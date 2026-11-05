@@ -77,7 +77,7 @@ func TestDeletingTheLastSourceMarksTheTargetOrphaned(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	contact := syncSource(t, ds, people, typeGoogleContact, "google:c1", map[string]any{
+	contact := syncSource(t, ds, people, typeGoogleContact, fid("google:c1"), map[string]any{
 		"name":   aname("Alex Example"),
 		"emails": []any{map[string]any{"value": "alex@example.com", "primary": true}},
 	})
@@ -108,7 +108,7 @@ func TestDeletingTheLastSourceMarksTheTargetOrphaned(t *testing.T) {
 
 	// A second source arrives naming the same person — the re-seed landing,
 	// the connector re-syncing — and the mark goes with the next recompute.
-	syncSource(t, ds, people, typeGoogleContact, "google:c2", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("google:c2"), map[string]any{
 		"name":   aname("Alex Example"),
 		"emails": []any{map[string]any{"value": "alex@example.com", "primary": true}},
 	}, pid)
@@ -132,7 +132,7 @@ func TestAPropertyHeldAboveTheMachineTierIsNotAnOrphan(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	contact := syncSource(t, ds, people, typeGoogleContact, "google:c1", map[string]any{
+	contact := syncSource(t, ds, people, typeGoogleContact, fid("google:c1"), map[string]any{
 		"name":   aname("Alex Example"),
 		"emails": []any{map[string]any{"value": "alex@example.com", "primary": true}},
 	})
@@ -176,15 +176,15 @@ func TestTheSweepCollectsAnOldUnreferencedOrphan(t *testing.T) {
 		})
 		return personOf(t, ds, src), src
 	}
-	old, oldSrc := mint("google:c1", "Old Husk", "old@example.com")
-	young, youngSrc := mint("google:c2", "Young Husk", "young@example.com")
-	held, heldSrc := mint("google:c3", "Held Husk", "held@example.com")
+	old, oldSrc := mint(fid("google:c1"), "Old Husk", "old@example.com")
+	young, youngSrc := mint(fid("google:c2"), "Young Husk", "young@example.com")
+	held, heldSrc := mint(fid("google:c3"), "Held Husk", "held@example.com")
 
 	// Something of the owner's points at the third person, which is what
 	// spares it: the collection asks the refs index, over every id the record
 	// has ever had, whether anything live still has hold of it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t1",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("t1"),
 		Properties: map[string]any{"name": "call them", "assignee": typePerson + "/" + held},
 	})
 
@@ -215,7 +215,7 @@ func TestTheSweepCollectsAnOldUnreferencedOrphan(t *testing.T) {
 	}
 	// The task still points at a record that is there, which is the whole
 	// point of asking.
-	task := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", "t1")
+	task := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", fid("t1"))
 	if refPathValue(task, "assignee") != typePerson+"/"+held {
 		t.Fatalf("the task's assignee moved: %v", task.Properties["assignee"])
 	}
@@ -230,7 +230,7 @@ func TestTheSweepCollectsNoOrphanByDefault(t *testing.T) {
 	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
 
-	contact := syncSource(t, ds, people, typeGoogleContact, "google:c1", map[string]any{
+	contact := syncSource(t, ds, people, typeGoogleContact, fid("google:c1"), map[string]any{
 		"name":   aname("Alex Example"),
 		"emails": []any{map[string]any{"value": "alex@example.com", "primary": true}},
 	})

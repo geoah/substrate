@@ -35,25 +35,25 @@ func TestSearchQuality(t *testing.T) {
 			Properties: map[string]any{"name": name, "description": description},
 		})
 	}
-	person("jose", "José Ramírez", "")
-	person("anastasia", "Anastasia Pell", "anastasia@inbox.example")
-	person("ansel", "Ansel Linscott", "")
+	person(fid("jose"), "José Ramírez", "")
+	person(fid("anastasia"), "Anastasia Pell", "anastasia@inbox.example")
+	person(fid("ansel"), "Ansel Linscott", "")
 	// Every person is born `utility`, as each synced contact is.
-	person("ada-trigger", "Ada Trigger", "")
-	task("rollback-plan", "Rollback plan", "Write the rollback plan for the migration.")
-	task("rollback-notes", "Notes", "Ideas for the rollback, and the migration order.")
+	person(fid("ada-trigger"), "Ada Trigger", "")
+	task(fid("rollback-plan"), "Rollback plan", "Write the rollback plan for the migration.")
+	task(fid("rollback-notes"), "Notes", "Ideas for the rollback, and the migration order.")
 	// A long description that repeats the word saturates; the task titled by
 	// it still ranks first.
-	task("long", "Quarterly archive", strings.Repeat("rollback steps and the archive layout. ", 60))
+	task(fid("long"), "Quarterly archive", strings.Repeat("rollback steps and the archive layout. ", 60))
 	// Common words: every one of these holds `review`, one holds `ansel`.
 	for _, id := range []string{"r1", "r2", "r3", "r4", "r5", "r6"} {
-		task("review-"+id, "Review the queue "+id, "Weekly review.")
+		task(fid("review-"+id), "Review the queue "+id, "Weekly review.")
 	}
-	task("sync-ansel", "Sync with Ansel", "Agenda for Thursday.")
+	task(fid("sync-ansel"), "Sync with Ansel", "Agenda for Thursday.")
 	// Core declares a kind named trigger and describes it in words. These
 	// tasks name it in a long title and in a description.
-	task("deploy-notes", "Deploy notes for the trigger on the staging cluster after the weekly review", "")
-	task("deploy-site", "Deploy the site", "Set the trigger after review.")
+	task(fid("deploy-notes"), "Deploy notes for the trigger on the staging cluster after the weekly review", "")
+	task(fid("deploy-site"), "Deploy the site", "Set the trigger after review.")
 
 	search := func(q string, purposes ...string) []string {
 		t.Helper()
@@ -75,16 +75,16 @@ func TestSearchQuality(t *testing.T) {
 	}
 
 	t.Run("a folded spelling finds the accented one, and back", func(t *testing.T) {
-		first("jose", "/jose")
-		first("José", "/jose")
-		first("ramirez", "/jose")
+		first("jose", "/"+fid("jose"))
+		first("José", "/"+fid("jose"))
+		first("ramirez", "/"+fid("jose"))
 	})
 	t.Run("an address's local part and domain find it", func(t *testing.T) {
-		first("anastasia@inbox.example", "/anastasia")
-		first("inbox.example", "/anastasia")
+		first("anastasia@inbox.example", "/"+fid("anastasia"))
+		first("inbox.example", "/"+fid("anastasia"))
 		// Before, the only lexeme was the whole address.
 		got := search("inbox")
-		if !slices.Contains(got, personKind+"/anastasia") {
+		if !slices.Contains(got, personKind+"/"+fid("anastasia")) {
 			t.Errorf("search inbox = %v, want the person with that domain", got)
 		}
 	})
@@ -95,14 +95,14 @@ func TestSearchQuality(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := pageIDs(page); !slices.Equal(got, []string{"ansel"}) {
+		if got := pageIDs(page); !slices.Equal(got, []string{fid("ansel")}) {
 			t.Errorf("filter.search ans* = %v, want [ansel]", got)
 		}
 		got := search("ans*", "primary")
-		if len(got) == 0 || !strings.HasSuffix(got[0], "/ansel") && !strings.HasSuffix(got[0], "/sync-ansel") {
+		if len(got) == 0 || !strings.HasSuffix(got[0], "/"+fid("ansel")) && !strings.HasSuffix(got[0], "/"+fid("sync-ansel")) {
 			t.Errorf("search ans* = %v, want Ansel first", got)
 		}
-		if slices.Contains(got, personKind+"/anastasia") {
+		if slices.Contains(got, personKind+"/"+fid("anastasia")) {
 			t.Errorf("search ans* = %v: Anastasia holds no word starting with ans", got)
 		}
 	})
@@ -111,7 +111,7 @@ func TestSearchQuality(t *testing.T) {
 		if len(got) < 2 {
 			t.Fatalf("search = %v, want the rollback tasks", got)
 		}
-		if !strings.HasSuffix(got[0], "/rollback-plan") {
+		if !strings.HasSuffix(got[0], "/"+fid("rollback-plan")) {
 			t.Errorf("search = %v, want the task holding both words first", got)
 		}
 		// The words as typed, all of them, match nothing: the list's search
@@ -126,12 +126,12 @@ func TestSearchQuality(t *testing.T) {
 	})
 	t.Run("the title outranks a long text that repeats the word", func(t *testing.T) {
 		got := search("rollback")
-		if i, j := slices.Index(got, taskKind+"/rollback-plan"), slices.Index(got, taskKind+"/long"); i < 0 || j < 0 || i > j {
+		if i, j := slices.Index(got, taskKind+"/"+fid("rollback-plan")), slices.Index(got, taskKind+"/"+fid("long")); i < 0 || j < 0 || i > j {
 			t.Errorf("search rollback = %v: the titled task must rank above the long one", got)
 		}
 	})
 	t.Run("a rare word outweighs a common one", func(t *testing.T) {
-		first("review ansel", "/sync-ansel")
+		first("review ansel", "/"+fid("sync-ansel"))
 	})
 	t.Run("machinery ranks below data, and a purpose filter drops it", func(t *testing.T) {
 		res, err := ds.Search(ctx, substrate.SearchInput{Q: "trigger", Mode: substrate.SearchLexical, K: 10})
@@ -149,12 +149,12 @@ func TestSearchQuality(t *testing.T) {
 		}
 		// The long title scores below the declaration on words alone, so
 		// only the purpose prior puts it above.
-		if raw["deploy-notes"] >= raw[declared] {
-			t.Errorf("the long-titled task scores %v, the declaration %v: the case no longer tests the prior", raw["deploy-notes"], raw[declared])
+		if raw[fid("deploy-notes")] >= raw[declared] {
+			t.Errorf("the long-titled task scores %v, the declaration %v: the case no longer tests the prior", raw[fid("deploy-notes")], raw[declared])
 		}
 		// A person born a moment ago is demoted below known people, not below
 		// machinery.
-		for _, id := range []string{"deploy-notes", "deploy-site", "ada-trigger"} {
+		for _, id := range []string{fid("deploy-notes"), fid("deploy-site"), fid("ada-trigger")} {
 			if r, ok := rank[id]; !ok || r > ri {
 				t.Errorf("search trigger = %v: task %s must rank above the declaration", hitIDs(res.Hits), id)
 			}
@@ -216,7 +216,7 @@ func TestSearchScoresProseWhereProseIsRare(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "tasks")
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "deploy-site",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("deploy-site"),
 		Properties: map[string]any{"name": "Deploy the site", "description": "Set the trigger after review."},
 	})
 	res, err := ds.Search(ctx, substrate.SearchInput{Q: "trigger", Mode: substrate.SearchLexical, K: 20})
@@ -227,7 +227,7 @@ func TestSearchScoresProseWhereProseIsRare(t *testing.T) {
 	for _, h := range res.Hits {
 		raw[h.Record.ID] = h.Lexical
 	}
-	task, declared := raw["deploy-site"], raw["substrate.reamde.dev/core/trigger"]
+	task, declared := raw[fid("deploy-site")], raw["substrate.reamde.dev/core/trigger"]
 	if declared == 0 || task < 0.4*declared {
 		t.Errorf("the description match scores %v against the titled declaration's %v, want at least 0.4 of it", task, declared)
 	}

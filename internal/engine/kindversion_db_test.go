@@ -43,13 +43,13 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	}
 
 	first := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: widget, ID: "w1", Properties: map[string]any{"name": "first"},
+		Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "first"},
 	})
 	if first.KindVersion != v1 {
 		t.Fatalf("a record written under kind version %d reads back kindVersion %d", v1, first.KindVersion)
 	}
 	third := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: widget, ID: "w3", Properties: map[string]any{"name": "third"},
+		Kind: widget, ID: fid("w3"), Properties: map[string]any{"name": "third"},
 	})
 
 	// A new optional property is a widening the guard admits, and a changed
@@ -69,14 +69,14 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	}
 
 	second := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: widget, ID: "w2", Properties: map[string]any{"name": "second", "note": "written later"},
+		Kind: widget, ID: fid("w2"), Properties: map[string]any{"name": "second", "note": "written later"},
 	})
 	if second.KindVersion != v2 {
 		t.Fatalf("a record written under kind version %d reads back kindVersion %d", v2, second.KindVersion)
 	}
 	// The first record was not written since; it keeps the version that
 	// validated it, whatever the kind is at now.
-	if got := mustGet(t, ds, widget, "w1"); got.KindVersion != v1 {
+	if got := mustGet(t, ds, widget, fid("w1")); got.KindVersion != v1 {
 		t.Fatalf("an untouched record's kindVersion moved to %d, want %d", got.KindVersion, v1)
 	}
 
@@ -85,7 +85,7 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	// the columns, and this write wrote none.
 	head := maxSeq(t, ds)
 	again := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: widget, ID: "w1", Properties: map[string]any{"name": "first"},
+		Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "first"},
 	})
 	if again.Version != first.Version || again.KindVersion != v1 {
 		t.Fatalf("an identical re-put moved the row: version %d -> %d, kindVersion %d -> %d",
@@ -120,7 +120,7 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 	if after := foldOf(t, ds); string(before) != string(after) {
 		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
 	}
-	for id, want := range map[string]int64{"w1": v1, "w2": v2, "w3": v2} {
+	for id, want := range map[string]int64{fid("w1"): v1, fid("w2"): v2, fid("w3"): v2} {
 		if got := mustGet(t, ds, widget, id).KindVersion; got != want {
 			t.Errorf("after the rebuild %s carries kindVersion %d, want %d", id, got, want)
 		}
@@ -145,8 +145,8 @@ func TestMergeAndSplitCarryTheStampUnchanged(t *testing.T) {
 		t.Fatalf("declare the widget kind: %v", err)
 	}
 	v1 := kindVersion(t, ds, widget)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w1", Properties: map[string]any{"name": "one"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: "w2", Properties: map[string]any{"name": "two"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "one"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widget, ID: fid("w2"), Properties: map[string]any{"name": "two"}})
 
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(kvPackage, 0),
@@ -161,20 +161,20 @@ func TestMergeAndSplitCarryTheStampUnchanged(t *testing.T) {
 		t.Fatalf("re-declaring the kind left its version at %d", v2)
 	}
 
-	merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: widget, Winner: "w1", Loser: "w2"})
+	merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: widget, Winner: fid("w1"), Loser: fid("w2")})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if got := mustGet(t, ds, widget, "w1").KindVersion; got != v1 {
+	if got := mustGet(t, ds, widget, fid("w1")).KindVersion; got != v1 {
 		t.Fatalf("the merge stamped the winner with kind version %d, want %d kept", got, v1)
 	}
 	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: merged.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	if got := mustGet(t, ds, widget, "w2").KindVersion; got != v1 {
+	if got := mustGet(t, ds, widget, fid("w2")).KindVersion; got != v1 {
 		t.Fatalf("the split stamped the revived loser with kind version %d, want %d kept", got, v1)
 	}
-	if got := mustGet(t, ds, widget, "w1").KindVersion; got != v1 {
+	if got := mustGet(t, ds, widget, fid("w1")).KindVersion; got != v1 {
 		t.Fatalf("the split stamped the winner with kind version %d, want %d kept", got, v1)
 	}
 }

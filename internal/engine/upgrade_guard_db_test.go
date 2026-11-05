@@ -405,7 +405,7 @@ func TestBundleUpgradeRefusesATightenedPatternWithLiveRows(t *testing.T) {
 	ctx := context.Background()
 	ds := installMailBundle(t)
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mbItemType, ID: "kept", Properties: map[string]any{"name": "keep me"},
+		Kind: mbItemType, ID: fid("kept"), Properties: map[string]any{"name": "keep me"},
 	})
 	closure := func(pattern string) []map[string]any {
 		item := vocabulary.KindManifest(mbPackage,
@@ -726,7 +726,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	}
 	declaring, ds := declare(t, shipping, "login")
 	mirror := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gadget, ID: "g1", Properties: map[string]any{"login": "geoah"},
+		Kind: gadget, ID: fid("g1"), Properties: map[string]any{"login": "geoah"},
 	})
 	subjectKind, subjectID, _ := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, gadget, mirror.ID), "person"))
 	if got := mustGet(t, ds, subjectKind, subjectID); got.Properties["handle"] != "geoah" {
@@ -784,7 +784,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	if got := mustGet(t, ds, gadget, mirror.ID); got.Properties["username"] != "geoah" || got.Properties["login"] != nil {
 		t.Fatalf("the rename did not land once the mapping moved: %v", got.Properties)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: gadget, ID: "g1", Properties: map[string]any{"username": "george"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: gadget, ID: fid("g1"), Properties: map[string]any{"username": "george"}})
 	if got := mustGet(t, ds, subjectKind, subjectID); got.Properties["handle"] != "george" {
 		t.Fatalf("the redeclared mapping does not project from the new name: %v", got.Properties)
 	}
@@ -849,7 +849,7 @@ func TestBootUpgradeCompilesTheKeptStoredDeclaration(t *testing.T) {
 		t.Fatalf("the kept gadget's template is %v, want the stored one", gadget.Properties["displayTemplate"])
 	}
 	card := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: corePackage + "/gadget", ID: "g1",
+		Kind: corePackage + "/gadget", ID: fid("g1"),
 		Properties: map[string]any{"provider": "substrate.reamde.dev/llm/provider/guarded"},
 	})
 	if card.Title != "a label" {
@@ -1406,7 +1406,7 @@ func TestBootUpgradeReprojectsTheIndexesOfAChangedKind(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 	mustPut(t, ds1, owner, substrate.PutInput{
-		Kind: widget, ID: "w1", Properties: map[string]any{"note": "quixotic"},
+		Kind: widget, ID: fid("w1"), Properties: map[string]any{"note": "quixotic"},
 	})
 	if got := searchIDs(t, ds1, "zanzibar"); len(got) != 0 {
 		t.Fatalf("binary N indexed a note it declares `fts: false`: %v", got)
@@ -1446,7 +1446,7 @@ func TestBootUpgradeReprojectsTheIndexesOfAChangedKind(t *testing.T) {
 	if got := searchIDs(t, ds2, "zanzibar"); len(got) != 1 || got[0] != "noted" {
 		t.Fatalf("the newly indexed note is not searchable after the upgrade: %v", got)
 	}
-	if got := searchIDs(t, ds2, "quixotic"); len(got) != 1 || got[0] != "w1" {
+	if got := searchIDs(t, ds2, "quixotic"); len(got) != 1 || got[0] != fid("w1") {
 		t.Fatalf("the kept widget lost its declared bands: %v", got)
 	}
 	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
@@ -1664,7 +1664,7 @@ func TestBootUpgradeRefusesATightenedRefinementOfAKeptKind(t *testing.T) {
 	ctx := context.Background()
 	const gizmo = corePackage + "/gizmo"
 	dsn := gizmoRepository(t, "  base: string\n  pattern: \"^[a-z]+$\"\n", refinedCode,
-		map[string]string{"long": "abc", "short": "ab"})
+		map[string]string{fid("long"): "abc", fid("short"): "ab"})
 
 	tightened := shippedTree(t)
 	shipRefinedGizmo(t, tightened, "  base: string\n  pattern: \"^[a-z]{1,2}$\"\n", refinedCode)
@@ -1684,7 +1684,7 @@ func TestBootUpgradeRefusesATightenedRefinementOfAKeptKind(t *testing.T) {
 		t.Fatalf("dataset: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gizmo, ID: "again", Properties: map[string]any{"code": "abcd"},
+		Kind: gizmo, ID: fid("again"), Properties: map[string]any{"code": "abcd"},
 	})
 }
 
@@ -1697,7 +1697,7 @@ func TestBootUpgradeRemapsARenamedRefinementValueOfAKeptKind(t *testing.T) {
 	const gizmo = corePackage + "/gizmo"
 	dsn := gizmoRepository(t,
 		"  base: enum\n  values:\n    - value: bronze\n    - value: silver\n", refinedCode,
-		map[string]string{"old": "bronze", "kept": "silver"})
+		map[string]string{fid("old"): "bronze", fid("kept"): "silver"})
 
 	renamed := shippedTree(t)
 	shipRefinedGizmo(t, renamed,
@@ -1716,14 +1716,14 @@ func TestBootUpgradeRemapsARenamedRefinementValueOfAKeptKind(t *testing.T) {
 	if v, _ := vocabulary.VersionValue(kind.Properties["version"]); v != 1 {
 		t.Fatalf("gizmo is stored at version %d, want the kept 1", v)
 	}
-	if got := mustGet(t, ds, gizmo, "old"); got.Properties["code"] != "copper" {
+	if got := mustGet(t, ds, gizmo, fid("old")); got.Properties["code"] != "copper" {
 		t.Fatalf("the boot did not remap the kept kind's row: %v", got.Properties)
 	}
-	if got := mustGet(t, ds, gizmo, "kept"); got.Properties["code"] != "silver" {
+	if got := mustGet(t, ds, gizmo, fid("kept")); got.Properties["code"] != "silver" {
 		t.Fatalf("the boot rewrote a row no step touched: %v", got.Properties)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: gizmo, ID: "stale", Properties: map[string]any{"code": "bronze"},
+		Kind: gizmo, ID: fid("stale"), Properties: map[string]any{"code": "bronze"},
 	}); err == nil {
 		t.Fatal("the old spelling must be undeclared once the remap landed")
 	}
@@ -1781,7 +1781,7 @@ func TestBootUpgradeRefusesADefaultARefinementNoLongerAdmits(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dataset: %v", err)
 			}
-			if got := mustPut(t, ds, owner, substrate.PutInput{Kind: gizmo, ID: "defaulted"}); got.Properties["code"] != "abc" {
+			if got := mustPut(t, ds, owner, substrate.PutInput{Kind: gizmo, ID: fid("defaulted")}); got.Properties["code"] != "abc" {
 				t.Fatalf("a create did not take the stored default: %v", got.Properties)
 			}
 		})

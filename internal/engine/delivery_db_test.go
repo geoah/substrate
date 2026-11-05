@@ -103,7 +103,7 @@ def main(input, host):
 WIDGET = "` + ledgerWidget + `"
 
 def main(input, host):
-    if host.records.get(WIDGET, "gate") is None:
+    if host.records.get(WIDGET, "` + fid("gate") + `") is None:
         raise RuntimeError("gate closed")
     env = input.get("envelope") or {}
     req = env.get("request") or {}
@@ -289,7 +289,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		Query: map[string][]string{"token": {secret}},
 		Body:  []byte(body),
 	}
-	fid, err := d.svc.receiveWebhook(ctx, testdb.Repository(t), ledgerHook, "", req, webhookFireInline)
+	hookFire, err := d.svc.receiveWebhook(ctx, testdb.Repository(t), ledgerHook, "", req, webhookFireInline)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 
 	// The parked webhook replays the request it arrived with, body read back
 	// from the blob store, without the header the ledger dropped.
-	if _, err := d2.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: "gate", Properties: map[string]any{"name": "open"}}); err != nil {
+	if _, err := d2.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d2.RetryTriggerFailure(ctx, ledgerHook, hookIDs[0]); err != nil {
@@ -467,7 +467,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if got := failureIDs(t, d2, ledgerHook); len(got) != 0 {
 		t.Fatalf("webhook failures after the retry: %v", got)
 	}
-	_ = fid
+	_ = hookFire
 
 	// The restored fold, ledger included, is what a rebuild reproduces.
 	before, err := d2.FoldSnapshot(ctx)
@@ -696,7 +696,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 	ds.deliveryFault = func(*txn) error { return errors.New("the completion failed") }
 	ds.mu.Unlock()
 	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-claim", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-claim"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -880,7 +880,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	installLedgerConnector(t, d, nowUTC().Add(-time.Hour))
 	put := func(ds *dataset, kind, id string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: fid(id), Properties: map[string]any{"name": id}}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -897,14 +897,14 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	}
 	put(d, ledgerWidget, "w1")
 	process(d)
-	if taskTitle(t, d, "t-w1") != "w1" {
+	if taskTitle(t, d, "t-"+fid("w1")) != "w1" {
 		t.Fatal("the mirror did not deliver the widget")
 	}
 	// A gadget the mirror scans past: no source matches it, so only the
 	// Postgres-only scan position moves.
 	put(d, ledgerGadget, "g-old")
 	process(d)
-	if liveExists(t, d, "t-g-old") {
+	if liveExists(t, d, "t-"+fid("g-old")) {
 		t.Fatal("the mirror delivered a kind outside its source")
 	}
 	// Widen the mirror to gadgets: the edit pins the scan position.
@@ -917,7 +917,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	// acknowledged position stays at the widget, below the gadget, so only
 	// the pin at the edit tells a replay the gadget was already scanned.
 	process(d)
-	if liveExists(t, d, "t-g-old") {
+	if liveExists(t, d, "t-"+fid("g-old")) {
 		t.Fatal("the widened mirror delivered the gadget it had scanned past")
 	}
 
@@ -950,15 +950,15 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	}
 	d2 := ds2.(*dataset)
 	process(d2)
-	if liveExists(t, d2, "t-g-old") {
+	if liveExists(t, d2, "t-"+fid("g-old")) {
 		t.Fatal("the restore delivered the gadget the live trigger scanned past: an effect that never occurred")
 	}
-	if n := entriesOf(t, d2, ledgerTask, "t-w1"); n != 1 {
+	if n := entriesOf(t, d2, ledgerTask, "t-"+fid("w1")); n != 1 {
 		t.Fatalf("the restore redelivered the widget: %d entries", n)
 	}
 	put(d2, ledgerGadget, "g-new")
 	process(d2)
-	if taskTitle(t, d2, "t-g-new") != "g-new" {
+	if taskTitle(t, d2, "t-"+fid("g-new")) != "g-new" {
 		t.Fatal("the restored trigger did not deliver a new gadget under its edited source")
 	}
 }
@@ -977,16 +977,16 @@ func TestAReplayOverAParkedChangeParksItAgainAndMovesOn(t *testing.T) {
 
 	// A widget without a name parks the mirror; the named one behind it
 	// delivers.
-	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: widgetType, ID: "poison"}); err != nil {
+	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: widgetType, ID: fid("poison")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: widgetType, ID: "fine", Properties: map[string]any{"name": "fine"}}); err != nil {
+	if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: widgetType, ID: fid("fine"), Properties: map[string]any{"name": "fine"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if taskTitle(t, ds, "t-fine") != "fine" {
+	if taskTitle(t, ds, "t-"+fid("fine")) != "fine" {
 		t.Fatal("the healthy change was not delivered")
 	}
 	if got := failureIDs(t, ds, triggerID); len(got) != 1 {
@@ -1009,7 +1009,7 @@ func TestAReplayOverAParkedChangeParksItAgainAndMovesOn(t *testing.T) {
 	if got := failureIDs(t, ds, triggerID); len(got) != 2 {
 		t.Fatalf("failures after the replay %v, want the old park and the new one", got)
 	}
-	if n := entriesOf(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-fine"); n != 1 {
+	if n := entriesOf(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-"+fid("fine")); n != 1 {
 		t.Fatalf("the replayed healthy delivery wrote %d entries, want the no-op's 1", n)
 	}
 }
@@ -1031,7 +1031,7 @@ func TestAClaimAnotherDispatchHoldsIsSkipped(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-held", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-held"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1097,7 +1097,7 @@ func TestConcurrentRetriesOfOneAgentFailureRunOneLoop(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}}, fakeTurn{content: "kept"},
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-race", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-race"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1177,7 +1177,7 @@ func TestAScanAdvanceLosesToATriggerEdit(t *testing.T) {
 	// Rows the mirror's source does not match: a pass scans past them.
 	for _, id := range []string{"a", "b", "c"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: "samples.substrate.reamde.dev/tasks/task", ID: "unmatched-" + id, Properties: map[string]any{"name": id},
+			Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("unmatched-" + id), Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1227,7 +1227,7 @@ func TestARetryOfARunningClaimAnswersConflict(t *testing.T) {
 	}
 	fake.script("keep", fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}}, fakeTurn{content: "kept"})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-running", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-running"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1309,7 +1309,7 @@ func TestAParkedMultipartWebhookKeepsItsPartValuesOutOfTheLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The retry delivers the request as it arrived, values read back.
-	if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: "gate", Properties: map[string]any{"name": "open"}}); err != nil {
+	if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.RetryTriggerFailure(ctx, ledgerHook, ids[0]); err != nil {

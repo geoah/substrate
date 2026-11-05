@@ -389,7 +389,7 @@ def main(input, host):
 	fn := fnPackage + "/proposer"
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-proposed", Properties: map[string]any{"name": "draft"},
+		Kind: taskType, ID: fid("t-proposed"), Properties: map[string]any{"name": "draft"},
 	})
 
 	// A patch proposal: the request carries the target edge, the diff and the

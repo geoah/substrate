@@ -113,7 +113,7 @@ func TestForeignMirrorMintsAndMatchesThroughTheOwnersMapping(t *testing.T) {
 	tmInstall(t, ds)
 
 	first := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-1",
+		Kind: tmIssueType, ID: fid("issue-1"),
 		Properties: map[string]any{"headline": "Ship the thing"},
 	})
 	minted := tmSubjectOf(t, ds, first.ID)
@@ -130,7 +130,7 @@ func TestForeignMirrorMintsAndMatchesThroughTheOwnersMapping(t *testing.T) {
 		Kind: tmTaskType, Properties: map[string]any{"name": "Write the record"},
 	})
 	second := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-2",
+		Kind: tmIssueType, ID: fid("issue-2"),
 		Properties: map[string]any{"headline": "Write the record"},
 	})
 	if got := tmSubjectOf(t, ds, second.ID); got != existing.ID {
@@ -150,14 +150,14 @@ func TestDeclaringAMappingMakesTheTargetsIDsServerAssigned(t *testing.T) {
 	}
 	// Nothing points at `task` yet, so the writer names its own id.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmTaskType, ID: "groceries", Properties: map[string]any{"name": "Groceries"},
+		Kind: tmTaskType, ID: fid("groceries"), Properties: map[string]any{"name": "Groceries"},
 	})
 
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{tmMappingDoc()}); err != nil {
 		t.Fatalf("declare the mapping: %v", err)
 	}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: tmTaskType, ID: "laundry", Properties: map[string]any{"name": "Laundry"},
+		Kind: tmTaskType, ID: fid("laundry"), Properties: map[string]any{"name": "Laundry"},
 	})
 	wantErr(t, err, substrate.ErrValidation, "a chosen id on a mapped-to kind")
 
@@ -165,7 +165,7 @@ func TestDeclaringAMappingMakesTheTargetsIDsServerAssigned(t *testing.T) {
 	// exists is not naming it.
 	mustPut(t, ds, owner, substrate.PutInput{Kind: tmTaskType, Properties: map[string]any{"name": "Laundry"}})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmTaskType, ID: "groceries", Properties: map[string]any{"name": "Groceries, again"},
+		Kind: tmTaskType, ID: fid("groceries"), Properties: map[string]any{"name": "Groceries, again"},
 	})
 }
 
@@ -209,7 +209,7 @@ func TestOneMirrorReachesTwoKindsThroughTwoSlots(t *testing.T) {
 	}
 
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-1",
+		Kind: tmIssueType, ID: fid("issue-1"),
 		Properties: map[string]any{"headline": "Two slots"},
 	})
 	full := mustGet(t, ds, row.Kind, row.ID)
@@ -246,11 +246,11 @@ func TestTheMappingPinsAnUnpinnedSubjectSlot(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	note := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmNoteType, ID: "n1", Properties: map[string]any{"summary": "not a task"},
+		Kind: tmNoteType, ID: fid("n1"), Properties: map[string]any{"summary": "not a task"},
 	})
 
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-note",
+		Kind: tmIssueType, ID: fid("issue-note"),
 		Properties: map[string]any{
 			"headline": "wrong kind",
 			"task":     vocabulary.RecordPath(tmNoteType, note.ID),
@@ -264,7 +264,7 @@ func TestTheMappingPinsAnUnpinnedSubjectSlot(t *testing.T) {
 		Kind: tmTaskType, Properties: map[string]any{"name": "Named by hand"},
 	})
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-bare",
+		Kind: tmIssueType, ID: fid("issue-bare"),
 		Properties: map[string]any{"headline": "bare id", "task": task.ID},
 	})
 	if got := tmSubjectOf(t, ds, row.ID); got != task.ID {
@@ -335,7 +335,7 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	issue := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tmIssueType, ID: "issue-1", Properties: map[string]any{"headline": "Ambiguous"},
+		Kind: tmIssueType, ID: fid("issue-1"), Properties: map[string]any{"headline": "Ambiguous"},
 	})
 
 	_, err := ds.Put(ctx, owner, substrate.PutInput{

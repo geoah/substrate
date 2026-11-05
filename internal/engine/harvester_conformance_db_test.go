@@ -81,8 +81,10 @@ func loadYAMLDocs(t *testing.T, path string) []map[string]any {
 	return out
 }
 
-// putDataDoc applies one data-record manifest (a trigger) the way `substratectl
-// apply` routes a non-schema document — through the ordinary write path.
+// putDataDoc applies one shipped data-record manifest through the ordinary
+// write path under the bundle's actor, as the catalog's install does: the
+// shipped ids (the digest's `latest`) are the bundle's to name, and a person
+// creating them under those ids is refused (decision 0228).
 func putDataDoc(t *testing.T, ds *dataset, m map[string]any) *substrate.Record {
 	t.Helper()
 	typ, _ := m["kind"].(string)
@@ -90,7 +92,7 @@ func putDataDoc(t *testing.T, ds *dataset, m map[string]any) *substrate.Record {
 	id, _ := meta["id"].(string)
 	data, _ := m["data"].(map[string]any)
 	props, _ := data["properties"].(map[string]any)
-	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	e, err := ds.Put(context.Background(), substrate.BundleActor(vocabulary.SplitPackageRef(rlPackage)), substrate.PutInput{
 		Kind: typ, ID: id, Properties: props,
 	})
 	if err != nil {
@@ -266,13 +268,13 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	)
 
 	// --- feed one message carrying two URLs, one deny-listed ---------------
-	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: "p-alice", Properties: map[string]any{"name": "Alice"}})
-	acct := mustPutInternal(t, ds, substrate.PutInput{Kind: enginetest.AccountType, ID: "acct-test", Properties: map[string]any{"provider": "test", "label": "test inbox"}})
+	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: fid("p-alice"), Properties: map[string]any{"name": "Alice"}})
+	acct := mustPutInternal(t, ds, substrate.PutInput{Kind: enginetest.AccountType, ID: fid("acct-test"), Properties: map[string]any{"provider": "test", "label": "test inbox"}})
 	conv := mustPutInternal(t, ds, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "conv-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("conv-1"),
 		Properties: map[string]any{"category": "direct", "name": "reading chat", "account": enginetest.AccountType + "/" + acct.ID},
 	})
-	feedMessage(t, ds, "msg-1", person.ID, conv.ID,
+	feedMessage(t, ds, fid("msg-1"), person.ID, conv.ID,
 		fmt.Sprintf("read %s and %s later", blogURL, trackerURL))
 
 	drainTriggers(t, ds)
@@ -292,7 +294,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// SUCCEED (the deny is a filter, not a failure), yet the tracker page must
 	// have ZERO changelog rows across all of history — proving it was never
 	// minted, as opposed to minted-then-removed (which final absence permits).
-	denyMsg := feedMessage(t, ds, "msg-deny", person.ID, conv.ID,
+	denyMsg := feedMessage(t, ds, fid("msg-deny"), person.ID, conv.ID,
 		fmt.Sprintf("nothing but junk here: %s", trackerURL))
 	drainTriggers(t, ds)
 	var denyStatus string
@@ -467,11 +469,11 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// --- CONFORMANCE PROPERTY 1: re-feeding re-mints nothing (put-if-absent)
 	pagesBefore := countLivePages(t, ds)
 	// Re-put the identical message: a no-op that never even redelivers.
-	feedMessage(t, ds, "msg-1", person.ID, conv.ID,
+	feedMessage(t, ds, fid("msg-1"), person.ID, conv.ID,
 		fmt.Sprintf("read %s and %s later", blogURL, trackerURL))
 	// A DISTINCT message carrying the SAME url: findurls runs and its
 	// put-if-absent must be a no-op because the page already exists.
-	feedMessage(t, ds, "msg-2", person.ID, conv.ID,
+	feedMessage(t, ds, fid("msg-2"), person.ID, conv.ID,
 		fmt.Sprintf("still worth reading: %s", blogURL))
 	// The changelog head after the messages are in but BEFORE findurls re-runs:
 	// a correct put-if-absent writes NOTHING to the page past this point. A

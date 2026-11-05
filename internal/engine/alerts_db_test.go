@@ -99,7 +99,7 @@ func TestAParkRaisesOneAlertAndARepeatWithinTheIntervalWritesNothing(t *testing.
 	want := []string{
 		vocabulary.RecordPath("substrate.reamde.dev/core/trigger", triggerID),
 		vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/boom"),
-		vocabulary.RecordPath(widgetType, "w1"),
+		vocabulary.RecordPath(widgetType, fid("w1")),
 	}
 	if got := aboutPaths(t, a); strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("the alert is about %v, want %v", got, want)
@@ -127,7 +127,7 @@ func TestAParkRaisesOneAlertAndARepeatWithinTheIntervalWritesNothing(t *testing.
 		t.Fatalf("referencing %s found %d alerts, want the one parked alert", want[1], len(page.Records))
 	}
 
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	if st := statusOf(t, ds, triggerID); st.Parked != 2 {
 		t.Fatalf("the second delivery did not park: parked=%d", st.Parked)
@@ -170,8 +170,8 @@ func TestForgetResolvesTheParkedAlertAndAParkReopensIt(t *testing.T) {
 	ctx := context.Background()
 	ds := boomDataset(t)
 	triggerID, _ := parkOne(t, ds)
-	putWidget(t, ds, "w2")
-	putWidget(t, ds, "w3")
+	putWidget(t, ds, fid("w2"))
+	putWidget(t, ds, fid("w3"))
 	process(t, ds)
 	failures, err := ds.TriggerFailures(ctx, triggerID)
 	if err != nil || len(failures) != 3 {
@@ -199,7 +199,7 @@ func TestForgetResolvesTheParkedAlertAndAParkReopensIt(t *testing.T) {
 			resolved.Properties["state"], alertCountOf(resolved))
 	}
 
-	putWidget(t, ds, "w4")
+	putWidget(t, ds, fid("w4"))
 	process(t, ds)
 	reopened := alertOf(t, ds, triggerID)
 	if reopened.Properties["state"] != "open" || alertCountOf(reopened) != 1 {
@@ -209,7 +209,7 @@ func TestForgetResolvesTheParkedAlertAndAParkReopensIt(t *testing.T) {
 	if reopened.Properties["firstSeenAt"] == first.Properties["firstSeenAt"] {
 		t.Fatalf("the reopened alert kept firstSeenAt %v", first.Properties["firstSeenAt"])
 	}
-	if got := aboutPaths(t, reopened); got[len(got)-1] != vocabulary.RecordPath(widgetType, "w4") {
+	if got := aboutPaths(t, reopened); got[len(got)-1] != vocabulary.RecordPath(widgetType, fid("w4")) {
 		t.Fatalf("the reopened alert is about %v, want the parked record w4 last", got)
 	}
 }
@@ -229,7 +229,7 @@ func TestARebuildReproducesTheParkedAlert(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	triggerID, parked := parkOne(t, ds)
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	if err := ds.ForgetTriggerFailure(ctx, triggerID, parked.ID); err != nil {
 		t.Fatalf("forget: %v", err)
@@ -269,7 +269,7 @@ func TestAFailingAlertNotifierParksOnceAndNeverReceivesItsOwnAlert(t *testing.T)
 		pyFn("boom", map[string]any{}, []any{taskType}, raisingSource),
 		pyFn("notify", map[string]any{}, []any{taskType}, raisingSource))
 
-	putWidget(t, ds, "w1")
+	putWidget(t, ds, fid("w1"))
 	for range 4 {
 		process(t, ds)
 	}

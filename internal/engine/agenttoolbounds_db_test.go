@@ -262,7 +262,7 @@ func TestLexicalSearchDegradesWhenTheTopUpRunsOutOfBudget(t *testing.T) {
 	const budget = 2 * time.Second
 	ds := openInternalDataset(t, WithSearchBudget(budget))
 	importVocabulary(t, ds, "tasks")
-	for id, name := range map[string]string{"both": "flight booking", "flight": "flight to Lisbon", "booking": "booking for dinner"} {
+	for id, name := range map[string]string{fid("both"): "flight booking", fid("flight"): "flight to Lisbon", fid("booking"): "booking for dinner"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: "samples.substrate.reamde.dev/tasks/task", ID: id, Properties: map[string]any{"name": name},
 		}); err != nil {
@@ -275,7 +275,7 @@ func TestLexicalSearchDegradesWhenTheTopUpRunsOutOfBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a top-up past the budget failed the search: %v", err)
 	}
-	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "both" {
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != fid("both") {
 		t.Fatalf("hits = %v, want the strict match alone", res.Hits)
 	}
 	if !res.Capped || !strings.HasPrefix(res.Note, "Search stopped looking for records matching only some of the words at four fifths of its 2s budget, so the lexical hits are only records matching every word.") {

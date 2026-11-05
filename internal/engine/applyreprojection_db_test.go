@@ -101,7 +101,7 @@ func TestAProviderUpgradeReturnsBeforeItReindexesAReshapedKind(t *testing.T) {
 	if _, _, err := rpProviderCatalog(t, 1, false).Install(ctx, owner, rpPackage, ds); err != nil {
 		t.Fatalf("install version 1: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: rpMeter, ID: "kitchen", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: rpMeter, ID: fid("kitchen"), Properties: map[string]any{
 		"name": "kitchen", "remark": "a wombat under the sink",
 	}})
 	if got := idsOfHits(lexicalHits(t, ds, "wombat")); len(got) != 0 {
@@ -113,10 +113,10 @@ func TestAProviderUpgradeReturnsBeforeItReindexesAReshapedKind(t *testing.T) {
 	}
 	// A row written now derives under the published declaration, so it is
 	// found; the stored one waits for the pass, which the hook holds.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: rpMeter, ID: "pantry", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: rpMeter, ID: fid("pantry"), Properties: map[string]any{
 		"name": "pantry", "remark": "a wombat behind the flour",
 	}})
-	if got := idsOfHits(lexicalHits(t, ds, "wombat")); !reflect.DeepEqual(got, []string{"pantry"}) {
+	if got := idsOfHits(lexicalHits(t, ds, "wombat")); !reflect.DeepEqual(got, []string{fid("pantry")}) {
 		t.Fatalf("before the pass, search finds %v, want only the row written after the upgrade [pantry]", got)
 	}
 
@@ -176,7 +176,7 @@ func TestTheReprojectionKeepsTheRequestOfAnApplyThatDidNotPublish(t *testing.T) 
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, notes(false)); err != nil {
 		t.Fatalf("declare the notes: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: ftsNote, ID: "kitchen", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: ftsNote, ID: fid("kitchen"), Properties: map[string]any{
 		"name": "kitchen", "remark": "a wombat under the sink",
 	}})
 
@@ -216,7 +216,7 @@ func TestTheReprojectionKeepsTheRequestOfAnApplyThatDidNotPublish(t *testing.T) 
 		t.Fatalf("reopen: %v", err)
 	}
 	engine.DrainIndexReprojection(t, ds2)
-	if got := idsOfHits(lexicalHits(t, ds2, "wombat")); !reflect.DeepEqual(got, []string{"kitchen"}) {
+	if got := idsOfHits(lexicalHits(t, ds2, "wombat")); !reflect.DeepEqual(got, []string{fid("kitchen")}) {
 		t.Fatalf("after the reopen, search finds %v, want [kitchen] under the committed declaration", got)
 	}
 }

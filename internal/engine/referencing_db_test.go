@@ -98,32 +98,32 @@ func TestReferencingReadsEveryReferenceShape(t *testing.T) {
 	hub := graphPackage + "/hub"
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: hub, ID: "h1", Properties: map[string]any{"name": "Hub"},
+		Kind: hub, ID: fid("h1"), Properties: map[string]any{"name": "Hub"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: graphPackage + "/spoke", ID: fid("s1"), Properties: map[string]any{"hub": fid("h1")},
 	})
 	// Points at a DIFFERENT hub: the reverse read must not gather it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: hub, ID: "h2", Properties: map[string]any{"name": "Other"},
+		Kind: hub, ID: fid("h2"), Properties: map[string]any{"name": "Other"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s2", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: fid("s2"), Properties: map[string]any{"hub": fid("h2")},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x1",
-		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h1")},
+		Kind: graphPackage + "/loose", ID: fid("x1"),
+		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, fid("h1"))},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/fan", ID: "f1",
-		Properties: map[string]any{"hubs": []any{"h2", "h1"}},
+		Kind: graphPackage + "/fan", ID: fid("f1"),
+		Properties: map[string]any{"hubs": []any{fid("h2"), fid("h1")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/nester", ID: "n1",
-		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
+		Kind: graphPackage + "/nester", ID: fid("n1"),
+		Properties: map[string]any{"tool": map[string]any{"callable": fid("h1")}},
 	})
 
-	page := referencing(t, ds, hub, "h1", substrate.Filter{}, 50, "")
+	page := referencing(t, ds, hub, fid("h1"), substrate.Filter{}, 50, "")
 	if len(page.Records) != 4 {
 		t.Fatalf("records = %v, want the spoke, the unpinned pointer, the repeated one and the nested one", pathsOf(page))
 	}
@@ -137,17 +137,17 @@ func TestReferencingReadsEveryReferenceShape(t *testing.T) {
 		}
 		return sites[0]
 	}
-	if got := site("spoke", "s1"); got.Property != "hub" || got.Path != "" {
+	if got := site("spoke", fid("s1")); got.Property != "hub" || got.Path != "" {
 		t.Fatalf("the pinned pointer reads %+v", got)
 	}
-	if got := site("loose", "x1"); got.Property != "anything" || got.Path != "" {
+	if got := site("loose", fid("x1")); got.Property != "anything" || got.Path != "" {
 		t.Fatalf("the unpinned pointer reads %+v", got)
 	}
-	if got := site("fan", "f1"); got.Property != "hubs" || got.Path != "" {
+	if got := site("fan", fid("f1")); got.Property != "hubs" || got.Path != "" {
 		t.Fatalf("the repeated pointer reads %+v", got)
 	}
 	// The nested site names its property AND the address inside it.
-	if got := site("nester", "n1"); got.Property != "tool" || got.Path != "callable" {
+	if got := site("nester", fid("n1")); got.Property != "tool" || got.Path != "callable" {
 		t.Fatalf("the nested pointer reads %+v", got)
 	}
 }
@@ -158,18 +158,18 @@ func TestReferencingNarrowsByKindAndProperty(t *testing.T) {
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1"})
-	for _, id := range []string{"s1", "s2"} {
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1")})
+	for _, id := range []string{fid("s1"), fid("s2")} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": fid("h1")},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/fan", ID: "f1", Properties: map[string]any{"hubs": []any{"h1"}},
+		Kind: graphPackage + "/fan", ID: fid("f1"), Properties: map[string]any{"hubs": []any{fid("h1")}},
 	})
 
 	// The kinds arm of the filter is the drill-down into one source kind.
-	page := referencing(t, ds, hub, "h1", substrate.Filter{Kinds: []string{graphPackage + "/spoke"}}, 50, "")
+	page := referencing(t, ds, hub, fid("h1"), substrate.Filter{Kinds: []string{graphPackage + "/spoke"}}, 50, "")
 	if len(page.Records) != 2 {
 		t.Fatalf("kinds must narrow to the spokes, got %v", pathsOf(page))
 	}
@@ -179,12 +179,12 @@ func TestReferencingNarrowsByKindAndProperty(t *testing.T) {
 		}
 	}
 	ref := func(property string) *substrate.Referencing {
-		return &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h1"), Property: property}
+		return &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h1")), Property: property}
 	}
-	if page := referencing(t, ds, hub, "h1", substrate.Filter{Referencing: ref("hubs")}, 50, ""); len(page.Records) != 1 {
+	if page := referencing(t, ds, hub, fid("h1"), substrate.Filter{Referencing: ref("hubs")}, 50, ""); len(page.Records) != 1 {
 		t.Fatalf("property must narrow to the repeated pointer, got %v", pathsOf(page))
 	}
-	if page := referencing(t, ds, hub, "h1", substrate.Filter{Referencing: ref("nothing")}, 50, ""); len(page.Records) != 0 {
+	if page := referencing(t, ds, hub, fid("h1"), substrate.Filter{Referencing: ref("nothing")}, 50, ""); len(page.Records) != 0 {
 		t.Fatalf("an unclaimed property must find nothing, got %v", pathsOf(page))
 	}
 }
@@ -196,20 +196,20 @@ func TestReferencingExcludesADeletedSource(t *testing.T) {
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: graphPackage + "/spoke", ID: fid("s1"), Properties: map[string]any{"hub": fid("h1")},
 	})
-	if page := referencing(t, ds, hub, "h1", substrate.Filter{}, 50, ""); len(page.Records) != 1 {
+	if page := referencing(t, ds, hub, fid("h1"), substrate.Filter{}, 50, ""); len(page.Records) != 1 {
 		t.Fatalf("referencing before the delete = %v", pathsOf(page))
 	}
-	if _, err := ds.Delete(ctx, owner, graphPackage+"/spoke", "s1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, graphPackage+"/spoke", fid("s1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the source: %v", err)
 	}
 	// The tombstone keeps its rows in the index (a delete touches `records`
 	// alone), so this is the list's own liveness predicate doing the
 	// filtering: a deleted record points at nothing.
-	if page := referencing(t, ds, hub, "h1", substrate.Filter{}, 50, ""); len(page.Records) != 0 {
+	if page := referencing(t, ds, hub, fid("h1"), substrate.Filter{}, 50, ""); len(page.Records) != 0 {
 		t.Fatalf("referencing after the delete = %v", pathsOf(page))
 	}
 }
@@ -222,16 +222,16 @@ func TestReferencingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	hub := graphPackage + "/hub"
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: hub, ID: "h1", Properties: map[string]any{"name": "Winner"},
+		Kind: hub, ID: fid("h1"), Properties: map[string]any{"name": "Winner"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: hub, ID: "h2", Properties: map[string]any{"name": "Loser"},
+		Kind: hub, ID: fid("h2"), Properties: map[string]any{"name": "Loser"},
 	})
 	// Written while h2 was still a record of its own.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: fid("s1"), Properties: map[string]any{"hub": fid("h2")},
 	})
-	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: winner.ID, Loser: "h2"}); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: winner.ID, Loser: fid("h2")}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -242,16 +242,16 @@ func TestReferencingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	// The merge also leaves its own `recordmerge` row naming both sides, which
 	// is why this looks for the spoke rather than counting: that row is the
 	// merge's audit trail and belongs in the fan-in.
-	for _, target := range []string{"h1", "h2"} {
+	for _, target := range []string{fid("h1"), fid("h2")} {
 		page := referencing(t, ds, hub, target, substrate.Filter{}, 50, "")
-		sites := page.Matches[vocabulary.RecordPath(graphPackage+"/spoke", "s1")]
+		sites := page.Matches[vocabulary.RecordPath(graphPackage+"/spoke", fid("s1"))]
 		if len(sites) != 1 || sites[0].Property != "hub" || sites[0].Path != "" {
 			t.Fatalf("referencing %s: the pointer written under the former id must be found and named, got %v %+v",
 				target, pathsOf(page), page.Matches)
 		}
 	}
 	// And the stored value still spells the loser's id: nothing rewrote it.
-	if got := refPathValue(mustGet(t, ds, graphPackage+"/spoke", "s1"), "hub"); got != vocabulary.RecordPath(hub, "h2") {
+	if got := refPathValue(mustGet(t, ds, graphPackage+"/spoke", fid("s1")), "hub"); got != vocabulary.RecordPath(hub, fid("h2")) {
 		t.Fatalf("the merge rewrote a reference value: hub = %q", got)
 	}
 }
@@ -269,30 +269,30 @@ func TestReferencingManyTargetsIsOneRead(t *testing.T) {
 	spoke := graphPackage + "/spoke"
 	path := func(kind, id string) string { return vocabulary.RecordPath(graphPackage+"/"+kind, id) }
 
-	for _, id := range []string{"work", "home", "other"} {
+	for _, id := range []string{fid("work"), fid("home"), fid("other")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: id})
 	}
-	for id, at := range map[string]string{"s-work": "work", "s-home": "home", "s-other": "other"} {
+	for id, at := range map[string]string{fid("s-work"): fid("work"), fid("s-home"): fid("home"), fid("s-other"): fid("other")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: spoke, ID: id, Properties: map[string]any{"hub": at}})
 	}
 	// One record pointing at BOTH addresses.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/fan", ID: "f-both", Properties: map[string]any{"hubs": []any{"work", "home"}},
+		Kind: graphPackage + "/fan", ID: fid("f-both"), Properties: map[string]any{"hubs": []any{fid("work"), fid("home")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/nester", ID: "n-work",
-		Properties: map[string]any{"tool": map[string]any{"callable": "work"}},
+		Kind: graphPackage + "/nester", ID: fid("n-work"),
+		Properties: map[string]any{"tool": map[string]any{"callable": fid("work")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x-home", Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "home")},
+		Kind: graphPackage + "/loose", ID: fid("x-home"), Properties: map[string]any{"anything": vocabulary.RecordPath(hub, fid("home"))},
 	})
 	// Points at a SPOKE: only a target list spanning two kinds gathers it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x-spoke", Properties: map[string]any{"anything": path("spoke", "s-other")},
+		Kind: graphPackage + "/loose", ID: fid("x-spoke"), Properties: map[string]any{"anything": path("spoke", fid("s-other"))},
 	})
 
-	both := []string{vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "home")}
-	want := []string{path("fan", "f-both"), path("loose", "x-home"), path("nester", "n-work"), path("spoke", "s-home"), path("spoke", "s-work")}
+	both := []string{vocabulary.RecordPath(hub, fid("work")), vocabulary.RecordPath(hub, fid("home"))}
+	want := []string{path("fan", fid("f-both")), path("loose", fid("x-home")), path("nester", fid("n-work")), path("spoke", fid("s-home")), path("spoke", fid("s-work"))}
 	list := func(f substrate.Filter, first int, after string) *substrate.Page {
 		t.Helper()
 		page, err := ds.List(ctx, substrate.Query{Filter: f, First: first, After: after, Count: true})
@@ -314,7 +314,7 @@ func TestReferencingManyTargetsIsOneRead(t *testing.T) {
 	if page.Count == nil || *page.Count != int64(len(want)) {
 		t.Fatalf("count = %v, want %d: the record pointing at both counts once", page.Count, len(want))
 	}
-	if sites := page.Matches[path("fan", "f-both")]; len(sites) != 1 || sites[0].Property != "hubs" {
+	if sites := page.Matches[path("fan", fid("f-both"))]; len(sites) != 1 || sites[0].Property != "hubs" {
 		t.Fatalf("the record pointing at both matches %+v, want the one hubs site", sites)
 	}
 	for _, p := range want {
@@ -350,11 +350,11 @@ func TestReferencingManyTargetsIsOneRead(t *testing.T) {
 
 	// The same narrowing the single form takes: one property, one source kind.
 	page = list(substrate.Filter{Referencing: &substrate.Referencing{Refs: both, Property: "hub"}}, 50, "")
-	if got := sorted(pathsOf(page)); got != sorted([]string{path("spoke", "s-home"), path("spoke", "s-work")}) {
+	if got := sorted(pathsOf(page)); got != sorted([]string{path("spoke", fid("s-home")), path("spoke", fid("s-work"))}) {
 		t.Fatalf("refs narrowed to hub = %s, want the two spokes", got)
 	}
 	page = list(substrate.Filter{Kinds: []string{graphPackage + "/fan"}, Referencing: &substrate.Referencing{Refs: both}}, 50, "")
-	if got := sorted(pathsOf(page)); got != path("fan", "f-both") {
+	if got := sorted(pathsOf(page)); got != path("fan", fid("f-both")) {
 		t.Fatalf("refs narrowed to the fan kind = %s", got)
 	}
 
@@ -365,9 +365,9 @@ func TestReferencingManyTargetsIsOneRead(t *testing.T) {
 	}
 
 	// Targets of two kinds are one read too.
-	mixed := []string{vocabulary.RecordPath(hub, "other"), path("spoke", "s-other")}
+	mixed := []string{vocabulary.RecordPath(hub, fid("other")), path("spoke", fid("s-other"))}
 	page = list(substrate.Filter{Referencing: &substrate.Referencing{Refs: mixed}}, 50, "")
-	if got := sorted(pathsOf(page)); got != sorted([]string{path("loose", "x-spoke"), path("spoke", "s-other")}) {
+	if got := sorted(pathsOf(page)); got != sorted([]string{path("loose", fid("x-spoke")), path("spoke", fid("s-other"))}) {
 		t.Fatalf("refs across a hub and a spoke = %s", got)
 	}
 }
@@ -383,18 +383,18 @@ func TestReferencingManyTargetsFollowsAFormerID(t *testing.T) {
 	hub := graphPackage + "/hub"
 	spoke := graphPackage + "/spoke"
 
-	for _, id := range []string{"work", "home", "old-home"} {
+	for _, id := range []string{fid("work"), fid("home"), fid("old-home")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: id})
 	}
-	for id, at := range map[string]string{"s-work": "work", "s-home": "home", "s-old": "old-home"} {
+	for id, at := range map[string]string{fid("s-work"): fid("work"), fid("s-home"): fid("home"), fid("s-old"): fid("old-home")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: spoke, ID: id, Properties: map[string]any{"hub": at}})
 	}
-	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: "home", Loser: "old-home"}); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: fid("home"), Loser: fid("old-home")}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	for name, refs := range map[string][]string{
-		"the canonical ids": {vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "home")},
-		"a former id":       {vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "old-home")},
+		"the canonical ids": {vocabulary.RecordPath(hub, fid("work")), vocabulary.RecordPath(hub, fid("home"))},
+		"a former id":       {vocabulary.RecordPath(hub, fid("work")), vocabulary.RecordPath(hub, fid("old-home"))},
 	} {
 		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 			Kinds: []string{spoke}, Referencing: &substrate.Referencing{Refs: refs},
@@ -404,9 +404,11 @@ func TestReferencingManyTargetsFollowsAFormerID(t *testing.T) {
 		}
 		got := pathsOf(page)
 		sort.Strings(got)
-		if strings.Join(got, " ") != strings.Join([]string{
-			vocabulary.RecordPath(spoke, "s-home"), vocabulary.RecordPath(spoke, "s-old"), vocabulary.RecordPath(spoke, "s-work"),
-		}, " ") {
+		want := []string{
+			vocabulary.RecordPath(spoke, fid("s-home")), vocabulary.RecordPath(spoke, fid("s-old")), vocabulary.RecordPath(spoke, fid("s-work")),
+		}
+		sort.Strings(want)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Fatalf("%s: refs = %v, want every spoke, the one written under the former id included", name, got)
 		}
 	}
@@ -421,18 +423,18 @@ func TestReferencingRefusesATargetListPastTheCap(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h0"})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/spoke", ID: "s0", Properties: map[string]any{"hub": "h0"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h0")})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/spoke", ID: fid("s0"), Properties: map[string]any{"hub": fid("h0")}})
 
 	atCap := make([]string, substrate.MaxReferencingTargets)
 	for i := range atCap {
-		atCap[i] = vocabulary.RecordPath(hub, "h"+strconv.Itoa(i))
+		atCap[i] = vocabulary.RecordPath(hub, fid("h"+strconv.Itoa(i)))
 	}
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Referencing: &substrate.Referencing{Refs: atCap}}})
 	if err != nil {
 		t.Fatalf("a list AT the cap must be read: %v", err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "s0" {
+	if len(page.Records) != 1 || page.Records[0].ID != fid("s0") {
 		t.Fatalf("refs at the cap = %v", pathsOf(page))
 	}
 
@@ -451,7 +453,7 @@ func TestReferencingRefusesATargetListPastTheCap(t *testing.T) {
 			substrate.Referencing{Ref: atCap[0], Refs: []string{}}, "set ref or refs, not both",
 		},
 		"no target": {substrate.Referencing{Property: "hub"}, "name a target"},
-		"a bare id": {substrate.Referencing{Refs: []string{atCap[0], "h1"}}, "referencing.refs[1]"},
+		"a bare id": {substrate.Referencing{Refs: []string{atCap[0], fid("h1")}}, "referencing.refs[1]"},
 	} {
 		_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Referencing: &tc.ref}})
 		wantErr(t, err, substrate.ErrValidation, name)
@@ -467,24 +469,24 @@ func TestReferencingPagesCleanly(t *testing.T) {
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1")})
 	want := map[string]bool{}
-	for _, id := range []string{"s1", "s2", "s3", "s4", "s5"} {
+	for _, id := range []string{fid("s1"), fid("s2"), fid("s3"), fid("s4"), fid("s5")} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": fid("h1")},
 		})
 		want[vocabulary.RecordPath(graphPackage+"/spoke", id)] = true
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/nester", ID: "n1",
-		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
+		Kind: graphPackage + "/nester", ID: fid("n1"),
+		Properties: map[string]any{"tool": map[string]any{"callable": fid("h1")}},
 	})
-	want[vocabulary.RecordPath(graphPackage+"/nester", "n1")] = true
+	want[vocabulary.RecordPath(graphPackage+"/nester", fid("n1"))] = true
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x1",
-		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h1")},
+		Kind: graphPackage + "/loose", ID: fid("x1"),
+		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, fid("h1"))},
 	})
-	want[vocabulary.RecordPath(graphPackage+"/loose", "x1")] = true
+	want[vocabulary.RecordPath(graphPackage+"/loose", fid("x1"))] = true
 
 	seen := map[string]int{}
 	after := ""
@@ -492,7 +494,7 @@ func TestReferencingPagesCleanly(t *testing.T) {
 		if pages > 10 {
 			t.Fatal("the cursor never terminated")
 		}
-		page := referencing(t, ds, hub, "h1", substrate.Filter{}, 2, after)
+		page := referencing(t, ds, hub, fid("h1"), substrate.Filter{}, 2, after)
 		for _, path := range pathsOf(page) {
 			seen[path]++
 			// The matches ride every page, not the first alone.
@@ -531,17 +533,17 @@ func TestListRefusesACursorReplayedWithAnotherFilter(t *testing.T) {
 	ctx := context.Background()
 	hub := graphPackage + "/hub"
 
-	for _, id := range []string{"h1", "h2"} {
+	for _, id := range []string{fid("h1"), fid("h2")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: id})
 	}
-	for _, id := range []string{"s1", "s2", "s3"} {
+	for _, id := range []string{fid("s1"), fid("s2"), fid("s3")} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": fid("h1")},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x1",
-		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h1")},
+		Kind: graphPackage + "/loose", ID: fid("x1"),
+		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, fid("h1"))},
 	})
 
 	// Garbage is refused before any comparison.
@@ -550,14 +552,14 @@ func TestListRefusesACursorReplayedWithAnotherFilter(t *testing.T) {
 
 	narrow := substrate.Filter{
 		Kinds:       []string{graphPackage + "/spoke"},
-		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h1"), Property: "hub"},
+		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h1")), Property: "hub"},
 	}
-	minted := referencing(t, ds, hub, "h1", narrow, 1, "")
+	minted := referencing(t, ds, hub, fid("h1"), narrow, 1, "")
 	if minted.Cursor == "" || len(minted.Records) != 1 {
 		t.Fatalf("the first page = %v cursor %q", pathsOf(minted), minted.Cursor)
 	}
 	// The same cursor, still good for the read it came from.
-	next := referencing(t, ds, hub, "h1", narrow, 1, minted.Cursor)
+	next := referencing(t, ds, hub, fid("h1"), narrow, 1, minted.Cursor)
 	if len(next.Records) != 1 || next.Records[0].ID == minted.Records[0].ID {
 		t.Fatalf("the second page of the same read = %v", pathsOf(next))
 	}
@@ -565,18 +567,18 @@ func TestListRefusesACursorReplayedWithAnotherFilter(t *testing.T) {
 	for name, f := range map[string]substrate.Filter{
 		"another property": {
 			Kinds:       []string{graphPackage + "/spoke"},
-			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h1"), Property: "anything"},
+			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h1")), Property: "anything"},
 		},
 		"another source kind": {
 			Kinds:       []string{graphPackage + "/loose"},
-			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h1"), Property: "hub"},
+			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h1")), Property: "hub"},
 		},
 		"no narrowing at all": {
-			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h1")},
+			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h1"))},
 		},
 		"another target": {
 			Kinds:       []string{graphPackage + "/spoke"},
-			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, "h2"), Property: "hub"},
+			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(hub, fid("h2")), Property: "hub"},
 		},
 		"no referencing, the kind alone": {
 			Kinds: []string{graphPackage + "/spoke"},
@@ -602,25 +604,25 @@ func TestExpandCarriesReferentsKeyedByTheWrittenPath(t *testing.T) {
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1", Properties: map[string]any{"name": "One"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h2", Properties: map[string]any{"name": "Two"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1"), Properties: map[string]any{"name": "One"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h2"), Properties: map[string]any{"name": "Two"}})
 	// Two spokes at one hub: the referent is included ONCE.
-	for _, id := range []string{"s1", "s2"} {
+	for _, id := range []string{fid("s1"), fid("s2")} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+			Kind: graphPackage + "/spoke", ID: id, Properties: map[string]any{"hub": fid("h1")},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s3", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: fid("s3"), Properties: map[string]any{"hub": fid("h2")},
 	})
 	// A repeated pointer, and an unpinned one at a record that does not
 	// exist: the dangling pointer has no entry, and the row still says where
 	// it pointed.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/fan", ID: "f1", Properties: map[string]any{"hubs": []any{"h1", "h2"}},
+		Kind: graphPackage + "/fan", ID: fid("f1"), Properties: map[string]any{"hubs": []any{fid("h1"), fid("h2")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/loose", ID: "x1",
+		Kind: graphPackage + "/loose", ID: fid("x1"),
 		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h-nowhere")},
 	})
 
@@ -633,7 +635,7 @@ func TestExpandCarriesReferentsKeyedByTheWrittenPath(t *testing.T) {
 	if len(page.Records) != 3 || len(page.Included) != 2 {
 		t.Fatalf("records %v included %d, want 3 spokes and the 2 hubs once each", pathsOf(page), len(page.Included))
 	}
-	for _, id := range []string{"h1", "h2"} {
+	for _, id := range []string{fid("h1"), fid("h2")} {
 		got := page.Included[vocabulary.RecordPath(hub, id)]
 		if got == nil || got.ID != id || got.Kind != hub {
 			t.Fatalf("included[%s] = %+v", id, got)
@@ -660,7 +662,7 @@ func TestExpandCarriesReferentsKeyedByTheWrittenPath(t *testing.T) {
 	if _, dangling := page.Included[vocabulary.RecordPath(hub, "h-nowhere")]; dangling {
 		t.Fatal("a dangling pointer grew an entry")
 	}
-	if got := refPathValue(mustGet(t, ds, graphPackage+"/loose", "x1"), "anything"); got != vocabulary.RecordPath(hub, "h-nowhere") {
+	if got := refPathValue(mustGet(t, ds, graphPackage+"/loose", fid("x1")), "anything"); got != vocabulary.RecordPath(hub, "h-nowhere") {
 		t.Fatalf("the dangling value was rewritten: %q", got)
 	}
 
@@ -689,12 +691,12 @@ func TestExpandFollowsTheFormerIDTrail(t *testing.T) {
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1", Properties: map[string]any{"name": "Winner"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h2", Properties: map[string]any{"name": "Loser"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1"), Properties: map[string]any{"name": "Winner"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h2"), Properties: map[string]any{"name": "Loser"}})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphPackage + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
+		Kind: graphPackage + "/spoke", ID: fid("s1"), Properties: map[string]any{"hub": fid("h2")},
 	})
-	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: "h1", Loser: "h2"}); err != nil {
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: fid("h1"), Loser: fid("h2")}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	page, err := ds.List(ctx, substrate.Query{
@@ -703,12 +705,12 @@ func TestExpandFollowsTheFormerIDTrail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list with expand: %v", err)
 	}
-	written := vocabulary.RecordPath(hub, "h2")
+	written := vocabulary.RecordPath(hub, fid("h2"))
 	if refPathValue(page.Records[0], "hub") != written {
 		t.Fatalf("the merge rewrote the value: %q", refPathValue(page.Records[0], "hub"))
 	}
 	got := page.Included[written]
-	if got == nil || got.ID != "h1" || got.Properties["name"] != "Winner" {
+	if got == nil || got.ID != fid("h1") || got.Properties["name"] != "Winner" {
 		t.Fatalf("included[%s] = %+v, want the winner", written, got)
 	}
 }
@@ -719,7 +721,7 @@ func TestExpandRefusesANameThatIsNotAReference(t *testing.T) {
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 	hub := graphPackage + "/hub"
-	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h1", Properties: map[string]any{"name": "One"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: fid("h1"), Properties: map[string]any{"name": "One"}})
 
 	for name, q := range map[string]substrate.Query{
 		"an unknown property": {
@@ -757,10 +759,10 @@ func TestReferencingIsSeparateAndPaged(t *testing.T) {
 	sam := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"),
 	})
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "email": "sam@acme.com",
 	})
 
@@ -792,7 +794,7 @@ func TestReferencingExcludesTombstonedSources(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
-	g := syncSource(t, ds, people, typeGoogleContact, "g-ned", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-ned"), map[string]any{
 		"name": aname("Nameless Ned"),
 	})
 	pid := personOf(t, ds, g)
@@ -812,10 +814,10 @@ func TestReferencingResolvesFormerIDToCanonicalRecord(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"),
 	})
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "email": "sam@corp.example",
 	})
 	winner, loser := personOf(t, ds, g), personOf(t, ds, s)

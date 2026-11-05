@@ -64,7 +64,7 @@ func TestAnAmbiguousMintDoesNotCopyTheSharedAddress(t *testing.T) {
 	const addr = "family@acme.com"
 	a, b := twoAlexes(t, ds, addr)
 
-	first := syncSource(t, ds, people, typeGoogleContact, "g-fam", map[string]any{
+	first := syncSource(t, ds, people, typeGoogleContact, fid("g-fam"), map[string]any{
 		"name": aname("The Family"), "emails": gemails(addr, "fam@other.example.com"),
 	})
 	shell := personOf(t, ds, first)
@@ -94,7 +94,7 @@ func TestAnAmbiguousMintDoesNotCopyTheSharedAddress(t *testing.T) {
 
 	// The next contact on the same address sees the same two candidates, not
 	// three: the address did not spread.
-	second := syncSource(t, ds, people, typeGoogleContact, "g-fam2", map[string]any{
+	second := syncSource(t, ds, people, typeGoogleContact, fid("g-fam2"), map[string]any{
 		"name": aname("Family Account"), "emails": gemails(addr),
 	})
 	if personOf(t, ds, second) == shell {
@@ -119,10 +119,10 @@ func TestALinkedTargetDoesNotTakeAnAddressAnotherHolds(t *testing.T) {
 		Kind: typePerson, Properties: map[string]any{"name": "Nina", "emails": []any{"nina@example.com"}},
 	})
 	// Alex's address arrives through a source first, so the machine holds it.
-	syncSource(t, ds, people, typeGoogleContact, "g-alex", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-alex"), map[string]any{
 		"name": aname("Alex"), "emails": gemails("alex@example.com"),
 	}, alex.ID)
-	both := syncSource(t, ds, people, typeGoogleContact, "g-alex2", map[string]any{
+	both := syncSource(t, ds, people, typeGoogleContact, fid("g-alex2"), map[string]any{
 		"name": aname("Alex"), "emails": gemails("alex@example.com", "nina@example.com"),
 	}, alex.ID)
 	if got := personOf(t, ds, both); got != alex.ID {
@@ -145,7 +145,7 @@ func TestAnAddressATargetAlreadyHoldsStays(t *testing.T) {
 	installPeopleSources(t, ds)
 	const addr = "family@acme.com"
 	// Alex's address arrives through a source while nobody else holds it.
-	g := syncSource(t, ds, people, typeGoogleContact, "g-a", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-a"), map[string]any{
 		"name": aname("Alex"), "emails": gemails(addr),
 	})
 	a := personOf(t, ds, g)
@@ -154,7 +154,7 @@ func TestAnAddressATargetAlreadyHoldsStays(t *testing.T) {
 		Kind: typePerson, Properties: map[string]any{"name": "Alexa", "emails": []any{addr}},
 	})
 	// Re-syncing Alex's contact keeps the address on Alex.
-	syncSource(t, ds, people, typeGoogleContact, "g-a", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-a"), map[string]any{
 		"name": aname("Alex A."), "emails": gemails(addr),
 	})
 	if got := holdersOf(t, ds, addr); len(got) != 2 {
@@ -185,7 +185,7 @@ func TestOnAmbiguousParkMarksTheSource(t *testing.T) {
 			a, b := twoAlexes(t, ds, addr)
 
 			shared := mustPut(t, ds, book, substrate.PutInput{
-				Kind: typeVerbatimContact, ID: "c1",
+				Kind: typeVerbatimContact, ID: fid("c1"),
 				Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
 			})
 			if got := len(livePersons(t, ds)); got != 2 {
@@ -194,7 +194,7 @@ func TestOnAmbiguousParkMarksTheSource(t *testing.T) {
 			if v := mustGet(t, ds, shared.Kind, shared.ID).Properties["person"]; v != nil {
 				t.Fatalf("a parked source linked %v", v)
 			}
-			if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != "c1" {
+			if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != fid("c1") {
 				t.Fatalf("ambiguous sources = %v, want c1", got)
 			}
 			if got := ambiguousIDs(t, ds, typeVerbatimContact, false); len(got) != 0 {
@@ -203,7 +203,7 @@ func TestOnAmbiguousParkMarksTheSource(t *testing.T) {
 			// A source that offers nothing is unresolved too, but it is not
 			// ambiguous, and the mark says only the second.
 			mustPut(t, ds, book, substrate.PutInput{
-				Kind: typeVerbatimContact, ID: "c2", Properties: map[string]any{"resourceName": "people/c2"},
+				Kind: typeVerbatimContact, ID: fid("c2"), Properties: map[string]any{"resourceName": "people/c2"},
 			})
 			if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 {
 				t.Fatalf("ambiguous sources = %v, want c1 alone", got)
@@ -213,7 +213,7 @@ func TestOnAmbiguousParkMarksTheSource(t *testing.T) {
 				t.Fatalf("delete: %v", err)
 			}
 			resynced := mustPut(t, ds, book, substrate.PutInput{
-				Kind: typeVerbatimContact, ID: "c1",
+				Kind: typeVerbatimContact, ID: fid("c1"),
 				Properties: map[string]any{
 					"names": gnames("The Family"), "emailAddresses": gaddresses(addr), "nicknames": []any{"Fam"},
 				},
@@ -238,7 +238,7 @@ func TestOnAmbiguousOldestLinksTheFirstCreated(t *testing.T) {
 	const addr = "family@example.com"
 	a, b := twoAlexes(t, ds, addr)
 
-	for _, id := range []string{"c1", "c2"} {
+	for _, id := range []string{fid("c1"), fid("c2")} {
 		src := mustPut(t, ds, book, substrate.PutInput{
 			Kind: typeVerbatimContact, ID: id,
 			Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
@@ -266,7 +266,7 @@ func TestOnAmbiguousMintMintsWithoutTheSharedAddress(t *testing.T) {
 	a, b := twoAlexes(t, ds, addr)
 
 	var shells []string
-	for _, id := range []string{"c1", "c2"} {
+	for _, id := range []string{fid("c1"), fid("c2")} {
 		src := mustPut(t, ds, book, substrate.PutInput{
 			Kind: typeVerbatimContact, ID: id,
 			Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
@@ -315,7 +315,7 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 	const addr = "family@example.com"
 	oldest, _ := twoAlexes(t, ds, addr)
 	mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{"names": gnames("The Family"), "emailAddresses": gaddresses(addr)},
 	})
 	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 {
@@ -329,7 +329,7 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != "c1" {
+	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != fid("c1") {
 		t.Fatalf("ambiguous sources after a rebuild = %v, want c1", got)
 	}
 
@@ -341,7 +341,7 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 	if err := enginetest.DeclareMappings(ctx, ds, edited); err != nil {
 		t.Fatalf("declare the edited mapping: %v", err)
 	}
-	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != "c1" {
+	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 1 || got[0] != fid("c1") {
 		t.Fatalf("ambiguous sources after a mapping edit = %v, want c1 still", got)
 	}
 
@@ -351,7 +351,7 @@ func TestTheAmbiguityMarkIsDerivedAgain(t *testing.T) {
 	if err := enginetest.DeclareMappings(ctx, ds, verbatimContactMappingOn("oldest")); err != nil {
 		t.Fatalf("declare oldest: %v", err)
 	}
-	if got := personOf(t, ds, mustGet(t, ds, typeVerbatimContact, "c1")); got != oldest.ID {
+	if got := personOf(t, ds, mustGet(t, ds, typeVerbatimContact, fid("c1"))); got != oldest.ID {
 		t.Fatalf("c1 names person %q, want the oldest Alex %q", got, oldest.ID)
 	}
 	if got := ambiguousIDs(t, ds, typeVerbatimContact, true); len(got) != 0 {

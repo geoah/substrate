@@ -167,16 +167,16 @@ func TestSubagentWritesRollUpTheWholeChildChain(t *testing.T) {
 	)
 	fake.script("rworker",
 		fakeTurn{calls: []fakeCall{
-			{"write", writeArgs(t, "put", rollupTask, "t-1", map[string]any{"name": "one"})},
-			{"write", writeArgs(t, "put", rollupNote, "n-1", map[string]any{"name": "one"})},
+			{"write", writeArgs(t, "put", rollupTask, fid("t-1"), map[string]any{"name": "one"})},
+			{"write", writeArgs(t, "put", rollupNote, fid("n-1"), map[string]any{"name": "one"})},
 		}},
 		// The same task again: a second entry, not a second record.
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", rollupTask, "t-1", map[string]any{"name": "uno"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", rollupTask, fid("t-1"), map[string]any{"name": "uno"})}}},
 		fakeTurn{calls: []fakeCall{{"helper", toolArgs(t, map[string]any{"input": "leave a memo"})}}},
 		fakeTurn{content: "worked"},
 	)
 	fake.script("rhelper",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", rollupMemo, "m-1", map[string]any{"name": "one"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", rollupMemo, fid("m-1"), map[string]any{"name": "one"})}}},
 		fakeTurn{content: "memo left"},
 	)
 	res, err := ds.CallAgent(ctx, rollupPackage+"/lead", "go")
@@ -277,14 +277,14 @@ func TestSubagentWritesCountAFailedGrandchildsWrites(t *testing.T) {
 		fakeTurn{content: "helper broke"},
 	)
 	fake.script("rhelper",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", rollupMemo, "m-late", map[string]any{"name": "late"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", rollupMemo, fid("m-late"), map[string]any{"name": "late"})}}},
 		fakeTurn{status: 500},
 	)
 	res, err := ds.CallAgent(ctx, rollupPackage+"/lead", "go")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	if _, err := ds.Get(ctx, rollupMemo, "m-late"); err != nil {
+	if _, err := ds.Get(ctx, rollupMemo, fid("m-late")); err != nil {
 		t.Fatalf("the grandchild's write did not land: %v", err)
 	}
 	leadRow := toolRowNamed(t, toolRowsOf(t, ds, res.Thread), "worker")

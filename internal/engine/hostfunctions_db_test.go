@@ -217,14 +217,14 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	ds := openInternalDataset(t)
 	importVocabulary(t, ds, "tasks")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "t-1",
+		Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("t-1"),
 		Properties: map[string]any{"name": "written by hand"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	out, effects, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{
-		"kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1",
+		"kind": "samples.substrate.reamde.dev/tasks/task", "id": fid("t-1"),
 	})
 	if err != nil {
 		t.Fatalf("query under a token: %v", err)
@@ -232,7 +232,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	if effects != 0 {
 		t.Fatalf("a read applied %d effects", effects)
 	}
-	if !strings.Contains(toJSONString(t, out), "t-1") {
+	if !strings.Contains(toJSONString(t, out), fid("t-1")) {
 		t.Fatalf("the query answer does not hold the record: %v", out)
 	}
 
@@ -242,15 +242,15 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query list under a token: %v", err)
 	}
-	if !strings.Contains(toJSONString(t, out), "t-1") {
+	if !strings.Contains(toJSONString(t, out), fid("t-1")) {
 		t.Fatalf("the query answer does not hold the record: %v", out)
 	}
 
 	// Each refusal is reached with arguments its own card admits, so what refuses
 	// is the missing grant and not the shape.
 	for id, args := range map[string]map[string]any{
-		vocabulary.HostFunctionPropose: {"op": "patch", "kind": "samples.substrate.reamde.dev/tasks/task", "target": "t-1"},
-		vocabulary.HostFunctionWrite:   {"op": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": "t-1"},
+		vocabulary.HostFunctionPropose: {"op": "patch", "kind": "samples.substrate.reamde.dev/tasks/task", "target": fid("t-1")},
+		vocabulary.HostFunctionWrite:   {"op": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": fid("t-1")},
 		vocabulary.HostFunctionAsk:     {"questions": []any{map[string]any{"id": "q", "prompt": "really?"}}},
 	} {
 		_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, id, args)
@@ -321,7 +321,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-shelved",
+		Kind: crewPackage + "/widget", ID: fid("w-shelved"),
 		Properties: map[string]any{"name": "shelved"},
 	}); err != nil {
 		t.Fatal(err)
@@ -353,7 +353,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	if len(contents) != 2 {
 		t.Fatalf("tool rows: %v", contents)
 	}
-	if !strings.Contains(contents[0], "w-shelved") {
+	if !strings.Contains(contents[0], fid("w-shelved")) {
 		t.Fatalf("the query answer does not carry the row: %s", contents[0])
 	}
 	if !strings.Contains(contents[1], "not in the reads allowlist") {
@@ -378,7 +378,7 @@ func TestAgentQueryHoldsEveryReferencingTargetToTheAllowlist(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	widget := crewPackage + "/widget"
-	for id, source := range map[string]string{"w-a": "", "w-b": "", "w-from-a": "w-a", "w-from-b": "w-b"} {
+	for id, source := range map[string]string{fid("w-a"): "", fid("w-b"): "", fid("w-from-a"): fid("w-a"), fid("w-from-b"): fid("w-b")} {
 		props := map[string]any{"name": id}
 		if source != "" {
 			props["source"] = source
@@ -393,8 +393,8 @@ func TestAgentQueryHoldsEveryReferencingTargetToTheAllowlist(t *testing.T) {
 		})}}}
 	}
 	fake.script("lib",
-		query(vocabulary.RecordPath(widget, "w-a"), vocabulary.RecordPath(widget, "w-b")),
-		query(vocabulary.RecordPath(widget, "w-a"), "samples.substrate.reamde.dev/tasks/task/t1"),
+		query(vocabulary.RecordPath(widget, fid("w-a")), vocabulary.RecordPath(widget, fid("w-b"))),
+		query(vocabulary.RecordPath(widget, fid("w-a")), "samples.substrate.reamde.dev/tasks/task/t1"),
 		fakeTurn{content: "two widgets were made from those"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/librarian", "what was made from w-a or w-b")
@@ -414,7 +414,7 @@ func TestAgentQueryHoldsEveryReferencingTargetToTheAllowlist(t *testing.T) {
 	if len(contents) != 2 {
 		t.Fatalf("tool rows: %v", contents)
 	}
-	if !strings.Contains(contents[0], "w-from-a") || !strings.Contains(contents[0], "w-from-b") {
+	if !strings.Contains(contents[0], fid("w-from-a")) || !strings.Contains(contents[0], fid("w-from-b")) {
 		t.Fatalf("the refs read does not carry both pointers: %s", contents[0])
 	}
 	if !strings.Contains(contents[1], "samples.substrate.reamde.dev/tasks/task is not in the reads allowlist") {
@@ -438,7 +438,7 @@ func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	for _, id := range []string{"w-mon", "w-tue"} {
+	for _, id := range []string{fid("w-mon"), fid("w-tue")} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: crewPackage + "/widget", ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
@@ -461,7 +461,7 @@ func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 		t.Fatalf("the dropped predicate answered as a success: %v", tool["content"])
 	}
 	content, _ := tool["content"].(string)
-	if strings.Contains(content, "w-mon") {
+	if strings.Contains(content, fid("w-mon")) {
 		t.Fatalf("the filter was dropped and the collection answered anyway: %s", content)
 	}
 	// The content is the JSON tool result, so the quotes around the key

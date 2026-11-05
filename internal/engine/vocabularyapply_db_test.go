@@ -82,7 +82,7 @@ func TestApplyPublishesAChangedMappingsOffersAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ds.Put(ctx, csrcActor, substrate.PutInput{
-		Kind: csrcContact, ID: "c-sam", Properties: map[string]any{"email": "sam@acme.com", "name": "Samuel"},
+		Kind: csrcContact, ID: fid("c-sam"), Properties: map[string]any{"email": "sam@acme.com", "name": "Samuel"},
 	}); err != nil {
 		t.Fatal(err)
 	}
