@@ -1,7 +1,10 @@
 # Plan: the iPhone apps on the public App Store
 
-Status: draft 3, 2026-11-04: draft 2 revised after one review (record at the
-end), then the tool chosen (§4) and the review server stood up (§6.1).
+Status: in progress, 2026-11-05. Draft 3 (2026-11-04) was draft 2 revised
+after one review (record at the end), then the tool chosen (§4) and the
+review server stood up (§6.1). Since then every listing has been applied
+from the tree, the macOS versions removed, and Tasks sent to review on
+0.118.0 (§7).
 Builds on the TestFlight release (`mise run apps:testflight`,
 [apps/README.md](../../apps/README.md#testflight)).
 
@@ -22,15 +25,20 @@ Tasks; this plan builds what Tasks needs and names what comes after.
 - Builds are uploaded by `apps:testflight`, signed by hand with the team's
   Apple Distribution certificate and App Store profiles the API makes, since
   an API key may not use the cloud-managed certificate.
-- Each record has an iOS version in Prepare for Submission, set by hand on
-  2026-11-04 to the release's version with that release's build attached, so
-  App Store Connect shows the app's icon. Each record also has an empty
-  macOS version, made when the record was created with both platforms;
-  nothing ships for the Mac through the store (§9).
-- Nothing else of a listing exists: no description, keywords, URLs,
-  category, age rating, screenshots, review details or privacy answers.
-- No privacy policy is published anywhere, and the store requires one for
-  every app.
+- Each record has an iOS version, kept at the latest release's version with
+  that release's build attached (by hand with `asc versions update` and
+  `asc versions attach-build`, until §8's step 7). The empty macOS versions
+  made with the records were deleted on 2026-11-04: nothing ships for the Mac
+  through the store (§9).
+- Every listing is applied from the tree by `mise run apps:store`
+  (`apps/<app>/store/listing.json` and `store/screenshots/`): texts,
+  keywords, categories, age rating, URLs, review details and screenshots for
+  iPhone and iPad. App Privacy, price (free) and territories (all) were set by
+  hand. `apps:store --check` reports nothing outstanding for any app.
+- The privacy policy is published at <https://reamde.dev/substrate/policy>
+  (§6.2), and each app's About links it.
+- TestFlight builds reach testers without an email: `apps:testflight` turns
+  "notify testers" off while each build processes.
 
 ## 3. What a submission needs, and who fills it
 
@@ -167,10 +175,16 @@ that accounts live on the user's server and are never created in the app,
 so in-app account deletion (5.1.1(v)) does not apply.
 
 Decided 2026-11-04: a substrate of its own, fresh on every start and
-restarted nightly, with one review owner registered by the stack and no
+restarted weekly, with one review owner registered by the stack and no
 other data; a reviewer's sign-in installs the app's package through its
 approval. Its address, the owner's repository name and password are the
 release environment's (`SUBSTRATE_APPLE_REVIEW_*`), never this tree.
+
+Added 2026-11-05 for Chat: the stack keys the seeded `anthropic` provider
+row, points the sample agents at it, and caps the repository's agent spend
+at $2 a day, so a reviewer's question gets an answer. Chat offers a reviewer
+the agents its sign-in may drive (Substrate editor and Substrate echo), and
+its notes say to pick the editor.
 
 ### 6.2 The privacy policy
 
@@ -214,10 +228,14 @@ before Workouts and Sync:** confirm that.
 
 ## 7. Submitting
 
-By a person, in App Store Connect, for the first submissions. Release type:
-manual, so a passed review waits for the owner. Version numbers stay the
-release's (0.x); the store accepts them. A `--submit` flag is later work
-(§10).
+Release type: manual, so a passed review waits for the owner. Version
+numbers stay the release's (0.x); the store accepts them. A `--submit` flag
+is later work (§10).
+
+Tasks went first, on 0.118.0, submitted with `asc` at the owner's request
+on 2026-11-05 after its redesign (#1192), and has been Waiting for Review since 14:17 UTC. The others wait for what review
+says of Tasks, and Chat and Console for the risks a review-readiness audit
+named: Chat's AI disclosure and age rating, Console's minimum functionality.
 
 ## 8. The work, in order
 
@@ -245,8 +263,8 @@ After Tasks passes:
 
 ## 9. What this plan does not do
 
-- The Mac apps stay on Sparkle and the feeds. The empty macOS versions are
-  left as they are: an unsubmitted version costs nothing.
+- The Mac apps stay on Sparkle and the feeds; their store versions were
+  deleted.
 - Android's store (Play) is its own plan.
 - Localisation beyond English.
 
