@@ -42,11 +42,19 @@ Chosen: the second.
   `u`, needs no case, and decodes back to a standard UUID. Base58 and NanoID
   are shorter but case-sensitive, and NanoID is not a UUID.
 - **A create of a kind the repository installed** (an imported sample, a
-  kind the owner declared, an app's package), **written by a person, an app
+  kind the owner declared), **written by a person, an app
   or an agent, takes a minted id.** Omitting the id lets the server mint one;
   an id the writer minted in the same shape is accepted, so an offline
   outbox knows a record's id before the server answers. Any other id is
-  refused with `422 validation`.
+  refused with `422 validation`. The check is on the shape (26 Crockford
+  characters, the first `0` to `7`), not the UUID version: only an id the
+  server mints is guaranteed to be a UUIDv7.
+- **A create request is judged when it is written, against the hand that
+  proposes it,** because its accept runs under the owner's actor. A gated
+  create or a `propose create` with no id gets a minted target id at once
+  (a gate derives it from the gate key, so a retry names the same record);
+  a person's or an agent's slug is refused at the request; a function's
+  composed id is kept, and the owner's accept lands it as proposed.
 - **Updating a record by its id is not naming it.** `PUT` at an existing id,
   a restore onto a tombstone, and `substratectl apply` of a fetched record
   are unchanged, whatever the id looks like.
@@ -73,14 +81,23 @@ script free to slug again.
 - Bad, because a script that imports data with its own stable keys under
   the owner's token can no longer use them as ids: it keeps the key in a
   property, or runs as a function.
-- Bad, because the Workouts app's routine, exercise and setup slugs and the
-  `apply -f` of a new record that carries `metadata.id` are refused until
-  their writers mint ids. Records already stored keep their ids.
+- Bad, because a package an app publishes through the catalog lands as
+  `published`, like a provider's, so its kinds are exempt: the Workouts
+  app's `substrate.reamde.dev/training` routines can still be created under
+  slugs. Telling an app's authored kinds from a provider's mirror kinds
+  needs a signal the declaration does not carry yet; that is an open
+  question on this record.
+- Bad, because a `substratectl apply` of a new record that carries
+  `metadata.id` is refused until its writer drops or mints the id. Records
+  already stored keep their ids.
 
 ### Confirmation
 
 `TestACreateOfAnInstalledKindTakesAMintedID` (`internal/engine`) covers each
-actor and kind class; `TestNewIDIsAUUIDv7InCrockfordBase32` and
+actor and kind class; `TestAnAgentWriteCreatesUnderAMintedID`,
+`TestAGatedCreateMintsItsTargetAndTheAcceptLandsIt` and
+`TestAProposedCreateTakesAMintedTarget` cover the agent and request paths
+under the production rule; `TestNewIDIsAUUIDv7InCrockfordBase32` and
 `TestEncodeCrockfordKnownValues` pin the encoding against the TypeID
 specification. The console's create editor refuses the same ids before the
 write (`serverAssignsID` in `web/console/src/lib/record-yaml.ts`).

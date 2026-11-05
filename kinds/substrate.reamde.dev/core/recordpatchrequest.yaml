@@ -12,7 +12,7 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  version: 19
+  version: 20
   purpose: internal
   names:
     singular: recordpatchrequest
@@ -62,7 +62,8 @@ data:
       description: "op create: the full kind reference of the record to mint"
     targetId:
       type: string
-      description: "op create: a stable id for the new record"
+      description: "op create: the id of the new record, a minted one unless
+        the kind takes composed ids"
     # the target version the diff was computed against; the patch path compares
     # against it (§7). Stamped by the engine when the target reference is written.
     targetVersion:

@@ -197,8 +197,9 @@ data:
         record to mint (create)
     - name: id
       type: string
-      description: "for op create: a stable id for the new record (create-if-absent
-        on accept)"
+      description: "for op create: leave it out and the substrate mints the
+        new record's id; a given id must be a minted one unless the kind takes
+        composed ids (create-if-absent on accept)"
     - name: diff
       type: json
       description: 'the proposed change: property values under "properties",

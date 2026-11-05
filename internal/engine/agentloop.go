@@ -2653,8 +2653,17 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, c *toolRun, args map[st
 	case opCreate:
 		typeIdent, _ := args["kind"].(string)
 		newTargetID, _ := args["id"].(string)
-		if typeIdent == "" || newTargetID == "" {
-			return toolError("propose create needs kind (a kind reference) and id (a stable id for the new record)"), false
+		if typeIdent == "" {
+			return toolError("propose create needs kind (a kind reference)"), false
+		}
+		// No id: the accept mints the record under one minted now, so the
+		// request names it from the start (decision 0228).
+		if newTargetID == "" {
+			minted, err := newID()
+			if err != nil {
+				return toolError(err.Error()), false
+			}
+			newTargetID = minted
 		}
 		ty, err := l.ds.resolveType(typeIdent)
 		if err != nil {

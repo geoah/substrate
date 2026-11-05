@@ -1705,6 +1705,20 @@ func encodeCrockford(b [16]byte) string {
 	return string(out[:])
 }
 
+// derivedMintedID is a deterministic id in the minted shape: the first 16
+// bytes of sha256 over parts, marked as a UUIDv8 (RFC 9562's custom
+// version), in the same 26 Crockford characters as newID. For an id a
+// retry must name again and a person, an app or an agent will see as the
+// record's (a gated create's target).
+func derivedMintedID(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	var u [16]byte
+	copy(u[:], sum[:16])
+	u[6] = u[6]&0x0f | 0x80 // version 8
+	u[8] = u[8]&0x3f | 0x80 // RFC 9562 variant
+	return encodeCrockford(u)
+}
+
 // derivedID is the deterministic ID form: 12 characters of base32(sha256).
 func derivedID(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))

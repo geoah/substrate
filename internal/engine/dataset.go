@@ -529,6 +529,11 @@ type txn struct {
 	ctx context.Context
 	ds  *dataset
 	tx  *sql.Tx
+	// idAdmitted is set while an accepted create request mints its target:
+	// the target id was judged against the proposer when the request was
+	// written (admitRequestDiff), so checkCreateID does not judge it again
+	// against the accepting owner.
+	idAdmitted bool
 	// wc is the context tx was begun under (beginWrite): the request's until
 	// commitAndMirror starts, the commit budget's from then on. Nil on a
 	// transaction that commits some other way.

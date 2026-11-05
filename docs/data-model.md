@@ -55,7 +55,7 @@ working. Who may choose a new record's id
 ([0228](decisions/0228-a-new-record-the-owner-authors-takes-a-minted-id.md)):
 
 - A person, an app or an agent creating a record of a kind the repository
-  installed (a sample, the owner's own kind, an app's package) omits the id
+  installed (a sample, the owner's own kind) omits the id
   and the server mints one, or mints one itself in the same shape. Any other
   id is refused, because an id named after a record's title stops matching
   once the title changes.
