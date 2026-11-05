@@ -223,7 +223,7 @@ private struct RPESheetRest: View {
                 .font(.caption.weight(.medium))
                 .lineLimit(oneRow ? 2 : 1)
                 .minimumScaleFactor(0.8)
-            CountdownText(start: rest.startedAt, end: rest.endsAt)
+            CountdownText(start: rest.startedAt, end: rest.endsAt, alignment: .leading)
                 .font(.headline.monospacedDigit())
         }
         .foregroundStyle(.tint)

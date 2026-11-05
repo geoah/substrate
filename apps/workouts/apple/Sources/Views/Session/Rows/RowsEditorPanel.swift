@@ -422,9 +422,12 @@ struct RowsFieldRow: View {
             // `last` when the row is too narrow: neither is ever cut.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
-                    value
-                        .frame(minWidth: valueWidth, alignment: .leading)
-                    last
+                    // `last` on the number's baseline, not centred on its row.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        value
+                            .frame(minWidth: valueWidth, alignment: .leading)
+                        last
+                    }
                     resetChip
                     Spacer(minLength: 4)
                     RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)
@@ -764,16 +767,25 @@ struct RowsTrack: View {
     let tint: Color
 
     @ScaledMetric(relativeTo: .footnote) private var labelHeight: CGFloat = 18
+    /// "0:00" in the footnote font and the gap after it: last time's label
+    /// starts past it, never on it.
+    @ScaledMetric(relativeTo: .footnote) private var zeroWidth: CGFloat = 36
+
+    private static let trackHeight: CGFloat = 8
+    private static let tickHeight: CGFloat = 18
 
     var body: some View {
-        VStack(spacing: 2) {
-            label(timer.goal, text: timer.goalText, color: tint, weight: .semibold)
+        VStack(spacing: 0) {
+            label(timer.goal, text: timer.goalText, color: tint, weight: .semibold, from: 0)
+            // The ticks stand out of the track by the same amount above and
+            // below, and the row is their height, so they never reach a label.
             GeometryReader { geometry in
                 let width = geometry.size.width
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(.tertiarySystemFill))
+                        .frame(height: Self.trackHeight)
                     Capsule().fill(tint)
-                        .frame(width: max(0, width * timer.fraction(elapsed)))
+                        .frame(width: max(0, width * timer.fraction(elapsed)), height: Self.trackHeight)
                         .animation(.linear(duration: 1), value: elapsed)
                     if let goal = timer.goal {
                         tick(at: width * timer.fraction(goal), color: tint)
@@ -782,13 +794,14 @@ struct RowsTrack: View {
                         tick(at: width * timer.fraction(last), color: .secondary)
                     }
                 }
+                .frame(width: width, height: geometry.size.height, alignment: .leading)
             }
-            .frame(height: 8)
+            .frame(height: Self.tickHeight)
             ZStack(alignment: .leading) {
                 Text(Format.duration(0))
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
-                label(timer.last, text: timer.lastText, color: .secondary, weight: .regular)
+                label(timer.last, text: timer.lastText, color: .secondary, weight: .regular, from: zeroWidth)
             }
         }
         .padding(.vertical, 2)
@@ -799,21 +812,28 @@ struct RowsTrack: View {
     private func tick(at x: CGFloat, color: Color) -> some View {
         RoundedRectangle(cornerRadius: 1)
             .fill(color)
-            .frame(width: 2, height: 18)
+            .frame(width: 2, height: Self.tickHeight)
             .offset(x: x - 1)
     }
 
-    /// A label centred on its tick, kept inside the track.
-    private func label(_ seconds: Seconds?, text: String?, color: Color, weight: Font.Weight) -> some View {
+    /// A label centred on its tick, kept inside the track and right of
+    /// `from`, by its own measured width.
+    private func label(_ seconds: Seconds?, text: String?, color: Color, weight: Font.Weight, from: CGFloat)
+        -> some View
+    {
         GeometryReader { geometry in
             if let seconds, let text {
-                let x = geometry.size.width * timer.fraction(seconds)
+                let width = geometry.size.width
+                let x = width * timer.fraction(seconds)
                 Text(text)
                     .font(.footnote.weight(weight).monospacedDigit())
                     .foregroundStyle(color)
                     .lineLimit(1)
                     .fixedSize()
-                    .position(x: min(max(x, 36), max(36, geometry.size.width - 36)), y: geometry.size.height / 2)
+                    .alignmentGuide(.leading) { d in
+                        -min(max(x - d.width / 2, from), max(from, width - d.width))
+                    }
+                    .frame(width: width, height: geometry.size.height, alignment: .leading)
             }
         }
         .frame(height: labelHeight)

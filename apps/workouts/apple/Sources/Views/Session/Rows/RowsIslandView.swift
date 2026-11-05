@@ -176,11 +176,8 @@ struct RowsRestPartView: View {
             RowsRestRing(startedAt: rest.startedAt, endsAt: rest.endsAt)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // The widest the countdown gets, so it never pushes the buttons.
-                ReservedWidth(template: rest.endsAt.timeIntervalSince(rest.startedAt) >= 600 ? "00:00" : "0:00") {
-                    CountdownText(start: rest.startedAt, end: rest.endsAt)
-                }
-                .font(.title.weight(.semibold).monospacedDigit())
-                .fixedSize()
+                CountdownText(start: rest.startedAt, end: rest.endsAt, alignment: .trailing)
+                    .font(.title.weight(.semibold).monospacedDigit())
                 if showsTotal {
                     Text(rest.totalText)
                         .font(.subheadline.monospacedDigit())

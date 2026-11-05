@@ -103,9 +103,11 @@ struct RunningTime: View {
                         countdown(to: endsAt)
                     } else {
                         // `+` and the time past the target, counting up from it.
-                        HStack(spacing: 0) {
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text("+")
-                            Text(timerInterval: endsAt ... Date.distantFuture, countsDown: false)
+                            TimerWidth(seconds: 0, alignment: .leading) {
+                                Text(timerInterval: endsAt ... Date.distantFuture, countsDown: false)
+                            }
                         }
                         .foregroundStyle(overtimeColor)
                         .accessibilityElement(children: .ignore)
@@ -114,7 +116,9 @@ struct RunningTime: View {
                     }
                 }
             } else {
-                Text(timerInterval: startedAt ... Date.distantFuture, countsDown: false)
+                TimerWidth(seconds: 0) {
+                    Text(timerInterval: startedAt ... Date.distantFuture, countsDown: false)
+                }
             }
         }
         .font(font)
@@ -135,7 +139,7 @@ struct RunningTime: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                VStack(spacing: -1) {
+                VStack(alignment: .center, spacing: -1) {
                     CountdownText(start: startedAt, end: endsAt)
                     Text("left")
                         .font(.caption2)
