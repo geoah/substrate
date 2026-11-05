@@ -69,7 +69,7 @@ final class RowsScreenModel {
     var expanded: Set<String> = []
     /// Warm-up folds the owner opened.
     var unfolded: Set<String> = []
-    /// Rows whose `+ RPE` the owner tapped.
+    /// Rows whose `+ Reps left` the owner tapped.
     var openStrips: Set<RowID> = []
     var flash: Flash?
     var undo: Undo?
@@ -77,7 +77,7 @@ final class RowsScreenModel {
     var fresh: RowID?
     /// The set a "Then" tap took the list to.
     var mark: Mark?
-    /// The island's RPE stops, open on the docked set.
+    /// The island's reps left, open on the docked set.
     var islandRPE: RowID?
     /// Whether the island docks the open set, and holds the docked height.
     private(set) var dock = RowsDock()
@@ -118,7 +118,7 @@ final class RowsScreenModel {
 
     // MARK: - Changing values
 
-    /// A stepper, a reset chip, a keypad chip or an RPE cell: on the open
+    /// A stepper, a reset chip, a keypad chip or a stop reason: on the open
     /// row an edit at once, on a fix a change to the draft.
     func apply(_ patch: SetValuesPatch, row: RowID, mode: RowsEditor.Mode, session: SessionModel) {
         Haptics.shared.play(.step)
@@ -132,22 +132,13 @@ final class RowsScreenModel {
         }
     }
 
-    /// An RPE cell: its patch (rate, or clear the rating), and for a moment
-    /// the header says what the value means.
-    func pick(_ cell: RowsRPECell, in editor: RowsEditor, session: SessionModel) {
-        apply(cell.patch, row: editor.row, mode: editor.mode, session: session)
-        if cell.style == .filled {
-            flash = nil
-        } else {
-            show(Flash(row: editor.row, text: cell.meaning, token: next()))
-        }
-    }
-
-    /// The `½`: the value with its half point added or taken off, rated, and its meaning for a moment.
-    func pick(_ half: RowsRPEHalf, in editor: RowsEditor, session: SessionModel) {
-        guard let patch = half.patch else { return }
+    /// A reps-left step, the tap that rates it, its reset or a stop reason:
+    /// the patch, and for a moment the header says what the new value means.
+    func step(_ patch: SetValuesPatch, in editor: RowsEditor, session: SessionModel) {
         apply(patch, row: editor.row, mode: editor.mode, session: session)
-        if let meaning = half.meaning { show(Flash(row: editor.row, text: meaning, token: next())) }
+        if case let .set(rpe) = patch.rpe {
+            show(Flash(row: editor.row, text: RowsEffort.meaning(rpe), token: next()))
+        }
     }
 
     // MARK: - The keypad

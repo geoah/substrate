@@ -15,7 +15,7 @@ import Testing
 
 private let kinds = WorkoutsKinds.v1
 
-/// One press slot whose planned sets aim at RPE 8, with a set rest of 90 s.
+/// One press slot whose planned sets aim with 2 left, with a set rest of 90 s.
 private func pressSession() throws -> EngineScript {
     var script = EngineScript(at: engineEpoch)
     try script.start(
@@ -41,7 +41,7 @@ struct RowsReviewEffortTests {
         let previous = PreviousSet(
             session: "past", date: engineEpoch, record: "p1",
             values: SetValues(load: .kg(35), reps: 13, rpe: 9.5, rpeMethod: .entered),
-            text: "35 kg × 13 @ 9.5", deload: false)
+            text: "35 kg × 13 · 0–1 left", deload: false)
         try script.send(.editSet(.init(row: s1, values: previous.copy)))
         var row = try #require(try presented(script).row(s1))
         #expect(row.rpeEntry == .value(9.5, .copied))

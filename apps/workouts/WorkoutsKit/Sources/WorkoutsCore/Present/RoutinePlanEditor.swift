@@ -14,13 +14,12 @@ public struct RoutinePlanSetEditor: Equatable, Sendable {
     /// `Set 2 is a drop set: 1 drop`: a structure, changed under More; nil
     /// for a straight set.
     public var structure: String?
-    /// The load, then the reps or the hold, as a session's panel lists them.
+    /// The load, then the reps or the hold, then reps left, as a session's
+    /// panel lists them.
     public var fields: [RoutinePlanField]
-    /// The RPE stops, the plan's target filled.
-    public var rpe: RowsRPEStrip
-    /// The plan aims at reps in reserve instead: `Aims at 2–3 reps in
-    /// reserve`. A stop sets an RPE in its place.
-    public var reserve: String?
+    /// `No target`, beside reps left: the plan leaves the effort to the
+    /// session; nil when it names none.
+    public var clearEffort: RoutinePlanChange?
     /// The rest after this set, its own; nil takes `restDefault`.
     public var rest: Seconds?
     /// The slot's rest, or the app's for the exercise.
@@ -28,7 +27,7 @@ public struct RoutinePlanSetEditor: Equatable, Sendable {
 
     public init(
         ref: RoutinePlanSetRef, title: String, setLabel: String, isWarmup: Bool, structure: String?,
-        fields: [RoutinePlanField], rpe: RowsRPEStrip, reserve: String?, rest: Seconds?, restDefault: Seconds
+        fields: [RoutinePlanField], clearEffort: RoutinePlanChange?, rest: Seconds?, restDefault: Seconds
     ) {
         self.ref = ref
         self.title = title
@@ -36,24 +35,9 @@ public struct RoutinePlanSetEditor: Equatable, Sendable {
         self.isWarmup = isWarmup
         self.structure = structure
         self.fields = fields
-        self.rpe = rpe
-        self.reserve = reserve
+        self.clearEffort = clearEffort
         self.rest = rest
         self.restDefault = restDefault
-    }
-
-    /// What a tap on an RPE stop does: the filled stop clears the target,
-    /// any other sets it (and drops a reps-in-reserve target).
-    public func change(for cell: RowsRPECell) -> RoutinePlanChange {
-        .rpe(cell.style == .filled ? nil : cell.value)
-    }
-
-    /// The `½`: the target with the half point added or taken off; nil when
-    /// there is no target, or at 10.
-    public var halfChange: RoutinePlanChange? {
-        guard let shown = rpe.shown else { return nil }
-        let next = rpe.half.isOn ? shown - Decimal(5) / 10 : shown + Decimal(5) / 10
-        return RPEScaleText.values.contains(next) ? .rpe(next) : nil
     }
 
     /// `Rest after this set, 2:00 (default)`.
@@ -65,7 +49,7 @@ public struct RoutinePlanSetEditor: Equatable, Sendable {
 /// One target of the open set: its label, value and steps.
 public struct RoutinePlanField: Equatable, Sendable, Identifiable {
     public enum Kind: String, Sendable {
-        case load, assistance, repsMin, repsMax, durationMin, durationMax
+        case load, assistance, repsMin, repsMax, durationMin, durationMax, repsLeft
     }
 
     public var kind: Kind
@@ -192,10 +176,7 @@ public extension RoutinePlanPresenter {
         let title = isGroup ? "\(name), \(setTitle.lowercased())" : setTitle
         let working = slot.sets.filter { $0.role == .working }
         let ordinal = (working.firstIndex { $0.key == planned.key } ?? 0) + 1
-        let reserve =
-            Format.rpeRange(planned.rpeMin, planned.rpeMax) == nil
-            ? Format.effort(rpeMin: nil, rpeMax: nil, rirMin: planned.rirMin, rirMax: planned.rirMax).map { "Aims at \($0)" }
-            : nil
+        fields.append(effortField(planned, measurement: measurement))
         let restDefault =
             planned.role == .warmup
             ? slot.warmupRest ?? rests.warmupRest
@@ -208,8 +189,7 @@ public extension RoutinePlanPresenter {
             structure: planned.role == .working && planned.structure != .straight
                 ? RoutinePresenter.specialText(planned, number: ordinal) : nil,
             fields: fields,
-            rpe: strip(planned, title: title, measurement: measurement),
-            reserve: reserve,
+            clearEffort: effortLeft(planned) == nil ? nil : .rpe(nil),
             rest: planned.rest,
             restDefault: restDefault
         )
@@ -361,35 +341,38 @@ public extension RoutinePlanPresenter {
         ]
     }
 
-    /// The stops with the plan's RPE (the top of a range) filled.
-    internal static func strip(_ planned: PlannedSet, title: String, measurement: MeasurementType) -> RowsRPEStrip {
-        let shown = planned.rpeMax ?? planned.rpeMin
-        func meaning(_ value: Decimal) -> String {
-            let words = RPEScaleText.reserve(value, measurement: measurement) ?? RPEScaleText.headline(value)
-            return "RPE \(Format.rpe(value))" + (words.map { ": \($0.lowercasedFirst)" } ?? "")
+    /// The reps left the plan aims at, fewest first: the top of an RPE
+    /// range (RPE 7–8 aims at 2), else the fewest reps in reserve.
+    internal static func effortLeft(_ planned: PlannedSet) -> Decimal? {
+        if let top = planned.rpeMax ?? planned.rpeMin { return max(0, 10 - top) }
+        return planned.rirMin ?? planned.rirMax
+    }
+
+    /// Reps left, a target like the others: − and + a rep at a time, 0 to
+    /// 4+, written as one RPE (RPE = 10 − reps left), which takes a reps in
+    /// reserve target's place; from none, `+` sets 2 left.
+    internal static func effortField(_ planned: PlannedSet, measurement: MeasurementType) -> RoutinePlanField {
+        let label = "Reps left"
+        func change(_ left: Decimal) -> RoutinePlanChange { .rpe(10 - left) }
+        guard let left = effortLeft(planned) else {
+            return RoutinePlanField(
+                kind: .repsLeft, label: label, value: "Auto", unit: nil, isSet: false, minus: nil,
+                plus: RoutinePlanStep(title: "+", accessibilityLabel: "Set to 2 reps left", change: change(2)),
+                accessibilityLabel: label, accessibilityValue: "Not set, no effort target")
         }
-        let cells = RPEScaleText.values.filter { $0 == $0.roundedTo(0) }.map { whole in
-            let holds = shown.map { $0 >= whole && $0 < whole + 1 } ?? false
-            let value = holds ? shown ?? whole : whole
-            return RowsRPECell(
-                value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0),
-                style: holds ? .filled : .plain, patch: holds ? .clearingRPE : .enteringRPE(value),
-                meaning: meaning(value))
-        }
-        let isOn = shown.map { $0 != $0.roundedTo(0) } ?? false
-        let toggled: Decimal? = shown.flatMap { value in
-            let next = isOn ? value - Decimal(5) / 10 : value + Decimal(5) / 10
-            return RPEScaleText.values.contains(next) ? next : nil
-        }
-        let half = RowsRPEHalf(
-            text: "\u{00BD}", isOn: isOn, patch: toggled.map(SetValuesPatch.enteringRPE),
-            meaning: toggled.map(meaning),
-            accessibilityLabel: isOn ? "Take off the half point" : "Add half a point")
-        let value =
-            Format.rpeRange(planned.rpeMin, planned.rpeMax).map { "\($0.replacingOccurrences(of: "\u{2013}", with: " to ")), planned" }
-            ?? "No RPE target"
-        return RowsRPEStrip(
-            cells: cells, half: half, shown: shown, isRated: shown != nil, isCollapsed: false,
-            addTitle: RowsRPEStrip.addTitle, accessibilityLabel: "\(title), RPE target", accessibilityValue: value)
+        let whole = left.roundedTo(0) == left
+        let fewer = whole ? left - 1 : (left - Decimal(5) / 10).roundedTo(0)
+        let more = whole ? left + 1 : (left + Decimal(5) / 10).roundedTo(0)
+        let shown = Format.effortRange(
+            rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax)
+            ?? Format.number(left)
+        let value = left == RowsEffort.most && shown == "4" ? "4+" : shown
+        return RoutinePlanField(
+            kind: .repsLeft, label: label, value: value, unit: measurement.recordsReps ? "reps left" : "left", isSet: true,
+            minus: fewer >= 0
+                ? RoutinePlanStep(title: "\u{2212}1", accessibilityLabel: "1 rep left fewer", change: change(fewer)) : nil,
+            plus: more <= RowsEffort.most
+                ? RoutinePlanStep(title: "+1", accessibilityLabel: "1 rep left more", change: change(more)) : nil,
+            accessibilityLabel: label, accessibilityValue: "\(value) reps left, planned")
     }
 }

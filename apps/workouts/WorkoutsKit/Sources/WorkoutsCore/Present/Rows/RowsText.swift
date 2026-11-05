@@ -51,8 +51,8 @@ enum RowsText {
         return reps == "1" ? "1 rep" : "\(reps) reps"
     }
 
-    /// Last time's set beside a pending row, no units: `105 × 10 @ 9.5`, `15`,
-    /// `0:53`, `BW + 10 × 8`, `10 for 0:55`. Its RPE only when it was a rating.
+    /// Last time's set beside a pending row, no units: `105 × 10 · 0–1 left`, `15`,
+    /// `0:53`, `BW + 10 × 8`, `10 for 0:55`. Its reps left only when they were a rating.
     static func compact(_ values: SetValues, measurement: MeasurementType, perSide: Bool) -> String {
         func number(_ mass: Mass?) -> String? { mass.map { Format.number($0.value) } }
         var text: String
@@ -77,7 +77,7 @@ enum RowsText {
         case .shortdistanceweight:
             text = [number(values.load), values.distance.map(Format.length)].compactMap(\.self).joined(separator: " for ")
         }
-        if let rpe = values.rpe { text += text.isEmpty ? "@ \(Format.rpe(rpe))" : " @ \(Format.rpe(rpe))" }
+        if let rpe = values.rpe { text += (text.isEmpty ? "" : " \u{00B7} ") + Format.repsLeft(rpe) }
         return text
     }
 
@@ -139,12 +139,12 @@ enum RowsText {
         return column.spokenName(unit: unit)
     }
 
-    /// ` @ 8`, or nothing.
+    /// ` · 2 left`, or nothing.
     static func effortSuffix(_ rpe: Decimal?) -> String {
-        rpe.map { " @ \(Format.rpe($0))" } ?? ""
+        rpe.map { " \u{00B7} \(Format.repsLeft($0))" } ?? ""
     }
 
-    /// The Log button: `Log 110 kg × 8 @ 8`, `Log warm-up 40 kg × 12`,
+    /// The Log button: `Log 110 kg × 8 · 2 left`, `Log warm-up 40 kg × 12`,
     /// `Log A2, 11 per side`, `Log mini-set 3, 3 reps`; `Log` alone with no values.
     static func logTitle(prefix: String, values: String, rpe: Decimal?) -> String {
         guard !values.isEmpty else {
@@ -155,6 +155,21 @@ enum RowsText {
     }
 
     // MARK: - Spoken
+
+    /// `2 reps left`, `1 rep left`, `1 or 2 reps left`, `no reps left`.
+    static func spokenRepsLeft(_ rpe: Decimal) -> String {
+        let left = max(0, 10 - rpe)
+        let whole = left.roundedTo(0)
+        guard left == whole else {
+            let lower = (left - Decimal(5) / 10).roundedTo(0)
+            return "\(Format.number(lower)) or \(Format.number(lower + 1)) reps left"
+        }
+        switch whole {
+        case 0: return "no reps left"
+        case 1: return "1 rep left"
+        default: return "\(Format.number(whole)) reps left"
+        }
+    }
 
     /// A set as VoiceOver reads it: `110 kilograms, 8 reps`, `11 reps per side`,
     /// `58 seconds`, `bodyweight plus 10 kilograms, 8 reps`, `20 kilograms, 40 metres`.

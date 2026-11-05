@@ -8,7 +8,7 @@ import WorkoutsCore
 /// 1. The rest: a ring and the time left, `of 2:00`, −15, +15 and Skip.
 /// 2. The next set, compact: its name (a tap brings the full editor into
 ///    view), its values with steppers where they fit (a tap on a number
-///    types it), its RPE (a tap opens the stops in the island) and a Log
+///    types it), its reps left (a tap opens their steps in the island) and a Log
 ///    check; Start or Stop and the clock for a timed set. At the
 ///    accessibility sizes only the name and Log (or Stop and its clock).
 ///    Drawn only while the open editor is scrolled out of view, so logging
@@ -227,13 +227,13 @@ struct RowsRestPartView: View {
 
 /// The next set, compact: `A2 Bird Dog  Round 1  ⌃` on a line of its own
 /// (the name cut in its middle; a tap brings the full editor into view),
-/// then its values, each with − and + (a tap on a number types it), its RPE
-/// (a tap opens the stops in the island) and Log as a check, on one row
-/// where they fit. Where they do not, the values take the first row and the
-/// RPE the second, with Log at its right edge; narrower still (larger text)
+/// then its values, each with − and + (a tap on a number types it), its reps
+/// left (a tap opens their steps in the island) and Log as a check, on one
+/// row where they fit. Where they do not, the values take the first row and
+/// reps left the second, with Log at its right edge; narrower still (larger text)
 /// each value takes a line of its own, still with its steppers, and the
 /// number shrinks between them before a stepper ever goes: the steppers
-/// never give way to the RPE (owner, 2026-11-02). A timed set's clock leads
+/// never give way to reps left (owner, 2026-11-02). A timed set's clock leads
 /// the values. At the accessibility sizes it docks only the name and Log, or
 /// Stop and its clock, so the island never takes half the screen. Every
 /// target stays at least 44 pt: the layout gives way, never the targets.
@@ -263,7 +263,7 @@ struct RowsNextPartView: View {
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
-                    // Wide: the values, the RPE and Log on one row, packed
+                    // Wide: the values, reps left and Log on one row, packed
                     // (4 pt gaps, Log right-aligned without a spacer's two
                     // gaps) so a load and reps fit Plus and Pro Max phones.
                     HStack(spacing: 4) {
@@ -274,7 +274,7 @@ struct RowsNextPartView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         primary
                     }
-                    // Narrow: the values, then the RPE with Log at the right edge.
+                    // Narrow: the values, then reps left with Log at the right edge.
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
                             valuesRow
@@ -287,8 +287,8 @@ struct RowsNextPartView: View {
                         logRow
                     }
                 }
-                if screen.islandRPE == next.row, let strip = showsRPE {
-                    rpePicker(strip)
+                if screen.islandRPE == next.row, let effort = showsEffort {
+                    effortPicker(effort)
                         .transition(.opacity)
                 }
             }
@@ -378,7 +378,7 @@ struct RowsNextPartView: View {
         }
     }
 
-    /// The RPE and, at the row's right edge, Log.
+    /// Reps left and, at the row's right edge, Log.
     private var logRow: some View {
         HStack(spacing: 6) {
             rpeButton
@@ -402,58 +402,76 @@ struct RowsNextPartView: View {
         }
     }
 
-    /// The RPE the island shows: as the panel shows it, so a warm-up's or a
-    /// timed set's stays out until the owner opens it there.
-    private var showsRPE: RowsRPEStrip? {
-        guard let strip = next.rpeStrip, !strip.isCollapsed || screen.openStrips.contains(next.row) else { return nil }
-        return strip
+    /// The reps left the island shows: as the panel shows them, so a
+    /// warm-up's or a timed set's stay out until the owner opens them there.
+    private var showsEffort: RowsEffort? {
+        guard let effort = next.effort, !effort.isCollapsed || screen.openStrips.contains(next.row) else { return nil }
+        return effort
     }
 
-    /// `@ 8`, filled once rated and outlined while it is the plan's; a tap opens the stops.
+    /// `2 left`, filled once rated and outlined while it is the plan's; a tap
+    /// opens the steps and why the set ended.
     @ViewBuilder
     private var rpeButton: some View {
-        if let strip = showsRPE {
+        if let effort = showsEffort {
             let open = screen.islandRPE == next.row
             Button {
                 withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = open ? nil : next.row }
             } label: {
-                Text(next.rpe ?? "RPE")
+                Text(next.rpe ?? effort.addTitle)
                     .font(.body.weight(.semibold).monospacedDigit())
                     .foregroundStyle(next.rpe == nil ? Color.secondary : tint)
                     .lineLimit(1)
                     .fixedSize()
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 8)
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(tint.opacity(strip.isRated || open ? 0.13 : 0), in: .capsule)
+                    .background(tint.opacity(effort.isRated || open ? 0.13 : 0), in: .capsule)
                     .overlay {
-                        if !strip.isRated, !open { Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1.5) }
+                        if !effort.isRated, !open {
+                            Capsule().strokeBorder(tint.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        }
                     }
                     .contentShape(.capsule)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("RPE")
-            .accessibilityValue(strip.accessibilityValue)
-            .accessibilityHint(open ? "Hides the RPE stops" : "Shows the RPE stops")
+            .accessibilityLabel("Reps left")
+            .accessibilityValue(effort.accessibilityValue)
+            .accessibilityHint(open ? "Hides the steps" : "Shows the steps and why the set ended")
         }
     }
 
-    /// The panel's RPE stops, in the island: a stop rates and closes them, `½` keeps them open.
-    private func rpePicker(_ strip: RowsRPEStrip) -> some View {
-        let label = Text("RPE").font(.subheadline).foregroundStyle(.secondary).accessibilityHidden(true)
-        let stops = RowsRPEStripView(strip: strip, tint: tint) { cell in
-            screen.apply(cell.patch, row: next.row, mode: .log, session: session)
-            withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = nil }
-        } onHalf: { half in
-            if let patch = half.patch { screen.apply(patch, row: next.row, mode: .log, session: session) }
+    /// Reps left in the island: `−1 | +1` either side of the number, and why
+    /// the set ended beside them; the steps keep it open, the reason closes it.
+    private func effortPicker(_ effort: RowsEffort) -> some View {
+        let label = Text("\(effort.value ?? "\u{2013}") \(effort.unit)")
+            .font(.subheadline.weight(.semibold).monospacedDigit())
+            .foregroundStyle(effort.value == nil ? Color.secondary : tint)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityHidden(true)
+        let steps = RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint) { patch in
+            screen.apply(patch, row: next.row, mode: .log, session: session)
+        }
+        let stop = effort.stop.map { menu in
+            RowsStopMenuChip(menu: menu, tint: tint) { patch in
+                screen.apply(patch, row: next.row, mode: .log, session: session)
+                withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = nil }
+            }
         }
         return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 label
-                stops
+                steps
+                Spacer(minLength: 0)
+                stop
             }
             VStack(alignment: .leading, spacing: 4) {
-                label
-                stops
+                HStack(spacing: 8) {
+                    label
+                    Spacer(minLength: 0)
+                    steps
+                }
+                stop
             }
         }
         .padding(.top, 2)
@@ -532,7 +550,7 @@ struct RowsNextPartView: View {
         .accessibilityHidden(step == nil)
     }
 
-    /// The check (play, stop for a timed set), alone: the room goes to the values and the RPE.
+    /// The check (play, stop for a timed set), alone: the room goes to the values and reps left.
     private var primary: some View {
         Button {
             screen.perform(next.primary.action, session: session, cover: cover, loggedText: next.loggedText)

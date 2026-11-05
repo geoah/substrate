@@ -575,12 +575,12 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
     public var tint: RowsEditor.Tint
     /// The editor's value fields: the same steppers, keypads and words.
     public var fields: [RowsField]
-    /// `@ 8`: the RPE the Log commits; nil when none.
+    /// `2 left`: the reps left the Log commits; nil when none.
     public var rpe: String?
-    /// The editor's RPE control, for the island's picker; nil when the set
-    /// takes no RPE. Collapsed (a warm-up, a timed set, nothing to show) the
-    /// island leaves it out unless the owner opened it in the panel.
-    public var rpeStrip: RowsRPEStrip?
+    /// The editor's reps left and why the set ended, for the island; nil when
+    /// the set takes none. Collapsed (a warm-up, a timed set, nothing to show)
+    /// the island leaves it out unless the owner opened it in the panel.
+    public var effort: RowsEffort?
     /// `Log`, `Start`, `Stop`: the editor's primary action, in a word.
     public var primary: RowsButton
     /// A timed set runs: its clock counts up from here.
@@ -592,7 +592,7 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
 
     public init(
         row: RowID, exercise: String, setLabel: String, isWarmup: Bool = false, label: String, tint: RowsEditor.Tint,
-        fields: [RowsField], rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?,
+        fields: [RowsField], rpe: String?, effort: RowsEffort? = nil, primary: RowsButton, timerStartedAt: Date?,
         sentence: String, loggedText: String? = nil
     ) {
         self.row = row
@@ -604,7 +604,7 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
         self.tint = tint
         self.fields = fields
         self.rpe = rpe
-        self.rpeStrip = rpeStrip
+        self.effort = effort
         self.primary = primary
         self.timerStartedAt = timerStartedAt
         self.sentence = sentence

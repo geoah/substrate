@@ -434,8 +434,8 @@ struct SuggestRules: Sendable {
 
     func sessionText(_ reason: Reason, k: Int, prev: String, new: String) -> String {
         switch reason {
-        case .sessionUp: "Set \(k): \(prev), easier than RPE \(SuggestText.rpe(rpe)); try \(new)"
-        case .sessionDown: "Set \(k): \(prev), harder than RPE \(SuggestText.rpe(rpe)); try \(new)"
+        case .sessionUp: "Set \(k): \(prev), more left than \(SuggestText.left(rpe)); try \(new)"
+        case .sessionDown: "Set \(k): \(prev), fewer left than \(SuggestText.left(rpe)); try \(new)"
         case .sessionCoarse: "Set \(k): \(prev); next step too big, try \(new)"
         case .sessionAtMax: "Set \(k): \(prev), at the heaviest load; try \(new)"
         default: "Set \(k): \(prev); try \(new)"

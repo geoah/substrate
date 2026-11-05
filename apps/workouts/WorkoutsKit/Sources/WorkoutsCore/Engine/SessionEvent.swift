@@ -357,6 +357,11 @@ public struct SetValuesPatch: Codable, Equatable, Sendable {
     public var rpeMethod: EffortMethod?
     public var reachedFailure: FieldPatch<Bool>
     public var failedRepAttempted: FieldPatch<Bool>
+    /// Why the set ended: set, cleared or left alone.
+    public var stopReason: FieldPatch<StopReason>
+    /// With `rpe` cleared on a pending row: the plan's pre-fill comes back
+    /// (the reset chip), rather than stopping until a value is tapped.
+    public var restoresRPEPrefill: Bool
 
     public init(
         load: FieldPatch<Mass> = .unchanged,
@@ -367,7 +372,9 @@ public struct SetValuesPatch: Codable, Equatable, Sendable {
         rpe: FieldPatch<Decimal> = .unchanged,
         rpeMethod: EffortMethod? = nil,
         reachedFailure: FieldPatch<Bool> = .unchanged,
-        failedRepAttempted: FieldPatch<Bool> = .unchanged
+        failedRepAttempted: FieldPatch<Bool> = .unchanged,
+        stopReason: FieldPatch<StopReason> = .unchanged,
+        restoresRPEPrefill: Bool = false
     ) {
         self.load = load
         self.assistance = assistance
@@ -378,6 +385,25 @@ public struct SetValuesPatch: Codable, Equatable, Sendable {
         self.rpeMethod = rpeMethod
         self.reachedFailure = reachedFailure
         self.failedRepAttempted = failedRepAttempted
+        self.stopReason = stopReason
+        self.restoresRPEPrefill = restoresRPEPrefill
+    }
+
+    // A session's journal outlives a build: a patch written before a field
+    // existed decodes with the field unchanged.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        load = try c.decodeIfPresent(FieldPatch<Mass>.self, forKey: .load) ?? .unchanged
+        assistance = try c.decodeIfPresent(FieldPatch<Mass>.self, forKey: .assistance) ?? .unchanged
+        reps = try c.decodeIfPresent(FieldPatch<Int>.self, forKey: .reps) ?? .unchanged
+        duration = try c.decodeIfPresent(FieldPatch<Seconds>.self, forKey: .duration) ?? .unchanged
+        distance = try c.decodeIfPresent(FieldPatch<Length>.self, forKey: .distance) ?? .unchanged
+        rpe = try c.decodeIfPresent(FieldPatch<Decimal>.self, forKey: .rpe) ?? .unchanged
+        rpeMethod = try c.decodeIfPresent(EffortMethod.self, forKey: .rpeMethod)
+        reachedFailure = try c.decodeIfPresent(FieldPatch<Bool>.self, forKey: .reachedFailure) ?? .unchanged
+        failedRepAttempted = try c.decodeIfPresent(FieldPatch<Bool>.self, forKey: .failedRepAttempted) ?? .unchanged
+        stopReason = try c.decodeIfPresent(FieldPatch<StopReason>.self, forKey: .stopReason) ?? .unchanged
+        restoresRPEPrefill = try c.decodeIfPresent(Bool.self, forKey: .restoresRPEPrefill) ?? false
     }
 
     /// Every field the values set; the rest unchanged. PREVIOUS copies this
@@ -388,7 +414,8 @@ public struct SetValuesPatch: Codable, Equatable, Sendable {
             load: patch(values.load), assistance: patch(values.assistance), reps: patch(values.reps),
             duration: patch(values.duration), distance: patch(values.distance), rpe: patch(values.rpe),
             rpeMethod: values.rpe == nil ? nil : values.rpeMethod,
-            reachedFailure: patch(values.reachedFailure), failedRepAttempted: patch(values.failedRepAttempted)
+            reachedFailure: patch(values.reachedFailure), failedRepAttempted: patch(values.failedRepAttempted),
+            stopReason: patch(values.stopReason)
         )
     }
 
@@ -399,6 +426,14 @@ public struct SetValuesPatch: Codable, Equatable, Sendable {
 
     /// The lifter clears the RPE: no rating, and no pre-fill on a pending row.
     public static let clearingRPE = SetValuesPatch(rpe: .cleared)
+
+    /// Back to the plan's value: no rating, and the pre-fill shows again.
+    public static let restoringRPEPrefill = SetValuesPatch(rpe: .cleared, restoresRPEPrefill: true)
+
+    /// Why the set ended, or no reason.
+    public static func stopping(_ reason: StopReason?) -> SetValuesPatch {
+        SetValuesPatch(stopReason: reason.map(FieldPatch.set) ?? .cleared)
+    }
 }
 
 public extension SetValues {
@@ -421,7 +456,8 @@ public extension SetValues {
             rpe: patch.rpe.applied(to: rpe),
             rpeMethod: method,
             reachedFailure: patch.reachedFailure.applied(to: reachedFailure),
-            failedRepAttempted: patch.failedRepAttempted.applied(to: failedRepAttempted)
+            failedRepAttempted: patch.failedRepAttempted.applied(to: failedRepAttempted),
+            stopReason: patch.stopReason.applied(to: stopReason)
         )
     }
 }

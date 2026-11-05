@@ -300,7 +300,7 @@ public enum RoutinePresenter {
         return text
     }
 
-    /// A run of working sets: `2 sets of 10–15 reps at RPE 8, from 90 kg`.
+    /// A run of working sets: `2 sets of 10–15 reps with 2 left, from 90 kg`.
     static func runText(_ planned: PlannedSet, count: Int, measurement: MeasurementType) -> String {
         let sets = Format.count(count, "set")
         let load =
@@ -310,7 +310,9 @@ public enum RoutinePresenter {
         let effortTarget = Format.effort(
             rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin,
             rirMax: planned.rirMax)
-        let effort = effortTarget.map { " at \($0)" } ?? ""
+        let effort =
+            Format.effortRange(rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax)
+            .map { " with \($0) left" } ?? ""
         if measurement.isTimedHold {
             var text = sets
             if let min = planned.durationMin {

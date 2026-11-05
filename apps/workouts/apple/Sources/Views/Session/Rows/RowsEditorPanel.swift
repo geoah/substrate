@@ -58,22 +58,16 @@ struct RowsEditorPanel: View {
                 RowsTimerView(timer: timer, tint: tint)
                     .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
-            if let strip = editor.rpe, !strip.isCollapsed || screen.openStrips.contains(editor.row) {
-                // Inside the panel's padding, lined up with the values, and
-                // named as they are: the stops alone did not say what they rate.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("RPE")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    RowsRPEStripView(strip: strip, tint: tint) { cell in
-                        screen.pick(cell, in: editor, session: session)
-                    } onHalf: { half in
-                        screen.pick(half, in: editor, session: session)
-                    }
-                }
+            if let effort = editor.effort, !effort.isCollapsed || screen.openStrips.contains(editor.row) {
+                // A third value under load and reps, built like them, so the
+                // number lines up with theirs and steps under the same thumb.
+                RowsEffortRow(
+                    effort: effort,
+                    tint: tint,
+                    valueWidth: max(minValueWidth, valueWidths.values.max() ?? 0),
+                    onPatch: { screen.step($0, in: editor, session: session) }
+                )
                 .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
-                .padding(.top, 6)
             }
             buttons
                 .padding(.top, 10)
@@ -235,12 +229,12 @@ struct RowsEditorPanel: View {
     @ViewBuilder
     private var trailing: some View {
         HStack(spacing: 8) {
-            if let strip = editor.rpe, strip.isCollapsed, !screen.openStrips.contains(editor.row) {
+            if let effort = editor.effort, effort.isCollapsed, !screen.openStrips.contains(editor.row) {
                 Button {
                     screen.openStrips.insert(editor.row)
                 } label: {
                     // A symbol and a short word, never wrapped.
-                    Label(strip.addTitle, systemImage: "plus")
+                    Label(effort.addTitle, systemImage: "plus")
                         .labelStyle(.titleAndIcon)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(tint)
@@ -253,7 +247,7 @@ struct RowsEditorPanel: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Add an RPE")
+                .accessibilityLabel("Add reps left")
             }
             if let trailingNote = editor.trailingNote {
                 Text(trailingNote)
@@ -611,108 +605,189 @@ struct RowsStepper: View {
     }
 }
 
-// MARK: - RPE
+// MARK: - Reps left
 
-/// The RPE control: five whole stops, 6 to 10, and a `½` beside them that
-/// adds or takes off the half point, so every half step is reachable and the
-/// whole control stays inside the panel. The plan's value is an outlined,
-/// hollow stop; a rating is filled solid inside its stop. A tap on any stop
-/// rates it (the outlined one too); a tap on the filled stop clears it.
-/// Every target is at least 44 pt square; where the row does not fit (larger
-/// text) the `½` goes under the stops.
-struct RowsRPEStripView: View {
-    let strip: RowsRPEStrip
+/// Reps left, a third value under load and reps: the number in a capsule,
+/// hollow while it is the plan's value or a copy and filled once it is the
+/// lifter's (a tap on the hollow one rates it as it is), `reps left`, last
+/// time and the reset chip, and `−1 | +1` under the thumb. Under it, why the
+/// set ended, a menu. Where one row cannot hold them (larger text) last time
+/// and the chip go under the number; the steppers never give way.
+struct RowsEffortRow: View {
+    let effort: RowsEffort
     let tint: Color
-    let onPick: (RowsRPECell) -> Void
-    let onHalf: (RowsRPEHalf) -> Void
+    let valueWidth: CGFloat
+    let onPatch: (SetValuesPatch) -> Void
 
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 44
-    @ScaledMetric(relativeTo: .body) private var scaledWidth: CGFloat = 48
-
-    /// A stop grows with the text up to 52 pt; past that its digits shrink to fit.
-    private var width: CGFloat { min(52, scaledWidth) }
-
-    /// The width `ViewThatFits` judges the row by: 44 pt at the standard sizes,
-    /// so the stops and the `½` (5 × 44 + 8 + 44) fit one row on a 375 pt
-    /// phone, then widen to `width` where the row has room.
-    private var idealWidth: CGFloat { width > 48 ? width : 44 }
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .title) private var valueSize: CGFloat = 26
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                stops
-                half
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                stops
-                half
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(strip.accessibilityLabel)
-        .accessibilityValue(strip.accessibilityValue)
-    }
-
-    private var stops: some View {
-        HStack(spacing: 0) {
-            ForEach(strip.cells) { cell in
-                Button {
-                    onPick(cell)
-                } label: {
-                    Text(cell.text)
-                        .font(.body.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(foreground(cell.style))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: width, minHeight: height)
-                        .background { mark(cell.style) }
-                        .contentShape(.rect)
+        VStack(alignment: .leading, spacing: 2) {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    value
+                    HStack(spacing: 8) {
+                        last
+                        resetChip
+                    }
+                    RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(cell.meaning)
-                .accessibilityValue(cell.style == .filled ? "rated" : cell.style == .outlined ? "shown, not rated" : "")
-                .accessibilityAddTraits(cell.style == .filled ? .isSelected : [])
+                .padding(.vertical, 6)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            value
+                                .frame(minWidth: valueWidth, alignment: .leading)
+                            last
+                        }
+                        resetChip
+                        Spacer(minLength: 4)
+                        RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            value
+                            Spacer(minLength: 4)
+                            RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
+                        }
+                        HStack(spacing: 8) {
+                            last
+                            resetChip
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .frame(minHeight: 48)
+            }
+            if let stop = effort.stop {
+                RowsStopMenuChip(menu: stop, tint: tint, onPatch: onPatch)
             }
         }
-        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
-        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var half: some View {
-        let style: RowsRPECell.Style = strip.half.isOn ? (strip.isRated ? .filled : .outlined) : .plain
-        return Button {
-            onHalf(strip.half)
-        } label: {
-            Text(strip.half.text)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(strip.half.patch == nil ? Color(.tertiaryLabel) : foreground(style))
-                .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: max(44, width), minHeight: height, maxHeight: height)
-                .background { mark(style) }
-                .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
-                .contentShape(.rect)
+    /// The number in its capsule and `reps left` after it.
+    private var value: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Button {
+                if let rate = effort.rate { onPatch(rate) }
+            } label: {
+                Text(effort.value ?? "\u{2013}")
+                    .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(effort.value == nil ? Color.secondary : effort.isRated ? Color.white : tint)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background {
+                        if effort.isRated {
+                            Capsule().fill(tint)
+                        } else if effort.value != nil {
+                            Capsule().strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        }
+                    }
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+            .disabled(effort.rate == nil)
+            .accessibilityLabel(effort.accessibilityLabel)
+            .accessibilityValue(effort.accessibilityValue)
+            .accessibilityHint(effort.rate == nil ? "" : "Rates it as shown")
+            Text(effort.unit)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .disabled(strip.half.patch == nil)
-        .accessibilityLabel(strip.half.accessibilityLabel)
-        .accessibilityAddTraits(strip.half.isOn ? .isSelected : [])
     }
 
     @ViewBuilder
-    private func mark(_ style: RowsRPECell.Style) -> some View {
-        switch style {
-        case .filled: RoundedRectangle(cornerRadius: 10).fill(tint).padding(3)
-        case .outlined: RoundedRectangle(cornerRadius: 9).strokeBorder(tint, lineWidth: 2).padding(4)
-        case .plain: EmptyView()
+    private var last: some View {
+        if let last = effort.last {
+            Text(last)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
-    private func foreground(_ style: RowsRPECell.Style) -> Color {
-        switch style {
-        case .filled: .white
-        case .outlined: tint
-        case .plain: .primary
+    @ViewBuilder
+    private var resetChip: some View {
+        if let reset = effort.reset {
+            Button {
+                onPatch(reset.patch)
+            } label: {
+                Label(reset.text, systemImage: "arrow.counterclockwise")
+                    .labelStyle(.titleAndIcon)
+                    .font(.footnote.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 28)
+                    .background(tint.opacity(0.13), in: .capsule)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(reset.accessibilityLabel)
+        }
+    }
+}
+
+/// Why the set ended: `Why stop?` with a chevron, or the reason chosen
+/// (pain in orange); a tap lists the three reasons and, with one chosen,
+/// `No reason`.
+struct RowsStopMenuChip: View {
+    let menu: RowsStopMenu
+    let tint: Color
+    let onPatch: (SetValuesPatch) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(menu.options) { option in
+                Button {
+                    onPatch(option.patch)
+                } label: {
+                    if option.isSelected {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
+                    }
+                }
+            }
+            if let clear = menu.clear {
+                Divider()
+                Button("No reason") { onPatch(clear) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(menu.title)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .background(color.opacity(menu.selected == nil ? 0.08 : 0.15), in: .capsule)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(menu.accessibilityLabel)
+        .accessibilityValue(menu.accessibilityValue)
+    }
+
+    private var color: Color {
+        switch menu.selected {
+        case .pain?: RowsStyle.orange
+        case nil: .secondary
+        default: tint
         }
     }
 }

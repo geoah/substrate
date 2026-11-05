@@ -245,6 +245,7 @@ extension RecordCodec {
                 .enumeration("rpeScale", RPEScale.self),
                 .bool("reachedFailure"),
                 .bool("failedRepAttempted"),
+                .enumeration("stopReason", StopReason.self),
                 .enumeration("completionMethod", CompletionMethod.self),
                 .text("notes"),
                 .string("sourceType"),

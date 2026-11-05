@@ -51,6 +51,8 @@ public struct PerformedSet: Codable, Hashable, Sendable, Identifiable {
     public var rpeScale: RPEScale?
     public var reachedFailure: Bool?
     public var failedRepAttempted: Bool?
+    /// Why the set ended, where the lifter said (training 6).
+    public var stopReason: StopReason?
     /// Ticked on its own, marked done at Finish, or imported.
     public var completionMethod: CompletionMethod?
     public var notes: String?
@@ -103,6 +105,7 @@ public struct PerformedSet: Codable, Hashable, Sendable, Identifiable {
         rpeScale: RPEScale? = nil,
         reachedFailure: Bool? = nil,
         failedRepAttempted: Bool? = nil,
+        stopReason: StopReason? = nil,
         completionMethod: CompletionMethod? = nil,
         notes: String? = nil,
         sourceType: String? = nil,
@@ -150,6 +153,7 @@ public struct PerformedSet: Codable, Hashable, Sendable, Identifiable {
         self.rpeScale = rpeScale
         self.reachedFailure = reachedFailure
         self.failedRepAttempted = failedRepAttempted
+        self.stopReason = stopReason
         self.completionMethod = completionMethod
         self.notes = notes
         self.sourceType = sourceType

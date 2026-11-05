@@ -563,6 +563,7 @@ public extension RecordCodec {
             rpeScale: r.enumeration("rpeScale"),
             reachedFailure: r.bool("reachedFailure"),
             failedRepAttempted: r.bool("failedRepAttempted"),
+            stopReason: r.enumeration("stopReason"),
             completionMethod: r.enumeration("completionMethod"),
             notes: r.string("notes"),
             sourceType: r.string("sourceType"),
@@ -647,6 +648,7 @@ public extension RecordCodec {
         w.enumeration("rpeScale", set.rpeScale)
         w.bool("reachedFailure", set.reachedFailure)
         w.bool("failedRepAttempted", set.failedRepAttempted)
+        w.enumeration("stopReason", set.stopReason)
         w.enumeration("completionMethod", set.completionMethod)
         w.string("notes", set.notes)
         w.string("sourceType", set.sourceType)

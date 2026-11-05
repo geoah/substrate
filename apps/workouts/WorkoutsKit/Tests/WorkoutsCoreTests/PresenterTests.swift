@@ -78,7 +78,7 @@ struct PresenterGridTests {
         let card = try #require(try session.present().card("chest-press"))
         #expect(card.name == "Chest Press (Machine)")
         #expect(card.columns == [.set, .previous, .load, .reps, .rpe, .tick])
-        #expect(card.columnTitles == ["SET", "PREVIOUS", "KG", "REPS", "RPE", ""])
+        #expect(card.columnTitles == ["SET", "PREVIOUS", "KG", "REPS", "LEFT", ""])
         #expect(card.restChip == "Rest 1:30")
         #expect(card.progress == "0 of 2 done")
         #expect(card.loadStep == .kg(5))
@@ -90,7 +90,7 @@ struct PresenterGridTests {
         #expect(rows.map(\.label.short) == ["W", "1", "2", "2a"])
         #expect(rows.map(\.label.spoken) == ["warm-up", "set 1", "set 2", "set 2, drop 1"])
         #expect(rows.map(\.state) == [.pending, .pending, .pending, .locked])
-        #expect(rows.map { $0.previous?.text } == ["25 kg × 15", "35 kg × 15", "35 kg × 13 @ 9.5", "35 kg × 8 @ 9.5"])
+        #expect(rows.map { $0.previous?.text } == ["25 kg × 15", "35 kg × 15", "35 kg × 13 · 0–1 left", "35 kg × 8 · 0–1 left"])
         #expect(rows.map { $0.cells.map(\.text) } == [["25", "15"], ["40", "11"], ["35", "14"], ["25", GhostValues.toFailure]])
         #expect(rows.allSatisfy { $0.cells.allSatisfy { $0.isGhost } })
         // The drop goes to failure: no number to commit, so its tick waits for typed reps.
@@ -114,7 +114,7 @@ struct PresenterGridTests {
         #expect(plank.rows.map { $0.previous?.text } == ["1:02", "0:53"])
         #expect(plank.restChip == "Rest 0:15")
         let crunch = try #require(presentation.card("crunch"))
-        #expect(crunch.columnTitles == ["SET", "PREVIOUS", "REPS", "RPE", ""])
+        #expect(crunch.columnTitles == ["SET", "PREVIOUS", "REPS", "LEFT", ""])
         #expect(crunch.restChip == "Rest Off")
         #expect(crunch.rows.first?.previous?.text == "× 15")
         let push = try #require(presentation.card("push-up"))
@@ -129,7 +129,7 @@ struct PresenterGridTests {
         #expect(card.rows.map(\.label.spoken) == ["set 1, left side", "set 1, right side", "set 2, left side", "set 2, right side"])
         #expect(
             card.rows.map { $0.previous?.text }
-                == ["10 kg × 10 @ 8", "10 kg × 10 @ 8.5", "10 kg × 10 @ 8.5", "10 kg × 9 @ 9"])
+                == ["10 kg × 10 · 2 left", "10 kg × 10 · 1–2 left", "10 kg × 10 · 1–2 left", "10 kg × 9 · 1 left"])
         #expect(card.rows.map(\.state) == [.pending, .locked, .pending, .locked])
         #expect(card.rows.map { $0.cells.map(\.text) } == [["10", "10"], ["10", "10"], ["10", "9"], ["10", "9"]])
         #expect(card.rows[0].allowedKinds == [.warmup, .working, .failure])
@@ -143,7 +143,7 @@ struct PresenterGridTests {
         let card = try #require(try session.present(at: 61).card("bulgarian-split-squat"))
         #expect(card.rows[1].state == .upNext)
         #expect(card.rows[1].cells.map(\.text) == ["12", "10"])
-        #expect(card.rows[1].reason == "Last time 10 kg × 10 at RPE 8.5; try 10 kg × 10")
+        #expect(card.rows[1].reason == "Last time 10 kg × 10 with 1–2 left; try 10 kg × 10")
     }
 
     @Test("Ghost precedence: typed beats the suggestion, the suggestion beats the target")
@@ -521,7 +521,7 @@ struct PresenterControllerTests {
         let presentation = try session.present(at: 200)
         let unticked = Dictionary(uniqueKeysWithValues: presentation.unticked.map { ($0.row, $0.values) })
         #expect(unticked.count == 53)
-        // Set 2 follows set 1's 40 kg × 11 at RPE 9 in the session.
+        // Set 2 follows set 1's 40 kg × 11 with 1 left in the session.
         #expect(unticked[try session.row("chest-press", 2)] == .some(SetValues(load: .kg(40), reps: 11)))
         // A rirstop set's planned reps are shown, so saved as shown.
         #expect(unticked[try session.row("push-up", 0)] == .some(SetValues(reps: 15)))
@@ -760,7 +760,7 @@ struct PresenterScreenTests {
         #expect(detail.healthText == "Apple Health: saved" && !detail.canRetryHealth)
         let chest = try #require(detail.blocks.flatMap(\.exercises).first { $0.slot == "chest-press" })
         #expect(chest.sets.map(\.label.short) == ["W", "1", "2", "2a"])
-        #expect(chest.sets.map(\.text) == ["25 kg × 15", "35 kg × 15", "35 kg × 13 @ 9.5", "35 kg × 8 @ 9.5"])
+        #expect(chest.sets.map(\.text) == ["25 kg × 15", "35 kg × 15", "35 kg × 13 · 0–1 left", "35 kg × 8 · 0–1 left"])
         #expect(chest.sets.last?.rest == "rest 0:06")
         let superset = try #require(detail.blocks.first { $0.title != nil })
         #expect(superset.title == "Superset A")
@@ -812,16 +812,16 @@ struct PresenterScreenTests {
         let preview = RoutinePresenter.preview(routine, catalog: catalog, history: history, settings: Progression.settings)
         #expect(preview.lastDone == "Last done Tue 27 Oct, 46 min")
         let slots = Dictionary(uniqueKeysWithValues: preview.blocks.flatMap(\.slots).map { ($0.id, $0) })
-        #expect(slots["leg-press"]?.lines == ["Warm-up: 40 kg × 12", "2 sets of 10–15 reps at RPE 8, from 90 kg", "Rest 2:00"])
+        #expect(slots["leg-press"]?.lines == ["Warm-up: 40 kg × 12", "2 sets of 10–15 reps with 2 left, from 90 kg", "Rest 2:00"])
         #expect(
             slots["chest-press"]?.lines
-                == ["Warm-up: 25 kg × 15", "2 sets of 10–15 reps at RPE 9.5, from 35 kg", "Set 2 is a drop set: 1 drop", "Rest 1:30"])
+                == ["Warm-up: 25 kg × 15", "2 sets of 10–15 reps with 0–1 left, from 35 kg", "Set 2 is a drop set: 1 drop", "Rest 1:30"])
         #expect(slots["plank"]?.lines == ["2 sets: hold 0:45–1:30, counted down", "Rest 0:15"])
-        #expect(slots["push-up"]?.lines == ["2 sets, each until RPE 9", "Rest 1:30"])
+        #expect(slots["push-up"]?.lines == ["2 sets, each until 1 rep left", "Rest 1:30"])
         #expect(slots["crunch"]?.lines == ["2 sets of 12–20 reps", "Rest Off"])
         #expect(
             slots["bulgarian-split-squat"]?.lines
-                == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
+                == ["2 sets of 8–12 reps with 2 left, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
         #expect(slots["hip-thrust"]?.notes?.hasPrefix("Ribs down") == true)
         let group = try #require(preview.blocks.first { $0.header != nil })
         // No group letter and no colour: the members are named by their exercises.
@@ -835,13 +835,13 @@ struct PresenterScreenTests {
         #expect(
             day1Slots["leg-press"]?.lines == [
                 "Warm-up: 40 kg × 12", "Warm-up: 70 kg × 6",
-                "3 sets of 6–10 reps at RPE 8, from 100 kg", "Rest 2:30",
+                "3 sets of 6–10 reps with 2 left, from 100 kg", "Rest 2:30",
                 "Rest after warm-up 2: 1:30",
             ])
         #expect(
             day1Slots["lateral-raise"]?.lines == [
-                "1 set of 12–15 reps at RPE 8, from 6 kg",
-                "1 set of 12–20 reps at RPE 9, from 6 kg", "Set 2 is myo-reps", "Rest 1:30",
+                "1 set of 12–15 reps with 2 left, from 6 kg",
+                "1 set of 12–20 reps with 1 left, from 6 kg", "Set 2 is myo-reps", "Rest 1:30",
             ])
         #expect(day1Slots["romanian-deadlift"]?.lines.last == "Tempo 3-1-1-0")
     }
@@ -889,13 +889,13 @@ struct PresenterScreenTests {
                 LabelledValue("Muscles", "Chest; also Shoulders, Triceps"), LabelledValue("Load", "5 kg steps"),
             ])
         #expect(chest.sessions.map(\.title) == ["Tue 27 Oct, Fully Body Collection #1"])
-        #expect(chest.sessions.first?.lines == ["W 25 kg × 15", "1 35 kg × 15", "2 35 kg × 13 @ 9.5, 2a 35 kg × 8 @ 9.5"])
-        // 35 kg × 15 and × 13 at RPE 9.5 are too far from failure (n > 12) for the chart.
+        #expect(chest.sessions.first?.lines == ["W 25 kg × 15", "1 35 kg × 15", "2 35 kg × 13 · 0–1 left, 2a 35 kg × 8 · 0–1 left"])
+        // 35 kg × 15 and × 13 with 0–1 left are too far from failure (n > 12) for the chart.
         #expect(chest.trend.metric == .oneRepMax && chest.trend.points.isEmpty)
         let legPress = ExercisePresenter.detail(
             try #require(catalog.exercises["leg-press-machine"]), history: history,
             settings: Progression.settings)
-        // 22 Oct: 100 kg × 10 at RPE 8 (n = 12) gives 100 / 0.680; 26 Oct: 105 kg × 9 at RPE 8 gives 105 / 0.707.
+        // 22 Oct: 100 kg × 10 with 2 left (n = 12) gives 100 / 0.680; 26 Oct: 105 kg × 9 with 2 left gives 105 / 0.707.
         #expect(legPress.trend.points.map(\.text) == ["147.1 kg", "148.5 kg"])
         #expect(legPress.trend.title == "Estimated 1RM")
         #expect(legPress.trend.hasTrend(legPress.trend.points))
@@ -916,6 +916,6 @@ struct PresenterScreenTests {
             try #require(catalog.exercises["bulgarian-split-squat-dumbbell"]), history: history,
             settings: Progression.settings)
         #expect(split.facts.contains(LabelledValue("Sides", "One side at a time")))
-        #expect(split.sessions.first?.lines == ["1L 10 kg × 10 @ 8, 1R 10 kg × 10 @ 8.5", "2L 10 kg × 10 @ 8.5, 2R 10 kg × 9 @ 9"])
+        #expect(split.sessions.first?.lines == ["1L 10 kg × 10 · 2 left, 1R 10 kg × 10 · 1–2 left", "2L 10 kg × 10 · 1–2 left, 2R 10 kg × 9 · 1 left"])
     }
 }

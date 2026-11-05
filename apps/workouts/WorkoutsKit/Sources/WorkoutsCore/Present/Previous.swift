@@ -33,6 +33,7 @@ public struct PreviousSet: Codable, Equatable, Sendable {
         values.rpeMethod = values.rpe == nil ? nil : .copied
         values.reachedFailure = nil
         values.failedRepAttempted = nil
+        values.stopReason = nil
         return .setting(values)
     }
 }

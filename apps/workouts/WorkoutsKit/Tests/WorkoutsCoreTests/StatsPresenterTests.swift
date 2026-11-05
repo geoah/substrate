@@ -147,7 +147,7 @@ struct StatsPresenterTests {
     func exerciseProgress() throws {
         let month = try Stats.exercise(try Stats.present(.routine(Stats.dayOne), .month), "leg-press-machine")
         #expect(month.metric == "Estimated 1RM")
-        // 22 Oct: 100 kg × 10 at RPE 8 gives 147.1 kg; 26 Oct: 105 kg × 9 at RPE 8 gives 148.5 kg.
+        // 22 Oct: 100 kg × 10 with 2 left gives 147.1 kg; 26 Oct: 105 kg × 9 with 2 left gives 148.5 kg.
         #expect(month.points.map(\.text) == ["147.1 kg", "148.5 kg"])
         #expect(month.best == "148.5 kg")
         #expect(month.change == nil)

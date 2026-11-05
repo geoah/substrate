@@ -32,7 +32,7 @@ public enum GridColumn: String, Codable, Sendable, CaseIterable {
     }
 
     /// The header: `SET`, `PREVIOUS`, `KG` or `LB`, `+KG`, `−KG`, `REPS`,
-    /// `TIME`, `M`, `RPE`; empty for the tick, which the view draws as a glyph.
+    /// `TIME`, `M`, `LEFT` (reps left); empty for the tick, which the view draws as a glyph.
     public func title(unit: MassUnit) -> String {
         let unitTitle = unit.rawValue.uppercased()
         return switch self {
@@ -44,7 +44,7 @@ public enum GridColumn: String, Codable, Sendable, CaseIterable {
         case .reps: "REPS"
         case .time: "TIME"
         case .distance: "M"
-        case .rpe: "RPE"
+        case .rpe: "LEFT"
         case .tick: ""
         }
     }
@@ -61,7 +61,7 @@ public enum GridColumn: String, Codable, Sendable, CaseIterable {
         case .reps: "reps"
         case .time: "time in minutes and seconds"
         case .distance: "distance in metres"
-        case .rpe: "RPE"
+        case .rpe: "reps left"
         case .tick: "done"
         }
     }
