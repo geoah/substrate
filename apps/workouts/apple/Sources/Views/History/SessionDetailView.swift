@@ -128,7 +128,7 @@ struct SessionDetailView: View {
             }
             if let notes = detail.notes {
                 Section("Notes") {
-                    Text(notes)
+                    NotesText(notes)
                         .font(.subheadline)
                 }
             }
@@ -180,7 +180,7 @@ private struct DetailExercise: View {
                         }
                     }
                     if let notes = set.notes {
-                        Text(notes)
+                        NotesText(notes)
                             .font(.footnote)
                             .italic()
                             .foregroundStyle(.secondary)
@@ -191,7 +191,7 @@ private struct DetailExercise: View {
                 .accessibilityLabel("\(set.label.spoken.capitalizedSentence), \(set.text)\(set.rest.map { ", \($0)" } ?? "")")
             }
             if let notes = exercise.notes {
-                Text(notes)
+                NotesText(notes)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

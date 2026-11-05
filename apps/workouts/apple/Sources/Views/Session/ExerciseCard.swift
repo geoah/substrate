@@ -37,12 +37,12 @@ struct ExerciseCardView: View {
             }
             chips
             if let notes = card.planNotes {
-                Text(notes)
+                NotesText(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             if let notes = card.notes {
-                Text(notes)
+                NotesText(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

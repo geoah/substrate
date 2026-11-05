@@ -127,7 +127,7 @@ struct SetRowView: View {
             CarryStopwatch(row: row, exercise: card.name, timer: timer, focus: focus)
         }
         if let notes = row.notes {
-            Text(notes)
+            NotesText(notes)
                 .font(.footnote)
                 .italic()
                 .foregroundStyle(.secondary)

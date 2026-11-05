@@ -206,7 +206,7 @@ private struct RoutineHeader: View {
                     .accessibilityLabel("Folder, \(folder)")
             }
             if let notes {
-                Text(notes)
+                NotesText(notes)
                     .font(.subheadline)
             }
             let layout =

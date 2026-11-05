@@ -47,7 +47,9 @@ exercise's best with its trend, personal records, a body map (`BodyMap`) with pu
 upper/lower balance, and the sessions, worked out off the main thread and kept until the
 history or the catalogue changes. `StatsPresenter` and `RoutinePlanPresenter` work it all out
 (`StatsPresenterTests`, `RoutinePlanPresenterTests`); the screenshots are
-`docs/screenshots/routine-*.jpg` and `stats-*.jpg`. The body map's figures are
+`docs/screenshots/routine-*.jpg` and `stats-*.jpg`. Every note, a routine's, an
+exercise's, a set's or a session's, reads as Markdown (`NotesMarkdown`, `NotesText`) and folds
+past five lines behind Show more. The body map's figures are
 react-native-body-highlighter's (MIT), written into `Views/Stats/BodyMapShapes.swift` by
 `apps/workouts/scripts/body-map.py` at a pinned commit, with its notice.
 
