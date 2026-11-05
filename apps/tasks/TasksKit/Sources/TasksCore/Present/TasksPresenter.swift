@@ -101,14 +101,10 @@ public enum TasksPresenter {
             priorities: priorities, move: "Move to List", delete: "Delete Task", swipeDelete: "Delete")
         let openRows = open.map { row($0, words: words, mixed: selection == .today) }
         let late = openRows.filter { $0.due?.tone == .overdue }.count
-        let total = open.count + closed.count
-        let share = selection == .today || total == 0 ? nil : Double(closed.count) / Double(total)
         let summary = ListSummary(
             headline: open.isEmpty ? "All done" : "\(open.count) to do",
-            detail: selection == .today
-                ? dayTitle(today, words: words) : total == 0 ? nil : "\(closed.count) of \(total) done",
-            overdue: late == 0 ? nil : "\(late) overdue", progress: share,
-            progressText: share.map { "\(Int(($0 * 100).rounded()))%" })
+            detail: selection == .today ? dayTitle(today, words: words) : nil,
+            overdue: late == 0 ? nil : "\(late) overdue")
         return ListPresentation(
             selection: selection, title: title, summary: summary,
             open: KeyedList(openRows, revision: revision), openTitle: "To Do",

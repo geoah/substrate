@@ -222,37 +222,22 @@ struct TaskMenu: View {
 }
 
 /// What a list holds at a glance: how many are left in the lists' serif,
-/// the day or how much is done, what is late, and a ring of what is done.
+/// the day in Today, and what is late.
 private struct SummaryCard: View {
     let summary: ListSummary
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(summary.headline)
-                    .font(.system(.title, design: .serif).weight(.semibold))
-                if let detail = summary.detail {
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                }
-                if let overdue = summary.overdue {
-                    Label(overdue, systemImage: "exclamationmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.red)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(summary.headline)
+                .font(.system(.title, design: .serif).weight(.semibold))
+            if let detail = summary.detail {
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
-            if let progress = summary.progress {
-                ZStack {
-                    Circle().stroke(Color.brandAccent.opacity(0.15), lineWidth: 7)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(Color.brandAccent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text(summary.progressText ?? "")
-                        .font(.system(.subheadline, design: .serif).weight(.semibold))
-                }
-                .frame(width: 62, height: 62)
-                .accessibilityHidden(true)
+            if let overdue = summary.overdue {
+                Label(overdue, systemImage: "exclamationmark.circle.fill")
+                    .labelStyle(TightLabelStyle(spacing: 5))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.red)
             }
         }
         .padding(18)
@@ -260,7 +245,7 @@ private struct SummaryCard: View {
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(TasksSymbols.card)
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.05), radius: 12, y: 4)
         }
         .accessibilityElement(children: .combine)
     }

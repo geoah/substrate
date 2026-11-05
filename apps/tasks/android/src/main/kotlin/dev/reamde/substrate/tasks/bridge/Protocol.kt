@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "5ac48426e73584748e776d32206356df2432d1b0a219183b091456d7e5a9667b"
+    public const val VALUE: String = "a2d0c9aa46f8cc99179326b74a0035803c83a38cedd51c06c9ca230aba1491ee"
 }
 
 @Serializable(with = Confirmation.Serializer::class)
@@ -150,8 +150,6 @@ public data class ListSummary(
     val headline: String,
     val detail: String? = null,
     val overdue: String? = null,
-    val progress: Double? = null,
-    val progressText: String? = null,
 )
 
 @Serializable

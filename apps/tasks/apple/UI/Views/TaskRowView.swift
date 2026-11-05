@@ -134,12 +134,12 @@ private struct Chip: View {
 
     var body: some View {
         Label(text, systemImage: symbol)
-            .labelStyle(.titleAndIcon)
+            .labelStyle(TightLabelStyle(spacing: 4))
             .font(.caption.weight(emphasis ? .bold : .medium))
             .foregroundStyle(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(color.opacity(0.12), in: .capsule)
+            .background(color.opacity(0.07), in: .capsule)
     }
 }
 

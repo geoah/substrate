@@ -102,10 +102,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "1 of 3 done",
-          "headline": "2 to do",
-          "progress": 0.3333333333333333,
-          "progressText": "33%"
+          "headline": "2 to do"
         },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
@@ -489,10 +486,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "1 of 3 done",
-          "headline": "2 to do",
-          "progress": 0.3333333333333333,
-          "progressText": "33%"
+          "headline": "2 to do"
         },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
@@ -1671,11 +1665,8 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "0 of 2 done",
           "headline": "2 to do",
-          "overdue": "1 overdue",
-          "progress": 0,
-          "progressText": "0%"
+          "overdue": "1 overdue"
         },
         "title": "Home",
         "toggleClosed": "Show Completed"
@@ -2262,11 +2253,8 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "0 of 2 done",
           "headline": "2 to do",
-          "overdue": "1 overdue",
-          "progress": 0,
-          "progressText": "0%"
+          "overdue": "1 overdue"
         },
         "title": "Home",
         "toggleClosed": "Show Completed"
@@ -2860,11 +2848,8 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "0 of 2 done",
           "headline": "2 to do",
-          "overdue": "1 overdue",
-          "progress": 0,
-          "progressText": "0%"
+          "overdue": "1 overdue"
         },
         "title": "Home",
         "toggleClosed": "Show Completed"
@@ -3333,10 +3318,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "1 of 3 done",
-          "headline": "2 to do",
-          "progress": 0.3333333333333333,
-          "progressText": "33%"
+          "headline": "2 to do"
         },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
@@ -3745,11 +3727,8 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "0 of 2 done",
           "headline": "2 to do",
-          "overdue": "1 overdue",
-          "progress": 0,
-          "progressText": "0%"
+          "overdue": "1 overdue"
         },
         "title": "Home",
         "toggleClosed": "Show Completed"
@@ -4133,10 +4112,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "detail": "1 of 3 done",
-          "headline": "2 to do",
-          "progress": 0.3333333333333333,
-          "progressText": "33%"
+          "headline": "2 to do"
         },
         "title": "Groceries",
         "toggleClosed": "Show Completed"

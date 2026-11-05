@@ -157,9 +157,7 @@
       "fields": [
         {"name": "headline", "type": "String"},
         {"name": "detail", "type": "String?"},
-        {"name": "overdue", "type": "String?"},
-        {"name": "progress", "type": "Double?"},
-        {"name": "progressText", "type": "String?"}
+        {"name": "overdue", "type": "String?"}
       ]
     },
     {

@@ -91,20 +91,15 @@ public struct ListPresentation: Bridged, Equatable, Sendable {
     public var rowMenu: TaskMenuWords
 }
 
-/// A list at a glance: how many tasks are left, how many are late, and
-/// either the day (Today) or how much of the list is done.
+/// A list at a glance: how many tasks are left, the day in Today, and how
+/// many are late.
 public struct ListSummary: Bridged, Hashable, Sendable {
     /// "3 to do", or "All done".
     public var headline: String
-    /// "Thursday, 5 November" in Today; "2 of 5 done" in a list.
+    /// "Thursday, 5 November", in Today.
     public var detail: String?
     /// "1 overdue", where any is.
     public var overdue: String?
-    /// The share of the list that is done, 0 to 1; none in Today, whose done
-    /// tasks are every one ever due.
-    public var progress: Double?
-    /// The share as words: "40%".
-    public var progressText: String?
 }
 
 /// The words of what a task offers from its row: its state, its priority,

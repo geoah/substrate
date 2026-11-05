@@ -8,25 +8,22 @@ import TasksCore
 /// the presentation's, never the view's: the list shown and the task open,
 /// so a reminder's tap or a command from anywhere moves the stack, and
 /// going back is a command.
+///
+/// The bar is Tasks' own: the sections' island and, beside it on the same
+/// row, the round + that adds a task, two shapes of one Liquid Glass. The
+/// system's tab bar puts no button of an app's beside itself.
 struct TabRoot: View {
     @Environment(TasksShell.self) private var shell
     let link: LinkPresentation<TasksPresentation>
     let app: TasksPresentation
 
     var body: some View {
-        AppMenuView(app.menu, select: { shell.send(.select(section: $0)) }) { section in
-            content(section.id)
-        }
-        .environment(\.addsFromTabBar, true)
-        // The round + stands on its own to the right of the tab bar, level
-        // with it, wherever there are tasks to add to.
-        .overlay(alignment: .bottomTrailing) {
-            if app.menu.selected != TasksMenu.settings {
-                NewTaskButton(title: app.list?.newTask ?? "New Task")
-                    .padding(.trailing, 7)
-                    .padding(.bottom, -25)
+        content(app.menu.selected)
+            .id(app.menu.selected)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                TasksTabBar(menu: app.menu, adds: app.menu.selected != TasksMenu.settings, newTask: app.list?.newTask ?? "New Task")
             }
-        }
+            .environment(\.addsFromTabBar, true)
     }
 
     @ViewBuilder
@@ -98,5 +95,78 @@ private struct LivePushedDetail: View {
 
     var body: some View {
         if let detail = shell.presentation.app?.detail { TaskDetailView(detail: detail) }
+    }
+}
+
+/// The phone's bar: an island of the sections, each its symbol over its
+/// name, the chosen one lifted; and, apart from it on the same row, the
+/// round + where there are tasks to add to.
+private struct TasksTabBar: View {
+    @Environment(TasksShell.self) private var shell
+    let menu: AppMenuPresentation
+    let adds: Bool
+    let newTask: String
+
+    var body: some View {
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                HStack(spacing: 0) {
+                    ForEach(menu.sections) { section in item(section) }
+                }
+                .padding(4)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                if adds {
+                    Button {
+                        shell.send(.newTask)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(TasksSymbols.card)
+                            .frame(width: 62, height: 62)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.tint(Color.primary).interactive(), in: .circle)
+                    .accessibilityLabel(newTask)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        // Into the home indicator's margin, where the system's bar sits.
+        .padding(.bottom, -10)
+    }
+
+    private func item(_ section: AppMenuSection) -> some View {
+        let chosen = section.id == menu.selected
+        return Button {
+            shell.send(.select(section: section.id))
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: DesignTokens.menuSymbol(section.symbol).sfSymbol)
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(height: 24)
+                    .overlay(alignment: .topTrailing) {
+                        if let badge = section.badge, badge > 0 {
+                            Text(badge, format: .number)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 17, minHeight: 17)
+                                .background(Color.red, in: .capsule)
+                                .offset(x: 12, y: -6)
+                        }
+                    }
+                Text(section.title).font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(chosen ? Color.brandAccent : Color.primary)
+            .frame(width: 74, height: 54)
+            .background {
+                if chosen { Capsule().fill(Color.primary.opacity(0.08)) }
+            }
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(section.title)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }

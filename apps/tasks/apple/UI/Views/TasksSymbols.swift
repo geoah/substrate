@@ -43,7 +43,7 @@ enum TasksSymbols {
     /// accent at the top.
     static var screen: some View {
         LinearGradient(
-            stops: [.init(color: Color.brandAccent.opacity(0.13), location: 0), .init(color: grouped, location: 0.45)],
+            stops: [.init(color: Color.brandAccent.opacity(0.06), location: 0), .init(color: grouped, location: 0.45)],
             startPoint: .top, endPoint: .bottom
         )
         .ignoresSafeArea()
@@ -71,6 +71,19 @@ enum TasksSymbols {
         case .open: "circle"
         case .done: "checkmark.circle.fill"
         case .abandoned: "xmark.circle"
+        }
+    }
+}
+
+/// A symbol and its words set close, as a chip or a short line: the
+/// system's label leaves a gap meant for a list row.
+struct TightLabelStyle: LabelStyle {
+    var spacing: CGFloat = 4
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: spacing) {
+            configuration.icon
+            configuration.title
         }
     }
 }
