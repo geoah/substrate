@@ -155,6 +155,9 @@ public struct DoneSet: Sendable, Hashable {
     /// explanation says "assuming RPE x" of the set (DESIGN §5.3).
     public var unratedRPE: Double?
     public var reachedFailure: Bool
+    /// Why the set ended, where the lifter said: a technique or pain stop is
+    /// no evidence for going up (the progression offer, DESIGN §5.3).
+    public var stopReason: StopReason?
     /// The plan in force when the set was done.
     public var target: Target03
     public var completedAt: Date
@@ -175,6 +178,7 @@ public struct DoneSet: Sendable, Hashable {
         rpe: Double? = nil,
         unratedRPE: Double? = nil,
         reachedFailure: Bool = false,
+        stopReason: StopReason? = nil,
         target: Target03 = Target03(),
         completedAt: Date,
         position: Int,
@@ -191,6 +195,7 @@ public struct DoneSet: Sendable, Hashable {
         self.rpe = rpe
         self.unratedRPE = unratedRPE
         self.reachedFailure = reachedFailure
+        self.stopReason = stopReason
         self.target = target
         self.completedAt = completedAt
         self.position = position
@@ -273,12 +278,28 @@ public struct Suggestion: Codable, Sendable, Equatable, Hashable {
     }
 }
 
-/// Which rule produced a suggestion (03 §9.5; `backoff` is the app's, DESIGN §5.3).
+/// Which rule produced a suggestion (03 §9.5; `backoff`, `historyHold` and
+/// `progressionUp` are the app's, DESIGN §5.3).
 public enum Reason: Codable, Sendable, Hashable {
     case warmupAsLastTime, historyAddRep, historyLoadUp, historyLoadDown, historyNewRange,
         historyAtMax, sessionKeep, sessionUp, sessionDown, sessionCoarse, sessionAtMax, coldStartRoutineLoad,
         coldStartPickLoad, myoMini, myoStop, drop, dropAtMinimum, timedHistory, timedSession, timedLoadUp,
-        timedColdStart, backoff
+        timedColdStart, backoff,
+        /// 03 §11.3 would raise the load; the owner decides, so it holds at the top of the range.
+        historyHold,
+        /// The owner took the progression offer: the new load at the bottom of the range.
+        progressionUp
+}
+
+/// Whether the history rule raises a load on its own (03 §11.3) or the owner
+/// decides through the progression offer (DESIGN §5.3).
+public enum ProgressionGate: Sendable, Hashable {
+    /// 03 as written: a load-up from history whenever the estimate says so.
+    case automatic
+    /// The owner decides: from history the load holds at the top of the
+    /// range until they go up; `accepted` is the load they took, in the
+    /// exercise's unit (the added load in a bodyweight mode).
+    case ask(accepted: Double?)
 }
 
 /// Suggests the pending set's load and reps (or duration) from today's sets of
@@ -291,6 +312,7 @@ public enum Reason: Codable, Sendable, Hashable {
 ///   - bodyMass: today's body mass in kilograms.
 ///   - now: the instant the gap to each past session is counted to.
 ///   - calendar: the owner's calendar; it only counts whole local days.
+///   - progression: whether a load-up from history waits for the owner.
 /// - Returns: nil when no rule applies (a warm-up with no warm-up last time).
 public func suggest(
     pending: PendingSet,
@@ -299,10 +321,11 @@ public func suggest(
     history: [PastSession],
     bodyMass: Double?,
     now: Date,
-    calendar: Calendar
+    calendar: Calendar,
+    progression: ProgressionGate = .automatic
 ) -> Suggestion? {
     SuggestRules(
         pending: pending, exercise: exercise, today: today, history: history,
-        bodyMass: bodyMass, now: now, calendar: calendar
+        bodyMass: bodyMass, now: now, calendar: calendar, progression: progression
     ).run()
 }

@@ -96,8 +96,53 @@ struct RowsBuilder {
                     accessibilityLabel: "Add a set to \(card.name)", action: .addSet(slot: card.slot, role: .working))
             },
             isFinished: isFinished,
-            summary: isFinished ? summary(block, title: title) : nil
+            summary: isFinished ? summary(block, title: title) : nil,
+            offers: slots.compactMap { progressionOffer(slot: $0, isGroup: isGroup) }
         )
+    }
+
+    // MARK: - The progression offer
+
+    /// The offer for one exercise (DESIGN §5.3), until a working set of it
+    /// is done today: ready to go up with its reasons and two answers, or
+    /// the answer given and Undo.
+    func progressionOffer(slot key: String, isGroup: Bool) -> RowsProgressionOffer? {
+        guard p.settings.asksBeforeGoingUp,
+            !state.orderedRows(inSlot: key).contains(where: { $0.role == .working && $0.isCompleted })
+        else { return nil }
+        let name = p.exerciseName(state.slot(key)?.exercise ?? ExerciseID(""))
+        func titled(_ text: String) -> String { isGroup ? "\(name): \(text.lowercasedFirst)" : text }
+        let undo = RowsButton(
+            title: "Undo", accessibilityLabel: "Undo, \(name)", action: .answerProgression(slot: key, answer: nil))
+        let check = evaluator.progressionCheck(slot: key)
+        switch state.progressionAnswer(ofSlot: key) {
+        case let .up(mass)?:
+            return RowsProgressionOffer(
+                slot: key, state: .goingUp, title: titled("Going up to \(Format.mass(mass))"), detail: nil, accept: nil,
+                stay: nil, undo: undo)
+        case .stay?:
+            return RowsProgressionOffer(
+                slot: key, state: .staying, title: titled(check.map { "Staying at \($0.loadText)" } ?? "Staying at the same load"),
+                detail: nil, accept: nil, stay: nil, undo: undo)
+        case nil:
+            guard let check, let exercise = state.exercise(ofSlot: key) else { return nil }
+            let unit = evaluator.config(exercise).unit
+            let reached = check.topReps.map { "reached \($0) reps" } ?? "reached the top of its range"
+            let left =
+                check.plannedLeft > 0
+                ? ", with \(Format.number(check.plannedLeft)) or more left" + (check.assumedEffort ? " (as planned)" : "")
+                : ""
+            return RowsProgressionOffer(
+                slot: key, state: .offered, title: titled("Ready to go up"),
+                detail: "Last \(ProgressionOffer.sessions) sessions: every working set \(reached) at \(check.loadText)\(left).",
+                accept: RowsButton(
+                    title: "Use \(check.nextText)", accessibilityLabel: "\(name), go up to \(check.nextText)",
+                    action: .answerProgression(slot: key, answer: .up(Mass(suggested: check.next, unit: unit)))),
+                stay: RowsButton(
+                    title: "Stay at \(check.loadText)", accessibilityLabel: "\(name), stay at \(check.loadText)",
+                    action: .answerProgression(slot: key, answer: .stay)),
+                undo: nil)
+        }
     }
 
     func isWarmup(_ unit: [RowID]) -> Bool {

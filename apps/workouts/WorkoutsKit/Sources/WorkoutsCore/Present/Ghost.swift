@@ -48,6 +48,8 @@ final class SessionEvaluator {
     let calendar: Calendar
     /// Today's body mass in kilograms.
     let bodyMass: Double?
+    /// The owner decides when a load goes up (DESIGN §5.3, the progression offer).
+    let asksBeforeGoingUp: Bool
 
     private var configs: [ExerciseID: ExerciseConfig] = [:]
     private var pasts: [ExerciseID: [PastSession]] = [:]
@@ -55,13 +57,37 @@ final class SessionEvaluator {
     private var previouses: [RowID: PreviousSet?] = [:]
     private var lastTimes: [ExerciseID: ExerciseHistory?] = [:]
     private var ghosts: [RowID: GhostValues] = [:]
+    private var checks: [String: ProgressionCheck?] = [:]
 
-    init(state: SessionState, history: HistoryIndex, now: Date, calendar: Calendar) {
+    init(state: SessionState, history: HistoryIndex, now: Date, calendar: Calendar, asksBeforeGoingUp: Bool = false) {
         self.state = state
         self.history = history
         self.now = now
         self.calendar = calendar
+        self.asksBeforeGoingUp = asksBeforeGoingUp
         bodyMass = state.session.bodyMass.map(SuggestionInputs.kilograms)
+    }
+
+    // MARK: - The progression offer
+
+    /// Whether the history rule may raise the slot's load on its own, or
+    /// waits for the owner's answer to the offer (DESIGN §5.3).
+    func progressionGate(slot: String, exercise: Exercise) -> ProgressionGate {
+        guard asksBeforeGoingUp else { return .automatic }
+        guard case let .up(mass)? = state.progressionAnswer(ofSlot: slot) else { return .ask(accepted: nil) }
+        return .ask(accepted: SuggestionInputs.convert(mass, to: config(exercise).unit))
+    }
+
+    /// Whether the slot's exercise is ready to go up: never in a deload
+    /// session, nor while the owner lets loads rise on their own.
+    func progressionCheck(slot: String) -> ProgressionCheck? {
+        if let cached = checks[slot] { return cached }
+        var result: ProgressionCheck?
+        if asksBeforeGoingUp, state.session.deload != true, let exercise = state.exercise(ofSlot: slot) {
+            result = ProgressionOffer.check(history: past(exercise), exercise: config(exercise), now: now, calendar: calendar)
+        }
+        checks[slot] = result
+        return result
     }
 
     // MARK: - Inputs
@@ -269,7 +295,8 @@ final class SessionEvaluator {
             }
         return suggestNext(
             pending: built.0, exercise: built.1, today: sets, history: past(exercise),
-            bodyMass: bodyMass, now: now, calendar: calendar)
+            bodyMass: bodyMass, now: now, calendar: calendar,
+            progression: progressionGate(slot: row.slot, exercise: exercise))
     }
 
     /// The stop text of a myo, myo-match or rest-pause chain that has ended
@@ -371,9 +398,9 @@ final class SessionEvaluator {
 /// The suggestion engine's entry point under a name no member shadows.
 private func suggestNext(
     pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
-    bodyMass: Double?, now: Date, calendar: Calendar
+    bodyMass: Double?, now: Date, calendar: Calendar, progression: ProgressionGate
 ) -> Suggestion? {
     suggest(
         pending: pending, exercise: exercise, today: today, history: history, bodyMass: bodyMass, now: now,
-        calendar: calendar)
+        calendar: calendar, progression: progression)
 }

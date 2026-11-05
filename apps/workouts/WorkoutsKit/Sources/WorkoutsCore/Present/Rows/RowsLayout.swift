@@ -61,10 +61,14 @@ public struct RowsBlock: Codable, Equatable, Sendable, Identifiable {
     public var isFinished: Bool
     /// What a finished block's line shows; nil until the block is finished.
     public var summary: RowsBlockSummary?
+    /// The progression offer of each member ready to go up (DESIGN §5.3),
+    /// above the block's lines until a working set of it is done.
+    public var offers: [RowsProgressionOffer]
 
     public init(
         id: String, slots: [String], group: String?, title: String, subtitle: String?,
-        items: [RowsItem], addSets: [RowsButton], isFinished: Bool, summary: RowsBlockSummary?
+        items: [RowsItem], addSets: [RowsButton], isFinished: Bool, summary: RowsBlockSummary?,
+        offers: [RowsProgressionOffer] = []
     ) {
         self.id = id
         self.slots = slots
@@ -75,6 +79,7 @@ public struct RowsBlock: Codable, Equatable, Sendable, Identifiable {
         self.addSets = addSets
         self.isFinished = isFinished
         self.summary = summary
+        self.offers = offers
     }
 
     /// A set row of this block wherever it sits.
@@ -438,6 +443,8 @@ public enum RowsAction: Codable, Equatable, Sendable {
     /// `.adjustRest(seconds)`: −15 and +15.
     case adjustRest(Seconds)
     case skipRest
+    /// The progression offer's Use or Stay; nil takes the answer back.
+    case answerProgression(slot: String, answer: ProgressionAnswer?)
 }
 
 extension RowsAction {
@@ -608,6 +615,43 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
         self.primary = primary
         self.timerStartedAt = timerStartedAt
         self.sentence = sentence
+    }
+}
+
+/// The progression offer on an exercise (DESIGN §5.3): ready to go up, why,
+/// and the owner's two answers; once answered, what was chosen and Undo.
+public struct RowsProgressionOffer: Codable, Equatable, Sendable, Identifiable {
+    public enum State: String, Codable, Equatable, Sendable {
+        case offered, goingUp, staying
+    }
+
+    public var slot: String
+    public var state: State
+    /// `Ready to go up`, `Going up to 107.5 kg`, `Staying at 105 kg`; in a
+    /// group after the exercise's name.
+    public var title: String
+    /// Why: `Last 2 sessions: every working set reached 12 reps at 105 kg,
+    /// with 2 or more left.`; nil once answered.
+    public var detail: String?
+    /// `Use 107.5 kg`.
+    public var accept: RowsButton?
+    /// `Stay at 105 kg`.
+    public var stay: RowsButton?
+    /// `Undo`, once answered: the offer again.
+    public var undo: RowsButton?
+    public var id: String { slot }
+
+    public init(
+        slot: String, state: State, title: String, detail: String?, accept: RowsButton?, stay: RowsButton?,
+        undo: RowsButton?
+    ) {
+        self.slot = slot
+        self.state = state
+        self.title = title
+        self.detail = detail
+        self.accept = accept
+        self.stay = stay
+        self.undo = undo
     }
 }
 

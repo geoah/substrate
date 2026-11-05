@@ -16,6 +16,9 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
     public var sessionLayout: SessionLayout = .rows
     /// Used at Start when Apple Health has no body mass (§9.5).
     public var typedBodyMass: Mass?
+    /// The progression offer asks before a load goes up (§5.3); off, the
+    /// suggestion raises it on its own, as 03 §11.3 does.
+    public var asksBeforeGoingUp = true
 
     public init() {}
 
@@ -37,7 +40,7 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
     public var sessionPresenter: PresenterSettings {
         PresenterSettings(
             calendar: .current, defaultUnit: defaultUnit, countWarmupsInVolume: countWarmupsInVolume,
-            prefillsRPE: sessionLayout == .rows)
+            prefillsRPE: sessionLayout == .rows, asksBeforeGoingUp: asksBeforeGoingUp)
     }
 
     // MARK: - Storage
@@ -52,6 +55,7 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
         public static let keepAwake = "workouts.keepAwake"
         public static let sessionLayout = "workouts.sessionLayout"
         public static let bodyMass = "workouts.bodyMass"
+        public static let asksBeforeGoingUp = "workouts.asksBeforeGoingUp"
     }
 
     /// The stored settings; a key never written keeps its default.
@@ -66,6 +70,7 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
         settings.countWarmupsInVolume = defaults.object(forKey: Key.countWarmupsInVolume) as? Bool ?? false
         settings.supersetAutoScroll = defaults.object(forKey: Key.supersetAutoScroll) as? Bool ?? true
         settings.keepAwake = defaults.object(forKey: Key.keepAwake) as? Bool ?? true
+        settings.asksBeforeGoingUp = defaults.object(forKey: Key.asksBeforeGoingUp) as? Bool ?? true
         if let raw = defaults.string(forKey: Key.sessionLayout), let layout = SessionLayout(rawValue: raw) {
             settings.sessionLayout = layout
         }
@@ -81,6 +86,7 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
         defaults.set(countWarmupsInVolume, forKey: Key.countWarmupsInVolume)
         defaults.set(supersetAutoScroll, forKey: Key.supersetAutoScroll)
         defaults.set(keepAwake, forKey: Key.keepAwake)
+        defaults.set(asksBeforeGoingUp, forKey: Key.asksBeforeGoingUp)
         defaults.set(sessionLayout.rawValue, forKey: Key.sessionLayout)
         if let typedBodyMass {
             defaults.set(try? JSONEncoder().encode(typedBodyMass), forKey: Key.bodyMass)

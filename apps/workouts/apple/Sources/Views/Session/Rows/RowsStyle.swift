@@ -300,6 +300,7 @@ extension RowsAction {
         case let .cancelTimedSet(row): .cancelTimedSet(row)
         case let .adjustRest(seconds): .adjustRest(seconds)
         case .skipRest: .skipRest
+        case let .answerProgression(slot, answer): .answerProgression(slot: slot, answer: answer)
         }
     }
 

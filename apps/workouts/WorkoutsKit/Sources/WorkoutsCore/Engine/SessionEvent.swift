@@ -63,6 +63,8 @@ public enum SessionEvent: Codable, Equatable, Sendable {
     case finish(Finish)
     /// The controller deletes the journal after it applies.
     case discard
+    /// The progression offer's answer for a slot; nil takes it back.
+    case answerProgression(slot: String, answer: ProgressionAnswer?)
 
     /// Whether the event changes a property of the session record, so raises
     /// its revision (§4.2's right-hand column, §4.12).
@@ -72,7 +74,8 @@ public enum SessionEvent: Codable, Equatable, Sendable {
             .ungroupExercise, .setGroup, .setSlotRest, .setNote, .pauseClock, .resumeClock, .finish:
             true
         case .touchRow, .editSet, .completeSet, .uncompleteSet, .addSet, .removeSet, .restoreSet, .changeSetKind, .setRowRest,
-            .startRest, .adjustRest, .skipRest, .startTimedSet, .stopTimedSet, .cancelTimedSet, .discard:
+            .startRest, .adjustRest, .skipRest, .startTimedSet, .stopTimedSet, .cancelTimedSet, .discard,
+            .answerProgression:
             false
         }
     }
