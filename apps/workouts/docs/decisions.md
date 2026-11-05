@@ -672,6 +672,68 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   stay two and an import again, in any order, finds its own. Body measurements come in as
   `substrate.reamde.dev/training/bodymeasurement` (package 5, T7).
 
+## Effort and progression (owner, 2026-11-05)
+
+The owner passed on another agent's suggestions for better, more flexible suggestions and
+asked for them to be accommodated, adding: "removing the reps in reserve and replacing them
+with reps left will also improve the UI, as it's just the single number that we can now
+have like + similar to the KG and things like that, and the other option should be just like
+toggles that we can toggle or like drop downs next to them". The proposal, what each
+suggestion changes and in what order, is
+[design/effort-and-progression.md](design/effort-and-progression.md); Phase 1 is below.
+
+### P1. Effort is said as reps left, a number with − and +
+
+- **Decided by** the owner, 2026-11-05.
+- **What:** the RPE strip (6 to 10 and ½) goes; the open set gets reps left built like the
+  load and the reps, 0 to 4+, with the plan's value pre-filled hollow. Every surface says
+  `2 left` where it said `@ 8`. The value stays `set.rpe` on the RIR-based scale, where
+  RPE = 10 − reps left exactly, so no reader changes; writing `set.rir` instead was set aside
+  because every reader would then read two fields for one number.
+- **Source:** owner, 2026-11-05; [DESIGN.md §4.14](../DESIGN.md#414-rpe-provenance-and-the-pre-fill).
+
+### P2. Why a set ended is a menu beside reps left, and a field of its own
+
+- **Decided by** the owner ("toggles … or drop downs next to them"), the values by the lead.
+- **What:** `set.stopReason` (training 6): `fatigue`, `technique`, `pain`, absent when the set
+  ended at the plan's reps or nobody said. Kept apart from `reachedFailure`. A technique or
+  pain stop is no evidence for going up, and the coach reads `pain` by its traffic light.
+- **Source:** owner, 2026-11-05; the other agent's "Actual effort logging".
+
+### P3. A load goes up when the owner says so
+
+- **Decided by** the lead, from the other agent's "Progression suggestions"; open to the owner.
+- **What:** two sessions with every working set at the top of its range and at least the
+  planned reps left offer the next load, with the reasons, Use and Stay. Until then the
+  history rule keeps the load at the top of the range instead of raising it on its own.
+  "Ask before going up a load" in Settings, on by default, turns the old rule back on.
+- **Why:** the old rule raised a load after one easy-looking session, and a load nobody chose
+  appeared; the offer makes progressive overload a decision with its reason shown.
+- **Source:** [DESIGN.md §5.3](../DESIGN.md#53-the-apps-rules-around-03).
+
+### P4. A group of warm-ups runs as a circuit
+
+- **Decided by** the lead, from the other agent's "Warm-up-aware supersets".
+- **What:** a group whose members hold warm-ups alone runs them in rounds, with the group's
+  transitions and round rest (absent, the warm-up rest); a group that mixes keeps every
+  member's preparation sets before round 1. The coach may now group warm-ups.
+- **Source:** [DESIGN.md §4.6](../DESIGN.md#46-up-next).
+
+### P5. A slot has a cue, beside the set being done
+
+- **Decided by** the lead, from the other agent's "Exercise-specific cues".
+- **What:** `routine.slots[].cue` (training 6), one short line shown under the open set's
+  title and on the plan; the slot's notes stay the longer rationale, in Markdown, folded.
+- **Source:** [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
+### P6. The session says when it should end
+
+- **Decided by** the lead, from the other agent's "Flexible rest and time estimates".
+- **What:** "ends about 11:42" under the session's length, from the pending sets' working
+  time (measured today) and the rests the plan gives. A finish time rather than a countdown,
+  so it stays right while nothing changes.
+- **Source:** [DESIGN.md §4.15](../DESIGN.md#415-time-left).
+
 ## Open questions
 
 ### Open since #1100

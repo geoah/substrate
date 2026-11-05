@@ -355,8 +355,7 @@ data:
         cue: Easy pace, long strokes
         notes: >-
           A warm-up circuit with the bird dog, two rounds: row 250 m at an
-          easy pace, then the bird dog. The app keeps your time with the
-          distance.
+          easy pace, then the bird dog. The app keeps your time with the distance.
         sets:
           - key: w1
             role: warmup
@@ -425,8 +424,8 @@ data:
         notes: >-
           Each arm has its own plates, so the load is per side. Straight sets
           of 8 to 12 with 2 to 3 reps left, lowered over three seconds (tempo
-          3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set:
-          two drops, each 5 kg a side lighter, of 6 reps each.
+          3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop
+          set: two drops, each 5 kg a side lighter, of 6 reps each.
         sets:
           - key: s1
             load:
@@ -490,8 +489,8 @@ data:
         exercise: substrate.reamde.dev/training/exercise/push-up
         group: a
         notes: >-
-          A2, your body weight: stop round 1 with two to three reps left, and
-          do round 2 for as many reps as possible (AMRAP).
+          A2, your body weight: stop round 1 with two to three reps left,
+          and do round 2 for as many reps as possible (AMRAP).
         sets:
           - key: s1
             termination: rirstop
@@ -582,8 +581,8 @@ data:
         exercise: substrate.reamde.dev/training/exercise/triceps-pushdown
         setRest: PT1M30S
         notes: >-
-          A cluster set (4 reps, 15 s, three more clusters, two reps left), then
-          a last set to failure.
+          A cluster set (4 reps, 15 s, three more clusters, two reps left),
+          then a last set to failure.
         sets:
           - key: s1
             structure: cluster

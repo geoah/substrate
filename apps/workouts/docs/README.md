@@ -62,6 +62,10 @@ for this repository; the text is as written.
 
 ### Design
 
+- [design/effort-and-progression.md](design/effort-and-progression.md): the proposal of
+  2026-11-05, another agent's seven suggestions against what the app held, and what each
+  changes: reps left, why a set ended, the progression offer, warm-up circuits, cues and the
+  time left in Phase 1; check-ins, constraints and programme history after it.
 - [design/README.md](design/README.md): the six session-screen options, how Rows was chosen,
   the tap counts and the comparison page.
 - [A. Table](design/table.md), the first build's layout; [B. Big type](design/large-text.md),
