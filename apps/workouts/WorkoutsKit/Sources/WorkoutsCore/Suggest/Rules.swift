@@ -70,7 +70,9 @@ struct SuggestRules: Sendable {
             return inSession(latest.set, ordinal: latest.ordinal)
         }
         let reference = evidence.reference(ordinal: pending.ordinal, timed: false)
-        if case let .ask(accepted?) = progression {
+        // The new load is the top sets'; a back-off set backs off from its
+        // parent once that is done, and from history until then.
+        if case let .ask(accepted?) = progression, target.dropPercent == nil, target.dropStep == nil {
             return goingUp(to: accepted, from: reference)
         }
         if let reference {
