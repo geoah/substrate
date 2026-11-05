@@ -134,7 +134,8 @@ public enum Format {
     /// One set as text (§4.13): `35 kg × 13`, reps only `× 15`, `BW × 10`;
     /// a timed set `1:02`, with a load `10 kg for 1:02`; a distance `40 m`,
     /// with a load `20 kg for 40 m`; a distance and a time `500 m in 2:05`.
-    /// With `rpe`, a logged RPE follows as ` @ 9.5` (PREVIOUS and history).
+    /// With `rpe`, a logged effort follows as ` · 0–1 left`, or ` · hard` on a
+    /// hold or a distance (PREVIOUS and history).
     /// `repsHint` writes the reps as a hint, `≈15` (a `rirstop` set, §5.3).
     public static func set(
         _ values: SetValues, measurement: MeasurementType, rpe showRPE: Bool = false,
@@ -181,9 +182,16 @@ public enum Format {
             }
         }
         if showRPE, let rpe = values.rpe {
-            text += (text.isEmpty ? "" : " \u{00B7} ") + repsLeft(rpe)
+            text += (text.isEmpty ? "" : " \u{00B7} ") + effort(rpe, measurement: measurement)
         }
         return text
+    }
+
+    /// A set's effort as its measurement says it: reps left where reps are
+    /// counted (`2 left`); on a hold or a distance, where reps mean nothing,
+    /// the scale's word (`hard`).
+    public static func effort(_ rpe: Decimal, measurement: MeasurementType) -> String {
+        measurement.recordsReps ? repsLeft(rpe) : RPEScaleText.headline(rpe)?.lowercased() ?? repsLeft(rpe)
     }
 
     // MARK: - Reps left

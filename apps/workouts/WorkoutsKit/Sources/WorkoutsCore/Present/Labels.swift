@@ -256,21 +256,23 @@ public enum RPEScaleText {
 
 /// Why a set ended, in words (`set.stopReason`).
 public enum StopReasonText {
-    /// `Muscles gave out`, `Form broke down`, `Pain or discomfort`.
+    /// `Muscular fatigue`, `Form broke down`, `Pain or discomfort`, `Other reason`.
     public static func title(_ reason: StopReason) -> String {
         switch reason {
-        case .fatigue: "Muscles gave out"
+        case .fatigue: "Muscular fatigue"
         case .technique: "Form broke down"
         case .pain: "Pain or discomfort"
+        case .other: "Other reason"
         }
     }
 
-    /// The word a chip and a logged line show: `Fatigue`, `Form`, `Pain`.
+    /// The word a chip and a logged line show: `Fatigue`, `Form`, `Pain`, `Other`.
     public static func short(_ reason: StopReason) -> String {
         switch reason {
         case .fatigue: "Fatigue"
         case .technique: "Form"
         case .pain: "Pain"
+        case .other: "Other"
         }
     }
 }

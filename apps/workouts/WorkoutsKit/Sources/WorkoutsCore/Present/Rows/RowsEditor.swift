@@ -320,6 +320,9 @@ public struct RowsEffort: Codable, Equatable, Sendable {
     public var accessibilityLabel: String
     /// `2, planned, not rated yet`, `1`, `not rated`.
     public var accessibilityValue: String
+    /// A hold or a distance, where reps mean nothing: the value is the
+    /// scale's word (`Hard`) and the steps say Easier and Harder.
+    public var saysWords: Bool = false
 
     /// Where the reset chip goes.
     public enum Back: Codable, Equatable, Sendable {
@@ -356,14 +359,30 @@ public struct RowsEffort: Codable, Equatable, Sendable {
     /// The most reps left the control says: 4 reads `4+`.
     public static let most: Decimal = 4
 
-    /// `−1`: one rep left fewer, rated.
+    /// `−1`: one rep left fewer, rated; in words, `Easier`, a step down the scale.
     public var minus: RowsStep? {
-        fewer.map { RowsStep(title: "\u{2212}1", accessibilityLabel: "1 rep left fewer", patch: .enteringRPE($0)) }
+        guard !saysWords else { return more.map { RowsStep(title: "Easier", accessibilityLabel: "Easier", patch: .enteringRPE($0)) } }
+        return fewer.map { RowsStep(title: "\u{2212}1", accessibilityLabel: "1 rep left fewer", patch: .enteringRPE($0)) }
     }
 
-    /// `+1`: one rep left more, rated.
+    /// `+1`: one rep left more, rated; in words, `Harder`, a step up the scale.
     public var plus: RowsStep? {
-        more.map { RowsStep(title: "+1", accessibilityLabel: "1 rep left more", patch: .enteringRPE($0)) }
+        guard !saysWords else { return fewer.map { RowsStep(title: "Harder", accessibilityLabel: "Harder", patch: .enteringRPE($0)) } }
+        return more.map { RowsStep(title: "+1", accessibilityLabel: "1 rep left more", patch: .enteringRPE($0)) }
+    }
+
+    /// Clear: no value, rated or pre-filled, until a step (a long press on
+    /// the number, the strip's tap on the filled stop before it); nil with
+    /// nothing shown.
+    public var clear: RowsStep? {
+        shown.map { _ in
+            RowsStep(title: saysWords ? "Clear the effort" : "Clear reps left", accessibilityLabel: "Clear", patch: .clearingRPE)
+        }
+    }
+
+    /// The value as the row says it: `2`, `4+`, or in words `Hard`.
+    public func text(_ rpe: Decimal) -> String {
+        saysWords ? RPEScaleText.headline(rpe) ?? Self.number(rpe) : Self.number(rpe)
     }
 
     /// A tap on the hollow number rates it as shown; nil once rated.
@@ -377,19 +396,21 @@ public struct RowsEffort: Codable, Equatable, Sendable {
         case nil:
             return nil
         case let .plan(rpe):
-            let text = Self.number(rpe)
-            return RowsReset(text: text, accessibilityLabel: "Back to \(text) left, as planned", patch: .restoringRPEPrefill)
+            let text = text(rpe)
+            let said = saysWords ? text : "\(text) left"
+            return RowsReset(text: text, accessibilityLabel: "Back to \(said), as planned", patch: .restoringRPEPrefill)
         case .clear:
-            return RowsReset(text: "clear", accessibilityLabel: "Clear reps left", patch: .clearingRPE)
+            return RowsReset(
+                text: "clear", accessibilityLabel: saysWords ? "Clear the effort" : "Clear reps left", patch: .clearingRPE)
         case let .logged(rpe, method):
-            let was = rpe.map(Self.number) ?? "empty"
+            let was = rpe.map(text) ?? "empty"
             let patch = rpe.map { SetValuesPatch(rpe: .set($0), rpeMethod: method) } ?? .clearingRPE
             return RowsReset(text: "was \(was)", accessibilityLabel: "Back to \(was), as logged", patch: patch)
         }
     }
 }
 
-/// Why the set ended, a menu beside reps left: three reasons and none.
+/// Why the set ended, a menu beside reps left: four reasons and none.
 public struct RowsStopMenu: Codable, Equatable, Sendable {
     /// `Why stop?` with none chosen, else the reason's word: `Form`, `Pain`.
     public var title: String
@@ -417,7 +438,7 @@ public struct RowsStopMenu: Codable, Equatable, Sendable {
         }
     }
 
-    /// `No reason`, which clears a chosen one; nil with none chosen.
+    /// `Clear reason`, which clears a chosen one; nil with none chosen.
     public var clear: SetValuesPatch? {
         selected == nil ? nil : .stopping(nil)
     }
@@ -426,7 +447,7 @@ public struct RowsStopMenu: Codable, Equatable, Sendable {
 /// One reason in the stop menu.
 public struct RowsStopOption: Codable, Equatable, Sendable, Identifiable {
     public var reason: StopReason
-    /// `Muscles gave out`, `Form broke down`, `Pain or discomfort`.
+    /// `Muscular fatigue`, `Form broke down`, `Pain or discomfort`, `Other reason`.
     public var title: String
     public var isSelected: Bool
     /// The reason chosen; on the chosen one, no reason.
@@ -624,12 +645,12 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         case .fix:
             let text = text(commit ?? shown)
             primary = RowsButton(
-                title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(shownEffort),
+                title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(shownEffort, measurement: measurement),
                 action: .edit(row, SetValuesPatch()), isEnabled: canCommit)
             delete = RowsButton(title: "Delete set", accessibilityLabel: "Delete \(spoken)", action: .removeSet(row))
         case .log:
             let text = text(commit ?? shown)
-            let logTitle = RowsText.logTitle(prefix: logPrefix, values: text, rpe: shownEffort)
+            let logTitle = RowsText.logTitle(prefix: logPrefix, values: text, rpe: shownEffort, measurement: measurement)
             if timer != nil, measurement.hasTimer {
                 if isRunning {
                     primary = RowsButton(
@@ -839,29 +860,35 @@ extension RowsEditorSource {
                 back = .logged(baseline.rpe, baseline.rpeMethod)
             }
         }
+        let words = !measurement.recordsReps
+        func said(_ rpe: Decimal) -> String {
+            words ? RPEScaleText.headline(rpe) ?? RowsEffort.number(rpe) : RowsEffort.number(rpe)
+        }
         let value: String =
             switch rpe {
             case .none: "not rated"
-            case let .prefill(x): "\(RowsEffort.number(x)), planned, not rated yet"
-            case let .value(x, .copied): "\(RowsEffort.number(x)), copied from last time, not rated yet"
-            case let .value(x, .prefilled): "\(RowsEffort.number(x)), as planned, not rated"
-            case let .value(x, _): RowsEffort.number(x)
+            case let .prefill(x): "\(said(x)), planned, not rated yet"
+            case let .value(x, .copied): "\(said(x)), copied from last time, not rated yet"
+            case let .value(x, .prefilled): "\(said(x)), as planned, not rated"
+            case let .value(x, _): said(x)
             }
-        return RowsEffort(
-            value: shown.map(RowsEffort.number),
+        var effort = RowsEffort(
+            value: shown.map(said),
             shown: shown,
-            unit: measurement.recordsReps ? "reps left" : "left",
+            unit: words ? "effort" : "reps left",
             isRated: isRated,
-            last: last.map { "last \(RowsEffort.number($0))" },
+            last: last.map { "last \(words ? said($0).lowercased() : said($0))" },
             back: back,
             fewer: rated(fewer),
             more: rated(more),
             isCollapsed: shown == nil && !rpeOpen,
-            addTitle: RowsEffort.addTitle,
+            addTitle: words ? "Effort" : RowsEffort.addTitle,
             stop: offersStop ? stopMenu(values.stopReason) : nil,
-            meaning: shown.map(RowsEffort.meaning),
-            accessibilityLabel: "\(spoken), reps left",
+            meaning: shown.map { words ? said($0) : RowsEffort.meaning($0) },
+            accessibilityLabel: "\(spoken), \(words ? "effort" : "reps left")",
             accessibilityValue: value)
+        effort.saysWords = words
+        return effort
     }
 
     func stopMenu(_ selected: StopReason?) -> RowsStopMenu {

@@ -51,7 +51,7 @@ public struct PerformedSet: Codable, Hashable, Sendable, Identifiable {
     public var rpeScale: RPEScale?
     public var reachedFailure: Bool?
     public var failedRepAttempted: Bool?
-    /// Why the set ended, where the lifter said (training 6).
+    /// Why the set ended, as the lifter reported it (training 6; `other` in 7).
     public var stopReason: StopReason?
     /// Ticked on its own, marked done at Finish, or imported.
     public var completionMethod: CompletionMethod?

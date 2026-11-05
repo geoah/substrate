@@ -47,4 +47,22 @@ struct EstimateTests {
         // what is left of the 2:00 rest.
         #expect(SessionEstimate.timeLeft(state, now: engineEpoch.addingTimeInterval(210)) == 120 + 30)
     }
+
+    @Test("a running hold counts what is left of its goal; a myo-rep set its mini-sets to come")
+    func holdsAndMiniSets() throws {
+        var hold = EngineScript(at: engineEpoch)
+        try hold.start(
+            EngineCatalog.routine([EngineCatalog.slot("p", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 60, durationMax: 60)])]),
+            exercises: EngineCatalog.all)
+        let running = try hold.send(.startTimedSet(row: try hold.row("p", 0), target: 60), at: engineEpoch)
+        #expect(SessionEstimate.timeLeft(running, now: engineEpoch.addingTimeInterval(20)) == 40)
+
+        var myo = EngineScript(at: engineEpoch)
+        let state = try myo.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("r", EngineCatalog.raise, [PlannedSet(key: "s1", structure: .myo, repsMin: 12, repsMax: 15, miniSets: 3)])
+            ]), exercises: EngineCatalog.all)
+        // The activation's 45 s, then three mini-sets of 15 s, each after its 15 s pause.
+        #expect(SessionEstimate.timeLeft(state, now: engineEpoch) == 45 + 3 * (15 + 15))
+    }
 }

@@ -75,7 +75,8 @@ public struct SessionState: Codable, Equatable, Sendable {
 public enum ProgressionAnswer: Codable, Equatable, Sendable {
     /// Go up to this load (the added load, or the assistance, in a bodyweight mode).
     case up(Mass)
-    /// Stay at the load: the suggestion holds it at the top of the range.
+    /// Keep the load: the suggestion holds it at the top of the range. Its
+    /// journal spelling stays `stay`.
     case stay
 }
 

@@ -20,7 +20,7 @@ public enum SessionEstimate {
         // Each row done in turn on a copy, so the rule reads the plan as it will stand.
         var done = state
         for (index, id) in pending.enumerated() {
-            total += work(id, in: state, measured: measured)
+            total += work(id, in: state, measured: measured, now: now) + miniSets(after: id, in: state)
             done.rows[id]?.performed = Performed(recordID: SetID("estimate"), completedAt: now, values: SetValues())
             done.lastCompleted = id
             if index < pending.count - 1 {
@@ -30,11 +30,16 @@ public enum SessionEstimate {
         return total
     }
 
-    /// A pending row's working time: a timed set's goal; else the median of
-    /// today's measured sets of its exercise, else of all of today's, else 45 s.
-    static func work(_ id: RowID, in state: SessionState, measured: [ExerciseID: [Seconds]]) -> Seconds {
+    /// A pending row's working time: a timed set's goal, or what is left of
+    /// it while it runs; else the median of today's measured sets of its
+    /// exercise, else of all of today's, else 45 s.
+    static func work(_ id: RowID, in state: SessionState, measured: [ExerciseID: [Seconds]], now: Date) -> Seconds {
         guard let row = state.rows[id] else { return defaultWork }
         let head = state.rows[row.headID] ?? row
+        if let countdown = state.countdown, countdown.timedRow == id {
+            guard let end = countdown.endsAt else { return defaultWork }
+            return max(0, Seconds(end.timeIntervalSince(now).rounded(.up)))
+        }
         if state.exercise(ofRow: id)?.measurement.isTimedHold == true {
             let target = row.target ?? head.target
             if let goal = target?.durationMax ?? target?.durationMin { return goal }
@@ -42,6 +47,18 @@ public enum SessionEstimate {
         let exercise = state.slot(row.slot)?.exercise
         let own = exercise.flatMap { measured[$0] } ?? []
         return median(own) ?? median(measured.values.flatMap { $0 }) ?? defaultWork
+    }
+
+    /// The mini-sets a myo-rep, myo-rep match or rest-pause head grows one at a
+    /// time after it, which no row holds yet: the planned count (else 3),
+    /// each a short bout and its pause.
+    static func miniSets(after id: RowID, in state: SessionState) -> Seconds {
+        guard let row = state.rows[id], row.isHead, row.side == nil, row.structure.growsOneAtATime,
+            state.chain(of: id).count == 1
+        else { return 0 }
+        let count = state.plannedSet(ofRow: id)?.miniSets ?? row.target?.miniSets ?? 3
+        let pause = row.intraSetPause ?? RestDefaults.intraSetPause(row.structure)
+        return count * (15 + pause)
     }
 
     /// Today's working times by exercise: a timed set's start to its end;

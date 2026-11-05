@@ -187,8 +187,8 @@ struct RowsOpenSetTests {
         // Why the set ended, beside it: nothing chosen yet.
         let stop = try #require(effort.stop)
         #expect(stop.title == "Why stop?" && stop.selected == nil && stop.clear == nil)
-        #expect(stop.options.map(\.title) == ["Muscles gave out", "Form broke down", "Pain or discomfort"])
-        #expect(stop.options.map(\.patch) == [.stopping(.fatigue), .stopping(.technique), .stopping(.pain)])
+        #expect(stop.options.map(\.title) == ["Muscular fatigue", "Form broke down", "Pain or discomfort", "Other reason"])
+        #expect(stop.options.map(\.patch) == [.stopping(.fatigue), .stopping(.technique), .stopping(.pain), .stopping(.other)])
 
         // The Log button names exactly what the tick commits.
         #expect(editor.primary == RowsButton(title: "Log 105 kg × 10 \u{00B7} 2 left", action: .tick(set2.id)))
@@ -289,7 +289,7 @@ struct RowsOpenSetTests {
         #expect(top.primary.title == "Log 105 kg × 10 \u{00B7} 4 left")
     }
 
-    @Test("Why stop: a reason is chosen, shown on the chip and committed; a second tap or No reason clears it")
+    @Test("Why stop: a reason is chosen, shown on the chip and committed; a second tap or Clear reason clears it")
     func stopReason() throws {
         var session = try RowsSession.dayOne()
         try session.log("leg-press", 0, at: 60)
@@ -872,7 +872,10 @@ struct RowsWordsTests {
         #expect(
             RowsText.compact(SetValues(load: .kg(10), duration: 55), measurement: .weightduration, perSide: false)
                 == "10 for 0:55")
-        #expect(RowsText.logTitle(prefix: "Log A2,", values: "", rpe: nil) == "Log A2")
+        #expect(RowsText.logTitle(prefix: "Log A2,", values: "", rpe: nil, measurement: .weightreps) == "Log A2")
+        // A hold's effort is a word: reps mean nothing there.
+        #expect(RowsText.logTitle(prefix: "Log", values: "1:07", rpe: 8, measurement: .duration) == "Log 1:07 \u{00B7} hard")
+        #expect(Format.set(SetValues(duration: 62, rpe: 9), measurement: .duration, rpe: true) == "1:02 \u{00B7} very hard")
         #expect(RowsText.spokenDuration(62) == "1 minute 2 seconds" && RowsText.spokenDuration(120) == "2 minutes")
     }
 

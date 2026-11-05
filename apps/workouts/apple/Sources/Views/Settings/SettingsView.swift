@@ -69,12 +69,12 @@ struct SettingsView: View {
                     Toggle("Keep the screen awake", isOn: $app.settings.keepAwake)
                     Toggle("Count warm-ups in volume", isOn: $app.settings.countWarmupsInVolume)
                     Toggle("Scroll to the next exercise in a superset", isOn: $app.settings.supersetAutoScroll)
-                    Toggle("Ask before going up a load", isOn: $app.settings.asksBeforeGoingUp)
+                    Toggle("Confirm increases from earlier sessions", isOn: $app.settings.asksBeforeGoingUp)
                 } header: {
                     Text("Session")
                 } footer: {
                     Text(
-                        "Rows shows each set as a line, with the set to do now open and its planned reps left filled in. Table shows the grid. With Ask before going up a load, an exercise whose working sets reached the top of their range two sessions running offers the next load, and the suggestions stay at the top of the range until you take it. A session in progress keeps the rest and volume settings it started with."
+                        "Rows shows each set as a line, with the set to do now open and its planned reps left filled in. Table shows the grid. With Confirm increases from earlier sessions, a load the suggestion would raise from your last sessions is offered first, with the reason, and stays where it was until you take it; increases from today's own sets stay automatic. A session in progress keeps the rest and volume settings it started with."
                     )
                 }
 

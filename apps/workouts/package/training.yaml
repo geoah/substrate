@@ -52,10 +52,11 @@ data:
   # from each repository's own authority to substrate.reamde.dev, published
   # (decision record 0214). 5: library, what the app has seeded whole, and
   # bodymeasurement, a day's body measurements. 6: a set's stopReason, and a
-  # routine slot's cue. Each change ships as the next version, additive only;
+  # routine slot's cue. 7: stopReason's `other`, and the two said as the
+  # review of the proposal asked. Each change ships as the next version, additive only;
   # a changed closure under an unmoved version is refused by
   # `workouts-package.py --check` and never published.
-  version: 6
+  version: 7
 ---
 # ---- the bundle document -----------------------------------------------------
 #

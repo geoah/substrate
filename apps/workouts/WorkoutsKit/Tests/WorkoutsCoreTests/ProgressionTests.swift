@@ -3,8 +3,8 @@ import Testing
 
 @testable import WorkoutsCore
 
-// The progression offer (DESIGN §5.3): when an exercise is ready to go up,
-// and how the suggestion holds a load or takes the owner's new one.
+// The progression offer (DESIGN §5.3): when an exercise offers a higher load
+// and why, and how the suggestion holds a load or takes the owner's new one.
 
 private let now = try! Date("2026-11-05T12:00:00Z", strategy: .iso8601)
 private let utc: Calendar = {
@@ -37,43 +37,59 @@ private func ready(_ change: (inout [PastSession]) -> Void = { _ in }) -> [PastS
     return history
 }
 
-private func check(_ history: [PastSession], _ exercise: ExerciseConfig = barbell) -> ProgressionCheck? {
-    ProgressionOffer.check(history: history, exercise: exercise, now: now, calendar: utc)
+private func check(
+    _ history: [PastSession], _ exercise: ExerciseConfig = barbell, plan target: Target03 = plan, planned: Int = 3
+) -> ProgressionCheck? {
+    ProgressionOffer.check(history: history, exercise: exercise, plan: target, planned: planned, now: now, calendar: utc)
 }
 
-@Suite("The progression offer", .timeLimit(.minutes(10)))
+@Suite("The progression offer's evidence", .timeLimit(.minutes(10)))
 struct ProgressionOfferTests {
-    @Test("two sessions at the top of the range at the planned reps left: one step up, said as planned")
-    func readyAsPlanned() throws {
+    @Test("two sessions at the top of today's range on today's targets: one step up; untouched effort said so")
+    func readyUnrated() throws {
         let offer = try #require(check(ready()))
         #expect(offer.load == 105 && offer.next == 107.5 && offer.loadText == "105 kg" && offer.nextText == "107.5 kg")
-        #expect(offer.topReps == 12 && offer.plannedLeft == 2 && offer.assumedEffort)
+        #expect(offer.topReps == 12 && offer.sets == 3 && offer.plannedLeft == 2 && offer.unrated)
+        #expect(offer.reason == "All 3 sets reached 12 reps at 105 kg in both sessions. Effort wasn't rated.")
     }
 
-    @Test("a rating counts when it left at least the planned reps, and fails when it left fewer")
+    @Test("rated at least the planned reps left: said so; fewer, or failure, rules it out")
     func ratings() {
-        let rated = ready { history in history[0].sets[2] = working(105, 12, rpe: 7.5, ordinal: 3) }
-        #expect(check(rated)?.assumedEffort == true)
         let allRated = [4, 9].map { days in session(daysAgo: days, (1 ... 3).map { working(105, 12, rpe: 8, ordinal: $0) }) }
-        #expect(check(allRated)?.assumedEffort == false)
-        let tooHard = ready { history in history[1].sets[1] = working(105, 12, rpe: 9, ordinal: 2) }
-        #expect(check(tooHard) == nil)
-        let failed = ready { history in history[0].sets[2] = working(105, 12, failure: true, ordinal: 3) }
-        #expect(check(failed) == nil)
+        #expect(check(allRated)?.unrated == false)
+        #expect(check(allRated)?.reason == "All 3 sets reached 12 reps at 105 kg in both sessions, with at least 2 reps left.")
+        #expect(check(ready { $0[1].sets[1] = working(105, 12, rpe: 9, ordinal: 2) }) == nil)
+        #expect(check(ready { $0[0].sets[2] = working(105, 12, failure: true, ordinal: 3) }) == nil)
+        // No effort in the plan: nothing to hold the effort to, and nothing said of it.
+        let open = Target03(repsMin: 8, repsMax: 12)
+        let unplanned = [4, 9].map { days in session(daysAgo: days, (1 ... 3).map { working(105, 12, target: open, ordinal: $0) }) }
+        #expect(check(unplanned, plan: open)?.reason == "All 3 sets reached 12 reps at 105 kg in both sessions.")
     }
 
-    @Test("not ready: a set short of the top, a form or pain stop, two loads, one session, a long gap")
+    @Test("not ready: a set short of the top, a limited stop, two loads, one session, a long gap")
     func notReady() {
         #expect(check(ready { $0[0].sets[1] = working(105, 11, ordinal: 2) }) == nil)
-        #expect(check(ready { $0[1].sets[0] = working(105, 12, stop: .technique, ordinal: 1) }) == nil)
-        #expect(check(ready { $0[0].sets[0] = working(105, 12, stop: .pain, ordinal: 1) }) == nil)
+        for reason in [StopReason.technique, .pain, .other] {
+            #expect(check(ready { $0[1].sets[0] = working(105, 12, stop: reason, ordinal: 1) }) == nil)
+        }
         #expect(check(ready { history in history[1].sets = (1 ... 3).map { working(100, 12, ordinal: $0) } }) == nil)
         #expect(check(Array(ready().prefix(1))) == nil)
         #expect(check(ready { $0[0].start = now.addingTimeInterval(-30 * 86400) }) == nil)
         #expect(check(ready { $0[1].start = $0[0].start.addingTimeInterval(-29 * 86400) }) == nil)
-        // A muscular stop is evidence, and an open top never is.
+        // Fatigue is a reason, and still evidence; an open top never is.
         #expect(check(ready { $0[0].sets[0] = working(105, 12, stop: .fatigue, ordinal: 1) }) != nil)
-        #expect(check(ready { $0[0].sets[0] = working(105, 12, target: Target03(repsMin: 8, openTop: true), ordinal: 1) }) == nil)
+        #expect(check(ready(), plan: Target03(repsMin: 8, openTop: true)) == nil)
+    }
+
+    @Test("comparable: today's range and effort, and as many sets as today plans")
+    func comparable() {
+        // Today aims at 10 to 15: last sessions' 8 to 12 is another prescription.
+        #expect(check(ready(), plan: Target03(repsMin: 10, repsMax: 15, rpe: 8)) == nil)
+        // A different effort target is another prescription too.
+        #expect(check(ready(), plan: Target03(repsMin: 8, repsMax: 12, rpe: 9)) == nil)
+        // Two sets done where today plans three: incomplete.
+        #expect(check(ready { $0[0].sets.removeLast() }) == nil)
+        #expect(check(ready { $0[0].sets.removeLast() }, planned: 2) != nil)
     }
 
     @Test("a lighter back-off set neither qualifies nor spoils the working load")
@@ -89,7 +105,7 @@ struct ProgressionOfferTests {
         #expect(check(ready(), ExerciseConfig(unit: .kg)) == nil)
         let assisted = ExerciseConfig(unit: .kg, mode: .bodyweightAssisted, base: 0, step: 5)
         let history = [4, 9].map { days in session(daysAgo: days, (1 ... 2).map { working(30, 12, ordinal: $0) }) }
-        let offer = try #require(check(history, assisted))
+        let offer = try #require(check(history, assisted, planned: 2))
         #expect(offer.load == 30 && offer.next == 25 && offer.nextText == "BW \u{2212} 25 kg")
     }
 }
@@ -119,6 +135,24 @@ struct ProgressionGateTests {
         #expect(suggestion.text == "Last time 100 kg × 12 with 4 left, top of range; try 100 kg × 12")
     }
 
+    @Test("a reference that ended for technique, pain or another reason gains no rep and raises no load")
+    func limitedHistory() throws {
+        for reason in [StopReason.technique, .pain, .other] {
+            let limited = [PastSession(start: now.addingTimeInterval(-4 * 86400), sets: [working(100, 12, rpe: 6, stop: reason, ordinal: 1)])]
+            let suggestion = try #require(
+                suggest(pending: pending, exercise: barbell, today: [], history: limited, bodyMass: nil, now: now, calendar: utc))
+            #expect(suggestion.load == 100 && suggestion.reason == .historyHold, "\(reason)")
+        }
+    }
+
+    @Test("today: a set that ended for form never raises the next one; muscular fatigue may")
+    func limitedToday() throws {
+        let form = try #require(run(.automatic, today: [working(100, 12, rpe: 6, stop: .technique, ordinal: 1)]))
+        #expect(form.load == 100 && form.reason == .sessionKeep)
+        let fatigue = try #require(run(.automatic, today: [working(100, 12, rpe: 6, stop: .fatigue, ordinal: 1)]))
+        #expect(fatigue.load ?? 0 > 100 && fatigue.reason == .sessionUp)
+    }
+
     @Test("taken: the new load at the bottom of the range, then today's sets lead")
     func goingUp() throws {
         let suggestion = try #require(run(.ask(accepted: 102.5)))
@@ -131,22 +165,56 @@ struct ProgressionGateTests {
 
 @Suite("The progression offer on the Rows layout", .timeLimit(.minutes(10)))
 struct ProgressionOfferRowsTests {
-    /// Two working sets of the press at 60 kg × 12, logged with the plan's 2 left untouched.
-    private func past(_ id: String, daysAgo days: Int) -> SessionRecords {
+    /// Two working sets of the press at 60 kg × 12, logged with the plan's 2
+    /// left untouched, unless `rpe` rates them.
+    private func past(
+        _ id: String, daysAgo days: Int, reps: Int = 12, rpe: Decimal = 8, method: EffortMethod = .prefilled,
+        deload: Bool = false
+    ) -> SessionRecords {
         let session = SessionID(id)
         let date = engineEpoch.addingTimeInterval(-Double(days) * 86400)
         let sets = (0 ..< 2).map { index in
             PerformedSet(
                 id: SetID("\(id)-\(index)"), at: date.addingTimeInterval(TimeInterval(60 * (index + 1))), session: session,
                 exercise: EngineCatalog.press.id, slot: "s", order: index + 1, ordinal: index + 1, loadMode: .external,
-                load: .kg(60), reps: 12, rpe: 8, rpeMethod: .prefilled,
+                load: .kg(60), reps: reps, rpe: rpe, rpeMethod: method,
                 target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
         }
         return SessionRecords(
             session: TrainingSession(
-                id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
+                id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished, deload: deload ? true : nil,
                 slots: [SessionSlot(key: "s", exercise: EngineCatalog.press.id)], timezone: "UTC"),
             sets: sets)
+    }
+
+    private func started() throws -> EngineScript {
+        var script = EngineScript(at: engineEpoch)
+        try script.start(
+            EngineCatalog.routine([EngineCatalog.slot("s", EngineCatalog.press, EngineCatalog.sets(2))]),
+            exercises: [EngineCatalog.press])
+        return script
+    }
+
+    private let asks = PresenterSettings(calendar: Progression.calendar, prefillsRPE: true, asksBeforeGoingUp: true)
+
+    @Test("one session the engine would go up from: the offer with the engine's reason, the load held")
+    func engineIncrease() throws {
+        let script = try started()
+        let history = HistoryIndex([past("a", daysAgo: 3, rpe: 6, method: .entered)])
+        let presentation = SessionPresenter.present(try script.current, history: history, settings: asks, now: engineEpoch)
+        let offer = try #require(presentation.rowsLayout.blocks.first?.offers.first)
+        #expect(offer.title == "Try a higher load?" && offer.detail == "Last time 60 kg × 12 with 4 left, top of range.")
+        #expect(offer.accept?.title == "Use 65 kg" && offer.stay?.title == "Keep 60 kg")
+        #expect(presentation.row(try script.row("s", 0))?.suggestion?.load == 60)
+    }
+
+    @Test("a deload among the two newest sessions starts the count again")
+    func deloadResets() throws {
+        let script = try started()
+        let history = HistoryIndex([past("a", daysAgo: 3, deload: true), past("b", daysAgo: 7), past("c", daysAgo: 10)])
+        let offer = SessionPresenter.present(try script.current, history: history, settings: asks, now: engineEpoch)
+            .rowsLayout.blocks.first?.offers.first
+        #expect(offer?.detail?.hasPrefix("Both sets") != true)
     }
 
     @Test("ready: the card with its reasons, the load held meanwhile; Use takes the new load until a set is done")
@@ -163,10 +231,10 @@ struct ProgressionOfferRowsTests {
         let first = try script.row("s", 0)
 
         let offer = try #require(try present().rowsLayout.blocks.first?.offers.first)
-        #expect(offer.state == .offered && offer.title == "Ready to go up" && offer.undo == nil)
-        #expect(offer.detail == "Last 2 sessions: every working set reached 12 reps at 60 kg, with 2 or more left (as planned).")
+        #expect(offer.state == .offered && offer.title == "Try a higher load?" && offer.undo == nil)
+        #expect(offer.detail == "Both sets reached 12 reps at 60 kg in both sessions. Effort wasn't rated.")
         #expect(offer.accept?.title == "Use 65 kg" && offer.accept?.action == .answerProgression(slot: "s", answer: .up(.kg(65))))
-        #expect(offer.stay?.title == "Stay at 60 kg" && offer.stay?.action == .answerProgression(slot: "s", answer: .stay))
+        #expect(offer.stay?.title == "Keep 60 kg" && offer.stay?.action == .answerProgression(slot: "s", answer: .stay))
         // Until the owner answers, the load holds at the top of the range.
         let held = try #require(try present().row(first)?.suggestion)
         #expect(held.reason == .historyHold && held.load == 60 && held.reps == 12)
@@ -202,7 +270,7 @@ struct ProgressionOfferRowsTests {
                 .rowsLayout.blocks.first?.offers.first
         }
         try script.send(.answerProgression(slot: "s", answer: .stay))
-        #expect(try offer()?.state == .staying && offer()?.title == "Staying at 60 kg")
+        #expect(try offer()?.state == .staying && offer()?.title == "Keeping 60 kg")
         try script.send(.answerProgression(slot: "s", answer: nil))
         #expect(try offer()?.state == .offered)
     }

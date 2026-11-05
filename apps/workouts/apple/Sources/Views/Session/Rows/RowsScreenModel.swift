@@ -137,7 +137,8 @@ final class RowsScreenModel {
     func step(_ patch: SetValuesPatch, in editor: RowsEditor, session: SessionModel) {
         apply(patch, row: editor.row, mode: editor.mode, session: session)
         if case let .set(rpe) = patch.rpe {
-            show(Flash(row: editor.row, text: RowsEffort.meaning(rpe), token: next()))
+            let text = editor.effort?.saysWords == true ? RPEScaleText.headline(rpe) ?? RowsEffort.meaning(rpe) : RowsEffort.meaning(rpe)
+            show(Flash(row: editor.row, text: text, token: next()))
         }
     }
 

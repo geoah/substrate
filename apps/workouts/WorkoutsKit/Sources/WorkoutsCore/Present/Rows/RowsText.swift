@@ -77,7 +77,7 @@ enum RowsText {
         case .shortdistanceweight:
             text = [number(values.load), values.distance.map(Format.length)].compactMap(\.self).joined(separator: " for ")
         }
-        if let rpe = values.rpe { text += (text.isEmpty ? "" : " \u{00B7} ") + Format.repsLeft(rpe) }
+        if let rpe = values.rpe { text += (text.isEmpty ? "" : " \u{00B7} ") + Format.effort(rpe, measurement: measurement) }
         return text
     }
 
@@ -139,22 +139,29 @@ enum RowsText {
         return column.spokenName(unit: unit)
     }
 
-    /// ` · 2 left`, or nothing.
-    static func effortSuffix(_ rpe: Decimal?) -> String {
-        rpe.map { " \u{00B7} \(Format.repsLeft($0))" } ?? ""
+    /// ` · 2 left` (` · hard` on a hold or a distance), or nothing.
+    static func effortSuffix(_ rpe: Decimal?, measurement: MeasurementType) -> String {
+        rpe.map { " \u{00B7} \(Format.effort($0, measurement: measurement))" } ?? ""
     }
 
     /// The Log button: `Log 110 kg × 8 · 2 left`, `Log warm-up 40 kg × 12`,
     /// `Log A2, 11 per side`, `Log mini-set 3, 3 reps`; `Log` alone with no values.
-    static func logTitle(prefix: String, values: String, rpe: Decimal?) -> String {
+    static func logTitle(prefix: String, values: String, rpe: Decimal?, measurement: MeasurementType) -> String {
         guard !values.isEmpty else {
             let bare = prefix.hasSuffix(",") ? String(prefix.dropLast()) : prefix
-            return bare + effortSuffix(rpe)
+            return bare + effortSuffix(rpe, measurement: measurement)
         }
-        return "\(prefix) \(values)\(effortSuffix(rpe))"
+        return "\(prefix) \(values)\(effortSuffix(rpe, measurement: measurement))"
     }
 
     // MARK: - Spoken
+
+    /// A set's effort said aloud: reps left where reps are counted, else the
+    /// scale's word (`hard effort`).
+    static func spokenEffort(_ rpe: Decimal, measurement: MeasurementType) -> String {
+        guard !measurement.recordsReps, let word = RPEScaleText.headline(rpe) else { return spokenRepsLeft(rpe) }
+        return word.hasSuffix("effort") ? word.lowercased() : "\(word.lowercased()) effort"
+    }
 
     /// `2 reps left`, `1 rep left`, `1 or 2 reps left`, `no reps left`.
     static func spokenRepsLeft(_ rpe: Decimal) -> String {

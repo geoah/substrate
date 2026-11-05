@@ -70,9 +70,10 @@ extension ExerciseConfig {
     }
 
     /// The e1RM of a usable, non-timed set with an effective load and `n ≤ 30`
-    /// (03 §10.6). `bodyMass` is in the exercise unit.
+    /// (03 §10.6). `bodyMass` is in the exercise unit. A set that ended for
+    /// technique, pain or another reason says nothing of capacity: none.
     func oneRepMax(of set: DoneSet, bodyMass: Double?) -> OneRepMaxEstimate? {
-        guard set.kind != .timed, isUsable(set), let reps = set.effectiveReps,
+        guard set.kind != .timed, isUsable(set), set.stopReason?.limitsEvidence != true, let reps = set.effectiveReps,
             let space = LoadSpace(exercise: self, bodyMass: bodyMass), space.isEffective
         else { return nil }
         let load = space.value(ofSetting: setting(of: set))
