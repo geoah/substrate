@@ -21,12 +21,20 @@
 //
 //   swift scripts/appstoreconnect.swift quiet <build number|all> <bundle-id>…
 //
-// Turns TestFlight's "notify testers" off for each app's build of that build
-// number, or for every build it has (`all`), so a build reaches the groups
-// that take every build without an email and a push to each tester. A build
-// shows in App Store Connect a while after its upload and is given to the
-// groups once processed: this waits for it (up to 20 minutes) and switches it
-// before that. One line per build switched.
+// Hands each app's build of that build number to its testers without an
+// email or a push to any of them. App Store Connect tells testers when a
+// build reaches their group with "notify testers" on, and turns it on for
+// every build; a group that takes every build (automatic distribution) gets
+// it the moment processing ends. So this, for every app at once, watches for
+// the build to show (every 5 seconds, for up to 40 minutes: a release starts
+// it before its first upload), turns notifying off while it is processing,
+// waits for processing to end (up to 45 minutes), then adds it to each
+// internal group that takes no build of its own (as rxtx.dev's
+// apps/apple/apps.yaml groups are made). A group that takes every build got
+// it by itself, and is named. With
+// SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY=1 notifying stays on, and the build is
+// handed over the same way. With `all`, it only turns notifying off for every
+// build each app has. One line per build.
 //
 // The key is SUBSTRATE_APPLE_ASC_KEY_PATH (the AuthKey_….p8),
 // SUBSTRATE_APPLE_ASC_KEY_ID and SUBSTRATE_APPLE_ASC_ISSUER_ID, as for
@@ -70,8 +78,6 @@ func token() -> String {
     return input + "." + base64URL(signature)
 }
 
-let bearer = token()
-
 /// One call; a status other than `expect` stops the run with Apple's answer.
 @discardableResult
 func call(_ method: String, _ path: String, query: [String: String] = [:], body: Any? = nil, expect: Int = 200) async throws -> [String: Any] {
@@ -79,7 +85,9 @@ func call(_ method: String, _ path: String, query: [String: String] = [:], body:
     if !query.isEmpty { url.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) } }
     var request = URLRequest(url: url.url!)
     request.httpMethod = method
-    request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    // Signed for each call: a token lives ten minutes, and a release waits
+    // longer than that for processing.
+    request.setValue("Bearer \(token())", forHTTPHeaderField: "Authorization")
     if let body {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -175,26 +183,70 @@ func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async t
 }
 
 func quiet(_ number: String, _ bundles: [String]) async throws {
-    for bundle in bundles {
-        let apps = rows(try await call("GET", "/v1/apps", query: ["filter[bundleId]": bundle, "fields[apps]": "bundleId"]))
-        guard let app = apps.first(where: { attributes($0)["bundleId"] as? String == bundle })?["id"] as? String else {
-            fail("App Store Connect has no record for \(bundle)")
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        for bundle in bundles {
+            group.addTask { try await quiet(number, bundle) }
         }
-        var query = ["filter[app]": app, "include": "buildBetaDetail", "fields[builds]": "version", "limit": "200"]
-        if number != "all" { query["filter[version]"] = number }
-        var details: [String] = []
-        for _ in 0 ..< 80 {
-            let answer = try await call("GET", "/v1/builds", query: query)
-            details = (answer["included"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
-            if !details.isEmpty || number == "all" { break }
-            try await Task.sleep(for: .seconds(15))
+        try await group.waitForAll()
+    }
+}
+
+func quiet(_ number: String, _ bundle: String) async throws {
+    let apps = rows(try await call("GET", "/v1/apps", query: ["filter[bundleId]": bundle, "fields[apps]": "bundleId"]))
+    guard let app = apps.first(where: { attributes($0)["bundleId"] as? String == bundle })?["id"] as? String else {
+        fail("App Store Connect has no record for \(bundle)")
+    }
+    var query = [
+        "filter[app]": app, "include": "buildBetaDetail", "fields[builds]": "version,processingState,buildBetaDetail", "limit": "200",
+    ]
+    if number != "all" { query["filter[version]"] = number }
+    func builds() async throws -> [String: Any] { try await call("GET", "/v1/builds", query: query) }
+
+    // Notifying goes off the moment the build shows, while it is processing.
+    let notify = ProcessInfo.processInfo.environment["SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY"] == "1" && number != "all"
+    var answer: [String: Any] = [:]
+    for _ in 0 ..< 480 {
+        answer = try await builds()
+        if !rows(answer).isEmpty || number == "all" { break }
+        try await Task.sleep(for: .seconds(5))
+    }
+    guard !rows(answer).isEmpty || number == "all" else { fail("\(bundle)'s build \(number) did not show in App Store Connect in 40 minutes") }
+    for detail in (answer["included"] as? [[String: Any]] ?? []).compactMap({ $0["id"] as? String }) where !notify {
+        let body: [String: Any] = ["data": ["type": "buildBetaDetails", "id": detail, "attributes": ["autoNotifyEnabled": false]]]
+        try await call("PATCH", "/v1/buildBetaDetails/\(detail)", body: body)
+    }
+    guard number != "all" else {
+        print("\(bundle) notifying off for every build")
+        return
+    }
+
+    // Then the build, once processed, to the groups that take no build of
+    // their own.
+    var build: [String: Any] = [:]
+    for _ in 0 ..< 180 {
+        build = rows(try await builds()).first ?? [:]
+        let state = attributes(build)["processingState"] as? String ?? ""
+        if state == "VALID" { break }
+        if state == "FAILED" || state == "INVALID" { fail("\(bundle)'s build \(number) is \(state) in App Store Connect") }
+        try await Task.sleep(for: .seconds(15))
+    }
+    guard attributes(build)["processingState"] as? String == "VALID", let id = build["id"] as? String else {
+        fail("\(bundle)'s build \(number) was still processing after 45 minutes; it reaches no group until added")
+    }
+    let groups = rows(
+        try await call(
+            "GET", "/v1/apps/\(app)/betaGroups",
+            query: ["fields[betaGroups]": "name,isInternalGroup,hasAccessToAllBuilds", "limit": "200"]))
+    for group in groups where attributes(group)["isInternalGroup"] as? Bool == true {
+        let name = attributes(group)["name"] as? String ?? "?"
+        guard let groupID = group["id"] as? String else { continue }
+        if attributes(group)["hasAccessToAllBuilds"] as? Bool == true {
+            print("\(bundle) \(number): \(name) takes every build itself\(notify ? "" : ", told of it only if processing beat the switch")")
+            continue
         }
-        guard !details.isEmpty || number == "all" else { fail("\(bundle)'s build \(number) did not show in App Store Connect in 20 minutes") }
-        for detail in details {
-            let body: [String: Any] = ["data": ["type": "buildBetaDetails", "id": detail, "attributes": ["autoNotifyEnabled": false]]]
-            try await call("PATCH", "/v1/buildBetaDetails/\(detail)", body: body)
-            print("\(bundle) \(detail)")
-        }
+        let body: [String: Any] = ["data": [["type": "builds", "id": id]]]
+        try await call("POST", "/v1/betaGroups/\(groupID)/relationships/builds", body: body, expect: 204)
+        print("\(bundle) \(number) to \(name)\(notify ? "" : ", quietly")")
     }
 }
 
