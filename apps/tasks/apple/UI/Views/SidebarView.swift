@@ -56,19 +56,16 @@ struct SidebarView: View {
             Notices(link: link, app: app)
                 .padding(.horizontal)
         }
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                naming = ListNaming(id: nil, name: "")
-            } label: {
-                Label(sidebar.newList, systemImage: "plus")
-                    .font(.body.weight(.semibold))
-                    .padding(.horizontal, 6)
+        .scrollContentBackground(menu == nil ? .hidden : .automatic)
+        .background { if menu == nil { TasksSymbols.screen } }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    naming = ListNaming(id: nil, name: "")
+                } label: {
+                    Label(sidebar.newList, systemImage: "folder.badge.plus")
+                }
             }
-            .buttonStyle(.glass)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
         }
         .refreshable { shell.send(.refresh) }
         .listNaming($naming)

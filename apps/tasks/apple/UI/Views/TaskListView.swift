@@ -5,13 +5,15 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// One list's tasks: the open ones in the order the presentation gives,
-/// dragged to reorder where it allows, then the completed ones when shown;
-/// New Task at the bottom, and the list's options one tap away. Every
-/// change is a command.
+/// One list's tasks as cards on a washed screen: what the list holds at a
+/// glance, then To Do, in the order the presentation gives and dragged to
+/// reorder where it allows, then Done when shown. Adding is the round +:
+/// the tab bar's on a phone (`addsFromTabBar`), this column's own beside a
+/// detail. The list's options are one tap away. Every change is a command.
 struct TaskListView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.addsFromTabBar) private var addsFromTabBar
     let list: ListPresentation
     let app: TasksPresentation
     let link: LinkPresentation<TasksPresentation>
@@ -19,14 +21,25 @@ struct TaskListView: View {
 
     var body: some View {
         List(selection: selection) { rows }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background { TasksSymbols.screen }
             .overlay {
                 if let empty = list.empty, list.closed.rows.isEmpty {
                     ContentUnavailableView(empty.title, systemImage: "checkmark.circle", description: Text(empty.message))
+                        .padding(.top, 120)
                 }
             }
             .navigationTitle(list.title)
             .refreshable { shell.send(.refresh) }
-            .safeAreaInset(edge: .bottom) { newTaskButton }
+            .safeAreaInset(edge: .bottom) {
+                if !addsFromTabBar {
+                    NewTaskButton(title: list.newTask)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                }
+            }
             .toolbar { toolbar }
             .listNaming($naming)
     }
@@ -46,35 +59,53 @@ struct TaskListView: View {
 
     @ViewBuilder
     private var rows: some View {
-        if let note = list.orderNote {
-            Text(note).font(.footnote).foregroundStyle(.secondary)
-        }
-        Section {
-            ForEach(list.open.rows) { row in rowView(row) }
-                .onMove(perform: reorder)
+        SummaryCard(summary: list.summary)
+            .plainRow(top: 4, bottom: 10)
+        if !list.open.rows.isEmpty {
+            Section {
+                heading(list.openTitle, count: list.open.rows.count, note: list.orderNote)
+                ForEach(list.open.rows) { row in rowView(row) }
+                    .onMove(perform: reorder)
+            }
         }
         if list.showsClosed, !list.closed.rows.isEmpty {
-            Section(list.closedTitle) {
+            Section {
+                heading(list.closedTitle, count: list.closed.rows.count, note: nil)
                 ForEach(list.closed.rows) { row in rowView(row) }
             }
         }
     }
 
-    /// On a phone the row's content opens the task, beside its round mark;
-    /// beside a detail column the row is the list's selection.
+    /// A section's name, its count in a pill beside it, and what orders it.
+    private func heading(_ title: String, count: Int?, note: String?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title).font(.title3.weight(.semibold))
+            if let count {
+                Text(count, format: .number)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(.quaternary, in: .capsule)
+            }
+            Spacer()
+            if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
+        }
+        .plainRow(top: 12, bottom: 2)
+    }
+
+    /// A card that opens its task, beside its round mark; the open task's
+    /// card is outlined.
     @ViewBuilder
     private func rowView(_ row: TaskRow) -> some View {
         Group {
             if sizeClass == .compact {
-                TaskRowView(row: row, open: { shell.send(.open(task: row.id)) })
+                TaskRowView(row: row, open: { shell.send(.open(task: row.id)) }, selected: app.detail?.id == row.id)
             } else {
-                TaskRowView(row: row).tag(row.id)
+                TaskRowView(row: row, selected: app.detail?.id == row.id).tag(row.id)
             }
         }
-        // The open task's row is marked whichever path drew it: an iPad's
-        // middle column is compact too, and there no selection draws one.
-        // On a phone the task covers its list while it is open.
-        .listRowBackground(Color.secondary.opacity(app.detail?.id == row.id ? 0.15 : 0))
+        .plainRow(top: 5, bottom: 5)
         .swipeActions(edge: .leading) {
             Button(row.toggle) { shell.send(row.status == .open ? .complete(row.id) : .reopen(row.id)) }
                 .tint(.green)
@@ -98,24 +129,6 @@ struct TaskListView: View {
     private func move(_ from: IndexSet, _ to: Int) {
         guard let source = from.first else { return }
         shell.send(.reorderTask(list.open.rows[source].id, to: to > source ? to - 1 : to))
-    }
-
-    /// The one way to add a task: the editor, seeded with this list (and
-    /// today, in Today).
-    private var newTaskButton: some View {
-        Button {
-            shell.send(.newTask)
-        } label: {
-            Label(list.newTask, systemImage: "plus")
-                .font(.body.weight(.semibold))
-                .padding(.horizontal, 6)
-        }
-        .buttonStyle(.glassProminent)
-        .controlSize(.large)
-        .tint(.brandAccent)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal)
-        .padding(.bottom, 8)
     }
 
     /// The order, as Settings offers it: one choice for every list.
@@ -205,5 +218,87 @@ struct TaskMenu: View {
         }
         Divider()
         Button(words.delete, systemImage: "trash", role: .destructive) { shell.send(.deleteTask(task)) }
+    }
+}
+
+/// What a list holds at a glance: how many are left in the lists' serif,
+/// the day or how much is done, what is late, and a ring of what is done.
+private struct SummaryCard: View {
+    let summary: ListSummary
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary.headline)
+                    .font(.system(.title, design: .serif).weight(.semibold))
+                if let detail = summary.detail {
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                }
+                if let overdue = summary.overdue {
+                    Label(overdue, systemImage: "exclamationmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+            }
+            Spacer(minLength: 0)
+            if let progress = summary.progress {
+                ZStack {
+                    Circle().stroke(Color.brandAccent.opacity(0.15), lineWidth: 7)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(Color.brandAccent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Text(summary.progressText ?? "")
+                        .font(.system(.subheadline, design: .serif).weight(.semibold))
+                }
+                .frame(width: 62, height: 62)
+                .accessibilityHidden(true)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(TasksSymbols.card)
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Adding a task: a round, dark +, the one way in. It opens the editor,
+/// seeded with the list shown (and today, in Today).
+struct NewTaskButton: View {
+    @Environment(TasksShell.self) private var shell
+    let title: String
+
+    var body: some View {
+        Button {
+            shell.send(.newTask)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(TasksSymbols.card)
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(Color.primary))
+                .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+extension EnvironmentValues {
+    /// The tab bar carries the round + (a phone), so a list draws none.
+    @Entry var addsFromTabBar = false
+}
+
+private extension View {
+    /// A row with no list chrome: its own card, or bare words, on the screen.
+    func plainRow(top: CGFloat, bottom: CGFloat) -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
     }
 }

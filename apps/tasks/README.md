@@ -16,7 +16,7 @@ draws it and sends commands, nothing else.
 | `apple/UI/` | `SubstrateTasksUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
 | `apple/Tests/` | the views drawn from TasksKit's fixtures, on the Mac |
 | `android/` | the Android app: the Gradle module `:tasks`, its Compose UI, its bridge configuration and generated Kotlin, and its gallery test over `fixtures/tasks.json` |
-| `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Today, the lists, a list and its options, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
+| `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Today, the lists, a list, one with its done tasks and its options, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
 
 ## TasksKit
 

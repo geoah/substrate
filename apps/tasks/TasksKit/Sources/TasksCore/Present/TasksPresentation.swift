@@ -68,7 +68,11 @@ public enum ListAction: Bridged, Hashable, Sendable {
 public struct ListPresentation: Bridged, Equatable, Sendable {
     public var selection: ListSelection
     public var title: String
+    /// What the list holds at a glance, above its tasks.
+    public var summary: ListSummary
     public var open: KeyedList<TaskRow>
+    /// The open tasks' heading: "To Do".
+    public var openTitle: String
     public var closed: KeyedList<TaskRow>
     public var closedTitle: String
     public var showsClosed: Bool
@@ -85,6 +89,22 @@ public struct ListPresentation: Bridged, Equatable, Sendable {
     public var actions: [ActionButton<ListAction>]
     /// What a row's swipes and context menu say.
     public var rowMenu: TaskMenuWords
+}
+
+/// A list at a glance: how many tasks are left, how many are late, and
+/// either the day (Today) or how much of the list is done.
+public struct ListSummary: Bridged, Hashable, Sendable {
+    /// "3 to do", or "All done".
+    public var headline: String
+    /// "Thursday, 5 November" in Today; "2 of 5 done" in a list.
+    public var detail: String?
+    /// "1 overdue", where any is.
+    public var overdue: String?
+    /// The share of the list that is done, 0 to 1; none in Today, whose done
+    /// tasks are every one ever due.
+    public var progress: Double?
+    /// The share as words: "40%".
+    public var progressText: String?
 }
 
 /// The words of what a task offers from its row: its state, its priority,
@@ -115,6 +135,8 @@ public struct TaskRow: Bridged, Hashable, Sendable, Identifiable {
     /// The list it is in, where the column mixes lists (Today).
     public var listName: String?
     public var hasNotes: Bool
+    /// The notes' opening, on one line: what a row shows under its name.
+    public var notes: String?
     /// The row read aloud: "Buy milk, due Today, priority High".
     public var spoken: String
 }

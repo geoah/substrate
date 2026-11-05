@@ -91,19 +91,29 @@ public enum TasksPresenter {
             if !open.isEmpty { nil } else {
                 switch selection {
                 case .today: EmptyPresentation(title: "Nothing due today", message: "Tasks due today or earlier show here.")
-                case .inbox: EmptyPresentation(title: "No tasks", message: "Tasks in no list show here. Add one below.")
-                case .list: EmptyPresentation(title: "No open tasks", message: "Add a task below.")
+                case .inbox: EmptyPresentation(title: "No tasks", message: "Tasks in no list show here. Tap + to add one.")
+                case .list: EmptyPresentation(title: "No open tasks", message: "Tap + to add a task.")
                 }
             }
         let named = selection == .today ? "for today" : selection == .inbox ? "" : "to \(title)"
         let menu = TaskMenuWords(
             complete: "Mark as Done", abandon: "Won't Do", reopen: "Reopen", edit: "Edit", priority: TaskField.priority.label,
             priorities: priorities, move: "Move to List", delete: "Delete Task", swipeDelete: "Delete")
+        let openRows = open.map { row($0, words: words, mixed: selection == .today) }
+        let late = openRows.filter { $0.due?.tone == .overdue }.count
+        let total = open.count + closed.count
+        let share = selection == .today || total == 0 ? nil : Double(closed.count) / Double(total)
+        let summary = ListSummary(
+            headline: open.isEmpty ? "All done" : "\(open.count) to do",
+            detail: selection == .today
+                ? dayTitle(today, words: words) : total == 0 ? nil : "\(closed.count) of \(total) done",
+            overdue: late == 0 ? nil : "\(late) overdue", progress: share,
+            progressText: share.map { "\(Int(($0 * 100).rounded()))%" })
         return ListPresentation(
-            selection: selection, title: title,
-            open: KeyedList(open.map { row($0, words: words, mixed: selection == .today) }, revision: revision),
+            selection: selection, title: title, summary: summary,
+            open: KeyedList(openRows, revision: revision), openTitle: "To Do",
             closed: KeyedList(showsClosed ? closed.map { row($0, words: words, mixed: false) } : [], revision: revision),
-            closedTitle: closed.count == 1 ? "1 Completed" : "\(closed.count) Completed",
+            closedTitle: "Done",
             showsClosed: showsClosed, toggleClosed: showsClosed ? "Hide Completed" : "Show Completed",
             quickAdd: named.isEmpty ? "Add a task" : "Add a task \(named)", newTask: "New Task",
             reorders: selection != .today && order == .manual,
@@ -124,7 +134,24 @@ public enum TasksPresenter {
         if task.notes != nil { spoken.append("has notes") }
         return TaskRow(
             id: task.id, title: title, status: task.status, toggle: task.isOpen ? "Mark as Done" : "Reopen", due: due,
-            priority: priority, listName: listName, hasNotes: task.notes != nil, spoken: spoken.joined(separator: ", "))
+            priority: priority, listName: listName, hasNotes: task.notes != nil, notes: task.notes.map(preview),
+            spoken: spoken.joined(separator: ", "))
+    }
+
+    /// Today's date as Today's summary says it: "Thursday, 5 November".
+    static func dayTitle(_ day: CivilDay, words: Words) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = words.locale
+        formatter.timeZone = words.calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+        return formatter.string(from: day.start(in: words.calendar, hour: 12))
+    }
+
+    /// Notes as a row shows them: their words on one line, at most 160
+    /// characters, ending in "…" where they go on.
+    static func preview(_ notes: String) -> String {
+        let words = notes.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return words.count > 160 ? String(words.prefix(159)) + "…" : words
     }
 
     // MARK: The open task

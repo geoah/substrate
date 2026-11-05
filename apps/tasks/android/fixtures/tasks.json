@@ -33,7 +33,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "1 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -60,6 +60,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Groceries",
         "reorders": true,
         "rowMenu": {
@@ -100,6 +101,12 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "1 of 3 done",
+          "headline": "2 to do",
+          "progress": 0.3333333333333333,
+          "progressText": "33%"
+        },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
       },
@@ -413,7 +420,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "1 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -440,6 +447,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Groceries",
         "reorders": true,
         "rowMenu": {
@@ -480,6 +488,12 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "1 of 3 done",
+          "headline": "2 to do",
+          "progress": 0.3333333333333333,
+          "progressText": "33%"
+        },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
       },
@@ -776,7 +790,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -819,6 +833,7 @@
               "hasNotes": true,
               "id": "plumber",
               "listName": "Home",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -830,6 +845,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task for today",
         "reorders": false,
         "rowMenu": {
@@ -868,6 +884,11 @@
           "today": {}
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "Tuesday, November 3",
+          "headline": "3 to do",
+          "overdue": "1 overdue"
+        },
         "title": "Today",
         "toggleClosed": "Show Completed"
       },
@@ -1162,9 +1183,9 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "empty": {
-          "message": "Tasks in no list show here. Add one below.",
+          "message": "Tasks in no list show here. Tap + to add one.",
           "title": "No tasks"
         },
         "newTask": "New Task",
@@ -1172,6 +1193,7 @@
           "revision": 29894940,
           "rows": []
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task",
         "reorders": true,
         "rowMenu": {
@@ -1210,6 +1232,9 @@
           "inbox": {}
         },
         "showsClosed": false,
+        "summary": {
+          "headline": "All done"
+        },
         "title": "No List",
         "toggleClosed": "Show Completed"
       },
@@ -1564,7 +1589,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -1592,6 +1617,7 @@
               },
               "hasNotes": true,
               "id": "plumber",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -1603,6 +1629,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Home",
         "reorders": true,
         "rowMenu": {
@@ -1643,6 +1670,13 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "0 of 2 done",
+          "headline": "2 to do",
+          "overdue": "1 overdue",
+          "progress": 0,
+          "progressText": "0%"
+        },
         "title": "Home",
         "toggleClosed": "Show Completed"
       },
@@ -2146,7 +2180,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -2174,6 +2208,7 @@
               },
               "hasNotes": true,
               "id": "plumber",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -2185,6 +2220,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Home",
         "reorders": true,
         "rowMenu": {
@@ -2225,6 +2261,13 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "0 of 2 done",
+          "headline": "2 to do",
+          "overdue": "1 overdue",
+          "progress": 0,
+          "progressText": "0%"
+        },
         "title": "Home",
         "toggleClosed": "Show Completed"
       },
@@ -2735,7 +2778,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -2763,6 +2806,7 @@
               },
               "hasNotes": true,
               "id": "plumber",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -2774,6 +2818,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Home",
         "reorders": true,
         "rowMenu": {
@@ -2814,6 +2859,13 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "0 of 2 done",
+          "headline": "2 to do",
+          "overdue": "1 overdue",
+          "progress": 0,
+          "progressText": "0%"
+        },
         "title": "Home",
         "toggleClosed": "Show Completed"
       },
@@ -3212,7 +3264,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "1 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -3239,6 +3291,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Groceries",
         "reorders": true,
         "rowMenu": {
@@ -3279,6 +3332,12 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "1 of 3 done",
+          "headline": "2 to do",
+          "progress": 0.3333333333333333,
+          "progressText": "33%"
+        },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
       },
@@ -3604,7 +3663,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "0 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -3632,6 +3691,7 @@
               },
               "hasNotes": true,
               "id": "plumber",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -3643,6 +3703,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Home",
         "reorders": true,
         "rowMenu": {
@@ -3683,6 +3744,13 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "0 of 2 done",
+          "headline": "2 to do",
+          "overdue": "1 overdue",
+          "progress": 0,
+          "progressText": "0%"
+        },
         "title": "Home",
         "toggleClosed": "Show Completed"
       },
@@ -3996,7 +4064,7 @@
           "revision": 29894940,
           "rows": []
         },
-        "closedTitle": "1 Completed",
+        "closedTitle": "Done",
         "newTask": "New Task",
         "open": {
           "revision": 29894940,
@@ -4023,6 +4091,7 @@
             }
           ]
         },
+        "openTitle": "To Do",
         "quickAdd": "Add a task to Groceries",
         "reorders": true,
         "rowMenu": {
@@ -4063,6 +4132,12 @@
           }
         },
         "showsClosed": false,
+        "summary": {
+          "detail": "1 of 3 done",
+          "headline": "2 to do",
+          "progress": 0.3333333333333333,
+          "progressText": "33%"
+        },
         "title": "Groceries",
         "toggleClosed": "Show Completed"
       },

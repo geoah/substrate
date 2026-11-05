@@ -74,6 +74,8 @@ struct TaskDetailView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background { TasksSymbols.screen }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

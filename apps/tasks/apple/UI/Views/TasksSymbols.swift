@@ -39,6 +39,33 @@ enum TasksSymbols {
         }
     }
 
+    /// The screen behind the cards: the grouped background, washed with the
+    /// accent at the top.
+    static var screen: some View {
+        LinearGradient(
+            stops: [.init(color: Color.brandAccent.opacity(0.13), location: 0), .init(color: grouped, location: 0.45)],
+            startPoint: .top, endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+
+    static var grouped: Color {
+        #if os(iOS)
+        Color(uiColor: .systemGroupedBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
+
+    /// A card on the screen: white in light mode, raised grey in dark.
+    static var card: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemGroupedBackground)
+        #else
+        Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
+
     static func mark(_ status: TaskStatus) -> String {
         switch status {
         case .open: "circle"

@@ -17,6 +17,16 @@ struct TabRoot: View {
         AppMenuView(app.menu, select: { shell.send(.select(section: $0)) }) { section in
             content(section.id)
         }
+        .environment(\.addsFromTabBar, true)
+        // The round + stands on its own to the right of the tab bar, level
+        // with it, wherever there are tasks to add to.
+        .overlay(alignment: .bottomTrailing) {
+            if app.menu.selected != TasksMenu.settings {
+                NewTaskButton(title: app.list?.newTask ?? "New Task")
+                    .padding(.trailing, 7)
+                    .padding(.bottom, -25)
+            }
+        }
     }
 
     @ViewBuilder
