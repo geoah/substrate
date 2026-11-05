@@ -272,7 +272,9 @@ struct RowsTitleView: View {
                 TimelineView(.periodic(from: header.clockStart, by: 60)) { context in
                     let end = header.clockPausedAt ?? context.date
                     let length = Format.sessionLength(Seconds(max(0, end.timeIntervalSince(header.clockStart))))
-                    Text(header.isPaused ? "Paused, \(length)" : length)
+                    // The finish time, not a countdown: it stays right while
+                    // the plan holds, and moves when a set or a rest does.
+                    Text(header.isPaused ? "Paused, \(length)" : [length, header.endsText].compactMap { $0 }.joined(separator: " \u{00B7} "))
                 }
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(header.isPaused ? Color.orange : Color.secondary)
