@@ -236,6 +236,7 @@ struct Reduction {
         case let .startRest(seconds): try startRest(seconds)
         case let .adjustRest(seconds): try adjustRest(seconds)
         case .skipRest: try skipRest()
+        case let .answerProgression(slot, answer): try answerProgression(slot, answer)
         case let .startTimedSet(row, target): try startTimed(row, target: target)
         case let .stopTimedSet(tick): try complete(tick, stopsTimer: true)
         case let .cancelTimedSet(row): try cancelTimed(row)
@@ -597,6 +598,13 @@ struct Reduction {
         state.groups[index].pairing = change.pairing.applied(to: state.groups[index].pairing)
         state.groups[index].roundRest = change.roundRest.applied(to: state.groups[index].roundRest).map { max(0, $0) }
         state.groups[index].changedInGym = true
+    }
+
+    mutating func answerProgression(_ key: String, _ answer: ProgressionAnswer?) throws(EngineError) {
+        _ = try state.requireSlotIndex(key)
+        var answers = state.progression ?? [:]
+        answers[key] = answer
+        state.progression = answers.isEmpty ? nil : answers
     }
 
     mutating func setSlotRest(_ key: String, _ rest: SlotRestKind, _ seconds: Seconds?) throws(EngineError) {

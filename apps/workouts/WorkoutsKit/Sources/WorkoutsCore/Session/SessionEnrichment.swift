@@ -128,6 +128,8 @@ extension SessionController {
             return [engine(.setGroup(change))]
         case let .setSlotRest(slot, kind, seconds):
             return [engine(.setSlotRest(slot: slot, rest: kind, seconds: seconds))]
+        case let .answerProgression(slot, answer):
+            return [engine(.answerProgression(slot: slot, answer: answer))]
         case let .setNote(target, text):
             return [engine(.setNote(target: target, text: text))]
         case .pauseClock:

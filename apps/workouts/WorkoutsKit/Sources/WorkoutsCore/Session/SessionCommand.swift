@@ -34,6 +34,8 @@ public enum SessionCommand: Codable, Equatable, Sendable {
     case ungroupAll(group: String)
     case setGroup(SessionEvent.SetGroup)
     case setSlotRest(slot: String, kind: SlotRestKind, seconds: Seconds?)
+    /// The progression offer's Use or Stay; nil takes the answer back.
+    case answerProgression(slot: String, answer: ProgressionAnswer?)
     case setNote(NoteTarget, String?)
     case pauseClock
     case resumeClock

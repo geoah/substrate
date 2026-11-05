@@ -83,6 +83,13 @@ struct RowsBlockView: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            ForEach(block.offers) { offer in
+                RowsProgressionOfferView(offer: offer) { action in
+                    withAnimation(.smooth(duration: 0.25)) { session.run(action.command) }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+            }
             ForEach(Array(block.items.enumerated()), id: \.element.id) { index, item in
                 if index > 0, isLine(item), isLine(block.items[index - 1]) {
                     separator
@@ -323,5 +330,88 @@ struct RowsBlockView: View {
         .buttonStyle(.plain)
         .disabled(!button.isEnabled)
         .accessibilityLabel(button.accessibilityLabel)
+    }
+}
+
+/// The progression offer above an exercise's lines (DESIGN.md §5.3): ready
+/// to go up and why, with Use and Stay side by side; once answered, what was
+/// chosen in one line with Undo.
+struct RowsProgressionOfferView: View {
+    let offer: RowsProgressionOffer
+    let perform: (RowsAction) -> Void
+
+    var body: some View {
+        switch offer.state {
+        case .offered:
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text(offer.title)
+                        .font(.subheadline.weight(.semibold))
+                } icon: {
+                    Image(systemName: "arrow.up.right.circle.fill")
+                        .foregroundStyle(RowsStyle.gain)
+                }
+                if let detail = offer.detail {
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { buttons }
+                    VStack(alignment: .leading, spacing: 8) { buttons }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RowsStyle.gain.opacity(0.10), in: .rect(cornerRadius: 12))
+            .accessibilityElement(children: .contain)
+        case .goingUp, .staying:
+            HStack(spacing: 8) {
+                Image(systemName: offer.state == .goingUp ? "arrow.up.right" : "equal")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(offer.state == .goingUp ? RowsStyle.gain : .secondary)
+                    .accessibilityHidden(true)
+                Text(offer.title)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                if let undo = offer.undo {
+                    Button(undo.title) { perform(undo.action) }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .frame(minHeight: 44)
+                        .accessibilityLabel(undo.accessibilityLabel)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        if let accept = offer.accept {
+            Button {
+                perform(accept.action)
+            } label: {
+                Text(accept.title)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(RowsStyle.gain)
+            .accessibilityLabel(accept.accessibilityLabel)
+        }
+        if let stay = offer.stay {
+            Button {
+                perform(stay.action)
+            } label: {
+                Text(stay.title)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(stay.accessibilityLabel)
+        }
     }
 }

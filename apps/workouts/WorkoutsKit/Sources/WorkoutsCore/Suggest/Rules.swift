@@ -30,11 +30,13 @@ struct SuggestRules: Sendable {
     let range: RepRange
     /// The target RPE `R`: 10 for a failure set (03 §10.8).
     let rpe: Double
+    let progression: ProgressionGate
 
     init(
         pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
-        bodyMass: Double?, now: Date, calendar: Calendar
+        bodyMass: Double?, now: Date, calendar: Calendar, progression: ProgressionGate = .automatic
     ) {
+        self.progression = progression
         self.pending = pending
         self.exercise = exercise
         self.today = today
@@ -60,16 +62,38 @@ struct SuggestRules: Sendable {
 
     // MARK: Working sets
 
-    /// A working set: the app's back-off rule, else 11.2, 11.3 or 11.4 (03 §11).
+    /// A working set: the app's back-off rule, else 11.2, the load the owner
+    /// went up to, 11.3 or 11.4 (03 §11, DESIGN §5.3).
     func working() -> Suggestion {
         if let backoff = backoff() { return backoff }
         if let latest = evidence.latest(in: today, timed: false) {
             return inSession(latest.set, ordinal: latest.ordinal)
         }
-        if let reference = evidence.reference(ordinal: pending.ordinal, timed: false) {
+        let reference = evidence.reference(ordinal: pending.ordinal, timed: false)
+        if case let .ask(accepted?) = progression {
+            return goingUp(to: accepted, from: reference)
+        }
+        if let reference {
             return fromHistory(reference)
         }
         return coldStart()
+    }
+
+    /// DESIGN §5.3: the owner took the progression offer. The first working
+    /// set of the day aims at the bottom of the range at the new load, as
+    /// double progression does; the sets after it follow 11.2.
+    func goingUp(to load: Double, from reference: SuggestEvidence.Reference?) -> Suggestion {
+        let new = text.set(load: load, reps: range.lo)
+        let was = reference.flatMap { text.load(exercise.setting(of: $0.set)) }
+        return Suggestion(
+            load: load, reps: range.lo, targetRPE: rpe, reason: .progressionUp,
+            text: was.map { "Going up from \($0): try \(new)" } ?? "Going up: try \(new)")
+    }
+
+    /// The owner decides when the load goes up (`ProgressionGate.ask`).
+    var holdsLoad: Bool {
+        if case .ask = progression { return true }
+        return false
     }
 
     /// 03 §11.2: from the set just done today.
@@ -160,7 +184,10 @@ struct SuggestRules: Sendable {
             } else if range.contains(goal) {
                 (load, newReps, reason) = (lpNow, goal, .historyAddRep)
             } else if range.isAboveTop(goal), let hi = range.hi {
-                if let up = grid.next(lpNow) {
+                if holdsLoad, grid.next(lpNow) != nil {
+                    // The owner decides when to go up (DESIGN §5.3): the top of the range again.
+                    (load, newReps, reason) = (lpNow, hi, .historyHold)
+                } else if let up = grid.next(lpNow) {
                     // Exactly one step; the reps never go below the range, as in double progression.
                     let r = range.clamped(RPECurve.repsAt(up, e1RM: e1RM, rpe: rpe))
                     (load, newReps, reason) = (up, r, .historyLoadUp)
@@ -195,7 +222,12 @@ struct SuggestRules: Sendable {
         let space = LoadSpace(exercise: exercise, bodyMass: nil)
         let value = space?.value(ofSetting: setting)
         var (load, reps, reason) = (setting, predicted, session ? Reason.sessionKeep : .historyAddRep)
-        if range.isAboveTop(predicted), let space, let value, let heavier = space.grid?.next(value) {
+        if !session, holdsLoad, range.isAboveTop(predicted), let hi = range.hi, let space, let value,
+            space.grid?.next(value) != nil
+        {
+            // The owner decides when to go up (DESIGN §5.3).
+            (reps, reason) = (hi, .historyHold)
+        } else if range.isAboveTop(predicted), let space, let value, let heavier = space.grid?.next(value) {
             load = space.setting(ofValue: heavier)
             (reps, reason) = (range.lo, session ? .sessionUp : .historyLoadUp)
         } else if predicted < range.lo, let space, let value, let lighter = space.grid?.prev(value) {
@@ -444,7 +476,7 @@ struct SuggestRules: Sendable {
 
     func historyText(_ reason: Reason, prev: String, new: String) -> String {
         switch reason {
-        case .historyLoadUp: "Last time \(prev), top of range; try \(new)"
+        case .historyLoadUp, .historyHold: "Last time \(prev), top of range; try \(new)"
         case .historyLoadDown: "Last time \(prev), below target; try \(new)"
         case .historyAtMax: "Last time \(prev), at the heaviest load; try \(new)"
         case .historyNewRange:

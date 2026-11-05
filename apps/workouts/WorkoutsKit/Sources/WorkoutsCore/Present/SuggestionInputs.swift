@@ -216,7 +216,8 @@ public enum SuggestionInputs {
             let values = SetValues(
                 load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
                 distance: set.distance, rpe: rated ?? unrated?.value,
-                rpeMethod: rated == nil ? unrated?.method : .entered, reachedFailure: set.reachedFailure)
+                rpeMethod: rated == nil ? unrated?.method : .entered, reachedFailure: set.reachedFailure,
+                stopReason: set.stopReason)
             let kind = kind(
                 role: head.role, isSegment: set.continues != nil, side: set.side, structure: head.structure,
                 measurement: exercise.measurement, reachedFailure: set.reachedFailure == true,
@@ -266,6 +267,7 @@ public enum SuggestionInputs {
             rpe: values.ratedRPE?.double,
             unratedRPE: values.ratedRPE == nil ? values.rpe?.double : nil,
             reachedFailure: values.reachedFailure == true,
+            stopReason: values.stopReason,
             target: target,
             completedAt: completedAt,
             position: 0,
@@ -283,6 +285,7 @@ public enum SuggestionInputs {
         pair.unratedRPE = pair.rpe == nil ? [first.unratedRPE, second.unratedRPE].compactMap(\.self).max() : nil
         pair.duration = [first.duration, second.duration].compactMap(\.self).min()
         pair.reachedFailure = first.reachedFailure || second.reachedFailure
+        pair.stopReason = first.stopReason ?? second.stopReason
         pair.completedAt = max(first.completedAt, second.completedAt)
         if pair.load == nil {
             pair.load = second.load

@@ -26,6 +26,10 @@ public struct SessionState: Codable, Equatable, Sendable {
     public var lastCompleted: RowID?
     /// The session record's revision (§4.12).
     public var revision: Int
+    /// The owner's answers to the progression offer, by slot key (DESIGN
+    /// §5.3). Nil in a journal written before the offer; nothing is
+    /// written to a record for it.
+    public var progression: [String: ProgressionAnswer]?
 
     public init(
         session: SessionHeader,
@@ -60,6 +64,19 @@ public struct SessionState: Codable, Equatable, Sendable {
     public enum Phase: String, Codable, Sendable {
         case active, finished
     }
+
+    /// The owner's answer to the progression offer for `slot`, if any.
+    public func progressionAnswer(ofSlot slot: String) -> ProgressionAnswer? {
+        progression?[slot]
+    }
+}
+
+/// The owner's answer to the progression offer for one exercise (DESIGN §5.3).
+public enum ProgressionAnswer: Codable, Equatable, Sendable {
+    /// Go up to this load (the added load, or the assistance, in a bodyweight mode).
+    case up(Mass)
+    /// Stay at the load: the suggestion holds it at the top of the range.
+    case stay
 }
 
 /// The session record's own fields, known at Start or changed since. `name`

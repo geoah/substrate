@@ -85,6 +85,7 @@ struct RowsSession {
                 return
             }
             try send(.startTimedSet(row: row, target: target), at: seconds)
+        case let .answerProgression(slot, answer): try send(.answerProgression(slot: slot, answer: answer), at: seconds)
         case .addSet, .stopTimedSet, .cancelTimedSet, .adjustRest, .skipRest:
             Issue.record("not used here: \(action)")
         }

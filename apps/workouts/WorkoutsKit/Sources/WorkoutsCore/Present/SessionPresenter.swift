@@ -55,7 +55,9 @@ struct Presenting {
         self.catalog = catalog
         self.settings = settings
         self.now = now
-        evaluator = SessionEvaluator(state: state, history: history, now: now, calendar: settings.calendar)
+        evaluator = SessionEvaluator(
+            state: state, history: history, now: now, calendar: settings.calendar,
+            asksBeforeGoingUp: settings.asksBeforeGoingUp)
         upNextID = state.upNext
         timedID = state.timedRow
         var colors: [String: Int] = [:]

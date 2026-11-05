@@ -19,15 +19,19 @@ public struct PresenterSettings: Codable, Equatable, Sendable {
     /// pre-fill as `prefilled` when it holds no RPE of its own
     /// (`SetRowPresentation.commitValues`, `UntickedRow.values`).
     public var prefillsRPE: Bool
+    /// The owner decides when a load goes up: the history rule holds it at
+    /// the top of the range and the progression offer asks (DESIGN §5.3).
+    public var asksBeforeGoingUp: Bool
 
     public init(
         calendar: Calendar = .current, defaultUnit: MassUnit = .kg, countWarmupsInVolume: Bool = false,
-        prefillsRPE: Bool = false
+        prefillsRPE: Bool = false, asksBeforeGoingUp: Bool = false
     ) {
         self.calendar = calendar
         self.defaultUnit = defaultUnit
         self.countWarmupsInVolume = countWarmupsInVolume
         self.prefillsRPE = prefillsRPE
+        self.asksBeforeGoingUp = asksBeforeGoingUp
     }
 
     public var timeZone: TimeZone { calendar.timeZone }
