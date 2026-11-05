@@ -207,3 +207,20 @@ struct ProgressionOfferRowsTests {
         #expect(try offer()?.state == .offered)
     }
 }
+
+@Suite("The progression setting", .timeLimit(.minutes(10)))
+struct ProgressionSettingTests {
+    @Test("the session in progress asks before a load goes up unless the owner turned it off")
+    func controllerPassesTheSetting() throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        var settings = WorkoutsSettings()
+        #expect(settings.asksBeforeGoingUp && settings.sessionPresenter.asksBeforeGoingUp)
+        func controller(_ settings: WorkoutsSettings) -> SessionController {
+            SessionController(catalog: Catalog(), history: HistoryIndex(), settings: settings, adapter: "test", directory: directory.url)
+        }
+        #expect(controller(settings).presenterSettings(calendar: Progression.calendar).asksBeforeGoingUp)
+        settings.asksBeforeGoingUp = false
+        #expect(!controller(settings).presenterSettings(calendar: Progression.calendar).asksBeforeGoingUp)
+    }
+}

@@ -279,6 +279,7 @@ struct RowsTitleView: View {
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(header.isPaused ? Color.orange : Color.secondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
             }
             .contentShape(.rect)
         }

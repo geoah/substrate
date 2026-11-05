@@ -161,7 +161,7 @@ public struct SessionHeaderStats: Codable, Equatable, Sendable {
     /// What the pending sets and their rests take (`SessionEstimate`); nil
     /// with nothing left, or while the clock is paused.
     public var timeLeft: Seconds?
-    /// `ends about 11:42`, the time the estimate runs to, which stays right
+    /// `ends ~11:42`, the time the estimate runs to, which stays right
     /// while nothing changes; nil with no estimate.
     public var endsText: String?
 

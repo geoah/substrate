@@ -82,7 +82,10 @@ struct RowsBuilder {
         let rows = slots.flatMap(state.orderedRows(inSlot:))
         let isFinished = !rows.isEmpty && rows.allSatisfy(\.isCompleted)
         // No group letter: the members are named by their exercises.
-        let title = block.group.map(\.kind.label) ?? block.cards.first?.name ?? ""
+        let title =
+            block.group.map { group in
+                UpNext.isWarmupCircuit(group: group.key, in: state) ? "Warm-up circuit" : group.kind.label
+            } ?? block.cards.first?.name ?? ""
         return RowsBlock(
             id: block.id,
             slots: slots,
