@@ -622,8 +622,13 @@ struct RowsBuilder {
             let warmups = Ordinals.warmupCount(inSlot: row.slot, of: state)
             if running {
                 note = RowsNote(text: measurement.isTimedHold ? "holding" : "timing", kind: .running)
-            } else if head.role == .warmup, row.isHead, warmups > 1 {
-                note = RowsNote(text: "of \(warmups)", kind: .status)
+            } else if head.role == .warmup, row.isHead, warmups > 1,
+                !(state.slot(row.slot)?.group.map { UpNext.isWarmupCircuit(group: $0, in: state) } ?? false)
+            {
+                // "of 2" follows "Warm-up 1". A group's title is the exercise, so
+                // the note names the warm-up; a warm-up circuit's round says it.
+                let ordinal = state.ordinal(of: row.id) ?? 1
+                note = RowsNote(text: isGroup ? "warm-up \(ordinal) of \(warmups)" : "of \(warmups)", kind: .status)
             } else if role == .drop, ghost.repsPlaceholder != nil {
                 note = RowsNote(text: GhostValues.toFailure, kind: .status)
             } else if isMini, let load = Format.load(shown, mode: measurement.loadMode), load != "BW" {
