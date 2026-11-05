@@ -1207,6 +1207,9 @@ reason line all describe it. It is recomputed after every event.
   member is a lane: a slot that replaced another mid-exercise (`replaceExercise` with done sets) continues that slot's
   lane, its working heads numbered after the old slot's, so A1, B1, A2, B2 and then a replacement's set is round 3. A
   row's round is this number; outside a group it is the head's ordinal.
+- A **warm-up circuit** is a group whose members hold warm-ups alone (proposal 2026-11-05, 1d): its warm-ups are its
+  rounds, round `r` each member's `r`-th warm-up, so a general warm-up runs A1, B1, A2, B2 as a working group does
+  (`UpNext.isWarmupCircuit`). A group that mixes keeps every member's warm-ups (its preparation sets) before round 1.
 
 **The rule.**
 
@@ -1234,9 +1237,9 @@ Source, notifies: Bool }` picks one rest, from C and the expected next row N (§
 | 1 | C's chain is complete and C's chain head has a `restOverride`                        | `override`      | the head's `restOverride`                                                                                                                            |
 | 2 | N is the next link of C's chain, a side                                              | `sideSwitch`    | session slot `sideSwitch`, routine slot `sideSwitch`, default 0                                                                                      |
 | 3 | N is the next link of C's chain, any other structure                                 | `intraSetPause` | the head's `intraSetPause`, else by structure: drop 0, myo 15 s, myomatch 15 s, restpause 20 s, cluster 20 s                                         |
-| 4 | C is a warm-up                                                                       | `warmupRest`    | session slot, routine slot, settings warm-up rest (default 45 s)                                                                                     |
+| 4 | C is a warm-up, unless N is in C's warm-up circuit (then lines 5 and 6)              | `warmupRest`    | session slot, routine slot, settings warm-up rest (default 45 s)                                                                                     |
 | 5 | C and N are in the same group block and N is in the same round as C (another member) | `transition`    | C's session slot, C's routine slot, default transition below                                                                                         |
-| 6 | C and N are in the same group block, N in another round                              | `roundRest`     | session group, routine group, default round rest below                                                                                               |
+| 6 | C and N are in the same group block, N in another round                              | `roundRest`     | session group, routine group, default round rest below; in a warm-up circuit, C's warm-up rest in its place                                          |
 | 7 | N is in another slot or group block than C                                           | `blockRest`     | if the "rest after an exercise's last set" setting is off: 0. Else C's group's round rest (as line 6) if C is grouped, else C's set rest (as line 8) |
 | 8 | Otherwise (N is in C's own plain slot)                                               | `setRest`       | session slot, routine slot, settings default for C's exercise's `restClass`, else the settings fallback                                              |
 
@@ -1360,13 +1363,22 @@ One formatter module, used everywhere ([req 37](docs/research/README.md#session-
 - **Loads** ([03 §12](docs/research/03-progression.md#12-explanation-strings)): at most two decimals, trailing zeros removed, a space, the unit: `35 kg`, `92.5 kg`, `190 lb`.
   Bodyweight `BW`, added load `BW + 2.5 kg`, assistance `BW − 30 kg` (U+2212).
 - **A set**: `{load} × {reps}` with U+00D7; reps only `× 15`; timed `1:02`, with load `10 kg for 1:02`; distance
-  `40 m`, with load `20 kg for 40 m`; RPE added after a space as `@ 9.5` in PREVIOUS and history, a rated RPE only
+  `40 m`, with load `20 kg for 40 m`; reps left added after a middle dot as `· 0–1 left` in PREVIOUS and history, a rated value only
   (§4.14).
 - **RPE**: at most one decimal, trailing zero removed: `9.5`, `8`.
 - **Ranges**: en dash, `10–12`. An effort target: `RPE 8`, `RPE 7–8`, `2–3 reps in reserve`, `1 rep in reserve`
   (`Format.effort`). A percentage load: `80% of training max`.
 
 ### 4.14 RPE provenance and the pre-fill
+
+**Effort is said as reps left** (owner, 2026-11-05; proposal 2026-11-05, 1a): every surface shows and steps the reps
+left in the tank, a single number like the load and the reps (`2 left`, `2–3 reps left`, `1–2 left` for a half point,
+`4+` at the top of the control). The value is stored as before, in `set.rpe` on the RIR-based scale every set is logged
+on (`rpeScale: rirbased`), where RPE = 10 − reps left exactly, so the rules below, the suggestion, e1RM, History, the
+Hevy import and the coach read it unchanged; `set.rir` stays what another app logged as reps in reserve. The plan's
+target (`set.target.rpeMin` to `rirMax`) and the effort done (`set.rpe`) were already separate. Why a set ended is a
+field of its own (`set.stopReason`: `fatigue`, `technique`, `pain`, training 6), chosen beside reps left and never
+derived from them. The session rating at Finish is CR10, another scale, and stays as it is.
 
 The Rows session screen shows the plan's RPE pre-filled on the set being logged, and one tap logs the set with it.
 Each set record says how its RPE got there (`rpeMethod`, D1), and nothing decides that by comparing values: the event
@@ -1402,6 +1414,18 @@ says it.
   or none written; not `cr10` or an unknown scale): `PerformedSet.ratedRPE`. The suggestion reads a pre-filled or
   copied RPE as none (§5.2), keeping the method of the field it came from (`unratedRPE`); PREVIOUS and History show
   and copy ratings only; e1RM and the exercise trend take ratings only.
+
+### 4.15 Time left
+
+The session's header says when the session should end (`SessionHeaderStats.endsText`, "ends about 11:42";
+`SessionEstimate`, proposal 2026-11-05, 1f): from now, what is left of a running rest, then each pending row in plan
+order (§4.6) with its working time and the rest the plan gives after it, as §4.7 picks it with the rows done in that
+order (transitions, round rests, side switches and warm-up rests included; none after the last). A timed set works for
+its goal; any other set for the median of today's measured sets of its exercise, else of all of today's, else 45 s.
+A set is measured from the tick before it, less the rest the plan gave (`restPlanned`), so a rest run over counts as
+the set's; a timed set from its start; a sample outside 5 s to 5 min is left out. It is worked out again on every
+change and shows nothing while the clock is paused. Mini-sets a chain grows one at a time are not known ahead, so a
+myo-rep set ends a little later than said.
 
 ## 5. Suggestions, PREVIOUS and ghost values
 
@@ -1562,6 +1586,22 @@ The engine is re-run after every change and never commits anything ([req 29](doc
   no RPE at all keeps 03's text.
 - **History's body share.** A past set's effective load uses the exercise's current `bodyShare`, as [03 §10.4](docs/research/03-progression.md#104-effective-load) does; the
   set's own copy (§3.5) is what volume reads (§4.11).
+- **The progression offer** (proposal 2026-11-05, 1c; `ProgressionOffer`, `ProgressionGate`). With "Ask before going
+  up a load" on (the default, §7.10), an exercise is **ready to go up** when in each of its two newest sessions (no
+  deload, the newer within 28 days, the older within 28 days of it) every working set at the session's heaviest
+  working load reached its target's `repsMax` (an open top never qualifies) with at least the planned reps left
+  (a rating at or below the target's top RPE; a set logged with the plan's value untouched counts as at the plan and
+  is said "as planned"; one that reached failure has none left), the load was the same both times, and no set ended
+  for technique or pain. A lighter back-off set neither qualifies nor spoils it. An exercise with no grid, or plain
+  bodyweight, is never offered; an assisted one goes up by one step less assistance. Rows shows the offer above the
+  exercise's lines until a working set of it is done today (§7.6a), with the next point of the grid. The answer is the
+  session's (`SessionEvent.answerProgression`, kept in `SessionState.progression` by slot; nothing is written to a
+  record for it): **Use** makes the first working set of the day suggest the new load at the bottom of the range
+  (`progressionUp`, "Going up from 105 kg: try 107.5 kg × 8"), after which 03 §11.2 reads today's sets as before;
+  **Stay**, no answer, or an exercise not yet ready keeps the load where [03 §11.3](docs/research/03-progression.md#113-working-set-from-history) (and §11.5 from history) would raise it, at the top
+  of the range (`historyHold`, said as `historyLoadUp` is). In-session changes, going down, timed sets and every other
+  rule stay as 03 says. With the setting off the history rule raises loads on its own, as 03 does, and no offer shows;
+  the engine's vectors run that way.
 
 ### 5.4 PREVIOUS
 
@@ -1572,7 +1612,7 @@ PREVIOUS is the same row last time, wherever the exercise was done (lead decisio
 - The row is matched by role and ordinal, then chain position and side: today's working set 2 shows last time's working
   set 2; today's `2a` shows last time's `2a`; `1R` shows last time's `1R`; a warm-up shows the warm-up with the same
   warm-up ordinal. When today has two slots of one exercise, the n-th slot matches last time's n-th slot of it.
-- Shown in the set grid's PREVIOUS column with RPE (`35 kg × 13 @ 9.5`), a rated RPE only: a set logged with the
+- Shown in the set grid's PREVIOUS column with reps left (`35 kg × 13 · 0–1 left`), a rated value only: a set logged with the
   plan's pre-filled RPE shows `105 kg × 9`. Tapping it copies its values into the row's entered values (`editSet`), a
   rated RPE with `rpeMethod: copied`, which a later tap on the RPE makes `entered` (§4.14).
 
@@ -2071,18 +2111,20 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 
 ```text
 +--------------------------------------------------+
-| (v)  Day 1 – Strength Foundation    (≡ …) [Finish]|  <- glass toolbar; the session's length under the title
-|      12 min                                       |
+| (v)  Day 1 – Strength Foundation    (≡ …) [Finish]|  <- glass toolbar; the session's length and the
+|      12 min · ends about 11:42                    |     time it should end under the title
 | Leg Press (Machine)                         (…)  |
-| 6–10 reps at RPE 8, rest 2:30                    |
+| 6–10 reps with 2 left, rest 2:30                 |
 | (✓) Warm-ups 40 kg × 12, 70 kg × 6  as last time |  <- folded once every warm-up is done
-| (✓) Set 1  110 kg × 8  @ 8    +5 kg, −2 reps (=) |  <- done: the change and the verdict mark
+| (✓) Set 1  110 kg × 8 · 2 left +5 kg, −2 reps (=)|  <- done: the change and the verdict mark
 | +----------------------------------------------+ |
 | | (●) Set 2  ✦ reason for today's numbers  (…) | |  <- the open set, tinted
+| |     💡 Feet flat, knees track your toes      | |  <- the slot's cue
 | |     110 kg   last 105            ( −5 | +5 ) | |
 | |     8 reps   last 10             ( −1 | +1 ) | |
-| |     [6  7 [8] 9  10] [½]                     | |  <- RPE stops; the plan's 8 outlined
-| | [         ✓ Log 110 kg × 8 @ 8          ]    | |
+| |     (2) reps left   last 2       ( −1 | +1 ) | |  <- reps left; the plan's 2, hollow
+| |     [Why stop? ⌄]                            | |  <- why the set ended, a menu
+| | [       ✓ Log 110 kg × 8 · 2 left       ]    | |
 | +----------------------------------------------+ |
 | ( ) Set 3  110 kg × 8              last 105 × 10 |  <- pending: muted, last time; a tap opens it
 |  +  Add set                                      |
@@ -2090,7 +2132,7 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 | (◔) 1:56  of 2:30           [−15] [+15] [Skip]   |  <- the island (glass): the rest, while one runs,
 |  ----------------------------------------------  |
 | Leg Press (Machine)  Set 3                    ⌃  |     the next set, docked once its editor is
-| (− 110 kg +) (− 8 reps +)      @ 8   [✓ Log]     |     scrolled out of view,
+| (− 110 kg +) (− 8 reps +)   2 left   [✓ Log]     |     scrolled out of view,
 |  ----------------------------------------------  |
 | Then  Iso-Lateral Chest Press, set 1, 25 kg × 7 › |     and the one after it
 +--------------------------------------------------+
@@ -2125,7 +2167,7 @@ session's length and not as a clock running for the set at hand; a tap pauses or
   grey otherwise. Never a group letter and never a group's colour: colour means a warm-up, failure or the set to do now
   (owner, 2026-11-02). Beside it the `caption`: the exercise's name in a group, a chain's part (`Drop`, `Mini-set 3`),
   nothing for a plain exercise's set. Then the values (17 pt, monospaced digits: secondary, the accent when
-  `valuesChanged`), the RPE ("@ 8", 15 pt secondary) and the tags ("+ drop" orange, "to failure" red, "up next" accent).
+  `valuesChanged`), reps left ("2 left", 15 pt secondary) and the tags ("+ drop" orange, "to failure" red, "up next" accent).
 - A done line sits on a light green wash (8 %, 16 % with Increase Contrast) with its values grey and struck through, so
   a logged set never reads as the one to do; a tap still opens its fix.
 - At the end: on a done line the changes, joined by commas, gains green and everything else grey, then the verdict mark
@@ -2148,10 +2190,12 @@ line when fixing). In order:
 
 - The header, at least 36 pt: the ring, the badge and title (17 pt semibold), the note (a sparkle and the suggestion's
   reason in 13 pt; a status such as "of 2" or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
-  rest": a set waits for nothing), and on the right a plus symbol and "RPE" on one line while the strip is folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
+  rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
   menu items) or Cancel when fixing. The note sits beside the title when it fits, else on its own line under it. After
-  an RPE tap the cell's meaning ("RPE 8.5: could do 1 more rep, maybe 2") shows in the note's place for 2.5 s without
+  a reps-left step the new value's meaning ("1 left: very hard") shows in the note's place for 2.5 s without
   changing the header's height.
+- The slot's cue, when the routine gives one (`RowsEditor.cue`): a lightbulb and one line in 13 pt secondary,
+  indented to the values. The slot's notes stay above the block, folded past five lines.
 - Each value on a 48 pt row, indented to the title: the number at 26 pt semibold with monospaced digits and a faint
   dotted underline (a tap opens the keypad; the target is 44 pt tall), its unit (15 pt secondary), `last` (15 pt secondary) at the same x on
   every row (the widest number and unit sets it, at least 84 pt), the reset chip ("↺ 8", or "↺ was 8" when fixing), and
@@ -2164,19 +2208,24 @@ line when fixing). In order:
   changed, nor does what is written (owner, 2026-11-02). When the row is narrow the
   chip goes under `last`; at larger sizes `last` goes under the number; at the accessibility sizes the stepper goes
   under them.
-- The RPE stops, under the label "RPE" (15 pt secondary, as the values' units are): five whole stops, 6 to 10, on a
-  `tertiarySystemFill` track, then a separate `½` (`RowsRPEStrip.half`)
-  that adds or takes off the half point, so every half step is a stop and then `½` and the control stays inside the
-  panel's padding, indented to the values: about 280 pt wide, each target 44 pt tall and 44 to 52 pt wide. The stop
-  holding the value shows it ("8.5"). The plan's value (and a pre-filled or copied value) is outlined and hollow; a
-  rating is filled solid with its fill inset. A tap on any stop rates it (the outlined one too, as `entered`); a tap on
-  the filled stop clears it; `½` rates the value with the half added or taken off, and is off with no value and at 10.
-  At the accessibility sizes `½` goes under the stops. Folded behind "RPE" when there is nothing to show (a warm-up, a
-  timed set, or a set with no planned RPE and none last time).
+- Reps left (`RowsEffort`, owner, 2026-11-05), a third value built like the others: the number in a 44 pt capsule,
+  "reps left" (on a timed or distance set, "left"), `last` and the reset chip, and "−1 | +1" under the thumb. 0 to 4,
+  where 4 reads "4+" (RPE 6, "could do 4 or more"); a value with a half point from an import or an older entry reads
+  "1–2", and a step from it lands on the whole count beside it. The plan's value (and a pre-filled or copied one) is
+  drawn hollow, a dashed outline; a rating is filled solid. A step rates it as `entered`, and so does a tap on the
+  hollow number, as it is; the chip goes back to the plan's value unrated ("↺ 2", `restoringRPEPrefill`), clears a
+  rating where the plan names none ("↺ clear"), or goes back to what was logged when fixing ("↺ was 2"). Empty, the
+  steps start from last time's rating, else 2. The value is still `rpe` on the RIR-based scale, RPE = 10 − reps
+  left, so nothing that reads it changes (§4.14). Folded behind "Reps left" when there is nothing to show (a warm-up,
+  a timed set, or a set with no planned effort and none last time).
+- Why the set ended (`RowsStopMenu`), under reps left on a working set: a chip, "Why stop?" with a chevron, that
+  lists "Muscles gave out", "Form broke down" and "Pain or discomfort" (`set.stopReason`: `fatigue`, `technique`,
+  `pain`) and, once one is chosen, "No reason". The chip then shows the reason's word ("Form", "Pain" in orange). A
+  done line carries the word as a tag, as History does after the values.
 - A timed set: ready, the duration row with its stepper and, under it, the track with the goal's tick labelled above and
   last time's below. Running, the duration row gives way to the clock (28 pt, counting up, its width reserved so it
   never moves anything) with "0:21 to beat last time" beside it, and the track filling.
-- The buttons. Log is a 50 pt capsule in the panel's colour that names exactly what it saves ("Log 110 kg × 8 @ 8",
+- The buttons. Log is a 50 pt capsule in the panel's colour that names exactly what it saves ("Log 110 kg × 8 · 2 left",
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
   has Save, enabled once the draft differs; Delete set is in the `…`, as on every set.
@@ -2238,19 +2287,20 @@ from the screen's edges, stacking up to three parts with hairlines between them,
 2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round
    1") on a line of their own, the name cut in its middle, with a chevron (a tap brings the full editor into view).
    Under it its values, each in a tinted capsule with − and + (44 pt targets; a tap on the number opens the keypad),
-   its RPE ("@ 8", outlined while it is the plan's, filled once rated) and Log as a check alone (44 pt, read "Log"
+   its reps left ("2 left", outlined while it is the plan's, filled once rated) and Log as a check alone (44 pt, read "Log"
    and then what it logs; play or stop for a timed set, whose clock leads the values): on one row where they fit;
-   where they do not, the values take the first row and the RPE the second, with Log at its right edge; with larger
+   where they do not, the values take the first row and reps left the second, with Log at its right edge; with larger
    text each value takes a line of its own, still with its steppers, and on the narrowest line the number shrinks
-   between them. The steppers never give way to the RPE (owner, 2026-11-02). The single row is packed: 4 pt gaps,
-   Log right-aligned without a spacer, Log exactly 44 pt, the RPE chip 6 pt either side of its text (44 pt at least),
+   between them. The steppers never give way to reps left (owner, 2026-11-02). The single row is packed: 4 pt gaps,
+   Log right-aligned without a spacer, Log exactly 44 pt, the reps-left chip 8 pt either side of its text (44 pt at least),
    no padding beside the number between its steppers, and the part 12 and 10 pt inside an island 12 pt from the
-   screen's edges. Measured at the default size, "60 kg", "8 reps", "@ 8" and Log need 364 pt; the island holds
+   screen's edges. Measured at the default size, "60 kg", "8 reps", "2 left" and Log need 364 pt; the island holds
    394 pt on a 440 pt phone and 384 pt on a 430 pt one, so a load-and-reps set takes one row on Plus and Pro Max
    phones (30 and 20 pt to spare, room for a three-digit load or a half-point RPE), and two on a 402 pt phone (356
-   pt) and narrower. A set with one value (reps alone, a hold) takes one row everywhere. A tap on the RPE opens the panel's stops in the island, under the values: a stop
-   rates and closes them, `½` keeps them open. The RPE shows as the panel shows it, so a warm-up's or a timed set's
-   stays out until opened there. A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. At the
+   pt) and narrower. A set with one value (reps alone, a hold) takes one row everywhere. A tap on reps left opens
+   their steps in the island, under the values: "2 reps left" with "−1 | +1" and the stop chip; a step keeps them
+   open, a reason closes them. Reps left show as the panel shows them, so a warm-up's or a timed set's stay out
+   until opened there. A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. At the
    accessibility sizes it docks only the name row and Log, or the clock and stop: a tap on the name brings the full
    editor into view, so the island stays a few lines and the list keeps the screen. The layout gives way, never the
    targets: each stepper half, each number and the name row stay at least 44 pt. A tap on a number opens the keypad where the list is, without scrolling it. It is drawn only
@@ -2290,7 +2340,13 @@ is used only on what floats (the toolbar, the island, the keypad and the undo of
 strip are opaque. Light and dark use the system colours, the accent, the group palette and an adaptive green for gains
 (`RowsStyle`).
 
-**Haptics.** A light tick (`.selection`) on every stepper step and RPE pick; `.success` when a Log is journaled (§9.3).
+**The progression offer** (§5.3), above a block's lines until a working set of the exercise is done: a green-tinted
+card, "Ready to go up" (in a group, after the exercise's name), the reasons in 13 pt ("Last 2 sessions: every working
+set reached 12 reps at 105 kg, with 2 or more left (as planned)."), and "Use 107.5 kg" (filled, green) beside "Stay at
+105 kg" (bordered), stacked where they do not fit. Answered, it is one line, "Going up to 107.5 kg" or "Staying at
+105 kg", with Undo.
+
+**Haptics.** A light tick (`.selection`) on every stepper step and reps-left step; `.success` when a Log is journaled (§9.3).
 
 **Where it differs from the design mockup** (the owner's pick, "rows", revision 2):
 
@@ -2298,8 +2354,8 @@ strip are opaque. Light and dark use the system colours, the accent, the group p
   mini-set (§4.14). Log stays disabled until reps are set; the stepper starts from last time.
 - A timed set offers Cancel, not Pause: the engine has no paused timed set.
 - The verdict mark follows the presenter's estimated one-rep max, so heavier for fewer reps can read as below.
-- Dragging along the RPE stops does not scrub: inside the scrolling list a drag there is a scroll. Each stop is a
-  tap target instead, and the half steps sit behind `½` so the control fits inside the card.
+- Effort is reps left with − and +, not RPE stops (owner, 2026-11-05): one number like the load and the reps, with
+  why the set ended beside it.
 - The keypad's Log label changes when the typed value is set, not while typing.
 - Rows has no Duration, Volume and Working sets header; the session's length is under the title and the totals are in
   Finish.
@@ -2462,6 +2518,7 @@ Session
   Keep the screen awake                           [on]
   Count warm-ups in volume                       [off]
   Scroll to the next exercise in a superset       [on]
+  Ask before going up a load                      [on]   (the progression offer, §5.3)
 Alerts
   Rest alerts: on, time sensitive                      (or "not time sensitive", "not asked yet", or a warning; §9.2)
 Apple Health

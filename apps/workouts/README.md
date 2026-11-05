@@ -3,9 +3,11 @@
 An iPhone app (iOS 27) for strength sessions in the gym, writing them into a
 substrate as records of a training package the app keeps there. It lists the
 workout routines, starts a session from one or from nothing, and runs it:
-exercises in any order, supersets, warm-up, drop and myo-rep sets, timed sets,
-RPE, rest timers that notify when rest ends, and a suggested load and rep
-count for the next set from this session and earlier ones. Each finished
+exercises in any order, supersets and warm-up circuits, warm-up, drop and
+myo-rep sets, timed sets, reps left and why a set ended, rest timers that
+notify when rest ends, a suggested load and rep count for the next set from
+this session and earlier ones, an offer of the next load once two sessions
+reached the top of the range, and the time the session should end. Each finished
 session is also saved to Apple Health as one strength workout. It came to
 this repository from an app called Spotter; its spec is
 [DESIGN.md](DESIGN.md), and its package is [Package/](package/README.md).
@@ -18,8 +20,9 @@ newest first. **Stats** shows progress across every routine, or one. **Exercises
 estimated 1RM trend. **Settings** holds units, rest defaults, the session
 switches, alerts, Apple Health, the substrate, imports and the update check. A session
 runs in a full-screen cover whose default layout, **Rows**, shows each set as
-a line, opens the next set in place with steppers and the planned RPE filled
-in (any other set opens with a tap, in any order), and keeps an island at the
+a line, opens the next set in place with steppers, the slot's cue and the
+planned reps left filled in (any other set opens with a tap, in any order),
+and keeps an island at the
 bottom with the rest countdown, the next set once its editor is scrolled away,
 and the set after it; **Table** is the grid. The session's Live Activity
 (`SubstrateWorkoutsWidgets`) shows the rest on the Lock Screen and in the
@@ -36,10 +39,10 @@ mise run apps:release prerelease workouts   # archived, signed and published und
 **A routine's page** opens on its folder, notes and what the plan holds, then Plan or
 Progress. The plan is the routine as a started session draws it, read only: a card per
 exercise or group, each planned set a line with its label, its targets (load, reps or hold,
-the RPE), its tags and last time, groups by round, with no glyph to tick and nothing that
+the reps left), its tags and last time, groups by round, with no glyph to tick and nothing that
 answers a tap but an exercise's name, which opens its history. On the signed-in substrate,
 Edit, and only Edit, edits the routine in place: the lines take the session's glyphs, a tap
-opens a set as a session's panel with steppers, RPE stops and its rest, each line's and
+opens a set as a session's panel with steppers, reps left among them, and its rest, each line's and
 card's `…` hold the rest, and Save queues one guarded write as before. Progress, and the **Stats** tab for every
 routine or one, show the period's sessions and rate, volume, working sets and time per
 session, the weeks trained, volume over time, the last session against the one before, each
