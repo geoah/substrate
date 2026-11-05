@@ -733,6 +733,15 @@ and `MISE_TASK_RUN_AUTO_INSTALL=false` stops `mise run` installing the rest,
 so a task that needs a tool its job did not name fails and the fix is to name
 it.
 
+A job that restores mise from the cache downloads nothing to verify it: since
+mise-action 5.2.4 the release's signed checksums are kept in the cache beside
+the binary and checked again on every restore. Before, every job fetched them
+from GitHub, and a blip there (curl's exit 22, five quick retries) failed jobs
+that had restored everything they needed. Caches saved by an older action hold
+no checksums and are only saved again on a miss, so `cache_key_prefix` moved to
+`mise-v2` with the upgrade; bump it again whenever a cache's contents must be
+replaced rather than reused.
+
 Each Go job's first step is `.mise/changescheck.sh`, the path gate. On a pull
 request the checkout is the PR's merge commit, and the gate diffs the tree
 against its first parent, the base branch's tip, which the job's two-commit

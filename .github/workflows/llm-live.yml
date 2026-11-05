@@ -80,10 +80,11 @@ jobs:
       # Go installed afresh, never restored from the Actions cache: the
       # provider key reaches the go this step puts on PATH, and any job on main
       # can write the cache entry a restore would read.
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           install_args: go
           cache: false
       # The key reaches this step alone. go test's default 10 minute timeout

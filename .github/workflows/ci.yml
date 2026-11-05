@@ -170,10 +170,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint yamlfmt yamllint shellcheck ruff
             lychee goreleaser uv actionlint zizmor
@@ -203,10 +204,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint
       # golangci-lint typechecks the module, so it wants the same module and
@@ -250,10 +252,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint
       # Its own key: this job's working set is four foreign GOARCHes, which the
@@ -322,10 +325,11 @@ jobs:
       - id: changes
         run: .mise/changescheck.sh
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
@@ -420,10 +424,11 @@ jobs:
       - if: steps.changes.outputs.go == 'true'
         run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
@@ -502,10 +507,11 @@ jobs:
       - if: steps.changes.outputs.go == 'true'
         run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go
       # One key for every shard: they all build the one engine test binary, so
@@ -567,10 +573,11 @@ jobs:
         with:
           persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
       - id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -641,10 +648,11 @@ jobs:
         with:
           persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go
       - id: cache
@@ -707,10 +715,11 @@ jobs:
         with:
           persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
       # Its own key: -covermode=atomic instruments every package, so the
       # objects `go test` and the shards cache are of no use here.
@@ -765,10 +774,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       # Its own key: -race builds a differently-instrumented object for every
@@ -810,10 +820,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       # NO pnpm store cache here, deliberately — it was measured and it does not
@@ -833,10 +844,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       # NO pnpm store cache here, deliberately — it was measured and it does not
@@ -865,10 +877,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install: false
       - run: mise run ci:apps
@@ -901,10 +914,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: swift@6.4.2 java@temurin-21.0.11+10.0.LTS
       - run: mise run ci:android
@@ -948,10 +962,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
+          cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       - run: mise run ci:image
