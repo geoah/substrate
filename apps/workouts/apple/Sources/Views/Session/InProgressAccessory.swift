@@ -45,9 +45,9 @@ struct InProgressAccessory: View {
     @ViewBuilder
     private var clock: some View {
         if let end = accessory.restEndsAt {
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("Rest")
-                CountdownText(start: .now, end: end)
+                CountdownText(start: .now, end: end, alignment: .leading)
             }
             .font(.subheadline.weight(.semibold).monospacedDigit())
             .foregroundStyle(.tint)
@@ -55,7 +55,9 @@ struct InProgressAccessory: View {
         } else if let start = accessory.timerStartedAt {
             HStack(spacing: 4) {
                 Circle().fill(.red).frame(width: 6, height: 6)
-                Text(timerInterval: start ... .distantFuture, countsDown: false)
+                TimerWidth(seconds: 0, alignment: .leading) {
+                    Text(timerInterval: start ... .distantFuture, countsDown: false)
+                }
             }
             .font(.subheadline.weight(.semibold).monospacedDigit())
             .foregroundStyle(.red)
