@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.117.0](https://github.com/geoah/substrate/compare/v0.116.0...v0.117.0) (2026-11-05)
+
+
+### Added
+
+* **apps:** App Store screenshots for Tasks, Sync, Chat and Console ([#1188](https://github.com/geoah/substrate/issues/1188)) ([b7bbc71](https://github.com/geoah/substrate/commit/b7bbc713093bb19f07b35409240265201ed3e4de))
+
+
+### Fixed
+
+* **apple:** sign-in marks carry the stacked layers, as the app icons do ([#1190](https://github.com/geoah/substrate/issues/1190)) ([630b1b6](https://github.com/geoah/substrate/commit/630b1b6213072be319fce0b4a56c1dd05babca85))
+* **apple:** the console from the App Store opens no registration ([#1189](https://github.com/geoah/substrate/issues/1189)) ([d650fd4](https://github.com/geoah/substrate/commit/d650fd462c74025ea5e622f0457231834a0e33d6))
+
 ## [0.116.0](https://github.com/geoah/substrate/compare/v0.115.0...v0.116.0) (2026-11-04)
 
 
