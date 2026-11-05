@@ -38,7 +38,8 @@ public struct RowsEditor: Codable, Equatable, Sendable {
     /// Beside the label: the exercise in a group, `Drop`, `Mini-set 3`; nil for a plain set.
     public var caption: String?
     /// The header line after the title: the suggestion's reason, `after the rest`,
-    /// `of 2`, `to failure`, `at 6 kg`, `holding`, `logged at 09:28`.
+    /// `of 2` (in a group `warm-up 1 of 2`), `to failure`, `at 6 kg`, `holding`,
+    /// `logged at 09:28`.
     public var note: RowsNote?
     /// On the header's right: `no rest` on a drop.
     public var trailingNote: String?

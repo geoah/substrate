@@ -68,4 +68,30 @@ struct WarmupCircuitTests {
         #expect(try UpNext.sequence(state) == [script.row("bike", 0), script.row("press", 0), script.row("press", 1)])
         #expect(try UpNext.round(of: script.row("bike", 0), in: state) == 0)
     }
+
+    @Test("the open warm-up's note: none in a circuit, whose round says it; the warm-up named in a group")
+    func editorNote() throws {
+        func note(_ script: EngineScript, _ slot: String) throws -> RowsNote? {
+            let state = try script.current
+            let layout = SessionPresenter.present(
+                state, history: HistoryIndex([]), settings: Progression.settings, now: engineEpoch
+            ).rowsLayout
+            let id = try script.row(slot, 0)
+            let line = layout.blocks.lazy.compactMap { $0.item(id) }.first
+            return try #require(line?.editor, "\(slot) is not open").note
+        }
+        #expect(try note(circuit(), "bike") == nil)
+
+        var mixed = EngineScript(at: engineEpoch)
+        try mixed.start(
+            EngineCatalog.routine(
+                [
+                    EngineCatalog.slot(
+                        "press", EngineCatalog.press,
+                        [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "w2", role: .warmup), PlannedSet(key: "s1")],
+                        group: "g"),
+                    EngineCatalog.slot("row", EngineCatalog.row, [PlannedSet(key: "s1")], group: "g"),
+                ], groups: [RoutineGroup(key: "g", groupKind: .superset)]), exercises: EngineCatalog.all)
+        #expect(try note(mixed, "press") == RowsNote(text: "warm-up 1 of 2", kind: .status))
+    }
 }
