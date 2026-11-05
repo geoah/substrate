@@ -707,7 +707,9 @@ struct RowsEffortRow: View {
                     .contentShape(.capsule)
             }
             .buttonStyle(.plain)
-            .disabled(effort.rate == nil)
+            // Not `disabled`: a rated value is drawn solid at full strength,
+            // and a disabled button would dim it; it just takes no tap.
+            .allowsHitTesting(effort.rate != nil)
             .accessibilityLabel(effort.accessibilityLabel)
             .accessibilityValue(effort.accessibilityValue)
             .accessibilityHint(effort.rate == nil ? "" : "Rates it as shown")
