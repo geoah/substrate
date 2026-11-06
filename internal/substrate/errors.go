@@ -96,7 +96,7 @@ var (
 	// the API answers 503 with Retry-After, and the payload's reason is
 	// ReasonObservedRederiving so a client tells it from every other 503.
 	ErrObservedRederiving = fmt.Errorf("%w: the observed index this read selects is being re-derived", ErrUnavailable)
-	// ErrAllowance refuses a call the operator would pay for (decision 0230)
+	// ErrAllowance refuses a call the operator would pay for (decision 0232)
 	// because the repository's allowance for the UTC day is used up, or would
 	// be by this call's reserved ceiling. The message names the site, the
 	// reset and the way out. It wraps ErrGuard, so the API answers 403

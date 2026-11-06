@@ -324,7 +324,7 @@ Three consequences an operator meets:
 ## Operator defaults
 
 An operator who pays for the people it invites names one file in
-`SUBSTRATE_OPERATOR_DEFAULTS` ([decision 0230](decisions/0230-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md),
+`SUBSTRATE_OPERATOR_DEFAULTS` ([decision 0232](decisions/0232-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md),
 [the plan](plans/host-defaults.md)). An operator default is a key the file
 supplies, used only where a repository holds none of its own. Without the
 file the server behaves as the section above says. With it:

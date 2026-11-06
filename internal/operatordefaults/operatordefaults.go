@@ -3,7 +3,7 @@
 // an operator default is a key or an OAuth client the operator supplies, used
 // only where a repository holds none of its own, and the file's budget is the
 // allowance that bounds what the operator pays for one repository in one UTC
-// day (docs/plans/host-defaults.md, decision 0230). A deployment without the
+// day (docs/plans/host-defaults.md, decision 0232). A deployment without the
 // file has no operator defaults, and nothing in this package runs.
 //
 // The file holds no key material itself. Every credential is a reference, `{file:

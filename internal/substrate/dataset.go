@@ -305,7 +305,7 @@ type Dataset interface {
 	// its package. Repeating it or completing a revoked token is a no-op.
 	CompleteAppAddon(ctx context.Context, tokenID, packageID string) error
 
-	// --- operator defaults (decision 0230) ---
+	// --- operator defaults (decision 0232) ---
 	// OperatorDefaults answers each slot the repository spends a key through
 	// that the operator could fill (its llm/provider rows and its embeddings
 	// provider), each resolved by the same reads dispatch and the embed drain

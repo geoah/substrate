@@ -105,7 +105,7 @@ import (
 //     the keys answer for, so the keys stay valid; only a fresh database
 //     forgets them, which docs/api.md states.
 //   - operator_spend_reservations: the operator's ledger of what it paid for
-//     on this repository's behalf (operatorspend.go, decision 0230). It is
+//     on this repository's behalf (operatorspend.go, decision 0232). It is
 //     the operator's data, never the repository's, so a rebuild or a restore
 //     leaves the day's allowance where it was.
 //   - repositories — the control plane, one row per repository.

@@ -7,7 +7,7 @@ import (
 )
 
 // operatorDefaultsRoute answers which slots the operator fills for this
-// repository and today's allowance (decision 0230, docs/plans/host-defaults.md).
+// repository and today's allowance (decision 0232, docs/plans/host-defaults.md).
 const operatorDefaultsRoute = "/operator/defaults"
 
 // getOperatorDefaults serves GET /api/v1/operator/defaults: the engine's

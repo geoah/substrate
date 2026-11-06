@@ -11,7 +11,7 @@
 # (SUBSTRATE_OPERATOR_DEFAULTS) lists runs on the operator's transport, and the
 # row's wire, baseURL, headers, defaults, cache, titleModel and pricing are
 # ignored for it, so the operator's bearer still never reaches a
-# repository-chosen endpoint (decision 0230). Only the anthropic wire has an
+# repository-chosen endpoint (decision 0232). Only the anthropic wire has an
 # endpoint of its own to leave baseURL empty against.
 #
 # An agent references a row by id (`provider: openai`) and names its model as

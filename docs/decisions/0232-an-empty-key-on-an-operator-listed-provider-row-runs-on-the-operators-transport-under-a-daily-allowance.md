@@ -4,7 +4,7 @@ date: 2026-11-06
 decision-makers: George Antoniadis
 ---
 
-# 0230. An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance
+# 0232. An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance
 
 ## Context and Problem Statement
 

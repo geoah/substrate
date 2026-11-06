@@ -234,7 +234,7 @@ var features = []featureInfo{
 // operatorDefaultsFeature is listed only where the server booted with an
 // operator defaults file: `GET /operator/defaults` is served everywhere, and
 // the entry is what tells a client the operator pays for anything (decision
-// 0230). Alpha while the plan's later phases add OAuth clients and function
+// 0232). Alpha while the plan's later phases add OAuth clients and function
 // secrets to it.
 var operatorDefaultsFeature = featureInfo{Name: substrate.FeatureOperatorDefaults, Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}}
 

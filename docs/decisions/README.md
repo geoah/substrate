@@ -386,4 +386,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0226](0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `lifecycle` trait, and names its done and dropped states | accepted |
 | [0228](0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md) | A person, an app or an agent creates a record under a minted id, a UUIDv7 in 26 Crockford characters | accepted |
 | [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | proposed |
-| [0230](0230-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
+| [0232](0232-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |

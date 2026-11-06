@@ -11,7 +11,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// THE OPERATOR TRANSPORT (decision 0230). A live llm/provider row with an
+// THE OPERATOR TRANSPORT (decision 0232). A live llm/provider row with an
 // empty apiKey whose id the operator's defaults file lists is served by the
 // operator's entry WHOLE: wire, base URL, key, headers, defaults, cache, title
 // model, models and prices all come from the entry, and nothing the row holds
