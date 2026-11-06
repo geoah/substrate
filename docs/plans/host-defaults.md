@@ -50,7 +50,6 @@ optional.
 | Embeddings | the one `llm/provider` row with `embedModel` | engine embed drain (Go) | yes, phase 1 |
 | Google, GitHub, WHOOP sign-in | the bundle's OAuth client input (`config` record) | engine OAuth facility; functions never see the client secret | yes, phase 2 |
 | Firecrawl search and scrape | `secret` record of the **sample** | the sample's Python functions | phase 3, after it becomes a hardened provider |
-| ElevenLabs, Soniox | no bundle | new provider functions | phase 4 |
 | Linear, Notion, Slack, Beeper | the person's own token on their account | provider functions | no, the token is the person's |
 | Apple, Apple Health | pushed by the person's device | none | nothing to supply |
 
@@ -405,7 +404,7 @@ on the `screenshots/host-defaults` branch with these screens:
 
 ## Implementation plan
 
-Four pull requests, in order. Each lands behind the host file: a deployment
+Three pull requests, in order. Each lands behind the host file: a deployment
 without `SUBSTRATE_HOST_DEFAULTS` behaves exactly as today, which is what
 every existing test keeps proving.
 
@@ -499,13 +498,7 @@ Checks: `internal/providertest` cases for host mode (key injected, refused
 past the budget, absent for a sample copy, absent for a function not named
 as a consumer).
 
-### Phase 4: more providers on the same rule
-
-ElevenLabs (speech) and Soniox (transcription) as new providers with
-`functionSecrets` entries. Not designed here beyond the rule phase 3
-establishes.
-
-### After phase 4: Google production client
+### After phase 3: Google production client
 
 The host creates the production client in a new GCP project, completes
 Google's verification, swaps the client in the file, and every Google
@@ -518,3 +511,5 @@ account reconnects once.
 - One per-repository daily budget is enough; no host-wide monthly stop.
 - No per-repository withdrawal: abuse is not a concern for this group, and
   removing an entry from the file withdraws it for everyone.
+- Speech (ElevenLabs) and transcription (Soniox) are out of scope for now.
+  A later provider would follow phase 3's rule for function secrets.
