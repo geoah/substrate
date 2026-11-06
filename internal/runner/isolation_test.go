@@ -1219,8 +1219,10 @@ def main(input, host):
 
 // A confined body opens no Unix socket, so a resolver or proxy daemon on a
 // pathname socket cannot carry its traffic past the gate, while socketpair(2)
-// still gives it a connected pair. A runner that never called
-// ConfineBodyEgress, as in production, still reaches the socket. The
+// still gives it a connected pair. socket(2) is where it is refused, for a
+// body granted network and for one granted none. A runner that never called
+// ConfineBodyEgress, as in production, lets a body granted no network reach
+// the socket, and its connect gate refuses a network body's connect. The
 // listener is a pathname socket in this test's own directory.
 func TestAConfinedBodyOpensNoUnixSocket(t *testing.T) {
 	confined := New()
@@ -1266,11 +1268,16 @@ def attempt(fn):
 def main(input, host):
     path = input["args"]["path"]
     def unix():
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        except OSError as e:
+            return "socket:%s" % e.errno
         try:
             s.settimeout(5)
             s.connect(path)
             s.sendall(b"leaked")
+        except OSError as e:
+            return "connect:%s" % e.errno
         finally:
             s.close()
         return "ok"
@@ -1284,34 +1291,42 @@ def main(input, host):
             b.close()
     return {"output": {"unix": attempt(unix), "pair": attempt(pair)}}
 `
-	spec := Spec{
+	offline := Spec{
 		Repository: "t1", Function: "unixsocket.g.test", Runtime: "python",
-		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+		Source: probe, TimeoutMs: 20000,
 	}
+	online := offline
+	online.Function = "unixsocketnet.g.test"
+	online.Network = []string{"api.example.com"}
 	in := testInput()
 	in.Args = map[string]any{"path": path}
-	res, err := confined.Invoke(context.Background(), spec, in, nil)
-	if err != nil {
-		t.Fatalf("invoke: %v", err)
+	invoke := func(r *Runner, spec Spec) map[string]any {
+		t.Helper()
+		res, err := r.Invoke(context.Background(), spec, in, nil)
+		if err != nil {
+			t.Fatalf("invoke %s: %v", spec.Function, err)
+		}
+		out, _ := res.Output.(map[string]any)
+		return out
 	}
-	out, _ := res.Output.(map[string]any)
-	if out["unix"] != "err:13" || out["pair"] != "ok" {
-		t.Fatalf("a confined body answered %v, want its Unix socket refused with EACCES and its socketpair working", out)
-	}
-	select {
-	case got := <-received:
-		t.Fatalf("a confined body reached a pathname Unix socket: %q", got)
-	case <-time.After(500 * time.Millisecond):
+	for _, spec := range []Spec{offline, online} {
+		if out := invoke(confined, spec); out["unix"] != "socket:13" || out["pair"] != "ok" {
+			t.Fatalf("a confined body (network %v) answered %v, want socket(2) refused with EACCES and its socketpair working", spec.Network, out)
+		}
 	}
 
 	unconfined := New()
-	res, err = unconfined.Invoke(context.Background(), spec, in, nil)
-	if err != nil {
-		t.Fatalf("invoke unconfined: %v", err)
+	if out := invoke(unconfined, online); out["unix"] != "connect:13" {
+		t.Fatalf("an unconfined network body answered %v, want its Unix connect refused with EACCES by the connect gate", out)
 	}
-	out, _ = res.Output.(map[string]any)
-	if out["unix"] != "ok" {
-		t.Fatalf("an unconfined body could not reach a pathname Unix socket: %v", out)
+	select {
+	case got := <-received:
+		t.Fatalf("a refused body reached a pathname Unix socket: %q", got)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if out := invoke(unconfined, offline); out["unix"] != "ok" {
+		t.Fatalf("an unconfined body granted no network could not reach a pathname Unix socket: %v", out)
 	}
 	select {
 	case got := <-received:

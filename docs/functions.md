@@ -472,13 +472,19 @@ unprivileged, none requiring a container runtime:
   `egress blocked by the server's dial gate`. The kernel never finishes a
   `connect` the supervisor has only inspected: the supervisor makes every
   connect it allows itself, with its own copy of the address, so a second
-  thread that rewrites the address mid-check changes nothing. A unix-socket
-  connect from a network body is made the same way, on the body's own
-  socket, to the path the body named. An abstract unix address is refused:
-  from Landlock ABI 6, Landlock confines a body's abstract connects to its
-  own processes, and a connect the supervisor makes is outside them. A
-  netlink `connect` is refused too; runtimes bind a netlink socket and send
-  on it instead.
+  thread that rewrites the address mid-check changes nothing. **A network
+  body cannot connect a unix socket**: every unix `connect`, by path or by
+  abstract name, is refused with `EACCES`. The supervisor would have to make
+  that connect, and the listener would then see the supervisor's process,
+  not the body's. A `socketpair` still works, so does the `AF_UNSPEC`
+  `connect` that drops a socket's peer, and glibc's name lookup reads its
+  refused nscd socket as no nscd. Python's `multiprocessing` connects a unix
+  socket to reach a manager and to start a process under its `forkserver`
+  method, the default on Linux from Python 3.14, so a network body uses no
+  manager and starts processes with `multiprocessing.get_context("spawn")`.
+  A body that declares no network connects unix sockets as before. A netlink
+  `connect` is refused too; runtimes bind a netlink socket and send on it
+  instead.
   A network body's internet sockets are TCP streams and datagram sockets.
   SCTP, MPTCP and raw sockets are refused with `EACCES`, because SCTP opens
   an association without `connect`, MPTCP is not the TCP the supervisor

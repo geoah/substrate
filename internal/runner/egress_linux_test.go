@@ -4,8 +4,10 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -417,92 +419,92 @@ def main(input, host):
 	}
 }
 
-// A network body's unix sockets are connected by the supervisor too, on the
-// body's own socket, so a pathname listener in the body's directory stays
-// reachable, by an absolute path and by one relative to its working
-// directory, as a stream and as a datagram socket. An abstract address is
-// refused: Landlock confines a body's abstract connects to its own domain, and
-// a connect the supervisor makes would be outside it.
-func TestNetworkBodyKeepsItsUnixSockets(t *testing.T) {
+// A network body connects no unix socket. The supervisor would have to make
+// the connect for it, and a connect it made would carry its own credentials to
+// the listener and share the body's socket flags and send timeout with every
+// thread of the body. So every unix connect a network body makes is refused
+// with EACCES: by path, absolute or relative, stream or datagram, blocking or
+// not, and by abstract name. The listeners outside the body are the ground
+// truth, and one that accepts names the peer's pid, which would be this test
+// process's: the supervisor runs in it. A socketpair, which asyncio's event
+// loop opens, still works, and glibc's getaddrinfo, which tries nscd's socket
+// first, still resolves.
+func TestNetworkBodyCannotConnectAUnixSocket(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
 	requireConnectGate(t, r)
 
+	// sockaddr_un holds 108 bytes, so the directory is a short one.
+	dir, err := os.MkdirTemp("", "ug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	streamPath := filepath.Join(dir, "stream")
+	stream, err := net.ListenUnix("unix", &net.UnixAddr{Name: streamPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	abstractName := fmt.Sprintf("substrate-gate-test-%d", os.Getpid())
+	abstract, err := net.ListenUnix("unix", &net.UnixAddr{Name: "@" + abstractName, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abstract.Close()
+	datagramPath := filepath.Join(dir, "datagram")
+	datagram, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: datagramPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer datagram.Close()
+
 	const probe = `
 import os, shutil, socket, tempfile
-def roundtrip(srv, client):
-    a, _ = srv.accept()
-    with a:
-        client.sendall(b"ping")
-        return a.recv(4).decode()
+def connect(typ, address, blocking=True):
+    try:
+        with socket.socket(socket.AF_UNIX, typ) as c:
+            c.setblocking(blocking)
+            c.connect(address)
+        return "connected"
+    except OSError as e:
+        return "err:%d" % e.errno
 def main(input, host):
-    # The work dir outlives the process, so each run binds in a fresh one.
+    a = input["args"]
+    out = {
+        "absolute": connect(socket.SOCK_STREAM, a["stream"]),
+        "nonblocking": connect(socket.SOCK_STREAM, a["stream"], blocking=False),
+        "datagram": connect(socket.SOCK_DGRAM, a["datagram"]),
+        "abstract": connect(socket.SOCK_STREAM, "\0" + a["abstract"]),
+    }
     tmp = tempfile.mkdtemp(dir=os.environ["TMPDIR"])
     try:
-        return {"output": probe(tmp)}
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
+            srv.bind(os.path.join(tmp, "own"))
+            srv.listen(4)
+            out["own"] = connect(socket.SOCK_STREAM, os.path.join(tmp, "own"))
+            os.chdir(tmp)
+            out["relative"] = connect(socket.SOCK_STREAM, "own")
     finally:
         os.chdir(os.environ["TMPDIR"])
         shutil.rmtree(tmp, ignore_errors=True)
-def probe(tmp):
-    out = {}
-    path = os.path.join(tmp, "s1")
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
-        srv.bind(path)
-        srv.listen(4)
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-                c.connect(path)
-                out["absolute"] = roundtrip(srv, c)
-        except OSError as e:
-            out["absolute"] = "err:%d" % e.errno
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-                c.setblocking(False)
-                c.connect(path)
-                c.setblocking(True)
-                out["nonblocking"] = roundtrip(srv, c)
-        except OSError as e:
-            out["nonblocking"] = "err:%d" % e.errno
-        os.chdir(tmp)
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-                c.connect("s1")
-                out["relative"] = roundtrip(srv, c)
-        except OSError as e:
-            out["relative"] = "err:%d" % e.errno
-    dpath = os.path.join(tmp, "d1")
-    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as srv:
-        srv.bind(dpath)
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as c:
-                c.connect(dpath)
-                c.send(b"ping")
-                out["datagram"] = srv.recv(4).decode()
-        except OSError as e:
-            out["datagram"] = "err:%d" % e.errno
+    left, right = socket.socketpair()
+    with left, right:
+        left.sendall(b"ping")
+        out["socketpair"] = right.recv(4).decode()
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-            c.connect(os.path.join(tmp, "missing"))
-        out["missing"] = "connected"
+        out["getaddrinfo"] = socket.getaddrinfo("localhost", 443, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
     except OSError as e:
-        out["missing"] = "err:%d" % e.errno
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
-        name = "\0substrate-gate-test-%d" % os.getpid()
-        srv.bind(name)
-        srv.listen(1)
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-                c.connect(name)
-            out["abstract"] = "connected"
-        except OSError as e:
-            out["abstract"] = "err:%d" % e.errno
-    return out
+        out["getaddrinfo"] = "err:%s" % e
+    return {"output": out}
 `
 	spec := Spec{
 		Repository: "t1", Function: "unixsockets.g.test", Runtime: "python",
 		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
 	}
-	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
+	in := testInput()
+	in.Args = map[string]any{"stream": streamPath, "datagram": datagramPath, "abstract": abstractName}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -510,33 +512,56 @@ def probe(tmp):
 	if !ok {
 		t.Fatalf("unexpected output: %#v", res.Output)
 	}
-	for _, conn := range []string{"absolute", "nonblocking", "relative", "datagram"} {
-		if out[conn] != "ping" {
-			t.Errorf("a network body's %s unix connect = %v, want the echo", conn, out[conn])
+	for name, ln := range map[string]*net.UnixListener{"pathname": stream, "abstract": abstract} {
+		if err := ln.SetDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			c, err := ln.AcceptUnix()
+			if err != nil {
+				break
+			}
+			pid := int32(-1)
+			if raw, err := c.SyscallConn(); err == nil {
+				_ = raw.Control(func(fd uintptr) {
+					if cred, err := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED); err == nil {
+						pid = cred.Pid
+					}
+				})
+			}
+			_ = c.Close()
+			t.Errorf("the %s listener accepted a connection from pid %d (the supervisor's is %d)", name, pid, os.Getpid())
 		}
 	}
-	// The kernel's own answer for a path with nothing behind it.
-	if out["missing"] != "err:2" {
-		t.Errorf("a unix connect to a missing path = %v, want err:2 (ENOENT)", out["missing"])
+	for _, conn := range []string{"absolute", "nonblocking", "datagram", "abstract", "own", "relative"} {
+		if out[conn] != "err:13" {
+			t.Errorf("a network body's %s unix connect = %v, want err:13 (EACCES)", conn, out[conn])
+		}
 	}
-	if out["abstract"] != "err:13" {
-		t.Errorf("a network body's abstract unix connect = %v, want err:13 (EACCES)", out["abstract"])
+	if out["socketpair"] != "ping" {
+		t.Errorf("a network body's socketpair = %v, want the echo", out["socketpair"])
+	}
+	if out["getaddrinfo"] != "127.0.0.1" {
+		t.Errorf("getaddrinfo(localhost) in a network body = %v, want 127.0.0.1", out["getaddrinfo"])
 	}
 }
 
-// A blocking unix connect waits while the listener's queue is full, and the
-// runner makes that connect on the body's behalf. It must still end where the
-// kernel's would: at the body's own send timeout, with EAGAIN. And a body that
-// waits with no timeout must not hold the gate: a timeout's kill closes the
-// gate before it signals the body, so a runner stuck in the connect would
-// never tear the body down.
-func TestABlockedUnixConnectDoesNotHoldTheConnectGate(t *testing.T) {
+// A body's socket and the supervisor's duplicate of it share one set of flags
+// and options, so a supervisor that connected the body's own unix socket could
+// be made to wait: a second thread clears O_NONBLOCK or the send timeout
+// between the supervisor's check and its connect, and the connect then waits
+// on a full listener queue with no deadline, holding the gate and every
+// teardown behind it. A body that does exactly that, while it connects the
+// socket by path and dissolves it with AF_UNSPEC in a loop, gets an answer to
+// every call at once, and its process tears down.
+func TestAUnixConnectRacingItsSocketFlagsCannotHoldTheGate(t *testing.T) {
 	r := New()
 	requireSeccomp(t, r)
 	requireConnectGate(t, r)
 
 	const probe = `
-import os, shutil, socket, struct, tempfile, time
+import ctypes, fcntl, os, shutil, socket, struct, tempfile, threading, time
+libc = ctypes.CDLL(None, use_errno=True)
 def main(input, host):
     tmp = tempfile.mkdtemp(dir=os.environ["TMPDIR"])
     path = os.path.join(tmp, "q")
@@ -544,62 +569,98 @@ def main(input, host):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
             srv.bind(path)
             srv.listen(0)
+            # Where unix connects go through, fill the listener's queue, so a
+            # blocking connect to it waits.
             fillers = []
             while True:
                 c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 c.setblocking(False)
                 try:
                     c.connect(path)
-                except BlockingIOError:
+                except OSError:
                     c.close()
                     break
                 fillers.append(c)
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
-                if not input["args"]["forever"]:
-                    c.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, struct.pack("ll", 1, 0))
-                start = time.monotonic()
-                try:
-                    c.connect(path)
-                    result = "connected"
-                except OSError as e:
-                    result = "err:%d" % e.errno
-                return {"output": {"result": result, "queued": len(fillers), "waited": time.monotonic() - start}}
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            fd = c.fileno()
+            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+            no_timeout = struct.pack("ll", 0, 0)
+            stop = threading.Event()
+            def mutate():
+                while not stop.is_set():
+                    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                    c.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, no_timeout)
+                    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+                    c.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, no_timeout)
+            mutator = threading.Thread(target=mutate, daemon=True)
+            mutator.start()
+            sun = struct.pack("=H", socket.AF_UNIX) + path.encode() + b"\0"
+            targets = [(ctypes.create_string_buffer(sun, len(sun)), len(sun)),
+                       (ctypes.create_string_buffer(16), 16)]
+            answers, slowest, end = {}, 0.0, time.monotonic() + 1.0
+            while time.monotonic() < end:
+                for target, size in targets:
+                    start = time.monotonic()
+                    rc = libc.connect(fd, target, size)
+                    slowest = max(slowest, time.monotonic() - start)
+                    key = "ok" if rc == 0 else "err:%d" % ctypes.get_errno()
+                    answers[key] = answers.get(key, 0) + 1
+            stop.set()
+            mutator.join(timeout=1)
+            c.close()
+            return {"output": {"answers": answers, "queued": len(fillers), "slowest": slowest}}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 `
 	spec := Spec{
-		Repository: "t1", Function: "unixqueue.g.test", Runtime: "python",
-		Source: probe, TimeoutMs: 3000, Network: []string{"api.example.com"},
+		Repository: "t1", Function: "unixrace.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 5000, Network: []string{"api.example.com"},
 	}
-	in := testInput()
-	in.Args = map[string]any{"forever": false}
-	res, err := r.Invoke(context.Background(), spec, in, nil)
-	if err != nil {
-		t.Fatalf("invoke: %v", err)
+	type result struct {
+		res *Result
+		err error
 	}
-	out, _ := res.Output.(map[string]any)
-	if out["queued"] == float64(0) {
-		t.Fatalf("the listener's queue never filled: %v", out)
+	invoked := make(chan result, 1)
+	go func() {
+		res, err := r.Invoke(context.Background(), spec, testInput(), nil)
+		invoked <- result{res, err}
+	}()
+	var got result
+	select {
+	case got = <-invoked:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the invocation did not end within 20s: a unix connect held the connect gate")
 	}
-	if out["result"] != "err:11" {
-		t.Errorf("a blocking unix connect to a full queue with a 1s send timeout = %v, want err:11 (EAGAIN)", out["result"])
+	if got.err != nil {
+		t.Fatalf("invoke: %v", got.err)
 	}
-	if waited, _ := out["waited"].(float64); waited < 0.9 || waited > 2.5 {
-		t.Errorf("the connect gave up after %.2fs, want about the body's own 1s", waited)
+	out, ok := got.res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", got.res.Output)
+	}
+	// EACCES is the refused unix connect, EINVAL the kernel's answer to
+	// AF_UNSPEC on a unix stream socket.
+	answers, _ := out["answers"].(map[string]any)
+	for answer := range answers {
+		if answer != "err:13" && answer != "err:22" {
+			t.Errorf("a racing connect answered %s: %v", answer, answers)
+		}
+	}
+	if answers["err:13"] == nil {
+		t.Errorf("no unix connect was refused: %v", answers)
+	}
+	if slowest, _ := out["slowest"].(float64); slowest > 1 {
+		t.Errorf("the slowest connect took %.2fs, want an answer at once", slowest)
 	}
 
-	in.Args = map[string]any{"forever": true}
-	invoked := make(chan error, 1)
+	torn := make(chan struct{})
 	go func() {
-		_, err := r.Invoke(context.Background(), spec, in, nil)
-		invoked <- err
+		r.Reconcile(context.Background(), spec.Repository, nil)
+		close(torn)
 	}()
 	select {
-	case err := <-invoked:
-		if err == nil || !strings.Contains(err.Error(), "exceeded") {
-			t.Fatalf("invocation = %v, want its own timeout", err)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("the invocation did not end within 15s: a blocked unix connect held the connect gate")
+	case <-torn:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the body's process did not tear down within 10s")
 	}
 }

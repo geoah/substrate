@@ -57,7 +57,8 @@
 // multi-threaded body cannot race the destination past the check. Its
 // internet sockets are TCP streams and datagram sockets, and none of its
 // sends carries MSG_FASTOPEN (seccomp_linux.go), so connect(2) is the only
-// call that opens a connection. That filter
+// call that opens a connection. Its unix connects are refused: the runner
+// would make them, with its own credentials. That filter
 // is not optional — where the deployment denies the two
 // syscalls the supervisor answers notifications with, a body that declares
 // network is REFUSED rather than run unfiltered, in every mode but off. One

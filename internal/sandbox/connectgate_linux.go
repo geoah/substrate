@@ -441,7 +441,6 @@ const (
 	verdictDeny       verdict = iota // refuse with EACCES: the target could not be read or parsed, or its family is not one the gate connects
 	verdictRefuse                    // refuse with EACCES and record it: an INET destination the policy does not allow
 	verdictConnect                   // an allowed INET destination: emulate it on a fresh socket
-	verdictUnix                      // a unix address: connect the body's own socket from the runner
 	verdictDisconnect                // AF_UNSPEC: dissolve the body's association from the runner
 )
 
@@ -450,16 +449,16 @@ const (
 // resumed the syscall, and a second thread can change either in between, so
 // a family or a destination the check never saw would reach the kernel.
 // Instead the runner makes every connect it allows: an allowed INET
-// destination on a fresh socket it installs into the body, a unix address or
-// an AF_UNSPEC disconnect on its own duplicate of the body's socket, each with
-// its own copy of the address. Every other path refuses; nothing falls open.
+// destination on a fresh socket it installs into the body, and an AF_UNSPEC
+// disconnect on its own duplicate of the body's socket, each with its own copy
+// of the address. Every other path refuses; nothing falls open.
 func (g *connectGate) service(n *seccompNotif) bool {
 	v, family, dest, addr := g.classify(n)
 	switch v {
 	case verdictConnect:
 		return g.emulateConnect(n, family, dest)
-	case verdictUnix, verdictDisconnect:
-		return g.connectInPlace(n, v, addr)
+	case verdictDisconnect:
+		return g.disconnect(n, addr)
 	case verdictRefuse:
 		// Recorded before the body is answered, so a runner that reads the
 		// record after the body's response sees this refusal.
@@ -478,10 +477,15 @@ func (g *connectGate) service(n *seccompNotif) bool {
 // SUBSTRATE_SANDBOX_EGRESS_ALLOW could lift. The copy it returns is the only
 // form of the address anything after it reads.
 //
-// A family the gate does not connect itself is a deny. AF_NETLINK is one: no
-// runtime a body runs connects a netlink socket (they bind it and send), and
-// a connect the runner made would be checked against the runner's
-// credentials, not the body's.
+// A family the gate does not connect itself is a deny. AF_UNIX is one: a unix
+// connect the runner made would carry the runner's credentials to the
+// listener (SO_PEERCRED is fixed at connect), and on the body's own socket the
+// runner would share the flags and the send timeout the kernel waits by with
+// every thread of the body, so a body could hold the runner in a connect to a
+// full listener. glibc's getaddrinfo tries nscd's socket first and reads the
+// refusal as no nscd. AF_NETLINK is another: no runtime a body runs connects a
+// netlink socket (they bind it and send), and a connect the runner made would
+// be checked against the runner's credentials, not the body's.
 func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort, []byte) {
 	uaddr := uintptr(n.Data.Args[1])
 	alen := int(int32(n.Data.Args[2]))
@@ -497,8 +501,6 @@ func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort, [
 	}
 	family := int(binary.LittleEndian.Uint16(buf[0:2]))
 	switch family {
-	case unix.AF_UNIX:
-		return verdictUnix, family, netip.AddrPort{}, buf
 	case unix.AF_UNSPEC:
 		return verdictDisconnect, family, netip.AddrPort{}, buf
 	case unix.AF_INET:
@@ -530,134 +532,29 @@ func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort, [
 	}
 }
 
-// connectInPlace runs the body's connect on the runner's duplicate of the
-// body's socket, with the runner's copy of the address: a unix address, or
-// AF_UNSPEC, which dissolves an association and reaches nothing. The
-// duplicate shares the body's open file description, so the body's own socket
-// is the one connected, with every option the body set on it. The socket's
-// domain is read from the duplicate, which no thread of the body can change,
-// so a unix address on an internet socket is refused, never passed on.
-//
-// The runner is outside the body's Landlock domain, so an abstract unix
-// address is refused (unixAddress): Landlock confines a body's abstract
-// connects to its own domain, and a connect the runner makes would not be held
-// to that. A pathname connect is checked against the same uid either way, and
-// the ruleset handles no Landlock right that mediates it.
-func (g *connectGate) connectInPlace(n *seccompNotif, v verdict, addr []byte) bool {
-	info, err := inspectSocket(tgidOf(int(n.Pid)), int(int32(n.Data.Args[0])))
+// disconnect runs an AF_UNSPEC connect, which dissolves a socket's
+// association and reaches nothing, on the runner's duplicate of the body's
+// socket, with the runner's copy of the address. glibc's getaddrinfo makes one
+// on its datagram socket between the addresses it orders. The duplicate shares
+// the body's flags and options, and no thread of the body can make this call
+// wait through them: a TCP or datagram internet socket, a unix datagram socket
+// and netlink each drop their peer without waiting, and a unix stream or
+// seqpacket socket refuses AF_UNSPEC with EINVAL.
+func (g *connectGate) disconnect(n *seccompNotif, addr []byte) bool {
+	dup, err := dupBodyFD(tgidOf(int(n.Pid)), int(int32(n.Data.Args[0])))
 	if err != nil {
 		return g.send(denyResp(n.ID, unix.EACCES))
 	}
-	defer info.close()
-	if v == verdictUnix {
-		if info.domain != unix.AF_UNIX {
-			return g.send(denyResp(n.ID, unix.EAFNOSUPPORT))
-		}
-		target, dirfd, errno := unixAddress(int(n.Pid), addr)
-		if errno != 0 {
-			return g.send(denyResp(n.ID, errno))
-		}
-		if dirfd >= 0 {
-			defer func() { _ = unix.Close(dirfd) }()
-		}
-		addr = target
-	}
+	defer func() { _ = unix.Close(dup) }()
 	// Confirm the notification is still live, so the descriptor duplicated
 	// above was the body's.
 	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
 		return g.send(denyResp(n.ID, unix.EACCES))
 	}
-	var errno unix.Errno
-	if v == verdictUnix && !info.nonblock && info.typ != unix.SOCK_DGRAM {
-		errno = g.waitUnixConnect(info.dupfd, addr, n.ID)
-	} else {
-		// A datagram connect, a non-blocking one and a disconnect never wait.
-		errno = rawConnect(info.dupfd, addr)
-	}
-	if errno != 0 {
+	if errno := rawConnect(dup, addr); errno != 0 {
 		return g.send(denyResp(n.ID, errno))
 	}
 	return g.send(&seccompNotifResp{ID: n.ID})
-}
-
-// unixAddress turns the unix address a body passed into one the runner can
-// connect to on the body's behalf. The kernel reads a pathname up to its first
-// NUL or the end of the address. A relative path names a file under the
-// connecting thread's working directory, which is not the runner's, so it is
-// reached through a descriptor on that directory, /proc/self/fd/<n>/<path>;
-// the descriptor is returned for the caller to close after the connect, and
-// is -1 when none was opened. An address with no path is the kernel's EINVAL,
-// and an abstract one is refused (connectInPlace).
-func unixAddress(tid int, raw []byte) ([]byte, int, unix.Errno) {
-	const pathAt = 2 // offsetof(struct sockaddr_un, sun_path)
-	if len(raw) <= pathAt || len(raw) > unix.SizeofSockaddrUnix {
-		return nil, -1, unix.EINVAL
-	}
-	path := raw[pathAt:]
-	if path[0] == 0 {
-		return nil, -1, unix.EACCES
-	}
-	if i := bytes.IndexByte(path, 0); i >= 0 {
-		path = path[:i]
-	}
-	dirfd := -1
-	if path[0] != '/' {
-		fd, err := unix.Open(fmt.Sprintf("/proc/%d/cwd", tid), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-		if err != nil {
-			return nil, -1, unix.EACCES
-		}
-		dirfd = fd
-		path = append([]byte(fmt.Sprintf("/proc/self/fd/%d/", fd)), path...)
-		if pathAt+len(path) > unix.SizeofSockaddrUnix {
-			_ = unix.Close(fd)
-			return nil, -1, unix.ENAMETOOLONG
-		}
-	}
-	addr := make([]byte, pathAt+len(path))
-	binary.LittleEndian.PutUint16(addr, unix.AF_UNIX)
-	copy(addr[pathAt:], path)
-	return addr, dirfd, 0
-}
-
-// waitUnixConnect connects a blocking unix stream or seqpacket socket without
-// letting the runner block on it. The kernel waits there while the listener's
-// queue is full, for as long as the socket's send timeout allows, and a body
-// that held the runner in that wait would hold its gate and its teardown. So
-// the duplicate's send timeout is set to one poll slice per attempt and the
-// body's own is restored before the body is answered. The attempts end when
-// one completes, when the body's own timeout or connectTimeout runs out, or
-// when the notification goes invalid or the gate closes.
-func (g *connectGate) waitUnixConnect(fd int, addr []byte, id uint64) unix.Errno {
-	own, err := unix.GetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO)
-	if err != nil {
-		return unix.EACCES
-	}
-	defer func() { _ = unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, own) }()
-	limit, ownLimit := connectTimeout, time.Duration(own.Nano())
-	if ownLimit > 0 && ownLimit < limit {
-		limit = ownLimit
-	}
-	deadline := time.Now().Add(limit)
-	for {
-		slice := min(time.Until(deadline), connectPollMs*time.Millisecond)
-		if slice <= 0 {
-			if limit == ownLimit {
-				return unix.EAGAIN // the kernel's own answer when a send timeout runs out
-			}
-			return unix.ETIMEDOUT
-		}
-		// A zero timeout is no timeout at all, so a slice never rounds to it.
-		tv := unix.NsecToTimeval(max(slice, time.Millisecond).Nanoseconds())
-		if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &tv); err != nil {
-			return unix.EACCES
-		}
-		if errno := rawConnect(fd, addr); errno != unix.EAGAIN && errno != unix.EINTR {
-			return errno
-		}
-		if g.stopping() || notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&id)) != nil {
-			return unix.ECONNABORTED
-		}
-	}
 }
 
 // rawConnect is connect(2) with an address already held as bytes, which no
@@ -665,14 +562,6 @@ func (g *connectGate) waitUnixConnect(fd int, addr []byte, id uint64) unix.Errno
 func rawConnect(fd int, addr []byte) unix.Errno {
 	_, _, errno := unix.Syscall(unix.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(len(addr)))
 	return errno
-}
-
-// stopping reports whether Close has asked the supervisor to stop. The stop
-// eventfd stays readable once it is written.
-func (g *connectGate) stopping() bool {
-	pfd := []unix.PollFd{{Fd: int32(g.stop), Events: unix.POLLIN}}
-	n, err := unix.Poll(pfd, 0)
-	return err == nil && n > 0
 }
 
 // emulateConnect connects to the verified destination in the runner and
@@ -872,12 +761,7 @@ func (s *sockInfo) close() {
 // runner's own copy, not the body's. It is read from the body's descriptor in
 // fdCloexec.
 func inspectSocket(tgid, fd int) (*sockInfo, error) {
-	pidfd, err := unix.PidfdOpen(tgid, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = unix.Close(pidfd) }()
-	dup, err := unix.PidfdGetfd(pidfd, fd, 0)
+	dup, err := dupBodyFD(tgid, fd)
 	if err != nil {
 		return nil, err
 	}
@@ -904,6 +788,18 @@ func inspectSocket(tgid, fd int) (*sockInfo, error) {
 		info.bound = sockaddrBound(sa)
 	}
 	return info, nil
+}
+
+// dupBodyFD duplicates the body's descriptor fd into the runner. The
+// duplicate shares the body's open file description, flags and options
+// included.
+func dupBodyFD(tgid, fd int) (int, error) {
+	pidfd, err := unix.PidfdOpen(tgid, 0)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = unix.Close(pidfd) }()
+	return unix.PidfdGetfd(pidfd, fd, 0)
 }
 
 // fdCloexec reads the body descriptor's true close-on-exec flag from
