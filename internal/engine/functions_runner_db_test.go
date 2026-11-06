@@ -477,11 +477,11 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 			t.Fatalf("put %s/%s: %v", kind, id, err)
 		}
 	}
-	put(winSeries, "meds", map[string]any{
+	put(winSeries, fid("meds"), map[string]any{
 		"name": "Meds", "recurrence": "FREQ=DAILY;BYHOUR=7,19;BYMINUTE=30", "timezone": "UTC",
 		"at": "2026-09-01T07:30:00Z", "endsAt": "2026-09-01T07:35:00Z",
 	})
-	put(winMeeting, "sync", map[string]any{"name": "Sync", "at": "2026-09-24T13:00:00Z", "endsAt": "2026-09-24T13:30:00Z"})
+	put(winMeeting, fid("sync"), map[string]any{"name": "Sync", "at": "2026-09-24T13:00:00Z", "endsAt": "2026-09-24T13:30:00Z"})
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "window"}})
 	wd := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "window-date"}})
@@ -490,7 +490,8 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 		t.Fatalf("the window list parked: %v %v", parked, err)
 	}
 
-	want := "meds_20260924T073000Z@2026-09-24T07:30:00Z*,sync@2026-09-24T13:00:00Z,meds_20260924T193000Z@2026-09-24T19:30:00Z*"
+	want := fid("meds") + "_20260924T073000Z@2026-09-24T07:30:00Z*," + fid("sync") + "@2026-09-24T13:00:00Z," +
+		fid("meds") + "_20260924T193000Z@2026-09-24T19:30:00Z*"
 	for _, id := range []string{w.ID, wd.ID} {
 		if got := mustGet(t, ds, taskType, "t-"+id); got.Title != want {
 			t.Fatalf("the body saw %q, want %q", got.Title, want)

@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,30 +86,30 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	}
 	// A weekly meeting series anchored on July 1st, two exceptions: the 8th
 	// moved out of the window entirely, the 15th moved within it.
-	put(winSeries, "standup", map[string]any{
+	put(winSeries, fid("standup"), map[string]any{
 		"name": "Standup", "recurrence": "RRULE:FREQ=WEEKLY", "timezone": "Europe/London",
 		"at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z",
 	})
-	put(winException, "standup_20260708T080000Z", map[string]any{
+	put(winException, fid("standup_20260708T080000Z"), map[string]any{
 		"name": "Standup (moved to August)", "at": "2026-08-20T08:00:00Z", "endsAt": "2026-08-20T08:30:00Z",
-		"recurrenceOf": winSeries + "/standup", "originalAt": "2026-07-08T08:00:00Z",
+		"recurrenceOf": winSeries + "/" + fid("standup"), "originalAt": "2026-07-08T08:00:00Z",
 	})
-	put(winException, "standup_20260715T080000Z", map[string]any{
+	put(winException, fid("standup_20260715T080000Z"), map[string]any{
 		"name": "Standup (later)", "at": "2026-07-15T14:00:00Z", "endsAt": "2026-07-15T14:30:00Z",
-		"recurrenceOf": winSeries + "/standup", "originalAt": "2026-07-15T08:00:00Z",
+		"recurrenceOf": winSeries + "/" + fid("standup"), "originalAt": "2026-07-15T08:00:00Z",
 	})
 	// A dose series whose slot is dueAt, a plain meeting, and a dose override
 	// at its own dueAt.
-	put(winDose, "levo", map[string]any{"name": "Levo", "recurrence": "FREQ=DAILY", "dueAt": "2026-07-01T06:00:00Z"})
-	put(winDose, "levo_20260703T060000Z", map[string]any{
+	put(winDose, fid("levo"), map[string]any{"name": "Levo", "recurrence": "FREQ=DAILY", "dueAt": "2026-07-01T06:00:00Z"})
+	put(winDose, fid("levo_20260703T060000Z"), map[string]any{
 		"name": "Levo (evening)", "dueAt": "2026-07-03T18:00:00Z",
-		"recurrenceOf": winDose + "/levo", "originalAt": "2026-07-03T06:00:00Z",
+		"recurrenceOf": winDose + "/" + fid("levo"), "originalAt": "2026-07-03T06:00:00Z",
 	})
-	put(winMeeting, "dentist", map[string]any{"name": "Dentist", "at": "2026-07-02T12:00:00Z", "endsAt": "2026-07-02T13:00:00Z", "recurrence": "every year, roughly"})
+	put(winMeeting, fid("dentist"), map[string]any{"name": "Dentist", "at": "2026-07-02T12:00:00Z", "endsAt": "2026-07-02T13:00:00Z", "recurrence": "every year, roughly"})
 	// A series outside the window's kinds must not be a candidate; a deleted
 	// row must not be anything.
-	put(winMeeting, "gone", map[string]any{"name": "Gone", "at": "2026-07-04T12:00:00Z", "endsAt": "2026-07-04T13:00:00Z"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, winMeeting, "gone", substrate.DeleteInput{}); err != nil {
+	put(winMeeting, fid("gone"), map[string]any{"name": "Gone", "at": "2026-07-04T12:00:00Z", "endsAt": "2026-07-04T13:00:00Z"})
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, winMeeting, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -129,7 +130,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	for _, r := range page.Rows {
 		rows = append(rows, r.ID)
 	}
-	want := "dentist levo_20260703T060000Z standup_20260715T080000Z"
+	want := join([]string{fid("dentist"), fid("levo_20260703T060000Z"), fid("standup_20260715T080000Z")})
 	if got := join(rows); got != want {
 		t.Fatalf("rows = %q, want %q", got, want)
 	}
@@ -140,7 +141,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	for _, s := range page.Series {
 		series = append(series, s.ID)
 	}
-	if got := join(series); got != "levo standup" {
+	if got := join(series); got != join([]string{fid("levo"), fid("standup")}) {
 		t.Fatalf("series = %q, want both series", got)
 	}
 	// Overrides: every override whose ORIGINAL slot is in the window, the
@@ -149,7 +150,10 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	for _, o := range page.Overrides {
 		overrides = append(overrides, o.ID)
 	}
-	if got := join(overrides); got != "levo_20260703T060000Z standup_20260708T080000Z standup_20260715T080000Z" {
+	// In kind order, then id order: the dose's, then the exceptions'.
+	exceptions := []string{fid("standup_20260708T080000Z"), fid("standup_20260715T080000Z")}
+	slices.Sort(exceptions)
+	if got := join(overrides); got != join(append([]string{fid("levo_20260703T060000Z")}, exceptions...)) {
 		t.Fatalf("overrides = %q", got)
 	}
 
@@ -160,12 +164,12 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 			"at": {Gte: from.Format(time.RFC3339), Lt: to.Format(time.RFC3339)},
 		}},
 		From: from, To: to, First: 1,
-		After: &substrate.WindowKey{At: time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC), Kind: winMeeting, ID: "dentist"},
+		After: &substrate.WindowKey{At: time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC), Kind: winMeeting, ID: fid("dentist")},
 	})
 	if err != nil {
 		t.Fatalf("Window after: %v", err)
 	}
-	if len(page.Rows) != 1 || page.Rows[0].ID != "levo_20260703T060000Z" || !page.More {
+	if len(page.Rows) != 1 || page.Rows[0].ID != fid("levo_20260703T060000Z") || !page.More {
 		t.Fatalf("after dentist, first=1: rows %v more %v", page.Rows, page.More)
 	}
 	page, err = ds.Window(ctx, substrate.WindowQuery{
@@ -181,10 +185,10 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	for _, r := range page.Rows {
 		rows = append(rows, r.ID)
 	}
-	if got := join(rows); got != "standup_20260715T080000Z dentist" {
+	if got := join(rows); got != join([]string{fid("standup_20260715T080000Z"), fid("dentist")}) {
 		t.Fatalf("descending rows over three kinds = %q", got)
 	}
-	if len(page.Series) != 1 || page.Series[0].ID != "standup" {
+	if len(page.Series) != 1 || page.Series[0].ID != fid("standup") {
 		t.Fatalf("kinds narrow the candidates: %v", page.Series)
 	}
 
@@ -198,17 +202,25 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 
 	// A series id long enough to push `<id>_<slot>` past the id alphabet's
 	// bound is refused at write; the same id on a kind without the trait is
-	// fine.
+	// fine. Only a writer that names its records, such as a calendar sync,
+	// chooses such an id: an owner's write takes a minted one.
+	syncer := substrate.FunctionActor("providers.example.com", "calendar", "sync")
+	putNamed := func(kind, id string, props map[string]any) {
+		t.Helper()
+		if _, err := ds.Put(ctx, syncer, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+			t.Fatalf("put %s/%s: %v", kind, id, err)
+		}
+	}
 	long := strings.Repeat("x", vocabulary.MaxSeriesIDLen+1)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: winSeries, ID: long, Properties: map[string]any{
+	if _, err := ds.Put(ctx, syncer, substrate.PutInput{Kind: winSeries, ID: long, Properties: map[string]any{
 		"name": "too long", "recurrence": "FREQ=DAILY", "at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z",
 	}}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a %d-character series id must be refused, got %v", len(long), err)
 	}
-	put(winMeeting, long, map[string]any{"name": "long but plain", "at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z"})
+	putNamed(winMeeting, long, map[string]any{"name": "long but plain", "at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z"})
 	// An override of the recurring kind carries the slot suffix already and
 	// is held to MaxIDLen alone.
-	put(winSeries, strings.Repeat("y", vocabulary.MaxSeriesIDLen)+"_20260708T080000Z", map[string]any{
+	putNamed(winSeries, strings.Repeat("y", vocabulary.MaxSeriesIDLen)+"_20260708T080000Z", map[string]any{
 		"name": "an override with a long id", "at": "2026-07-08T09:00:00Z", "endsAt": "2026-07-08T09:30:00Z",
 	})
 }

@@ -120,7 +120,7 @@ def main(input, host):
 		t.Fatalf("pass: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pkg + "/widget", ID: "w1", Properties: map[string]any{"name": "w1"},
+		Kind: pkg + "/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -139,10 +139,10 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
-	if _, err := ds.Get(ctx, taskKind, "t-w1"); err != nil {
+	if _, err := ds.Get(ctx, taskKind, "t-"+fid("w1")); err != nil {
 		t.Fatalf("the mirror's task: %v", err)
 	}
-	if _, err := ds.Get(ctx, taskKind, "tally-t-w1"); err != nil {
+	if _, err := ds.Get(ctx, taskKind, "tally-t-"+fid("w1")); err != nil {
 		t.Fatalf("the tally of the mirror's task, in the pass that wrote it: %v", err)
 	}
 }
@@ -213,7 +213,7 @@ func TestAPassDoesNotRedeliverWhatAWakeDeliveredSinceItBegan(t *testing.T) {
 	const mirrorID = "on-mirror.widgets.test.dev/widgets"
 	hourly := hourlyFunction(t, ds, 2)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "widgets.test.dev/widgets/widget", ID: "w1", Properties: map[string]any{"name": "w1"},
+		Kind: "widgets.test.dev/widgets/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestATurnWithWorkReadsTheHeadItsTurnBeganWith(t *testing.T) {
 	put := func(name string) {
 		t.Helper()
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: "widgets.test.dev/widgets/widget", ID: "w1", Properties: map[string]any{"name": name},
+			Kind: "widgets.test.dev/widgets/widget", ID: fid("w1"), Properties: map[string]any{"name": name},
 		}); err != nil {
 			t.Fatalf("put widget: %v", err)
 		}

@@ -53,7 +53,7 @@ func twoRepositories(t *testing.T) pair {
 		}
 		importVocabulary(t, ds, "tasks")
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "samples.substrate.reamde.dev/tasks/task", ID: "shared-id",
+			Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("shared-id"),
 			Properties: map[string]any{"name": name + " only"},
 		})
 	}
@@ -337,7 +337,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		// (kind, id) pair into the same table.
 		var n int
 		if err := raw.QueryRowContext(ctx,
-			`SELECT count(*) FROM records WHERE id = 'shared-id'`).Scan(&n); err != nil {
+			`SELECT count(*) FROM records WHERE id = $1`, fid("shared-id")).Scan(&n); err != nil {
 			t.Fatalf("count tasks: %v", err)
 		}
 		if n != 1 {
@@ -345,7 +345,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 		var title string
 		if err := raw.QueryRowContext(ctx,
-			`SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
+			`SELECT title FROM records WHERE id = $1`, fid("shared-id")).Scan(&title); err != nil {
 			t.Fatalf("read the task: %v", err)
 		}
 		if title != "alpha.example.com only" {
@@ -402,7 +402,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = other.Close() })
 		if err := other.QueryRowContext(ctx,
-			`SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
+			`SELECT title FROM records WHERE id = $1`, fid("shared-id")).Scan(&title); err != nil {
 			t.Fatalf("read beta's task: %v", err)
 		}
 		if title != "beta.example.com only" {
@@ -432,7 +432,7 @@ func TestRepositoryIsolation(t *testing.T) {
 				rows, err := raw.QueryContext(ctx, `
 					SELECT r.title FROM `+call+` m
 					JOIN records r ON r.kind = m.kind AND r.id = m.id
-					WHERE m.id = 'shared-id'`)
+					WHERE m.id = $1`, fid("shared-id"))
 				if err != nil {
 					t.Fatalf("%s under %s: %v", fn.name, id, err)
 				}
@@ -453,7 +453,7 @@ func TestRepositoryIsolation(t *testing.T) {
 				// The id half alone, before any join under the policy.
 				var n int
 				if err := raw.QueryRowContext(ctx,
-					`SELECT count(*) FROM `+call+` WHERE id = 'shared-id'`).Scan(&n); err != nil {
+					`SELECT count(*) FROM `+call+` WHERE id = $1`, fid("shared-id")).Scan(&n); err != nil {
 					t.Fatal(err)
 				}
 				if n != 1 {
@@ -496,7 +496,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		for i := range 50 {
 			for id, db := range handles {
 				var title string
-				if err := db.QueryRowContext(ctx, `SELECT title FROM records WHERE id = 'shared-id'`).Scan(&title); err != nil {
+				if err := db.QueryRowContext(ctx, `SELECT title FROM records WHERE id = $1`, fid("shared-id")).Scan(&title); err != nil {
 					t.Fatalf("read %s's task, round %d: %v", id, i, err)
 				}
 				if title != id+" only" {

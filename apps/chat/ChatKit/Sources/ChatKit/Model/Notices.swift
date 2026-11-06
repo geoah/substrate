@@ -76,9 +76,15 @@ func deliveryNotice(_ turn: Turn) -> DeliveryNotice? {
 
 // MARK: Cards a call landed
 
-/// A minted record id: twelve lowercase base32 characters.
-private func isMintedID(_ s: String) -> Bool {
-    s.count == 12 && s.allSatisfy { ("a" ... "z").contains($0) || ("2" ... "7").contains($0) }
+/// A minted record id: a UUIDv7 as 26 lowercase Crockford base32 characters
+/// (decision 0228), or the twelve lowercase base32 characters ids were minted
+/// as before it.
+func isMintedID(_ s: String) -> Bool {
+    if s.count == 26, let first = s.first, ("0" ... "7").contains(first) {
+        let crockford = Set("0123456789abcdefghjkmnpqrstvwxyz")
+        return s.allSatisfy { crockford.contains($0) }
+    }
+    return s.count == 12 && s.allSatisfy { ("a" ... "z").contains($0) || ("2" ... "7").contains($0) }
 }
 
 /// The change request a settled call landed: from the engine's stamp where

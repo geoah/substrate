@@ -243,23 +243,23 @@ func TestFormerIDNamesItsWinner(t *testing.T) {
 	// A writer supplying a former id as its OWN key is a conflict: it would
 	// silently address a merge the writer never made.
 	src := mustPut(t, ds, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-c1", Properties: map[string]any{"name": aname("Alex")},
+		Kind: typeGoogleContact, ID: fid("g-c1"), Properties: map[string]any{"name": aname("Alex")},
 	})
 	srcLoser := mustPut(t, ds, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-c2", Properties: map[string]any{"name": aname("Alex 2")},
+		Kind: typeGoogleContact, ID: fid("g-c2"), Properties: map[string]any{"name": aname("Alex 2")},
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: src.Kind, Winner: src.ID, Loser: srcLoser.ID}); err != nil {
 		t.Fatalf("merge sources: %v", err)
 	}
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-c2", Properties: map[string]any{"name": aname("Alex 2")},
+		Kind: typeGoogleContact, ID: fid("g-c2"), Properties: map[string]any{"name": aname("Alex 2")},
 	}); err == nil {
 		t.Fatal("a writer-supplied former id must be a conflict")
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "former id as a writer key")
 		// The message names the id, its canonical id and the remedy, so a
 		// writer can act on it without a second read.
-		for _, want := range []string{"g-c2", "g-c1", "write to the canonical id"} {
+		for _, want := range []string{fid("g-c2"), fid("g-c1"), "write to the canonical id"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("conflict message %q does not name %q", err, want)
 			}
@@ -365,7 +365,7 @@ func TestRekeySameIDAcrossTypes(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	const shared = "shared-id-1"
+	shared := fid("shared-id-1")
 	person := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", ID: shared, Properties: map[string]any{"name": "Pat"},
 	})
@@ -414,10 +414,10 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/people/person", ID: "trail-w", Properties: map[string]any{"name": "A"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: fid("trail-w"), Properties: map[string]any{"name": "A"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/people/person", ID: "trail-l", Properties: map[string]any{"name": "B"},
+		Kind: "samples.substrate.reamde.dev/people/person", ID: fid("trail-l"), Properties: map[string]any{"name": "B"},
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: "samples.substrate.reamde.dev/people/person", Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)

@@ -42,7 +42,7 @@ func TestObservedIndexIsolation(t *testing.T) {
 			for j := range 6 {
 				values = append(values, fmt.Sprintf("%d.%d", 20+10*i+h, j))
 			}
-			mustPut(t, ds, owner, substrate.PutInput{Kind: kindTrace, ID: fmt.Sprintf("shared/%d", h), Properties: map[string]any{
+			mustPut(t, ds, owner, substrate.PutInput{Kind: kindTrace, ID: fid(fmt.Sprintf("shared/%d", h)), Properties: map[string]any{
 				"metric": map[string]any{"ref": kindMetric + "/environment/air_temperature"}, "form": "gauge", "unit": "Cel",
 				"at": fmt.Sprintf("2026-10-07T%02d:00:00Z", 6+h), "endsAt": fmt.Sprintf("2026-10-07T%02d:00:00Z", 7+h),
 				"every": "PT10M", "values": values, "utcOffset": 180,
@@ -100,7 +100,8 @@ func TestObservedIndexIsolation(t *testing.T) {
 				}
 			}
 			var segments int
-			if err := raw.QueryRowContext(ctx, `SELECT count(*) FROM observed_segments WHERE record_id LIKE 'shared/%'`).Scan(&segments); err != nil {
+			if err := raw.QueryRowContext(ctx, `SELECT count(*) FROM observed_segments WHERE record_id IN ($1, $2, $3)`,
+				fid("shared/0"), fid("shared/1"), fid("shared/2")).Scan(&segments); err != nil {
 				t.Fatal(err)
 			}
 			if segments != 3 {

@@ -43,8 +43,8 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install the offering bundle: %v", err)
 	}
-	putMemory(t, ds, "veg", "The owner is vegetarian.", nil)
-	putMemory(t, ds, "old", "The owner lives in Lisbon.", map[string]any{"active": false})
+	putMemory(t, ds, fid("veg"), "The owner is vegetarian.", nil)
+	putMemory(t, ds, fid("old"), "The owner lives in Lisbon.", map[string]any{"active": false})
 
 	fake.script("gpt-5", fakeTurn{content: "hello"})
 	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, testdb.Repository(t)+"/llm/substrate", substrate.ChatInput{Message: "hi"}, nil); err != nil {
@@ -57,7 +57,7 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	system := pinnedSystemOf(t, reqs[0])
 	want := pinnedOpen + "\n" + pinnedIntro + "\n" +
 		`<records kind="` + kindMemory + `">` + "\n" +
-		`{"id":"veg","text":"The owner is vegetarian."}` + "\n" +
+		`{"id":"` + fid("veg") + `","text":"The owner is vegetarian."}` + "\n" +
 		"</records>\n" + pinnedClose
 	if !strings.HasSuffix(system, want) {
 		t.Fatalf("system prompt does not end with the active memories:\n%s", system)

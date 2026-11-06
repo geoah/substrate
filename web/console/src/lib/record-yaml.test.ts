@@ -63,7 +63,8 @@ describe("templateYAML", () => {
   it("builds the full apply-able envelope fixed to the kind reference", () => {
     const doc = parse(yaml)
     expect(doc.kind).toBe("crew.test.dev/crew/agent")
-    expect(doc.metadata).toHaveProperty("id")
+    // The substrate mints a new record's id (decision 0228).
+    expect(doc).not.toHaveProperty("metadata")
     expect(doc.data.properties).toMatchObject({
       prompt: "",
       enabled: false,
@@ -79,7 +80,60 @@ describe("templateYAML", () => {
       "# optional, enum: opus (Opus 4) | sonnet (Sonnet 4) | haiku"
     )
     expect(yaml).toContain("# optional, string[]")
-    expect(yaml).toMatch(/id: ""\s*# optional/)
+  })
+
+  it("offers metadata.id on a kind whose ids are named", () => {
+    const named: KindInfo = {
+      ...agentKind,
+      definition: { ...agentKind.definition, ids: { type: "named" } },
+    }
+    expect(templateYAML(SHIPPED_UNITS, named)).toMatch(/id: ""\s*# optional/)
+    const mintedInternal: KindInfo = {
+      ...agentKind,
+      definition: {
+        ...agentKind.definition,
+        purpose: "internal",
+        ids: { type: "minted" },
+      },
+    }
+    expect(
+      parse(templateYAML(SHIPPED_UNITS, mintedInternal))
+    ).not.toHaveProperty("metadata")
+  })
+
+  it("offers metadata.id only on an internal kind", () => {
+    const internal: KindInfo = {
+      ...agentKind,
+      definition: { ...agentKind.definition, purpose: "internal" },
+    }
+    expect(templateYAML(SHIPPED_UNITS, internal)).toMatch(/id: ""\s*# optional/)
+  })
+
+  it("refuses a chosen id on a new record", () => {
+    const doc = (id: string) =>
+      `kind: crew.test.dev/crew/agent\nmetadata:\n  id: ${id}\ndata:\n  properties:\n    prompt: hi\n`
+    const idErrors = (id: string, ctx = {}) =>
+      validateApplyDoc(SHIPPED_UNITS, doc(id), agentKind, ctx).filter(
+        (p) => p.severity === "error" && p.path === "metadata.id"
+      )
+    expect(idErrors("floor-first")).toHaveLength(1)
+    // An id the writer minted in the substrate's shape is accepted.
+    expect(idErrors("01h2xcejqtf2nbrexx3vqjhp41")).toHaveLength(0)
+    expect(idErrors("0188bac7-4afa-78aa-bc3b-bd1eef28d881")).toHaveLength(0)
+    // An edit addresses the record that exists; the id is the route's.
+    expect(
+      idErrors("floor-first", {
+        record: {
+          id: "floor-first",
+          kind: agentKind.identity,
+          properties: {},
+          labels: {},
+          version: 1,
+          createdAt: "x",
+          updatedAt: "x",
+        },
+      })
+    ).toHaveLength(0)
   })
 
   it("keeps an empty seed list inline with its comment", () => {
@@ -329,7 +383,8 @@ describe("applyManifestYAML (edit seed)", () => {
     const errs = validateApplyDoc(
       SHIPPED_UNITS,
       applyManifestYAML(record),
-      agentKind
+      agentKind,
+      { record }
     ).filter((p) => p.severity === "error")
     expect(errs).toHaveLength(0)
   })

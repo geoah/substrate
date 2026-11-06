@@ -630,7 +630,9 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
+	// The task the function addresses by the id it composes, written by the
+	// function: a person may not name it (decision 0228).
+	mustPut(t, ds, substrate.FunctionActor("widgets.test.dev", "widgets", "closer"), substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ds)
 
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "done"}})
@@ -761,7 +763,7 @@ def main(input, host):
 	)
 	ctx := context.Background()
 
-	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w", Properties: map[string]any{"count": float64(0)}})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: fid("w"), Properties: map[string]any{"count": float64(0)}})
 	var parked []substrate.TriggerFailure
 	for range 30 {
 		process(t, ds)
@@ -845,7 +847,9 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
+	// The task the function addresses by the id it composes, written by the
+	// function: a person may not name it (decision 0228).
+	mustPut(t, ds, substrate.FunctionActor("widgets.test.dev", "widgets", "sweeper"), substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ds)
 
 	if _, err := ds.Delete(ctx, fnActor, w.Kind, w.ID, substrate.DeleteInput{}); err != nil {
@@ -879,7 +883,9 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
+	// The task the function addresses by the id it composes, written by the
+	// function: a person may not name it (decision 0228).
+	mustPut(t, ds, substrate.FunctionActor("widgets.test.dev", "widgets", "closer"), substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ds)
 
 	// First delivery moves open → done and stamps completedAt.

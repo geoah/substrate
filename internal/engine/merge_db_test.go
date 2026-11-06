@@ -178,8 +178,8 @@ func TestMergeTakesTheSeededObservationsKinds(t *testing.T) {
 	_, ds := newCoreDataset(t)
 	source := vocabulary.PackageObservations + "/source"
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: "withings", Properties: map[string]any{"name": "Withings scale"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: "apple/scale", Properties: map[string]any{"name": "Scale via Apple Health"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: fid("withings"), Properties: map[string]any{"name": "Withings scale"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: source, ID: fid("apple/scale"), Properties: map[string]any{"name": "Scale via Apple Health"}})
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: source, Winner: winner.ID, Loser: loser.ID})
 	if err != nil {
 		t.Fatalf("merge two sources of the seeded observations package: %v", err)

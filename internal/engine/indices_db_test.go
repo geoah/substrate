@@ -214,7 +214,7 @@ func TestAnIndexRebuildDoesNotStallAnotherRepositorysWrite(t *testing.T) {
 	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	started := time.Now()
 	_, werr := other.Put(wctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: lampKind, ID: "l1", Properties: map[string]any{"name": "on"},
+		Kind: lampKind, ID: fid("l1"), Properties: map[string]any{"name": "on"},
 	})
 	took := time.Since(started)
 	cancel()

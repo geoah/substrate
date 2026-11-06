@@ -143,6 +143,21 @@ func analyzeTables(t *testing.T, ds *dataset) {
 	}
 }
 
+// readPlanIDs is the fixture ids of names as a read answers them by id:
+// sorted, comma-joined.
+func readPlanIDs(names ...string) string {
+	ids := make([]string, 0, len(names))
+	for _, n := range names {
+		ids = append(ids, fid(n))
+	}
+	slices.Sort(ids)
+	return strings.Join(ids, ",")
+}
+
+// bulkIDBelowFixtures is a minted-shape id that sorts below every fid, so a
+// read by id descending reaches the fixture's own records before the bulk.
+func bulkIDBelowFixtures(i int) string { return fmt.Sprintf("000000000000000000000h%04d", i) }
+
 // oweRefs stands for a re-derivation of kind's refs rows for property that
 // the pass behind the open has not finished, and returns its undo.
 func oweRefs(t *testing.T, ds *dataset, kind, property string) func() {
@@ -490,7 +505,7 @@ func TestReadPlanRepeatedReferenceFilterSeeksTheRefsIndex(t *testing.T) {
 	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 		for i := range 400 {
 			if _, err := tx.put(substrate.PutInput{
-				Kind: pointer, ID: fmt.Sprintf("bulk%03d", i), Properties: map[string]any{"alsoSeen": []any{"a"}},
+				Kind: pointer, ID: fid(fmt.Sprintf("bulk%03d", i)), Properties: map[string]any{"alsoSeen": []any{fid("a")}},
 			}); err != nil {
 				return err
 			}
@@ -512,7 +527,7 @@ func TestReadPlanRepeatedReferenceFilterSeeksTheRefsIndex(t *testing.T) {
 		return substrate.Filter{Kinds: []string{pointer}, Properties: map[string]substrate.Cond{"alsoSeen": c}}
 	}
 
-	q := log.sent(t, "FROM refs r", func() { list(seen(substrate.Cond{Eq: "c"})) })
+	q := log.sent(t, "FROM refs r", func() { list(seen(substrate.Cond{Eq: fid("c")})) })
 	if strings.Contains(q.sql, "@>") || strings.Contains(q.sql, "r.ord") {
 		t.Fatalf("the repeated reference filter is not one refs arm over every item:\n%s", q.sql)
 	}
@@ -520,42 +535,42 @@ func TestReadPlanRepeatedReferenceFilterSeeksTheRefsIndex(t *testing.T) {
 
 	// The rows: one value, two, the first item and a later one, none, and a
 	// filter naming no kind.
-	if got := list(seen(substrate.Cond{Eq: "c"})); got != "p3" {
+	if got := list(seen(substrate.Cond{Eq: fid("c")})); got != fid("p3") {
 		t.Fatalf("alsoSeen c answered %q, want p3", got)
 	}
-	if got := list(seen(substrate.Cond{In: []any{"b", "c"}})); got != "p2,p3" {
+	if got := list(seen(substrate.Cond{In: []any{fid("b"), fid("c")}})); got != readPlanIDs("p2", "p3") {
 		t.Fatalf("alsoSeen in [b, c] answered %q, want p2,p3", got)
 	}
 	if got := list(seen(substrate.Cond{Eq: "nowhere"})); got != "" {
 		t.Fatalf("alsoSeen nowhere answered %q, want nothing", got)
 	}
 	if got := list(substrate.Filter{Properties: map[string]substrate.Cond{
-		"alsoSeen": {Eq: vocabulary.RecordPath(target, "c")},
-	}}); got != "p3" {
+		"alsoSeen": {Eq: vocabulary.RecordPath(target, fid("c"))},
+	}}); got != fid("p3") {
 		t.Fatalf("a kindless filter on alsoSeen c answered %q, want p3", got)
 	}
 	// A pointer stored under a target's former id answers a filter naming the
 	// record it became.
 	if _, err := ds.db.ExecContext(ctx,
-		`INSERT INTO former_ids (record_kind, former_id, record_id) VALUES ($1, 'old-c', 'c')`, target); err != nil {
+		`INSERT INTO former_ids (record_kind, former_id, record_id) VALUES ($1, 'old-c', $2)`, target, fid("c")); err != nil {
 		t.Fatalf("plant a former id: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pointer, ID: "pold", Properties: map[string]any{"alsoSeen": []any{"b", "old-c"}},
+		Kind: pointer, ID: fid("pold"), Properties: map[string]any{"alsoSeen": []any{fid("b"), "old-c"}},
 	}); err != nil {
 		t.Fatalf("put the pointer at the former id: %v", err)
 	}
-	if got := list(seen(substrate.Cond{Eq: "c"})); got != "p3,pold" {
+	if got := list(seen(substrate.Cond{Eq: fid("c")})); got != readPlanIDs("p3", "pold") {
 		t.Fatalf("alsoSeen c answered %q, want p3,pold", got)
 	}
 
 	// p3's refs rows gone, refs no longer finds it; owed, its properties do.
-	dropRefs(t, ds, pointer, "p3")
-	if got := list(seen(substrate.Cond{Eq: "c"})); got != "pold" {
+	dropRefs(t, ds, pointer, fid("p3"))
+	if got := list(seen(substrate.Cond{Eq: fid("c")})); got != fid("pold") {
 		t.Fatalf("with p3's refs rows dropped, alsoSeen c answered %q, want refs alone to decide", got)
 	}
 	undo := oweRefs(t, ds, pointer, "alsoSeen")
-	if got := list(seen(substrate.Cond{Eq: "c"})); got != "p3,pold" {
+	if got := list(seen(substrate.Cond{Eq: fid("c")})); got != readPlanIDs("p3", "pold") {
 		t.Fatalf("with refs owed, alsoSeen c answered %q, want p3,pold off their properties", got)
 	}
 	undo()
@@ -576,7 +591,7 @@ func TestReadPlanReferencingMatchesSeekThePage(t *testing.T) {
 		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 			for i := from; i < from+batch; i++ {
 				if _, err := tx.put(substrate.PutInput{
-					Kind: pointer, ID: fmt.Sprintf("h%04d", i), Properties: map[string]any{"target": "b"},
+					Kind: pointer, ID: bulkIDBelowFixtures(i), Properties: map[string]any{"target": fid("b")},
 				}); err != nil {
 					return err
 				}
@@ -593,7 +608,7 @@ func TestReadPlanReferencingMatchesSeekThePage(t *testing.T) {
 		var err error
 		// By id, descending, so p2 is on the page with both its sites.
 		if page, err = ds.List(ctx, substrate.Query{First: 50, Filter: substrate.Filter{
-			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, "b")},
+			Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, fid("b"))},
 		}, OrderBy: []substrate.Order{{Property: "id", Desc: true}}}); err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -608,13 +623,13 @@ func TestReadPlanReferencingMatchesSeekThePage(t *testing.T) {
 	assertSeeksRefs(t, "the matches read", analyzedPlan(t, ds, q), 1, "refs_dst_idx", "refs_pkey")
 
 	// The matches: one entry per record on the page, p2 from both its sites.
-	if len(page.Records) != 50 || len(page.Matches) != 50 || page.Records[0].ID != "p2" {
+	if len(page.Records) != 50 || len(page.Matches) != 50 || page.Records[0].ID != fid("p2") {
 		t.Fatalf("a page of %d records carries %d matches, want 50 of each, p2 first", len(page.Records), len(page.Matches))
 	}
 	for _, e := range page.Records {
 		sites := page.Matches[vocabulary.RecordPath(e.Kind, e.ID)]
 		want := []substrate.ReferenceSite{{Property: "target"}}
-		if e.ID == "p2" {
+		if e.ID == fid("p2") {
 			want = []substrate.ReferenceSite{{Property: "alsoSeen"}, {Property: "target"}}
 		}
 		if fmt.Sprint(sites) != fmt.Sprint(want) {
@@ -666,16 +681,16 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	// points at a note of its own, which names the txt.
 	for i := range 60 {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: note, ID: fmt.Sprintf("n%02d", i),
+			Kind: note, ID: fid(fmt.Sprintf("n%02d", i)),
 			Properties: map[string]any{"name": strconv.Itoa(i), "file": txt.Digest},
 		}); err != nil {
 			t.Fatalf("put note %d: %v", i, err)
 		}
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: doc, ID: fmt.Sprintf("d%02d", i),
+			Kind: doc, ID: fid(fmt.Sprintf("d%02d", i)),
 			Properties: map[string]any{
 				"name": strconv.Itoa(i), "file": png.Digest, "files": []any{txt.Digest, png.Digest},
-				"see": fmt.Sprintf("n%02d", i),
+				"see": fid(fmt.Sprintf("n%02d", i)),
 			},
 			Annotations: map[string]any{"readplan/n": strconv.Itoa(i)},
 		}); err != nil {
@@ -684,11 +699,11 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	}
 	// d01 absorbs a merged doc, so its former id is one record's alone.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: doc, ID: "gone", Properties: map[string]any{"name": "gone"},
+		Kind: doc, ID: fid("gone"), Properties: map[string]any{"name": "gone"},
 	}); err != nil {
 		t.Fatalf("put the doc to merge: %v", err)
 	}
-	if _, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: doc, Winner: "d01", Loser: "gone"}); err != nil {
+	if _, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: doc, Winner: fid("d01"), Loser: fid("gone")}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -725,8 +740,16 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	if smallN != 5 || expandedN != 5 {
 		t.Fatalf("an expanded page of 5 sent %d statements for its former ids, annotations and blobs, one of 50 sent %d; want 5 each", smallN, expandedN)
 	}
-	for i := range 50 {
-		path := vocabulary.RecordPath(note, fmt.Sprintf("n%02d", i))
+	// The docs in id order, and the index each was planted under: a page
+	// by id holds the first 50 of them and their notes.
+	docs, planted := make([]string, 0, 60), map[string]int{}
+	for i := range 60 {
+		id := fid(fmt.Sprintf("d%02d", i))
+		docs, planted[id] = append(docs, id), i
+	}
+	slices.Sort(docs)
+	for _, id := range docs[:50] {
+		path := vocabulary.RecordPath(note, fid(fmt.Sprintf("n%02d", planted[id])))
 		n := expanded.Included[path]
 		if n == nil {
 			t.Fatalf("the expanded page does not carry %s", path)
@@ -738,15 +761,15 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	}
 
 	for i, e := range large.Records {
-		if want := fmt.Sprintf("d%02d", i); e.ID != want {
+		if want := docs[i]; e.ID != want {
 			t.Fatalf("record %d is %s, want %s", i, e.ID, want)
 		}
-		if got := e.Annotations["readplan/n"]; got != strconv.Itoa(i) {
-			t.Fatalf("%s carries annotation %v, want its own %d", e.ID, got, i)
+		if got := e.Annotations["readplan/n"]; got != strconv.Itoa(planted[e.ID]) {
+			t.Fatalf("%s carries annotation %v, want its own %d", e.ID, got, planted[e.ID])
 		}
 		wantFormer := "[]"
-		if e.ID == "d01" {
-			wantFormer = "[gone]"
+		if e.ID == fid("d01") {
+			wantFormer = "[" + fid("gone") + "]"
 		}
 		if got := fmt.Sprint(e.FormerIDs); got != wantFormer {
 			t.Fatalf("%s carries former ids %s, want %s", e.ID, got, wantFormer)
@@ -800,12 +823,12 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 	}
 	// s1 holds c's path, s2 b's, s3 c's bare id.
 	for id, seen := range map[string][]any{
-		"s1": {vocabulary.RecordPath(target, "c"), "other"},
-		"s2": {vocabulary.RecordPath(target, "b")},
-		"s3": {"c"},
+		"s1": {vocabulary.RecordPath(target, fid("c")), "other"},
+		"s2": {vocabulary.RecordPath(target, fid("b"))},
+		"s3": {fid("c")},
 	} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: tagged, ID: id, Properties: map[string]any{"alsoSeen": seen},
+			Kind: tagged, ID: fid(id), Properties: map[string]any{"alsoSeen": seen},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
@@ -826,20 +849,20 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 			want string
 		}{
 			{"alsoSeen contains c over both kinds", substrate.Filter{
-				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: "c"}},
-			}, "p3,s3"},
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: fid("c")}},
+			}, readPlanIDs("p3", "s3")},
 			{"alsoSeen contains c's path over both kinds", substrate.Filter{
-				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, "c")}},
-			}, "p3,s1"},
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, fid("c"))}},
+			}, readPlanIDs("p3", "s1")},
 			{"alsoSeen c over both kinds", substrate.Filter{
-				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "c"}},
-			}, "p3"},
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Eq: fid("c")}},
+			}, readPlanIDs("p3")},
 			{"alsoSeen in [b, c] over both kinds", substrate.Filter{
-				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {In: []any{"b", "c"}}},
-			}, "p2,p3"},
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {In: []any{fid("b"), fid("c")}}},
+			}, readPlanIDs("p2", "p3")},
 			{"a kindless alsoSeen contains c's path", substrate.Filter{
-				Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, "c")}},
-			}, "p3,s1"},
+				Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, fid("c"))}},
+			}, readPlanIDs("p3", "s1")},
 		} {
 			if got := list(c.f); got != c.want {
 				t.Fatalf("%s: %s answered %q, want %q", when, c.name, got, c.want)
@@ -879,13 +902,13 @@ func TestReadPlanAReferenceSplitSeeksTheRefsIndex(t *testing.T) {
 	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 		for i := range 400 {
 			if _, err := tx.put(substrate.PutInput{
-				Kind: pointer, ID: fmt.Sprintf("bulk%03d", i), Properties: map[string]any{"target": "a"},
+				Kind: pointer, ID: fid(fmt.Sprintf("bulk%03d", i)), Properties: map[string]any{"target": fid("a")},
 			}); err != nil {
 				return err
 			}
 		}
-		for id, at := range map[string]string{"q1": vocabulary.RecordPath(target, "c"), "q2": "c", "q3": "a"} {
-			if _, err := tx.put(substrate.PutInput{Kind: plain, ID: id, Properties: map[string]any{"target": at}}); err != nil {
+		for id, at := range map[string]string{"q1": vocabulary.RecordPath(target, fid("c")), "q2": fid("c"), "q3": fid("a")} {
+			if _, err := tx.put(substrate.PutInput{Kind: plain, ID: fid(id), Properties: map[string]any{"target": at}}); err != nil {
 				return err
 			}
 		}
@@ -908,11 +931,11 @@ func TestReadPlanAReferenceSplitSeeksTheRefsIndex(t *testing.T) {
 		want string
 	}{
 		{"naming no kind", substrate.Filter{
-			Properties: map[string]substrate.Cond{"target": {Eq: vocabulary.RecordPath(target, "c")}},
-		}, "p3,q1"},
+			Properties: map[string]substrate.Cond{"target": {Eq: vocabulary.RecordPath(target, fid("c"))}},
+		}, readPlanIDs("p3", "q1")},
 		{"naming both kinds", substrate.Filter{
-			Kinds: []string{pointer, plain}, Properties: map[string]substrate.Cond{"target": {Eq: "c"}},
-		}, "p3,q2"},
+			Kinds: []string{pointer, plain}, Properties: map[string]substrate.Cond{"target": {Eq: fid("c")}},
+		}, readPlanIDs("p3", "q2")},
 	} {
 		q := log.sent(t, "FROM refs r", func() { list(c.f) })
 		assertSeeksRefs(t, "a reference split "+c.name, analyzedPlan(t, ds, q), 3, "refs_dst_idx")
@@ -975,7 +998,7 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 		for i := range 60 {
 			at := from.Add(time.Duration(i) * time.Hour)
 			if _, err := tx.put(substrate.PutInput{
-				Kind: meeting, ID: fmt.Sprintf("m%02d", i),
+				Kind: meeting, ID: fid(fmt.Sprintf("m%02d", i)),
 				Properties: map[string]any{
 					"name": strconv.Itoa(i), "team": "core", "at": stamp(at), "endsAt": stamp(at.Add(30 * time.Minute)),
 				},
@@ -988,7 +1011,7 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 		// override of its second slot, and one series it does not.
 		for _, s := range []struct{ id, team string }{{"s0", "core"}, {"s1", "core"}, {"s2", "core"}, {"hot", "other"}} {
 			if _, err := tx.put(substrate.PutInput{
-				Kind: series, ID: s.id,
+				Kind: series, ID: fid(s.id),
 				Properties: map[string]any{
 					"name": s.id, "team": s.team, "recurrence": "RRULE:FREQ=WEEKLY", "timezone": "Europe/London",
 					"at": "2026-07-01T08:00:00Z", "endsAt": "2026-07-01T08:30:00Z",
@@ -999,10 +1022,10 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 		}
 		for i := range 3 {
 			if _, err := tx.put(substrate.PutInput{
-				Kind: exception, ID: fmt.Sprintf("s%d_20260708T080000Z", i),
+				Kind: exception, ID: fid(fmt.Sprintf("s%d_20260708T080000Z", i)),
 				Properties: map[string]any{
 					"name": "moved", "at": "2026-07-08T09:00:00Z", "endsAt": "2026-07-08T09:30:00Z",
-					"recurrenceOf": fmt.Sprintf("s%d", i), "originalAt": "2026-07-08T08:00:00Z",
+					"recurrenceOf": fid(fmt.Sprintf("s%d", i)), "originalAt": "2026-07-08T08:00:00Z",
 				},
 			}); err != nil {
 				return err
@@ -1021,10 +1044,10 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 			for i := start; i < start+batch; i++ {
 				slot := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Hour)
 				if _, err := tx.put(substrate.PutInput{
-					Kind: exception, ID: fmt.Sprintf("hot_%04d", i),
+					Kind: exception, ID: fid(fmt.Sprintf("hot_%04d", i)),
 					Properties: map[string]any{
 						"name": "hot", "at": stamp(slot), "endsAt": stamp(slot.Add(30 * time.Minute)),
-						"recurrenceOf": "hot", "originalAt": stamp(slot),
+						"recurrenceOf": fid("hot"), "originalAt": stamp(slot),
 					},
 				}); err != nil {
 					return err
@@ -1071,14 +1094,14 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 		t.Fatalf("a window of 5 rows sent %d statements for its former ids and annotations, one of 50 sent %d; want 4 each", smallN, largeN)
 	}
 	for i, e := range large.Rows {
-		if want := fmt.Sprintf("m%02d", i); e.ID != want || e.Annotations["readplan/n"] != strconv.Itoa(i) {
+		if want := fid(fmt.Sprintf("m%02d", i)); e.ID != want || e.Annotations["readplan/n"] != strconv.Itoa(i) {
 			t.Fatalf("row %d is %s annotated %v, want %s annotated %d", i, e.ID, e.Annotations, want, i)
 		}
 	}
-	if got := ids(large.Series); got != "s0,s1,s2" {
+	if got := ids(large.Series); got != readPlanIDs("s0", "s1", "s2") {
 		t.Fatalf("the series are %q, want s0,s1,s2", got)
 	}
-	if got := ids(large.Overrides); got != "s0_20260708T080000Z,s1_20260708T080000Z,s2_20260708T080000Z" {
+	if got := ids(large.Overrides); got != readPlanIDs("s0_20260708T080000Z", "s1_20260708T080000Z", "s2_20260708T080000Z") {
 		t.Fatalf("the overrides are %q, want one per series", got)
 	}
 

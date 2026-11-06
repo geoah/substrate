@@ -46,11 +46,11 @@ func staleSearchIndex(t *testing.T) (dsn, root, repo string) {
 	ds := d.(*dataset)
 	for i := range reindexRows {
 		mustPutInternal(t, ds, substrate.PutInput{
-			Kind: reindexPerson, ID: fmt.Sprintf("p%d", i),
+			Kind: reindexPerson, ID: fid(fmt.Sprintf("p%d", i)),
 			Properties: map[string]any{"name": fmt.Sprintf("José %d", i), "emails": []any{fmt.Sprintf("p%d@inbox.example", i)}},
 		})
 		mustPutInternal(t, ds, substrate.PutInput{
-			Kind: reindexTask, ID: fmt.Sprintf("t%d", i),
+			Kind: reindexTask, ID: fid(fmt.Sprintf("t%d", i)),
 			Properties: map[string]any{"name": fmt.Sprintf("Read https://docs.example.com/page%d", i)},
 		})
 	}
@@ -224,7 +224,7 @@ func TestTheSearchReindexServesRequestsUntilItFinishes(t *testing.T) {
 		t.Fatalf("the list during the reindex answered %d persons, want %d", len(page.Records), reindexRows)
 	}
 	mustPutInternal(t, ds, substrate.PutInput{
-		Kind: reindexPerson, ID: "p0",
+		Kind: reindexPerson, ID: fid("p0"),
 		Properties: map[string]any{"name": "Zoë Written", "emails": []any{"zoe@midway.example"}},
 	})
 	if n := plantedRows(t, ds); n < reindexRows {
@@ -413,7 +413,7 @@ func TestTheSearchReindexRedoesARowAWriteHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = held.Rollback() }()
-	if _, err := held.ExecContext(ctx, `SELECT 1 FROM records WHERE kind = $1 AND id = 'p1' FOR UPDATE`, reindexPerson); err != nil {
+	if _, err := held.ExecContext(ctx, `SELECT 1 FROM records WHERE kind = $1 AND id = $2 FOR UPDATE`, reindexPerson, fid("p1")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -441,7 +441,7 @@ func TestTheSearchReindexRedoesARowAWriteHeld(t *testing.T) {
 	}
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		if ids := planted(); len(ids) == 1 && ids[0] == "p1" {
+		if ids := planted(); len(ids) == 1 && ids[0] == fid("p1") {
 			break
 		}
 		if time.Now().After(deadline) {

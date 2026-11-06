@@ -654,8 +654,10 @@ func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
 		}
 		if existing == nil || existing.DeletedAt != nil {
 			if gw.id == "" {
-				return "", fmt.Errorf("%w: a gated create needs the write's own id — server-assigned ids cannot be promised by a request",
-					substrate.ErrValidation)
+				// The request promises the id the accept will mint, so it
+				// is minted now: derived from the gate key, so a retry
+				// that re-puts the request names the same record.
+				ref.ID = derivedMintedID("gate-target", gw.key)
 			}
 			op = opCreate
 			props["targetKind"] = gw.kind.Identity

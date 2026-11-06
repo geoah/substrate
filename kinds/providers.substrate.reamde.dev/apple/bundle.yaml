@@ -97,7 +97,9 @@ data:
   # 3: `reminderlist` and `reminder` (EventKit's reminders), `visitstore` and
   #    `visit` (CoreLocation's visits), and `share`, what the owner sends from
   #    another app; the event store counts reminders too.
-  version: 3
+  # 4: every kind declares its ids named: the app keeps naming its mirror
+  #    rows by the hash of Apple's identifier (decision record 0228).
+  version: 4
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No input and no
@@ -141,6 +143,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     The contacts on one of your Apple devices. One row per install of the
     app that pushes them: the contact store a CNContact.identifier is unique
@@ -201,6 +208,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     A contact from your iPhone. One Apple CNContact as the device's Contacts
     framework holds it, pushed by an app on the device and keyed on its identifier
@@ -565,6 +577,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     The calendars on one of your Apple devices. One row per install of the
     app that pushes them, and the scope every calendar and event id from that
@@ -641,6 +658,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     A calendar on your iPhone or iPad. One Apple EKCalendar that holds events,
     pushed by an app on the device and keyed on its identifier within one
@@ -763,6 +785,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     An event on your iPhone or iPad calendar. One Apple EKEvent occurrence,
     pushed by an app on the device; a repeating event is one row per occurrence
@@ -1072,6 +1099,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     A reminders list on your iPhone or iPad. One Apple EKCalendar that holds
     reminders, pushed by an app on the device and keyed within one event store.
@@ -1174,6 +1206,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     A reminder on your iPhone or iPad. One Apple EKReminder, completed or
     not, pushed by an app on the device; a repeating reminder is one row.
@@ -1351,6 +1388,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     The places one of your Apple devices recorded you staying at. One row
     per install of the app that pushes them, and the scope of their ids.
@@ -1396,6 +1438,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     A place your iPhone recorded you staying at, with when you arrived and
     left. One CoreLocation visit, named by Apple Maps where it could.
@@ -1489,6 +1536,11 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # A mirror row's id is the app's hash of Apple's identifier
+  # (`apple-<32 hex>`), never a title, so the app names it (decision
+  # record 0228).
+  ids:
+    type: named
   description: >-
     Something you sent to Substrate from another app on your iPhone or iPad:
     a link, some text or an image, with a note.

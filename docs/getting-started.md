@@ -124,7 +124,7 @@ Authorization: Bearer substrate_tok_…
 {"kind": "ada.example.com/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "ada.example.com/tasks/task",
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "ada.example.com/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
@@ -148,8 +148,8 @@ Read it back, then complete it. A state change is a `patch`, and the
 declaration stamps `completedAt` for you:
 
 ```bash
-substratectl get $AUTHORITY/tasks/task kq3v9x2m41pf -o yaml
-substratectl patch $AUTHORITY/tasks/task kq3v9x2m41pf --state status=done
+substratectl get $AUTHORITY/tasks/task 01jbx9m2qz7k4c5v8n3w6t1hrd -o yaml
+substratectl patch $AUTHORITY/tasks/task 01jbx9m2qz7k4c5v8n3w6t1hrd --state status=done
 ```
 
 ## Watch the change stream
@@ -167,7 +167,7 @@ GET /api/v1/changes?watch=1
 
 {"bookmark": 412, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
- "kind": "ada.example.com/tasks/task", "recordId": "kq3v9x2m41pf",
+ "kind": "ada.example.com/tasks/task", "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
 

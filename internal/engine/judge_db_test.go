@@ -60,7 +60,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 		"context":    "thread",
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-judged", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-judged"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting on the judge."},
 		fakeTurn{content: "the judge let it through."},
 	)
@@ -81,7 +81,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	}
 	// The held write landed, decided by the POLICY's actor.
 	waitUntil(t, "the judged accept landing", func() bool {
-		got, err := ds.Get(ctx, crewPackage+"/widget", "w-judged")
+		got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-judged"))
 		return err == nil && got.Properties["name"] == "wanted"
 	})
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: req.ID, Ops: []substrate.Op{substrate.OpPatch}}, 10)
@@ -123,7 +123,7 @@ func TestJudgeEscalatesBelowThresholdAndTheOwnerDecides(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "wary-widgets", map[string]any{"autoAccept": 0.9, "autoRefuse": 0.9})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-wary", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-wary"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
@@ -159,7 +159,7 @@ func TestTheJudgesAuditNamesTheRequestWithoutAVersion(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "audited-widgets", map[string]any{"autoAccept": 0.9, "autoRefuse": 0.9})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-audited", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-audited"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
@@ -218,7 +218,7 @@ func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 		"mode":       "advise",
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-advised", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-advised"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	fake.script("vjudge",
@@ -235,7 +235,7 @@ func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 	if fresh, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, req.ID); err != nil || fresh.Properties["decision"] != "proposed" {
 		t.Fatalf("request after advice: %+v %v", fresh.Properties, err)
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-advised"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-advised")); err == nil {
 		t.Fatal("an advised write landed")
 	}
 }
@@ -246,7 +246,7 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "sloppy-widgets", map[string]any{"autoAccept": 0.5})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-sloppy", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-sloppy"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	// The judge padded its answer with prose: strict decode refuses, the
@@ -265,7 +265,7 @@ func TestJudgeFailuresFailClosed(t *testing.T) {
 	if note, _ := audit["note"].(string); !strings.Contains(note, "not the verdict object") {
 		t.Fatalf("the audit does not say what broke: %v", audit["note"])
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-sloppy"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-sloppy")); err == nil {
 		t.Fatal("a write landed on a broken judge")
 	}
 }
@@ -283,7 +283,7 @@ func TestJudgesWithHandsAreRefused(t *testing.T) {
 		"autoAccept": 0.1,
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-armed", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-armed"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
@@ -304,13 +304,13 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-polite", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-polite"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	gatePolicyWithJudge(t, ds, "judge-widgets", map[string]any{"autoAccept": 0.9})
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-polite","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-polite") + `","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 		fakeTurn{content: "the judge accepted my proposal."},
 	)
@@ -327,7 +327,7 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 		t.Fatalf("audit: %+v", audit)
 	}
 	waitUntil(t, "the judged proposal landing", func() bool {
-		got, err := ds.Get(ctx, crewPackage+"/widget", "w-polite")
+		got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-polite"))
 		return err == nil && got.Properties["name"] == "better"
 	})
 	waitUntil(t, "the proposer's resume", func() bool {
@@ -367,7 +367,7 @@ func TestTheEngineTellsTheJudgeItsReplyContract(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	gatePolicyWithJudge(t, ds, "contract-widgets", map[string]any{"autoAccept": 0.9})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-fenced", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-fenced"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 		fakeTurn{content: "through."},
 	)
@@ -452,7 +452,7 @@ func TestAnAgentTurnsTheGuidanceOff(t *testing.T) {
 func evidenceWidget(t *testing.T, ds *dataset) {
 	t.Helper()
 	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-evidence",
+		Kind: crewPackage + "/widget", ID: fid("w-evidence"),
 		Properties: map[string]any{"name": "the evidence text", "token": "hunter2"},
 	}); err != nil {
 		t.Fatalf("put the evidence: %v", err)
@@ -473,8 +473,8 @@ func TestJudgeReadsTheDiffsReferentsWhenThePolicyOptsIn(t *testing.T) {
 		"expandReferents": true,
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-cited", map[string]any{
-			"name": "derived", "source": crewPackage + "/widget/w-evidence",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-cited"), map[string]any{
+			"name": "derived", "source": crewPackage + "/widget/" + fid("w-evidence"),
 		})}}},
 		fakeTurn{content: "held."},
 		fakeTurn{content: "through."},
@@ -520,8 +520,8 @@ func TestJudgeWithoutTheDialNeverSeesTheReferent(t *testing.T) {
 	evidenceWidget(t, ds)
 	gatePolicyWithJudge(t, ds, "blind-widgets", map[string]any{"autoAccept": 0.9})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-blind", map[string]any{
-			"name": "derived", "source": crewPackage + "/widget/w-evidence",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-blind"), map[string]any{
+			"name": "derived", "source": crewPackage + "/widget/" + fid("w-evidence"),
 		})}}},
 		fakeTurn{content: "held."},
 		fakeTurn{content: "through."},
@@ -546,7 +546,7 @@ func TestJudgeWithoutTheDialNeverSeesTheReferent(t *testing.T) {
 	}
 	sent := string(raw)
 	// The pointer is in the diff either way; the record behind it is not.
-	if !strings.Contains(sent, "w-evidence") {
+	if !strings.Contains(sent, fid("w-evidence")) {
 		t.Fatalf("the diff's own pointer went missing: %s", sent)
 	}
 	if strings.Contains(sent, "referents") || strings.Contains(sent, "the evidence text") {

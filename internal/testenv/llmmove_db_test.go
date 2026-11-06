@@ -34,6 +34,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/testenv"
 	"github.com/geoah/substrate/kinds"
@@ -123,11 +124,20 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	// The rows an agent leaves behind, written under the old kinds: a provider,
 	// a thread of two messages, an interaction, and a change request whose
 	// `thread` reference the move repoints beside the agent's `provider`.
+	// They are written by the engine's own hand: the pre-move tree declares
+	// no `purpose`, so its machinery kinds read as primary, and a person
+	// could not name them (decision 0228). Who wrote them is not what the
+	// move is about.
+	beforeDS, err := before.Service.Dataset(context.Background(), before.Repository)
+	if err != nil {
+		t.Fatalf("open the pre-move dataset: %v", err)
+	}
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
-		if status, body := before.Do(http.MethodPut, "/api/v1/"+kind+"/"+id,
-			map[string]any{"properties": props}); status/100 != 2 {
-			t.Fatalf("write %s/%s on the pre-move tree: %d %s", kind, id, status, body)
+		if _, err := beforeDS.Put(context.Background(), substrate.ActorSystem, substrate.PutInput{
+			Kind: kind, ID: id, Properties: props,
+		}); err != nil {
+			t.Fatalf("write %s/%s on the pre-move tree: %v", kind, id, err)
 		}
 	}
 	put(corePkg+"/llmprovider", "openai", map[string]any{

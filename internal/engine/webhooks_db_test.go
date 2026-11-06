@@ -67,7 +67,7 @@ def main(input, host):
 // first delivery parks, and the retry proves the parked payload came back.
 var hookGatedSource = hookEchoSource + `
 def main(input, host):
-    if host.records.get(WIDGET, "gate") is None:
+    if host.records.get(WIDGET, "` + fid("gate") + `") is None:
         raise RuntimeError("gate closed")
     return echo(input, host, "gated-echo")
 `
@@ -535,7 +535,7 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 			{Name: "audio", MediaType: "audio/mp4", Data: audio},
 		},
 	}
-	fid, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Repository(t), "hook-gated", "", req)
+	fireID, err := engine.ReceiveWebhookSync(ctx, svc, testdb.Repository(t), "hook-gated", "", req)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -546,8 +546,8 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(failures) != 1 || failures[0].FireID != fid {
-		t.Fatalf("parked failures = %+v, want one for fire %s", failures, fid)
+	if len(failures) != 1 || failures[0].FireID != fireID {
+		t.Fatalf("parked failures = %+v, want one for fire %s", failures, fireID)
 	}
 
 	// The spooled blob is referenced by nothing but the parked payload, and
@@ -567,12 +567,12 @@ func TestWebhookParkedRetryReplaysRequest(t *testing.T) {
 	}
 
 	// Open the gate; the retry carries the original request.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: fid("gate"), Properties: map[string]any{"name": "open"}})
 	if _, err := ds.RetryTriggerFailure(ctx, "hook-gated", failures[0].ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	got := hookEcho(t, ds, "gated-echo")
-	if got["name"] != "call the dentist" || got["want"] != "parked" || got["target"] != digest || got["record"] != fid {
+	if got["name"] != "call the dentist" || got["want"] != "parked" || got["target"] != digest || got["record"] != fireID {
 		t.Fatalf("retried delivery echoed %v", got)
 	}
 	if left, err := ds.TriggerFailures(ctx, "hook-gated"); err != nil || len(left) != 0 {
@@ -613,7 +613,7 @@ var hookRepoSource = `
 WIDGET = "` + widgetType + `"
 
 def main(input, host):
-    if host.records.get(WIDGET, "gate") is None:
+    if host.records.get(WIDGET, "` + fid("gate") + `") is None:
         raise RuntimeError("gate closed")
     repo = (input.get("envelope") or {})["repository"]
     host.effects.put(WIDGET, "repo-echo", properties={
@@ -690,7 +690,7 @@ func TestParkedEnvelopeGainsTheAuthorityOnRetry(t *testing.T) {
 		t.Fatalf("rewrite the parked payload: %v", err)
 	}
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: fid("gate"), Properties: map[string]any{"name": "open"}})
 	if _, err := ds.RetryTriggerFailure(ctx, "hook-repo", failures[0].ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}

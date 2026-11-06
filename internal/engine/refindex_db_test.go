@@ -58,7 +58,7 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 	}
 	for _, id := range []string{"a", "b", "c"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: target, ID: id, Properties: map[string]any{"name": id},
+			Kind: target, ID: fid(id), Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put target %s: %v", id, err)
 		}
@@ -66,13 +66,13 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 	// Every pointer has also seen `a` (a repeated reference holds each record
 	// once, so the one pointing at it names it once).
 	for id, at := range map[string]string{"p1": "a", "p2": "b", "p3": "c"} {
-		alsoSeen := []any{"a"}
+		alsoSeen := []any{fid("a")}
 		if at != "a" {
-			alsoSeen = append(alsoSeen, at)
+			alsoSeen = append(alsoSeen, fid(at))
 		}
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: pointer, ID: id,
-			Properties: map[string]any{"note": id, "target": at, "alsoSeen": alsoSeen},
+			Kind: pointer, ID: fid(id),
+			Properties: map[string]any{"note": id, "target": fid(at), "alsoSeen": alsoSeen},
 		}); err != nil {
 			t.Fatalf("put pointer %s: %v", id, err)
 		}
@@ -153,7 +153,7 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 	b := &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:      []string{pointer},
-		Properties: map[string]substrate.Cond{"target": {In: []any{"a", "b"}}},
+		Properties: map[string]substrate.Cond{"target": {In: []any{fid("a"), fid("b")}}},
 	}); err != nil {
 		t.Fatalf("build filter: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 		t.Fatalf("the scalar reference filter did not compile to one indexed equality:\n%s", where)
 	}
 	paths, ok := b.args[1].([]string)
-	if !ok || len(paths) != 2 || paths[0] != vocabulary.RecordPath(target, "a") || paths[1] != vocabulary.RecordPath(target, "b") {
+	if !ok || len(paths) != 2 || paths[0] != vocabulary.RecordPath(target, fid("a")) || paths[1] != vocabulary.RecordPath(target, fid("b")) {
 		t.Fatalf("the bound path list: %#v", b.args[1])
 	}
 	// The plan walks the reference index, not the table.
@@ -175,19 +175,19 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 	// And answers the right rows.
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{pointer},
-		Properties: map[string]substrate.Cond{"target": {In: []any{"a", "b"}}},
+		Properties: map[string]substrate.Cond{"target": {In: []any{fid("a"), fid("b")}}},
 	}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if got := recordIDs(page); got != "p1,p2" {
+	if got := recordIDs(page); got != refIndexIDs("p1", "p2") {
 		t.Fatalf("the list answered %q, want p1,p2", got)
 	}
 	// `eq` and a full path spell the same clause.
 	b = &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:      []string{pointer},
-		Properties: map[string]substrate.Cond{"target": {Eq: vocabulary.RecordPath(target, "c")}},
+		Properties: map[string]substrate.Cond{"target": {Eq: vocabulary.RecordPath(target, fid("c"))}},
 	}); err != nil {
 		t.Fatalf("build filter: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 	b = &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:      []string{pointer},
-		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "b"}},
+		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: fid("b")}},
 	}); err != nil {
 		t.Fatalf("build filter: %v", err)
 	}
@@ -210,12 +210,12 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 	}
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{pointer},
-		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "a"}},
+		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: fid("a")}},
 	}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if got := recordIDs(page); got != "p1,p2,p3" {
+	if got := recordIDs(page); got != refIndexIDs("p1", "p2", "p3") {
 		t.Fatalf("the repeated list answered %q, want p1,p2,p3", got)
 	}
 }
@@ -230,7 +230,7 @@ func TestTheReferencingArmWalksTheRefsIndex(t *testing.T) {
 	b := &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:       []string{pointer},
-		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, "b")},
+		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, fid("b"))},
 	}); err != nil {
 		t.Fatalf("build filter: %v", err)
 	}
@@ -243,12 +243,12 @@ func TestTheReferencingArmWalksTheRefsIndex(t *testing.T) {
 		t.Fatalf("the plan does not walk refs_dst_idx:\n%s", plan)
 	}
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, "b")},
+		Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, fid("b"))},
 	}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if got := recordIDs(page); got != "p2" {
+	if got := recordIDs(page); got != refIndexIDs("p2") {
 		t.Fatalf("referencing b answered %q, want p2", got)
 	}
 }
@@ -265,7 +265,7 @@ func TestTheReferencingListWalksTheRefsIndex(t *testing.T) {
 	ds, target, pointer := refIndexDataset(t)
 	for i := range 300 {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: pointer, ID: "bulk" + strconv.Itoa(i), Properties: map[string]any{"target": "a"},
+			Kind: pointer, ID: fid("bulk" + strconv.Itoa(i)), Properties: map[string]any{"target": fid("a")},
 		}); err != nil {
 			t.Fatalf("put bulk pointer %d: %v", i, err)
 		}
@@ -281,12 +281,12 @@ func TestTheReferencingListWalksTheRefsIndex(t *testing.T) {
 		want string
 	}{
 		"one kind": {
-			refs: []string{vocabulary.RecordPath(target, "b"), vocabulary.RecordPath(target, "c")},
-			arm:  "r.dst = ANY(", want: "p2,p3",
+			refs: []string{vocabulary.RecordPath(target, fid("b")), vocabulary.RecordPath(target, fid("c"))},
+			arm:  "r.dst = ANY(", want: refIndexIDs("p2", "p3"),
 		},
 		"two kinds": {
-			refs: []string{vocabulary.RecordPath(target, "b"), vocabulary.RecordPath(pointer, "p1")},
-			arm:  ") OR (", want: "p2",
+			refs: []string{vocabulary.RecordPath(target, fid("b")), vocabulary.RecordPath(pointer, fid("p1"))},
+			arm:  ") OR (", want: refIndexIDs("p2"),
 		},
 	} {
 		b := &builder{}
@@ -333,10 +333,10 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 		return out
 	}
 	trails := map[eref]string{
-		{Kind: target, ID: "x"}: "y", {Kind: target, ID: "y"}: "c",
+		{Kind: target, ID: "x"}: "y", {Kind: target, ID: "y"}: fid("c"),
 		{Kind: target, ID: "p"}: "q", {Kind: target, ID: "q"}: "p",
 		// The same former id in another kind names another record.
-		{Kind: pointer, ID: "x"}: "p1",
+		{Kind: pointer, ID: "x"}: fid("p1"),
 	}
 	for former, record := range trails {
 		if _, err := ds.db.ExecContext(ctx,
@@ -353,7 +353,7 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 		}
 		return c
 	}
-	universe := append(at(target, "a", "b", "c", "x", "y", "p", "q", "nowhere"), at(pointer, "x", "p1")...)
+	universe := append(at(target, fid("a"), fid("b"), fid("c"), "x", "y", "p", "q", "nowhere"), at(pointer, "x", fid("p1"))...)
 	keys := func(es []eref) []string {
 		out := make([]string, 0, len(es))
 		for _, e := range es {
@@ -377,8 +377,8 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 		return keys(out)
 	}
 	for _, targets := range [][]eref{
-		at(target, "x"), at(target, "y"), at(target, "c"), at(target, "x", "b"),
-		at(target, "p"), at(target, "q", "x", "a"), at(target, "nowhere"),
+		at(target, "x"), at(target, "y"), at(target, fid("c")), at(target, "x", fid("b")),
+		at(target, "p"), at(target, "q", "x", fid("a")), at(target, "nowhere"),
 		at(pointer, "x"), append(at(target, "x"), at(pointer, "x")...),
 	} {
 		got, err := trailIDs(ctx, ds.db, targets)
@@ -393,25 +393,25 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 	// End to end: a pointer stored under x, two hops from c, answers a
 	// reverse read of c.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pointer, ID: "px", Properties: map[string]any{"target": "x"},
+		Kind: pointer, ID: fid("px"), Properties: map[string]any{"target": "x"},
 	}); err != nil {
 		t.Fatalf("put the pointer at x: %v", err)
 	}
 	var dst string
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT dst FROM refs WHERE src_kind = $1 AND src = 'px' AND property = 'target'`, pointer).Scan(&dst); err != nil {
+		`SELECT dst FROM refs WHERE src_kind = $1 AND src = $2 AND property = 'target'`, pointer, fid("px")).Scan(&dst); err != nil {
 		t.Fatalf("read the pointer's refs row: %v", err)
 	}
 	if dst != "x" {
 		t.Fatalf("the refs row holds %q; the case needs a pointer indexed under x", dst)
 	}
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Referencing: &substrate.Referencing{Refs: []string{vocabulary.RecordPath(target, "c")}, Property: "target"},
+		Referencing: &substrate.Referencing{Refs: []string{vocabulary.RecordPath(target, fid("c"))}, Property: "target"},
 	}})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if got := recordIDs(page); got != "p3,px" {
+	if got := recordIDs(page); got != refIndexIDs("p3", "px") {
 		t.Fatalf("referencing c answered %q, want p3 and the pointer stored under x", got)
 	}
 }
@@ -434,8 +434,8 @@ func TestAHotTargetsReferencingPageCountsOnlyWhenAsked(t *testing.T) {
 		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 			for i := from; i < from+batch; i++ {
 				if _, err := tx.put(substrate.PutInput{
-					Kind: pointer, ID: fmt.Sprintf("h%04d", i),
-					Properties: map[string]any{"target": "b"},
+					Kind: pointer, ID: fid(fmt.Sprintf("h%04d", i)),
+					Properties: map[string]any{"target": fid("b")},
 				}); err != nil {
 					return err
 				}
@@ -452,7 +452,7 @@ func TestAHotTargetsReferencingPageCountsOnlyWhenAsked(t *testing.T) {
 		t.Fatalf("analyze: %v", err)
 	}
 	const want = hot + 1
-	f := substrate.Filter{Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, "b")}}
+	f := substrate.Filter{Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, fid("b"))}}
 
 	// walk pages through the whole fan-in, asking `count` on its first page
 	// alone when countFirst. It answers the rows it read, the first page's
@@ -579,6 +579,16 @@ func TestADeclaredReferenceIndexIsNotDoubled(t *testing.T) {
 
 // recordIDs is a page's ids, sorted: the fixture plants its pointers in map
 // order, so the list's own (created_at) order is not the assertion.
+// refIndexIDs is the fixture ids of names as recordIDs writes them.
+func refIndexIDs(names ...string) string {
+	ids := make([]string, len(names))
+	for i, n := range names {
+		ids[i] = fid(n)
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
+}
+
 func recordIDs(page *substrate.Page) string {
 	ids := make([]string, 0, len(page.Records))
 	for _, r := range page.Records {

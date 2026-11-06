@@ -22,6 +22,11 @@ data:
     systems use for it, its unit and how its values are best read. Every observation
     and trace points at one.
   purpose: primary
+  # A metric's id is its name: values, views, priorities and functions point
+  # at `health/body_mass` by that path, so the writer chooses it (decision
+  # record 0228).
+  ids:
+    type: named
   names:
     singular: metric
   traits:

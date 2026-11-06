@@ -28,7 +28,7 @@ func todayFix(t *testing.T) aggFix {
 		at    time.Time
 		value string
 	}{{time.Date(2026, 9, 24, 7, 0, 0, 0, london), "60"}, {time.Date(2026, 9, 24, 20, 0, 0, 0, london), "70"}} {
-		f.mustPut(t, f.observation, fmt.Sprintf("hr/%d", i), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("hr/%d", i)), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": at(x.at), "hold": "PT1M", "utcOffset": 60,
 		})
@@ -37,15 +37,15 @@ func todayFix(t *testing.T) aggFix {
 		at    time.Time
 		value string
 	}{{time.Date(2026, 9, 24, 0, 30, 0, 0, athensOff), "40"}, {time.Date(2026, 9, 24, 21, 0, 0, 0, athensOff), "60"}} {
-		f.mustPut(t, f.observation, fmt.Sprintf("steps/%d", i), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("steps/%d", i)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity(x.value, "{steps}"), "at": at(x.at), "endsAt": at(x.at.Add(10 * time.Minute)), "utcOffset": 180,
 		})
 	}
-	f.weighing("w/1", "scale", "70.5", time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC), nil)
+	f.weighing(fid("w/1"), "scale", "70.5", time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC), nil)
 	night := time.Date(2026, 9, 24, 1, 0, 0, 0, athensOff)
-	f.summary("rhr/avg", "health/resting_heart_rate", "watch", "avg", "52", "/min", night, 6*time.Hour)
-	f.summary("rhr/max", "health/resting_heart_rate", "watch", "max", "58", "/min", night, 6*time.Hour)
+	f.summary(fid("rhr/avg"), "health/resting_heart_rate", "watch", "avg", "52", "/min", night, 6*time.Hour)
+	f.summary(fid("rhr/max"), "health/resting_heart_rate", "watch", "max", "58", "/min", night, 6*time.Hour)
 	return f
 }
 
@@ -248,13 +248,13 @@ func TestAggregateSeveralMetricsWriteADayAtTheValuesTaken(t *testing.T) {
 		at    time.Time
 		value string
 	}{{time.Date(2026, 9, 24, 7, 0, 0, 0, london), "60"}, {time.Date(2026, 9, 24, 20, 0, 0, 0, london), "70"}} {
-		f.mustPut(t, f.observation, fmt.Sprintf("hr/%d", i), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("hr/%d", i)), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": at(x.at), "hold": "PT1M", "utcOffset": 60,
 		})
 	}
 	night := time.Date(2026, 9, 24, 1, 0, 0, 0, time.FixedZone("", 3*3600))
-	f.summary("hr/night", "health/heart_rate", "watch", "avg", "52", "/min", night, 6*time.Hour)
+	f.summary(fid("hr/night"), "health/heart_rate", "watch", "avg", "52", "/min", night, 6*time.Hour)
 	hr := f.metricPath("health/heart_rate")
 	bucket := &substrate.AggregateBucket{Calendar: "day"}
 

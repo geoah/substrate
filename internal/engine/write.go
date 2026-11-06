@@ -229,7 +229,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		return nil, err
 	}
 	if in.ID != "" && existing == nil {
-		if err := t.checkCreateID(ty); err != nil {
+		if err := t.checkCreateID(ty, id); err != nil {
 			return nil, err
 		}
 	}
@@ -314,17 +314,51 @@ func (t *txn) checkID(typ, id string) error {
 	return nil
 }
 
-// checkCreateID enforces who names a new record: a type some mapping points
-// at is always server-assigned, because nothing external names a subject.
-// Addressing a record that already exists is not naming it, so
-// `PUT …/{name}/{id}` (the console's Save, and `substrate apply`) works on
-// every type.
-func (t *txn) checkCreateID(ty *vocabulary.Kind) error {
-	if len(t.declarations().MappingsTo(ty.Identity)) == 0 {
+// checkCreateID enforces who names a new record. Addressing a record that
+// already exists is not naming it, so `PUT …/{name}/{id}` (the console's
+// Save, and `substratectl apply`) updates any record by its id; only a create
+// is judged here.
+//
+// A kind some mapping points at is always server-assigned, because nothing
+// external names a subject. Otherwise a chosen id is the writer's to give
+// only when the writer derives it from data (substrate.NamesItsRecords: the
+// engine, a bundle, a function, decision 0162) or the kind's ids are
+// `named` (Kind.IDType: declared by `ids.type`, else every internal kind),
+// because its ids are names the substrate resolves by: a metric's path, a
+// unit's spelling, a provider row, an input's `default`. A person, an app or
+// an agent creates every other record under a minted id, which it may mint itself so an
+// offline outbox knows it before the server answers, or derive from an
+// upstream key so a re-sync names the same row; any other id is refused,
+// because a name chosen for what a record says stops matching once the
+// record changes (decision 0228).
+//
+// A create request's target id was judged when the request was written,
+// against the hand that proposed it (admitRequestDiff), so the accept that
+// mints it under the owner's actor is not judged again (idAdmitted).
+func (t *txn) checkCreateID(ty *vocabulary.Kind, id string) error {
+	if len(t.declarations().MappingsTo(ty.Identity)) != 0 {
+		return fmt.Errorf("%w: %s ids are server-assigned — a mapping points at it, and nothing external names a subject",
+			substrate.ErrValidation, ty.Name)
+	}
+	if t.idAdmitted {
 		return nil
 	}
-	return fmt.Errorf("%w: %s ids are server-assigned — a mapping points at it, and nothing external names a subject",
-		substrate.ErrValidation, ty.Name)
+	return t.createIDRefusal(ty, id)
+}
+
+// createIDRefusal is the rule on who names a new record (decision 0228),
+// judged against this transaction's actor: nil when the actor may create a
+// record of ty under id, else the refusal. A declaration is named by the
+// identity it declares, whatever its kind's purpose says.
+func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
+	if _, declaration := vocabularyRecordKinds[ty.Identity]; declaration {
+		return nil
+	}
+	if substrate.NamesItsRecords(t.actor) || ty.IDType() == vocabulary.IDsNamed || vocabulary.MintedID(id) {
+		return nil
+	}
+	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id yourself: a UUIDv7 as 26 lowercase Crockford base32 characters, or as canonical lowercase UUID text",
+		substrate.ErrValidation, id, ty.Identity)
 }
 
 // hotProps are the properties that occupy their own storage column: everything
@@ -2182,6 +2216,15 @@ func (t *txn) admitRequestDiff(sp *applySpec) error {
 		if err != nil {
 			return err
 		}
+		// The id the accept would mint is judged here, against the hand that
+		// proposes it, because the accept runs under the owner's actor. Only
+		// when the request names it first: a decision rewrites the request
+		// under the owner's hand and must not be judged as the proposer.
+		if sp.existing == nil || sp.existing.Props["targetId"] != id {
+			if err := t.createIDRefusal(ty, id); err != nil {
+				return err
+			}
+		}
 		return t.storeNormalizedDiff(sp, ty, diff, opCreate)
 	}
 	// A patch's diff is checked against the kind its `target` names. A TARGETLESS
@@ -2669,7 +2712,8 @@ func decodeDiff(edit *erow) (substrate.PatchInput, error) {
 }
 
 // applyCreateRequest mints the record a create request names, through the
-// ordinary write path under the accepting actor. It is
+// ordinary write path under the accepting actor, with the target id the
+// request was admitted with (idAdmitted). It is
 // create-if-absent + idempotent on replay: the per-record advisory lock makes
 // the existence check atomic (the effect ifAbsent pattern, effects.go), so a
 // re-materialized request or a second request naming the same id is a no-op,
@@ -2719,10 +2763,10 @@ func (t *txn) applyCreateRequest(edit *erow) error {
 			substrate.ErrConflict, id, row.Kind)
 	}
 	in.ID = id
-	if _, err := t.put(in); err != nil {
-		return err
-	}
-	return nil
+	t.idAdmitted = true
+	_, err = t.put(in)
+	t.idAdmitted = false
+	return err
 }
 
 // existingSatisfiesCreate reports whether a live record already IS what a

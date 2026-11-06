@@ -230,10 +230,10 @@ func TestBackgroundFunctionReachesTheRunningLoop(t *testing.T) {
 	arrived := make(chan struct{})
 	held, release := heldTurn(t)
 	fake.script("jfiler",
-		fakeTurn{calls: []fakeCall{{name: "stamp", args: `{"id":"n1"}`}}},
+		fakeTurn{calls: []fakeCall{{name: "stamp", args: `{"id":"` + fid("n1") + `"}`}}},
 		// Held until the job's end is a row, then one more batch: a second
 		// stamp's handle, after which the first one's result follows.
-		fakeTurn{calls: []fakeCall{{name: "stamp", args: `{"id":"n2"}`}}, arrived: arrived, release: held},
+		fakeTurn{calls: []fakeCall{{name: "stamp", args: `{"id":"` + fid("n2") + `"}`}}, arrived: arrived, release: held},
 		fakeTurn{content: "filed"},
 		fakeTurn{content: "and the second one"},
 	)
@@ -263,10 +263,10 @@ func TestBackgroundFunctionReachesTheRunningLoop(t *testing.T) {
 		t.Fatal(r.err)
 	}
 	reqs := fake.requestsOf("jfiler")
-	if len(reqs) < 3 || !requestCarries(reqs[2], eventToolCompleted) || !requestCarries(reqs[2], `stamped\":\"n1`) {
+	if len(reqs) < 3 || !requestCarries(reqs[2], eventToolCompleted) || !requestCarries(reqs[2], `stamped\":\"`+fid("n1")) {
 		t.Fatal("the third turn did not carry the first job's result")
 	}
-	if _, err := ds.Get(ctx, jobsNote, "n1"); err != nil {
+	if _, err := ds.Get(ctx, jobsNote, fid("n1")); err != nil {
 		t.Fatalf("the background function's effect: %v", err)
 	}
 	// The second job ended after the reply, so it resumes the thread; the

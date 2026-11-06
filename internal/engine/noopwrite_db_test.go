@@ -68,7 +68,7 @@ func noopConversation() map[string]any {
 // noopProps is what the sync writes, every run, byte for byte.
 func noopProps() map[string]any {
 	return map[string]any{
-		"conversationId": "C123",
+		"conversationId": fid("C123"),
 		"name":           "general",
 		"memberCount":    42,
 		"priority":       0.0426,
@@ -101,7 +101,7 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	const conversation = noopPackage + "/conversation"
 
 	first := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: conversation, ID: "C123", Properties: noopProps(),
+		Kind: conversation, ID: fid("C123"), Properties: noopProps(),
 	})
 
 	// A trigger watching the mirror. Nothing here runs the dispatcher: a
@@ -116,11 +116,11 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	}{
 		{"a re-put of the same page", func() *substrate.Record {
 			return mustPut(t, ds, slack, substrate.PutInput{
-				Kind: conversation, ID: "C123", Properties: noopProps(),
+				Kind: conversation, ID: fid("C123"), Properties: noopProps(),
 			})
 		}},
 		{"a patch of the same page", func() *substrate.Record {
-			return mustPatch(t, ds, slack, conversation, "C123", substrate.PatchInput{
+			return mustPatch(t, ds, slack, conversation, fid("C123"), substrate.PatchInput{
 				Properties: noopProps(),
 			})
 		}},
@@ -132,11 +132,11 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 			props["lastReadAt"] = "2026-09-16T12:11:12+02:00"
 			props["at"] = "2026-01-02T04:04:05+01:00"
 			return mustPut(t, ds, slack, substrate.PutInput{
-				Kind: conversation, ID: "C123", Properties: props,
+				Kind: conversation, ID: fid("C123"), Properties: props,
 			})
 		}},
 		{"a patch of one unchanged property", func() *substrate.Record {
-			return mustPatch(t, ds, slack, conversation, "C123", substrate.PatchInput{
+			return mustPatch(t, ds, slack, conversation, fid("C123"), substrate.PatchInput{
 				Properties: map[string]any{"name": "general"},
 			})
 		}},
@@ -172,7 +172,7 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	}
 
 	// And a real change still moves: one bump, one row.
-	changed := mustPatch(t, ds, slack, conversation, "C123", substrate.PatchInput{
+	changed := mustPatch(t, ds, slack, conversation, fid("C123"), substrate.PatchInput{
 		Properties: map[string]any{"memberCount": 43},
 	})
 	if changed.Version != first.Version+1 {

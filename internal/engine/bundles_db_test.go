@@ -40,7 +40,10 @@ func mbConfigTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailconfig"},
 		map[string]any{
-			"traits": []any{"substrate.reamde.dev/core/oauth2"},
+			// A bundle's input kind, internal like every shipped one: the
+			// owner writes its well-known `default` record by that name.
+			"purpose": "internal",
+			"traits":  []any{"substrate.reamde.dev/core/oauth2"},
 			"properties": map[string]any{
 				"authorizationEndpoint": map[string]any{"type": "url"},
 				"tokenEndpoint":         map[string]any{"type": "url"},
@@ -1043,11 +1046,11 @@ func TestSplitResurrectingASecondInputReadsAmbiguous(t *testing.T) {
 
 // fenceWaiterSource polls for a flag record, then emits one message: the barrier
 // that keeps an invocation in flight while a lifecycle verb races it.
-const fenceWaiterSource = `
+var fenceWaiterSource = `
 import time
 def main(input, host):
     for _ in range(150):
-        got = host.get("mail.bundles.substrate.reamde.dev/mail/mailitem", "fence-flag")
+        got = host.get("mail.bundles.substrate.reamde.dev/mail/mailitem", "` + fid("fence-flag") + `")
         if got:
             return {"effects": [{"action": "put", "kind": "mail.bundles.substrate.reamde.dev/mail/mailmessage",
                                  "id": "fence-done", "properties": {"subject": "done"}}]}
@@ -1124,7 +1127,7 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 
 	// Release the barrier: the invocation finishes and commits, THEN the
 	// disable lands.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, ID: "fence-flag", Properties: map[string]any{"name": "go"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbItemType, ID: fid("fence-flag"), Properties: map[string]any{"name": "go"}})
 	select {
 	case err := <-disableDone:
 		if err != nil {

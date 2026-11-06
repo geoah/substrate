@@ -107,23 +107,23 @@ func TestASyncDeliveryThatSettlesOkRetiresTheAccountsOlderParks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	processOnce(t, ds)
-	renameJob(t, ds, "inbox", "inbox, again")
+	renameJob(t, ds, fid("inbox"), "inbox, again")
 	processOnce(t, ds)
 	if got := parksOf(t, ds, supersedeRec); len(got) != 2 {
 		t.Fatalf("%s parked %v, want the creation's and the request's", supersedeRec, got)
 	}
 	syncs, triggers := jobSyncs(t, ds)
-	if syncs["inbox"].Parked != 2 || triggers[supersedeRec].Parked != 2 {
-		t.Fatalf("parked: sync status %d, trigger status %d, want 2 each", syncs["inbox"].Parked, triggers[supersedeRec].Parked)
+	if syncs[fid("inbox")].Parked != 2 || triggers[supersedeRec].Parked != 2 {
+		t.Fatalf("parked: sync status %d, trigger status %d, want 2 each", syncs[fid("inbox")].Parked, triggers[supersedeRec].Parked)
 	}
 	if a := alertOf(t, ds, parkedAlertKey(supersedeRec)); a == nil || a.Properties["state"] != alertStateOpen {
 		t.Fatalf("the parked-deliveries alert is %v, want open", a)
 	}
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	if got := parksOf(t, ds, supersedeRec); len(got) != 0 {
 		t.Fatalf("%s parked %v after the account synced, want none", supersedeRec, got)
@@ -132,7 +132,7 @@ func TestASyncDeliveryThatSettlesOkRetiresTheAccountsOlderParks(t *testing.T) {
 	if st := triggers[supersedeRec]; st.Parked != 0 || st.LastParkedError != "" || st.Health != substrate.HealthOK {
 		t.Fatalf("trigger status = %+v, want nothing parked and ok", st)
 	}
-	if st := syncs["inbox"]; st.Parked != 0 || st.State != substrate.SyncStateOK || st.Health != substrate.HealthOK {
+	if st := syncs[fid("inbox")]; st.Parked != 0 || st.State != substrate.SyncStateOK || st.Health != substrate.HealthOK {
 		t.Fatalf("sync status = %+v, want nothing parked, state ok", st)
 	}
 	if a := alertOf(t, ds, parkedAlertKey(supersedeRec)); a == nil || a.Properties["state"] != alertStateResolved {
@@ -174,7 +174,7 @@ func TestASyncDeliveryRetiresTheParksOfAnotherTriggerWithTheSameCallable(t *test
 	ds := supersedeDatasetOn(t, openInternalDataset(t, WithHealthFailingAfter(healthWindow), WithTestHealthClock(clock.Now)),
 		futureSchedule(), "update")
 	putJobTrigger(t, ds, supersedeConnect, "jobsync", "create")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	healthPass(t, ds)
 	if got := parksOf(t, ds, supersedeConnect); len(got) != 1 {
 		t.Fatalf("%s parked %v, want the connect", supersedeConnect, got)
@@ -184,7 +184,7 @@ func TestASyncDeliveryRetiresTheParksOfAnotherTriggerWithTheSameCallable(t *test
 	failing := requireAlertState(t, ds, supersedeConnect, alertStateOpen)
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	healthPass(t, ds)
 	if got := parksOf(t, ds, supersedeConnect); len(got) != 0 {
 		t.Fatalf("%s parked %v after the request synced, want none", supersedeConnect, got)
@@ -222,8 +222,8 @@ func TestASyncDeliveryLeavesOtherAccountsAndOtherCallablesParksParked(t *testing
 	t.Parallel()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
 	putJobTrigger(t, ds, supersedeMirror, "other", "create")
-	putJob(t, ds, "inbox")
-	putJob(t, ds, "outbox")
+	putJob(t, ds, fid("inbox"))
+	putJob(t, ds, fid("outbox"))
 	processOnce(t, ds)
 	perRecord := func(triggerID string) map[string]int {
 		out := map[string]int{}
@@ -233,29 +233,29 @@ func TestASyncDeliveryLeavesOtherAccountsAndOtherCallablesParksParked(t *testing
 		return out
 	}
 	before := perRecord(supersedeRec)
-	if before["inbox"] == 0 || before["outbox"] == 0 {
+	if before[fid("inbox")] == 0 || before[fid("outbox")] == 0 {
 		t.Fatalf("%s parked %v, want parks on inbox and outbox", supersedeRec, before)
 	}
-	if got := perRecord(supersedeMirror); got["inbox"] != 1 || got["outbox"] != 1 {
+	if got := perRecord(supersedeMirror); got[fid("inbox")] != 1 || got[fid("outbox")] != 1 {
 		t.Fatalf("%s parked %v, want one on each job", supersedeMirror, got)
 	}
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	after := perRecord(supersedeRec)
-	if after["inbox"] != 0 || after["outbox"] != before["outbox"] {
-		t.Fatalf("%s parked %v, want none on inbox and outbox's %d", supersedeRec, after, before["outbox"])
+	if after[fid("inbox")] != 0 || after[fid("outbox")] != before[fid("outbox")] {
+		t.Fatalf("%s parked %v, want none on inbox and outbox's %d", supersedeRec, after, before[fid("outbox")])
 	}
-	if got := perRecord(supersedeMirror); got["inbox"] != 1 || got["outbox"] != 1 {
+	if got := perRecord(supersedeMirror); got[fid("inbox")] != 1 || got[fid("outbox")] != 1 {
 		t.Fatalf("%s parked %v, want both of another function's parks", supersedeMirror, got)
 	}
 	syncs, triggers := jobSyncs(t, ds)
-	if triggers[supersedeRec].Parked != int64(before["outbox"]) || triggers[supersedeMirror].Parked != 2 {
-		t.Fatalf("trigger statuses count %d and %d parked, want %d and 2", triggers[supersedeRec].Parked, triggers[supersedeMirror].Parked, before["outbox"])
+	if triggers[supersedeRec].Parked != int64(before[fid("outbox")]) || triggers[supersedeMirror].Parked != 2 {
+		t.Fatalf("trigger statuses count %d and %d parked, want %d and 2", triggers[supersedeRec].Parked, triggers[supersedeMirror].Parked, before[fid("outbox")])
 	}
-	if syncs["inbox"].Parked != 1 || syncs["outbox"].Parked != int64(before["outbox"])+1 {
-		t.Fatalf("sync statuses count inbox %d and outbox %d parked, want 1 and %d", syncs["inbox"].Parked, syncs["outbox"].Parked, before["outbox"]+1)
+	if syncs[fid("inbox")].Parked != 1 || syncs[fid("outbox")].Parked != int64(before[fid("outbox")])+1 {
+		t.Fatalf("sync statuses count inbox %d and outbox %d parked, want 1 and %d", syncs[fid("inbox")].Parked, syncs[fid("outbox")].Parked, before[fid("outbox")]+1)
 	}
 }
 
@@ -265,9 +265,9 @@ func TestARetryThatDeliversASyncRetiresTheAccountsOlderParks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	processOnce(t, ds)
-	renameJob(t, ds, "inbox", "inbox, again")
+	renameJob(t, ds, fid("inbox"), "inbox, again")
 	processOnce(t, ds)
 	failures, err := ds.TriggerFailures(ctx, supersedeRec)
 	if err != nil || len(failures) != 2 {
@@ -296,7 +296,7 @@ func TestARetryThatDeliversASyncRetiresTheAccountsOlderParks(t *testing.T) {
 func TestAParkNewerThanTheSettlingDeliveryStays(t *testing.T) {
 	t.Parallel()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	processOnce(t, ds)
 	failures, err := ds.TriggerFailures(context.Background(), supersedeRec)
 	if err != nil || len(failures) != 1 {
@@ -305,13 +305,13 @@ func TestAParkNewerThanTheSettlingDeliveryStays(t *testing.T) {
 	// The same change, parked an hour from now.
 	if _, err := ds.db.ExecContext(context.Background(), `
 		INSERT INTO trigger_failures (id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
-		VALUES ($1, $2, $3, '', 'inbox', 3, 'RuntimeError: upstream returned HTTP 500', $4)`,
-		int64(-7), supersedeRec, failures[0].Seq, nowUTC().Add(time.Hour)); err != nil {
+		VALUES ($1, $2, $3, '', $5, 3, 'RuntimeError: upstream returned HTTP 500', $4)`,
+		int64(-7), supersedeRec, failures[0].Seq, nowUTC().Add(time.Hour), fid("inbox")); err != nil {
 		t.Fatalf("park ahead: %v", err)
 	}
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	left, err := ds.TriggerFailures(context.Background(), supersedeRec)
 	if err != nil || len(left) != 1 || left[0].ID != -7 {
@@ -336,14 +336,14 @@ def main(input, host):
 func TestASyncDeliveryThatLeavesTheAccountErroringOrThrottledRetiresNothing(t *testing.T) {
 	t.Parallel()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	processOnce(t, ds)
 	if got := parksOf(t, ds, supersedeRec); len(got) != 1 {
 		t.Fatalf("%s parked %v, want the creation's", supersedeRec, got)
 	}
 	for i, state := range []string{substrate.SyncStateErroring, substrate.SyncStateThrottled} {
 		setJobSync(t, ds, jobSyncAt(state))
-		renameJob(t, ds, "inbox", "inbox "+state)
+		renameJob(t, ds, fid("inbox"), "inbox "+state)
 		processOnce(t, ds)
 		if oks := runRowsFor(t, ds, supersedeRec, runStatusOK); oks != i+1 {
 			t.Fatalf("%s has %d ok runs after the %s delivery, want %d", supersedeRec, oks, state, i+1)
@@ -353,7 +353,7 @@ func TestASyncDeliveryThatLeavesTheAccountErroringOrThrottledRetiresNothing(t *t
 		}
 	}
 	setJobSync(t, ds, jobSyncAt(substrate.SyncStateOK))
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	if got := parksOf(t, ds, supersedeRec); len(got) != 0 {
 		t.Fatalf("%s parked %v after a delivery left the job ok, want none", supersedeRec, got)
@@ -384,19 +384,19 @@ func TestASyncDeliveryLeavesTheParkOfTheSameIDUnderAnotherKind(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("put the note trigger: %v", err)
 	}
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: note, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: note, ID: fid("inbox"), Properties: map[string]any{"name": fid("inbox")},
 	}); err != nil {
 		t.Fatalf("put the note: %v", err)
 	}
 	processOnce(t, ds)
-	if got := parksOf(t, ds, "note-sync"); len(got) != 1 || got[0] != "inbox" {
+	if got := parksOf(t, ds, "note-sync"); len(got) != 1 || got[0] != fid("inbox") {
 		t.Fatalf("note-sync parked %v, want the note's creation", got)
 	}
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	if oks := runRowsFor(t, ds, supersedeRec, runStatusOK); oks != 1 {
 		t.Fatalf("%s has %d ok runs, want the job's request", supersedeRec, oks)
@@ -412,7 +412,7 @@ func TestASyncDeliveryLeavesAParkAHandHolds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := supersedeDataset(t, futureSchedule(), "create", "update")
-	putJob(t, ds, "inbox")
+	putJob(t, ds, fid("inbox"))
 	processOnce(t, ds)
 	failures, err := ds.TriggerFailures(ctx, supersedeRec)
 	if err != nil || len(failures) != 1 {
@@ -422,7 +422,7 @@ func TestASyncDeliveryLeavesAParkAHandHolds(t *testing.T) {
 	ds.runningClaims.Store(held, struct{}{})
 
 	setJobSync(t, ds, supersedeOK)
-	renameJob(t, ds, "inbox", "inbox, synced")
+	renameJob(t, ds, fid("inbox"), "inbox, synced")
 	processOnce(t, ds)
 	ds.runningClaims.Delete(held)
 	left, err := ds.TriggerFailures(ctx, supersedeRec)

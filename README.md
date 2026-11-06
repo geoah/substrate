@@ -179,7 +179,10 @@ data:
 
 Apply it, write records against it, and query them back. Every write is
 validated against the declaration, and a state moves only along its
-declared transitions:
+declared transitions. A record you create takes an id in the substrate's
+minted shape, a UUIDv7 in 26 Crockford characters: leave `metadata.id` out
+and the substrate mints one, or mint your own as below so the next commands
+can name the records:
 
 ```bash
 bin/substratectl apply -f chores.yaml
@@ -187,35 +190,35 @@ bin/substratectl apply -f chores.yaml
 cat <<'EOF' | bin/substratectl apply -f -
 kind: geoah.me/chores/project
 metadata:
-  id: home
+  id: 01jcd8m0k3p7s2x9v4w6y1z5qa  # home
 data:
   properties:
     name: Home
 ---
 kind: geoah.me/chores/task
 metadata:
-  id: milk
+  id: 01jcd8m0k3p7s2x9v4w6y1z5qb  # milk
 data:
   properties:
     name: Buy milk
     dueAt: 2026-08-30T09:00:00Z
-    project: geoah.me/chores/project/home
+    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
 ---
 kind: geoah.me/chores/task
 metadata:
-  id: plants
+  id: 01jcd8m0k3p7s2x9v4w6y1z5qc  # plants
 data:
   properties:
     name: Water the plants
     dueAt: 2026-08-29T09:00:00Z
-    project: geoah.me/chores/project/home
+    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
 EOF
 
 bin/substratectl get geoah.me/chores/task
-bin/substratectl get geoah.me/chores/task milk -o yaml   # the full envelope, apply-able
+bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb -o yaml   # the full envelope, apply-able
 bin/substratectl get geoah.me/chores/task --filter '{"properties":{"status":{"eq":"open"}}}'
 
-bin/substratectl patch geoah.me/chores/task milk --state status=done  # stamps completedAt
+bin/substratectl patch geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb --state status=done  # stamps completedAt
 
 # Tail the changelog: from here on every write streams as one line, and the
 # opening line prints the sequence and generation a later run resumes from
@@ -297,13 +300,13 @@ data:
 ```
 
 Apply the file again (re-applying a closure is how it evolves; the engine
-versions the changes itself), then run the function by hand. `plants` is
+versions the changes itself), then run the function by hand. The plants task is
 open and past due, so it comes back urgent:
 
 ```bash
 bin/substratectl apply -f chores.yaml
 bin/substratectl function call geoah.me/chores/triage
-bin/substratectl get geoah.me/chores/task plants -o yaml
+bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qc -o yaml
 ```
 
 What usually runs it is a **trigger**, an ordinary record binding a source

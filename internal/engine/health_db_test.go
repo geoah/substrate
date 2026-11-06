@@ -176,7 +176,7 @@ func TestATriggerWhoseEveryDeliveryFailsForTheWindowReadsFailingAndOneOkClearsIt
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, triggerID, clock := healthAgentDataset(t)
-	parks := parkScribe(t, ds, triggerID, "w1")
+	parks := parkScribe(t, ds, triggerID, fid("w1"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 
@@ -218,7 +218,7 @@ func TestATriggerWhoseEveryDeliveryFailsForTheWindowReadsFailingAndOneOkClearsIt
 	}
 
 	fake.script("sub", fakeTurn{content: "done"})
-	putCrewWidget(t, ds, "w2")
+	putCrewWidget(t, ds, fid("w2"))
 	healthPass(t, ds)
 	oks := runsOf(t, ds, triggerID, runStatusOK)
 	if len(oks) != 1 || oks[0].mode != "record" {
@@ -246,7 +246,7 @@ func TestASuccessfulHandRetryClearsTheFailingAlert(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1", "w2")
+	parkScribe(t, ds, triggerID, fid("w1"), fid("w2"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	a := requireAlertState(t, ds, triggerID, alertStateOpen)
@@ -283,7 +283,7 @@ func TestAHandRetryThatDeliversInsideTheWindowKeepsTheAlertShut(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1", "w2")
+	parkScribe(t, ds, triggerID, fid("w1"), fid("w2"))
 	failures, err := ds.TriggerFailures(ctx, triggerID)
 	if err != nil || len(failures) != 2 {
 		t.Fatalf("parked deliveries %v (%v), want 2", failures, err)
@@ -318,7 +318,7 @@ func TestAFailedHandRetryAfterAResolveReopensTheAlert(t *testing.T) {
 	t.Cleanup(func() { alertRepeatInterval = prev })
 	ctx := context.Background()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1", "w2")
+	parkScribe(t, ds, triggerID, fid("w1"), fid("w2"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	a := requireAlertState(t, ds, triggerID, alertStateOpen)
@@ -353,7 +353,7 @@ func TestAFailedHandRetryAfterAResolveReopensTheAlert(t *testing.T) {
 		t.Fatalf("the reopened alert counts %v parks, want the one since the resolve", reopened.Properties["count"])
 	}
 
-	putCrewWidget(t, ds, "w3")
+	putCrewWidget(t, ds, fid("w3"))
 	clock.Advance(2 * time.Minute)
 	healthPass(t, ds)
 	if parks := runsOf(t, ds, triggerID, runStatusParked); len(parks) != 4 {
@@ -376,9 +376,9 @@ func TestAFailedHandRetryAfterAResolveReopensTheAlert(t *testing.T) {
 func TestAParkBeforeANewerOkRunIsNotFailing(t *testing.T) {
 	t.Parallel()
 	ds, fake, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1")
+	parkScribe(t, ds, triggerID, fid("w1"))
 	fake.script("sub", fakeTurn{content: "done"})
-	putCrewWidget(t, ds, "w2")
+	putCrewWidget(t, ds, fid("w2"))
 	healthPass(t, ds)
 	oks := runsOf(t, ds, triggerID, runStatusOK)
 	if len(oks) != 1 {
@@ -402,7 +402,7 @@ func TestARebuildReproducesTheFailingAlert(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1")
+	parkScribe(t, ds, triggerID, fid("w1"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	before := requireAlertState(t, ds, triggerID, alertStateOpen)
@@ -430,7 +430,7 @@ func TestAFailingScheduleTriggerFailsItsSync(t *testing.T) {
 	s := nowUTC().Add(-90 * time.Minute).Truncate(time.Minute)
 	ds := supersedeDatasetOn(t, openInternalDataset(t, WithHealthFailingAfter(healthWindow), WithTestHealthClock(clock.Now)), s, "update")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: supersedeJob, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}
@@ -497,7 +497,7 @@ func forgetAll(t *testing.T, ds *dataset, triggerID string) {
 func TestAParkForgottenInsideTheWindowOpensNoFailingAlert(t *testing.T) {
 	t.Parallel()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1")
+	parkScribe(t, ds, triggerID, fid("w1"))
 	forgetAll(t, ds, triggerID)
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
@@ -508,7 +508,7 @@ func TestAParkForgottenInsideTheWindowOpensNoFailingAlert(t *testing.T) {
 		t.Fatalf("the trigger reads %q with %d parked, want ok with none", st.Health, st.Parked)
 	}
 
-	putCrewWidget(t, ds, "w2")
+	putCrewWidget(t, ds, fid("w2"))
 	healthPass(t, ds)
 	if a := failingAlertOf(t, ds, triggerID); a != nil {
 		t.Fatalf("a fresh park opened the alert inside its window, counting the forgotten one: %v", a.Properties)
@@ -535,7 +535,7 @@ func TestForgettingTheLastParkResolvesTheFailingAlert(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1", "w2")
+	parkScribe(t, ds, triggerID, fid("w1"), fid("w2"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	a := requireAlertState(t, ds, triggerID, alertStateOpen)
@@ -621,7 +621,7 @@ func TestDeletingATriggerResolvesItsAlerts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1")
+	parkScribe(t, ds, triggerID, fid("w1"))
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	requireAlertState(t, ds, triggerID, alertStateOpen)
@@ -693,21 +693,21 @@ func forgetRecord(t *testing.T, ds *dataset, triggerID, record string) {
 func TestAForgottenParkAfterTheOkRunRaisesNothingWhileAnOlderParkStands(t *testing.T) {
 	t.Parallel()
 	ds, fake, triggerID, clock := healthAgentDataset(t)
-	parkScribe(t, ds, triggerID, "w1")
+	parkScribe(t, ds, triggerID, fid("w1"))
 	fake.script("sub", fakeTurn{content: "done"})
-	putCrewWidget(t, ds, "w2")
+	putCrewWidget(t, ds, fid("w2"))
 	healthPass(t, ds)
 	if oks := runsOf(t, ds, triggerID, runStatusOK); len(oks) != 1 {
 		t.Fatalf("%d ok runs, want w2's", len(oks))
 	}
-	putCrewWidget(t, ds, "w3")
-	putCrewWidget(t, ds, "w4")
+	putCrewWidget(t, ds, fid("w3"))
+	putCrewWidget(t, ds, fid("w4"))
 	healthPass(t, ds)
 	if parks := runsOf(t, ds, triggerID, runStatusParked); len(parks) != 3 {
 		t.Fatalf("parked runs %+v, want w1's, w3's and w4's", parks)
 	}
-	forgetRecord(t, ds, triggerID, "w3")
-	forgetRecord(t, ds, triggerID, "w4")
+	forgetRecord(t, ds, triggerID, fid("w3"))
+	forgetRecord(t, ds, triggerID, fid("w4"))
 
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
@@ -718,7 +718,7 @@ func TestAForgottenParkAfterTheOkRunRaisesNothingWhileAnOlderParkStands(t *testi
 		t.Fatalf("the trigger reads %q with %d parked, want ok with w1's park", st.Health, st.Parked)
 	}
 
-	putCrewWidget(t, ds, "w5")
+	putCrewWidget(t, ds, fid("w5"))
 	healthPass(t, ds)
 	parks := runsOf(t, ds, triggerID, runStatusParked)
 	clock.Advance(pastTheWindow)
@@ -731,7 +731,7 @@ func TestAForgottenParkAfterTheOkRunRaisesNothingWhileAnOlderParkStands(t *testi
 		t.Fatalf("the alert was first seen at %v, want w5's park %v", got, parks[len(parks)-1].at)
 	}
 
-	forgetRecord(t, ds, triggerID, "w5")
+	forgetRecord(t, ds, triggerID, fid("w5"))
 	resolved := requireAlertState(t, ds, triggerID, alertStateResolved)
 	if st := triggerStatusOf(t, ds, triggerID); st.Health != substrate.HealthOK || st.Parked != 1 {
 		t.Fatalf("after the forget the trigger reads %q with %d parked, want ok with w1's park", st.Health, st.Parked)
@@ -750,7 +750,7 @@ func TestAFailedRetryKeepsTheStreaksFirstPark(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _, triggerID, clock := healthAgentDataset(t)
-	first := parkScribe(t, ds, triggerID, "w1")[0]
+	first := parkScribe(t, ds, triggerID, fid("w1"))[0]
 	failures, err := ds.TriggerFailures(ctx, triggerID)
 	if err != nil || len(failures) != 1 {
 		t.Fatalf("parked deliveries %v (%v), want 1", failures, err)

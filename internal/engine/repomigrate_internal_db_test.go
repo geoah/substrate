@@ -32,10 +32,10 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 	if err := enginetest.PutShippedUnits(ctx, ds, "1/min"); err != nil {
 		t.Fatal(err)
 	}
-	put(pkg+"/metric", "m1", map[string]any{"name": "M1", "form": "gauge", "unit": unitRef("1/min")})
-	put(pkg+"/source", "s1", map[string]any{"name": "S1"})
-	put(obs, "o1", map[string]any{
-		"metric": map[string]any{"ref": pkg + "/metric/m1"}, "source": map[string]any{"ref": pkg + "/source/s1"},
+	put(pkg+"/metric", fid("m1"), map[string]any{"name": "M1", "form": "gauge", "unit": unitRef("1/min")})
+	put(pkg+"/source", fid("s1"), map[string]any{"name": "S1"})
+	put(obs, fid("o1"), map[string]any{
+		"metric": map[string]any{"ref": pkg + "/metric/" + fid("m1")}, "source": map[string]any{"ref": pkg + "/source/" + fid("s1")},
 		"form": "gauge", "at": "2026-10-07T08:00:00Z", "hold": "PT1M", "value": map[string]any{"value": "70", "unit": "/min"},
 	})
 	db := rawDB(t, ds)
@@ -47,7 +47,7 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 		}
 		return s
 	}
-	const segment = `SELECT count(*) || ':' || coalesce(max(encode(fingerprint, 'hex')), '') FROM observed_segments WHERE record_id = 'o1'`
+	segment := `SELECT count(*) || ':' || coalesce(max(encode(fingerprint, 'hex')), '') FROM observed_segments WHERE record_id = '` + fid("o1") + `'`
 	const latest = `SELECT count(*)::text FROM observed_latest`
 	const rollups = `SELECT count(*)::text FROM observed_rollups`
 	const value = `SELECT coalesce(max(value)::text, '') FROM observed_latest`
@@ -63,7 +63,7 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 	ds.mu.Unlock()
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
 		tx.migrating = true
-		row, err := tx.loadRow(eref{Kind: obs, ID: "o1"}, true)
+		row, err := tx.loadRow(eref{Kind: obs, ID: fid("o1")}, true)
 		if err != nil {
 			return err
 		}
@@ -72,7 +72,7 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 		if _, err := tx.foldRow(before, row, false, false); err != nil {
 			return err
 		}
-		if err := tx.appendChange(substrate.ActorSystem, substrate.OpPatch, "o1", obs, map[string]any{"properties": []string{"value"}}); err != nil {
+		if err := tx.appendChange(substrate.ActorSystem, substrate.OpPatch, fid("o1"), obs, map[string]any{"properties": []string{"value"}}); err != nil {
 			return err
 		}
 		return tx.requestUnprojected()

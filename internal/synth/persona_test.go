@@ -374,7 +374,7 @@ func TestPersonaTripRunFollowsTheTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out.Files[0].Body), "manual/2026-08-05-weight") {
+	if !strings.Contains(string(out.Files[0].Body), ManualID("manual/2026-08-05-weight")) {
 		t.Error("the hotel weigh-in is not on the trip's run day")
 	}
 }

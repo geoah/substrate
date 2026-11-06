@@ -104,21 +104,21 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/target", ID: "a",
+		Kind: firstClassPackage + "/target", ID: fid("a"),
 		Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/target", ID: "b",
+		Kind: firstClassPackage + "/target", ID: fid("b"),
 		Properties: map[string]any{"name": "Bea"},
 	})
 	// A bare id is admitted where a write admits one: `to:` pins the kind.
 	at := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p1",
+		Kind: firstClassPackage + "/pointer", ID: fid("p1"),
 		Properties: map[string]any{"note": "first", "target": a.ID},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p2",
-		Properties: map[string]any{"note": "second", "target": "b"},
+		Kind: firstClassPackage + "/pointer", ID: fid("p2"),
+		Properties: map[string]any{"note": "second", "target": fid("b")},
 	})
 
 	list := func(value any) []string {
@@ -137,14 +137,14 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 		return ids
 	}
 
-	if got := list("a"); len(got) != 1 || got[0] != at.ID {
+	if got := list(fid("a")); len(got) != 1 || got[0] != at.ID {
 		t.Fatalf("a bare id must find the rows pointing at it, got %v", got)
 	}
 	// The canonical PATH answers identically to the bare id the pin completes.
-	if got := list(vocabulary.RecordPath(firstClassPackage+"/target", "a")); len(got) != 1 {
+	if got := list(vocabulary.RecordPath(firstClassPackage+"/target", fid("a"))); len(got) != 1 {
 		t.Fatalf("the full path must find the same row, got %v", got)
 	}
-	if got := list("b"); len(got) != 1 || got[0] != "p2" {
+	if got := list(fid("b")); len(got) != 1 || got[0] != fid("p2") {
 		t.Fatalf("the filter must not leak across referents, got %v", got)
 	}
 	if got := list("nobody"); len(got) != 0 {
@@ -158,29 +158,29 @@ func TestReferenceFilterReachesIntoARepeatedPointer(t *testing.T) {
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
 
-	for _, id := range []string{"a", "b", "c"} {
+	for _, id := range []string{fid("a"), fid("b"), fid("c")} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: firstClassPackage + "/target", ID: id,
 			Properties: map[string]any{"name": id},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p1",
-		Properties: map[string]any{"target": "a", "alsoSeen": []any{"b", "c"}},
+		Kind: firstClassPackage + "/pointer", ID: fid("p1"),
+		Properties: map[string]any{"target": fid("a"), "alsoSeen": []any{fid("b"), fid("c")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p2",
-		Properties: map[string]any{"target": "a", "alsoSeen": []any{"c"}},
+		Kind: firstClassPackage + "/pointer", ID: fid("p2"),
+		Properties: map[string]any{"target": fid("a"), "alsoSeen": []any{fid("c")}},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{firstClassPackage + "/pointer"},
-		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "b"}},
+		Properties: map[string]substrate.Cond{"alsoSeen": {Eq: fid("b")}},
 	}})
 	if err != nil {
 		t.Fatalf("list by repeated reference: %v", err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "p1" {
+	if len(page.Records) != 1 || page.Records[0].ID != fid("p1") {
 		t.Fatalf("containment must reach inside the list, got %d rows", len(page.Records))
 	}
 }
@@ -191,25 +191,25 @@ func TestReferenceFilterMembershipAndPresence(t *testing.T) {
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
 
-	for _, id := range []string{"a", "b"} {
+	for _, id := range []string{fid("a"), fid("b")} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: firstClassPackage + "/target", ID: id,
 			Properties: map[string]any{"name": id},
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p1", Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/pointer", ID: fid("p1"), Properties: map[string]any{"target": fid("a")},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p2", Properties: map[string]any{"target": "b"},
+		Kind: firstClassPackage + "/pointer", ID: fid("p2"), Properties: map[string]any{"target": fid("b")},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p3", Properties: map[string]any{"note": "points nowhere"},
+		Kind: firstClassPackage + "/pointer", ID: fid("p3"), Properties: map[string]any{"note": "points nowhere"},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{firstClassPackage + "/pointer"},
-		Properties: map[string]substrate.Cond{"target": {In: []any{"a", "b"}}},
+		Properties: map[string]substrate.Cond{"target": {In: []any{fid("a"), fid("b")}}},
 	}})
 	if err != nil {
 		t.Fatalf("list by reference membership: %v", err)
@@ -226,7 +226,7 @@ func TestReferenceFilterMembershipAndPresence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list by reference absence: %v", err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "p3" {
+	if len(page.Records) != 1 || page.Records[0].ID != fid("p3") {
 		t.Fatalf("exists:false must find the row that points nowhere, got %d rows", len(page.Records))
 	}
 }
@@ -256,12 +256,12 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/target", ID: "a",
+		Kind: firstClassPackage + "/target", ID: fid("a"),
 		Properties: map[string]any{"name": "Ada"},
 	})
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p1",
-		Properties: map[string]any{"note": "first", "target": "a"},
+		Kind: firstClassPackage + "/pointer", ID: fid("p1"),
+		Properties: map[string]any{"note": "first", "target": fid("a")},
 	})
 	if row.Title != "Ada: first" {
 		t.Fatalf("a template must read THROUGH a reference, got %q", row.Title)
@@ -269,8 +269,8 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 
 	// A BARE token renders the referent's title.
 	tag := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/tag", ID: "t1",
-		Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/tag", ID: fid("t1"),
+		Properties: map[string]any{"target": fid("a")},
 	})
 	if tag.Title != "Ada" {
 		t.Fatalf("a bare reference token must render the referent's title, got %q", tag.Title)
@@ -282,7 +282,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// would throw away the only identifier the row had.
 	ghost := vocabulary.RecordPath(firstClassPackage+"/target", "ghost")
 	dangling := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/tag", ID: "t2",
+		Kind: firstClassPackage + "/tag", ID: fid("t2"),
 		Properties: map[string]any{"target": ghost},
 	})
 	if dangling.Title != "ghost" {
@@ -294,7 +294,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// the id was its `name`. The separator joining the empty token goes with
 	// it, so the title is the note alone.
 	unread := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p2",
+		Kind: firstClassPackage + "/pointer", ID: fid("p2"),
 		Properties: map[string]any{"note": "second", "target": ghost},
 	})
 	if unread.Title != "second" {
@@ -342,12 +342,12 @@ func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
 
 	sum := strings.Repeat("ab", 32)
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: pkg + "/holder", ID: "h1",
+		Kind: pkg + "/holder", ID: fid("h1"),
 		Properties: map[string]any{"fingerprint": sum},
 	})
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: pkg + "/viewer", ID: "v1",
-		Properties: map[string]any{"holder": "h1"},
+		Kind: pkg + "/viewer", ID: fid("v1"),
+		Properties: map[string]any{"holder": fid("h1")},
 	})
 	// The referent's digest sits verbatim in its fold, so without the skip the
 	// title would BE sum: assert both that the title is empty and that the
@@ -370,15 +370,15 @@ func TestRequiredReferenceIsEnforcedAtBirth(t *testing.T) {
 	// moves from an edge to a reference must not quietly turn that into a
 	// suggestion.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/strict", ID: "s1",
+		Kind: firstClassPackage + "/strict", ID: fid("s1"),
 	})
 	wantErr(t, err, substrate.ErrValidation, "requires reference target")
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: firstClassPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/strict", ID: "s1", Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/strict", ID: fid("s1"), Properties: map[string]any{"target": fid("a")},
 	})
 }
 
@@ -389,19 +389,19 @@ func TestReferenceFilterAsksEachKindInItsOwnShape(t *testing.T) {
 	firstClassVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: firstClassPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
 	// `target` is declared TWICE across these kinds: scalar on `pointer`,
 	// scalar on `strict`. `alsoSeen` is the repeated one. A filter naming
 	// several kinds must probe each in the shape that kind declares, or the
 	// first declaration it happens to find answers for all of them.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/pointer", ID: "p1",
-		Properties: map[string]any{"target": "a", "alsoSeen": []any{"a"}},
+		Kind: firstClassPackage + "/pointer", ID: fid("p1"),
+		Properties: map[string]any{"target": fid("a"), "alsoSeen": []any{fid("a")}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/strict", ID: "s1",
-		Properties: map[string]any{"target": "a"},
+		Kind: firstClassPackage + "/strict", ID: fid("s1"),
+		Properties: map[string]any{"target": fid("a")},
 	})
 
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
@@ -409,7 +409,7 @@ func TestReferenceFilterAsksEachKindInItsOwnShape(t *testing.T) {
 			firstClassPackage + "/pointer",
 			firstClassPackage + "/strict",
 		},
-		Properties: map[string]substrate.Cond{"target": {Eq: "a"}},
+		Properties: map[string]substrate.Cond{"target": {Eq: fid("a")}},
 	}})
 	if err != nil {
 		t.Fatalf("list across kinds: %v", err)
@@ -427,7 +427,7 @@ func TestRequiredRepeatedReferenceRefusesAnEmptyList(t *testing.T) {
 
 	// An empty list names nothing, so it is as absent as no key at all.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: firstClassPackage + "/roster", ID: "s1",
+		Kind: firstClassPackage + "/roster", ID: fid("s1"),
 		Properties: map[string]any{"targets": []any{}},
 	})
 	wantErr(t, err, substrate.ErrValidation, "requires reference targets")
@@ -445,17 +445,17 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal-account:george-at-acme.com",
+		Kind: enginetest.AccountType, ID: fid("gcal-account:george-at-acme.com"),
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: fid("gcal-cal:primary"),
 		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	// The connector writes the recurring definition; the substrate never
 	// expands RRULEs.
 	series := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendareventseries", ID: "gcal-series:abc-at-work",
+		Kind: "samples.substrate.reamde.dev/calendar/calendareventseries", ID: fid("gcal-series:abc-at-work"),
 		Properties: map[string]any{
 			"summary": "Standup", "recurrence": "FREQ=WEEKLY;BYDAY=WE",
 			"calendar": cal.ID,
@@ -475,7 +475,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 	})
 	event := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/calendar/calendarevent",
-		ID:   "gcal-event:abc-at-work_20260805",
+		ID:   fid("gcal-event:abc-at-work_20260805"),
 		Properties: map[string]any{
 			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z", "summary": "Standup", "location": "Meet",
 			"calendar":  cal.ID,
@@ -496,7 +496,7 @@ func TestReferencesResolveAcrossTheCalendarSample(t *testing.T) {
 
 	// After the meeting, the transcript points at the concrete instance.
 	transcript := mustPut(t, ds, substrate.Actor("connector:fireflies"), substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/transcript", ID: "fireflies-transcript:f81k",
+		Kind: "samples.substrate.reamde.dev/calendar/transcript", ID: fid("fireflies-transcript:f81k"),
 		Properties: map[string]any{
 			"title": "Standup notes", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:28:00Z",
 			"text":     "Alex asked for the rack layout.",

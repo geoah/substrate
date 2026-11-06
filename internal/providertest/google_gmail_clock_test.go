@@ -147,7 +147,7 @@ func (f *heavyGmail) emptiedThreads(t *testing.T, ds substrate.Dataset, aid stri
 		for i := range f.deleted {
 			tid := "t-" + f.gone(page, i)
 			rid := runner.ExternalID("gmail-thread", aid, tid)
-			mustPut(t, ds, substrate.PutInput{
+			mustPutAs(t, ds, substrate.FunctionActor(providersAuthority, "google", "syncgmail"), substrate.PutInput{
 				Kind: googleGmailThreadKind, ID: rid,
 				Properties: map[string]any{"account": aid, "threadId": tid},
 			})

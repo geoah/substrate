@@ -743,7 +743,7 @@ def main(input, host):
 		t.Fatalf("register paged secret bundle: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: pagedSecretPackage + "/sconfig", ID: "ps-cfg",
+		Kind: pagedSecretPackage + "/sconfig", ID: fid("ps-cfg"),
 		Properties: map[string]any{"apiToken": pagedSecretValue},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)

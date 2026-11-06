@@ -9,7 +9,6 @@ package catalog_test
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -37,9 +36,9 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	importVocabulary(t, loadCatalog(t), base, labsID)
 	importSamples(t, loadCatalog(t), base, peopleSampleID)
 	const live = 40
-	for i := range live {
+	for range live {
 		if _, err := base.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: homeAuthority + "/people/person", ID: fmt.Sprintf("p%02d", i),
+			Kind: homeAuthority + "/people/person",
 		}); err != nil {
 			t.Fatalf("put a person: %v", err)
 		}

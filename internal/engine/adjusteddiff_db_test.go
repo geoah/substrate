@@ -94,14 +94,14 @@ func TestAdjustedAcceptMintsTheOwnersCreate(t *testing.T) {
 	_, ds := newDataset(t)
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: requestKind, Properties: map[string]any{
-			"op": "create", "targetKind": taskType, "targetId": "t-minted",
+			"op": "create", "targetKind": taskType, "targetId": fid("t-minted"),
 			"diff": map[string]any{"properties": map[string]any{"name": "buy milk"}},
 		},
 	})
 	if err := acceptAdjusted(t, ds, req.ID, map[string]any{"properties": map[string]any{"name": "buy oat milk"}}); err != nil {
 		t.Fatalf("adjusted accept: %v", err)
 	}
-	if got := mustGet(t, ds, taskType, "t-minted"); got.Properties["name"] != "buy oat milk" {
+	if got := mustGet(t, ds, taskType, fid("t-minted")); got.Properties["name"] != "buy oat milk" {
 		t.Fatalf("minted %+v", got.Properties)
 	}
 }

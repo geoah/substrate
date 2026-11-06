@@ -353,7 +353,7 @@ def main(input, host):
 def main(input, host):
     key = input["idempotencyKey"]
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "t-idem", "properties": {"name": key}}],
+                         "id": host.ids.minted("fixture", "t-idem"), "properties": {"name": key}}],
             "output": {"key": key}}
 `,
 		}),
@@ -410,7 +410,7 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "t-burned", "properties": {"name": "burned"}}],
+                         "id": host.ids.minted("fixture", "t-burned"), "properties": {"name": "burned"}}],
             "output": {"ok": True}}
 `,
 		}),
@@ -689,15 +689,15 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-classified"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-classified") + `"}`}}},
 		fakeTurn{calls: []fakeCall{{"scribe", `{"input":"summarize the widget"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-fixed","diff":{"name":"better"},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-fixed") + `","diff":{"name":"better"},"rationale":"tidy"}`}}},
 		fakeTurn{content: "classified."},
 	)
 	fake.script("sub", fakeTurn{content: "the summary"})
 
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-fixed",
+		Kind: crewPackage + "/widget", ID: fid("w-fixed"),
 		Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -707,7 +707,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 
 	// The function tool's effect applied, under the AGENT's actor.
-	task, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-classified")
+	task, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fid("t-classified"))
 	if err != nil {
 		t.Fatalf("the annotate tool's task: %v", err)
 	}
@@ -716,7 +716,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var taskActor string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT actor FROM changelog WHERE record_id = 't-classified' ORDER BY seq LIMIT 1`).Scan(&taskActor); err != nil {
+		SELECT actor FROM changelog WHERE record_id = $1 ORDER BY seq LIMIT 1`, fid("t-classified")).Scan(&taskActor); err != nil {
 		t.Fatal(err)
 	}
 	if substrate.Actor(taskActor) != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/classifier")) {
@@ -735,7 +735,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, reqID).Scan(&target); err != nil {
 		t.Fatal(err)
 	}
-	if target != "w-fixed" {
+	if target != fid("w-fixed") {
 		t.Fatalf("proposal targets %q", target)
 	}
 
@@ -784,7 +784,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	if len(msgs) != 8 {
 		t.Fatalf("root messages: %d", len(msgs))
 	}
-	if msgs[0]["role"] != "user" || !strings.Contains(msgs[0]["content"].(string), "w-fixed") {
+	if msgs[0]["role"] != "user" || !strings.Contains(msgs[0]["content"].(string), fid("w-fixed")) {
 		t.Fatalf("the envelope message: %+v", msgs[0])
 	}
 
@@ -842,7 +842,7 @@ func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("rogue",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-rogue"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-rogue") + `"}`}}},
 		fakeTurn{content: "blocked, giving up"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/rogue", "go")
@@ -852,7 +852,7 @@ func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
 	if res.Status != threadOK || res.Effects != 0 {
 		t.Fatalf("rogue result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-rogue"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fid("t-rogue")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the held-back task landed: %v", err)
 	}
 	msgs := threadMessages(t, ds, res.Thread)
@@ -929,8 +929,8 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("budget",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-b1"}`}}},
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-b2"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-b1") + `"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-b2") + `"}`}}},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "go")
 	if err != nil {
@@ -946,7 +946,7 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 	if len(threads) != 1 || threads[0]["status"] != threadOverBudget {
 		t.Fatalf("threads: %+v", threads)
 	}
-	for _, id := range []string{"t-b1", "t-b2"} {
+	for _, id := range []string{fid("t-b1"), fid("t-b2")} {
 		if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", id); err != nil {
 			t.Fatalf("task %s: %v", id, err)
 		}
@@ -1078,7 +1078,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-ceiling", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-ceiling"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -1088,8 +1088,8 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 		fakeTurn{content: "warden done"},
 	)
 	fake.script("minion",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-ceiling"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-ceiling","diff":{"name":"better"}}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-ceiling") + `"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-ceiling") + `","diff":{"name":"better"}}`}}},
 		fakeTurn{content: "minion blocked"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/warden", "go")
@@ -1099,7 +1099,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	if res.Reply != "warden done" || res.Effects != 0 {
 		t.Fatalf("warden result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-ceiling"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fid("t-ceiling")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the ceilinged function-tool effect landed: %v", err)
 	}
 	var proposals int
@@ -1127,7 +1127,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 
 	// Control: the SAME agent called directly (no ceiling) writes fine.
 	fake.script("minion",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-direct"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-direct") + `"}`}}},
 		fakeTurn{content: "minion wrote"},
 	)
 	direct, err := ds.CallAgent(ctx, crewPackage+"/minion", "go")
@@ -1137,7 +1137,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	if direct.Effects != 1 {
 		t.Fatalf("direct minion effects: %d", direct.Effects)
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "t-direct"); err != nil {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fid("t-direct")); err != nil {
 		t.Fatalf("the direct write is missing: %v", err)
 	}
 }
@@ -1168,7 +1168,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 		fakeTurn{content: "kept"},                      // attempt 2: settles
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-idem", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-idem"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -1217,7 +1217,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	// settling ok.
 	var tasks int
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records WHERE id = 't-idem' AND deleted_at IS NULL`).Scan(&tasks); err != nil {
+		SELECT count(*) FROM records WHERE id = $1 AND deleted_at IS NULL`, fid("t-idem")).Scan(&tasks); err != nil {
 		t.Fatal(err)
 	}
 	if tasks != 1 {
@@ -1568,12 +1568,12 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-mal", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-mal"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mal","diff":{"type":"article","bogus":true}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-mal") + `","diff":{"type":"article","bogus":true}}`}}},
 		fakeTurn{content: "understood, giving up"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
@@ -1597,15 +1597,15 @@ func TestProposeDeleteRefusesADiff(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-doomed"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","diff":{"name":"why"},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"` + fid("w-doomed") + `","diff":{"name":"why"},"rationale":"tidy"}`}}},
 		// An EMPTY diff is a claim about the proposal too: presence, not content.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","diff":{},"rationale":"tidy"}`}}},
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"w-doomed","rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"` + fid("w-doomed") + `","diff":{},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/crew/widget","target":"` + fid("w-doomed") + `","rationale":"tidy"}`}}},
 		fakeTurn{content: "proposed the delete alone"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
@@ -1645,17 +1645,17 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-good", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-good"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
 		// A bare diff (no `properties` wrapper) coerces and lands.
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-good","diff":{"name":"tidier"},"rationale":"cleanup"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-good") + `","diff":{"name":"tidier"},"rationale":"cleanup"}`}}},
 		// A create proposal for a brand-new widget.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"w-minted","diff":{"properties":{"name":"born"}},"rationale":"the note asks for it"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"` + fid("w-minted") + `","diff":{"properties":{"name":"born"}},"rationale":"the note asks for it"}`}}},
 		// A create proposal with a bad shape is refused at propose.
-		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"w-bad","diff":{"nope":1}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"create","kind":"crew.test.dev/crew/widget","id":"` + fid("w-bad") + `","diff":{"nope":1}}`}}},
 		fakeTurn{content: "proposed."},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/classifier", "go")
@@ -1694,7 +1694,7 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept create: %v", err)
 	}
-	minted, err := ds.Get(ctx, crewPackage+"/widget", "w-minted")
+	minted, err := ds.Get(ctx, crewPackage+"/widget", fid("w-minted"))
 	if err != nil {
 		t.Fatalf("minted widget: %v", err)
 	}

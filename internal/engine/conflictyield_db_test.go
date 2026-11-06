@@ -154,7 +154,7 @@ func TestGuardedCursorWriteYieldsWithoutParking(t *testing.T) {
 	_, ds := newDataset(t)
 	installLeaseBundle(t, ds, "sync-solo")
 	// stampVersion 0 against a record that exists at version 1.
-	putLeaseAccount(t, ds, "acct-1", "0", "yield")
+	putLeaseAccount(t, ds, fid("acct-1"), "0", "yield")
 
 	if n := process(t, ds); n != 0 {
 		t.Fatalf("a yielded delivery applied %d effects, want 0", n)
@@ -167,7 +167,7 @@ func TestGuardedCursorWriteYieldsWithoutParking(t *testing.T) {
 	if len(failures) != 0 {
 		t.Fatalf("a yielded delivery parked: %+v", failures)
 	}
-	acct, err := ds.Get(ctx, leaseAccount, "acct-1")
+	acct, err := ds.Get(ctx, leaseAccount, fid("acct-1"))
 	if err != nil {
 		t.Fatalf("get account: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestGuardedCursorWriteParksWithoutTheYieldPolicy(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installLeaseBundle(t, ds, "sync-solo")
-	putLeaseAccount(t, ds, "acct-1", "0", "")
+	putLeaseAccount(t, ds, fid("acct-1"), "0", "")
 
 	process(t, ds)
 
@@ -212,7 +212,7 @@ func TestGuardedCursorWriteParksWithoutTheYieldPolicy(t *testing.T) {
 	if !strings.Contains(failures[0].LastError, "version conflict") {
 		t.Fatalf("the park does not name the conflict: %s", failures[0].LastError)
 	}
-	acct, err := ds.Get(ctx, leaseAccount, "acct-1")
+	acct, err := ds.Get(ctx, leaseAccount, fid("acct-1"))
 	if err != nil {
 		t.Fatalf("get account: %v", err)
 	}
@@ -234,11 +234,11 @@ func TestTwoInvocationsOverOneAccountOneAdvances(t *testing.T) {
 	installLeaseBundle(t, ds, "sync-scheduled", "sync-on-request")
 	// Both deliveries read version 1 — the state of the account when the pass
 	// began — exactly as two invocations that started together would.
-	putLeaseAccount(t, ds, "acct-1", "1", "yield")
+	putLeaseAccount(t, ds, fid("acct-1"), "1", "yield")
 
 	process(t, ds)
 
-	acct, err := ds.Get(ctx, leaseAccount, "acct-1")
+	acct, err := ds.Get(ctx, leaseAccount, fid("acct-1"))
 	if err != nil {
 		t.Fatalf("get account: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestTwoInvocationsOverOneAccountOneAdvances(t *testing.T) {
 	if n := process(t, ds); n != 0 {
 		t.Fatalf("a second pass applied %d effects — a cursor stood still", n)
 	}
-	if again, err := ds.Get(ctx, leaseAccount, "acct-1"); err != nil || again.Version != 2 {
+	if again, err := ds.Get(ctx, leaseAccount, fid("acct-1")); err != nil || again.Version != 2 {
 		t.Fatalf("the account moved on the second pass: %+v (%v)", again, err)
 	}
 	if got := runStatuses(t, ds); got["ok"] != 1 || got["skipped"] != 1 || got["parked"] != 0 {

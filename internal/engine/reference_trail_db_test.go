@@ -126,15 +126,15 @@ func TestReferenceFilterFollowsTheFormerIDTrail(t *testing.T) {
 	stranger := newPerson(t, ds, "Grace Hopper")
 
 	before := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-before",
+		Kind: typeNote, ID: fid("n-before"),
 		Properties: map[string]any{"label": "written at the loser", "about": loser.ID},
 	})
 	after := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-after",
+		Kind: typeNote, ID: fid("n-after"),
 		Properties: map[string]any{"label": "written at the winner", "about": winner.ID},
 	})
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-elsewhere",
+		Kind: typeNote, ID: fid("n-elsewhere"),
 		Properties: map[string]any{"label": "another person", "about": stranger.ID},
 	})
 
@@ -186,7 +186,7 @@ func TestReferenceFilterMatchesBothStoredShapes(t *testing.T) {
 	path := vocabulary.RecordPath(typePerson, person.ID)
 
 	flat := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-flat",
+		Kind: typeNote, ID: fid("n-flat"),
 		Properties: map[string]any{"label": "before the upgrade", "credit": path},
 	})
 	if _, err := raw.ExecContext(ctx,
@@ -202,7 +202,7 @@ func TestReferenceFilterMatchesBothStoredShapes(t *testing.T) {
 	installNotes(t, ds, 2, true)
 
 	object := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-object",
+		Kind: typeNote, ID: fid("n-object"),
 		Properties: map[string]any{"label": "after the upgrade", "credit": map[string]any{
 			vocabulary.ReferenceValueKey: path, "role": "author",
 		}},
@@ -235,7 +235,7 @@ func TestRepeatedReferenceRefusesOneRecordTwiceAcrossAMerge(t *testing.T) {
 	}
 
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-dup",
+		Kind: typeNote, ID: fid("n-dup"),
 		Properties: map[string]any{"label": "twice", "mentions": []any{
 			vocabulary.RecordPath(typePerson, winner.ID),
 			vocabulary.RecordPath(typePerson, loser.ID),
@@ -249,7 +249,7 @@ func TestRepeatedReferenceRefusesOneRecordTwiceAcrossAMerge(t *testing.T) {
 	}
 	// Two DIFFERENT records at the same site are what the rule allows.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-pair",
+		Kind: typeNote, ID: fid("n-pair"),
 		Properties: map[string]any{"label": "two people", "mentions": []any{
 			vocabulary.RecordPath(typePerson, winner.ID),
 			vocabulary.RecordPath(typePerson, other.ID),
@@ -271,11 +271,11 @@ func TestCascadeFollowsTheFormerIDTrail(t *testing.T) {
 	stranger := newPerson(t, ds, "Grace Hopper")
 
 	child := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-child",
+		Kind: typeNote, ID: fid("n-child"),
 		Properties: map[string]any{"label": "owned through the loser", "about": loser.ID},
 	})
 	survivor := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: typeNote, ID: "n-survivor",
+		Kind: typeNote, ID: fid("n-survivor"),
 		Properties: map[string]any{"label": "owned by somebody else", "about": stranger.ID},
 	})
 

@@ -133,7 +133,9 @@ func TestPublishedErrorCodesEndToEnd(t *testing.T) {
 func conformanceCases() []codeCase {
 	// The record the lifecycle cases walk: created, updated, then refused a
 	// stale ifVersion and a put-borne transition.
-	const id = "lifecycle"
+	// A minted-shape id: the client creates the record under an id it minted
+	// (decision 0228), so the PUT that creates it answers 201.
+	const id = "00000000000000000000000001"
 	const path = notesPath + "/" + id
 
 	return []codeCase{{
@@ -194,7 +196,7 @@ func conformanceCases() []codeCase {
 		name: "an accept whose diff applies nothing answers 409 conflict",
 		code: "conflict",
 		run: func(t *testing.T, e *testenv.Env) {
-			const settled = notesPath + "/settled"
+			const settled = notesPath + "/00000000000000000000000003"
 			status, body := e.Do(http.MethodPut, settled, map[string]any{
 				"properties": map[string]any{"subject": "already this"},
 			})
@@ -203,7 +205,7 @@ func conformanceCases() []codeCase {
 			const reqPath = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/noop"
 			status, body = e.Do(http.MethodPut, reqPath, map[string]any{
 				"properties": map[string]any{
-					"target":    conformanceRef + "/note/settled",
+					"target":    conformanceRef + "/note/00000000000000000000000003",
 					"diff":      map[string]any{"properties": map[string]any{"subject": "already this"}},
 					"rationale": "a diff the target already satisfies",
 				},
@@ -252,7 +254,7 @@ func conformanceCases() []codeCase {
 			// lossy plan and refuses without a confirmation for it (decision
 			// 0067). Nothing lands, and the datetime case below still finds
 			// the property declared.
-			status, body := e.Do(http.MethodPut, notesPath+"/dated", map[string]any{
+			status, body := e.Do(http.MethodPut, notesPath+"/00000000000000000000000004", map[string]any{
 				"properties": map[string]any{"subject": "dated", "occurredAt": "2026-09-08T00:00:00Z"},
 			})
 			wantRecord(t, status, body, http.StatusCreated)
@@ -282,7 +284,7 @@ func conformanceCases() []codeCase {
 		name: "a missing required property answers 422 validation",
 		code: "validation",
 		run: func(t *testing.T, e *testenv.Env) {
-			status, body := e.Do(http.MethodPut, notesPath+"/no-subject", map[string]any{
+			status, body := e.Do(http.MethodPut, notesPath+"/00000000000000000000000005", map[string]any{
 				"properties": map[string]any{"occurredAt": "2026-08-17T09:00:00Z"},
 			})
 			wantError(t, status, body, http.StatusUnprocessableEntity, "validation",
@@ -295,7 +297,7 @@ func conformanceCases() []codeCase {
 		name: "a datetime outside the Postgres range answers 422 validation",
 		code: "validation",
 		run: func(t *testing.T, e *testenv.Env) {
-			status, body := e.Do(http.MethodPut, notesPath+"/year-zero", map[string]any{
+			status, body := e.Do(http.MethodPut, notesPath+"/00000000000000000000000006", map[string]any{
 				"properties": map[string]any{
 					"subject":    "an instant with no year",
 					"occurredAt": "0000-01-01T00:00:00Z",
@@ -305,7 +307,7 @@ func conformanceCases() []codeCase {
 				"props.occurredAt", "year 0000")
 			// The refusal has to be the WHOLE write: a record stored here is
 			// the unreadable collection the check exists to prevent.
-			if status, body := e.Do(http.MethodGet, notesPath+"/year-zero", nil); status != http.StatusNotFound {
+			if status, body := e.Do(http.MethodGet, notesPath+"/00000000000000000000000006", nil); status != http.StatusNotFound {
 				t.Fatalf("the refused write landed: %d %s", status, body)
 			}
 		},
@@ -335,7 +337,7 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// Decoding is case-exact on purpose: `ifversion` binding to
 			// `ifVersion` would drop a compare-and-set silently.
-			status, body := e.Do(http.MethodPut, notesPath+"/miscased", map[string]any{
+			status, body := e.Do(http.MethodPut, notesPath+"/00000000000000000000000007", map[string]any{
 				"ifversion":  1,
 				"properties": map[string]any{"subject": "a precondition nothing reads"},
 			})
@@ -424,7 +426,7 @@ func conformanceCases() []codeCase {
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{conformanceRef + "/note"}}},
 				"callable": corePkg + "/function/" + conformanceRef + "/faulting",
 			}})
-			putRecord(t, e, conformanceRef+"/note", "parked", map[string]any{"properties": map[string]any{"subject": "parks"}})
+			putRecord(t, e, conformanceRef+"/note", "00000000000000000000000002", map[string]any{"properties": map[string]any{"subject": "parks"}})
 			ds, err := e.Service.Dataset(ctx, e.Repository)
 			if err != nil {
 				t.Fatalf("open the dataset: %v", err)

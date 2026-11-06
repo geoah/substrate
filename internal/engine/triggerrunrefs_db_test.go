@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -65,6 +66,14 @@ func TestTriggerRunsAreReadThroughRefs(t *testing.T) {
 
 	putRuns("kept", runStatusOK, runRetention)
 	putRuns("failing", runStatusParked, 3)
+	// Other triggers' runs share every refs_pkey column the read names but
+	// the destination, as a repository with more than one trigger has them:
+	// without them the table is so small that the pkey prefix ties the
+	// destination index on cost, and which one wins turns on the width of a
+	// record id.
+	for i := range 8 {
+		putRuns(fmt.Sprintf("other-%d", i), runStatusOK, runRetention)
+	}
 	// The read counts parked runs only while their delivery (seq 7) still
 	// stands in the ledger, from the oldest one (decision 0177).
 	if _, err := ds.db.ExecContext(ctx, `

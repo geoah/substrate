@@ -820,6 +820,10 @@ var typeDataKeys = map[string]bool{
 	// (decision 0133): validated and stored, read by clients deciding what
 	// to list, and acted on by nothing server-side.
 	"purpose": true,
+	// `ids` is who names a new record of the kind, minted or named (decision
+	// 0228): the engine refuses a person's, an app's or an agent's chosen id
+	// on a minted kind.
+	"ids": true,
 	// `label` is the kind's display label, both forms (decision 0117): display
 	// text only, read by no route, filter or grant.
 	"label": true,
@@ -936,6 +940,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	sort.Strings(t.PropOrder)
 	l.parseMovedFrom(where, d, t)
 	l.parseKindPurpose(where, d, t)
+	l.parseKindIDs(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
 

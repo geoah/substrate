@@ -212,14 +212,14 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 
 	// Not a SHA-256: refused at coercion.
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
-		Kind: pkg + "/artifact", ID: "a1",
+		Kind: pkg + "/artifact", ID: fid("a1"),
 		Properties: map[string]any{"fingerprint": "not-a-digest"},
 	})
 	wantErr(t, err, substrate.ErrValidation, "malformed digest")
 
 	sum := strings.Repeat("ab", 32)
 	rec := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: pkg + "/artifact", ID: "a1",
+		Kind: pkg + "/artifact", ID: fid("a1"),
 		Properties: map[string]any{"name": "one", "fingerprint": sum},
 	})
 	if got := rec.Properties["fingerprint"]; got != "<redacted>" {
@@ -227,8 +227,8 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 	}
 	// Stored as the value itself: the engine compares digests in SQL.
 	var stored string
-	if err := db.QueryRow(`SELECT props->>'fingerprint' FROM records WHERE kind = $1 AND id = 'a1'`,
-		pkg+"/artifact").Scan(&stored); err != nil {
+	if err := db.QueryRow(`SELECT props->>'fingerprint' FROM records WHERE kind = $1 AND id = $2`,
+		pkg+"/artifact", fid("a1")).Scan(&stored); err != nil {
 		t.Fatalf("read stored fingerprint: %v", err)
 	}
 	if stored != sum {

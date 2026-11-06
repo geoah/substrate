@@ -26,14 +26,14 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 		"action": "gate",
 	})
 	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "keep me"},
+		Kind: crewPackage + "/widget", ID: fid("w-doomed"), Properties: map[string]any{"name": "keep me"},
 	})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("edit",
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "delete", "kind": crewPackage + "/widget", "id": "w-doomed", "ifVersion": 1,
+			"op": "delete", "kind": crewPackage + "/widget", "id": fid("w-doomed"), "ifVersion": 1,
 		})}}},
 		fakeTurn{content: "held, waiting."},
 	)

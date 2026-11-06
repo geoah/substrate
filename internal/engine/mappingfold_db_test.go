@@ -61,7 +61,7 @@ func TestAFoldedProbeMatchesAScalarInAnyCase(t *testing.T) {
 			ada := mustPut(t, ds, owner, substrate.PutInput{
 				Kind: typePerson, Properties: map[string]any{"name": "Ada Example"},
 			})
-			u := syncSource(t, ds, slack, typeSlackUser, "U-ADA", map[string]any{
+			u := syncSource(t, ds, slack, typeSlackUser, fid("U-ADA"), map[string]any{
 				"realName": "  ada example ",
 			})
 			got := personOf(t, ds, u)
@@ -85,7 +85,7 @@ func TestAFoldedProbeMatchesARepeatedItemInAnyCase(t *testing.T) {
 	ada := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"name": "Ada", "emails": []any{"Ada@Example.com"}},
 	})
-	c := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
+	c := syncSource(t, ds, people, typeGoogleContact, fid("g-ada"), map[string]any{
 		"name": aname("Ada"), "emails": gemails("ada@example.com"),
 	})
 	if got := personOf(t, ds, c); got != ada.ID {
@@ -110,7 +110,7 @@ func TestAFoldedProbedValueDoesNotSpreadInAnotherCase(t *testing.T) {
 	nina := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"name": "Nina", "emails": []any{"Nina@Example.com"}},
 	})
-	syncSource(t, ds, people, typeGoogleContact, "g-alex", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-alex"), map[string]any{
 		"name": aname("Alex"), "emails": gemails("alex@example.com", "nina@example.com"),
 	}, alex.ID)
 	p := mustGet(t, ds, typePerson, alex.ID)

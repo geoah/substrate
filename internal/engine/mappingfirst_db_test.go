@@ -102,7 +102,7 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 	installVerbatimContacts(t, ds)
 
 	named := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{
 			"resourceName":   "people/c1",
 			"names":          gnames("Alex Example", "A. Example"),
@@ -115,7 +115,7 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 	// An entry that carries no displayName is not the answer: the first entry
 	// that RENDERS something is.
 	sparse := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c2",
+		Kind: typeVerbatimContact, ID: fid("c2"),
 		Properties: map[string]any{
 			"resourceName":   "people/c2",
 			"names":          []any{map[string]any{"givenName": "Nina"}, map[string]any{"displayName": "Nina Example"}},
@@ -128,7 +128,7 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 	// An entry of whitespace alone renders nothing either, so the next entry
 	// titles the record rather than the token falling through past it.
 	spaced := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c5",
+		Kind: typeVerbatimContact, ID: fid("c5"),
 		Properties: map[string]any{
 			"resourceName":   "people/c5",
 			"names":          gnames("  ", "Ada Example"),
@@ -141,7 +141,7 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 	// An empty list falls through to the next alternative — the repeated
 	// SCALAR form, and then the bare property.
 	nick := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c3",
+		Kind: typeVerbatimContact, ID: fid("c3"),
 		Properties: map[string]any{
 			"resourceName":   "people/c3",
 			"nicknames":      []any{"Sam"},
@@ -152,7 +152,7 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 		t.Fatalf("title = %q, want the first nickname", nick.Title)
 	}
 	bare := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c4",
+		Kind: typeVerbatimContact, ID: fid("c4"),
 		Properties: map[string]any{"resourceName": "people/c4", "emailAddresses": gaddresses("x@example.com")},
 	})
 	if bare.Title != "people/c4" {
@@ -170,7 +170,7 @@ func TestMergeFirstSetsASingleValuedTarget(t *testing.T) {
 	installVerbatimContacts(t, ds)
 
 	full := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{
 			"names":          gnames("Alex Example", "A. Example"),
 			"emailAddresses": gaddresses("alex@example.com", "alex@work.example.com"),
@@ -186,7 +186,7 @@ func TestMergeFirstSetsASingleValuedTarget(t *testing.T) {
 	}
 
 	nameless := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c2",
+		Kind: typeVerbatimContact, ID: fid("c2"),
 		Properties: map[string]any{
 			"names":          []any{},
 			"emailAddresses": gaddresses("alex@example.com"),
@@ -213,7 +213,7 @@ func TestASourceWithNothingToOfferMintsNoPerson(t *testing.T) {
 	before := len(livePersons(t, ds))
 
 	empty := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{"resourceName": "people/c1"},
 	})
 	if got := len(livePersons(t, ds)); got != before {
@@ -259,7 +259,7 @@ func TestAnAmbiguousProbeParksInsteadOfMinting(t *testing.T) {
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@example.com"}},
 	})
 	shared := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{
 			"names":          gnames("The Family"),
 			"emailAddresses": gaddresses("family@example.com"),
@@ -286,7 +286,7 @@ func TestAnAmbiguousProbeParksInsteadOfMinting(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 	resynced := mustPut(t, ds, book, substrate.PutInput{
-		Kind: typeVerbatimContact, ID: "c1",
+		Kind: typeVerbatimContact, ID: fid("c1"),
 		Properties: map[string]any{
 			"names":          gnames("The Family"),
 			"emailAddresses": gaddresses("family@example.com"),

@@ -93,7 +93,7 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: jobKind, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: jobKind, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync statuses: %v", err)
 	}
-	if len(statuses) != 1 || statuses[0].ID != "inbox" {
+	if len(statuses) != 1 || statuses[0].ID != fid("inbox") {
 		t.Fatalf("sync statuses = %+v, want the one job", statuses)
 	}
 	st := statuses[0]
@@ -150,7 +150,7 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	actor := substrate.Actor(vocabulary.PackageActor(pkg))
 	if err := ds.inTx(ctx, actor, false, func(t *txn) error {
 		return t.asSyncWriter(actor, func() error {
-			_, err := t.patch(eref{Kind: jobKind, ID: "inbox"}, substrate.PatchInput{Properties: map[string]any{
+			_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{
 				"syncState": "ok", "lastSyncedAt": later.Format(time.RFC3339Nano),
 			}})
 			return err

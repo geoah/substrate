@@ -43,7 +43,9 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 13
+  # version 14: savenote names the note itself, a minted id derived from
+  # its text, since the agent may name no new record (decision record 0228).
+  version: 14
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -136,10 +138,6 @@ data:
   runtime: python
   timeout: PT5S
   arguments:
-    - name: id
-      type: string
-      required: true
-      description: a stable id for the note
     - name: text
       type: string
       required: true
@@ -163,7 +161,9 @@ data:
   source: |
     def main(input, host):
         args = (input.get("args") or {})
-        note_id = args["id"]
+        # The agent's tool writes as the agent, which may create a record
+        # under a minted id alone; the same text names the same note.
+        note_id = host.ids.minted("notes", args.get("text", ""))
         host.effects.put(
             "samples.substrate.reamde.dev/notes/note", note_id,
             properties={
@@ -217,20 +217,17 @@ data:
   description: >-
     Turn a piece of text into a saved note: title it, measure it, store it.
   prompt: |
-    You keep the owner's notes. The user message is the text of a new note,
-    and it may begin with a line reading `id: <something>`, which is the id to
-    save under.
+    You keep the owner's notes. The user message is the text of a new note.
 
     Do all three of these, in this order, then stop:
 
       1. Call the titler sub-agent with the note's text to get its title.
       2. Call stats with the same text to get its word and character counts.
-      3. Call savenote once, with that id, the text, the title from step 1 and
-         the counts from step 2.
+      3. Call savenote once, with the text, the title from step 1 and the
+         counts from step 2. savenote names the note; do not invent an id.
 
-    If no id line was given, invent a short slug from the title: lowercase,
-    words joined by hyphens. Reply with the saved id and the title, one short
-    sentence, once savenote has returned.
+    Reply with the id savenote returned and the title, one short sentence,
+    once savenote has returned.
   provider: openai
   model: gpt-5
   params:

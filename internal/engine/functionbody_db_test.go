@@ -66,7 +66,7 @@ func TestAnAppliedBodyRunsOnTheVeryNextDelivery(t *testing.T) {
 		[]enginetest.Trigger{trigOn("stamp", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stamp", map[string]any{}, []any{taskType}, stampSource("v1")))
 
-	if got := driveStamp(t, ds, "w1"); got != "v1" {
+	if got := driveStamp(t, ds, fid("w1")); got != "v1" {
 		t.Fatalf("the first delivery wrote %q, want v1", got)
 	}
 
@@ -75,7 +75,7 @@ func TestAnAppliedBodyRunsOnTheVeryNextDelivery(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("re-apply the function with a new body: %v", err)
 	}
-	if got := driveStamp(t, ds, "w2"); got != "v2" {
+	if got := driveStamp(t, ds, fid("w2")); got != "v2" {
 		t.Fatalf("the delivery after the apply wrote %q, want v2 — the dispatcher ran the previous apply's body", got)
 	}
 }
@@ -90,7 +90,7 @@ func TestAReappliedBodyRunsAfterItsPackageWasTornDown(t *testing.T) {
 		[]enginetest.Trigger{trigOn("stamp", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stamp", map[string]any{}, []any{taskType}, stampSource("v1")))
 
-	if got := driveStamp(t, ds, "w1"); got != "v1" {
+	if got := driveStamp(t, ds, fid("w1")); got != "v1" {
 		t.Fatalf("the first delivery wrote %q, want v1", got)
 	}
 
@@ -114,7 +114,7 @@ func TestAReappliedBodyRunsAfterItsPackageWasTornDown(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("re-apply the function: %v", err)
 	}
-	if got := driveStamp(t, ds, "w2"); got != "v2" {
+	if got := driveStamp(t, ds, fid("w2")); got != "v2" {
 		t.Fatalf("the delivery after the re-apply wrote %q, want v2 — the uninstalled body was still cached", got)
 	}
 }
@@ -155,10 +155,10 @@ func TestADeliveryRunsTheBodyTheRegistryHoldsNow(t *testing.T) {
 	// Two widgets before the pass, so one pass carries two deliveries: the
 	// first re-applies the body, the second must run what it applied.
 	first := mustPut(t, ds, fnActor, substrate.PutInput{
-		Kind: widgetType, ID: "w1", Properties: map[string]any{"name": "w1"},
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	})
 	second := mustPut(t, ds, fnActor, substrate.PutInput{
-		Kind: widgetType, ID: "w2", Properties: map[string]any{"name": "w2"},
+		Kind: widgetType, ID: fid("w2"), Properties: map[string]any{"name": "w2"},
 	})
 	process(t, ds)
 	mu.Lock()

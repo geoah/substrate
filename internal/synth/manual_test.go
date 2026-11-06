@@ -153,12 +153,12 @@ func TestManualSourcesCarryTheirClass(t *testing.T) {
 		id := doc["metadata"].(map[string]any)["id"].(string)
 		classes[id], _ = doc["data"].(map[string]any)["properties"].(map[string]any)["class"].(string)
 	}
-	if classes["manual"] != "manual" {
-		t.Errorf("the hand entry is class %q, want manual", classes["manual"])
+	if classes[ManualID("manual")] != "manual" {
+		t.Errorf("the hand entry is class %q, want manual", classes[ManualID("manual")])
 	}
 	labs := 0
 	for id, class := range classes {
-		if id == "manual" {
+		if id == ManualID("manual") {
 			continue
 		}
 		labs++
@@ -184,7 +184,7 @@ func TestManualWeighsInAtTheHotelInsideTheRange(t *testing.T) {
 	} {
 		weighIns := 0
 		for _, doc := range manualDocs(t, Options{Start: c.start, End: NewDate(2026, time.September, 30)}) {
-			if id := doc["metadata"].(map[string]any)["id"]; id == "manual/2026-09-22-weight" {
+			if id := doc["metadata"].(map[string]any)["id"]; id == ManualID("manual/2026-09-22-weight") {
 				weighIns++
 			}
 		}

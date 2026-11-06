@@ -311,11 +311,11 @@ func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "slack-acct-1",
+		Kind: enginetest.AccountType, ID: fid("slack-acct-1"),
 		Properties: map[string]any{"provider": "slack", "label": "Work", "status": "ok"},
 	})
 	return mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack-C1"),
 		Properties: map[string]any{"category": "channel", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 }
@@ -348,7 +348,7 @@ func TestWriterControlledIDRoundTrip(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	const id = "google:people-c123"
+	id := fid("google:people-c123")
 	first := syncSource(t, ds, people, typeGoogleContact, id, map[string]any{"name": aname("Alex")})
 	if first.ID != id {
 		t.Fatalf("id = %q, want the writer's own %q", first.ID, id)
@@ -417,7 +417,7 @@ func TestMatchLinksSingleCandidate(t *testing.T) {
 	sam := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones", "firstName": "Samuel", "lastName": "Jones"},
 		"emails": gemails("sam@acme.com"),
 		"phones": gphones("+441234567890"),
@@ -448,7 +448,7 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 	p := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Nina", "phones": []any{"+301234567890"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-nina", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-nina"), map[string]any{
 		"name":   aname("Nina Ray"),
 		"phones": gphones("+301234567890"),
 	})
@@ -477,7 +477,7 @@ func TestAmbiguousMatchCreates(t *testing.T) {
 	b := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alexa", "emails": []any{"family@acme.com"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-fam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-fam"), map[string]any{
 		"name": aname("The Family"), "emails": gemails("family@acme.com"),
 	})
 	third := personOf(t, ds, g)
@@ -498,7 +498,7 @@ func TestNoMatchCreatesShell(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	lonely := syncSource(t, ds, people, typeGoogleContact, "g-ned", map[string]any{
+	lonely := syncSource(t, ds, people, typeGoogleContact, fid("g-ned"), map[string]any{
 		"name": aname("Nameless Ned"),
 	})
 	shell := mustGet(t, ds, typePerson, personOf(t, ds, lonely))
@@ -550,7 +550,7 @@ func TestSamScenario(t *testing.T) {
 
 	// Google matches by email, fills phones, and YIELDS on the owner's name
 	// and emails.
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones", "firstName": "Samuel", "lastName": "Jones"},
 		"emails": gemails("sam@acme.com"),
 		"phones": gphones("+441234567890"),
@@ -614,7 +614,7 @@ func TestSamScenario(t *testing.T) {
 	}
 
 	// Slack's sam shares nothing: a second person, never a guess.
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@corp.example",
 	})
 	second := personOf(t, ds, s)
@@ -689,11 +689,11 @@ func TestUnionRecompute(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{
 		"name": aname("Alex"), "emails": gemails("a@x.com", "b@x.com"),
 	})
 	pid := personOf(t, ds, g)
-	syncSource(t, ds, slack, typeSlackUser, "s-1", map[string]any{
+	syncSource(t, ds, slack, typeSlackUser, fid("s-1"), map[string]any{
 		"realName": "alex", "email": "c@x.com",
 	}, pid)
 
@@ -704,7 +704,7 @@ func TestUnionRecompute(t *testing.T) {
 	}
 
 	// Google stops asserting b@x.com: it goes; slack's stays.
-	syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{
 		"name": aname("Alex"), "emails": gemails("a@x.com"),
 	})
 	if got, _ := mustGet(t, ds, typePerson, pid).Properties["emails"].([]any); len(got) != 2 ||
@@ -720,19 +720,19 @@ func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{"name": aname("Alexandros Papas")})
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{"name": aname("Alexandros Papas")})
 	pid := personOf(t, ds, g)
-	syncSource(t, ds, slack, typeSlackUser, "s-1", map[string]any{"realName": "alex"}, pid)
+	syncSource(t, ds, slack, typeSlackUser, fid("s-1"), map[string]any{"realName": "alex"}, pid)
 	if got := mustGet(t, ds, typePerson, pid).Properties["name"]; got != "alex" {
 		t.Fatalf("latest source = %v, want slack's", got)
 	}
 	// An identical google re-sync is a no-op: nothing moves.
-	syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{"name": aname("Alexandros Papas")})
+	syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{"name": aname("Alexandros Papas")})
 	if got := mustGet(t, ds, typePerson, pid).Properties["name"]; got != "alex" {
 		t.Fatalf("a no-op re-sync must not steal the property: %v", got)
 	}
 	// A CHANGED google sync is the latest write.
-	syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{"name": aname("Alexandros P.")})
+	syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{"name": aname("Alexandros P.")})
 	p := mustGet(t, ds, typePerson, pid)
 	if p.Properties["name"] != "Alexandros P." {
 		t.Fatalf("latest source = %v, want google's", p.Properties["name"])
@@ -749,11 +749,11 @@ func TestHandEditSurvivesTheSync(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{"name": aname("Alexandros Papas")})
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{"name": aname("Alexandros Papas")})
 	pid := personOf(t, ds, g)
 	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"name": "Alex"}})
 
-	syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{"name": aname("Alexandros P.")})
+	syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{"name": aname("Alexandros P.")})
 	p := mustGet(t, ds, typePerson, pid)
 	if p.Properties["name"] != "Alex" {
 		t.Fatalf("a fresher source overwrote the owner's hold: %v", p.Properties["name"])
@@ -775,11 +775,11 @@ func TestRecomputeIsSilentOnResync(t *testing.T) {
 	props := map[string]any{
 		"name": aname("Nina Ray"), "emails": gemails("nina@acme.com"),
 	}
-	syncSource(t, ds, people, typeGoogleContact, "g-c9", props)
+	syncSource(t, ds, people, typeGoogleContact, fid("g-c9"), props)
 
 	before := maxSeq(t, ds)
 	for range 4 {
-		syncSource(t, ds, people, typeGoogleContact, "g-c9", props)
+		syncSource(t, ds, people, typeGoogleContact, fid("g-c9"), props)
 	}
 	if rows := changesSince(t, ds, before); len(rows) != 0 {
 		t.Fatalf("4 identical re-syncs wrote %d changelog rows: %+v", len(rows), rows)
@@ -839,7 +839,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 		t.Fatalf("declare the mapping: %v", err)
 	}
 	row := mustPut(t, ds, substrate.Actor("connector:promoter"), substrate.PutInput{
-		Kind: pkg + "/promoterrow", ID: "p1",
+		Kind: pkg + "/promoterrow", ID: fid("p1"),
 		Properties: map[string]any{"name": "Ada", "prominence": "known"},
 	})
 	person := mustGet(t, ds, typePerson, personOf(t, ds, row))
@@ -859,24 +859,24 @@ func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, g)
 	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Someone"}})
 
 	// Re-asserting the same target is what every re-sync does.
-	syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")}, pid)
+	syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")}, pid)
 
 	// Re-pointing it is not a write. The refusal is the same whichever generic
 	// verb asks: put and patch both reach apply's subject guard.
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-c1",
+		Kind: typeGoogleContact, ID: fid("g-c1"),
 		Properties: map[string]any{"person": other.ID},
 	}); err == nil {
 		t.Fatal("a put should not re-point a subject")
 	} else {
 		wantErr(t, err, substrate.ErrGuard, "split + merge")
 	}
-	if _, err := ds.Patch(ctx, people, typeGoogleContact, "g-c1", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, people, typeGoogleContact, fid("g-c1"), substrate.PatchInput{
 		Properties: map[string]any{"person": other.ID},
 	}); err == nil {
 		t.Fatal("a patch should not re-point a subject")
@@ -895,11 +895,11 @@ func TestOneHopResolution(t *testing.T) {
 	_, ds := newVocabularyDataset(t, "messaging")
 	installPeopleSources(t, ds)
 
-	s := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex"})
 	pid := personOf(t, ds, s)
 	conv := newConversation(t, ds)
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("s-msg-1"),
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
 			"author": vocabulary.RecordPath(slackPackage+"/slackuser", s.ID),
@@ -922,7 +922,7 @@ func TestHopThroughATombstonedMirrorMintsNoSubject(t *testing.T) {
 	_, ds := newVocabularyDataset(t, "messaging")
 	installPeopleSources(t, ds)
 
-	s := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex"})
 	pid := personOf(t, ds, s)
 	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete person: %v", err)
@@ -934,7 +934,7 @@ func TestHopThroughATombstonedMirrorMintsNoSubject(t *testing.T) {
 	persons := len(livePersons(t, ds))
 
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("s-msg-1"),
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
 			"author": vocabulary.RecordPath(slackPackage+"/slackuser", s.ID),
@@ -961,7 +961,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	importVocabulary(t, ds, "messaging")
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, g)
 
 	// Strip the pointer behind the engine's back, as a bad migration would: the
@@ -978,7 +978,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 
 	// Resolving through the record links a new shell in line.
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("s-msg-1"),
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-03T10:00:00Z",
 			"conversation": newConversation(t, ds).ID,
@@ -1014,13 +1014,13 @@ func TestDeletedTargetDoesNotStripItsSources(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	src := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	gone := personOf(t, ds, src)
 	if _, err := ds.Delete(ctx, owner, typePerson, gone, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	again := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	again := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	if again.ID != src.ID {
 		t.Fatalf("the record was re-minted as %s", again.ID)
 	}
@@ -1042,11 +1042,11 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{
 		"name": aname("Alex"), "phones": gphones("+441234567890"),
 	})
 	pid := personOf(t, ds, g)
-	syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"}, pid)
+	syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex"}, pid)
 	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"displayName": "Al"}})
 
 	if _, err := ds.Delete(ctx, owner, g.Kind, g.ID, substrate.DeleteInput{}); err != nil {
@@ -1062,7 +1062,7 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 
 	// The last source goes too: the machine-held properties go with it, and
 	// the owner's own write stays.
-	if _, err := ds.Delete(ctx, owner, typeSlackUser, mustGet(t, ds, typeSlackUser, "s-U1").ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, typeSlackUser, mustGet(t, ds, typeSlackUser, fid("s-U1")).ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete source: %v", err)
 	}
 	person = mustGet(t, ds, typePerson, pid)
@@ -1085,7 +1085,7 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	src := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, src)
 
 	// The contact goes to Trash: its contributions go with it.
@@ -1098,7 +1098,7 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 
 	// …and comes back. The re-sync restores the record, the person keeps its
 	// id, and recompute resumes.
-	back := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alexandros")})
+	back := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alexandros")})
 	if back.ID != src.ID || back.DeletedAt != nil {
 		t.Fatalf("restore = %s deletedAt=%v", back.ID, back.DeletedAt)
 	}
@@ -1121,7 +1121,7 @@ func TestPurgedSourceResolvesItsSubjectAgain(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
+	src := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex"})
 	shell := personOf(t, ds, src)
 	real := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"name": "Alex", "emails": []any{"alex@example.com"}},
@@ -1131,7 +1131,7 @@ func TestPurgedSourceResolvesItsSubjectAgain(t *testing.T) {
 	if _, err := ds.Delete(ctx, slack, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	back := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex", "email": "alex@example.com"})
+	back := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex", "email": "alex@example.com"})
 	if got := personOf(t, ds, back); got != shell {
 		t.Fatalf("a restore should keep the stored subject %s, got %s", shell, got)
 	}
@@ -1139,7 +1139,7 @@ func TestPurgedSourceResolvesItsSubjectAgain(t *testing.T) {
 	if _, err := ds.Delete(ctx, slack, src.Kind, src.ID, substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	again := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex", "email": "alex@example.com"})
+	again := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "alex", "email": "alex@example.com"})
 	if got := personOf(t, ds, again); got != real.ID {
 		t.Fatalf("the put after a purge points at %s, want the person the probe finds (%s)", got, real.ID)
 	}
@@ -1158,7 +1158,7 @@ func TestPatchOnATombstonedSourceMintsNoSubject(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	src := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, src)
 	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete person: %v", err)
@@ -1194,7 +1194,7 @@ func TestFinalizerReleaseOnATombstonedSourceMintsNoSubject(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	const hold = googlePackage + "/teardown"
-	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	src := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, src)
 	mustPatch(t, ds, owner, src.Kind, src.ID, substrate.PatchInput{AddFinalizers: []string{hold}})
 	if _, err := ds.Delete(ctx, owner, typePerson, pid, substrate.DeleteInput{}); err != nil {
@@ -1225,7 +1225,7 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "Ada"})
+	src := syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "Ada"})
 	a := personOf(t, ds, src)
 	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "C"}})
@@ -1263,7 +1263,7 @@ func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	t.Logf("targets after out-of-order splits: %s then %s", first, second)
 	// And a re-sync still works, whichever person it ended on: one value, no
 	// guard.
-	syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "Ada"})
+	syncSource(t, ds, slack, typeSlackUser, fid("s-U1"), map[string]any{"realName": "Ada"})
 }
 
 // Concurrent resolution of the same unlinked record mints one shell, not one
@@ -1276,7 +1276,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	importVocabulary(t, ds, "messaging")
 	installPeopleSources(t, ds)
 
-	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
+	src := syncSource(t, ds, people, typeGoogleContact, fid("g-c1"), map[string]any{"name": aname("Alex")})
 	// Strip the subject behind the engine's back, as a bad migration would: the
 	// property AND its projection in the refs index.
 	if _, err := raw.ExecContext(ctx, `UPDATE records SET props = props - 'person' WHERE id = $1`, src.ID); err != nil {
@@ -1291,7 +1291,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	for i := range 2 {
 		go func() {
 			_, err := ds.Put(ctx, slack, substrate.PutInput{
-				Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
+				Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("s-msg-" + string(rune('a'+i))),
 				Properties: map[string]any{
 					"text": "hi", "conversation": conv.ID,
 					"author": vocabulary.RecordPath(googlePackage+"/contact", src.ID),
@@ -1326,7 +1326,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 
 	// An undeclared field is a validation error, named.
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-bad-1",
+		Kind: typeGoogleContact, ID: fid("g-bad-1"),
 		Properties: map[string]any{"name": map[string]any{"display": "Alex"}},
 	}); err == nil {
 		t.Fatal("an undeclared field must be rejected")
@@ -1335,7 +1335,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 	}
 	// A field coerces by its declared kind — inside a repeated object too.
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-bad-2",
+		Kind: typeGoogleContact, ID: fid("g-bad-2"),
 		Properties: map[string]any{"emails": []any{map[string]any{"value": "not-an-email"}}},
 	}); err == nil {
 		t.Fatal("a bad field value must be rejected")
@@ -1344,14 +1344,14 @@ func TestObjectPropertyValidation(t *testing.T) {
 	}
 	// A repeated object is a LIST of objects.
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-bad-3",
+		Kind: typeGoogleContact, ID: fid("g-bad-3"),
 		Properties: map[string]any{"emails": map[string]any{"value": "a@x.com"}},
 	}); err == nil {
 		t.Fatal("a repeated object takes a list")
 	}
 	// A field explicitly null is dropped from the stored object.
 	g := mustPut(t, ds, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-ok",
+		Kind: typeGoogleContact, ID: fid("g-ok"),
 		Properties: map[string]any{
 			"name": map[string]any{"displayName": "Alex", "firstName": nil},
 		},
@@ -1460,7 +1460,7 @@ func TestHotMapTargets(t *testing.T) {
 	}
 	lib := substrate.Actor("connector:library")
 	row := mustPut(t, ds, lib, substrate.PutInput{
-		Kind: pkg + "/libraryrow", ID: "lib:1",
+		Kind: pkg + "/libraryrow", ID: fid("lib:1"),
 		Properties: map[string]any{
 			"title": "Piranesi", "body": "a house of statues",
 			"at": "2020-09-15T00:00:00Z", "subtitle": "a novel",
@@ -1535,10 +1535,10 @@ func TestAReferenceMayPinAMappingSource(t *testing.T) {
 		t.Fatalf("a reference at a mapped source kind must register: %v", err)
 	}
 
-	ada := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
+	ada := syncSource(t, ds, people, typeGoogleContact, fid("g-ada"), map[string]any{
 		"name": aname("Ada"), "emails": gemails("ada@example.com"),
 	})
-	grace := syncSource(t, ds, people, typeGoogleContact, "g-grace", map[string]any{
+	grace := syncSource(t, ds, people, typeGoogleContact, fid("g-grace"), map[string]any{
 		"name": aname("Grace"), "emails": gemails("grace@example.com"),
 		"friend": typeGoogleContact + "/" + ada.ID,
 	})
@@ -1645,14 +1645,14 @@ func samWithDirEntry(t *testing.T, ds substrate.Dataset) (sam, acc, entry *subst
 	sam = mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
-	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
 	})
 	acc = mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "dir-acct",
+		Kind: enginetest.AccountType, ID: fid("dir-acct"),
 		Properties: map[string]any{"provider": "dir", "label": "Work"},
 	})
-	entry = syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+	entry = syncSource(t, ds, dirsync, typeDirEntry, fid("e-sam"), map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	p := mustGet(t, ds, sam.Kind, sam.ID)
@@ -1712,13 +1712,13 @@ func TestMergedSourceLeavesItsSubject(t *testing.T) {
 		Kind: typePerson, Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "dir-acct",
+		Kind: enginetest.AccountType, ID: fid("dir-acct"),
 		Properties: map[string]any{"provider": "dir", "label": "Work"},
 	})
-	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+	first := syncSource(t, ds, dirsync, typeDirEntry, fid("e-1"), map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
-	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+	second := syncSource(t, ds, dirsync2, typeDirEntry, fid("e-2"), map[string]any{
 		"fullName": "Samuel Jones", "nickname": "Samuel", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	p := mustGet(t, ds, sam.Kind, sam.ID)
@@ -1761,7 +1761,7 @@ func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
 	}
 	// No lead named: the mapping mints the shell and the recompute fills it.
 	src := mustPut(t, ds, crmsync, substrate.PutInput{
-		Kind: typeLeadSource, ID: "ls-1",
+		Kind: typeLeadSource, ID: fid("ls-1"),
 		Properties: map[string]any{"fullName": "Acme Corp", "email": "hi@acme.example"},
 	})
 	leadID, ok := refIDOf(mustGet(t, ds, src.Kind, src.ID), "lead", typeLead)
@@ -1870,13 +1870,13 @@ func TestMergedSourcesWithDistinctSubjectsKeepBothCurrent(t *testing.T) {
 		Kind: typePerson, Properties: map[string]any{"name": "Pat", "emails": []any{"pat@acme.com"}},
 	})
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "dir-acct",
+		Kind: enginetest.AccountType, ID: fid("dir-acct"),
 		Properties: map[string]any{"provider": "dir", "label": "Work"},
 	})
-	first := syncSource(t, ds, dirsync, typeDirEntry, "e-1", map[string]any{
+	first := syncSource(t, ds, dirsync, typeDirEntry, fid("e-1"), map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
-	second := syncSource(t, ds, dirsync2, typeDirEntry, "e-2", map[string]any{
+	second := syncSource(t, ds, dirsync2, typeDirEntry, fid("e-2"), map[string]any{
 		"fullName": "Patricia", "nickname": "Pat", "email": "pat@acme.com", "account": acc.ID,
 	}, pat.ID)
 	if p := mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync) {
@@ -1925,10 +1925,10 @@ func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
 	sam := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
 	})
-	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"), "phones": gphones("+441234567890"),
 	})
-	syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
 	})
 	p := mustGet(t, ds, sam.Kind, sam.ID)
@@ -1966,7 +1966,7 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 	svc, ds := newDataset(t)
 	// Google alone, and its mapping the only one onto person.
 	installSources(t, ds, []enginetest.Manifest{googleManifest()}, peopleMappings()[:1])
-	g := syncSource(t, ds, people, typeGoogleContact, "g-1", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-1"), map[string]any{
 		"name": aname("Alexandros Papas"), "emails": gemails("alex@acme.example"),
 	})
 	pid := personOf(t, ds, g)
@@ -2023,7 +2023,7 @@ func TestMirrorCreateTakesANestedContactPayload(t *testing.T) {
 	installPeopleSources(t, ds)
 	_, err := ds.Put(context.Background(), "google.connectors.substrate.reamde.dev/google/people", substrate.PutInput{
 		Kind: "google.connectors.substrate.reamde.dev/google/contact",
-		ID:   "people-c1001",
+		ID:   fid("people-c1001"),
 		Properties: map[string]any{
 			"name": map[string]any{"displayName": "Ada Lovelace", "firstName": "Ada", "lastName": "Lovelace"},
 			"emails": []any{
@@ -2056,7 +2056,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	// A contact with nothing shared: no probe can match it, so its subject is a
 	// shell minted for it — and a re-resolution would mint a SECOND one, which
 	// is what makes the assertion below sharp.
-	contact := syncSource(t, ds, people, typeGoogleContact, "g-ned", map[string]any{
+	contact := syncSource(t, ds, people, typeGoogleContact, fid("g-ned"), map[string]any{
 		"name": aname("Nameless Ned"),
 	})
 	shell := personOf(t, ds, contact)
@@ -2071,7 +2071,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 
 	// The connector syncs the same contact again, carrying no subject of its
 	// own — the ordinary re-sync.
-	syncSource(t, ds, people, typeGoogleContact, "g-ned", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-ned"), map[string]any{
 		"name": aname("Nameless Ned"),
 	})
 
@@ -2094,7 +2094,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Grace Hopper"},
 	})
 	_, err := ds.Put(ctx, people, substrate.PutInput{
-		Kind: typeGoogleContact, ID: "g-ned",
+		Kind: typeGoogleContact, ID: fid("g-ned"),
 		Properties: map[string]any{"name": aname("Nameless Ned"), "person": grace.ID},
 	})
 	wantErr(t, err, substrate.ErrGuard, "re-pointing a subject after its target was merged")
@@ -2104,7 +2104,7 @@ func TestSyncAfterASubjectMergeMintsNothing(t *testing.T) {
 	// passes.
 	for _, id := range []string{shell, ada.ID} {
 		if _, err := ds.Put(ctx, people, substrate.PutInput{
-			Kind: typeGoogleContact, ID: "g-ned",
+			Kind: typeGoogleContact, ID: fid("g-ned"),
 			Properties: map[string]any{"name": aname("Nameless Ned"), "person": id},
 		}); err != nil {
 			t.Fatalf("re-asserting the subject as %s was refused: %v", id, err)
@@ -2203,7 +2203,7 @@ func TestAMappingSynthesizesItsSubjectSlot(t *testing.T) {
 
 	// The projection runs through it: a card with no subject mints a person,
 	// the link lands on the card, and the mapped values project.
-	c := syncSource(t, ds, people, typeSlotlessCard, "card-1", map[string]any{
+	c := syncSource(t, ds, people, typeSlotlessCard, fid("card-1"), map[string]any{
 		"fullName": "Ada Lovelace", "email": "ada@example.com",
 	})
 	personID := personOf(t, ds, c)

@@ -127,12 +127,12 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 		t.Fatalf("open dataset: %v", err)
 	}
 	installGauges(t, ds, false)
-	for _, g := range []struct{ id, unit string }{{"live", "kg"}, {"gone", "lb"}} {
+	for _, g := range []struct{ id, unit string }{{fid("live"), "kg"}, {fid("gone"), "lb"}} {
 		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: gaugeKind, ID: g.id, Properties: map[string]any{
 			"unit": g.unit, "form": "gauge",
 		}})
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, gaugeKind, "gone", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, gaugeKind, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone a gauge: %v", err)
 	}
 	if got := unitUsesOf(t, foldOf(t, ds), gaugeKind); len(got) != 0 {
@@ -148,7 +148,9 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	blocking.Store(false)
 	close(gate)
 	fold := rebuiltEqualsLive(t, svc, ds, "after binding observed")
-	if got, want := unitUsesOf(t, fold, gaugeKind), []string{"gone lb", "live kg"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	want := []string{fid("gone") + " lb", fid("live") + " kg"}
+	sort.Strings(want)
+	if got := unitUsesOf(t, fold, gaugeKind); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("the bound gauges' uses = %v, want %v", got, want)
 	}
 	_, err = ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
@@ -313,7 +315,7 @@ func TestTheSeedWaitsForTheUnitUses(t *testing.T) {
 	mustPut(t, ds, substrate.ActorSystem, substrate.PutInput{Kind: vocabulary.KindConversion, ID: "oz-kg", Properties: map[string]any{
 		"to": map[string]any{"ref": vocabulary.KindUnit + "/lb"}, "factor": "0.0625",
 	}})
-	for _, h := range []struct{ id, unit string }{{"pounds", "[lb_av]"}, {"ounces", "[oz_av]"}} {
+	for _, h := range []struct{ id, unit string }{{fid("pounds"), "[lb_av]"}, {fid("ounces"), "[oz_av]"}} {
 		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: h.id, Properties: map[string]any{
 			"weight": map[string]any{"value": "1", "unit": h.unit},
 		}})

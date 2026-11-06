@@ -128,7 +128,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
 			_, err := ds.Put(ctx, actor, substrate.PutInput{
-				Kind: kind, ID: "racer", Properties: map[string]any{"name": "a", "legacy": "held"},
+				Kind: kind, ID: fid("racer"), Properties: map[string]any{"name": "a", "legacy": "held"},
 			})
 			putDone <- err
 		}()
@@ -156,7 +156,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the parked write never finished")
 	}
-	if _, err := ds.Get(ctx, kind, "racer"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, kind, fid("racer")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused write landed a row: %v", err)
 	}
 }
@@ -267,7 +267,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: config, ID: "c1", Properties: map[string]any{"name": "one"},
+		Kind: config, ID: fid("c1"), Properties: map[string]any{"name": "one"},
 	}); err != nil {
 		t.Fatalf("put the config: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
-		go func() { bound <- ds.BindBundleInput(ctx, pkg, "client", "c1") }()
+		go func() { bound <- ds.BindBundleInput(ctx, pkg, "client", fid("c1")) }()
 		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
 		case err := <-bound:
@@ -434,7 +434,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: kind, ID: "doomed", Properties: map[string]any{"name": "doomed"},
+		Kind: kind, ID: fid("doomed"), Properties: map[string]any{"name": "doomed"},
 	}); err != nil {
 		t.Fatalf("put: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
-			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, "doomed", substrate.DeleteInput{})
+			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, fid("doomed"), substrate.DeleteInput{})
 			deleted <- err
 		}()
 		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
@@ -475,7 +475,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 		t.Fatal("the parked delete never finished")
 	}
 	// A soft delete leaves a tombstone, which Get still returns.
-	gone, err := ds.Get(ctx, kind, "doomed")
+	gone, err := ds.Get(ctx, kind, fid("doomed"))
 	if err != nil || gone.DeletedAt == nil {
 		t.Fatalf("the delete did not land once the apply published: %v %+v", err, gone)
 	}
@@ -502,14 +502,14 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	for _, id := range []string{"keep", "gone"} {
+	for _, id := range []string{fid("keep"), fid("gone")} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: kind, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	merged, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: kind, Winner: "keep", Loser: "gone"})
+	merged, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: kind, Winner: fid("keep"), Loser: fid("gone")})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the parked split never finished")
 	}
-	if _, err := ds.Get(ctx, kind, "gone"); err != nil {
+	if _, err := ds.Get(ctx, kind, fid("gone")); err != nil {
 		t.Fatalf("the split did not resurrect the merged-away record once the apply published: %v", err)
 	}
 }
@@ -612,7 +612,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockPackage + "/target", ID: "a", Properties: map[string]any{},
+		Kind: refLockPackage + "/target", ID: fid("a"), Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
 	}
@@ -629,12 +629,12 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const holderID = "h1"
+	holderID := fid("h1")
 	done := make(chan error, 1)
 	go func() {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: refLockPackage + "/holder", ID: holderID,
-			Properties: map[string]any{"points": "a"},
+			Properties: map[string]any{"points": fid("a")},
 		})
 		done <- err
 	}()
@@ -668,7 +668,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get the holder: %v", err)
 	}
-	if storedReferencePath(got.Properties["points"]) != vocabulary.RecordPath(refLockPackage+"/target", "a") {
+	if storedReferencePath(got.Properties["points"]) != vocabulary.RecordPath(refLockPackage+"/target", fid("a")) {
 		t.Fatalf("stored points = %#v", got.Properties["points"])
 	}
 	if n := refRowsOf(t, ds, refLockPackage+"/holder", holderID, "points"); n != 1 {
@@ -688,12 +688,12 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockPackage + "/target", ID: "a", Properties: map[string]any{},
+		Kind: refLockPackage + "/target", ID: fid("a"), Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
 	}
 	holder, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: refLockPackage + "/holder", ID: "h2", Properties: map[string]any{},
+		Kind: refLockPackage + "/holder", ID: fid("h2"), Properties: map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("put the holder: %v", err)
@@ -711,7 +711,7 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := ds.Patch(ctx, substrate.ActorAPI, holder.Kind, holder.ID, substrate.PatchInput{
-			Properties: map[string]any{"points": "a"},
+			Properties: map[string]any{"points": fid("a")},
 		})
 		done <- err
 	}()

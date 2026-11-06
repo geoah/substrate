@@ -66,8 +66,8 @@ func provisionShop(t *testing.T) (*dataset, *fakeLLM) {
 		t.Fatalf("install the shop: %v", err)
 	}
 	for _, in := range []substrate.PutInput{
-		{Kind: product, ID: "cup", Properties: map[string]any{"name": "Tajimi cup"}},
-		{Kind: note, ID: "said", Properties: map[string]any{"text": "the user asked about the tajimi cup"}},
+		{Kind: product, ID: fid("cup"), Properties: map[string]any{"name": "Tajimi cup"}},
+		{Kind: note, ID: fid("said"), Properties: map[string]any{"text": "the user asked about the tajimi cup"}},
 	} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, in); err != nil {
 			t.Fatal(err)
@@ -137,7 +137,7 @@ func TestAgentQueryListsKindsAndRequiresThemForQ(t *testing.T) {
 	}
 	for i := 3; i < 5; i++ {
 		content, _ := rows[i]["content"].(string)
-		if rows[i]["ok"] != true || !strings.Contains(content, `"id":"cup"`) {
+		if rows[i]["ok"] != true || !strings.Contains(content, `"id":"`+fid("cup")+`"`) {
 			t.Errorf("call %d: ok %v content %s", i+1, rows[i]["ok"], content)
 		}
 	}
@@ -208,10 +208,10 @@ func TestDirectQueryCallKeepsItsSearchDefaults(t *testing.T) {
 		"the purpose": {map[string]any{"filter": map[string]any{"purposes": []any{"internal"}}}, true},
 	} {
 		out := search(tc.extra)
-		if strings.Contains(out, `"id":"said"`) != tc.wantNote {
+		if strings.Contains(out, `"id":"`+fid("said")+`"`) != tc.wantNote {
 			t.Errorf("a direct search naming %s: want the note %v, got %s", name, tc.wantNote, out)
 		}
-		if !tc.wantNote && !strings.Contains(out, `"id":"cup"`) {
+		if !tc.wantNote && !strings.Contains(out, `"id":"`+fid("cup")+`"`) {
 			t.Errorf("a direct search naming %s lost the product: %s", name, out)
 		}
 	}

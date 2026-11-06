@@ -105,7 +105,7 @@ func TestChangeValuesCarryBeforeAndAfterAcrossPutPatchDeleteAndRestore(t *testin
 	_, ds := newDataset(t)
 	snaps := snapshots{}
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: cvTask, ID: "t1", Properties: map[string]any{
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: cvTask, ID: fid("t1"), Properties: map[string]any{
 		"name": "Write the report", "priority": "high",
 	}})
 	snaps.take(t, ds, cvTask, task.ID)
@@ -214,9 +214,9 @@ func TestChangeValuesWalkBackAcrossAMergeAndItsSplit(t *testing.T) {
 	const person = "samples.substrate.reamde.dev/people/person"
 	snaps := snapshots{}
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "grace", Properties: map[string]any{"name": "Grace B. Hopper"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: fid("grace"), Properties: map[string]any{"name": "Grace B. Hopper"}})
 	snaps.take(t, ds, person, winner.ID)
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "graceb", Properties: map[string]any{
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: fid("graceb"), Properties: map[string]any{
 		"name": "Grace Brewster Hopper", "emails": []any{"grace@example.com"},
 	}})
 	merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: person, Winner: winner.ID, Loser: loser.ID})
@@ -269,13 +269,13 @@ func TestChangeValuesBoundAManyTimesMergedRecordsPairHistory(t *testing.T) {
 	const person = "samples.substrate.reamde.dev/people/person"
 	snaps := snapshots{}
 
-	ada := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "ada", Properties: map[string]any{"name": "Ada"}})
+	ada := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: fid("ada"), Properties: map[string]any{"name": "Ada"}})
 	snaps.take(t, ds, person, ada.ID)
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "grace", Properties: map[string]any{"name": "Grace B. Hopper"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: fid("grace"), Properties: map[string]any{"name": "Grace B. Hopper"}})
 	snaps.take(t, ds, person, winner.ID)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: "graceb", Properties: map[string]any{"name": "Grace Brewster Hopper"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: person, ID: fid("graceb"), Properties: map[string]any{"name": "Grace Brewster Hopper"}})
 	for range 10 {
-		merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: person, Winner: winner.ID, Loser: "graceb"})
+		merged, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: person, Winner: winner.ID, Loser: fid("graceb")})
 		if err != nil {
 			t.Fatalf("merge: %v", err)
 		}
@@ -395,13 +395,13 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 		"fingerprint": map[string]any{"type": "digest"},
 		"pin":         map[string]any{"type": "secret"},
 	})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: vault, ID: "v1", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: vault, ID: fid("v1"), Properties: map[string]any{
 		"label": "first", "token": "s3cret-one", "fingerprint": fingerprint, "pin": "pin-0042",
 	}})
-	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"token": "s3cret-two"}})
+	mustPatch(t, ds, owner, vault, fid("v1"), substrate.PatchInput{Properties: map[string]any{"token": "s3cret-two"}})
 	// Cleared, so no live record holds the shape the next declaration drops
 	// and retypes.
-	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"fingerprint": nil, "pin": nil}})
+	mustPatch(t, ds, owner, vault, fid("v1"), substrate.PatchInput{Properties: map[string]any{"fingerprint": nil, "pin": nil}})
 	// token renamed (still a secret), fingerprint dropped, pin retyped to a
 	// plain string.
 	declare(map[string]any{
@@ -409,10 +409,10 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 		"apiKey": map[string]any{"type": "secret", "renamedFrom": "token"},
 		"pin":    map[string]any{"type": "string"},
 	})
-	mustPatch(t, ds, owner, vault, "v1", substrate.PatchInput{Properties: map[string]any{"label": "second", "pin": "now-plain"}})
+	mustPatch(t, ds, owner, vault, fid("v1"), substrate.PatchInput{Properties: map[string]any{"label": "second", "pin": "now-plain"}})
 
 	var sealed []string
-	rows, err := db.Query(`SELECT payload::text FROM changelog WHERE kind = $1 AND record_id = 'v1'`, vault)
+	rows, err := db.Query(`SELECT payload::text FROM changelog WHERE kind = $1 AND record_id = $2`, vault, fid("v1"))
 	if err != nil {
 		t.Fatalf("read the raw changelog: %v", err)
 	}
@@ -431,7 +431,7 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 		t.Fatalf("the changelog holds no sealed ref to guard: %v", sealed)
 	}
 
-	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{vault}, RecordID: "v1", Values: true}, 100)
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{vault}, RecordID: fid("v1"), Values: true}, 100)
 	if err != nil {
 		t.Fatalf("changes before: %v", err)
 	}

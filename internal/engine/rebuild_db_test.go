@@ -156,14 +156,14 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	})
 	// Google matches by email, fills phones, and yields on the owner's name:
 	// an offer beside a hold.
-	syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name":   aname("Samuel Jones"),
 		"emails": gemails("sam@acme.com"),
 		"phones": gphones("+441234567890"),
 	})
 	// Slack shares nothing with Sam, so it is a second person, merged by hand:
 	// the recompute after the merge offers slack's name and address.
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam J", "displayName": "sam", "email": "sam@corp.example",
 	})
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: personOf(t, ds, s)}); err != nil {
@@ -173,10 +173,10 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	// machine tier. Deleting its account has the sweep collect it, and the
 	// person must end where a delete of the entry would have left it.
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "dir-acct",
+		Kind: enginetest.AccountType, ID: fid("dir-acct"),
 		Properties: map[string]any{"provider": "dir", "label": "Work"},
 	})
-	syncSource(t, ds, dirsync, typeDirEntry, "e-sam", map[string]any{
+	syncSource(t, ds, dirsync, typeDirEntry, fid("e-sam"), map[string]any{
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	if _, err := ds.Delete(ctx, owner, acc.Kind, acc.ID, substrate.DeleteInput{}); err != nil {
@@ -196,7 +196,7 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 		{"g-ada", "Ada Lovelace", "Ada", "ada@acme.example", false},
 		{"g-bo", "Bo Peep", "Bo", "bo@acme.example", true},
 	} {
-		g := syncSource(t, ds, people, typeGoogleContact, who.contact, map[string]any{
+		g := syncSource(t, ds, people, typeGoogleContact, fid(who.contact), map[string]any{
 			"name": aname(who.name), "emails": gemails(who.email),
 		})
 		pid := personOf(t, ds, g)

@@ -58,27 +58,28 @@ func TestObservedDerivationMatchesTheGolden(t *testing.T) {
 	}
 }
 
-// writeGoldenCorpus writes the golden corpus, every record at a fixed id.
+// writeGoldenCorpus writes the golden corpus, every record at a fixed
+// minted id.
 func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	t.Helper()
 	ctx := context.Background()
 	berlinSummer, berlinWinter := 120, 60
 	trace := func(id string, props map[string]any) {
 		t.Helper()
-		r.mustPut(t, r.trace, id, props)
+		r.mustPut(t, r.trace, fid(id), props)
 	}
 	obs := func(id string, props map[string]any) {
 		t.Helper()
-		r.mustPut(t, r.observation, id, props)
+		r.mustPut(t, r.observation, fid(id), props)
 	}
 	putShippedUnits(t, r.ds, "deg")
-	r.mustPut(t, r.metric, "golden/wind", map[string]any{
+	r.mustPut(t, r.metric, fid("golden/wind"), map[string]any{
 		"name": "Wind direction", "unit": unitRef("deg"), "form": "gauge",
 	})
-	r.mustPut(t, r.metric, "golden/fine", map[string]any{
+	r.mustPut(t, r.metric, fid("golden/fine"), map[string]any{
 		"name": "Fine power", "unit": unitRef("W"), "form": "gauge", "rollups": []any{"5m", "1h"},
 	})
-	r.mustPut(t, r.metric, "golden/score", map[string]any{
+	r.mustPut(t, r.metric, fid("golden/score"), map[string]any{
 		"name": "A vendor's nightly score", "unit": unitRef("percent"), "form": "summary",
 	})
 	// A gauge trace each hour across the clock change of 2026-10-25, a null
@@ -125,7 +126,7 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 		"value": quantity("159.5", "[lb_av]"), "at": "2026-10-26T06:40:00Z", "utcOffset": berlinWinter,
 	})
 	trace("wind/0", map[string]any{
-		"metric": r.metricRef("golden/wind"), "source": r.sourceRef("vane"), "form": "gauge", "unit": "deg", "circular": true,
+		"metric": r.metricRef(fid("golden/wind")), "source": r.sourceRef("vane"), "form": "gauge", "unit": "deg", "circular": true,
 		"at": "2026-10-25T03:00:00Z", "endsAt": "2026-10-25T03:30:00Z", "every": "PT5M",
 		"values": []any{"350", "10", "355", "5", "0", "345"}, "utcOffset": berlinWinter,
 	})
@@ -165,20 +166,20 @@ func writeGoldenCorpus(t *testing.T, r obsIndex) {
 	})
 	// A summary, a censored lab value and a metric with its own tiers.
 	obs("night/hrv", map[string]any{
-		"metric": r.metricRef("golden/score"), "source": r.sourceRef("strap"), "form": "summary", "statistic": "vendor",
+		"metric": r.metricRef(fid("golden/score")), "source": r.sourceRef("strap"), "form": "summary", "statistic": "vendor",
 		"period": "cycle", "value": quantity("67", "%"), "at": "2026-10-24T22:31:00Z", "endsAt": "2026-10-25T06:02:00Z",
 	})
-	r.mustPut(t, r.labresult, "lab/tsh", map[string]any{
+	r.mustPut(t, r.labresult, fid("lab/tsh"), map[string]any{
 		"metric": r.metricRef("labs/tsh"), "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
 		"at":    "2026-10-25T08:05:00Z", "utcOffset": berlinWinter, "status": "final",
 	})
 	trace("fine/0", map[string]any{
-		"metric": r.metricRef("golden/fine"), "source": r.sourceRef("plug"), "form": "gauge", "unit": "W",
+		"metric": r.metricRef(fid("golden/fine")), "source": r.sourceRef("plug"), "form": "gauge", "unit": "W",
 		"at": "2026-10-25T09:00:00Z", "endsAt": "2026-10-25T09:20:00Z", "every": "PT2M", "utcOffset": berlinWinter,
 		"values": []any{"40", "42", "39", "120", "118", "41", "40", "40", "39", "38"},
 	})
-	if _, err := r.ds.Delete(ctx, owner, r.observation, "door/1", substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, owner, r.observation, fid("door/1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 }

@@ -106,13 +106,13 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 
 	// Turn one commits a tool effect; turn two dies, so the run never settles.
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"idem-annot"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("idem-annot") + `"}`}}},
 		fakeTurn{status: 500},
 	)
 	if _, err := ds.CallAgent(kctx, crewPackage+"/classifier", "annotate it"); err == nil {
 		t.Fatal("a run whose model died answered a result")
 	}
-	first, err := ds.Get(ctx, task, "idem-annot")
+	first, err := ds.Get(ctx, task, fid("idem-annot"))
 	if err != nil {
 		t.Fatalf("the tool effect did not commit: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 	if err := ds.clearDeadReservations(ctx); err != nil {
 		t.Fatalf("boot clear: %v", err)
 	}
-	fake.script("root", fakeTurn{calls: []fakeCall{{"annotate", `{"id":"idem-annot"}`}}}, fakeTurn{content: "done"})
+	fake.script("root", fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("idem-annot") + `"}`}}}, fakeTurn{content: "done"})
 	_, err = ds.CallAgent(kctx, crewPackage+"/classifier", "annotate it")
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "opened agent thread") {
 		t.Fatalf("retry under a thread-bound key: %v, want ErrConflict naming the thread", err)
@@ -134,7 +134,7 @@ func TestIdempotencyKeyBindsToTheThreadItOpened(t *testing.T) {
 	if n := threadCountOf(t, ds, crewPackage+"/classifier"); n != 1 {
 		t.Fatalf("one key opened %d threads", n)
 	}
-	if again := mustGetInternal(t, ds, task, "idem-annot"); again.Version != first.Version {
+	if again := mustGetInternal(t, ds, task, fid("idem-annot")); again.Version != first.Version {
 		t.Fatalf("the tool effect ran again: version %d -> %d", first.Version, again.Version)
 	}
 	if n := len(fake.requestsOf("root")); n != 2 {
@@ -157,8 +157,8 @@ func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
 		return writeArgs(t, "put", crewPackage+"/widget", id, map[string]any{"name": name})
 	}
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", put("w-first", "first")}}},
-		fakeTurn{calls: []fakeCall{{"write", put("w-second", "second")}}},
+		fakeTurn{calls: []fakeCall{{"write", put(fid("w-first"), "first")}}},
+		fakeTurn{calls: []fakeCall{{"write", put(fid("w-second"), "second")}}},
 		fakeTurn{content: "made both"},
 	)
 	res, err := ds.CallAgent(kctx, crewPackage+"/editor", "make two widgets")
@@ -168,7 +168,7 @@ func TestIdempotencyKeyDoesNotLeakIntoTheAgentsWrites(t *testing.T) {
 	if res.Status != threadOK || res.Effects != 2 {
 		t.Fatalf("result: %+v", res)
 	}
-	for _, id := range []string{"w-first", "w-second"} {
+	for _, id := range []string{fid("w-first"), fid("w-second")} {
 		if _, err := ds.Get(ctx, crewPackage+"/widget", id); err != nil {
 			t.Fatalf("widget %s was not created: %v", id, err)
 		}
@@ -462,7 +462,7 @@ func TestIdempotencyKeyAgentToolKeysDeriveFromTheClientKey(t *testing.T) {
 	if res.Status != threadOK {
 		t.Fatalf("result: %+v", res)
 	}
-	task := mustGetInternal(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-idem")
+	task := mustGetInternal(t, ds, "samples.substrate.reamde.dev/tasks/task", fid("t-idem"))
 	key, _ := task.Properties["name"].(string)
 	if !strings.Contains(key, "/call/key/keeper-dk/") {
 		t.Fatalf("the tool's key does not derive from the client key: %q", key)

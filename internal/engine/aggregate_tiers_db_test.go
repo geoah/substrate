@@ -43,7 +43,7 @@ func (f aggFix) tierHours(source, metric, form, unit string, from, to time.Time,
 		case "counter":
 			props["resetRule"] = "monotonic"
 		}
-		f.series(fmt.Sprintf("%s/%s/%s", metric, source, start.UTC().Format("2006-01-02T15")), props,
+		f.series(fid(fmt.Sprintf("%s/%s/%s", metric, source, start.UTC().Format("2006-01-02T15"))), props,
 			start, start.Add(time.Hour), offsets, vals)
 	}
 }

@@ -118,5 +118,35 @@
       "url": "https://example.test/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "url-33cc9b462d2070f82c29a17810740c9d"
     }
+  ],
+  "minted": [
+    {
+      "parts": [
+        "fixture",
+        "t-1"
+      ],
+      "id": "3c9ts84axnhyrvws6ntpphzves"
+    },
+    {
+      "parts": [
+        "notes",
+        "a note's text"
+      ],
+      "id": "6s6kh43nb5g2hr6d1cxq1zz3q8"
+    },
+    {
+      "parts": [
+        "apple",
+        "book-1",
+        "contact-1"
+      ],
+      "id": "4dn5ng7cxvgdnrk2mbvy4c9mqk"
+    },
+    {
+      "parts": [
+        "x"
+      ],
+      "id": "1de4b45ds6g1282rkwn7xtrcqn"
+    }
   ]
 }

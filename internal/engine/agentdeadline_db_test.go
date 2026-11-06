@@ -221,11 +221,11 @@ func TestAgentDeadlineInsideAModelCallSettlesOverbudgetOnOneThread(t *testing.T)
 	}
 	held, _ := heldTurn(t)
 	fake.script("dover",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", deadlineNote, "n-early", map[string]any{"name": "early"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", deadlineNote, fid("n-early"), map[string]any{"name": "early"})}}},
 		fakeTurn{content: "too late", release: held},
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-deadline", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-deadline"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestAgentDeadlineInsideAModelCallSettlesOverbudgetOnOneThread(t *testing.T)
 	if cost, _ := anyFloat(th["costUSD"]); math.Abs(cost-35e-6) > 1e-12 {
 		t.Fatalf("thread costUSD = %v, want 3.5e-05", th["costUSD"])
 	}
-	if _, err := ds.Get(ctx, deadlineNote, "n-early"); err != nil {
+	if _, err := ds.Get(ctx, deadlineNote, fid("n-early")); err != nil {
 		t.Fatalf("the first turn's note: %v", err)
 	}
 	if got := len(fake.requestsOf("dover")); got != 2 {
@@ -286,7 +286,7 @@ func TestAgentFinalPhaseGivesTheModelALastTurnToWrite(t *testing.T) {
 	arrived := make(chan struct{})
 	fake.script("ddraft",
 		fakeTurn{calls: []fakeCall{{"napper", `{"input":"nap"}`}}},
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", deadlineNote, "n-final", map[string]any{"name": "final"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", deadlineNote, fid("n-final"), map[string]any{"name": "final"})}}},
 	)
 	fake.script("dnap", fakeTurn{content: "rested", arrived: arrived, release: held})
 	wait := releaseNearTheDeadline(ds, "drafter", arrived, release)
@@ -302,7 +302,7 @@ func TestAgentFinalPhaseGivesTheModelALastTurnToWrite(t *testing.T) {
 	if res.Turns != 2 || res.ToolCalls != 2 {
 		t.Fatalf("result turns %d tool calls %d, want 2 and 2: the final phase reserves one of each", res.Turns, res.ToolCalls)
 	}
-	if _, err := ds.Get(ctx, deadlineNote, "n-final"); err != nil {
+	if _, err := ds.Get(ctx, deadlineNote, fid("n-final")); err != nil {
 		t.Fatalf("the final turn's note: %v", err)
 	}
 	// The final request carries the nudge as its last message, and the

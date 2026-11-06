@@ -154,9 +154,9 @@ func TestHeldCreateOnlyPutOfALiveTargetHoldsNothing(t *testing.T) {
 		pyFn("minter", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "t-live", "ifAbsent": True, "properties": {"name": "minted"}}]}
+                         "id": "`+fid("t-live")+`", "ifAbsent": True, "properties": {"name": "minted"}}]}
 `))
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-live", Properties: map[string]any{"name": "mine"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: fid("t-live"), Properties: map[string]any{"name": "mine"}})
 	gatePolicy(t, ds, "gate-minter", map[string]any{
 		"selector": map[string]any{"functions": []any{fnPackage + "/minter"}},
 		"action":   "gate",
@@ -167,7 +167,7 @@ def main(input, host):
 	if reqs := patchRequests(t, ds); len(reqs) != 0 {
 		t.Fatalf("a create-only put of a live target was held: %+v", reqs[0].Properties)
 	}
-	if got := mustGet(t, ds, taskType, "t-live"); got.Title != "mine" {
+	if got := mustGet(t, ds, taskType, fid("t-live")); got.Title != "mine" {
 		t.Fatalf("the live task moved: %+v", got)
 	}
 	if summary := runEffects(t, ds); summary["put"] == nil || summary["gate"] != nil {

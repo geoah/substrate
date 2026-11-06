@@ -7,6 +7,7 @@ package engine_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,10 +29,10 @@ func TestQuantityFilterAndOrderReadADeltaAsADifference(t *testing.T) {
 		return p
 	}
 	for id, props := range map[string]map[string]any{
-		"warmer":  reading("health/skin_temperature_deviation", "0.5", "K", true),
-		"warm":    reading("health/skin_temperature_deviation", "0.2", "Cel", true),
-		"cooler":  reading("health/skin_temperature_deviation", "-0.1", "[degF]", true),
-		"surface": reading("health/skin_temperature", "33.5", "Cel", false),
+		fid("warmer"):  reading("health/skin_temperature_deviation", "0.5", "K", true),
+		fid("warm"):    reading("health/skin_temperature_deviation", "0.2", "Cel", true),
+		fid("cooler"):  reading("health/skin_temperature_deviation", "-0.1", "[degF]", true),
+		fid("surface"): reading("health/skin_temperature", "33.5", "Cel", false),
 	} {
 		if _, err := r.put(t, r.observation, id, props); err != nil {
 			t.Fatalf("put %s: %v", id, err)
@@ -65,8 +66,14 @@ func TestQuantityFilterAndOrderReadADeltaAsADifference(t *testing.T) {
 			got := ids(substrate.Query{OrderBy: byID, Filter: substrate.Filter{
 				Properties: map[string]substrate.Cond{"value": tc.cond},
 			}})
-			if strings.Join(got, ",") != tc.want {
-				t.Fatalf("filtered to %v, want %s", got, tc.want)
+			// The ids sort as minted, so the order by id is theirs.
+			var want []string
+			for _, name := range strings.Split(tc.want, ",") {
+				want = append(want, fid(name))
+			}
+			slices.Sort(want)
+			if strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Fatalf("filtered to %v, want %s (%v)", got, tc.want, want)
 			}
 		})
 	}
@@ -87,18 +94,18 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 	r := openObserved(t)
 	ctx := context.Background()
 	putShippedUnits(t, r.ds, "score")
-	if _, err := r.put(t, r.metric, "vendor/strain", map[string]any{
+	if _, err := r.put(t, r.metric, fid("vendor/strain"), map[string]any{
 		"name": "A vendor's strain", "unit": unitRef("score"), "form": "summary",
 	}); err != nil {
 		t.Fatalf("put the strain metric: %v", err)
 	}
 	for id, props := range map[string]map[string]any{
-		"lab/hba1c": {
+		fid("lab/hba1c"): {
 			"metric": r.metricRef("labs/hba1c"), "form": "gauge", "value": quantity("5.2", "%"),
 			"at": "2026-10-07T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 		},
-		"vendor/strain": {
-			"metric": r.metricRef("vendor/strain"), "form": "summary", "statistic": "vendor", "period": "cycle",
+		fid("vendor/strain"): {
+			"metric": r.metricRef(fid("vendor/strain")), "form": "summary", "statistic": "vendor", "period": "cycle",
 			"value": quantity("17", "{score}"), "at": "2026-10-07T00:00:00+03:00", "endsAt": "2026-10-08T00:00:00+03:00",
 			"utcOffset": 180, "revision": 1,
 		},
@@ -122,11 +129,11 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 	}
 	for _, c := range []struct{ metric, unit, from string }{
 		{"labs/hba1c", "mmol/mol", ""},
-		{"vendor/strain", "percent", "summaries"},
+		{fid("vendor/strain"), "percent", "summaries"},
 	} {
 		refused(t, c.metric+" in "+c.unit, read(c.metric, c.unit, c.from), c.unit)
 	}
-	_, err := r.put(t, r.observation, "lab/hba1c-ifcc", map[string]any{
+	_, err := r.put(t, r.observation, fid("lab/hba1c-ifcc"), map[string]any{
 		"metric": r.metricRef("labs/hba1c"), "form": "gauge", "value": quantity("48", "mmol/mol"),
 		"at": "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 	})
@@ -140,7 +147,7 @@ func TestAggregateRefusesAUnitOutsideTheMetricsComponent(t *testing.T) {
 func TestATracePointPastTheDigitBoundIsRefused(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	_, err := r.put(t, r.trace, "hand/heart_rate/2026-10-07T06", map[string]any{
+	_, err := r.put(t, r.trace, fid("hand/heart_rate/2026-10-07T06"), map[string]any{
 		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "/min",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T06:01:00Z",
 		"utcOffset": 180,
@@ -166,14 +173,14 @@ func TestBloodGlucoseInEitherUnitReadsAsOneSeries(t *testing.T) {
 		}
 	}
 	for id, props := range map[string]map[string]any{
-		"meter/athens": reading("5.4", "mmol/L{glucose}", "2026-10-07T07:20:00+03:00"),
-		"meter/boston": reading("97", "mg/dL{glucose}", "2026-10-08T07:22:00+03:00"),
+		fid("meter/athens"): reading("5.4", "mmol/L{glucose}", "2026-10-07T07:20:00+03:00"),
+		fid("meter/boston"): reading("97", "mg/dL{glucose}", "2026-10-08T07:22:00+03:00"),
 	} {
 		if _, err := r.put(t, r.observation, id, props); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	if q, _ := r.get(t, r.observation, "meter/boston").Properties["value"].(map[string]any); q["value"] != "97" || q["unit"] != "mg/dL_glucose" {
+	if q, _ := r.get(t, r.observation, fid("meter/boston")).Properties["value"].(map[string]any); q["value"] != "97" || q["unit"] != "mg/dL_glucose" {
 		t.Errorf("the mg/dL reading is stored as %v, want its own digits in mg/dL_glucose", q)
 	}
 	read := func(unit string) map[string]float64 {
@@ -210,7 +217,7 @@ func TestBloodGlucoseInEitherUnitReadsAsOneSeries(t *testing.T) {
 		t.Errorf("in mg/dL{glucose}: %v, want count 2, min 97, max %.5f", got, 5.4*18.0156)
 	}
 	for _, unit := range []string{"mg/dL", "mmol/L"} {
-		_, err := r.put(t, r.observation, "meter/plain", reading("101", unit, "2026-10-09T07:21:00+03:00"))
+		_, err := r.put(t, r.observation, fid("meter/plain"), reading("101", unit, "2026-10-09T07:21:00+03:00"))
 		refused(t, "a glucose reading in plain "+unit, err, "does not convert to the metric's unit")
 	}
 }

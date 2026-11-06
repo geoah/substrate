@@ -79,7 +79,7 @@ func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "a", "flight plan", "")
+	putScoreTask(t, ds, fid("a"), "flight plan", "")
 	app := substrate.WithScopes(ctx, []string{"read:" + scoreTaskKind})
 	score := func(ctx context.Context) float64 {
 		t.Helper()
@@ -88,7 +88,7 @@ func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, h := range res.Hits {
-			if h.Record != nil && h.Record.ID == "a" {
+			if h.Record != nil && h.Record.ID == fid("a") {
 				return h.Lexical
 			}
 		}
@@ -99,7 +99,7 @@ func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
 	const hidden = "samples.substrate.reamde.dev/tasks/project"
 	for i := range 40 {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: hidden, ID: fmt.Sprintf("p%d", i),
+			Kind: hidden, ID: fid(fmt.Sprintf("p%d", i)),
 			Properties: map[string]any{"name": "flight flight " + strings.Repeat("long hidden words ", 30)},
 		}); err != nil {
 			t.Fatal(err)

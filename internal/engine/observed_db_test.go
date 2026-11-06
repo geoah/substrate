@@ -147,7 +147,7 @@ func TestObservedCataloguesInstallWithTheirMetrics(t *testing.T) {
 			t.Errorf("the health install landed the WHOOP metric %s", id)
 		}
 	}
-	rec, err := r.put(t, r.observation, "withings/george/5f3a91/weight", weighing(r))
+	rec, err := r.put(t, r.observation, fid("withings/george/5f3a91/weight"), weighing(r))
 	if err != nil {
 		t.Fatalf("put a weighing: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestObservedAboutAdmitsAnyKind(t *testing.T) {
 		if about != nil {
 			props["about"] = about
 		}
-		if _, err := r.put(t, r.observation, id, props); err != nil {
+		if _, err := r.put(t, r.observation, fid(id), props); err != nil {
 			t.Errorf("%s: %v", id, err)
 		}
 	}
@@ -185,23 +185,23 @@ func TestObservedValueAndCodeAreExclusive(t *testing.T) {
 	r := openObserved(t)
 	both := weighing(r)
 	both["code"] = "open"
-	_, err := r.put(t, r.observation, "both", both)
+	_, err := r.put(t, r.observation, fid("both"), both)
 	refused(t, "a create with both", err, "props.value: an observed value is a number or a code, never both")
 
-	if _, err := r.put(t, r.observation, "door", map[string]any{
+	if _, err := r.put(t, r.observation, fid("door"), map[string]any{
 		"metric": r.metricRef("environment/air_temperature"), "form": "gauge", "code": "open", "at": "2026-10-07T17:42:05Z",
 	}); err != nil {
 		t.Fatalf("a coded value: %v", err)
 	}
-	_, err = r.patch(t, r.observation, "door", map[string]any{"value": quantity("1", "1")})
+	_, err = r.patch(t, r.observation, fid("door"), map[string]any{"value": quantity("1", "1")})
 	refused(t, "a patch adding a value beside the code", err, "never both")
 	// Switching shapes in one patch is a write that leaves one.
-	if _, err := r.patch(t, r.observation, "door", map[string]any{"code": nil, "value": quantity("21", "Cel")}); err != nil {
+	if _, err := r.patch(t, r.observation, fid("door"), map[string]any{"code": nil, "value": quantity("21", "Cel")}); err != nil {
 		t.Errorf("a patch switching code for value: %v", err)
 	}
-	_, err = r.patch(t, r.observation, "door", map[string]any{"value": nil})
+	_, err = r.patch(t, r.observation, fid("door"), map[string]any{"value": nil})
 	refused(t, "a patch leaving neither", err, "props.value: an observed value needs value or code")
-	if _, err := r.patch(t, r.observation, "door", map[string]any{"value": nil, "absentReason": "error"}); err != nil {
+	if _, err := r.patch(t, r.observation, fid("door"), map[string]any{"value": nil, "absentReason": "error"}); err != nil {
 		t.Errorf("a patch saying why there is none: %v", err)
 	}
 }
@@ -211,16 +211,16 @@ func TestObservedValueAndCodeAreExclusive(t *testing.T) {
 func TestObservedRulesHoldOnEveryWrite(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	if _, err := r.put(t, r.observation, "w", weighing(r)); err != nil {
+	if _, err := r.put(t, r.observation, fid("w"), weighing(r)); err != nil {
 		t.Fatalf("put: %v", err)
 	}
-	_, err := r.patch(t, r.observation, "w", map[string]any{"form": "counter", "hold": "PT1H"})
+	_, err := r.patch(t, r.observation, fid("w"), map[string]any{"form": "counter", "hold": "PT1H"})
 	refused(t, "a held counter", err, "props.hold: only a gauge holds its value; a counter does not")
-	_, err = r.patch(t, r.observation, "w", map[string]any{"form": "summary", "endsAt": "2026-10-08T00:00:00+03:00", "period": "day"})
+	_, err = r.patch(t, r.observation, fid("w"), map[string]any{"form": "summary", "endsAt": "2026-10-08T00:00:00+03:00", "period": "day"})
 	refused(t, "a summary without a statistic", err, "props.statistic: a summary names the statistic")
-	_, err = r.patch(t, r.observation, "w", map[string]any{"circular": true})
+	_, err = r.patch(t, r.observation, fid("w"), map[string]any{"circular": true})
 	refused(t, "a circular value in kilograms", err, "props.circular: averages an angle on the circle, and kg declares no turn")
-	_, err = r.patch(t, r.observation, "w", map[string]any{"value": map[string]any{"value": "0.5", "unit": "kg", "comparator": "<"}})
+	_, err = r.patch(t, r.observation, fid("w"), map[string]any{"value": map[string]any{"value": "0.5", "unit": "kg", "comparator": "<"}})
 	refused(t, "a comparator where none is declared", err, "admits a comparator only where it declares `comparator: true`")
 }
 
@@ -231,25 +231,25 @@ func TestObservedWriteRefusesAFallingRevision(t *testing.T) {
 	r := openObserved(t)
 	props := weighing(r)
 	props["revision"] = 3
-	if _, err := r.put(t, r.observation, "w", props); err != nil {
+	if _, err := r.put(t, r.observation, fid("w"), props); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	props["value"] = quantity("72.10", "kg")
-	if _, err := r.put(t, r.observation, "w", props); err != nil {
+	if _, err := r.put(t, r.observation, fid("w"), props); err != nil {
 		t.Errorf("an equal revision: %v", err)
 	}
 	props["revision"] = 2
 	props["value"] = quantity("71.00", "kg")
-	_, err := r.put(t, r.observation, "w", props)
+	_, err := r.put(t, r.observation, fid("w"), props)
 	refused(t, "a lower revision", err, "props.revision: 2 is below the stored revision 3")
-	if got := r.get(t, r.observation, "w").Properties["value"].(map[string]any)["value"]; got != "72.10" {
+	if got := r.get(t, r.observation, fid("w")).Properties["value"].(map[string]any)["value"]; got != "72.10" {
 		t.Errorf("the stale write landed: value %v", got)
 	}
 	// A patch that names no revision keeps the stored one.
-	if _, err := r.patch(t, r.observation, "w", map[string]any{"utcOffset": 120}); err != nil {
+	if _, err := r.patch(t, r.observation, fid("w"), map[string]any{"utcOffset": 120}); err != nil {
 		t.Errorf("a patch without a revision: %v", err)
 	}
-	_, err = r.patch(t, r.observation, "w", map[string]any{"revision": nil})
+	_, err = r.patch(t, r.observation, fid("w"), map[string]any{"revision": nil})
 	refused(t, "removing the revision", err, "props.revision: the stored revision 3 is never removed")
 }
 
@@ -258,7 +258,7 @@ func TestObservedWriteRefusesAFallingRevision(t *testing.T) {
 func TestObservedTraceStatsAreComputedAndNullsKept(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	id := "applehealth/iphone/garmin-forerunner-265/heart_rate/2026-10-07T06"
+	id := fid("applehealth/iphone/garmin-forerunner-265/heart_rate/2026-10-07T06")
 	if _, err := r.put(t, r.trace, id, map[string]any{
 		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "bpm", "hold": "PT4M",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
@@ -317,7 +317,7 @@ func TestObservedTraceSizeCountsItsStats(t *testing.T) {
 			"adapter": strings.Repeat("x", pad),
 		}
 	}
-	if _, err := r.put(t, r.trace, "probe", trace(0)); err != nil {
+	if _, err := r.put(t, r.trace, fid("probe"), trace(0)); err != nil {
 		t.Fatalf("put the probe: %v", err)
 	}
 	// The limit holds the row's properties: the hot times are columns
@@ -336,17 +336,17 @@ func TestObservedTraceSizeCountsItsStats(t *testing.T) {
 		}
 		return len(raw)
 	}
-	exact := vocabulary.MaxTraceBytes - size("probe")
-	if _, err := r.put(t, r.trace, "exact", trace(exact)); err != nil {
+	exact := vocabulary.MaxTraceBytes - size(fid("probe"))
+	if _, err := r.put(t, r.trace, fid("exact"), trace(exact)); err != nil {
 		t.Fatalf("create a trace stored at exactly the limit: %v", err)
 	}
-	if got := size("exact"); got != vocabulary.MaxTraceBytes {
+	if got := size(fid("exact")); got != vocabulary.MaxTraceBytes {
 		t.Fatalf("the stored trace is %d bytes, want %d", got, vocabulary.MaxTraceBytes)
 	}
-	if _, err := r.put(t, r.trace, "exact", trace(exact)); err != nil {
+	if _, err := r.put(t, r.trace, fid("exact"), trace(exact)); err != nil {
 		t.Errorf("the identical rewrite of a trace stored at exactly the limit: %v", err)
 	}
-	_, err := r.put(t, r.trace, "past", trace(exact+1))
+	_, err := r.put(t, r.trace, fid("past"), trace(exact+1))
 	refused(t, "a trace stored one byte past the limit", err, "a trace holds at most 1048576 (1 MiB)")
 }
 
@@ -355,7 +355,7 @@ func TestObservedTraceSizeCountsItsStats(t *testing.T) {
 func TestObservedTraceRefusesAZeroSpacing(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	_, err := r.put(t, r.trace, "zero", map[string]any{
+	_, err := r.put(t, r.trace, fid("zero"), map[string]any{
 		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "/min", "hold": "PT4M",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
 		"every": "PT0S", "values": []any{"1"},
@@ -368,7 +368,7 @@ func TestObservedTraceRefusesAZeroSpacing(t *testing.T) {
 func TestObservedLabResultHoldsExactlyOneShape(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
-	id := "medichecks/george/MC-2026-091422/tsh"
+	id := fid("medichecks/george/MC-2026-091422/tsh")
 	if _, err := r.put(t, r.labresult, id, map[string]any{
 		"metric": r.metricRef("labs/tsh"), "hold": "PT0S",
 		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},

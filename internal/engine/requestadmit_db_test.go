@@ -50,18 +50,18 @@ func accept(t *testing.T, ds substrate.Dataset, id string) error {
 // (and a body written by one) writes both.
 func TestFunctionProposalLandsAndApplies(t *testing.T) {
 	t.Parallel()
-	const propose = `
+	propose := `
 def main(input, host):
     return {"effects": [
         {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-wrapped",
          "properties": {"rationale": "the widget says so",
                         "diff": {"properties": {"description": "wrapped"}},
-                        "target": "samples.substrate.reamde.dev/tasks/task/t-wrapped"}},
+                        "target": "samples.substrate.reamde.dev/tasks/task/` + fid("t-wrapped") + `"}},
         {"action": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
          "id": "req-bare",
          "properties": {"diff": {"description": "bare"},
-                        "target": "samples.substrate.reamde.dev/tasks/task/t-bare"}}
+                        "target": "samples.substrate.reamde.dev/tasks/task/` + fid("t-bare") + `"}}
     ]}
 `
 	ds := newFnDataset(t,
@@ -70,17 +70,17 @@ def main(input, host):
 		})},
 		pyFn("proposer", map[string]any{}, []any{requestKind}, propose))
 
-	for _, id := range []string{"t-wrapped", "t-bare"} {
+	for _, id := range []string{fid("t-wrapped"), fid("t-bare")} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: taskType, ID: id, Properties: map[string]any{"name": "draft"},
 		})
 	}
-	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: fid("w-1"), Properties: map[string]any{"name": "w"}})
 	process(t, ds)
 
 	for _, c := range []struct{ request, target, want string }{
-		{"req-wrapped", "t-wrapped", "wrapped"},
-		{"req-bare", "t-bare", "bare"},
+		{"req-wrapped", fid("t-wrapped"), "wrapped"},
+		{"req-bare", fid("t-bare"), "bare"},
 	} {
 		req := mustGet(t, ds, requestKind, c.request)
 		if req.Properties["decision"] != "proposed" {
@@ -138,9 +138,9 @@ def main(input, host):
 		pyFn("badcreate", map[string]any{}, []any{requestKind}, badCreate))
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-victim", Properties: map[string]any{"name": "untouched"},
+		Kind: taskType, ID: fid("t-victim"), Properties: map[string]any{"name": "untouched"},
 	})
-	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: fid("w-1"), Properties: map[string]any{"name": "w"}})
 	process(t, ds)
 
 	for _, c := range []struct{ fn, request, reason string }{
@@ -161,7 +161,7 @@ def main(input, host):
 			t.Fatalf("%s: the malformed request landed: %v", c.fn, err)
 		}
 	}
-	if got := mustGet(t, ds, taskType, "t-victim"); got.Properties["name"] != "untouched" {
+	if got := mustGet(t, ds, taskType, fid("t-victim")); got.Properties["name"] != "untouched" {
 		t.Fatalf("the target moved: %+v", got.Properties)
 	}
 }
@@ -294,7 +294,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 				Kind: requestKind,
 				Properties: map[string]any{
 					"op":     "delete",
-					"target": []any{target, vocabulary.RecordPath(taskType, "t-other")},
+					"target": []any{target, vocabulary.RecordPath(taskType, fid("t-other"))},
 				},
 			},
 			names: `a reference is a "<kind>/<id>" path string`,
@@ -307,7 +307,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 				Kind: requestKind,
 				Properties: map[string]any{
 					"target": target,
-					"op":     "create", "targetKind": taskType, "targetId": "t-fresh",
+					"op":     "create", "targetKind": taskType, "targetId": fid("t-fresh"),
 					"diff": map[string]any{"properties": map[string]any{"name": "new"}},
 				},
 			},
@@ -320,7 +320,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 			in: substrate.PutInput{
 				Kind: requestKind,
 				Properties: map[string]any{
-					"op": "create", "targetKind": taskType, "targetId": "t-precondition",
+					"op": "create", "targetKind": taskType, "targetId": fid("t-precondition"),
 					"diff": map[string]any{
 						"properties": map[string]any{"name": "guarded"}, "ifVersion": 0,
 					},
@@ -417,10 +417,10 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 		t.Fatalf("install the gauge authority: %v", err)
 	}
 	safe := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gaugePackage + "/safegauge", ID: "g-safe", Properties: map[string]any{"apiKey": "public"},
+		Kind: gaugePackage + "/safegauge", ID: fid("g-safe"), Properties: map[string]any{"apiKey": "public"},
 	})
 	secret := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: gaugePackage + "/secretgauge", ID: "g-secret", Properties: map[string]any{"apiKey": "sk-stored"},
+		Kind: gaugePackage + "/secretgauge", ID: fid("g-secret"), Properties: map[string]any{"apiKey": "sk-stored"},
 	})
 
 	_, err := ds.Put(ctx, engram, substrate.PutInput{
@@ -479,7 +479,7 @@ def main(input, host):
     return {}
 `))
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-replayed", Properties: map[string]any{"name": "draft"},
+		Kind: taskType, ID: fid("t-replayed"), Properties: map[string]any{"name": "draft"},
 	})
 	fn := fnPackage + "/reproposer"
 

@@ -489,11 +489,11 @@ func TestAppleHealthAdapterOwnerCorrectionOutranksTheAdapter(t *testing.T) {
 
 	// The correction: the owner's scale, ranked first for body mass, and its
 	// reading at the same instant.
-	mustPut(t, ds, substrate.PutInput{Kind: obsSource, ID: "owner/scale", Properties: map[string]any{
+	mustPut(t, ds, substrate.PutInput{Kind: obsSource, ID: fid("owner/scale"), Properties: map[string]any{
 		"name": "My scale", "class": "scale", "priorities": map[string]any{bodyMass: 1},
 	}})
-	ownerSource := obsSource + "/owner/scale"
-	correction := mustPut(t, ds, substrate.PutInput{Kind: obsObservation, ID: "owner/body_mass/" + at, Properties: map[string]any{
+	ownerSource := obsSource + "/" + fid("owner/scale")
+	correction := mustPut(t, ds, substrate.PutInput{Kind: obsObservation, ID: fid("owner/body_mass/" + at), Properties: map[string]any{
 		"metric": map[string]any{"ref": bodyMass}, "source": map[string]any{"ref": ownerSource},
 		"form": "gauge", "hold": "PT0S", "value": map[string]any{"value": "71.8", "unit": "kg"},
 		"at": at, "utcOffset": 180,

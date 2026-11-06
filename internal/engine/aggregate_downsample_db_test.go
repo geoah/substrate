@@ -72,7 +72,7 @@ func TestAggregateDownsampleSaysWhereItsValuesLie(t *testing.T) {
 		case 35 * time.Minute, 40 * time.Minute, 80 * time.Minute:
 			value = "9"
 		}
-		f.mustPut(t, f.observation, "steps/"+at.Format("1504"), map[string]any{
+		f.mustPut(t, f.observation, fid("steps/"+at.Format("1504")), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity(value, "{steps}"), "at": at.Format(time.RFC3339), "endsAt": at.Add(time.Minute).Format(time.RFC3339), "utcOffset": 0,
 		})
@@ -174,7 +174,7 @@ func TestAggregateDownsampleAnswersWhereItsInstantsDoNotFit(t *testing.T) {
 		offsets = append(offsets, int64(s)*1000)
 		vals = append(vals, strconv.Itoa(55+(s/60*7)%61))
 	}
-	f.series("hr/dense", map[string]any{
+	f.series(fid("hr/dense"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("garmin"),
 		"form": "gauge", "unit": "/min", "hold": "PT4M", "utcOffset": 0,
 	}, start, start.Add(2*time.Hour), offsets, vals)
@@ -187,7 +187,7 @@ func TestAggregateDownsampleAnswersWhereItsInstantsDoNotFit(t *testing.T) {
 		case 20, 33:
 			value = "3"
 		}
-		f.mustPut(t, f.observation, "steps/"+at.Format("1504"), map[string]any{
+		f.mustPut(t, f.observation, fid("steps/"+at.Format("1504")), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity(value, "{steps}"), "at": at.Format(time.RFC3339), "endsAt": at.Add(time.Minute).Format(time.RFC3339), "utcOffset": 0,
 		})

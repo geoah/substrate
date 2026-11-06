@@ -1203,18 +1203,18 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 
 	t.Run("an ordinary put", func(t *testing.T) {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: swPackage + "/widget", ID: "declared",
+			Kind: swPackage + "/widget", ID: fid("declared"),
 			Properties: map[string]any{"name": "ok"},
 		})
 		_, err := ds.Put(ctx, owner, substrate.PutInput{
-			Kind: swPackage + "/widget", ID: "undeclared",
+			Kind: swPackage + "/widget", ID: fid("undeclared"),
 			Properties: map[string]any{"name": "ok", "color": "red"},
 		})
 		wantErr(t, err, substrate.ErrValidation, "a put carrying an undeclared property")
 		if !strings.Contains(fmt.Sprint(err), "not declared") {
 			t.Fatalf("the refusal must name the undeclared property: %v", err)
 		}
-		if _, err := ds.Get(ctx, swPackage+"/widget", "undeclared"); err == nil {
+		if _, err := ds.Get(ctx, swPackage+"/widget", fid("undeclared")); err == nil {
 			t.Fatal("the refused put landed a row")
 		}
 	})
@@ -1223,12 +1223,12 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 		closure := []map[string]any{vocabulary.PackageManifest(swInstallPackage, 0)}
 
 		_, err := ds.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
-			Kind: swPackage + "/widget", ID: "from-install",
+			Kind: swPackage + "/widget", ID: fid("from-install"),
 			Properties: map[string]any{"name": "ok", "color": "red"},
 		}}, substrate.BundleInstall{})
 		wantErr(t, err, substrate.ErrValidation, "an install's data document carrying an undeclared property")
 		// The whole install rolled back with it: no data row, and no closure.
-		if _, err := ds.Get(ctx, swPackage+"/widget", "from-install"); err == nil {
+		if _, err := ds.Get(ctx, swPackage+"/widget", fid("from-install")); err == nil {
 			t.Fatal("the refused data document landed a row")
 		}
 		if _, err := ds.Get(ctx, "substrate.reamde.dev/core/package", swInstallPackage); err == nil {
@@ -1237,12 +1237,12 @@ func TestAnUntouchedKindKeepsItsStoredDeclarationAtEveryDoor(t *testing.T) {
 
 		// The same install with a declared property admits both halves.
 		if _, err := ds.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
-			Kind: swPackage + "/widget", ID: "from-install",
+			Kind: swPackage + "/widget", ID: fid("from-install"),
 			Properties: map[string]any{"name": "ok"},
 		}}, substrate.BundleInstall{}); err != nil {
 			t.Fatalf("install: %v", err)
 		}
-		mustGet(t, ds, swPackage+"/widget", "from-install")
+		mustGet(t, ds, swPackage+"/widget", fid("from-install"))
 		mustGet(t, ds, "substrate.reamde.dev/core/package", swInstallPackage)
 	})
 }

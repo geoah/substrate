@@ -108,9 +108,9 @@ func TestAggregateEmptyRangeKeepsItsUnits(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	f.mustPut(t, f.metric, "load", map[string]any{"name": "Load"})
-	f.mustPut(t, f.observation, "load/1", map[string]any{
-		"metric": f.metricRef("load"), "source": f.sourceRef("scale"), "form": "gauge",
+	f.mustPut(t, f.metric, fid("load"), map[string]any{"name": "Load"})
+	f.mustPut(t, f.observation, fid("load/1"), map[string]any{
+		"metric": f.metricRef(fid("load")), "source": f.sourceRef("scale"), "form": "gauge",
 		"value": quantity("70.5", "kg"), "at": at(start), "hold": "PT5M",
 	})
 	for _, x := range []struct {
@@ -123,7 +123,7 @@ func TestAggregateEmptyRangeKeepsItsUnits(t *testing.T) {
 		{"an empty range in grams", "g", "g", start.AddDate(0, 0, 5), 0},
 	} {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
-			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("load")},
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath(fid("load"))},
 			Range:    rng(x.from, x.from.Add(time.Hour)),
 			Reducers: reducers("avg"),
 			Unit:     x.unit,
@@ -147,7 +147,7 @@ func TestAggregateFormsAtTheCutEndsAndInSummaries(t *testing.T) {
 		source string
 		at     time.Duration
 	}{{"early", 8 * time.Minute}, {"late", 110 * time.Minute}} {
-		f.mustPut(t, f.observation, "steps/"+x.source, map[string]any{
+		f.mustPut(t, f.observation, fid("steps/"+x.source), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "amount",
 			"value": quantity("5", "{steps}"), "at": at(start.Add(x.at)), "endsAt": at(start.Add(x.at + time.Minute)),
 		})
@@ -166,7 +166,7 @@ func TestAggregateFormsAtTheCutEndsAndInSummaries(t *testing.T) {
 			t.Errorf("cut ends: %s counts %s %s, want 1 amount", row.Group.Source, c, row.Form)
 		}
 	}
-	f.mustPut(t, f.observation, "hr/daily", map[string]any{
+	f.mustPut(t, f.observation, fid("hr/daily"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("ring"), "form": "summary",
 		"statistic": "avg", "period": "day", "value": quantity("58", "/min"), "at": at(start), "endsAt": at(start.AddDate(0, 0, 1)),
 	})
@@ -204,7 +204,7 @@ func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
 		vals[i] = strconv.Itoa(60 + i%40)
 	}
 	end := start.Add(n * 15 * time.Minute)
-	f.series("hr/long", map[string]any{
+	f.series(fid("hr/long"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge", "unit": "/min",
 	}, start, end, offsets, vals)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -247,7 +247,7 @@ func TestAggregateStopsInsideAReducer(t *testing.T) {
 		offsets[i] = int64(i) * 100
 		vals[i] = strconv.Itoa(40 + (i*7919)%120)
 	}
-	f.series("hr/dense", map[string]any{
+	f.series(fid("hr/dense"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge", "unit": "/min",
 	}, start, start.Add(n*100*time.Millisecond), offsets, vals)
 	median := substrate.AggregateReducer{Name: "percentile", Percentile: ptr(0.5)}
@@ -307,7 +307,7 @@ func TestAggregateCoverageFallbackCountsAgainstMaxSamples(t *testing.T) {
 		id       string
 		from, to time.Duration
 	}{{"a", 0, 35 * time.Minute}, {"b", 15 * time.Minute, 50 * time.Minute}} {
-		f.series("steps/phone/"+x.id, map[string]any{
+		f.series(fid("steps/phone/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
 		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{"1"})
 	}
@@ -349,12 +349,12 @@ func TestAggregateFormDiscoveryCountsAgainstMaxSamples(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 3 {
 		from := start.Add(time.Duration(8+i) * time.Minute)
-		f.mustPut(t, f.observation, "steps/cut/"+strconv.Itoa(i), map[string]any{
+		f.mustPut(t, f.observation, fid("steps/cut/"+strconv.Itoa(i)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity("1", "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
 		})
 		day := start.AddDate(0, 0, 2+i)
-		f.mustPut(t, f.observation, "hr/day/"+strconv.Itoa(i), map[string]any{
+		f.mustPut(t, f.observation, fid("hr/day/"+strconv.Itoa(i)), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "summary",
 			"statistic": "avg", "period": "day", "value": quantity("60", "/min"), "at": at(day), "endsAt": at(day.AddDate(0, 0, 1)),
 		})
@@ -409,7 +409,7 @@ func TestAggregateMaxSamplesAddsEveryStatement(t *testing.T) {
 		id, value string
 		from, to  time.Duration
 	}{{"cut", "5", 8 * time.Minute, 9 * time.Minute}, {"a", "1", 15 * time.Minute, 50 * time.Minute}, {"b", "1", 30 * time.Minute, time.Hour}} {
-		f.series("steps/phone/"+x.id, map[string]any{
+		f.series(fid("steps/phone/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
 		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{x.value})
 	}
@@ -453,11 +453,11 @@ func TestAggregateFormsComeFromTheRange(t *testing.T) {
 	f := openAgg(t)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	steps := f.metricRef("health/steps")
-	f.mustPut(t, f.observation, "phone/early", map[string]any{
+	f.mustPut(t, f.observation, fid("phone/early"), map[string]any{
 		"metric": steps, "source": f.sourceRef("phone"), "form": "amount", "value": quantity("10", "{steps}"),
 		"at": at(start), "endsAt": at(start.Add(10 * time.Minute)),
 	})
-	f.mustPut(t, f.observation, "phone/later", map[string]any{
+	f.mustPut(t, f.observation, fid("phone/later"), map[string]any{
 		"metric": steps, "source": f.sourceRef("phone"), "form": "gauge", "value": quantity("20", "{steps}"),
 		"at": at(start.Add(30 * time.Minute)),
 	})
@@ -480,7 +480,7 @@ func TestAggregateFormsComeFromTheRange(t *testing.T) {
 	hour := quarter
 	hour.Range = rng(start, start.Add(time.Hour))
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &hour}, "a row never mixes forms")
-	f.mustPut(t, f.observation, "phone/daily", map[string]any{
+	f.mustPut(t, f.observation, fid("phone/daily"), map[string]any{
 		"metric": steps, "source": f.sourceRef("phone"), "form": "summary", "statistic": "sum", "period": "day",
 		"value": quantity("100", "{steps}"), "at": at(start), "endsAt": at(start.Add(24 * time.Hour)),
 	})
@@ -501,11 +501,11 @@ func TestAggregateAmountCoverageIsAUnion(t *testing.T) {
 		id       string
 		from, to time.Duration
 	}{{"a", 0, 35 * time.Minute}, {"b", 15 * time.Minute, 50 * time.Minute}} {
-		f.series("steps/phone/"+x.id, map[string]any{
+		f.series(fid("steps/phone/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
 		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{"1"})
 	}
-	f.mustPut(t, f.observation, "phone/hour", map[string]any{
+	f.mustPut(t, f.observation, fid("phone/hour"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "summary", "statistic": "sum",
 		"period": "hour", "value": quantity("100", "{steps}"), "at": at(start), "endsAt": at(start.Add(time.Hour)),
 	})
@@ -540,7 +540,7 @@ func TestAggregateAmountCoverageIsAUnion(t *testing.T) {
 		from, to time.Duration
 		offset   int
 	}{{"long", 0, time.Hour, 180}, {"short", 5 * time.Minute, 35 * time.Minute, 0}} {
-		f.mustPut(t, f.observation, "watch/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("watch/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("watch"), "form": "amount",
 			"value": quantity("3", "{steps}"), "at": at(next.Add(x.from)), "endsAt": at(next.Add(x.to)), "utcOffset": x.offset,
 		})
@@ -562,7 +562,7 @@ func TestAggregateBucketBudgetCountsCodes(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i, code := range []string{"light", "deep"} {
 		from := start.Add(time.Duration(i) * 20 * time.Minute)
-		f.mustPut(t, f.observation, "stage/"+code, map[string]any{
+		f.mustPut(t, f.observation, fid("stage/"+code), map[string]any{
 			"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef("ring"), "form": "amount",
 			"value": quantity("5", "min"), "code": code, "at": at(from), "endsAt": at(from.Add(5 * time.Minute)),
 		})
@@ -604,7 +604,7 @@ func TestAggregateCounterInAnotherUnit(t *testing.T) {
 		id, value, unit string
 		at              time.Duration
 	}{{"first", "1", "kW.h", 0}, {"second", "2000", "W.h", 30 * time.Minute}} {
-		f.mustPut(t, f.observation, "meter/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("meter/"+x.id), map[string]any{
 			"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
 		})
@@ -659,12 +659,12 @@ func TestAggregateRecordedLocalDayFromRealPoints(t *testing.T) {
 		at        time.Duration
 		offset    int
 	}{{"a", "10", time.Minute, 180}, {"b", "20", 10 * time.Minute, -240}} {
-		f.mustPut(t, f.observation, "travel/steps/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("travel/steps/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("travel"), "form": "amount",
 			"value": quantity(x.value, "{steps}"), "at": at(noon.Add(x.at)), "endsAt": at(noon.Add(x.at + 5*time.Minute)),
 			"utcOffset": x.offset,
 		})
-		f.mustPut(t, f.observation, "travel/hr/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("travel/hr/"+x.id), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("travel"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": at(noon.Add(x.at)), "hold": "PT5M", "utcOffset": x.offset,
 		})
@@ -695,12 +695,12 @@ func TestAggregateRecordedLocalDayFromRealPoints(t *testing.T) {
 		at        time.Time
 		offset    int
 	}{{"1", "60", athensDay, 180}, {"2", "80", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC), -240}} {
-		f.mustPut(t, f.observation, "trip/hr/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("trip/hr/"+x.id), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("trip"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": at(x.at), "utcOffset": x.offset,
 		})
 	}
-	f.mustPut(t, f.observation, "trip/hr/day", map[string]any{
+	f.mustPut(t, f.observation, fid("trip/hr/day"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("trip"), "form": "summary",
 		"statistic": "avg", "period": "day", "value": quantity("70", "/min"),
 		"at": at(athensDay), "endsAt": at(athensDay.AddDate(0, 0, 1)), "utcOffset": 180,
@@ -734,7 +734,7 @@ func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
 		id, value string
 		at        time.Duration
 	}{{"before", "3", -2 * time.Minute}, {"after", "4", -time.Minute}} {
-		f.mustPut(t, f.observation, "odd/steps/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("odd/steps/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("odd"), "form": "amount",
 			"value": quantity(x.value, "{steps}"), "at": at(midnight.Add(x.at)), "endsAt": at(midnight.Add(x.at + 30*time.Second)),
 			"utcOffset": 1,
@@ -744,7 +744,7 @@ func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
 		id, value string
 		at        time.Duration
 	}{{"before", "60", -4 * time.Minute}, {"after", "80", -30 * time.Second}} {
-		f.mustPut(t, f.observation, "odd/hr/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("odd/hr/"+x.id), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("odd"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": midnight.Add(x.at).Format(time.RFC3339), "hold": "PT2M", "utcOffset": 1,
 		})
@@ -781,7 +781,7 @@ func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
 func TestAggregateRecordedLocalDayCarriedAtAnOddOffset(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	f.mustPut(t, f.metric, "door", map[string]any{"name": "Door"})
+	f.mustPut(t, f.metric, fid("door"), map[string]any{"name": "Door"})
 	midnight := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	for _, x := range []struct {
 		source string
@@ -799,13 +799,13 @@ func TestAggregateRecordedLocalDayCarriedAtAnOddOffset(t *testing.T) {
 				at     time.Time
 				offset int
 			}{{"open", midnight.Add(-16 * time.Minute), x.offset}, {"closed", midnight.Add(x.closed), 0}} {
-				f.mustPut(t, f.observation, "door/"+x.source+"/"+p.code, map[string]any{
-					"metric": f.metricRef("door"), "source": f.sourceRef(x.source), "form": "gauge", "code": p.code,
+				f.mustPut(t, f.observation, fid("door/"+x.source+"/"+p.code), map[string]any{
+					"metric": f.metricRef(fid("door")), "source": f.sourceRef(x.source), "form": "gauge", "code": p.code,
 					"at": p.at.Format(time.RFC3339), "utcOffset": p.offset,
 				})
 			}
 			res, _, _ := f.bothPaths(substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath(x.source)}}}, substrate.Aggregate{
-				Metric:   &substrate.AggregateMetric{Ref: f.metricPath("door")},
+				Metric:   &substrate.AggregateMetric{Ref: f.metricPath(fid("door"))},
 				Range:    rng(midnight.Add(-15*time.Minute), midnight.Add(15*time.Minute)),
 				Bucket:   &substrate.AggregateBucket{Calendar: "day"},
 				Reducers: []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}},
@@ -827,14 +827,15 @@ func TestAggregateRecordedLocalDayCarriedAtAnOddOffset(t *testing.T) {
 }
 
 // Points at one instant are first and last by record id on both paths:
-// `a-reversed` holds 2000 W.h and `z-reversed` 1 kW.h at 00:05, two rollup
-// groups by unit, and in W.h the first is 2000 and the last 1000.
+// `a-reversed` holds 2000 W.h and `c-reversed` 1 kW.h at 00:05 (their fids
+// sort in that order), two rollup groups by unit, and in W.h the first is
+// 2000 and the last 1000.
 func TestAggregateFirstAndLastBreakTiesByRecord(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	for _, x := range []struct{ id, value, unit string }{{"a-reversed", "2000", "W.h"}, {"z-reversed", "1", "kW.h"}} {
-		f.mustPut(t, f.observation, x.id, map[string]any{
+	for _, x := range []struct{ id, value, unit string }{{"a-reversed", "2000", "W.h"}, {"c-reversed", "1", "kW.h"}} {
+		f.mustPut(t, f.observation, fid(x.id), map[string]any{
 			"metric": f.metricRef("environment/energy"), "source": f.sourceRef("meter"), "form": "gauge",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(5 * time.Minute)),
 		})
@@ -866,7 +867,7 @@ func TestAggregateFilterConditionsIntersect(t *testing.T) {
 	f := openAgg(t)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i, src := range []string{"a", "b"} {
-		f.mustPut(t, f.observation, "door/"+src, map[string]any{
+		f.mustPut(t, f.observation, fid("door/"+src), map[string]any{
 			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef(src), "form": "gauge",
 			"code": []string{"open", "closed"}[i], "at": at(start.Add(time.Duration(i) * time.Minute)),
 		})
@@ -917,7 +918,7 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 		amount   int64
 		currency string
 	}{{1005, "EUR"}, {2, "JPY"}} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: strconv.Itoa(i), Properties: map[string]any{
+		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: fid(strconv.Itoa(i)), Properties: map[string]any{
 			"price": moneyValue(x.amount, x.currency), "paidAt": "2026-09-03T10:00:00Z",
 		}})
 	}
@@ -972,7 +973,7 @@ func TestAggregatePropertyPlacesARecordInLogSteps(t *testing.T) {
 	}
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i := range n {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: strconv.Itoa(i), Properties: map[string]any{
+		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: fid(strconv.Itoa(i)), Properties: map[string]any{
 			"price": moneyValue(100, "EUR"), "paidAt": start.Add(time.Duration(i)*time.Minute + 30*time.Second).Format(time.RFC3339),
 		}})
 	}
@@ -1003,7 +1004,7 @@ func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for i, v := range []string{"9007199254740993", "9007199254740992"} {
 		from := start.Add(time.Duration(1+20*i) * time.Minute)
-		f.mustPut(t, f.observation, "big/"+strconv.Itoa(i), map[string]any{
+		f.mustPut(t, f.observation, fid("big/"+strconv.Itoa(i)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("counter"), "form": "amount",
 			"value": quantity(v, "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
 		})
@@ -1053,7 +1054,7 @@ func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
 		id, value, unit string
 		at              time.Duration
 	}{{"celsius", "-273.14999999999999", "Cel", time.Minute}, {"kelvin", "0.000000000000001", "K", 20 * time.Minute}} {
-		f.mustPut(t, f.observation, "cold/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("cold/"+x.id), map[string]any{
 			"metric": f.metricRef("environment/air_temperature"), "source": f.sourceRef("cryostat"), "form": "gauge",
 			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
 		})
@@ -1102,7 +1103,7 @@ func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 1, 0, 0, time.UTC)
 	for i, minute := range []time.Duration{0, 59} {
 		from := start.Add(minute * time.Minute)
-		f.mustPut(t, f.observation, "col/"+strconv.Itoa(i), map[string]any{
+		f.mustPut(t, f.observation, fid("col/"+strconv.Itoa(i)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity("5", "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
 		})
@@ -1134,10 +1135,10 @@ func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
 	f := openAgg(t)
 	sleep := kindSleep
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	f.mustPut(t, sleep, "a-instant", map[string]any{"at": at(start)})
-	f.mustPut(t, sleep, "b-instant", map[string]any{"at": at(start.Add(time.Minute))})
-	f.mustPut(t, sleep, "c-night", map[string]any{"at": at(start.Add(time.Hour)), "endsAt": at(start.Add(3 * time.Hour))})
-	f.mustPut(t, f.observation, "steps/night", map[string]any{
+	f.mustPut(t, sleep, fid("a-instant"), map[string]any{"at": at(start)})
+	f.mustPut(t, sleep, fid("b-instant"), map[string]any{"at": at(start.Add(time.Minute))})
+	f.mustPut(t, sleep, fid("c-night"), map[string]any{"at": at(start.Add(time.Hour)), "endsAt": at(start.Add(3 * time.Hour))})
+	f.mustPut(t, f.observation, fid("steps/night"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 		"value": quantity("10", "{steps}"), "at": at(start.Add(90 * time.Minute)), "endsAt": at(start.Add(100 * time.Minute)),
 	})
@@ -1162,13 +1163,13 @@ func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 	f := openAgg(t)
 	sleep := kindSleep
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	f.mustPut(t, sleep, "night", map[string]any{"at": at(start), "endsAt": at(start.Add(2 * time.Hour))})
-	f.mustPut(t, sleep, "late", map[string]any{"at": at(start.Add(45 * time.Minute)), "endsAt": at(start.Add(105 * time.Minute))})
+	f.mustPut(t, sleep, fid("night"), map[string]any{"at": at(start), "endsAt": at(start.Add(2 * time.Hour))})
+	f.mustPut(t, sleep, fid("late"), map[string]any{"at": at(start.Add(45 * time.Minute)), "endsAt": at(start.Add(105 * time.Minute))})
 	for _, x := range []struct {
 		id, value string
 		from, to  time.Duration
 	}{{"before", "5", -5 * time.Minute, 0}, {"after", "10", 90 * time.Minute, 100 * time.Minute}} {
-		f.mustPut(t, f.observation, "steps/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("steps/"+x.id), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
 			"value": quantity(x.value, "{steps}"), "at": at(start.Add(x.from)), "endsAt": at(start.Add(x.to)),
 		})
@@ -1177,7 +1178,7 @@ func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 		id, value string
 		at        time.Duration
 	}{{"evening", "60", -time.Hour}, {"night", "80", 90 * time.Minute}} {
-		f.mustPut(t, f.observation, "hr/"+x.id, map[string]any{
+		f.mustPut(t, f.observation, fid("hr/"+x.id), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("phone"), "form": "gauge",
 			"value": quantity(x.value, "/min"), "at": at(start.Add(x.at)),
 		})
@@ -1188,7 +1189,7 @@ func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 			Metric: &substrate.AggregateMetric{Ref: f.metricPath(metric)},
 			Range:  rng(start, start.Add(time.Hour)),
 			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
-				Filter: substrate.Filter{Kinds: []string{sleep}, IDs: []string{id}},
+				Filter: substrate.Filter{Kinds: []string{sleep}, IDs: []string{fid(id)}},
 			}},
 			Reducers: reducers(reds...),
 		})
@@ -1229,7 +1230,7 @@ func TestAggregateRecordedLocalCarryFromTheWestKeepsEveryDay(t *testing.T) {
 	f := openAgg(t)
 	noon := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
 	for d := range 9 {
-		f.mustPut(t, f.observation, "mass/"+strconv.Itoa(d), map[string]any{
+		f.mustPut(t, f.observation, fid("mass/"+strconv.Itoa(d)), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 			"value": quantity(strconv.Itoa(70+d), "kg"), "at": at(noon.AddDate(0, 0, d)), "utcOffset": 0,
 		})
@@ -1268,19 +1269,19 @@ func TestAggregateRecordedLocalRowsKeepTheirOwnEnds(t *testing.T) {
 	london := time.FixedZone("", 3600)
 	day := time.Date(2026, 9, 24, 0, 0, 0, 0, london)
 	for h := range 22 {
-		f.mustPut(t, f.observation, "london/"+strconv.Itoa(h), map[string]any{
+		f.mustPut(t, f.observation, fid("london/"+strconv.Itoa(h)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "amount",
 			"value": quantity("500", "{steps}"), "at": at(day.Add(time.Duration(h) * time.Hour)),
 			"endsAt": at(day.Add(time.Duration(h+1) * time.Hour)), "utcOffset": 60,
 		})
 	}
-	f.mustPut(t, f.observation, "london/day", map[string]any{
+	f.mustPut(t, f.observation, fid("london/day"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "summary",
 		"statistic": "sum", "period": "day", "value": quantity("12000", "{steps}"),
 		"at": at(day), "endsAt": at(day.AddDate(0, 0, 1)), "utcOffset": 60,
 	})
 	athensAt := time.Date(2026, 9, 24, 0, 30, 0, 0, time.FixedZone("", 3*3600))
-	f.mustPut(t, f.observation, "athens/1", map[string]any{
+	f.mustPut(t, f.observation, fid("athens/1"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("athens"), "form": "amount",
 		"value": quantity("40", "{steps}"), "at": at(athensAt), "endsAt": at(athensAt.Add(10 * time.Minute)), "utcOffset": 180,
 	})
@@ -1336,7 +1337,7 @@ func TestAggregatePrioritySummaryRowTakesItsSourcesEnds(t *testing.T) {
 		offset        int
 	}{{"london", "12000", 60}, {"athens", "9000", 180}} {
 		day := time.Date(2026, 9, 24, 0, 0, 0, 0, time.FixedZone("", x.offset*60))
-		f.mustPut(t, f.observation, x.source+"/day", map[string]any{
+		f.mustPut(t, f.observation, fid(x.source+"/day"), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "summary",
 			"statistic": "sum", "period": "day", "value": quantity(x.steps, "{steps}"),
 			"at": at(day), "endsAt": at(day.AddDate(0, 0, 1)), "utcOffset": x.offset,
@@ -1381,7 +1382,7 @@ func TestAggregateRecordedLocalRowsTheRangeCutsSaySo(t *testing.T) {
 	london := time.FixedZone("", 3600)
 	start := time.Date(2026, 9, 20, 0, 0, 0, 0, london)
 	for h := range 72 {
-		f.mustPut(t, f.observation, "london/"+strconv.Itoa(h), map[string]any{
+		f.mustPut(t, f.observation, fid("london/"+strconv.Itoa(h)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "amount",
 			"value": quantity("10", "{steps}"), "at": at(start.Add(time.Duration(h) * time.Hour)),
 			"endsAt": at(start.Add(time.Duration(h)*time.Hour + 30*time.Minute)), "utcOffset": 60,
@@ -1420,12 +1421,12 @@ func TestAggregatePreferRawNeedsAPointInTheBucket(t *testing.T) {
 	f := openAgg(t)
 	day := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	for h := 0; h < 24; h += 3 {
-		f.mustPut(t, f.observation, "hr/"+strconv.Itoa(h), map[string]any{
+		f.mustPut(t, f.observation, fid("hr/"+strconv.Itoa(h)), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge",
 			"value": quantity(strconv.Itoa(60+h), "/min"), "at": at(day.Add(time.Duration(h) * time.Hour)),
 		})
 	}
-	f.mustPut(t, f.observation, "hr/day2", map[string]any{
+	f.mustPut(t, f.observation, fid("hr/day2"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "summary",
 		"statistic": "avg", "period": "day", "value": quantity("70", "/min"),
 		"at": at(day.AddDate(0, 0, 1)), "endsAt": at(day.AddDate(0, 0, 2)),
@@ -1458,7 +1459,7 @@ func TestAggregateRefusesAMetricReferenceThatNamesNone(t *testing.T) {
 	f := openAgg(t)
 	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	f.heartRate("strap", day, time.Hour, 0, time.Time{}, time.Time{})
-	f.mustPut(t, f.metric, "quiet", map[string]any{"name": "Quiet"})
+	f.mustPut(t, f.metric, fid("quiet"), map[string]any{"name": "Quiet"})
 	bucketed := func(ref string) substrate.AggregateQuery {
 		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 			Metric: &substrate.AggregateMetric{Ref: ref}, Range: rng(day, day.AddDate(0, 0, 1)), Reducers: reducers("avg"),
@@ -1473,14 +1474,14 @@ func TestAggregateRefusesAMetricReferenceThatNamesNone(t *testing.T) {
 			Downsample: &substrate.Downsample{Points: 10},
 		}
 	}
-	typo, trace := f.metricPath("health/heart_rat"), f.trace+"/hr/strap/2026-09-01T00"
+	typo, trace := f.metricPath("health/heart_rat"), f.trace+"/"+fid("hr/strap/2026-09-01T00")
 	for _, q := range []substrate.AggregateQuery{bucketed(typo), latest(typo), downsample(typo)} {
 		f.refusedAgg(q, typo+" names no metric")
 	}
 	for _, q := range []substrate.AggregateQuery{bucketed(trace), latest(trace)} {
 		f.refusedAgg(q, "not a metric")
 	}
-	for _, q := range []substrate.AggregateQuery{bucketed(f.metricPath("quiet")), latest(f.metricPath("quiet"))} {
+	for _, q := range []substrate.AggregateQuery{bucketed(f.metricPath(fid("quiet"))), latest(f.metricPath(fid("quiet")))} {
 		res, err := f.ds.Aggregate(context.Background(), q)
 		if err != nil || len(res.Rows) != 0 {
 			t.Errorf("a metric with no value: %v, %+v; want no rows", err, res)
@@ -1623,7 +1624,7 @@ func TestAggregateANullAloneMakesNoRow(t *testing.T) {
 		{"steps", "health/steps", "amount", "{steps}", "5"},
 		{"hr", "health/heart_rate", "gauge", "/min", "60"},
 	} {
-		f.series(x.id, map[string]any{
+		f.series(fid(x.id), map[string]any{
 			"metric": f.metricRef(x.metric), "source": f.sourceRef("phone"), "form": x.form, "unit": x.unit,
 		}, start, start.Add(time.Hour), []int64{20 * 60000, 40 * 60000}, []any{nil, x.value})
 		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
@@ -1789,13 +1790,13 @@ func customPlan(t *testing.T, db *sql.DB, st boundStatement) string {
 func TestAggregateRawReadKeepsAStreamWithAnExtentPastADuration(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	f.mustPut(t, f.observation, "long/1", map[string]any{
+	f.mustPut(t, f.observation, fid("long/1"), map[string]any{
 		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("long"), "form": "gauge",
 		"value": quantity("70", "kg"), "at": "2000-01-01T00:00:00Z", "endsAt": "2400-01-01T00:00:00Z",
 		"utcOffset": 0, "hold": "PT0S",
 	})
 	for i, at := range []string{"2026-10-07T10:01:00Z", "2026-10-07T10:05:00Z"} {
-		f.mustPut(t, f.observation, "long/"+strconv.Itoa(i+2), map[string]any{
+		f.mustPut(t, f.observation, fid("long/"+strconv.Itoa(i+2)), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("long"), "form": "gauge",
 			"value": quantity("71", "kg"), "at": at, "utcOffset": 0, "hold": "PT0S",
 		})

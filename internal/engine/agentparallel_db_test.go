@@ -186,7 +186,7 @@ func TestAgentOrderedCallWaitsForTheCallsBeforeIt(t *testing.T) {
 		fakeTurn{calls: []fakeCall{
 			{"scout", `{"input":"look left"}`},
 			{"write", toolArgs(t, map[string]any{
-				"op": "put", "kind": fanPackage + "/note", "id": "n-between",
+				"op": "put", "kind": fanPackage + "/note", "id": fid("n-between"),
 				"input": map[string]any{"properties": map[string]any{"name": "between"}},
 			})},
 			{"spotter", `{"input":"look right"}`},
@@ -203,12 +203,12 @@ func TestAgentOrderedCallWaitsForTheCallsBeforeIt(t *testing.T) {
 	}()
 	arrives(t, scoutIn, "scout at the model")
 	stillOpen(t, spotIn, "spotter, behind the write")
-	if _, err := ds.Get(ctx, fanPackage+"/note", "n-between"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, fanPackage+"/note", fid("n-between")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the write ran before the call ahead of it settled: %v", err)
 	}
 	close(scoutGo)
 	arrives(t, spotIn, "spotter after the write")
-	if _, err := ds.Get(ctx, fanPackage+"/note", "n-between"); err != nil {
+	if _, err := ds.Get(ctx, fanPackage+"/note", fid("n-between")); err != nil {
 		t.Fatalf("spotter started before the write ahead of it landed: %v", err)
 	}
 	close(spotGo)

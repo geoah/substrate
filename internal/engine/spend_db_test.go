@@ -179,7 +179,7 @@ func TestASpendCapHoldsAnAgentTriggerUntilTheCapIsRaised(t *testing.T) {
 	fake.script("capped", fakeTurn{content: "one"}, fakeTurn{content: "two"}, fakeTurn{content: "three"})
 
 	// 100 cents a run: the second is admitted at 100 of 150.
-	for _, id := range []string{"w1", "w2"} {
+	for _, id := range []string{fid("w1"), fid("w2")} {
 		putSpendWidget(t, ds, id)
 		spendPass(t, ds)
 	}
@@ -188,7 +188,7 @@ func TestASpendCapHoldsAnAgentTriggerUntilTheCapIsRaised(t *testing.T) {
 	}
 
 	// At 200 of 150 the third delivery is held, pass after pass.
-	owed := putSpendWidget(t, ds, "w3")
+	owed := putSpendWidget(t, ds, fid("w3"))
 	spendPass(t, ds)
 	spendPass(t, ds)
 	if n := threadCountOf(t, ds, spendPackage+"/capped"); n != 2 {
@@ -250,7 +250,7 @@ func TestAZeroSpendCapHoldsEveryRun(t *testing.T) {
 	refused("a chat", err)
 
 	trigger := putSpendTrigger(t, ds, "zero")
-	putSpendWidget(t, ds, "w1")
+	putSpendWidget(t, ds, fid("w1"))
 	_, err = ds.WakeTrigger(ctx, trigger)
 	refused("a wake", err)
 	spendPass(t, ds)
@@ -395,7 +395,7 @@ func TestASpendCapCountsARunStillInFlight(t *testing.T) {
 			t.Errorf("admission %d while the first run is in flight: %v", i, err)
 		}
 	}
-	putSpendWidget(t, ds, "w1")
+	putSpendWidget(t, ds, fid("w1"))
 	spendPass(t, ds)
 	if st := spendStatusOf(t, ds, trigger); st.Held != want {
 		t.Fatalf("held %q while the first run is in flight, want %q", st.Held, want)

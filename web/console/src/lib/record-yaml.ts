@@ -32,6 +32,7 @@ import {
 
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { isDeclarationKind } from "@/lib/declarations"
+import { kindPurpose } from "@/lib/definition"
 import { scalarText } from "@/lib/format"
 import {
   checkValue,
@@ -93,10 +94,30 @@ function specComment(units: UnitReader, spec: PropSpec): string {
   return ` ${out}`
 }
 
+/** Whether a NEW record of `kind` takes a minted id, and a create carrying
+ * any other id is refused (`engine.checkCreateID`, decision 0228). The kind
+ * says so in `ids.type` (`minted` or `named`); absent, an `internal` kind's
+ * ids are named and every other kind's minted. A declaration is named by its
+ * identity. */
+export function serverAssignsID(kind: KindInfo): boolean {
+  if (isDeclarationKind(kind.identity)) return false
+  const ids = kind.definition?.ids as { type?: unknown } | undefined
+  if (ids?.type === "named") return false
+  if (ids?.type === "minted") return true
+  return kindPurpose(kind) !== "internal"
+}
+
+/** The shape of a minted id (`vocabulary.MintedID`): a UUIDv7 as 26
+ * lowercase Crockford base32 characters, or a UUID's canonical lowercase
+ * text, the spelling the apps mint. */
+const MINTED_ID =
+  /^(?:[0-7][0-9a-hjkmnp-tv-z]{25}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
+
 /** The apply-able envelope a NEW record of `kind` starts from, as a yaml
- * Document with comments. `kind` is fixed to the kind reference; `metadata.id`
- * is blank (omit to let the substrate mint one); `data.properties` carries
- * every declared property, required first, each seeded and commented. */
+ * Document with comments. `kind` is fixed to the kind reference;
+ * `metadata.id` is there, blank, only on a kind whose writer names its
+ * records (`serverAssignsID`); `data.properties` carries every declared
+ * property, required first, each seeded and commented. */
 function templateDoc(units: UnitReader, kind: KindInfo): Document {
   // A MANAGED property is the engine's stamp, and it refuses a write that
   // disagrees with what it stamped, so a template that seeded one with a
@@ -106,9 +127,10 @@ function templateDoc(units: UnitReader, kind: KindInfo): Document {
   const properties: Record<string, unknown> = {}
   for (const spec of specs) properties[spec.name] = seedValue(spec)
 
+  const minted = serverAssignsID(kind)
   const doc = new Document({
     kind: kind.identity,
-    metadata: { id: "" },
+    ...(minted ? {} : { metadata: { id: "" } }),
     data: { properties },
   })
 
@@ -335,6 +357,20 @@ export function validateApplyDoc(
     problems.push({
       severity: "error",
       message: `\`metadata.id\` is required. A ${kind.name} carries its own id, so write one here.`,
+      path: "metadata.id",
+      line: lineOfKey(text, "id"),
+    })
+  }
+  if (
+    !ctx.record &&
+    serverAssignsID(kind) &&
+    typeof authored === "string" &&
+    authored.trim() &&
+    !MINTED_ID.test(authored.trim())
+  ) {
+    problems.push({
+      severity: "error",
+      message: `\`metadata.id\` is not a minted id. Remove the line and the substrate assigns one, or write a minted id: 26 lowercase Crockford base32 characters (the first 0 to 7), or a lowercase UUID.`,
       path: "metadata.id",
       line: lineOfKey(text, "id"),
     })

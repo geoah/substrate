@@ -102,7 +102,7 @@ func installReadingsDeclared(t *testing.T, overrides map[string]any, units func(
 		for k, v := range props {
 			in[k] = v
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: in}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: in}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
@@ -163,7 +163,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 	}
 	// A quantity declared `fts: true` indexes its value text, number and
 	// unit, so a search finds the record by either.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "tall", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("tall"), Properties: map[string]any{
 		"name": "tall", "height": qv("1.93", "m"),
 	}}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -262,7 +262,7 @@ func TestQuantityFilterNoStoredUnitConvertsIsEmpty(t *testing.T) {
 	ds := installReadings(t, map[string]map[string]any{
 		"heavy": {"weight": qv("80", "kg")},
 	})
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "rested", Properties: map[string]any{
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("rested"), Properties: map[string]any{
 		"name": "rested", "pulse": qv("58", "/min"),
 	}}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -300,7 +300,7 @@ func TestFilterByALevelWithoutUnits(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	for name, ph := range map[string]string{"neutral": "7", "acid": "4.5"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: map[string]any{
 			"name": name, "ph": qv(ph, "[pH]"),
 		}}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
@@ -381,7 +381,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 		t.Fatalf("declare weight as a length on a second kind: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: quantityPackage + "/span", ID: "ruler", Properties: map[string]any{"name": "ruler", "weight": qv("1", "m")},
+		Kind: quantityPackage + "/span", ID: fid("ruler"), Properties: map[string]any{"name": "ruler", "weight": qv("1", "m")},
 	}); err != nil {
 		t.Fatalf("put a span: %v", err)
 	}
@@ -589,11 +589,11 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 		"ten":   {"weight": qv("10", "kg"), "value": qv("10", "kg"), "score": 100},
 	} {
 		props["name"] = name
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: labelKind, ID: "tag", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: labelKind, ID: fid("tag"), Properties: map[string]any{
 		"weight": "heavy", "score": "high",
 	}}); err != nil {
 		t.Fatalf("put the label: %v", err)
@@ -662,8 +662,10 @@ func TestOrderByQuantityMintsAShortCursor(t *testing.T) {
 		if page.Cursor == "" {
 			break
 		}
-		if len(page.Cursor) > 300 {
-			t.Fatalf("the cursor is %d characters, want a digest of the order, not its text", len(page.Cursor))
+		// 300 held the cursor over one-character ids; the row's minted id is
+		// a key the cursor carries, encoded at four characters per three.
+		if limit := 300 + 4*len(fid("a"))/3; len(page.Cursor) > limit {
+			t.Fatalf("the cursor is %d characters, want at most %d: a digest of the order, not its text", len(page.Cursor), limit)
 		}
 		q.After = page.Cursor
 	}
@@ -736,7 +738,7 @@ func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
 		{shiftKind, "small", qv("10", "Cel")},
 		{shiftKind, "large", qv("20", "K")},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: row.kind, ID: row.name, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: row.kind, ID: fid(row.name), Properties: map[string]any{
 			"name": row.name, "change": row.change,
 		}}); err != nil {
 			t.Fatalf("put %s: %v", row.name, err)
@@ -900,7 +902,7 @@ func TestDroppingAQuantityDeltaIsANarrowing(t *testing.T) {
 		"warmer": {"drift": qv("0.3", "Cel")},
 	} {
 		props["name"] = name
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
@@ -916,14 +918,14 @@ func TestDroppingAQuantityDeltaIsANarrowing(t *testing.T) {
 	}
 	// Deleting the difference does not clear the way: a restore would read
 	// it again. Clearing the value does.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "warmer", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid("warmer"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err == nil ||
 		!strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), "1 deleted records") {
 		t.Fatalf("dropping delta over a deleted difference: err = %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "warmer", Properties: map[string]any{"name": "warmer", "drift": nil}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("warmer"), Properties: map[string]any{"name": "warmer", "drift": nil}}); err != nil {
 		t.Fatalf("restore and clear: %v", err)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err != nil {
@@ -981,12 +983,12 @@ func TestQuantityDeltaGuardFollowsTheRestore(t *testing.T) {
 			"linked": {"peer": []any{map[string]any{vocabulary.ReferenceValueKey: "target", "drift": qv("0.3", "Cel")}}},
 		} {
 			p["name"] = id
-			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: id, Properties: p}); err != nil {
+			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: p}); err != nil {
 				t.Fatalf("put %s: %v", id, err)
 			}
 		}
 		for _, id := range []string{"warmer", "linked"} {
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, id, substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
 				t.Fatalf("delete %s: %v", id, err)
 			}
 		}
@@ -1067,13 +1069,13 @@ func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 	put := func(id string, props map[string]any) {
 		t.Helper()
 		props["name"] = id
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
 	del := func(id string) {
 		t.Helper()
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, id, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -1274,7 +1276,7 @@ func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
 			got = append(got, r.Properties["name"].(string))
 		}
 		if pages == 0 {
-			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "hecto", Properties: map[string]any{
+			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("hecto"), Properties: map[string]any{
 				"name": "hecto", "weight": qv("30000", "hg"),
 			}}); err != nil {
 				t.Fatalf("put: %v", err)
@@ -1313,7 +1315,7 @@ func TestQuantityFilterRefusesUnboundedUnitSpellings(t *testing.T) {
 			if _, err := tx.put(substrate.PutInput{Kind: vocabulary.KindConversion, ID: id + "-g", Properties: conversionProps(id, "g", map[string]any{"factor": fmt.Sprint(i + 2)})}); err != nil {
 				return err
 			}
-			if _, err := tx.put(substrate.PutInput{Kind: readingKind, ID: fmt.Sprintf("r%03d", i), Properties: map[string]any{
+			if _, err := tx.put(substrate.PutInput{Kind: readingKind, ID: fid(fmt.Sprintf("r%03d", i)), Properties: map[string]any{
 				"name": fmt.Sprintf("r%03d", i), "weight": qv("1", id),
 			}}); err != nil {
 				return err

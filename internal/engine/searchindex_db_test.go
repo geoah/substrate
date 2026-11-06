@@ -33,7 +33,7 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	}
 	const person = "samples.substrate.reamde.dev/people/person"
 	before := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: person, ID: "ada",
+		Kind: person, ID: fid("ada"),
 		Properties: map[string]any{"name": "Ada", "emails": []any{"ada@inbox.example"}},
 	})
 
@@ -60,7 +60,7 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	if _, err := raw.ExecContext(ctx, `
 		UPDATE records SET fts = setweight(to_tsvector('english', title), 'A') ||
 		                         setweight(to_tsvector('english', props->'emails'->>0), 'B')
-		WHERE kind = $1 AND id = 'ada'`, person); err != nil {
+		WHERE kind = $1 AND id = $2`, person, fid("ada")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := raw.ExecContext(ctx, `UPDATE search_index SET version = 1`); err != nil {
@@ -83,13 +83,13 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("the reindex the reopen started did not finish within a minute")
 	}
-	if hits := searchIDs(t, ds2, "inbox"); len(hits) != 1 || hits[0] != "ada" {
+	if hits := searchIDs(t, ds2, "inbox"); len(hits) != 1 || hits[0] != fid("ada") {
 		t.Fatalf("after the reopen, search inbox = %v, want [ada]", hits)
 	}
 	if v := version(); v != engine.SearchIndexVersion {
 		t.Fatalf("the reopen recorded search index version %d, want %d", v, engine.SearchIndexVersion)
 	}
-	after, err := ds2.Get(ctx, person, "ada")
+	after, err := ds2.Get(ctx, person, fid("ada"))
 	if err != nil {
 		t.Fatal(err)
 	}

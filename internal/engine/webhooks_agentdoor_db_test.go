@@ -145,7 +145,7 @@ func installSignedAgentBundle(t *testing.T, ds *dataset, fake *fakeLLM, clientSe
 		t.Fatalf("install the signed agent bundle: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: sigBundlePackage + "/sigconfig", ID: "default",
+		Kind: sigBundlePackage + "/sigconfig", ID: fid("default"),
 		Properties: map[string]any{"clientId": "client-1", "clientSecret": clientSecret},
 	}); err != nil {
 		t.Fatalf("put the client record: %v", err)

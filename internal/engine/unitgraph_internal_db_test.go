@@ -374,11 +374,11 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 	} {
 		putUnit(t, ds, u.id, map[string]any{"name": u.id, "code": u.code})
 	}
-	putHold(t, ds, "nested", map[string]any{"parts": map[string]any{"mass": qty("3", "g")}})
-	putHold(t, ds, "listed", map[string]any{"samples": []any{qty("1", "kg"), qty("2", "[oz_av]")}})
-	putHold(t, ds, "linked", map[string]any{"peer": map[string]any{"ref": holdKind + "/nested", "load": qty("4", "m")}})
-	putHold(t, ds, "gone", map[string]any{"weight": qty("5", "mg")})
-	if err := deleteRecord(ds, holdKind, "gone", false); err != nil {
+	putHold(t, ds, fid("nested"), map[string]any{"parts": map[string]any{"mass": qty("3", "g")}})
+	putHold(t, ds, fid("listed"), map[string]any{"samples": []any{qty("1", "kg"), qty("2", "[oz_av]")}})
+	putHold(t, ds, fid("linked"), map[string]any{"peer": map[string]any{"ref": holdKind + "/" + fid("nested"), "load": qty("4", "m")}})
+	putHold(t, ds, fid("gone"), map[string]any{"weight": qty("5", "mg")})
+	if err := deleteRecord(ds, holdKind, fid("gone"), false); err != nil {
 		t.Fatalf("tombstone the hold: %v", err)
 	}
 	// g sits between lb and kg, so its conversions go with it in each case
@@ -406,7 +406,7 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 	if err := deleteRecord(ds, vocabulary.KindUnit, "L", false); err != nil {
 		t.Errorf("delete an unused unit: %v", err)
 	}
-	if err := deleteRecord(ds, holdKind, "gone", true); err != nil {
+	if err := deleteRecord(ds, holdKind, fid("gone"), true); err != nil {
 		t.Fatalf("purge the hold: %v", err)
 	}
 	if err := deleteRecord(ds, vocabulary.KindUnit, "mg", false); err != nil {
@@ -429,14 +429,14 @@ func TestATraceAndAMetricUseTheirUnit(t *testing.T) {
 	putConversion(t, ds, "degX-K", "degX", "K", map[string]any{"factor": "2", "offset": "100"})
 	ctx := context.Background()
 	for id, unit := range map[string]string{"test_mass": "lb", "test_temperature": "K"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: id, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: fid(id), Properties: map[string]any{
 			"name": id, "unit": unitRef(unit), "form": "gauge",
 		}}); err != nil {
 			t.Fatalf("put the metric %s: %v", id, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: trace, ID: "t1", Properties: map[string]any{
-		"metric": map[string]any{"ref": metric + "/test_temperature"}, "form": "gauge", "unit": "[degX]",
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: trace, ID: fid("t1"), Properties: map[string]any{
+		"metric": map[string]any{"ref": metric + "/" + fid("test_temperature")}, "form": "gauge", "unit": "[degX]",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "utcOffset": 0,
 		"offsets": []any{0, 60000}, "values": []any{"20", "21"}, "revision": 1,
 	}}); err != nil {
@@ -470,8 +470,8 @@ func TestDisconnectingUsedUnitsIsRefused(t *testing.T) {
 	ds := openUnitsDataset(t)
 	ctx := context.Background()
 	putUnit(t, ds, "oz", map[string]any{"name": "ounce", "code": "[oz_av]"})
-	putHold(t, ds, "pounds", map[string]any{"weight": qty("150", "[lb_av]")})
-	putHold(t, ds, "kilos", map[string]any{"weight": qty("70", "kg")})
+	putHold(t, ds, fid("pounds"), map[string]any{"weight": qty("150", "[lb_av]")})
+	putHold(t, ds, fid("kilos"), map[string]any{"weight": qty("70", "kg")})
 
 	wantConflict(t, "a deleted conversion", deleteRecord(ds, vocabulary.KindConversion, "lb-g", false), "leaves")
 	wantConflict(t, "a deleted intermediate unit", ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
@@ -507,8 +507,8 @@ func TestDisconnectingUsedUnitsIsRefused(t *testing.T) {
 func TestChangingAFactorIsAdmitted(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
-	putHold(t, ds, "pounds", map[string]any{"weight": qty("150", "[lb_av]")})
-	putHold(t, ds, "kilos", map[string]any{"weight": qty("70", "kg")})
+	putHold(t, ds, fid("pounds"), map[string]any{"weight": qty("150", "[lb_av]")})
+	putHold(t, ds, fid("kilos"), map[string]any{"weight": qty("70", "kg")})
 	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "454"})
 	tab, err := ds.Units(context.Background())
 	if err != nil {
@@ -519,7 +519,7 @@ func TestChangingAFactorIsAdmitted(t *testing.T) {
 			t.Errorf("lb = %+v, want factor 454 to g", u)
 		}
 	}
-	rec, err := ds.Get(context.Background(), holdKind, "pounds")
+	rec, err := ds.Get(context.Background(), holdKind, fid("pounds"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,8 +592,8 @@ func TestUnitUsesAreDerivedBehindTheOpen(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
 	ctx := context.Background()
-	putHold(t, ds, "pounds", map[string]any{"weight": qty("150", "[lb_av]")})
-	putHold(t, ds, "kilos", map[string]any{"weight": qty("70", "kg")})
+	putHold(t, ds, fid("pounds"), map[string]any{"weight": qty("150", "[lb_av]")})
+	putHold(t, ds, fid("kilos"), map[string]any{"weight": qty("70", "kg")})
 	// The state a store upgraded through 0016 is in: rows, no uses, no version.
 	for _, q := range []string{`DELETE FROM unit_uses`, `DELETE FROM unit_uses_index`} {
 		if _, err := ds.db.ExecContext(ctx, q); err != nil {
@@ -638,8 +638,8 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 		{"greek_mu", "μg", "ug"},
 		{"square", "m²", "m2"},
 	} {
-		putHold(t, ds, h.id, map[string]any{"weight": qty("1", h.unit)})
-		rec, err := ds.Get(ctx, holdKind, h.id)
+		putHold(t, ds, fid(h.id), map[string]any{"weight": qty("1", h.unit)})
+		rec, err := ds.Get(ctx, holdKind, fid(h.id))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -647,7 +647,7 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 			t.Fatalf("the hold %s stores unit %q, want the id %q of the %q its writer sent", h.id, got, h.stored, h.unit)
 		}
 	}
-	if err := deleteRecord(ds, holdKind, "greek_mu", false); err != nil {
+	if err := deleteRecord(ds, holdKind, fid("greek_mu"), false); err != nil {
 		t.Fatalf("tombstone the hold: %v", err)
 	}
 	deleteUG := func() error {
@@ -662,11 +662,11 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 	}
 	wantConflict(t, "a micro sign", deleteUG(), "a stored value of "+holdKind)
 	wantConflict(t, "a superscript", deleteRecord(ds, vocabulary.KindUnit, "m2", false), "a stored value of "+holdKind)
-	if err := deleteRecord(ds, holdKind, "micro_sign", true); err != nil {
+	if err := deleteRecord(ds, holdKind, fid("micro_sign"), true); err != nil {
 		t.Fatalf("purge the micro sign hold: %v", err)
 	}
 	wantConflict(t, "a Greek mu on a tombstone", deleteUG(), "a stored value of "+holdKind)
-	if err := deleteRecord(ds, holdKind, "greek_mu", true); err != nil {
+	if err := deleteRecord(ds, holdKind, fid("greek_mu"), true); err != nil {
 		t.Fatalf("purge the tombstone: %v", err)
 	}
 	if err := deleteUG(); err != nil {

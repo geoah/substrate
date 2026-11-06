@@ -54,7 +54,7 @@ func TestAggregateRollingReadsTheBucketsBeforeTheRange(t *testing.T) {
 		if d == 6 {
 			continue
 		}
-		f.mustPut(t, f.observation, fmt.Sprintf("w/%d", d), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("w/%d", d)), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 			"value": quantity(fmt.Sprint(70+d), "kg"), "at": first.AddDate(0, 0, d).Add(7 * time.Hour).Format(time.RFC3339),
 			"hold": "PT0S", "utcOffset": 180,
@@ -145,13 +145,13 @@ func TestAggregateRollingTakesASplitLocalDayOnce(t *testing.T) {
 	plus3 := time.FixedZone("", 3*3600)
 	first := time.Date(2026, 9, 1, 0, 0, 0, 0, plus3)
 	for d := range 9 {
-		f.mustPut(t, f.observation, fmt.Sprintf("w/%d", d), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("w/%d", d)), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 			"value": quantity(fmt.Sprint(70+d), "kg"), "at": first.AddDate(0, 0, d).Add(7 * time.Hour).Format(time.RFC3339),
 			"hold": "PT0S", "utcOffset": 180,
 		})
 	}
-	f.mustPut(t, f.observation, "w/west", map[string]any{
+	f.mustPut(t, f.observation, fid("w/west"), map[string]any{
 		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 		"value": quantity("90", "kg"), "at": time.Date(2026, 9, 5, 18, 0, 0, 0, time.FixedZone("", -4*3600)).Format(time.RFC3339),
 		"hold": "PT0S", "utcOffset": -240,
@@ -210,7 +210,7 @@ func TestAggregateRollingLookbackIsNotCountedAgainstMaxBuckets(t *testing.T) {
 	first := time.Date(2026, 9, 1, 0, 0, 0, 0, plus3)
 	for d := range 10 {
 		for _, source := range []string{"scale", "phone"} {
-			f.mustPut(t, f.observation, fmt.Sprintf("w/%s/%d", source, d), map[string]any{
+			f.mustPut(t, f.observation, fid(fmt.Sprintf("w/%s/%d", source, d)), map[string]any{
 				"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(source), "form": "gauge",
 				"value": quantity(fmt.Sprint(70+d), "kg"), "at": first.AddDate(0, 0, d).Add(7 * time.Hour).Format(time.RFC3339),
 				"hold": "PT0S", "utcOffset": 180,
@@ -279,7 +279,7 @@ func TestAggregateRollingKeepsACensoredValuesBound(t *testing.T) {
 		if x.comparator != "" {
 			value["comparator"] = x.comparator
 		}
-		f.mustPut(t, f.labresult, fmt.Sprintf("lab/tsh/%d", i), map[string]any{
+		f.mustPut(t, f.labresult, fid(fmt.Sprintf("lab/tsh/%d", i)), map[string]any{
 			"metric": f.metricRef("labs/tsh"), "form": "gauge", "hold": "PT0S", "value": value,
 			"at": day.AddDate(0, 0, i).Add(8 * time.Hour).Format(time.RFC3339), "utcOffset": 0,
 		})

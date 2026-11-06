@@ -175,13 +175,13 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 	ds := openInternalDataset(t)
 	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
 	installStreamSync(t, ds, lastAt, map[string][]string{
-		"inbox":  {"mail", "files"},
-		"outbox": {"files"},
+		fid("inbox"):  {"mail", "files"},
+		fid("outbox"): {"files"},
 	})
 
 	// A record-sourced delivery of the mail sync parks on inbox.
 	parked := lastAt.Add(10 * time.Minute)
-	parkStreamSync(t, ds, -1, "mail-on-request", "inbox",
+	parkStreamSync(t, ds, -1, "mail-on-request", fid("inbox"),
 		"RuntimeError: mail: HTTP 403\nTraceback (most recent call last):", parked)
 
 	failures, err := ds.TriggerFailures(ctx, "mail-on-request")
@@ -190,7 +190,7 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 	}
 
 	got := streamSyncStatuses(t, ds)
-	inbox := got["inbox"]
+	inbox := got[fid("inbox")]
 	if mail := inbox.Streams["mail"]; mail.State != substrate.SyncStateErroring || mail.Message != "RuntimeError: mail: HTTP 403" {
 		t.Fatalf("inbox mail = %+v, want erroring with the park's first line", mail)
 	}
@@ -205,7 +205,7 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 			inbox.State, inbox.Parked, inbox.Error)
 	}
 	// A park that named inbox is not outbox's.
-	if outbox := got["outbox"]; outbox.State != substrate.SyncStateOK || outbox.Parked != 0 ||
+	if outbox := got[fid("outbox")]; outbox.State != substrate.SyncStateOK || outbox.Parked != 0 ||
 		outbox.Streams["files"].State != substrate.SyncStateOK {
 		t.Fatalf("outbox = %+v, want it untouched by inbox's park", outbox)
 	}
@@ -215,12 +215,12 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 	scheduled := lastAt.Add(20 * time.Minute)
 	parkStreamSync(t, ds, -2, "mail-scheduled", "", "run: runner: invocation exceeded 1m0s", scheduled)
 	got = streamSyncStatuses(t, ds)
-	inbox = got["inbox"]
+	inbox = got[fid("inbox")]
 	if mail := inbox.Streams["mail"]; mail.State != substrate.SyncStateErroring ||
 		mail.Message != "run: runner: invocation exceeded 1m0s" || inbox.Parked != 2 {
 		t.Fatalf("inbox mail = %+v, parked %d; want the newer scheduled park's reason over two parks", mail, inbox.Parked)
 	}
-	outbox := got["outbox"]
+	outbox := got[fid("outbox")]
 	if _, listed := outbox.Streams["mail"]; listed {
 		t.Fatalf("outbox streams = %+v, want no mail stream added by a park that named no account", outbox.Streams)
 	}
@@ -232,11 +232,11 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 	// The mail stream completes a run after both parks: its own word stands
 	// again, while the account still has no completed run since the parks.
 	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
-	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{
+	setStreamSync(t, ds, actor, fid("inbox"), map[string]any{"syncStreams": map[string]any{
 		"mail":  map[string]any{"state": "ok", "message": "mail caught up", "lastAt": scheduled.Add(time.Minute).Format(time.RFC3339Nano)},
 		"files": map[string]any{"state": "ok", "message": "files is current", "lastAt": lastAt.Format(time.RFC3339Nano)},
 	}})
-	inbox = streamSyncStatuses(t, ds)["inbox"]
+	inbox = streamSyncStatuses(t, ds)[fid("inbox")]
 	if mail := inbox.Streams["mail"]; mail.State != substrate.SyncStateOK || mail.Message != "mail caught up" {
 		t.Fatalf("inbox mail after a later completed run = %+v, want its own ok", mail)
 	}
@@ -253,15 +253,15 @@ func TestSyncStatusAStreamlessParkMarksTheAccountAlone(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
-	installStreamSync(t, ds, lastAt, map[string][]string{"inbox": {"mail", "files"}})
+	installStreamSync(t, ds, lastAt, map[string][]string{fid("inbox"): {"mail", "files"}})
 
-	parkStreamSync(t, ds, -1, "plain-on-request", "inbox", "RuntimeError: plain broke", lastAt.Add(10*time.Minute))
+	parkStreamSync(t, ds, -1, "plain-on-request", fid("inbox"), "RuntimeError: plain broke", lastAt.Add(10*time.Minute))
 
 	failures, err := ds.TriggerFailures(ctx, "plain-on-request")
 	if err != nil || len(failures) != 1 || failures[0].Stream != "" {
 		t.Fatalf("plain-on-request parked = %+v (%v), want one naming no stream", failures, err)
 	}
-	inbox := streamSyncStatuses(t, ds)["inbox"]
+	inbox := streamSyncStatuses(t, ds)[fid("inbox")]
 	if inbox.State != substrate.SyncStateErroring || inbox.Parked != 1 ||
 		!strings.Contains(inbox.Error, "RuntimeError: plain broke") {
 		t.Fatalf("inbox = state %q, parked %d, error %q; want the account erroring on the park",
@@ -284,13 +284,13 @@ func TestSyncStatusTheAccountsOwnParkWinsATie(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
 	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
-	installStreamSync(t, ds, lastAt, map[string][]string{"inbox": {"mail", "files"}})
+	installStreamSync(t, ds, lastAt, map[string][]string{fid("inbox"): {"mail", "files"}})
 
 	at := lastAt.Add(10 * time.Minute)
-	parkStreamSync(t, ds, 10, "plain-on-request", "inbox", "RuntimeError: the account's own park", at)
+	parkStreamSync(t, ds, 10, "plain-on-request", fid("inbox"), "RuntimeError: the account's own park", at)
 	parkStreamSync(t, ds, 11, "mail-scheduled", "", "RuntimeError: the schedule's park", at)
 
-	inbox := streamSyncStatuses(t, ds)["inbox"]
+	inbox := streamSyncStatuses(t, ds)[fid("inbox")]
 	if inbox.Parked != 2 {
 		t.Fatalf("inbox parked = %d, want both parks counted", inbox.Parked)
 	}
@@ -311,18 +311,18 @@ func TestSyncStreamsWriteMergesPerStream(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
-	installStreamSync(t, ds, lastAt, map[string][]string{"inbox": {"mail", "files"}})
+	installStreamSync(t, ds, lastAt, map[string][]string{fid("inbox"): {"mail", "files"}})
 	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
 
 	// The files delivery commits its newer entry; the mail delivery, which
 	// read the record before that, then writes its own entry alone.
-	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{
+	setStreamSync(t, ds, actor, fid("inbox"), map[string]any{"syncStreams": map[string]any{
 		"files": map[string]any{"state": "erroring", "message": "files broke", "requestedAck": "2026-10-13T10:00:00Z"},
 	}})
-	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{
+	setStreamSync(t, ds, actor, fid("inbox"), map[string]any{"syncStreams": map[string]any{
 		"mail": map[string]any{"state": "ok", "message": "mail caught up"},
 	}})
-	inbox := streamSyncStatuses(t, ds)["inbox"]
+	inbox := streamSyncStatuses(t, ds)[fid("inbox")]
 	if files := inbox.Streams["files"]; files.State != substrate.SyncStateErroring || files.Message != "files broke" ||
 		files.RequestedAck == nil {
 		t.Fatalf("files = %+v after a write naming mail alone, want its own erroring entry kept", files)
@@ -331,8 +331,8 @@ func TestSyncStreamsWriteMergesPerStream(t *testing.T) {
 		t.Fatalf("mail = %+v, want the entry the write named", mail)
 	}
 
-	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{"files": nil}})
-	inbox = streamSyncStatuses(t, ds)["inbox"]
+	setStreamSync(t, ds, actor, fid("inbox"), map[string]any{"syncStreams": map[string]any{"files": nil}})
+	inbox = streamSyncStatuses(t, ds)[fid("inbox")]
 	if _, listed := inbox.Streams["files"]; listed || inbox.Streams["mail"].Message != "mail caught up" {
 		t.Fatalf("streams = %+v after a null files entry, want files removed and mail kept", inbox.Streams)
 	}

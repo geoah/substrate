@@ -1203,22 +1203,22 @@ func TestOAuthStartTakesTheAccountsFullIdentity(t *testing.T) {
 		t.Fatalf("install the second bundle: %v", err)
 	}
 	mail := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mbAccountType, ID: "owner",
+		Kind: mbAccountType, ID: fid("owner"),
 		Properties: map[string]any{"address": "geo@example.com", "enabledMail": true},
 	})
 	chat := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: chatAccountType, ID: "owner", Properties: map[string]any{"handle": "geo"},
+		Kind: chatAccountType, ID: fid("owner"), Properties: map[string]any{"handle": "geo"},
 	})
 
 	// The bare id is refused as a bare id, not as an ambiguity, and the
 	// refusal hands back both identities, in kind order, in the spelling that
 	// works.
-	_, err := ds.StartOAuth(ctx, owner, "owner")
+	_, err := ds.StartOAuth(ctx, owner, fid("owner"))
 	wantErr(t, err, substrate.ErrValidation, "a bare id held by two account kinds")
 	for _, want := range []string{
-		`"owner" is a bare record id`,
+		`"` + fid("owner") + `" is a bare record id`,
 		"named in full as <authority>/<package>/<kind>/<id>",
-		"this repository holds " + chatAccountType + "/owner, " + mbAccountType + "/owner",
+		"this repository holds " + chatAccountType + "/" + fid("owner") + ", " + mbAccountType + "/" + fid("owner"),
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q: %v", want, err)

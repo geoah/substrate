@@ -1279,7 +1279,7 @@ func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
 	dir := repoDirOf(t, svc, ds)
 
 	fault.arm(engine.CommitAfterCommit)
-	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: "committed", Properties: map[string]any{"name": "committed"}})
+	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: fid("committed"), Properties: map[string]any{"name": "committed"}})
 	if !errors.Is(err, errCrash) {
 		t.Fatalf("the write did not die at the seam: %v", err)
 	}
@@ -1304,7 +1304,7 @@ func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds2.Get(ctx, taskKind, "committed"); err != nil {
+	if _, err := ds2.Get(ctx, taskKind, fid("committed")); err != nil {
 		t.Fatalf("the committed write is not readable after the boot: %v", err)
 	}
 }
@@ -1877,7 +1877,7 @@ func TestACommitInDoubtIsCaughtUpByTheNextWrite(t *testing.T) {
 		t.Fatalf("sealed/ holds %d files after the doubted commit, want %d", n, sealedBefore)
 	}
 
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, ID: "next", Properties: map[string]any{"name": "next"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, ID: fid("next"), Properties: map[string]any{"name": "next"}})
 	if got := maxSeq(t, ds); got <= doubted {
 		t.Fatalf("the next write did not reach the table: head %d, was %d", got, doubted)
 	}
@@ -1990,7 +1990,7 @@ func TestAVocabularyCommitInDoubtLatchesAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: narrowingPackage + "/note", ID: "after", Properties: map[string]any{"name": "after"}})
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: narrowingPackage + "/note", ID: fid("after"), Properties: map[string]any{"name": "after"}})
 }
 
 // A boot import of a long history takes minutes and its batches and fold

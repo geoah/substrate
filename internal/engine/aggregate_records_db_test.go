@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,13 +21,13 @@ import (
 // [start, start+span) and its stage amounts laid end to end from stagesAt.
 func (f aggFix) sleepNight(source string, n int, start time.Time, span time.Duration, stagesAt time.Time, stages []stage) {
 	f.t.Helper()
-	f.mustPut(f.t, kindSleep, fmt.Sprintf("%s/%d", source, n), map[string]any{
+	f.mustPut(f.t, kindSleep, aggRecordID(fmt.Sprintf("%s/%d", source, n)), map[string]any{
 		"source": f.sourceRef(source), "at": start.Format(time.RFC3339Nano), "endsAt": start.Add(span).Format(time.RFC3339Nano),
 		"utcOffsetStart": 180, "utcOffsetEnd": 180,
 	})
 	at := stagesAt
 	for i, s := range stages {
-		f.mustPut(f.t, f.observation, fmt.Sprintf("%s/%d/stage/%d", source, n, i), map[string]any{
+		f.mustPut(f.t, f.observation, fid(fmt.Sprintf("%s/%d/stage/%d", source, n, i)), map[string]any{
 			"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef(source), "form": "amount",
 			"value": quantity(strconv.Itoa(s.min), "min"), "code": s.code,
 			"at": at.Format(time.RFC3339Nano), "endsAt": at.Add(time.Duration(s.min) * time.Minute).Format(time.RFC3339Nano),
@@ -34,6 +35,25 @@ func (f aggFix) sleepNight(source string, n int, start time.Time, span time.Dura
 		})
 		at = at.Add(time.Duration(s.min) * time.Minute)
 	}
+}
+
+// aggRecordNames maps each id aggRecordID minted back to the name a test
+// wrote, so an assertion on the records a read answers reads the names.
+var aggRecordNames sync.Map
+
+// aggRecordID is the fixture id of name, remembered for aggRecordName.
+func aggRecordID(name string) string {
+	id := fid(name)
+	aggRecordNames.Store(id, name)
+	return id
+}
+
+// aggRecordName is the name aggRecordID minted id from, else id itself.
+func aggRecordName(id string) string {
+	if name, ok := aggRecordNames.Load(id); ok {
+		return name.(string)
+	}
+	return id
 }
 
 type stage struct {
@@ -92,7 +112,7 @@ func TestAggregateRecordWindowsKeepTheHighestRankedSource(t *testing.T) {
 		var out []string
 		for _, row := range res.Rows {
 			v, _ := val(row, "sum")
-			out = append(out, strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/")+"="+v)
+			out = append(out, aggRecordName(strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/"))+"="+v)
 		}
 		sort.Strings(out)
 		return strings.Join(out, " ")
@@ -100,7 +120,7 @@ func TestAggregateRecordWindowsKeepTheHighestRankedSource(t *testing.T) {
 	refs := func(res *substrate.AggregateResult) string {
 		var out []string
 		for _, row := range res.Rows {
-			out = append(out, strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/"))
+			out = append(out, aggRecordName(strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/")))
 		}
 		sort.Strings(out)
 		return strings.Join(out, " ")
@@ -170,15 +190,15 @@ func TestAggregateRecordSourcesWeighAChainAcrossTheRangeEdge(t *testing.T) {
 		{"apple/x", "apple", d.Add(15 * time.Minute), 105 * time.Minute},
 	}
 	for _, r := range chain {
-		f.mustPut(t, f.sleepKind(), r.id, map[string]any{
+		f.mustPut(t, f.sleepKind(), aggRecordID(r.id), map[string]any{
 			"source": f.sourceRef(r.source), "at": r.at.Format(time.RFC3339), "endsAt": r.at.Add(r.span).Format(time.RFC3339),
 		})
-		f.workout(r.id, r.source, "running", r.at, r.span, "5")
+		f.workout(fid(r.id), r.source, "running", r.at, r.span, "5")
 	}
 	// One stage in each night that no other night holds.
-	f.stageAt("whoop/z/stage", "whoop", "light", d.Add(-3*time.Hour), 10*time.Minute)
-	f.stageAt("garmin/y/stage", "garmin", "light", d, 10*time.Minute)
-	f.stageAt("apple/x/stage", "apple", "light", d.Add(time.Hour), 10*time.Minute)
+	f.stageAt(fid("whoop/z/stage"), "whoop", "light", d.Add(-3*time.Hour), 10*time.Minute)
+	f.stageAt(fid("garmin/y/stage"), "garmin", "light", d, 10*time.Minute)
+	f.stageAt(fid("apple/x/stage"), "apple", "light", d.Add(time.Hour), 10*time.Minute)
 	whoopFirst := &substrate.AggregateRecordSources{Policy: "priority", Order: []string{"whoop", "garmin"}, Property: "source"}
 	windows := func(gte, lt time.Time) string {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
@@ -192,7 +212,7 @@ func TestAggregateRecordSourcesWeighAChainAcrossTheRangeEdge(t *testing.T) {
 		seen := map[string]bool{}
 		var out []string
 		for _, row := range res.Rows {
-			if ref := strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/"); !seen[ref] {
+			if ref := aggRecordName(strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/")); !seen[ref] {
 				seen[ref] = true
 				out = append(out, ref)
 			}
@@ -257,7 +277,7 @@ func TestAggregateRecordSourcesKeepANightUnderAnUnfinishedOne(t *testing.T) {
 	plus3 := time.FixedZone("", 3*3600)
 	night := time.Date(2026, 9, 12, 23, 0, 0, 0, plus3)
 	f.sleepNight("garmin", 0, night, 8*time.Hour, night, []stage{{"light", 60}, {"deep", 45}})
-	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("whoop/0"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": night.Add(time.Hour).Format(time.RFC3339),
 	})
 	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
@@ -269,7 +289,7 @@ func TestAggregateRecordSourcesKeepANightUnderAnUnfinishedOne(t *testing.T) {
 		}},
 		Reducers: reducers("sum"), Unit: "min",
 	})
-	if len(res.Rows) != 1 || res.Rows[0].Record == nil || res.Rows[0].Record.Ref != f.sleepKind()+"/garmin/0" {
+	if len(res.Rows) != 1 || res.Rows[0].Record == nil || res.Rows[0].Record.Ref != f.sleepKind()+"/"+fid("garmin/0") {
 		t.Fatalf("rows %+v, want the garmin night's one row", res.Rows)
 	}
 	wantNum(t, "garmin/0", res.Rows[0], "sum", 105, true)
@@ -300,15 +320,15 @@ func TestAggregatePropertyKeepsTheHighestRankedSource(t *testing.T) {
 	f := openAgg(t)
 	plus3 := time.FixedZone("", 3*3600)
 	day := func(d, h, m, s int) time.Time { return time.Date(2026, 9, d, h, m, s, 0, plus3) }
-	f.workout("garmin/1", "garmin", "running", day(7, 7, 0, 0), time.Hour, "10")
-	f.workout("whoop/1", "whoop", "running", day(7, 7, 1, 0), time.Hour, "9.5")
-	f.workout("apple/1", "apple", "running", day(7, 7, 0, 30), 59*time.Minute, "10.2")
-	f.workout("apple/2", "apple", "running", day(8, 7, 0, 0), 30*time.Minute, "5.1")
-	f.workout("whoop/3", "whoop", "other", day(9, 6, 0, 0), 3*time.Hour, "12")
-	f.workout("garmin/3", "garmin", "running", day(9, 6, 30, 0), time.Hour, "8")
-	f.workout("garmin/4", "garmin", "walking", day(9, 8, 0, 0), 30*time.Minute, "2")
-	f.workout("whoop/5", "whoop", "running", day(13, 23, 59, 59), time.Hour, "3")
-	f.workout("garmin/5", "garmin", "running", day(14, 0, 0, 30), time.Hour, "3.1")
+	f.workout(fid("garmin/1"), "garmin", "running", day(7, 7, 0, 0), time.Hour, "10")
+	f.workout(fid("whoop/1"), "whoop", "running", day(7, 7, 1, 0), time.Hour, "9.5")
+	f.workout(fid("apple/1"), "apple", "running", day(7, 7, 0, 30), 59*time.Minute, "10.2")
+	f.workout(fid("apple/2"), "apple", "running", day(8, 7, 0, 0), 30*time.Minute, "5.1")
+	f.workout(fid("whoop/3"), "whoop", "other", day(9, 6, 0, 0), 3*time.Hour, "12")
+	f.workout(fid("garmin/3"), "garmin", "running", day(9, 6, 30, 0), time.Hour, "8")
+	f.workout(fid("garmin/4"), "garmin", "walking", day(9, 8, 0, 0), 30*time.Minute, "2")
+	f.workout(fid("whoop/5"), "whoop", "running", day(13, 23, 59, 59), time.Hour, "3")
+	f.workout(fid("garmin/5"), "garmin", "running", day(14, 0, 0, 30), time.Hour, "3.1")
 	read := func(gte, lt time.Time, sources *substrate.AggregateRecordSources) string {
 		res := f.agg(context.Background(), substrate.Filter{Kinds: []string{f.workoutKind()}}, substrate.Aggregate{
 			Property: &substrate.AggregateProperty{Name: "distance", Sources: sources},
@@ -387,7 +407,7 @@ func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
 	plus3 := time.FixedZone("", 3*3600)
 	start := time.Date(2026, 10, 4, 23, 0, 0, 500000000, plus3)
 	end := time.Date(2026, 10, 5, 3, 0, 0, 0, plus3)
-	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("whoop/0"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339Nano), "endsAt": end.Format(time.RFC3339Nano),
 	})
 	clock := func(h, m int) time.Time {
@@ -397,11 +417,11 @@ func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
 		}
 		return time.Date(2026, 10, d, h, m, 0, 0, plus3)
 	}
-	f.stageAt("garmin/awake", "garmin", "awake", clock(23, 0), 30*time.Minute)
-	f.stageAt("garmin/light", "garmin", "light", clock(23, 30), 90*time.Minute)
-	f.stageAt("garmin/deep", "garmin", "deep", clock(1, 0), time.Hour)
-	f.stageAt("garmin/rem", "garmin", "rem", clock(2, 0), 90*time.Minute)
-	f.stageAt("apple/asleep", "apple", "asleep", clock(22, 0), 5*time.Hour)
+	f.stageAt(fid("garmin/awake"), "garmin", "awake", clock(23, 0), 30*time.Minute)
+	f.stageAt(fid("garmin/light"), "garmin", "light", clock(23, 30), 90*time.Minute)
+	f.stageAt(fid("garmin/deep"), "garmin", "deep", clock(1, 0), time.Hour)
+	f.stageAt(fid("garmin/rem"), "garmin", "rem", clock(2, 0), 90*time.Minute)
+	f.stageAt(fid("apple/asleep"), "apple", "asleep", clock(22, 0), 5*time.Hour)
 	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
 		Range:    rng(clock(20, 0), clock(6, 0)),
@@ -446,11 +466,11 @@ func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
 	// One amount across two windows apart counts its part in each, once.
 	noon := time.Date(2026, 10, 6, 10, 0, 0, 0, plus3)
 	for i, w := range [][2]time.Time{{noon, noon.Add(time.Hour)}, {noon.Add(90 * time.Minute), noon.Add(150 * time.Minute)}} {
-		f.mustPut(t, f.sleepKind(), fmt.Sprintf("nap/%d", i), map[string]any{
+		f.mustPut(t, f.sleepKind(), fid(fmt.Sprintf("nap/%d", i)), map[string]any{
 			"source": f.sourceRef("whoop"), "at": w[0].Format(time.RFC3339), "endsAt": w[1].Format(time.RFC3339),
 		})
 	}
-	f.stageAt("garmin/nap", "garmin", "light", noon.Add(30*time.Minute), 90*time.Minute)
+	f.stageAt(fid("garmin/nap"), "garmin", "light", noon.Add(30*time.Minute), 90*time.Minute)
 	naps, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
 		Range:    rng(noon, noon.Add(3*time.Hour)),
@@ -482,7 +502,7 @@ func TestAggregateRecordWindowsChargeTheAmountReach(t *testing.T) {
 	night := time.Date(2026, 8, 1, 23, 0, 0, 0, plus3)
 	f.sleepNight("whoop", 0, night, 3*time.Hour, night, []stage{{"light", 60}, {"deep", 45}})
 	for d := 1; d <= 30; d++ {
-		f.stageAt(fmt.Sprintf("later/%d", d), "whoop", "light", night.AddDate(0, 0, d).Add(-10*time.Hour), 10*time.Minute)
+		f.stageAt(fid(fmt.Sprintf("later/%d", d)), "whoop", "light", night.AddDate(0, 0, d).Add(-10*time.Hour), 10*time.Minute)
 	}
 	query := func(maxSamples int64) substrate.AggregateQuery {
 		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
@@ -518,10 +538,10 @@ func TestAggregatePropertyReducesDurationsBySport(t *testing.T) {
 	f := openAgg(t)
 	plus3 := time.FixedZone("", 3*3600)
 	day := func(d, h int) time.Time { return time.Date(2026, 9, d, h, 0, 0, 0, plus3) }
-	f.workout("garmin/1", "garmin", "running", day(7, 7), 30*time.Minute, "5")
-	f.workout("garmin/2", "garmin", "running", day(8, 7), 90*time.Minute, "15")
-	f.workout("garmin/3", "garmin", "cycling", day(9, 7), 2*time.Hour, "40")
-	f.workout("apple/4", "apple", "running", day(10, 7), 45*time.Minute, "8")
+	f.workout(fid("garmin/1"), "garmin", "running", day(7, 7), 30*time.Minute, "5")
+	f.workout(fid("garmin/2"), "garmin", "running", day(8, 7), 90*time.Minute, "15")
+	f.workout(fid("garmin/3"), "garmin", "cycling", day(9, 7), 2*time.Hour, "40")
+	f.workout(fid("apple/4"), "apple", "running", day(10, 7), 45*time.Minute, "8")
 	read := func(groupBy []string, unit string, reds ...string) *substrate.AggregateResult {
 		return f.agg(context.Background(), substrate.Filter{Kinds: []string{f.workoutKind()}}, substrate.Aggregate{
 			Property: &substrate.AggregateProperty{Name: "duration", GroupBy: groupBy},
@@ -603,7 +623,7 @@ func TestAggregatePropertyPlacesARecordByItsOwnOffset(t *testing.T) {
 		if offset != nil {
 			props["utcOffsetEnd"] = offset
 		}
-		f.mustPut(t, f.sleepKind(), id, props)
+		f.mustPut(t, f.sleepKind(), fid(id), props)
 	}
 	night("athens", time.Date(2026, 9, 21, 4, 0, 0, 0, time.UTC), 180, "PT7H")
 	night("la", time.Date(2026, 9, 22, 1, 30, 0, 0, time.UTC), -420, "PT1H")
@@ -648,7 +668,7 @@ func TestAggregatePropertyPlacesARecordByItsOwnOffset(t *testing.T) {
 			Range:    rng(time.Date(2026, 9, 21, 0, 0, 0, 0, plus3), time.Date(2026, 9, 23, 0, 0, 0, 0, plus3)),
 			Bucket:   &substrate.AggregateBucket{Calendar: "day"}, Reducers: reducers("sum"),
 		},
-	}, f.sleepKind()+"/unknown holds no utcOffsetEnd")
+	}, f.sleepKind()+"/"+fid("unknown")+" holds no utcOffsetEnd")
 	res, err = read(substrate.AggregateBucket{Calendar: "day", FallbackTimezone: "Europe/Athens"})
 	if err != nil {
 		t.Fatalf("with a fallback zone: %v", err)
@@ -668,11 +688,11 @@ func TestAggregatePropertyRefusesOnlyAKeptRecordWithoutAnOffset(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	end := time.Date(2026, 9, 21, 4, 0, 0, 0, time.UTC)
-	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("whoop/0"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": end.Add(-8 * time.Hour).Format(time.RFC3339), "endsAt": end.Format(time.RFC3339),
 		"timeAsleep": "PT7H", "utcOffsetEnd": 180,
 	})
-	f.mustPut(t, f.sleepKind(), "googlefit/0", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("googlefit/0"), map[string]any{
 		"source": f.sourceRef("googlefit"), "at": end.Add(-8 * time.Hour).Format(time.RFC3339), "endsAt": end.Add(10 * time.Minute).Format(time.RFC3339),
 		"timeAsleep": "PT6H50M",
 	})
@@ -703,8 +723,8 @@ func TestAggregatePropertyRefusesOnlyAKeptRecordWithoutAnOffset(t *testing.T) {
 	if sum != "7" || n != "1" {
 		t.Errorf("sum/count = %s/%s, want the whoop's night alone, 7/1", sum, n)
 	}
-	f.refusedAgg(query(), f.sleepKind()+"/googlefit/0 holds no utcOffsetEnd")
-	f.refusedAgg(query("googlefit", "whoop"), f.sleepKind()+"/googlefit/0 holds no utcOffsetEnd")
+	f.refusedAgg(query(), f.sleepKind()+"/"+fid("googlefit/0")+" holds no utcOffsetEnd")
+	f.refusedAgg(query("googlefit", "whoop"), f.sleepKind()+"/"+fid("googlefit/0")+" holds no utcOffsetEnd")
 }
 
 // A records-mode row is written at its record's own offsets where the
@@ -718,15 +738,15 @@ func TestAggregateRecordWindowsAreWrittenAtTheRecordsOffsets(t *testing.T) {
 	f := openAgg(t)
 	start := time.Date(2026, 9, 14, 22, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 9, 15, 4, 0, 0, 0, time.UTC)
-	f.mustPut(t, f.sleepKind(), "travel", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("travel"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339), "endsAt": end.Format(time.RFC3339),
 		"utcOffsetStart": 60, "utcOffsetEnd": 180,
 	})
-	f.mustPut(t, f.sleepKind(), "unknown", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("unknown"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": start.AddDate(0, 0, 1).Format(time.RFC3339), "endsAt": end.AddDate(0, 0, 1).Format(time.RFC3339),
 	})
 	for _, day := range []int{0, 1} {
-		f.stageAt(fmt.Sprintf("stage/%d", day), "whoop", "light", start.AddDate(0, 0, day).Add(time.Hour), time.Hour)
+		f.stageAt(fid(fmt.Sprintf("stage/%d", day)), "whoop", "light", start.AddDate(0, 0, day).Add(time.Hour), time.Hour)
 	}
 	plus3 := time.FixedZone("", 3*3600)
 	read := func(offsets *substrate.AggregateRecordOffsets) string {
@@ -773,10 +793,10 @@ func TestAggregateRecordWindowLeavesOutWhatStartsAtItsEnd(t *testing.T) {
 	f := openAgg(t)
 	start := time.Date(2026, 10, 9, 21, 30, 0, 0, time.UTC)
 	end := time.Date(2026, 10, 10, 5, 45, 0, 160000000, time.UTC)
-	f.mustPut(t, f.sleepKind(), "whoop/night", map[string]any{
+	f.mustPut(t, f.sleepKind(), fid("whoop/night"), map[string]any{
 		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339Nano), "endsAt": end.Format(time.RFC3339Nano),
 	})
-	f.mustPut(t, f.observation, "whoop/spo2", map[string]any{
+	f.mustPut(t, f.observation, fid("whoop/spo2"), map[string]any{
 		"metric": f.metricRef("health/spo2"), "source": f.sourceRef("whoop"), "form": "summary",
 		"statistic": "vendor", "period": "night", "value": quantity("95", "%"),
 		"at": end.Format(time.RFC3339Nano), "endsAt": end.Add(24 * time.Hour).Format(time.RFC3339Nano), "utcOffset": 180,

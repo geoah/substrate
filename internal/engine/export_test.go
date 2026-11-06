@@ -1172,3 +1172,8 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 	}
 	return out, nil
 }
+
+// fid is a fixture's record id for this package's own tests: the readable
+// name derived into the minted shape (decision 0228); helpers_db_test.go
+// has the twin for the external test package.
+func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }

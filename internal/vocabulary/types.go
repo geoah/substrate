@@ -746,6 +746,11 @@ type Kind struct {
 	// stored declaration stays exactly what its author wrote.
 	Purpose string
 
+	// IDs is the kind's declared `ids.type` (decision record 0228), empty
+	// where the declaration says nothing. Read it through IDType, which
+	// applies the default for the kind's purpose.
+	IDs string
+
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.
 	HotColumns map[string]bool

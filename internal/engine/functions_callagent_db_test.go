@@ -250,7 +250,7 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 	}
 	fake.script("loop", fakeTurn{content: "done"})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-cause", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-cause"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 	}
 	var widgetSeq int64
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT seq FROM changelog WHERE record_id = 'w-cause' ORDER BY seq LIMIT 1`).Scan(&widgetSeq); err != nil {
+		`SELECT seq FROM changelog WHERE record_id = $1 ORDER BY seq LIMIT 1`, fid("w-cause")).Scan(&widgetSeq); err != nil {
 		t.Fatal(err)
 	}
 	if n := threadCountOf(t, ds, relayPackage+"/loopy"); n != 1 {
@@ -377,11 +377,11 @@ func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-by-editor", map[string]any{"name": "made"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-by-editor"), map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-seed", Properties: map[string]any{"name": "seed"},
+		Kind: crewPackage + "/widget", ID: fid("w-seed"), Properties: map[string]any{"name": "seed"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
 			t.Fatalf("process: %v", err)
 		}
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-by-editor"); err != nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-by-editor")); err != nil {
 		t.Fatalf("the editor's widget: %v", err)
 	}
 	if n := len(agentThreadsOf(t, ds, "editor")); n != 1 {
@@ -412,13 +412,13 @@ func TestFunctionToolRunsAnAgentUnderTheCallersCeiling(t *testing.T) {
 		fakeTurn{content: "asked"},
 	)
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-smuggled", map[string]any{"name": "smuggled"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-smuggled"), map[string]any{"name": "smuggled"})}}},
 		fakeTurn{content: "could not"},
 	)
 	if _, err := ds.CallAgent(ctx, relayPackage+"/steward", "make a widget"); err != nil {
 		t.Fatalf("call steward: %v", err)
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-smuggled"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-smuggled")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the editor under steward's empty ceiling wrote a widget: %v", err)
 	}
 	threads := agentThreadsOf(t, ds, "editor")
@@ -483,7 +483,7 @@ func TestDeliveryParksAfterItsAgentRan(t *testing.T) {
 	}
 	fake.script("sub", fakeTurn{content: "noted"})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-flaky", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-flaky"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestDeliveryClaimsWhenItsAgentOpensAThread(t *testing.T) {
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fake.script("sub", fakeTurn{content: "noted", arrived: arrived, release: release})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-stop", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-stop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -597,11 +597,11 @@ func TestDeliveryYieldAfterItsAgentRanSettlesAsSkip(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", "w-yield", map[string]any{"name": "bumped"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", fid("w-yield"), map[string]any{"name": "bumped"})}}},
 		fakeTurn{content: "renamed"},
 	)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-yield", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-yield"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestDeliveryYieldAfterItsAgentRanSettlesAsSkip(t *testing.T) {
 	if n := len(agentThreadsOf(t, ds, "editor")); n != 1 {
 		t.Fatalf("the yielder ran the editor %d times, want once", n)
 	}
-	w, err := ds.Get(ctx, crewPackage+"/widget", "w-yield")
+	w, err := ds.Get(ctx, crewPackage+"/widget", fid("w-yield"))
 	if err != nil {
 		t.Fatalf("get widget: %v", err)
 	}

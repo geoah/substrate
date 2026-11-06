@@ -186,7 +186,7 @@ func TestAScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
 	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
 	ds := supersedeDataset(t, s, "update")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: supersedeJob, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}
@@ -274,13 +274,13 @@ func TestAScheduleFireOfTheSameFunctionLeavesARecordParkParked(t *testing.T) {
 
 	// The job's creation parks on the record trigger.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: supersedeJob, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}
 	processOnce(t, ds)
 	parked, err := ds.TriggerFailures(ctx, supersedeRec)
-	if err != nil || len(parked) != 1 || parked[0].RecordID != "inbox" || parked[0].FireID != "" {
+	if err != nil || len(parked) != 1 || parked[0].RecordID != fid("inbox") || parked[0].FireID != "" {
 		t.Fatalf("%s parked %+v (%v), want the creation's one park", supersedeRec, parked, err)
 	}
 

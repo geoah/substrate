@@ -80,18 +80,18 @@ func newRelationFixture(t *testing.T) relationFixture {
 	}
 
 	// Two Slack users on one address converge on one person.
-	u1 := syncSource(t, ds, slack, typeSlackUser, "U1", map[string]any{"realName": "Ada", "email": "ada@example.com"})
-	u2 := syncSource(t, ds, slack, typeSlackUser, "U2", map[string]any{"realName": "Ada L", "email": "ada@example.com"})
+	u1 := syncSource(t, ds, slack, typeSlackUser, fid("U1"), map[string]any{"realName": "Ada", "email": "ada@example.com"})
+	u2 := syncSource(t, ds, slack, typeSlackUser, fid("U2"), map[string]any{"realName": "Ada L", "email": "ada@example.com"})
 	ada := personOf(t, ds, u1)
 	if personOf(t, ds, u2) != ada {
 		t.Fatal("the fixture needs both users on one person")
 	}
-	u3 := syncSource(t, ds, slack, typeSlackUser, "U3", map[string]any{"realName": "Grace", "email": "grace@example.com"})
+	u3 := syncSource(t, ds, slack, typeSlackUser, fid("U3"), map[string]any{"realName": "Grace", "email": "grace@example.com"})
 	grace := personOf(t, ds, u3)
 
 	sync := func(heading string) *substrate.Record {
 		t.Helper()
-		ticket := mustPut(t, ds, pmsync, substrate.PutInput{Kind: typeTicket, ID: "T1", Properties: map[string]any{
+		ticket := mustPut(t, ds, pmsync, substrate.PutInput{Kind: typeTicket, ID: fid("T1"), Properties: map[string]any{
 			"heading":   heading,
 			"assignee":  typeSlackUser + "/" + u1.ID,
 			"assignees": []any{typeSlackUser + "/" + u1.ID, typeSlackUser + "/" + u3.ID, typeSlackUser + "/" + u2.ID},
@@ -112,7 +112,7 @@ func assertTicketBacksCard(t *testing.T, card *substrate.Record) {
 	t.Helper()
 	for _, name := range []string{"owner", "watchers"} {
 		meta := card.PropertyMeta[name]
-		if meta.Source != typeTicket+"/T1" || len(meta.Alternatives) != 0 {
+		if meta.Source != typeTicket+"/"+fid("T1") || len(meta.Alternatives) != 0 {
 			t.Fatalf("%s meta = %+v, want the ticket as the source and no alternative", name, meta)
 		}
 	}

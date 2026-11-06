@@ -32,21 +32,21 @@ func TestRevisedKindRefusesAFallingRevision(t *testing.T) {
 		"at": "2026-10-09T22:40:00+03:00", "endsAt": "2026-10-10T06:55:00+03:00",
 		"timeAsleep": "PT7H20M", "revision": 5,
 	}
-	if _, err := r.put(t, sleep, "n", night); err != nil {
+	if _, err := r.put(t, sleep, fid("n"), night); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	night["timeAsleep"] = "PT7H25M"
-	if _, err := r.put(t, sleep, "n", night); err != nil {
+	if _, err := r.put(t, sleep, fid("n"), night); err != nil {
 		t.Errorf("an equal revision: %v", err)
 	}
 	night["revision"] = 3
 	night["timeAsleep"] = "PT3H"
-	_, err := r.put(t, sleep, "n", night)
+	_, err := r.put(t, sleep, fid("n"), night)
 	refused(t, "a lower revision", err, "props.revision: 3 is below the stored revision 5")
-	if got := r.get(t, sleep, "n").Properties["timeAsleep"]; got != "PT7H25M" {
+	if got := r.get(t, sleep, fid("n")).Properties["timeAsleep"]; got != "PT7H25M" {
 		t.Errorf("the stale write landed: timeAsleep %v", got)
 	}
-	_, err = r.patch(t, sleep, "n", map[string]any{"revision": nil})
+	_, err = r.patch(t, sleep, fid("n"), map[string]any{"revision": nil})
 	refused(t, "removing the revision", err, "props.revision: the stored revision 5 is never removed")
 }
 
@@ -64,17 +64,17 @@ func TestLabResultReferenceRangeIsQuantities(t *testing.T) {
 			"referenceRanges": []any{rng},
 		}
 	}
-	if _, err := r.put(t, r.labresult, "ldl", ldl(map[string]any{
+	if _, err := r.put(t, r.labresult, fid("ldl"), ldl(map[string]any{
 		"low": quantity("0", "mmol/L"), "high": quantity("116", "mg/dL"), "text": "optimal",
 	})); err != nil {
 		t.Fatalf("a range in two units of one measure: %v", err)
 	}
-	rng := r.get(t, r.labresult, "ldl").Properties["referenceRanges"].([]any)[0].(map[string]any)
+	rng := r.get(t, r.labresult, fid("ldl")).Properties["referenceRanges"].([]any)[0].(map[string]any)
 	high, _ := rng["high"].(map[string]any)
 	if high[vocabulary.QuantityUnit] != "mg/dL" || high[vocabulary.QuantityValue] != "116" {
 		t.Errorf("high = %v, want 116 mg/dL kept with its unit", rng["high"])
 	}
-	_, err := r.put(t, r.labresult, "ldl", ldl(map[string]any{"high": quantity("3.0", "mgdl")}))
+	_, err := r.put(t, r.labresult, fid("ldl"), ldl(map[string]any{"high": quantity("3.0", "mgdl")}))
 	refused(t, "a range in a unit the table cannot read", err, "referenceRanges")
 }
 
@@ -92,20 +92,20 @@ func TestWorkoutSportIsOneCodeSetAndEnergyIsSplit(t *testing.T) {
 		}
 		return out
 	}
-	if _, err := r.put(t, workout, "w", session(map[string]any{
+	if _, err := r.put(t, workout, fid("w"), session(map[string]any{
 		"sport": "strength", "sportSource": "weightlifting",
 		"totalEnergy": quantity("1960", "kJ"),
 	})); err != nil {
 		t.Fatalf("a mapped sport with its source word and a total energy: %v", err)
 	}
-	if _, err := r.put(t, workout, "a", session(map[string]any{
+	if _, err := r.put(t, workout, fid("a"), session(map[string]any{
 		"sport": "other", "sportSource": "INDOOR_ROWING_MACHINE", "activeEnergy": quantity("312", "kcal"),
 	})); err != nil {
 		t.Errorf("an unmapped sport as other with an active energy: %v", err)
 	}
-	_, err := r.put(t, workout, "x", session(map[string]any{"sport": "weightlifting"}))
+	_, err := r.put(t, workout, fid("x"), session(map[string]any{"sport": "weightlifting"}))
 	refused(t, "a provider's own word as the sport", err, "props.sport")
-	_, err = r.put(t, workout, "y", session(map[string]any{"sport": "running", "energy": quantity("400", "kcal")}))
+	_, err = r.put(t, workout, fid("y"), session(map[string]any{"sport": "running", "energy": quantity("400", "kcal")}))
 	refused(t, "energy that says neither active nor total", err, "energy")
 }
 
@@ -148,42 +148,42 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 		}
 		return props
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1,
+	if _, err := r.put(t, r.labresult, fid("quest/2026-09-14/ldl"), result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1,
 		map[string]any{"referenceRanges": []any{map[string]any{"high": quantity("100", "mg/dL"), "text": "optimal"}}})); err != nil {
 		t.Fatalf("put the LDL: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/a1c", result("labs/hba1c", "5.2", "%", 1, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, fid("quest/2026-09-14/a1c"), result("labs/hba1c", "5.2", "%", 1, nil)); err != nil {
 		t.Fatalf("put the HbA1c: %v", err)
 	}
 	// A summary converts with the statistic and period its form requires; a
 	// counter is a running total and never converts.
-	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-day", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
+	if _, err := r.put(t, r.labresult, fid("home/2026-09-14/ldl-day"), result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
 		"form": "summary", "statistic": "avg", "period": "day", "hold": nil, "endsAt": "2026-09-15T00:00:00-04:00",
 	})); err != nil {
 		t.Fatalf("put the LDL summary: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "home/2026-09-14/ldl-total", result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
+	if _, err := r.put(t, r.labresult, fid("home/2026-09-14/ldl-total"), result("labs/ldl_cholesterol_mass", "130", "mg/dL", 1, map[string]any{
 		"form": "counter", "hold": nil,
 	})); err != nil {
 		t.Fatalf("put the LDL counter: %v", err)
 	}
 	drain()
-	day := r.get(t, r.labresult, "home/2026-09-14/ldl-day/as/labs/ldl_cholesterol").Properties
+	day := r.get(t, r.labresult, fid("home/2026-09-14/ldl-day")+"/as/labs/ldl_cholesterol").Properties
 	if day["form"] != "summary" || day["statistic"] != "avg" || day["period"] != "day" {
 		t.Errorf("derived summary: form %v, statistic %v, period %v; want summary, avg, day", day["form"], day["statistic"], day["period"])
 	}
-	if n := len(derivedOf("home/2026-09-14/ldl-total")); n != 0 {
+	if n := len(derivedOf(fid("home/2026-09-14/ldl-total"))); n != 0 {
 		t.Errorf("a counter was converted: %d derived results", n)
 	}
 
-	ldl := r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
+	ldl := r.get(t, r.labresult, fid("quest/2026-09-14/ldl")+"/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.362" || v["unit"] != "mmol/L" {
 		t.Errorf("derived LDL = %v, want 3.362 mmol/L (130 mg/dL over 386.65 g/mol)", v)
 	}
 	if got := storedPath(ldl["metric"]); got != r.metric+"/labs/ldl_cholesterol" {
 		t.Errorf("derived LDL metric = %v", got)
 	}
-	if from := ldl["derivedFrom"].([]any); len(from) != 1 || storedPath(from[0]) != r.labresult+"/quest/2026-09-14/ldl" {
+	if from := ldl["derivedFrom"].([]any); len(from) != 1 || storedPath(from[0]) != r.labresult+"/"+fid("quest/2026-09-14/ldl") {
 		t.Errorf("derivedFrom = %v", from)
 	}
 	conv, _ := ldl["conversion"].(map[string]any)
@@ -194,19 +194,19 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	if high := rng["high"].(map[string]any); high["value"] != "2.586" || high["unit"] != "mmol/L" || rng["text"] != "optimal" {
 		t.Errorf("derived range = %v, want high 2.586 mmol/L, text kept", rng)
 	}
-	a1c := r.get(t, r.labresult, "quest/2026-09-14/a1c/as/labs/hba1c_ifcc").Properties
+	a1c := r.get(t, r.labresult, fid("quest/2026-09-14/a1c")+"/as/labs/hba1c_ifcc").Properties
 	if v := a1c["value"].(map[string]any); v["value"] != "33.3" || v["unit"] != "mmol/mol" {
 		t.Errorf("derived HbA1c = %v, want 33.3 mmol/mol ((5.2 - 2.15) x 10.929)", v)
 	}
-	if n := len(derivedOf("quest/2026-09-14/ldl/as/labs/ldl_cholesterol")); n != 0 {
+	if n := len(derivedOf(fid("quest/2026-09-14/ldl") + "/as/labs/ldl_cholesterol")); n != 0 {
 		t.Errorf("a derived result was converted again: %d derivations of it", n)
 	}
 
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "140", "mg/dL", 2, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, fid("quest/2026-09-14/ldl"), result("labs/ldl_cholesterol_mass", "140", "mg/dL", 2, nil)); err != nil {
 		t.Fatalf("correct the LDL: %v", err)
 	}
 	drain()
-	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
+	ldl = r.get(t, r.labresult, fid("quest/2026-09-14/ldl")+"/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.621" || fmt.Sprint(ldl["revision"]) != "2" {
 		t.Errorf("after the correction: value %v at revision %v; want 3.621 at 2", v, ldl["revision"])
 	}
@@ -214,26 +214,26 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	// Deleted and written again before the triggers run, the input starts
 	// over at revision 1 while its derivation still holds 2: the derivation
 	// keeps 2 and takes the new value.
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, "quest/2026-09-14/ldl", substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the LDL: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("labs/ldl_cholesterol_mass", "150", "mg/dL", 1, nil)); err != nil {
+	if _, err := r.put(t, r.labresult, fid("quest/2026-09-14/ldl"), result("labs/ldl_cholesterol_mass", "150", "mg/dL", 1, nil)); err != nil {
 		t.Fatalf("write the LDL again: %v", err)
 	}
 	drain()
-	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/labs/ldl_cholesterol").Properties
+	ldl = r.get(t, r.labresult, fid("quest/2026-09-14/ldl")+"/as/labs/ldl_cholesterol").Properties
 	if v := ldl["value"].(map[string]any); v["value"] != "3.879" || fmt.Sprint(ldl["revision"]) != "2" {
 		t.Errorf("after the input was written again: value %v at revision %v; want 3.879 at 2", v, ldl["revision"])
 	}
 
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, "quest/2026-09-14/ldl", substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the LDL: %v", err)
 	}
 	drain()
-	if n := len(derivedOf("quest/2026-09-14/ldl")); n != 0 {
+	if n := len(derivedOf(fid("quest/2026-09-14/ldl"))); n != 0 {
 		t.Errorf("%d derived results outlive their deleted input", n)
 	}
-	if n := len(derivedOf("quest/2026-09-14/a1c")); n != 1 {
+	if n := len(derivedOf(fid("quest/2026-09-14/a1c"))); n != 1 {
 		t.Errorf("the HbA1c has %d derived results, want its one", n)
 	}
 }
@@ -290,19 +290,19 @@ func TestConvertLabConvertsThroughAffineConversions(t *testing.T) {
 			t.Fatalf("put the metric %s: %v", id, err)
 		}
 	}
-	metric("test/assay_mass", "assay (mass)", "assay")
-	metric("test/assay_amount", "assay (amount)", "amtx")
-	if _, err := r.put(t, vocabulary.AuthorityPublisher+"/labs/analyte", "test/assay", map[string]any{
-		"metric":    r.metricRef("test/assay_mass"),
+	metric(fid("test/assay_mass"), "assay (mass)", "assay")
+	metric(fid("test/assay_amount"), "assay (amount)", "amtx")
+	if _, err := r.put(t, vocabulary.AuthorityPublisher+"/labs/analyte", fid("test/assay"), map[string]any{
+		"metric":    r.metricRef(fid("test/assay_mass")),
 		"molarMass": "2",
 		"conversions": []any{map[string]any{
-			"target": r.metricRef("test/assay_amount"), "formula": "molar-mass", "version": "1",
+			"target": r.metricRef(fid("test/assay_amount")), "formula": "molar-mass", "version": "1",
 		}},
 	}); err != nil {
 		t.Fatalf("put the analyte: %v", err)
 	}
-	if _, err := r.put(t, r.labresult, "lab/assay", map[string]any{
-		"metric": r.metricRef("test/assay_mass"), "form": "gauge", "hold": "PT0S",
+	if _, err := r.put(t, r.labresult, fid("lab/assay"), map[string]any{
+		"metric": r.metricRef(fid("test/assay_mass")), "form": "gauge", "hold": "PT0S",
 		"value": quantity("2.000", "assay"), "at": "2026-09-14T08:05:00-04:00", "utcOffset": -240,
 		"status": "final", "revision": 1,
 		"referenceRanges": []any{map[string]any{"low": quantity("1.000", "assay"), "high": quantity("4.000", "assay")}},
@@ -310,7 +310,7 @@ func TestConvertLabConvertsThroughAffineConversions(t *testing.T) {
 		t.Fatalf("put the result: %v", err)
 	}
 	drainTriggers(t, ds)
-	got := r.get(t, r.labresult, "lab/assay/as/test/assay_amount").Properties
+	got := r.get(t, r.labresult, fid("lab/assay")+"/as/"+fid("test/assay_amount")).Properties
 	equal := func(what string, q any, want string) {
 		t.Helper()
 		m, _ := q.(map[string]any)
@@ -378,7 +378,7 @@ func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testin
 			"value": quantity("5.4", unit), "at": "2026-10-07T07:20:00+03:00", "utcOffset": 180, "revision": 1,
 		}
 	}
-	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L")); err != nil {
+	if _, err := r.put(t, r.observation, fid("meter/1"), reading("mmol/L")); err != nil {
 		t.Fatalf("put a plain mmol/L reading under the older metric: %v", err)
 	}
 	stranded := func(what string, err error) {
@@ -388,17 +388,17 @@ func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testin
 		}
 	}
 	stranded("the re-install over a plain mmol/L reading", reinstall())
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("meter/1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the reading: %v", err)
 	}
 	stranded("the re-install over a deleted plain mmol/L reading", reinstall())
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "meter/1", substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("meter/1"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge the reading: %v", err)
 	}
 	if err := reinstall(); err != nil {
 		t.Fatalf("the re-install once the reading is purged: %v", err)
 	}
-	if _, err := r.put(t, r.observation, "meter/1", reading("mmol/L{glucose}")); err != nil {
+	if _, err := r.put(t, r.observation, fid("meter/1"), reading("mmol/L{glucose}")); err != nil {
 		t.Errorf("write the reading again in mmol/L{glucose}: %v", err)
 	}
 }

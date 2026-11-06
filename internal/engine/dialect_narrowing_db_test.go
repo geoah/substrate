@@ -63,17 +63,17 @@ func dnBaseProps() map[string]any {
 func dnRow(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: fid("h1"),
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read"}, "subject": "ada"},
 			"spec": map[string]any{
 				"mode": "high",
 				"code": "abcd",
 				"limits": map[string]any{
-					"depth": 3, "ref": "a", "grade": "high",
+					"depth": 3, "ref": fid("a"), "grade": "high",
 					// The level-4 leaf, so the deepest arm counts a live row too.
 					"budgets": map[string]any{"calls": 4},
 				},
@@ -87,9 +87,9 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 			"notes":   map[string]any{"not a camel key": "hei"},
 			"plain":   "text",
 			"installs": map[string]any{
-				"task": map[string]any{"version": "v1", "source": "a", "channel": "high"},
+				"task": map[string]any{"version": "v1", "source": fid("a"), "channel": "high"},
 			},
-			"tools":  []any{map[string]any{"callable": "a", "label": "first", "role": "high"}},
+			"tools":  []any{map[string]any{"callable": fid("a"), "label": "first", "role": "high"}},
 			"level":  "high",
 			"levels": []any{"high"},
 			"slots":  map[string]any{"primary": "high"},
@@ -98,7 +98,7 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 			"count":  5,
 			"ratio":  0.25,
 			"price":  "5.50",
-			"pinned": map[string]any{"ref": "a", "note": "abcd", "weight": 5},
+			"pinned": map[string]any{"ref": fid("a"), "note": "abcd", "weight": 5},
 
 			"fingerprint": strings.Repeat("ab", 32),
 			"token":       "old-secret",
@@ -460,11 +460,11 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 		t.Fatalf("install the base authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
-	target := vocabulary.RecordPath(dwPackage+"/target", "a")
+	target := vocabulary.RecordPath(dwPackage+"/target", fid("a"))
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "conforms",
+		Kind: dwPackage + "/holder", ID: fid("conforms"),
 		Properties: map[string]any{
 			// The object is present and its optional reference is not.
 			"loose": map[string]any{"note": "no pointer here"},
@@ -477,7 +477,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	})
 	// An EMPTY keyed map is still a stored value, and it points nowhere.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "empties",
+		Kind: dwPackage + "/holder", ID: fid("empties"),
 		Properties: map[string]any{"keyedRefs": map[string]any{}, "notes": map[string]any{}},
 	})
 
@@ -540,7 +540,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	// The same three diffs, one row later. Nothing about the declarations
 	// changed: the answers move with the DATA, which is the whole contract.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "strays",
+		Kind: dwPackage + "/holder", ID: fid("strays"),
 		Properties: map[string]any{
 			"loose":     map[string]any{"ref": vocabulary.RecordPath(dwPackage+"/other", "o1")},
 			"keyedRefs": map[string]any{"primary": vocabulary.RecordPath(dwPackage+"/other", "o1")},
@@ -582,7 +582,7 @@ func TestNestedNarrowingCountsOnlyTheRowsThatCarryTheValue(t *testing.T) {
 	}
 	// Two rows, one of them carrying nothing at the narrowed path.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "empty", Properties: map[string]any{"plain": "text"},
+		Kind: dwPackage + "/holder", ID: fid("empty"), Properties: map[string]any{"plain": "text"},
 	})
 	props := dnBaseProps()
 	delete(props["spec"].(map[string]any)["fields"].(map[string]any)["limits"].(map[string]any)["fields"].(map[string]any), "depth")
@@ -597,7 +597,7 @@ func TestNestedNarrowingCountsOnlyTheRowsThatCarryTheValue(t *testing.T) {
 		t.Fatalf("restore the base declaration: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "carrier",
+		Kind: dwPackage + "/holder", ID: fid("carrier"),
 		Properties: map[string]any{"spec": map[string]any{"limits": map[string]any{"depth": 1}}},
 	})
 	wantNarrowingGuard(t, dwApply(t, ds, props), `drops field "depth"`, "1 live records")
@@ -697,7 +697,7 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: pkg + "/item", ID: "one", Properties: map[string]any{"code": "abcd"},
+		Kind: pkg + "/item", ID: fid("one"), Properties: map[string]any{"code": "abcd"},
 	})
 
 	// The property type alone tightens; the kind document is not resent.
@@ -739,7 +739,7 @@ func TestDecimalBoundGuardCountsTheDeclaredNumber(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	for id, rate := range map[string]string{"cent": "0.01", "more": "0.011"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/fee", ID: id, Properties: map[string]any{"rate": rate}})
+		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/fee", ID: fid(id), Properties: map[string]any{"rate": rate}})
 	}
 
 	if err := apply(map[string]any{"min": 0.01}); err != nil {

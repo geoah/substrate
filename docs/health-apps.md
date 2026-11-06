@@ -728,7 +728,7 @@ the one Ada typed in by hand:
 ```
 
 The week of the London trip holds two weigh-ins at home and the 72.0 kg Ada
-typed in from a hotel scale, `manual/2026-09-22-weight`. `priority` answers
+typed in from a hotel scale. `priority` answers
 one row per week for the two sources, where `separate` would answer a row
 per source.
 

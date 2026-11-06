@@ -27,7 +27,7 @@ func TestListHeadHandsOffToTheWatch(t *testing.T) {
 
 	// Two writes before the list, so the head it reports is a real position
 	// in a non-empty changelog rather than 0.
-	for _, id := range []string{"before-1", "before-2"} {
+	for _, id := range []string{"00000000000000000000000001", "00000000000000000000000002"} {
 		if status, body := e.Do(http.MethodPut, itemsPath+"/"+id,
 			map[string]any{"properties": map[string]any{"name": id}}); status/100 != 2 {
 			t.Fatalf("seed %s: %d %s", id, status, body)
@@ -78,7 +78,7 @@ func TestListHeadHandsOffToTheWatch(t *testing.T) {
 			opening.Bookmark, opening.Generation, page.Head, page.Generation)
 	}
 
-	const probe = "after-the-head"
+	const probe = "00000000000000000000000003"
 	if status, body := e.Do(http.MethodPut, itemsPath+"/"+probe,
 		map[string]any{"properties": map[string]any{"name": "written with the watch open"}}); status/100 != 2 {
 		t.Fatalf("the probe write: %d %s", status, body)

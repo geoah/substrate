@@ -39,9 +39,9 @@ func TestAggregateSummariesReadOneStatistic(t *testing.T) {
 	avgs, maxes := []string{"60", "70", "65"}, []string{"90", "84", "88"}
 	for n := range 3 {
 		at := night.AddDate(0, 0, n)
-		f.summary(fmt.Sprintf("hrv/%d/avg", n), "health/hrv_rmssd", "garmin", "avg", avgs[n], "ms", at, 8*time.Hour)
-		f.summary(fmt.Sprintf("hrv/%d/max", n), "health/hrv_rmssd", "garmin", "max", maxes[n], "ms", at, 8*time.Hour)
-		f.summary(fmt.Sprintf("rhr/%d", n), "health/resting_heart_rate", "whoop", "vendor", []string{"50", "54", "49"}[n], "/min", at, 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("hrv/%d/avg", n)), "health/hrv_rmssd", "garmin", "avg", avgs[n], "ms", at, 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("hrv/%d/max", n)), "health/hrv_rmssd", "garmin", "max", maxes[n], "ms", at, 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("rhr/%d", n)), "health/resting_heart_rate", "whoop", "vendor", []string{"50", "54", "49"}[n], "/min", at, 8*time.Hour)
 	}
 	hrv := f.metricPath("health/hrv_rmssd")
 	read := func(filter substrate.Filter, metric string, groupBy []string, names ...string) substrate.AggregateQuery {
@@ -143,7 +143,7 @@ func TestAggregatePreferRawSumsRawStepsBesideAVendorTotal(t *testing.T) {
 	day := time.Date(2026, 9, 2, 0, 0, 0, 0, plus3)
 	for h := range 24 {
 		at := day.Add(time.Duration(h) * time.Hour)
-		f.mustPut(t, f.observation, fmt.Sprintf("steps/%02d", h), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("steps/%02d", h)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "amount",
 			"value": quantity("100", "{steps}"), "utcOffset": 180,
 			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339),
@@ -151,7 +151,7 @@ func TestAggregatePreferRawSumsRawStepsBesideAVendorTotal(t *testing.T) {
 	}
 	for d, total := range []string{"2400", "3100"} {
 		at := day.AddDate(0, 0, d)
-		f.mustPut(t, f.observation, fmt.Sprintf("steps/total/%d", d), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("steps/total/%d", d)), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "summary",
 			"statistic": "vendor", "period": "day", "value": quantity(total, "{steps}"), "utcOffset": 180,
 			"at": at.Format(time.RFC3339), "endsAt": at.AddDate(0, 0, 1).Format(time.RFC3339),
@@ -181,8 +181,8 @@ func TestAggregatePreferRawSumsRawStepsBesideAVendorTotal(t *testing.T) {
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &summaries}, "sum adds")
 
 	night := time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC)
-	f.summary("hrv/avg", "health/hrv_rmssd", "garmin", "avg", "60", "ms", night, 8*time.Hour)
-	f.summary("hrv/max", "health/hrv_rmssd", "garmin", "max", "90", "ms", night, 8*time.Hour)
+	f.summary(fid("hrv/avg"), "health/hrv_rmssd", "garmin", "avg", "60", "ms", night, 8*time.Hour)
+	f.summary(fid("hrv/max"), "health/hrv_rmssd", "garmin", "max", "90", "ms", night, 8*time.Hour)
 	hrv := substrate.Aggregate{
 		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/hrv_rmssd")}, From: substrate.AggregateFromPreferRaw,
 		Range: rng(day.AddDate(0, 0, -1), day.AddDate(0, 0, 2)), Reducers: reducers("last"),
@@ -205,14 +205,14 @@ func TestAggregatePreferRawAnswersEachReducerFromItsOwnStatistic(t *testing.T) {
 	f := openAgg(t)
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	for i, v := range []string{"60", "150"} {
-		f.mustPut(t, f.observation, fmt.Sprintf("hr/%d", i), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("hr/%d", i)), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "gauge",
 			"value": quantity(v, "/min"), "at": day.Add(time.Duration(8+i) * time.Hour).Format(time.RFC3339), "hold": "PT4M", "utcOffset": 0,
 		})
 	}
 	for stat, v := range map[string]string{"avg": "70", "max": "160"} {
 		next := day.AddDate(0, 0, 1)
-		f.mustPut(t, f.observation, "hr/day/"+stat, map[string]any{
+		f.mustPut(t, f.observation, fid("hr/day/"+stat), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "summary",
 			"statistic": stat, "period": "day", "value": quantity(v, "/min"),
 			"at": next.Format(time.RFC3339), "endsAt": next.AddDate(0, 0, 1).Format(time.RFC3339), "utcOffset": 0,
@@ -273,11 +273,11 @@ func TestAggregatePriorityFallsBackAcrossSourcesOfDifferentStatistics(t *testing
 			continue
 		}
 		at := night.AddDate(0, 0, n)
-		f.summary(fmt.Sprintf("garmin/avg/%d", n), "health/hrv_rmssd", "garmin", "avg", v, "ms", at, 8*time.Hour)
-		f.summary(fmt.Sprintf("garmin/max/%d", n), "health/hrv_rmssd", "garmin", "max", "99", "ms", at, 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("garmin/avg/%d", n)), "health/hrv_rmssd", "garmin", "avg", v, "ms", at, 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("garmin/max/%d", n)), "health/hrv_rmssd", "garmin", "max", "99", "ms", at, 8*time.Hour)
 	}
 	for n, v := range []string{"71", "72", "73"} {
-		f.summary(fmt.Sprintf("whoop/%d", n), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("whoop/%d", n)), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
 	}
 	read := func(policy string, stats []any, bucket substrate.AggregateBucket) (*substrate.AggregateResult, error) {
 		sources := &substrate.AggregateSources{Policy: policy, Order: []string{"garmin", "whoop"}}
@@ -334,11 +334,11 @@ func TestAggregateRollingTakesOneStatistic(t *testing.T) {
 	night := time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC)
 	for n, v := range []string{"60", "", "64"} {
 		if v != "" {
-			f.summary(fmt.Sprintf("garmin/avg/%d", n), "health/hrv_rmssd", "garmin", "avg", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+			f.summary(fid(fmt.Sprintf("garmin/avg/%d", n)), "health/hrv_rmssd", "garmin", "avg", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
 		}
 	}
 	for n, v := range []string{"71", "72", "73"} {
-		f.summary(fmt.Sprintf("whoop/%d", n), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+		f.summary(fid(fmt.Sprintf("whoop/%d", n)), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
 	}
 	reducer := "avg"
 	read := func(policy, from string, stats []any, buckets int) (*substrate.AggregateResult, error) {

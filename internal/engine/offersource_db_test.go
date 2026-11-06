@@ -36,11 +36,11 @@ func TestPropertyMetaNamesTheSourceRecordBehindEachOfferAndTheManager(t *testing
 	sam := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones"},
 		"emails": gemails("sam@acme.com", "sam@home.example"),
 	})
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Sam Jones", "displayName": "sam", "email": "sam@acme.com",
 	})
 	gPath := vocabulary.RecordPath(typeGoogleContact, g.ID)

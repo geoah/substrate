@@ -107,7 +107,7 @@ func TestAMappingWhereDecidesWhichSourcesProject(t *testing.T) {
 	installSources(t, ds, []enginetest.Manifest{prManifest()},
 		[]map[string]any{prMapping(openOnly)})
 
-	closed := syncPR(t, ds, "pr1", "closed")
+	closed := syncPR(t, ds, fid("pr1"), "closed")
 	if got := refPathValue(mustGet(t, ds, typePR, closed.ID), "person"); got != "" {
 		t.Fatalf("a closed pull request resolved a subject: %s", got)
 	}
@@ -115,15 +115,15 @@ func TestAMappingWhereDecidesWhichSourcesProject(t *testing.T) {
 		t.Fatalf("a closed pull request minted %d people", len(got))
 	}
 
-	open := syncPR(t, ds, "pr2", "open")
+	open := syncPR(t, ds, fid("pr2"), "open")
 	p := mustGet(t, ds, typePerson, personOf(t, ds, open))
-	if p.Properties["name"] != "Review pr2" {
+	if p.Properties["name"] != "Review "+fid("pr2") {
 		t.Fatalf("the open pull request did not project: %v", p.Properties)
 	}
 
 	// The closed one projects on the write that brings it inside.
-	reopened := syncPR(t, ds, "pr1", "open")
-	if got := mustGet(t, ds, typePerson, personOf(t, ds, reopened)); got.Properties["name"] != "Review pr1" {
+	reopened := syncPR(t, ds, fid("pr1"), "open")
+	if got := mustGet(t, ds, typePerson, personOf(t, ds, reopened)); got.Properties["name"] != "Review "+fid("pr1") {
 		t.Fatalf("a reopened pull request did not project: %v", got.Properties)
 	}
 }
@@ -143,9 +143,9 @@ func TestAMappingWhereReadsADecimalNumericRefuses(t *testing.T) {
 		id, size string
 		covered  bool
 	}{
-		{"pr1", strings.Repeat("9", 131073), false},
-		{"pr2", "-1", false},
-		{"pr3", "12.5", true},
+		{fid("pr1"), strings.Repeat("9", 131073), false},
+		{fid("pr2"), "-1", false},
+		{fid("pr3"), "12.5", true},
 	} {
 		r, err := ds.Put(context.Background(), prsync, substrate.PutInput{
 			Kind: typePR, ID: tc.id,
@@ -169,10 +169,10 @@ func TestASourceLeavingTheWhereLosesItsProjection(t *testing.T) {
 	installSources(t, ds, []enginetest.Manifest{prManifest()},
 		[]map[string]any{prMapping(openOnly)})
 
-	open := syncPR(t, ds, "pr1", "open")
+	open := syncPR(t, ds, fid("pr1"), "open")
 	person := personOf(t, ds, open)
 
-	syncPR(t, ds, "pr1", "closed")
+	syncPR(t, ds, fid("pr1"), "closed")
 	p := mustGet(t, ds, typePerson, person)
 	if _, has := p.Properties["name"]; has {
 		t.Fatalf("a closed pull request still projects its name: %v", p.Properties)
@@ -181,11 +181,11 @@ func TestASourceLeavingTheWhereLosesItsProjection(t *testing.T) {
 		t.Fatalf("orphaned = %v, want the person the closed pull request described", got)
 	}
 
-	back := syncPR(t, ds, "pr1", "open")
+	back := syncPR(t, ds, fid("pr1"), "open")
 	if got := personOf(t, ds, back); got != person {
 		t.Fatalf("a reopened pull request resolved %s, want the same person %s", got, person)
 	}
-	if got := mustGet(t, ds, typePerson, person); got.Properties["name"] != "Review pr1" {
+	if got := mustGet(t, ds, typePerson, person); got.Properties["name"] != "Review "+fid("pr1") {
 		t.Fatalf("the reopened pull request did not project again: %v", got.Properties)
 	}
 	if got := orphanedPersons(t, ds); len(got) != 0 {
@@ -203,9 +203,9 @@ func TestNarrowingAMappingWhereRecomputesItsTargets(t *testing.T) {
 	_, ds := newDataset(t)
 	installSources(t, ds, []enginetest.Manifest{prManifest()},
 		[]map[string]any{prMapping(nil)})
-	closed := syncPR(t, ds, "pr1", "closed")
+	closed := syncPR(t, ds, fid("pr1"), "closed")
 	person := personOf(t, ds, closed)
-	if got := mustGet(t, ds, typePerson, person); got.Properties["name"] != "Review pr1" {
+	if got := mustGet(t, ds, typePerson, person); got.Properties["name"] != "Review "+fid("pr1") {
 		t.Fatalf("no where: the closed pull request did not project: %v", got.Properties)
 	}
 
@@ -227,13 +227,13 @@ func TestApplyingAMappingWhereLinksOnlyCoveredExistingSources(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, prManifest()); err != nil {
 		t.Fatalf("install the pull request mirror: %v", err)
 	}
-	closed := syncPR(t, ds, "pr1", "closed")
-	open := syncPR(t, ds, "pr2", "open")
+	closed := syncPR(t, ds, fid("pr1"), "closed")
+	open := syncPR(t, ds, fid("pr2"), "open")
 
 	if err := enginetest.DeclareMappings(ctx, ds, prMapping(openOnly)); err != nil {
 		t.Fatalf("declare the open-only mapping: %v", err)
 	}
-	if got := mustGet(t, ds, typePerson, personOf(t, ds, open)); got.Properties["name"] != "Review pr2" {
+	if got := mustGet(t, ds, typePerson, personOf(t, ds, open)); got.Properties["name"] != "Review "+fid("pr2") {
 		t.Fatalf("the open pull request did not project: %v", got.Properties)
 	}
 	if got := refPathValue(mustGet(t, ds, typePR, closed.ID), "person"); got != "" {
@@ -246,7 +246,7 @@ func TestApplyingAMappingWhereLinksOnlyCoveredExistingSources(t *testing.T) {
 	if err := enginetest.DeclareMappings(ctx, ds, prMapping(nil)); err != nil {
 		t.Fatalf("widen the mapping: %v", err)
 	}
-	if got := mustGet(t, ds, typePerson, personOf(t, ds, closed)); got.Properties["name"] != "Review pr1" {
+	if got := mustGet(t, ds, typePerson, personOf(t, ds, closed)); got.Properties["name"] != "Review "+fid("pr1") {
 		t.Fatalf("the widened mapping did not project the closed pull request: %v", got.Properties)
 	}
 }
@@ -257,9 +257,9 @@ func TestTheSubjectHopRefusesAnUncoveredSource(t *testing.T) {
 	_, ds := newDataset(t)
 	installSources(t, ds, []enginetest.Manifest{prManifest()},
 		[]map[string]any{prMapping(openOnly)})
-	closed := syncPR(t, ds, "pr1", "closed")
+	closed := syncPR(t, ds, fid("pr1"), "closed")
 	// The same hop through a covered one resolves.
-	open := syncPR(t, ds, "pr2", "open")
+	open := syncPR(t, ds, fid("pr2"), "open")
 	note := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: typePRNote, Properties: map[string]any{
 			"text": "about the author", "about": vocabulary.RecordPath(typePR, open.ID),

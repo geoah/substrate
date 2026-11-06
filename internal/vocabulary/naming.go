@@ -1,6 +1,7 @@
 package vocabulary
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"regexp"
@@ -65,10 +66,11 @@ var (
 	reMetaKey       = regexp.MustCompile(`^` + metaNamespaceRE + `/` + metaNameRE + `$`)
 	reMetaNamespace = regexp.MustCompile(`^` + metaNamespaceRE + `$`)
 	reMetaName      = regexp.MustCompile(`^` + metaNameRE + `$`)
-	// reID is the record-id alphabet. Minted ids are 12 lowercase base32
-	// characters; a writer's own id is its provider key ENCODED into this set,
-	// which is RFC 3986 unreserved (ALPHA / DIGIT / "-" / "." / "_" / "~")
-	// plus the two extra pchars a path segment admits, ":" and "@", plus "/".
+	// reID is the record-id alphabet. Minted ids are 26 lowercase Crockford
+	// base32 characters (MintedID); a writer's own id is its provider key
+	// ENCODED into this set, which is RFC 3986 unreserved (ALPHA / DIGIT /
+	// "-" / "." / "_" / "~") plus the two extra pchars a path segment
+	// admits, ":" and "@", plus "/".
 	//
 	// The "/" is there for exactly one reason: a DECLARATION's id is a KIND
 	// REFERENCE ("samples.substrate.reamde.dev/tasks/task"), and the grammar has one
@@ -107,6 +109,69 @@ func ValidActor(s string) bool { return reActor.MatchString(s) }
 
 // ValidMetaKey reports whether s is a legal namespaced label/annotation key.
 func ValidMetaKey(s string) bool { return reMetaKey.MatchString(s) }
+
+// MintedIDLen is the length of a minted record id.
+const MintedIDLen = 26
+
+// reMinted is the shape of a minted record id: a UUIDv7 as 26 lowercase
+// Crockford base32 characters, the suffix form of a TypeID. The first
+// character carries three bits, so it is 0 to 7.
+var reMinted = regexp.MustCompile(`^[0-7][0-9a-hjkmnp-tv-z]{25}$`)
+
+// reUUID is a UUID's canonical text, lowercase and hyphenated: the other
+// spelling a client may create a record under, because it is what the apps
+// mint and what a HealthKit workout already carries as its sync identifier.
+// The server mints the Crockford form alone.
+var reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// crockford is the lowercase Crockford base32 alphabet a minted id is written
+// in: no i, l, o or u, so an id read aloud or copied by hand has one spelling.
+const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// EncodeMintedID writes a UUID's 16 bytes as the 26 characters of a minted
+// id, most significant first. 26 characters hold 130 bits, so the first
+// character carries two zero padding bits and is always 0 to 7.
+func EncodeMintedID(b [16]byte) string {
+	var out [MintedIDLen]byte
+	for i := range MintedIDLen {
+		var v byte
+		// Character i covers bits i*5-2 to i*5+2 of b; the two before bit 0
+		// are the zero padding.
+		for k := i*5 - 2; k < i*5+3; k++ {
+			v <<= 1
+			if k >= 0 {
+				v |= b[k/8] >> (7 - k%8) & 1
+			}
+		}
+		out[i] = crockford[v]
+	}
+	return string(out[:])
+}
+
+// DerivedMintedID is an id in the minted shape computed from parts: the
+// first 16 bytes of their sha256, marked as a UUIDv8 (RFC 9562's version for
+// custom layouts). A writer that must name the same record again, a mirror
+// keyed by an upstream id or a retried request, derives it instead of
+// minting (decision 0228). It mirrors host.py's `ids.minted` in the
+// algorithm, not the argument check: the body refuses an empty part, and
+// every caller here passes non-empty ones, which the vectors in
+// internal/runner/testdata/id_vectors.json hold.
+func DerivedMintedID(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	var u [16]byte
+	copy(u[:], sum[:16])
+	u[6] = u[6]&0x0f | 0x80 // version 8
+	u[8] = u[8]&0x3f | 0x80 // RFC 9562 variant
+	return EncodeMintedID(u)
+}
+
+// MintedID reports whether s has the shape of a minted record id: the id a
+// person, an app or an agent may give a new record of a minted kind
+// (decision 0228). Two spellings pass: the 26 Crockford characters the
+// server mints, and a UUID's canonical lowercase text, which the apps mint.
+// The shape is checked, not the UUID version, so a writer minting offline
+// needs only the encoding. Both are opaque: neither can spell a title.
+func MintedID(s string) bool { return reMinted.MatchString(s) || reUUID.MatchString(s) }
 
 // ValidID reports whether s is a legal record id (see reID).
 func ValidID(s string) bool {

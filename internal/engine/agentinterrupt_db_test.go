@@ -585,7 +585,7 @@ func TestTheFirstPassAfterARestartRerunsAFunctionBodysInterruptedAgent(t *testin
 	t.Cleanup(release)
 	fake.script("sub", fakeTurn{content: "noted", arrived: arrived, release: held})
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-crash", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-crash"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}

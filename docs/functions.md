@@ -693,6 +693,7 @@ host.effects.split(kind, merge)
 host.effects.propose(id, target_kind, target_id, diff=None, op="patch", rationale=None)
 host.ids.external(provider, account, external_id)
 host.ids.url(url)
+host.ids.minted(*parts)                           # a minted-shape id derived from parts
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
 host.units.convert(value, from_unit, to_unit, *, delta=False)  # a decimal str; .exact
@@ -720,6 +721,13 @@ host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
 ```
+
+A body run as an agent's tool writes as the agent, and an agent creates a
+record of a kind that is not `internal` under a minted id alone
+([0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
+Such a body derives one with `host.ids.minted`: the same parts give the same
+id, so a retry names the same record. A body run by a trigger or a schedule
+writes as the function and composes its ids as it likes.
 
 A `patch` onto a tombstone is refused `not found` and fails the delivery
 ([api](api.md#the-five-mutations)), so a function that patches a mirror it may

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Manual is the hand-entered data: three lab panels (a `labreport` and one
@@ -44,13 +46,21 @@ var loinc = map[string]struct{ code, display, metric string }{
 	"crp":                    {"1988-5", "C reactive protein [Mass/volume] in Serum or Plasma", "labs/crp"},
 }
 
+// ManualID is the id a manual record named readable is written under: the
+// name derived into the minted shape, because `synth load` writes as the
+// owner, who may create a record under no other id (decision 0228). The
+// same name is the same id, so a second load updates the first one's rows.
+func ManualID(readable string) string { return vocabulary.DerivedMintedID("synth", "manual", readable) }
+
 // Emit writes `labs.yaml`: the sources, the reports, the results and the
-// weigh-in, one multi-document file.
+// weigh-in, one multi-document file. Each record it creates is named by
+// ManualID; a reference to a metric keeps the seeded id.
 func (m Manual) Emit(p *Persona) (*Output, error) {
 	const a = "substrate.reamde.dev"
 	ref := func(kind, id string) map[string]any { return map[string]any{"ref": a + "/" + kind + "/" + id} }
-	doc := func(kind, id string, props map[string]any) map[string]any {
-		return map[string]any{"kind": a + "/" + kind, "metadata": map[string]any{"id": id}, "data": map[string]any{"properties": props}}
+	mine := func(kind, readable string) map[string]any { return ref(kind, ManualID(readable)) }
+	doc := func(kind, readable string, props map[string]any) map[string]any {
+		return map[string]any{"kind": a + "/" + kind, "metadata": map[string]any{"id": ManualID(readable)}, "data": map[string]any{"properties": props}}
 	}
 	docs := []map[string]any{
 		doc("observations/source", "manual", map[string]any{"name": "Entered by hand", "class": "manual"}),
@@ -68,7 +78,7 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		docs = append(docs, doc("labs/labreport", rid, map[string]any{
 			"lab": panel.Lab, "accession": fmt.Sprintf("%s-%04d%02d%02d-4471", strings.ToUpper(panel.Slug[:3]), panel.Date.Year, panel.Date.Month, panel.Date.Day),
 			"orderedAt": panel.Date.At(loc, 7, 55).Format(time.RFC3339), "issuedAt": panel.Date.At(loc, 16, 40).Format(time.RFC3339),
-			"status": "final", "review": "reviewed", "source": ref("observations/source", panel.Slug), "revision": 1,
+			"status": "final", "review": "reviewed", "source": mine("observations/source", panel.Slug), "revision": 1,
 		}))
 		for _, r := range panel.Results {
 			code, ok := loinc[r.Name]
@@ -94,9 +104,9 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 				material = "whole blood"
 			}
 			docs = append(docs, doc("labs/labresult", rid+"/"+r.Name, map[string]any{
-				"report": ref("labs/labreport", rid),
+				"report": mine("labs/labreport", rid),
 				"metric": ref("observations/metric", code.metric),
-				"source": ref("observations/source", panel.Slug),
+				"source": mine("observations/source", panel.Slug),
 				"coding": map[string]any{"system": "http://loinc.org", "code": code.code, "display": code.display},
 				"form":   "gauge", "hold": "PT0S",
 				"value": map[string]any{"value": num(r.Value), "unit": r.Unit},
@@ -119,7 +129,7 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		_, off := t.Zone()
 		docs = append(docs, doc("observations/observation", "manual/"+d.String()+"-weight", map[string]any{
 			"metric": ref("observations/metric", "health/body_mass"),
-			"source": ref("observations/source", "manual"),
+			"source": mine("observations/source", "manual"),
 			"form":   "gauge", "value": map[string]any{"value": "72.0", "unit": "kg"}, "hold": "PT0S",
 			"at": t.Format(time.RFC3339), "utcOffset": off / 60,
 		}))

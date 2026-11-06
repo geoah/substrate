@@ -830,7 +830,8 @@ admitted, validated at load and stored on the declaration, and none changes a
 write. `renamedFrom:`, above, was reserved the same way and is acted on now,
 on a property and on a value entry alike. A kind's `purpose:` sits between the
 two: it changes no write either, but it is not waiting on anything, because
-the reader it exists for is a client.
+the reader it exists for is a client. A kind's `ids:` is acted on from the
+start: it decides whether a create may name its record.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"
@@ -933,6 +934,28 @@ its grant reaches only through a glob
 ([record 0172](decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). A kind's `purpose:` is
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
+
+**`ids:` says who names a new record of the kind**
+([record 0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
+`type: minted` means the substrate assigns the id, a UUIDv7 in 26 lowercase
+Crockford base32 characters, and a person, an app or an agent may create a
+record only under an id in that shape. `type: named` means the writer
+chooses the id, because other records resolve the record by it:
+
+```yaml
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/observations/metric
+data:
+  ids:
+    type: named
+```
+
+An absent `ids:` reads as `named` for an `internal` kind and `minted` for any
+other, and the default is never written into the declaration. A function, a
+bundle's install and the engine name their records on any kind. `ids:` is a
+mapping so a later key, such as a function that generates the ids, joins
+`type` without changing its shape; today `type` is its only key.
 
 **`done:` and `dropped:` say which values close a record.** An enum or a
 state property lists, among its own values, the ones that mean the work was

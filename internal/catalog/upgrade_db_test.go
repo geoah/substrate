@@ -257,10 +257,11 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// A live row holding the very property binary N+1 drops.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/tasks/task", ID: "guarded",
+	guarded, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"url": "https://example.com/issue/1"},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("put the live task row: %v", err)
 	}
 
@@ -324,7 +325,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	if _, _, err := lossy.InstallConfirmed(ctx, substrate.ActorAPI, tasksBundleID, ds, confirm); err != nil {
 		t.Fatalf("the confirmed install must land: %v", err)
 	}
-	got, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "guarded")
+	got, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", guarded.ID)
 	if err != nil {
 		t.Fatalf("get the converted row: %v", err)
 	}

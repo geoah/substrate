@@ -12,7 +12,6 @@ package engine
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base32"
@@ -28,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -1660,16 +1660,22 @@ func errAuthorityTaken(authority string) error {
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// newID mints a bare 12-character lowercase base32 record ID: tokens, refs,
-// fires and the other minted records. A repository is not one of them; its id
-// is its authority.
+// newID mints a record id: a UUIDv7 written as 26 lowercase Crockford base32
+// characters, the suffix form of a TypeID. The leading 48 bits are the
+// creation time in milliseconds, so ids sort by when they were minted, and the
+// 128 bits decode back to the UUID. A repository is not one of the minted
+// records; its id is its authority.
 func newID() (string, error) {
-	raw := make([]byte, 10)
-	if _, err := rand.Read(raw); err != nil {
+	u, err := uuid.NewV7()
+	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(b32.EncodeToString(raw))[:12], nil
+	return vocabulary.EncodeMintedID(u), nil
 }
+
+// derivedMintedID is vocabulary.DerivedMintedID: an id in the minted shape
+// that a retry must name again (a gated create's target).
+func derivedMintedID(parts ...string) string { return vocabulary.DerivedMintedID(parts...) }
 
 // derivedID is the deterministic ID form: 12 characters of base32(sha256).
 func derivedID(parts ...string) string {

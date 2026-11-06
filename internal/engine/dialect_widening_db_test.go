@@ -115,30 +115,30 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
 
 	row := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: fid("h1"),
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read", "write"}, "subject": "ada"},
 			"spec": map[string]any{"limits": map[string]any{
 				// A bare id is admitted wherever `to:` pins the kind, nested or not.
-				"depth": 3, "ref": "a",
+				"depth": 3, "ref": fid("a"),
 			}},
 			"effects": map[string]any{"createdRecords": 2, "skipped": 0},
 			"notes":   map[string]any{"any key/at all": "free text"},
-			"pinned":  "a",
+			"pinned":  fid("a"),
 			"installs": map[string]any{
-				"task": map[string]any{"version": "v1", "source": "a"},
+				"task": map[string]any{"version": "v1", "source": fid("a")},
 				"tasks.example.com/tasks/task": map[string]any{
 					"version": "v2",
-					"source":  vocabulary.RecordPath(dwPackage+"/target", "a"),
+					"source":  vocabulary.RecordPath(dwPackage+"/target", fid("a")),
 				},
 			},
 			"tools": []any{
-				map[string]any{"callable": "a", "label": "first"},
-				map[string]any{"callable": "a", "label": "second"},
+				map[string]any{"callable": fid("a"), "label": "first"},
+				map[string]any{"callable": fid("a"), "label": "second"},
 			},
 		},
 	})
@@ -162,7 +162,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	if d, ok := limits["depth"].(float64); !ok || d != 3 {
 		t.Fatalf("spec.limits.depth = %#v, want float64(3)", limits["depth"])
 	}
-	wantRef := vocabulary.RecordPath(dwPackage+"/target", "a")
+	wantRef := vocabulary.RecordPath(dwPackage+"/target", fid("a"))
 	assertRef(t, "spec.limits.ref", limits["ref"], wantRef)
 	assertRef(t, "pinned", props["pinned"], wantRef)
 
@@ -220,7 +220,7 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+		Kind: dwPackage + "/target", ID: fid("a"), Properties: map[string]any{"name": "Ada"},
 	})
 
 	cases := map[string]struct {
@@ -295,7 +295,7 @@ func TestContainersStayOutOfSearch(t *testing.T) {
 		t.Fatalf("install the dialect authority: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dwPackage + "/holder", ID: "h1",
+		Kind: dwPackage + "/holder", ID: fid("h1"),
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"zorionak"}, "subject": "bezperatan"},
 			"notes": map[string]any{"greeting": "urtebetetzez"},
@@ -333,20 +333,24 @@ func TestContainersStayOutOfSearch(t *testing.T) {
 func TestDerivedTitleTokens(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
+	// An id shaped like a kind reference is one only an internal kind's record
+	// takes from a person: anything else carries a minted id (decision 0228),
+	// so every kind here that is written at such an id is internal.
 	docs := []map[string]any{
 		vocabulary.PackageManifest(dtPackage, 0),
 		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "leaf"},
-			map[string]any{"displayTemplate": "{localName}"}),
+			map[string]any{"displayTemplate": "{localName}", "purpose": "internal"}),
 		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "whole"},
-			map[string]any{"displayTemplate": "{localName} ({id})"}),
+			map[string]any{"displayTemplate": "{localName} ({id})", "purpose": "internal"}),
 		// A kind that declares a REAL property of the token's name: the
 		// declaration wins, and the token is only the fallback.
 		vocabulary.KindManifest(dtPackage,
 			map[string]any{"singular": "claimer"},
 			map[string]any{
 				"displayTemplate": "{localName}",
+				"purpose":         "internal",
 				"properties":      map[string]any{"localName": map[string]any{"type": "string"}},
 			}),
 		// And a kind whose REFERENCE takes the name. One name is one pointer, so
@@ -362,6 +366,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 			map[string]any{"singular": "refclaimer"},
 			map[string]any{
 				"displayTemplate": "{localName}",
+				"purpose":         "internal",
 				"properties": map[string]any{
 					"localName": map[string]any{"type": "reference", "kind": dtPackage + "/named"},
 				},
@@ -419,12 +424,12 @@ func TestDerivedTitleTokens(t *testing.T) {
 	// token would: the target's title. Rendering the id's last segment here would
 	// say the record's own name where the model points at another record's.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtPackage + "/named", ID: "n1", Properties: map[string]any{"name": "Ada"},
+		Kind: dtPackage + "/named", ID: fid("n1"), Properties: map[string]any{"name": "Ada"},
 	})
 	viaRef := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dtPackage + "/refclaimer", ID: "people.example.com/people/person",
 		Properties: map[string]any{
-			"localName": vocabulary.RecordPath(dtPackage+"/named", "n1"),
+			"localName": vocabulary.RecordPath(dtPackage+"/named", fid("n1")),
 		},
 	})
 	if viaRef.Title != "Ada" {
@@ -539,10 +544,10 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("admit the declaration: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/target", ID: "a"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/target", ID: fid("a")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: pkg + "/holder", ID: "h1",
-		Properties: map[string]any{"pinned": "a", "tools": []any{map[string]any{"callable": "a"}}},
+		Kind: pkg + "/holder", ID: fid("h1"),
+		Properties: map[string]any{"pinned": fid("a"), "tools": []any{map[string]any{"callable": fid("a")}}},
 	})
 	_ = svc.Close()
 
@@ -559,12 +564,12 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		t.Fatalf("a stored declaration with a nested reference must still open: %v", err)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind: pkg + "/holder", ID: "h2",
-		Properties: map[string]any{"tools": []any{map[string]any{"callable": "a"}}},
+		Kind: pkg + "/holder", ID: fid("h2"),
+		Properties: map[string]any{"tools": []any{map[string]any{"callable": fid("a")}}},
 	})
 	// And the stored value is still canonical after the rebuild.
-	read := mustGet(t, ds2, pkg+"/holder", "h1")
+	read := mustGet(t, ds2, pkg+"/holder", fid("h1"))
 	tools := read.Properties["tools"].([]any)
 	assertRef(t, "tools[].callable", tools[0].(map[string]any)["callable"],
-		vocabulary.RecordPath(pkg+"/target", "a"))
+		vocabulary.RecordPath(pkg+"/target", fid("a")))
 }

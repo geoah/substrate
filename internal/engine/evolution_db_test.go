@@ -403,7 +403,7 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 
 	// Nothing enforces `unique` yet, and a repository that believed otherwise
 	// would be storing rows it cannot keep: two records, one serial.
-	for _, id := range []string{"one", "two"} {
+	for _, id := range []string{fid("one"), fid("two")} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: evoPackage + "/gizmo", ID: id,
 			Properties: map[string]any{"serial": "SN-1"},

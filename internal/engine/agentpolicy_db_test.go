@@ -41,7 +41,7 @@ func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 		"action": "gate",
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-held", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-held"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting."},
 		// The decision's resume.
 		fakeTurn{content: "landed at last."},
@@ -51,7 +51,7 @@ func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	// The write did NOT land; the tool result is honest about the hold.
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-held"); err == nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-held")); err == nil {
 		t.Fatal("a gated write landed")
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
@@ -64,7 +64,7 @@ func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 	// The request carries the whole story: op create (the target was absent),
 	// the thread, the governing policy pinned at its revision.
 	req := onlyPatchRequest(t, ds)
-	if req.Properties["op"] != "create" || req.Properties["targetId"] != "w-held" {
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != fid("w-held") {
 		t.Fatalf("request: %+v", req.Properties)
 	}
 	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
@@ -86,7 +86,7 @@ func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-held"); err != nil || got.Properties["name"] != "wanted" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-held")); err != nil || got.Properties["name"] != "wanted" {
 		t.Fatalf("the accepted gate did not land: %+v %v", got, err)
 	}
 	waitUntil(t, "the gate's resume", func() bool {
@@ -116,14 +116,14 @@ func TestPolicyGatesAPatchOfAnAbsentTargetIntoACreate(t *testing.T) {
 		"action": "gate",
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", "w-absent", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", fid("w-absent"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held, waiting."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "edit a widget"); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
-	if req.Properties["op"] != "create" || req.Properties["targetId"] != "w-absent" {
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != fid("w-absent") {
 		t.Fatalf("a gated patch of an absent target: %+v", req.Properties)
 	}
 }
@@ -595,7 +595,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	// The floor held the effect: nothing landed, the batch failed honestly,
 	// and the request exists with the thread stamped and NO policy (the
 	// declaration itself demanded review).
-	if _, err := ds.Get(ctx, taskKind, "t-burned"); err == nil {
+	if _, err := ds.Get(ctx, taskKind, fid("t-burned")); err == nil {
 		t.Fatal("a floored effect landed")
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
@@ -603,7 +603,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 		t.Fatal("a floored effect reported ok")
 	}
 	req := onlyPatchRequest(t, ds)
-	if req.Properties["op"] != "create" || req.Properties["targetId"] != "t-burned" {
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != fid("t-burned") {
 		t.Fatalf("request: %+v", req.Properties)
 	}
 	if req.Properties["policy"] != nil {
@@ -621,7 +621,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, taskKind, "t-burned"); err != nil || got.Properties["name"] != "burned" {
+	if got, err := ds.Get(ctx, taskKind, fid("t-burned")); err != nil || got.Properties["name"] != "burned" {
 		t.Fatalf("the accepted effect did not land: %+v %v", got, err)
 	}
 }
@@ -639,18 +639,18 @@ func TestPolicyFunctionsArmGatesAToolCallsEffects(t *testing.T) {
 		"action":   "gate",
 	})
 	fake.script("budget",
-		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-gated"}`}}},
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"` + fid("t-gated") + `"}`}}},
 		fakeTurn{content: "held."},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "annotate one")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	if _, err := ds.Get(ctx, taskKind, "t-gated"); err == nil {
+	if _, err := ds.Get(ctx, taskKind, fid("t-gated")); err == nil {
 		t.Fatal("a gated tool effect landed")
 	}
 	req := onlyPatchRequest(t, ds)
-	if req.Properties["op"] != "create" || req.Properties["targetId"] != "t-gated" {
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != fid("t-gated") {
 		t.Fatalf("request: %+v", req.Properties)
 	}
 	if got := storedReferencePath(req.Properties["function"]); got != vocabulary.RecordPath(kindFunction, crewPackage+"/annotate") {
@@ -664,13 +664,13 @@ func TestPolicyFunctionsArmGatesAToolCallsEffects(t *testing.T) {
 	}
 
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-direct", map[string]any{"name": "direct"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-direct"), map[string]any{"name": "direct"})}}},
 		fakeTurn{content: "wrote it."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
 		t.Fatalf("editor call: %v", err)
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-direct"); err != nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-direct")); err != nil {
 		t.Fatalf("a function-only gate held an agent's own write: %v", err)
 	}
 }
@@ -685,14 +685,14 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-mine", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-mine"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	arrived := make(chan struct{})
 	release := make(chan struct{})
 	fake.script("self",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mine","diff":{"properties":{"name":"mine"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-mine") + `","diff":{"properties":{"name":"mine"}}}`}}},
 		fakeTurn{content: "waiting for the id.", arrived: arrived, release: release},
 	)
 	done := make(chan error, 1)
@@ -718,7 +718,7 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 	if tool["ok"] != true {
 		t.Fatalf("a within-emit self-accept refused: %v", tool["content"])
 	}
-	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-mine"); err != nil || got.Properties["name"] != "mine" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-mine")); err != nil || got.Properties["name"] != "mine" {
 		t.Fatalf("the self-accepted diff did not land: %+v %v", got, err)
 	}
 }
@@ -732,7 +732,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 		"action":   "gate",
 	})
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-gated", map[string]any{"name": "wanted"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-gated"), map[string]any{"name": "wanted"})}}},
 		fakeTurn{content: "held."},
 	)
 	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
@@ -762,7 +762,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("owner accept: %v", err)
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-gated"); err != nil {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-gated")); err != nil {
 		t.Fatalf("the accepted gate did not land: %v", err)
 	}
 }

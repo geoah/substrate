@@ -61,8 +61,11 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 	t.Parallel()
 	ds := newRaceDataset(t)
 	ctx := context.Background()
+	// The lock order is the ids' order, so the three take their roles from it.
+	ids := fixtureIDsInOrder("aaa", "mmm", "zzz")
+	former, canonical, last := ids[0], ids[1], ids[2]
 
-	for _, id := range []string{"aaa", "mmm", "zzz"} {
+	for _, id := range ids {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: raceWidget, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
@@ -71,7 +74,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 	}
 	// Merge aaa INTO mmm: aaa becomes a former id of the canonical mmm.
 	if err := ds.inTx(ctx, raceActor, false, func(tx *txn) error {
-		return tx.applyEffect(effect{Action: effectMerge, Type: raceWidget, ID: "mmm", Loser: "aaa"})
+		return tx.applyEffect(effect{Action: effectMerge, Type: raceWidget, ID: canonical, Loser: former})
 	}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -82,15 +85,15 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := barrier.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|mmm")); err != nil {
+		`SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey("record|"+raceWidget+"|"+canonical)); err != nil {
 		t.Fatal(err)
 	}
 
 	// The list addresses the FORMER id first, then zzz. The
 	// canonical mmm must be locked before zzz, so this parks at the barrier.
 	list := []effect{
-		{Action: effectPatch, Type: raceWidget, ID: "aaa", Properties: map[string]any{"name": "a2"}},
-		{Action: effectPatch, Type: raceWidget, ID: "zzz", Properties: map[string]any{"name": "z2"}},
+		{Action: effectPatch, Type: raceWidget, ID: former, Properties: map[string]any{"name": "a2"}},
+		{Action: effectPatch, Type: raceWidget, ID: last, Properties: map[string]any{"name": "z2"}},
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -107,11 +110,11 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 		})
 	}()
 
-	waitParked(t, ds, 1, "record|"+raceWidget+"|mmm")
+	waitParked(t, ds, 1, "record|"+raceWidget+"|"+canonical)
 	// zzz must still be free: the transaction parked at the canonical mmm in
 	// the global order, having NOT yet locked the larger id. Pre-fix it would
 	// already hold zzz (raw list) and be waiting on mmm only inside applyEffect.
-	if !tryLockFree(t, ds, "record|"+raceWidget+"|zzz") {
+	if !tryLockFree(t, ds, "record|"+raceWidget+"|"+last) {
 		t.Fatal("the list locked zzz before the canonical mmm — the former-id lock cycle is back")
 	}
 	select {
@@ -216,7 +219,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 
 	// A subject person x, minted by a first contact.
 	cx, err := ds.Put(ctx, csrcActor, substrate.PutInput{
-		Kind: csrcContact, ID: "c-x", Properties: map[string]any{"email": "x@example.com", "name": "X"},
+		Kind: csrcContact, ID: fid("c-x"), Properties: map[string]any{"email": "x@example.com", "name": "X"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +230,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 	// s. The put makes the plan take subject|person; the patch targets x.
 	list := []effect{
 		{Action: effectPatch, Type: subjPerson, ID: person, Properties: map[string]any{"name": "Xavier"}},
-		{Action: effectPut, Type: csrcContact, ID: "c-s", Properties: map[string]any{"email": "s@example.com", "name": "S"}},
+		{Action: effectPut, Type: csrcContact, ID: fid("c-s"), Properties: map[string]any{"email": "s@example.com", "name": "S"}},
 	}
 
 	barrier, err := ds.db.BeginTx(ctx, nil)
@@ -260,7 +263,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 	if !tryLockFree(t, ds, "record|"+subjPerson+"|"+person) {
 		t.Fatal("the effect plan locked the subject record before subject|person — the mapping cycle is back")
 	}
-	if !tryLockFree(t, ds, "record|"+csrcContact+"|c-s") {
+	if !tryLockFree(t, ds, "record|"+csrcContact+"|"+fid("c-s")) {
 		t.Fatal("the effect plan locked a source record before subject|person")
 	}
 	select {
@@ -276,7 +279,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 
 	// And the two orders compose without deadlock: the patch landed and the new
 	// source resolved to a subject.
-	got := personOfContact(t, ds, "c-s")
+	got := personOfContact(t, ds, fid("c-s"))
 	if got == "" {
 		t.Fatal("the put source never got a subject")
 	}
@@ -300,17 +303,17 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 
 	// A contact, so the reference has something live to hop through.
 	if _, err := ds.Put(ctx, csrcActor, substrate.PutInput{
-		Kind: csrcContact, ID: "c-x", Properties: map[string]any{"email": "x@example.com", "name": "X"},
+		Kind: csrcContact, ID: fid("c-x"), Properties: map[string]any{"email": "x@example.com", "name": "X"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// The list writes NO mapping source: it writes a note that POINTS at one.
 	list := []effect{{
-		Action: effectPut, Type: csrcNote, ID: "n-1",
+		Action: effectPut, Type: csrcNote, ID: fid("n-1"),
 		Properties: map[string]any{
 			"text":  "about X",
-			"about": vocabulary.RecordPath(csrcContact, "c-x"),
+			"about": vocabulary.RecordPath(csrcContact, fid("c-x")),
 		},
 	}}
 
@@ -339,7 +342,7 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 	}()
 
 	waitParked(t, ds, 1, "subject|"+subjPerson)
-	if !tryLockFree(t, ds, "record|"+csrcNote+"|n-1") {
+	if !tryLockFree(t, ds, "record|"+csrcNote+"|"+fid("n-1")) {
 		t.Fatal("the effect plan locked the note before subject|person: a referenced source's subject key is missing from the plan")
 	}
 	select {
@@ -354,12 +357,12 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 	}
 
 	// And the hop landed: the note points at the contact's subject.
-	note, err := ds.Get(ctx, csrcNote, "n-1")
+	note, err := ds.Get(ctx, csrcNote, fid("n-1"))
 	if err != nil {
 		t.Fatalf("get the note: %v", err)
 	}
 	kind, id, ok := vocabulary.SplitRecordPath(refPath(note, "about"))
-	if !ok || kind != subjPerson || id != personOfContact(t, ds, "c-x") {
+	if !ok || kind != subjPerson || id != personOfContact(t, ds, fid("c-x")) {
 		t.Fatalf("note.about = %v, want the contact's person", note.Properties["about"])
 	}
 }
@@ -374,7 +377,7 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 	ctx := context.Background()
 
 	cx, err := ds.Put(ctx, csrcActor, substrate.PutInput{
-		Kind: csrcContact, ID: "r-x", Properties: map[string]any{"email": "rx@example.com", "name": "RX"},
+		Kind: csrcContact, ID: fid("r-x"), Properties: map[string]any{"email": "rx@example.com", "name": "RX"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -383,7 +386,7 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 
 	list := []effect{
 		{Action: effectPatch, Type: subjPerson, ID: person, Properties: map[string]any{"name": "Renamed"}},
-		{Action: effectPut, Type: csrcContact, ID: "r-s", Properties: map[string]any{"email": "rs@example.com", "name": "RS"}},
+		{Action: effectPut, Type: csrcContact, ID: fid("r-s"), Properties: map[string]any{"email": "rs@example.com", "name": "RS"}},
 	}
 
 	var wg sync.WaitGroup
@@ -407,7 +410,7 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 		defer wg.Done()
 		// An ordinary source write that resolves to the SAME subject x by email.
 		_, err := ds.Put(ctx, csrcActor, substrate.PutInput{
-			Kind: csrcContact, ID: "r-o", Properties: map[string]any{"email": "rx@example.com", "name": "RO"},
+			Kind: csrcContact, ID: fid("r-o"), Properties: map[string]any{"email": "rx@example.com", "name": "RO"},
 		})
 		errs <- err
 	}()
@@ -588,14 +591,16 @@ func TestEffectListLocksInGlobalOrder(t *testing.T) {
 	t.Parallel()
 	ds := newRaceDataset(t)
 	ctx := context.Background()
+	// a is the smaller id in the lock order, z the larger.
+	ids := fixtureIDsInOrder("aaa", "zzz")
 	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: raceWidget, ID: "aaa", Properties: map[string]any{"name": "a"},
+		Kind: raceWidget, ID: ids[0], Properties: map[string]any{"name": "a"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	z, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: raceWidget, ID: "zzz", Properties: map[string]any{"name": "z"},
+		Kind: raceWidget, ID: ids[1], Properties: map[string]any{"name": "z"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -721,7 +726,7 @@ func TestGCSweepSerializesWithPutAtSameID(t *testing.T) {
 	outcomes := map[string]int{}
 	for i := range 12 {
 		shape := sweepRound(i % 3)
-		got := raceSweepAgainstPut(t, ds, fmt.Sprintf("widget-race-%d", i), shape)
+		got := raceSweepAgainstPut(t, ds, fid(fmt.Sprintf("widget-race-%d", i)), shape)
 		switch {
 		case shape == sweepFirst && got != "purged then created":
 			t.Fatalf("round %d: the sweep reached the row first and the history is %q", i, got)
@@ -981,11 +986,11 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 	ds := newRaceDataset(t)
 	ctx := context.Background()
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: raceWidget, ID: "v", Properties: map[string]any{"name": "v"},
+		Kind: raceWidget, ID: fid("v"), Properties: map[string]any{"name": "v"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, "v", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, fid("v"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1008,7 +1013,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 		gcDone <- err
 	}()
 	waitParked(t, ds, 1, changelogLockKey)
-	if !rowLockFree(t, ds, raceWidget, "v") {
+	if !rowLockFree(t, ds, raceWidget, fid("v")) {
 		t.Fatal("the sweep locked the victim's row before the changelog lock")
 	}
 	select {
@@ -1020,12 +1025,12 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 	putDone := make(chan error, 1)
 	go func() {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: raceWidget, ID: "v", Properties: map[string]any{"name": "back"},
+			Kind: raceWidget, ID: fid("v"), Properties: map[string]any{"name": "back"},
 		})
 		putDone <- err
 	}()
 	waitParked(t, ds, 2, changelogLockKey)
-	if !tryLockFree(t, ds, "record|"+raceWidget+"|v") {
+	if !tryLockFree(t, ds, "record|"+raceWidget+"|"+fid("v")) {
 		t.Fatal("the put locked its record before the changelog lock")
 	}
 	select {
@@ -1043,7 +1048,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 			t.Fatalf("a writer parked behind the changelog lock failed: %v", err)
 		}
 	}
-	rec, err := ds.Get(ctx, raceWidget, "v")
+	rec, err := ds.Get(ctx, raceWidget, fid("v"))
 	if err != nil || rec.DeletedAt != nil {
 		t.Fatalf("after both: %+v, %v", rec, err)
 	}

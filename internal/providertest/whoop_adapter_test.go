@@ -51,14 +51,15 @@ func newWhoopAdapter(t *testing.T) (substrate.Dataset, *fakeWhoop) {
 
 // installWhoopAdapter writes the data records the provider's install lays
 // beside its declarations for the adapter: WHOOP's own metrics and record
-// views (metrics.yaml, views.yaml) and the `whoop-to-health` trigger. The
-// health catalogue the outputs name came with the declarations (install).
-// The sync's own triggers stay out, so nothing but the test walks WHOOP.
+// views (metrics.yaml, views.yaml), under the package's bundle as the install
+// writes them, and the `whoop-to-health` trigger. The health catalogue the
+// outputs name came with the declarations (install). The sync's own triggers
+// stay out, so nothing but the test walks WHOOP.
 func installWhoopAdapter(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	for _, file := range []string{"metrics.yaml", "views.yaml"} {
 		for _, d := range loadDocs(t, whoopDir+"/"+file) {
-			putDataDoc(t, ds, d)
+			putDataDocAs(t, ds, substrate.BundleActor(providersAuthority, "whoop"), d)
 		}
 	}
 	installTriggers(t, ds, whoopDir, whoopAdapterTrigger)

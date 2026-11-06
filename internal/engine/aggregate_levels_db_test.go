@@ -49,23 +49,23 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 	at := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
 	putShippedUnits(t, f.ds, "dBSPL", "dBm", "dB", "pH")
 	for id, unit := range map[string]string{
-		"noise": "dBSPL", "dose": "dBSPL", "signal": "dBm",
-		"threshold": "dB", "gain": "dB", "acidity": "pH",
+		fid("noise"): "dBSPL", fid("dose"): "dBSPL", fid("signal"): "dBm",
+		fid("threshold"): "dB", fid("gain"): "dB", fid("acidity"): "pH",
 	} {
 		f.mustPut(t, f.metric, id, map[string]any{"name": id, "unit": unitRef(unit)})
 	}
-	f.level("noise/1", "noise", "gauge", "60", "dB[SPL]", at, nil)
-	f.level("noise/2", "noise", "gauge", "80", "dB[SPL]", at.Add(time.Hour), nil)
-	f.level("noise/day", "noise", "summary", "70", "dB[SPL]", at, map[string]any{"statistic": "sum", "period": "day"})
-	f.level("dose/1", "dose", "amount", "61", "dB[SPL]", at, nil)
-	f.level("dose/2", "dose", "amount", "62", "dB[SPL]", at.Add(time.Hour), nil)
-	f.level("signal/1", "signal", "counter", "-40", "dBm", at, nil)
-	f.level("signal/2", "signal", "counter", "-30", "dBm", at.Add(time.Hour), nil)
-	f.level("threshold/1", "threshold", "gauge", "20", "dB", at, nil)
-	f.level("threshold/2", "threshold", "gauge", "30", "dB", at.Add(time.Hour), nil)
-	f.level("gain/1", "gain", "amount", "3", "dB", at, nil)
-	f.level("acidity/1", "acidity", "gauge", "6", "[pH]", at, nil)
-	f.level("acidity/2", "acidity", "gauge", "7", "[pH]", at.Add(time.Hour), nil)
+	f.level(fid("noise/1"), fid("noise"), "gauge", "60", "dB[SPL]", at, nil)
+	f.level(fid("noise/2"), fid("noise"), "gauge", "80", "dB[SPL]", at.Add(time.Hour), nil)
+	f.level(fid("noise/day"), fid("noise"), "summary", "70", "dB[SPL]", at, map[string]any{"statistic": "sum", "period": "day"})
+	f.level(fid("dose/1"), fid("dose"), "amount", "61", "dB[SPL]", at, nil)
+	f.level(fid("dose/2"), fid("dose"), "amount", "62", "dB[SPL]", at.Add(time.Hour), nil)
+	f.level(fid("signal/1"), fid("signal"), "counter", "-40", "dBm", at, nil)
+	f.level(fid("signal/2"), fid("signal"), "counter", "-30", "dBm", at.Add(time.Hour), nil)
+	f.level(fid("threshold/1"), fid("threshold"), "gauge", "20", "dB", at, nil)
+	f.level(fid("threshold/2"), fid("threshold"), "gauge", "30", "dB", at.Add(time.Hour), nil)
+	f.level(fid("gain/1"), fid("gain"), "amount", "3", "dB", at, nil)
+	f.level(fid("acidity/1"), fid("acidity"), "gauge", "6", "[pH]", at, nil)
+	f.level(fid("acidity/2"), fid("acidity"), "gauge", "7", "[pH]", at.Add(time.Hour), nil)
 
 	day := rng(at.Add(-8*time.Hour), at.Add(16*time.Hour))
 	read := func(metric string, a substrate.Aggregate) substrate.AggregateQuery {
@@ -79,22 +79,22 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 		q     substrate.AggregateQuery
 		want  string
 	}{
-		{"gauge avg", read("noise", substrate.Aggregate{Reducers: reducers("max", "avg")}), "aggregate.reducers[1]: avg does not apply to " + f.metricPath("noise") + ": dBSPL is the level of a power"},
-		{"gauge stddev", read("noise", substrate.Aggregate{Reducers: reducers("stddev")}), "aggregate.reducers[0]: stddev does not apply"},
-		{"amount sum", read("dose", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("dose") + ": dBSPL is logarithmic"},
-		{"amount avg", read("dose", substrate.Aggregate{Reducers: reducers("avg")}), "aggregate.reducers[0]: avg does not apply"},
-		{"summary sum", read("noise", substrate.Aggregate{From: "summaries", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
-		{"prefer-raw sum", read("dose", substrate.Aggregate{From: "prefer-raw", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
-		{"counter increase", read("signal", substrate.Aggregate{Reducers: reducers("increase")}), "aggregate.reducers[0]: increase does not apply to " + f.metricPath("signal") + ": dBm is logarithmic"},
-		{"counter rate", read("signal", substrate.Aggregate{Reducers: reducers("rate")}), "aggregate.reducers[0]: rate does not apply"},
-		{"level sum", read("gain", substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath("gain") + ": dB is logarithmic"},
-		{"rolling sum", read("noise", substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("max", "sum")}}), "aggregate.rolling.reducers[1]: a rolling sum does not apply"},
-		{"rolling avg", read("noise", substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3}}), "aggregate.rolling.reducers[0]: a rolling avg does not apply"},
-		{"rolling level sum", read("threshold", substrate.Aggregate{Bucket: hours, Reducers: reducers("avg"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("sum")}}), "aggregate.rolling.reducers[0]: a rolling sum does not apply"},
+		{"gauge avg", read(fid("noise"), substrate.Aggregate{Reducers: reducers("max", "avg")}), "aggregate.reducers[1]: avg does not apply to " + f.metricPath(fid("noise")) + ": dBSPL is the level of a power"},
+		{"gauge stddev", read(fid("noise"), substrate.Aggregate{Reducers: reducers("stddev")}), "aggregate.reducers[0]: stddev does not apply"},
+		{"amount sum", read(fid("dose"), substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath(fid("dose")) + ": dBSPL is logarithmic"},
+		{"amount avg", read(fid("dose"), substrate.Aggregate{Reducers: reducers("avg")}), "aggregate.reducers[0]: avg does not apply"},
+		{"summary sum", read(fid("noise"), substrate.Aggregate{From: "summaries", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
+		{"prefer-raw sum", read(fid("dose"), substrate.Aggregate{From: "prefer-raw", Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply"},
+		{"counter increase", read(fid("signal"), substrate.Aggregate{Reducers: reducers("increase")}), "aggregate.reducers[0]: increase does not apply to " + f.metricPath(fid("signal")) + ": dBm is logarithmic"},
+		{"counter rate", read(fid("signal"), substrate.Aggregate{Reducers: reducers("rate")}), "aggregate.reducers[0]: rate does not apply"},
+		{"level sum", read(fid("gain"), substrate.Aggregate{Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to " + f.metricPath(fid("gain")) + ": dB is logarithmic"},
+		{"rolling sum", read(fid("noise"), substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("max", "sum")}}), "aggregate.rolling.reducers[1]: a rolling sum does not apply"},
+		{"rolling avg", read(fid("noise"), substrate.Aggregate{Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 3}}), "aggregate.rolling.reducers[0]: a rolling avg does not apply"},
+		{"rolling level sum", read(fid("threshold"), substrate.Aggregate{Bucket: hours, Reducers: reducers("avg"), Rolling: &substrate.AggregateRolling{Buckets: 3, Reducers: reducers("sum")}}), "aggregate.rolling.reducers[0]: a rolling sum does not apply"},
 		{"several metrics", substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-			Metrics: []substrate.AggregateMetricRead{{Ref: f.metricPath("threshold")}, {Ref: f.metricPath("noise")}},
+			Metrics: []substrate.AggregateMetricRead{{Ref: f.metricPath(fid("threshold"))}, {Ref: f.metricPath(fid("noise"))}},
 			Range:   day, Reducers: reducers("avg"),
-		}}, "aggregate.reducers[0]: in aggregate.metrics[1] (" + f.metricPath("noise") + "), avg does not apply"},
+		}}, "aggregate.reducers[0]: in aggregate.metrics[1] (" + f.metricPath(fid("noise")) + "), avg does not apply"},
 	} {
 		t.Run(x.label, func(t *testing.T) {
 			f := f
@@ -106,11 +106,11 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 	for _, x := range []struct {
 		label, metric, reducer, want string
 	}{
-		{"spl max", "noise", "max", "80"},
-		{"spl percentile", "noise", "p50", "70"},
-		{"level avg", "threshold", "avg", "25"},
-		{"acidity avg", "acidity", "avg", "6.5"},
-		{"amount max", "dose", "max", "62"},
+		{"spl max", fid("noise"), "max", "80"},
+		{"spl percentile", fid("noise"), "p50", "70"},
+		{"level avg", fid("threshold"), "avg", "25"},
+		{"acidity avg", fid("acidity"), "avg", "6.5"},
+		{"amount max", fid("dose"), "max", "62"},
 	} {
 		a := substrate.Aggregate{Reducers: reducers(x.reducer)}
 		if x.reducer == "p50" {
@@ -122,7 +122,7 @@ func TestAggregateRefusesWhatAddsOrAveragesALevel(t *testing.T) {
 			t.Errorf("%s: %+v, want one row of %s", x.label, res.Rows, x.want)
 		}
 	}
-	res := f.agg(ctx, substrate.Filter{}, *read("noise", substrate.Aggregate{
+	res := f.agg(ctx, substrate.Filter{}, *read(fid("noise"), substrate.Aggregate{
 		Bucket: hours, Reducers: reducers("max"), Rolling: &substrate.AggregateRolling{Buckets: 2, Reducers: reducers("max")},
 	}).Aggregate)
 	if len(res.Rows) != 2 {
@@ -151,7 +151,7 @@ func TestAggregatePropertyRefusesWhatAddsALevel(t *testing.T) {
 	}
 	at := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
 	for i, v := range []string{"61", "62"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/reading", ID: v, Properties: map[string]any{
+		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/reading", ID: fid(v), Properties: map[string]any{
 			"loudness": quantity(v, "dB[SPL]"), "level": quantity(v, "dB[SPL]"),
 			"takenAt": at.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
 		}})

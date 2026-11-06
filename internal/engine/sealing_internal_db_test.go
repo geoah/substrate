@@ -211,8 +211,8 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 		t.Helper()
 		var a, b string
 		if err := ds.db.QueryRow(
-			`SELECT props->>'secretA', props->>'secretB' FROM records WHERE kind = $1 AND id = 'v1'`,
-			vaultKind).Scan(&a, &b); err != nil {
+			`SELECT props->>'secretA', props->>'secretB' FROM records WHERE kind = $1 AND id = $2`,
+			vaultKind, fid("v1")).Scan(&a, &b); err != nil {
 			t.Fatalf("read stored refs: %v", err)
 		}
 		return a, b
@@ -221,15 +221,15 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 		t.Helper()
 		var n int
 		if err := ds.db.QueryRow(
-			`SELECT count(*) FROM sealed WHERE record_kind = $1 AND record_id = 'v1'`,
-			vaultKind).Scan(&n); err != nil {
+			`SELECT count(*) FROM sealed WHERE record_kind = $1 AND record_id = $2`,
+			vaultKind, fid("v1")).Scan(&n); err != nil {
 			t.Fatalf("count sealed rows: %v", err)
 		}
 		return n
 	}
 
 	mustPutInternal(t, ds, substrate.PutInput{
-		Kind: vaultKind, ID: "v1",
+		Kind: vaultKind, ID: fid("v1"),
 		Properties: map[string]any{"name": "v", "secretA": "value-A", "secretB": "value-B"},
 	})
 	refA, refB := readRefs()
@@ -244,7 +244,7 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	// unfixed write treats any ref of this record as a carried ref and stores it
 	// verbatim, aliasing B onto A's row.
 	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: vaultKind, ID: "v1",
+		Kind: vaultKind, ID: fid("v1"),
 		Properties: map[string]any{"secretB": refA},
 	})
 	if !errors.Is(err, substrate.ErrValidation) {
@@ -259,7 +259,7 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	// Rotating A must not erase B. With no alias, A's rotation deletes only A's
 	// old row; B keeps its ref and still opens to its original value.
 	mustPutInternal(t, ds, substrate.PutInput{
-		Kind: vaultKind, ID: "v1",
+		Kind: vaultKind, ID: fid("v1"),
 		Properties: map[string]any{"secretA": "value-A-rotated"},
 	})
 	if _, afterRotB := readRefs(); afterRotB != refB {

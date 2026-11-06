@@ -35,7 +35,7 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 	hours := 72
 	tierSets := [][]any{{"15m", "1h", "1d"}, {"5m", "1h"}, {"15m", "1d"}, {"1h"}, {"5m", "15m", "1h", "1d"}}
 	metric := func(name, unit, form string) string {
-		id := fmt.Sprintf("parity%d/%s", seed, name)
+		id := fid(fmt.Sprintf("parity%d/%s", seed, name))
 		props := map[string]any{"name": name, "form": form, "rollups": tierSets[rng.Intn(len(tierSets))]}
 		if unit != "" {
 			props["unit"] = unitRef(unit)
@@ -92,7 +92,7 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 		if rng.Intn(3) == 0 {
 			props["hold"] = fmt.Sprintf("PT%dM", 2+rng.Intn(10))
 		}
-		trace(fmt.Sprintf("p%d/temp/%d", seed, h), props, step(1, 9), func(int) any {
+		trace(fid(fmt.Sprintf("p%d/temp/%d", seed, h)), props, step(1, 9), func(int) any {
 			if rng.Intn(14) == 0 {
 				return nil
 			}
@@ -103,10 +103,10 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 			return strconv.FormatFloat(math.Round(c*100)/100, 'f', -1, 64)
 		})
 		codes := []string{"open", "closed", "ajar"}
-		trace(fmt.Sprintf("p%d/door/%d", seed, h), map[string]any{
+		trace(fid(fmt.Sprintf("p%d/door/%d", seed, h)), map[string]any{
 			"metric": f.metricRef(doors), "source": f.sourceRef("hall"), "form": "gauge", "utcOffset": berlin(at),
 		}, step(4, 20), func(int) any { return codes[rng.Intn(len(codes))] })
-		trace(fmt.Sprintf("p%d/steps/%d", seed, h), map[string]any{
+		trace(fid(fmt.Sprintf("p%d/steps/%d", seed, h)), map[string]any{
 			"metric": f.metricRef(steps), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}", "utcOffset": 330,
 		}, step(2, 12), func(int) any {
 			if rng.Intn(10) == 0 {
@@ -114,7 +114,7 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 			}
 			return strconv.Itoa(rng.Intn(200))
 		})
-		trace(fmt.Sprintf("p%d/meter/%d", seed, h), map[string]any{
+		trace(fid(fmt.Sprintf("p%d/meter/%d", seed, h)), map[string]any{
 			"metric": f.metricRef(meter), "source": f.sourceRef("meter"), "form": "counter", "unit": "kW.h",
 			"resetRule": "monotonic", "utcOffset": berlin(at),
 		}, step(5, 15), func(int) any {
@@ -125,14 +125,14 @@ func writeParityStreams(t *testing.T, f aggFix, rng *rand.Rand, seed int64) []pa
 			}
 			return strconv.Itoa(total) + "." + strconv.Itoa(rng.Intn(10))
 		})
-		trace(fmt.Sprintf("p%d/cellar/%d", seed, h), map[string]any{
+		trace(fid(fmt.Sprintf("p%d/cellar/%d", seed, h)), map[string]any{
 			"metric": f.metricRef(cellar), "source": f.sourceRef("cellar"), "form": "gauge", "unit": "Cel",
 		}, step(10, 30), func(int) any { return strconv.FormatFloat(10+float64(rng.Intn(400))/100, 'f', -1, 64) })
 	}
 	// A coded amount, single records across the days.
 	for i := range 12 {
 		at := start.Add(time.Duration(rng.Intn(hours*60)) * time.Minute)
-		f.mustPut(t, f.observation, fmt.Sprintf("p%d/nap/%d", seed, i), map[string]any{
+		f.mustPut(t, f.observation, fid(fmt.Sprintf("p%d/nap/%d", seed, i)), map[string]any{
 			"metric": f.metricRef(steps), "source": f.sourceRef("watch"), "form": "amount", "code": []string{"walk", "run"}[i%2],
 			"value": quantity(strconv.Itoa(10+rng.Intn(90)), "{steps}"), "at": at.Format(time.RFC3339),
 			"endsAt": at.Add(time.Duration(5+rng.Intn(50)) * time.Minute).Format(time.RFC3339), "utcOffset": 330,
@@ -188,7 +188,7 @@ func TestObservedRollupsAnswerAsRawPoints(t *testing.T) {
 				"amount":  {"sum", "count", "min", "max"},
 				"counter": {"increase", "rate", "count"},
 			}[s.form]
-			if s.metric == fmt.Sprintf("parity%d/door", seed) {
+			if s.metric == fid(fmt.Sprintf("parity%d/door", seed)) {
 				reds = []string{"count", "first", "last", "timeInState"}
 			}
 			buckets := []substrate.AggregateBucket{
