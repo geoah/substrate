@@ -94,6 +94,19 @@ linters:
                 it
             - pkg: github.com/stretchr/testify
               desc: the suite uses the standard testing package
+        # CodeQL's go/log-injection is excluded (codeql.yml) on the strength
+        # of this rule: slog's handlers quote a value that could forge a
+        # line, the stdlib log package's printers do not. slog.NewLogLogger
+        # hands a *log.Logger to an API that wants one without importing it.
+        slog-only:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+          deny:
+            - pkg: log$
+              desc: log through log/slog, whose handlers quote what a request
+                wrote; the stdlib log package prints it raw
     errorlint:
       asserts: true
     godox:
