@@ -189,7 +189,10 @@ account that still arrives changes nothing.
 **A finished session goes through the outbox** (`outbox.json`), kept on the
 phone until the server takes it, in the package's order, after any exercise it
 names that the repository lacks (a session logged signed out on the sample,
-for a repository that never got it):
+for a repository that never got it). An exercise the repository holds under
+another id with the same sample or library code (the slug builds before the
+derived ids seeded it under) is not written: the session names the held one,
+on the server and on the phone.
 
 1. the session `PUT` at its UUIDv7, without `status`, so a replay never moves
    a finished session back;
