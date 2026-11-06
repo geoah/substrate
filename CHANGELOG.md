@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.120.0](https://github.com/geoah/substrate/compare/v0.119.0...v0.120.0) (2026-11-06)
+
+
+### Added
+
+* **api:** delete a repository with both factors and free its name ([a209798](https://github.com/geoah/substrate/commit/a209798922eeaa4065a1c7134b603c97ba40a8ef))
+
+
+### Fixed
+
+* **api:** guard the console path on the value that reaches the join ([#1241](https://github.com/geoah/substrate/issues/1241)) ([754032d](https://github.com/geoah/substrate/commit/754032d082d3e78daeaba466e5ebcce0f77022fa))
+* **console:** widen the door card and keep DNS record rows on one line with copy buttons ([a209798](https://github.com/geoah/substrate/commit/a209798922eeaa4065a1c7134b603c97ba40a8ef))
+* **deps:** override the console's minimatch to 11 for the globparts DoS ([#1242](https://github.com/geoah/substrate/issues/1242)) ([508bad7](https://github.com/geoah/substrate/commit/508bad7e23c3acca29448b6ae11e79193b9797ab))
+* **engine:** keep the credential ref and a webhook secret out of logs ([#1243](https://github.com/geoah/substrate/issues/1243)) ([b7bf6a0](https://github.com/geoah/substrate/commit/b7bf6a0fb12021df1d9cbb5dc340ed98b0a4e842))
+* **engine:** refuse a spend cap past the platform's int instead of truncating it ([#1240](https://github.com/geoah/substrate/issues/1240)) ([c3c2fdd](https://github.com/geoah/substrate/commit/c3c2fdd8966fb790a5bad0bc824cc04e1475e4f8))
+* **web:** clear three CodeQL findings in the console and the identity page ([#1244](https://github.com/geoah/substrate/issues/1244)) ([ad8bbee](https://github.com/geoah/substrate/commit/ad8bbeeb482e227552b620b088dbdb4d14f69110))
+
 ## [0.119.0](https://github.com/geoah/substrate/compare/v0.118.0...v0.119.0) (2026-11-06)
 
 
