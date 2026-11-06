@@ -15,7 +15,7 @@ metadata:
   id: openai
 data:
   properties:
-    label: openai
+    label: OpenAI
     wire: openai
     baseURL: https://api.openai.com/v1
     # No reasoningEffort default: the accepted set is the MODEL's, not the
@@ -45,7 +45,7 @@ metadata:
   id: anthropic
 data:
   properties:
-    label: anthropic
+    label: Anthropic
     wire: anthropic
     # The SDK resolves `v1/messages` against this, so the trailing slash is
     # load-bearing.
@@ -94,7 +94,7 @@ metadata:
   id: gemini
 data:
   properties:
-    label: gemini
+    label: Gemini
     wire: openai
     baseURL: https://generativelanguage.googleapis.com/v1beta/openai
     pricing:

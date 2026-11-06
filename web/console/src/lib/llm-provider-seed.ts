@@ -8,7 +8,7 @@ export const LLM_PROVIDER_SEED: Readonly<
   Record<string, Readonly<Record<string, unknown>>>
 > = {
   openai: {
-    label: "openai",
+    label: "OpenAI",
     wire: "openai",
     baseURL: "https://api.openai.com/v1",
     cache: { key: true },
@@ -28,7 +28,7 @@ export const LLM_PROVIDER_SEED: Readonly<
     ],
   },
   anthropic: {
-    label: "anthropic",
+    label: "Anthropic",
     wire: "anthropic",
     baseURL: "https://api.anthropic.com/",
     pricing: [
@@ -76,7 +76,7 @@ export const LLM_PROVIDER_SEED: Readonly<
     ],
   },
   gemini: {
-    label: "gemini",
+    label: "Gemini",
     wire: "openai",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     pricing: [
