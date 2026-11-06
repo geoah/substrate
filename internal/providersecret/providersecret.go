@@ -3,11 +3,15 @@
 // row's key, and on a 401 the endpoint quotes the bearer it refused, so an
 // error returned verbatim would carry that repository's key into a log, a
 // record or an API response. Both wire clients need this (internal/llm buys
-// completions, internal/embed buys embeddings), so the scrub lives here once.
+// completions, internal/embed buys embeddings), so the scrub lives here once,
+// and so does the mark that tells a refused key from every other failure.
 package providersecret
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 )
@@ -74,4 +78,79 @@ func isSpace(r rune) bool {
 		return true
 	}
 	return false
+}
+
+// KeyRefusedError is an endpoint's refusal of the key a request carried
+// (RefusesKey). The wire clients rebuild every provider error as scrubbed
+// text, so Status is the one fact about the refusal a caller can read without
+// parsing the endpoint's words.
+type KeyRefusedError struct {
+	Status int
+	err    error
+}
+
+func (e *KeyRefusedError) Error() string { return e.err.Error() }
+func (e *KeyRefusedError) Unwrap() error { return e.err }
+
+// RefusesKey reports whether an endpoint's failure answer refused the key
+// itself, from its status and its error's type and code. Every call on a key
+// it refuses meets the same answer, so a caller may mark the key failing for
+// every request it carries.
+//
+// A 401 is the endpoint failing to authenticate the request, whatever its
+// body says. A 403 refuses the key only where the error names it:
+// `authentication_error` (Anthropic's type) or `invalid_api_key` (OpenAI's
+// code). Every other 403 refuses one request and leaves the key working for
+// the rest: OpenAI's `unsupported_country_region_territory`, a project
+// without access to a model, a restricted key missing a permission,
+// Anthropic's `permission_error` on one resource, a gateway's moderation
+// refusal.
+func RefusesKey(status int, errType, errCode string) bool {
+	switch status {
+	case http.StatusUnauthorized:
+		return true
+	case http.StatusForbidden:
+		return errType == "authentication_error" || errCode == "invalid_api_key"
+	}
+	return false
+}
+
+// ErrorFields reads the type and code of the error an endpoint's body
+// carries, `{"error": {"type": ..., "code": ...}}` as OpenAI, Anthropic and
+// the gateways that copy them send it. A field that is absent or not a
+// string, or a body that does not parse, reads "".
+func ErrorFields(body []byte) (errType, errCode string) {
+	var answer struct {
+		Error struct {
+			Type json.RawMessage `json:"type"`
+			Code json.RawMessage `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &answer) != nil {
+		return "", ""
+	}
+	_ = json.Unmarshal(answer.Error.Type, &errType)
+	_ = json.Unmarshal(answer.Error.Code, &errCode)
+	return errType, errCode
+}
+
+// MarkKeyRefused returns err marked as the endpoint refusing the key with
+// status, and err unchanged when status is 0. The caller decides the refusal
+// (RefusesKey). The mark keeps err whole, so a caller marks an error it has
+// already scrubbed, or one it rebuilds with Scrub before it leaves the
+// client.
+func MarkKeyRefused(status int, err error) error {
+	if err == nil || status == 0 {
+		return err
+	}
+	return &KeyRefusedError{Status: status, err: err}
+}
+
+// KeyRefusal is the status of the key refusal err carries, or 0 for none.
+func KeyRefusal(err error) int {
+	var refused *KeyRefusedError
+	if errors.As(err, &refused) {
+		return refused.Status
+	}
+	return 0
 }

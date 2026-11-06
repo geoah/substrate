@@ -301,8 +301,9 @@ dispatch, the OAuth facility and injection use:
 Three separate facts per item: `source` (`operator`, `own`, `none`),
 `operatorOffers` (removing your own key would fall back to the operator's),
 and `readiness` (`ready` means the key resolves, not that a call succeeded;
-`not-set-up`, `needs-connect`, `reconnect-needed`, `failing` from the newest
-open alert of an agent on the row, `install-failed`). For embeddings,
+`not-set-up`, `needs-connect`, `reconnect-needed`, `failing` when the vendor
+refused the key and has accepted no call on it since, or from the newest open
+alert of an agent on the row, `install-failed`). For embeddings,
 `target` is the row whose card shows the search line. Owner tokens and
 full-access app tokens may read it; scoped app tokens are refused. The
 discovery feature `operatorDefaults` is listed only when a file is loaded.

@@ -544,6 +544,56 @@ describe("an AI model card", () => {
     expect(within(group("AI models")).queryByText("Paused")).toBeNull()
   })
 
+  it("Needs attention and says the refusal in plain words where search by meaning through it fails", async () => {
+    answer = {
+      operator: { name: "Crane" },
+      items: [
+        { ...OPENAI, source: "own", models: undefined },
+        ANTHROPIC_NONE,
+        GEMINI_OWN,
+        {
+          ...EMBEDDINGS,
+          readiness: "failing",
+          message: "OpenAI refused the key (401)",
+        },
+      ],
+    }
+    rows = [
+      row("openai", { apiKey: "••••" }),
+      row("anthropic"),
+      row("gemini", { apiKey: "••••" }),
+    ]
+    renderPage()
+    const openai = await modelCard("OpenAI")
+    expect(within(openai).getByText("Needs attention")).toBeTruthy()
+    expect(within(openai).queryByText("On")).toBeNull()
+    expect(within(openai).getByText("Using your key")).toBeTruthy()
+    expect(
+      within(openai).getByText("Search by meaning: Crane’s key")
+    ).toBeTruthy()
+    expect(
+      within(openai).getByText("OpenAI refused the key (401)")
+    ).toBeTruthy()
+    expect(within(await modelCard("Gemini")).getByText("On")).toBeTruthy()
+  })
+
+  it("says a refused key once where chat and search by meaning share it", async () => {
+    const refused = "OpenAI refused the key (401)"
+    answer = {
+      operator: { name: "Crane" },
+      items: [
+        { ...OPENAI, readiness: "failing", message: refused },
+        ANTHROPIC_NONE,
+        GEMINI_OWN,
+        { ...EMBEDDINGS, readiness: "failing", message: refused },
+      ],
+    }
+    renderPage()
+    const openai = await modelCard("OpenAI")
+    expect(within(openai).getByText("Needs attention")).toBeTruthy()
+    expect(within(openai).getAllByText(refused)).toHaveLength(1)
+  })
+
   it("reads a row's own key where the server is older than the operator read", async () => {
     answer = { status: 404 }
     features = []

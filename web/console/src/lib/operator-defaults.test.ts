@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest"
 import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
 
 import {
+  cardState,
   modelKey,
   modelName,
   modelWhoseKey,
@@ -15,6 +16,7 @@ import {
   packageWhoseKey,
   percentOf,
   resetWords,
+  searchFailure,
   spendSplit,
   stateResolves,
   uncheckedKey,
@@ -39,6 +41,43 @@ function item(
 }
 
 const CRANE = operatorWords({ name: "Crane" })
+
+describe("searchFailure and cardState", () => {
+  const embeddings = (over: Partial<OperatorDefault>) =>
+    item({
+      id: "embeddings",
+      slot: "embeddings",
+      target: "substrate.reamde.dev/llm/provider/openai",
+      ...over,
+    })
+
+  it("names a refused search key on the card the embeddings item names alone", () => {
+    const items = [
+      embeddings({
+        readiness: "failing",
+        message: "OpenAI refused the key (401)",
+      }),
+    ]
+    expect(searchFailure(items, "openai")).toBe("OpenAI refused the key (401)")
+    expect(searchFailure(items, "gemini")).toBeUndefined()
+    expect(searchFailure([embeddings({})], "openai")).toBeUndefined()
+    expect(
+      searchFailure(
+        [embeddings({ readiness: "not-set-up", message: "no row" })],
+        "openai"
+      )
+    ).toBeUndefined()
+  })
+
+  it("turns On into Needs attention where search fails, and leaves the rest", () => {
+    expect(cardState({ state: "on" }, "OpenAI refused the key (401)")).toBe(
+      "attention"
+    )
+    expect(cardState({ state: "on" }, undefined)).toBe("on")
+    expect(cardState({ state: "setup" }, "refused")).toBe("setup")
+    expect(cardState({ state: "checking" }, "refused")).toBe("checking")
+  })
+})
 
 describe("modelKey", () => {
   it("reads the operator's item: On, Set up, Needs attention", () => {

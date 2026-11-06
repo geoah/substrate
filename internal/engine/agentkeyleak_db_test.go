@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,13 +14,15 @@ import (
 // A completions 401 quotes the bearer it refused, and under the per-repository
 // provider model that bearer is a repository's own key. This drives the whole
 // path: a provider row with a wrong key, a real agent turn, a provider that
-// answers 401 with the masked body a live endpoint sends. The error settles
-// onto the thread record's reason (it lands in the changelog and survives) and
-// is joined into the error the sweep logs, so neither may carry the key.
+// answers 401 with the masked body a live endpoint sends. The thread record's
+// reason (it lands in the changelog and survives) and the caller's error are
+// the plain refusal, and the endpoint's own words reach the log alone, so
+// none of the three may carry the key.
 func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	var logs syncBuffer
+	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	fake := newFakeLLM(t)
 
 	// Fragments of one synthetic key; no real key appears in this tree. The
@@ -62,7 +65,8 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		t.Fatal("a 401 was not reported as an error")
 	}
 
-	assertNoKeyFragment := func(where, s string) {
+	const refusal = "Leakllm refused this key (401). Add a working key on the Leakllm card under Providers."
+	assertNoKeyFragment := func(where, s, want string) {
 		t.Helper()
 		if strings.Contains(s, key) {
 			t.Fatalf("%s carries the row's key whole: %v", where, s)
@@ -70,13 +74,18 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		if strings.Contains(s, prefix) || strings.Contains(s, suffix) {
 			t.Fatalf("%s carries a fragment of the row's key: %v", where, s)
 		}
-		if !strings.Contains(s, "Incorrect API key provided") {
-			t.Fatalf("%s lost the endpoint's own message: %v", where, s)
+		if !strings.Contains(s, want) {
+			t.Fatalf("%s does not say %q: %v", where, want, s)
 		}
 	}
 
-	// The error the caller receives is the one errors.Join hands the sweep log.
-	assertNoKeyFragment("the caller error", err.Error())
+	// The error the caller receives is the one the sweep logs.
+	assertNoKeyFragment("the caller error", err.Error(), refusal)
+	if strings.Contains(err.Error(), "Incorrect API key provided") {
+		t.Fatalf("the caller error carries the endpoint's own words: %v", err)
+	}
+	// The endpoint's own words, scrubbed, are the operator's to read.
+	assertNoKeyFragment("the log", logs.String(), "Incorrect API key provided")
 
 	// The thread record's reason is that same string at settle: the sink that
 	// lands in the changelog and survives.
@@ -101,7 +110,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		if reason == "" {
 			t.Fatal("the thread carries no reason to check")
 		}
-		assertNoKeyFragment("the thread reason", reason)
+		assertNoKeyFragment("the thread reason", reason, refusal)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)

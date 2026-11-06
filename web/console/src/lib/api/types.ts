@@ -29,10 +29,12 @@ export type ErrorCode =
 /** The closed set of `reason`s that narrow an error code for a client that
  * acts on the case. `observed_rederiving` rides an `unavailable` (503): the
  * aggregate read selects an observed index the server is re-deriving.
- * `quota` rides a `guard` (403): the repository's allowance from the operator
- * for the UTC day is used up, and the message names the site and when it
- * resets. */
-export type ErrorReason = "observed_rederiving" | "quota"
+ * `key_refused` rides an `unavailable` (503) too: the vendor refused the key
+ * a model call carried, and the message names the vendor and the card to add
+ * a working key on. `quota` rides a `guard` (403): the repository's allowance
+ * from the operator for the UTC day is used up, and the message names the
+ * site and when it resets. */
+export type ErrorReason = "observed_rederiving" | "key_refused" | "quota"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

@@ -257,11 +257,11 @@ type agentCallInput struct {
 }
 
 // agentEntryError shapes a loop error for the direct entries: a sentinel the
-// engine already classified (a lease conflict, a missing thread, a guard)
-// passes through; anything else — the LLM transport, mostly — reads as a
-// validation failure of the invocation.
+// engine already classified (a lease conflict, a missing thread, a guard, a
+// key the vendor refused) passes through; anything else — the LLM transport,
+// mostly — reads as a validation failure of the invocation.
 func agentEntryError(err error) error {
-	for _, sentinel := range []error{substrate.ErrConflict, substrate.ErrNotFound, substrate.ErrGuard, substrate.ErrForbidden, substrate.ErrValidation} {
+	for _, sentinel := range []error{substrate.ErrConflict, substrate.ErrNotFound, substrate.ErrGuard, substrate.ErrForbidden, substrate.ErrKeyRefused, substrate.ErrValidation} {
 		if errors.Is(err, sentinel) {
 			return err
 		}

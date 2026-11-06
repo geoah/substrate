@@ -68,9 +68,11 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // A failure the endpoint cannot have acted on stays marked
 // egress.ErrUnprocessed through the rebuild: a refusal status (go-openai
 // answers one as an *APIError or a *RequestError carrying it), a redirect not
-// followed, or a mark an inner step already set.
+// followed, or a mark an inner step already set. An answer that refuses the
+// row's key (providersecret.RefusesKey) is marked
+// providersecret.KeyRefusedError.
 func (c *openaiClient) scrubbed(err error) error {
-	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providersecret.MarkKeyRefused(openaiKeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
 	if errors.Is(err, egress.ErrUnprocessed) || egress.IsRedirect(err) || egress.RefusedStatus(openaiStatus(err)) {
 		return egress.Unprocessed(out)
 	}
@@ -80,6 +82,28 @@ func (c *openaiClient) scrubbed(err error) error {
 // openaiStatus is the HTTP status go-openai read off a failure response, or 0.
 // An error event inside a stream carries none: the stream's own status was a
 // success.
+// openaiKeyRefusal is the status of an answer that refused the key
+// (providersecret.RefusesKey), or 0. go-openai reads the error's type and
+// code out of a body it parses (*APIError) and keeps the raw body of one it
+// cannot (*RequestError).
+func openaiKeyRefusal(err error) int {
+	var apiErr *openai.APIError
+	var reqErr *openai.RequestError
+	status, errType, errCode := 0, "", ""
+	switch {
+	case errors.As(err, &apiErr):
+		status, errType = apiErr.HTTPStatusCode, apiErr.Type
+		errCode, _ = apiErr.Code.(string)
+	case errors.As(err, &reqErr):
+		status = reqErr.HTTPStatusCode
+		errType, errCode = providersecret.ErrorFields(reqErr.Body)
+	}
+	if providersecret.RefusesKey(status, errType, errCode) {
+		return status
+	}
+	return 0
+}
+
 func openaiStatus(err error) int {
 	var apiErr *openai.APIError
 	var reqErr *openai.RequestError

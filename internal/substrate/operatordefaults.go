@@ -49,8 +49,10 @@ const (
 	// ReadinessReconnectNeeded: an account's grant came from a client that is
 	// no longer the one resolving, or its refresh was refused.
 	ReadinessReconnectNeeded = "reconnect-needed"
-	// ReadinessFailing: the newest open alert of something this slot pays
-	// for, its summary in Message.
+	// ReadinessFailing: the vendor refused the slot's key (401 or 403) and
+	// has accepted no call on it since, Message naming the vendor and the
+	// status; else the newest open alert of something this slot pays for,
+	// its summary in Message.
 	ReadinessFailing = "failing"
 	// ReadinessInstallFailed: the operator listed the package for install and
 	// the last attempt failed, its error in Message.

@@ -1,13 +1,15 @@
 /** One AI model card on Providers: an `llm/provider` row, titled by its
  * label, saying what it gives you, whether it works (On, Set up, Needs
  * attention; a row has no off switch, so never Paused), and whose key it
- * runs on. The key form opens in place: **Use your own key** over the
- * operator's, **Replace key** over your own, **Add key** where there is
- * none, and **Use _operator_’s key again** where your key replaced one the
- * operator still offers. Until the operator's read answers, or where it
- * failed, the card says so in a neutral pill and never Set up: a row with no
- * key of its own may still be the operator's. The row's record page is a
- * Technical details link only.
+ * runs on. A key the vendor refused, for chat or for search by meaning
+ * through the card, Needs attention and says why in the server's words. The
+ * key form opens in place: **Use your own key** over the operator's,
+ * **Replace key** over your own, **Add key** where there is none, and **Use
+ * _operator_’s key again** where your key replaced one the operator still
+ * offers. Until the operator's read answers, or where it failed, the card
+ * says so in a neutral pill and never Set up: a row with no key of its own
+ * may still be the operator's. The row's record page is a Technical details
+ * link only.
  *
  * A seeded row the person deleted is an Add card, which writes the row back
  * from the seed's fields with no key: the seed is create-only and never
@@ -37,6 +39,7 @@ import type { SubstrateRecord } from "@/lib/api/types"
 import { LLM_PROVIDER_SEED } from "@/lib/llm-provider-seed"
 import {
   LLM_PROVIDER_KIND,
+  cardState,
   modelName,
   modelWhoseKey,
   type ModelKey,
@@ -182,6 +185,7 @@ export function ModelCard({
   modelKey: key,
   words,
   search,
+  searchFailed,
   technical,
   focused,
 }: {
@@ -190,6 +194,8 @@ export function ModelCard({
   words: OperatorWords
   /** "Search by meaning: Crane’s key", on the one card it runs through. */
   search?: string
+  /** Why search by meaning through this card fails, in the server's words. */
+  searchFailed?: string
   technical: boolean
   /** Addressed by `?model=`: scrolled to, and its key form opened where it
    * has no key. */
@@ -206,7 +212,7 @@ export function ModelCard({
     setChecked(true)
     if (focused && key.state === "setup") setEditing(true)
   }
-  const state = STATE[key.state]
+  const state = STATE[cardState(key, searchFailed)]
   const whose = modelWhoseKey(key, words)
   const action = keyAction(key)
   return (
@@ -233,6 +239,9 @@ export function ModelCard({
         </p>
       )}
       {search && <p className="text-[12.5px]">{search}</p>}
+      {searchFailed && searchFailed !== key.message && (
+        <p className="text-[12.5px] text-destructive">{searchFailed}</p>
+      )}
       {editing ? (
         <ModelKeyForm
           row={row}

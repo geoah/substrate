@@ -71,6 +71,8 @@ func operatorProviderConfig(e *operatordefaults.LLM) *providerConfig {
 		titleModel: e.TitleModel,
 		pricing:    map[string]modelPrice{},
 		cfg:        llm.Config{BaseURL: e.BaseURL, APIKey: e.APIKey.Value(), RetryOnlyUnbilled: true},
+		key:        operatorKeyID(e.ID),
+		name:       vendorName("", e.ID),
 	}
 	pc.cfg.Headers = operatorHeaders(e)
 	if e.Cache != nil {

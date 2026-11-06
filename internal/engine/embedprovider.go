@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/operatordefaults"
@@ -46,7 +47,25 @@ type embedProvider struct {
 	// tokens, and settles to what the endpoint reported.
 	gate  *dataset
 	per1M float64
+	// ds and key are where every request tells the refused-key table what the
+	// vendor answered (keyrefusals.go): the operator entry's key, or the
+	// claiming row's own. A provider built without ds tells nobody.
+	ds  *dataset
+	key keyID
+	// drain is set on the provider a drain pass resolved (ProcessEmbedQueue).
+	// Its first request asks the key table, right before it is sent, whether
+	// it may go (keyRefusals.takeDrain), and one on a key whose wait stands
+	// is not sent (errEmbedKeyHeld); asked records the answer, which the
+	// pass's later requests go on.
+	drain bool
+	asked bool
 }
+
+// errEmbedKeyHeld is a drain's request left unsent: the vendor refused the
+// key and its wait has not ended, or another drain is asking. It is sent
+// marked egress.ErrUnprocessed, so the allowance settles the request's
+// reservation at nothing.
+var errEmbedKeyHeld = errors.New("substrate/engine: the embeddings key was refused and its wait has not ended")
 
 // Embed and Dimension make embedProvider a substrate.Embedder, so the queue
 // drains through the resolved row.
@@ -54,7 +73,32 @@ func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32,
 	if p.gate != nil {
 		return p.operatorEmbed(ctx, texts)
 	}
-	return p.client.Embed(ctx, texts)
+	vecs, _, err := p.request(ctx, texts)
+	return vecs, err
+}
+
+// request sends one embeddings request. The drain, the semantic query and
+// the endpoint check all reach the vendor here, inside the allowance gate,
+// so each answer reaches the refused-key table, and a drain's probe of a
+// refused key is taken only where a request follows at once.
+func (p *embedProvider) request(ctx context.Context, texts []string) ([][]float32, embed.Usage, error) {
+	if p.ds == nil {
+		return p.client.EmbedUsage(ctx, texts)
+	}
+	refusals, now := &p.ds.svc.keyRefusals, p.ds.svc.operatorNow
+	if p.drain && !p.asked {
+		probe, ok := refusals.takeDrain(p.key, now())
+		if !ok {
+			return nil, embed.Usage{}, egress.Unprocessed(errEmbedKeyHeld)
+		}
+		p.asked = true
+		if probe {
+			defer func() { refusals.endProbe(p.key, now()) }()
+		}
+	}
+	vecs, usage, err := p.client.EmbedUsage(ctx, texts)
+	refusals.observe(p.key, err, now())
+	return vecs, usage, err
 }
 
 func (p *embedProvider) Dimension() int { return p.client.Dimension() }
@@ -135,7 +179,10 @@ func (ds *dataset) openOperatorEmbedProvider(entry *operatordefaults.LLM) (*embe
 		return nil, fmt.Errorf("substrate/engine: the operator's embeddings entry %q: %w", entry.ID, err)
 	}
 	per1M, _ := priceFloat(entry.Embeddings.Per1M)
-	return &embedProvider{id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M}, nil
+	return &embedProvider{
+		id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M,
+		ds: ds, key: operatorKeyID(entry.ID),
+	}, nil
 }
 
 // embedClaims is every live row claiming the embeddings job, by id, read
@@ -200,7 +247,7 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 	if err != nil {
 		return nil, fmt.Errorf("%w: llm/provider row %q: %w", substrate.ErrValidation, id, err)
 	}
-	return &embedProvider{id: id, model: model, client: client}, nil
+	return &embedProvider{id: id, model: model, client: client, ds: ds, key: pc.key}, nil
 }
 
 // Reembed enqueues the properties the resolved pair did not embed. It buys no

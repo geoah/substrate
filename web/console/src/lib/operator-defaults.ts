@@ -210,6 +210,29 @@ export function searchLine(
   return undefined
 }
 
+/** Why search by meaning fails, in the server's words ("OpenAI refused the
+ * key (401)"), on the card the embeddings item names; nothing on any other
+ * card, and nothing while it works or is not set up. */
+export function searchFailure(
+  items: readonly OperatorDefault[] | undefined,
+  rowId: string
+): string | undefined {
+  const item = items?.find((i) => i.slot === "embeddings")
+  if (!item || providerRowOf(item.target) !== rowId) return undefined
+  if (item.readiness !== "failing") return undefined
+  return item.message || "Search by meaning stopped working"
+}
+
+/** The pill an AI model card wears, given what search by meaning through it
+ * says: a card whose chat key works but whose search fails Needs attention
+ * too, because the card is where the reader fixes either. */
+export function cardState(
+  key: Pick<ModelKey, "state">,
+  searchFailed: string | undefined
+): ModelState {
+  return key.state === "on" && searchFailed ? "attention" : key.state
+}
+
 // ── provider cards ──────────────────────────────────────────────────────────
 
 /** The "whose key" line on a provider's card, from its OAuth client or its

@@ -162,9 +162,10 @@ func anthropicEndpoint(base string) (string, error) {
 // scrubbed rebuilds a provider error with the row's bearer taken back out,
 // rebuilt rather than %w-wrapped so no unwrap can recover the key. A context
 // overflow is classified on the scrubbed text (providerError), and an
-// egress.ErrUnprocessed mark survives the rebuild.
+// egress.ErrUnprocessed mark and a providersecret.KeyRefusedError mark
+// (statusError) survive the rebuild.
 func (c *anthropicClient) scrubbed(err error) error {
-	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providersecret.MarkKeyRefused(providersecret.KeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
 	if errors.Is(err, egress.ErrUnprocessed) {
 		return egress.Unprocessed(out)
 	}
@@ -732,8 +733,15 @@ func anthropicRetryAfter(header http.Header) (time.Duration, bool) {
 // method, URL, status, request ids, then the body the endpoint sent, cut to
 // anthropicMaxErrorBody bytes without splitting a key scrubbed must remove.
 // The status code must stay in the text, because providerError tells a rate
-// limit from a context overflow by its 429.
+// limit from a context overflow by its 429. An answer that refuses the key
+// (providersecret.RefusesKey, read from the whole body before the cut) is
+// marked providersecret.KeyRefusedError; the text is not scrubbed yet, and
+// scrubbed keeps only the mark.
 func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
+	refused := 0
+	if errType, errCode := providersecret.ErrorFields(body); providersecret.RefusesKey(res.StatusCode, errType, errCode) {
+		refused = res.StatusCode
+	}
 	body = providersecret.Truncate(c.apiKey, body, anthropicMaxErrorBody)
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "%s %q: %d %s", http.MethodPost, c.endpoint, res.StatusCode, http.StatusText(res.StatusCode))
@@ -747,7 +755,7 @@ func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 		msg.WriteByte(' ')
 		msg.Write(body)
 	}
-	return errors.New(msg.String())
+	return providersecret.MarkKeyRefused(refused, errors.New(msg.String()))
 }
 
 // anthropicMessage is the Messages response, one-shot or folded from a
