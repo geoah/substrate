@@ -7,10 +7,18 @@
  * column beside it. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { KindInfo } from "@/lib/api/types"
+import { Toaster } from "@/components/ui/toast"
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { RecordConfigForm } from "./record-config-form"
 
 // The account kind as the substrate serves it: email + grantedScopes are the
@@ -188,5 +196,95 @@ describe("RecordConfigForm", () => {
     )
     expect(screen.getByLabelText(/API base/)).toBeTruthy()
     expect(screen.getByLabelText(/Drain budget/)).toBeTruthy()
+  })
+})
+
+describe("RecordConfigForm with a secret", () => {
+  const clientKind: KindInfo = {
+    identity: "providers.substrate.reamde.dev/google/client",
+    name: "client",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
+    version: 0,
+    source: "installed",
+    description: "",
+    definition: {
+      properties: {
+        clientId: { type: "string", required: true },
+        clientSecret: { type: "secret", required: true },
+      },
+    },
+  }
+  const stored: SubstrateRecord = {
+    id: "default",
+    kind: clientKind.identity,
+    properties: { clientId: "app-1", clientSecret: "[redacted]" },
+    labels: {},
+    version: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  }
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => vi.stubGlobal("fetch", fetchMock))
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("leaves nothing of a typed secret in the mutation cache after a refusal, a save or Cancel", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const onOpenChange = vi.fn()
+    render(
+      <QueryClientProvider client={client}>
+        <Toaster>
+          <RecordConfigForm
+            type={clientKind}
+            record={stored}
+            title="Edit client"
+            description="Your Google app."
+            open
+            onOpenChange={onOpenChange}
+          />
+        </Toaster>
+      </QueryClientProvider>
+    )
+    const secret = screen.getByLabelText(/Client secret/)
+    const save = screen.getByRole("button", { name: "Save changes" })
+    const sent = () =>
+      fetchMock.mock.calls
+        .filter(([, init]) => init?.method === "PATCH")
+        .map(([, init]) => JSON.parse(String(init?.body)))
+
+    fetchMock.mockResolvedValueOnce(
+      Response.json(
+        { error: { code: "conflict", message: "version mismatch" } },
+        { status: 409 }
+      )
+    )
+    fireEvent.change(secret, { target: { value: "cs-refused-secret" } })
+    fireEvent.click(save)
+    expect(await screen.findByText("Saving the client failed")).toBeTruthy()
+    expect(sent()).toEqual([
+      { properties: { clientId: "app-1", clientSecret: "cs-refused-secret" } },
+    ])
+    expectNoTrace(client, "cs-refused-secret")
+
+    fetchMock.mockResolvedValueOnce(Response.json(stored))
+    fireEvent.change(secret, { target: { value: "cs-saved-secret" } })
+    fireEvent.click(save)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(sent()).toHaveLength(2)
+    expectNoTrace(client, "cs-saved-secret")
+
+    onOpenChange.mockClear()
+    fireEvent.change(secret, { target: { value: "cs-cancelled-secret" } })
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(sent()).toHaveLength(2)
+    expectNoTrace(client, "cs-cancelled-secret")
   })
 })

@@ -18,6 +18,7 @@ import { BundleSettingsForm } from "@/components/bundle-settings"
 import { Toaster } from "@/components/ui/toast"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { groupSettings } from "@/lib/settings"
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
 
 const SETTINGS_PATH = "/api/v1/substrate.reamde.dev/core/setting"
 const SECRETS_PATH = "/api/v1/substrate.reamde.dev/core/secret"
@@ -60,13 +61,14 @@ function renderForm(records: SubstrateRecord[]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <Toaster>
         <BundleSettingsForm fields={fields} />
       </Toaster>
     </QueryClientProvider>
   )
+  return { ...view, client }
 }
 
 describe("BundleSettingsForm", () => {
@@ -120,6 +122,38 @@ describe("BundleSettingsForm", () => {
 
   // One bundle may own a `setting` and a `secret` both called apiKey; a
   // shared draft would PATCH the typed secret into the readable setting.
+  it("leaves nothing of a typed secret in the mutation cache after a refusal, a save or leaving the form", async () => {
+    const { client, unmount } = renderForm([BASE_URL, API_KEY])
+    const secret = await screen.findByLabelText(/API key/)
+    const save = screen.getByRole("button", { name: "Save" })
+
+    fetchMock.mockImplementationOnce(async () =>
+      Response.json(
+        { error: { code: "conflict", message: "version mismatch" } },
+        { status: 409 }
+      )
+    )
+    fireEvent.change(secret, { target: { value: "fc-refused-secret" } })
+    fireEvent.click(save)
+    expect(await screen.findByText("Saving the settings failed")).toBeTruthy()
+    expect(patches()[0]).toEqual([
+      `${SECRETS_PATH}/ada.example.com%2Ffirecrawl%2FapiKey`,
+      { properties: { value: "fc-refused-secret" } },
+    ])
+    expectNoTrace(client, "fc-refused-secret")
+
+    fireEvent.change(secret, { target: { value: "fc-saved-secret" } })
+    fireEvent.click(save)
+    expect(await screen.findByText("1 setting saved.")).toBeTruthy()
+    expect(patches()).toHaveLength(2)
+    expectNoTrace(client, "fc-saved-secret")
+
+    fireEvent.change(secret, { target: { value: "fc-left-secret" } })
+    unmount()
+    expect(patches()).toHaveLength(2)
+    expectNoTrace(client, "fc-left-secret")
+  })
+
   it("never writes a secret into the plain setting of the same name", async () => {
     renderForm([
       record(`${BUNDLE}/apiKey`, SETTING_KIND, {

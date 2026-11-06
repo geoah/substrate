@@ -86,6 +86,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
 import { PropertySheet } from "./property-sheet"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { ShippedUnits } from "@/components/units-provider.test-fixtures"
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
 
 /** Every render gets the shipped units, as the signed-in console's
  * `UnitsProvider` gives a page the repository's. */
@@ -211,7 +212,7 @@ function renderSheet(
   const view = render(sheet(r))
   /** A live re-read: the page hands the sheet the record as it is now. */
   const refresh = (at: SubstrateRecord) => view.rerender(sheet(at))
-  return { ...view, refresh }
+  return { ...view, refresh, client }
 }
 
 const row = (name: string) =>
@@ -575,6 +576,58 @@ describe("PropertySheet inline edit", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(
       /changed since you opened it/
     )
+  })
+})
+
+describe("PropertySheet secret row", () => {
+  const PROVIDER = "ada.example.com/llm/provider"
+  const provider = kind(PROVIDER, {
+    displayTemplate: "{label}",
+    properties: {
+      label: { type: "string" },
+      apiKey: { type: "secret" },
+    },
+  })
+  const keyed = record({
+    kind: PROVIDER,
+    properties: { label: "OpenAI", apiKey: "[redacted]" },
+  })
+
+  it("leaves nothing of a typed key in the mutation cache after a save, a refusal or Esc", async () => {
+    const { client } = renderSheet(keyed, provider)
+    const keyBox = () =>
+      document.querySelector<HTMLInputElement>("input[type=password]")
+    const typeKey = (secret: string, key: string) => {
+      fireEvent.click(valueOf("apiKey")!)
+      const input = keyBox()!
+      expect(input.getAttribute("aria-label")).toBe("Api key")
+      fireEvent.change(input, { target: { value: secret } })
+      fireEvent.keyDown(input, { key })
+      return input
+    }
+
+    typeKey("sk-sheet-saved", "Enter")
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { apiKey: "sk-sheet-saved" },
+      ifVersion: 7,
+    })
+    await waitFor(() => expect(keyBox()).toBeNull())
+    expectNoTrace(client, "sk-sheet-saved")
+
+    wire.refuse = { code: "conflict", message: "version mismatch" }
+    typeKey("sk-sheet-refused", "Enter")
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /changed since you opened it/
+    )
+    expect(wire.writes).toHaveLength(2)
+    expectNoTrace(client, "sk-sheet-refused")
+    fireEvent.keyDown(keyBox()!, { key: "Escape" })
+
+    typeKey("sk-sheet-cancelled", "Escape")
+    expect(keyBox()).toBeNull()
+    expect(wire.writes).toHaveLength(2)
+    expectNoTrace(client, "sk-sheet-cancelled")
   })
 })
 

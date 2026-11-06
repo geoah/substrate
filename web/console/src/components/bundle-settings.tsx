@@ -9,14 +9,16 @@
  * empty string over the stored one. */
 
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 
 import { PropertyField } from "@/components/record/property-field"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import { saveSettingValue } from "@/lib/api/settings"
+import type { SubstrateRecord } from "@/lib/api/types"
 import type { FormValue } from "@/lib/record-form"
 import { unset, type SettingField } from "@/lib/settings"
 
@@ -73,12 +75,17 @@ export function BundleSettingsForm({ fields }: { fields: SettingField[] }) {
     (f) => edited.includes(f.key) && changed(f, values[f.key])
   )
 
-  const save = useMutation({
-    mutationFn: async () => {
-      for (const field of pending) {
-        await saveSettingValue(field.record, stored(values[field.key]))
+  // A secret's value is among the writes, so they go through
+  // useSecretMutation and nothing of them stays in the mutation cache.
+  const save = useSecretMutation({
+    mutationKey: ["bundle-settings"],
+    mutationFn: async (
+      writes: { record: SubstrateRecord; value: string }[]
+    ) => {
+      for (const write of writes) {
+        await saveSettingValue(write.record, write.value)
       }
-      return pending.length
+      return writes.length
     },
     onSuccess: (count) => {
       toast.add({
@@ -104,7 +111,13 @@ export function BundleSettingsForm({ fields }: { fields: SettingField[] }) {
       onSubmit={(e) => {
         e.preventDefault()
         setAttempted(true)
-        if (pending.length) save.mutate()
+        if (pending.length)
+          save.mutate(
+            pending.map((f) => ({
+              record: f.record,
+              value: stored(values[f.key]),
+            }))
+          )
       }}
     >
       <FieldGroup className="gap-5">

@@ -9,7 +9,7 @@
  * cadence and depth, without the connect step. */
 
 import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRoundIcon, TriangleAlertIcon } from "lucide-react"
 
 import { PropertyField } from "@/components/record/property-field"
@@ -49,6 +49,7 @@ import {
   type FormValue,
   type FormValues,
 } from "@/lib/record-form"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import { useUnits } from "@/hooks/use-units"
 
 export interface AccountDialogProps {
@@ -116,21 +117,31 @@ export function AccountDialog({
     mode === "create" && oauth && configured && Boolean(connect)
   const accountName = `${providerName} account`
 
-  const save = useMutation({
-    mutationFn: async ({ tab }: { tab?: Window | null }) => {
-      const properties = toProperties(groups.all, values, mode)
+  // An account holds secrets (a pasted token), so the write goes through
+  // useSecretMutation and nothing of the typed values stays in the
+  // mutation cache.
+  const save = useSecretMutation({
+    mutationKey: ["account", kind.identity],
+    mutationFn: async ({
+      tab,
+      properties,
+    }: {
+      tab?: Window | null
+      properties: Record<string, unknown>
+    }) => {
       try {
-        return record
+        const saved = record
           ? await patchRecord(authority, pkg, kind.name, record.id, {
               properties,
             })
           : await createRecord(authority, pkg, kind.name, { properties })
+        return { saved, tab }
       } catch (error) {
         tab?.close()
         throw error
       }
     },
-    onSuccess: (saved, { tab }) => {
+    onSuccess: ({ saved, tab }) => {
       // An account write moves the bundle status, the trait query and the
       // record reads all at once.
       void queryClient.invalidateQueries()
@@ -204,7 +215,7 @@ export function AccountDialog({
     // The consent tab is opened HERE, from the press, before the create's
     // round-trip: opened after it, the browser counts it as a popup.
     const tab = connecting ? window.open("about:blank", "_blank") : undefined
-    save.mutate({ tab })
+    save.mutate({ tab, properties: toProperties(groups.all, values, mode) })
   }
 
   const title = record

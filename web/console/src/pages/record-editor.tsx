@@ -28,7 +28,7 @@
  *   success unless the apply returns ok. */
 
 import { Suspense, lazy, useEffect, useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CodeIcon,
@@ -96,6 +96,7 @@ import {
   type ReadOnlyReason,
 } from "@/lib/provenance"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
 import { useUnits } from "@/hooks/use-units"
@@ -302,9 +303,13 @@ export function RecordEditorForm({
   const errorCount = liveErrors.length
   const warnCount = problems.filter((p) => p.severity === "warning").length
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const parsed = parseApplyDoc(text)
+  // The document may carry a secret typed into the sheet or the YAML, so the
+  // write goes through useSecretMutation and nothing of it stays in the
+  // mutation cache.
+  const mutation = useSecretMutation({
+    mutationKey: ["record-editor", kind.identity],
+    mutationFn: async (doc: string) => {
+      const parsed = parseApplyDoc(doc)
       if (parsed.error || !parsed.value) {
         throw new ApiError(
           "validation",
@@ -469,7 +474,7 @@ export function RecordEditorForm({
             disabled={mutation.isPending}
             onClick={() => {
               setAttempted(true)
-              if (canSave) mutation.mutate()
+              if (canSave) mutation.mutate(text)
             }}
           >
             {mutation.isPending && <Spinner className="size-3.5" />}
@@ -549,7 +554,7 @@ export function RecordEditorForm({
               size="sm"
               className="gap-1.5"
               disabled={!canSave}
-              onClick={() => mutation.mutate()}
+              onClick={() => mutation.mutate(text)}
             >
               {mutation.isPending && <Spinner className="size-3.5" />}
               {mode === "edit" ? "Save changes" : "Create"}
