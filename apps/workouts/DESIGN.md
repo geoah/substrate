@@ -2230,8 +2230,8 @@ line when fixing). In order:
 - The header, at least 36 pt: the ring, the badge and title (17 pt semibold), the note (a sparkle and the suggestion's
   reason in 13 pt; a status such as "of 2" (in a group, after the exercise's name, "warm-up 1 of 2"; none in a warm-up
   circuit, whose round says it) or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
-  rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
-  menu items) or Cancel when fixing. The note sits beside the title when it fits, else on its own line under it. After
+  rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and Cancel when fixing; the set menu `…` is
+  beside Log, not in the header, so the title keeps the width (owner, 2026-11-06). The note sits beside the title when it fits, else on its own line under it. After
   a reps-left step the new value's meaning ("1 left: very hard") shows in the note's place for 2.5 s without
   changing the header's height.
 - The slot's cue, when the routine gives one (`RowsEditor.cue`): a lightbulb and one line in 13 pt secondary,
@@ -2272,7 +2272,8 @@ line when fixing). In order:
 - The buttons. Log is a 50 pt capsule in the panel's colour that names exactly what it saves ("Log 110 kg × 8 · 2 left",
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
-  has Save, enabled once the draft differs; Delete set is in the `…`, as on every set.
+  has Save, enabled once the draft differs; Delete set is in the `…`, as on every set. The `…` (the Table's set menu
+  items) is a 50 pt glass circle at the end of the row Log or Save is on, so every action is under the thumb.
 - **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02; a lone done warm-up is
   drawn as its own line rather than folded, so it has one too): the Table's set menu items,
   with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and

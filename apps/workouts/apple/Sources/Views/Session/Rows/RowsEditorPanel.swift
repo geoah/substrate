@@ -4,9 +4,9 @@ import WorkoutsCore
 /// The set open in place (DESIGN.md §7.6a): a tinted panel with a header
 /// line (the set and why today's numbers), each value with last time under
 /// it and its steppers under the thumb, reps left built the same, a timed set's clock
-/// and track, and a Log button that names exactly what it saves.
-/// A done set being fixed uses the same panel, neutral, with Save and
-/// Cancel; Delete set is in its `…`, as on every set (owner, 2026-11-02).
+/// and track, and a Log button that names exactly what it saves, with the
+/// set's `…` beside it. A done set being fixed uses the same panel, neutral,
+/// with Save and Cancel; Delete set is in its `…`, as on every set (owner, 2026-11-02).
 /// Every number, word and patch comes from `RowsEditor`.
 struct RowsEditorPanel: View {
     let editor: RowsEditor
@@ -276,44 +276,34 @@ struct RowsEditorPanel: View {
                     .fixedSize()
                     .frame(minHeight: 44)
             }
-            if let row {
-                Menu {
-                    SetMenuItems(
-                        row: row,
-                        untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
-                        delete: { screen.delete(editor.row, name: name, session: session) })
-                } label: {
-                    RowsGlassIcon(systemImage: "ellipsis")
-                }
-                .rowsGlassCircle(tint: tint)
-                .accessibilityLabel("\(editor.title) options")
-                .accessibilityHint(editor.mode == .fix ? "Untick, delete, set kind, rest and note" : "Delete, set kind, rest and note")
-            }
         }
     }
 
     // MARK: - Buttons
 
+    /// The set's `…` sits at the end of the row of its buttons, beside Log
+    /// or Save, so every action is under the thumb and the header keeps its
+    /// width for the title (owner, 2026-11-06).
     @ViewBuilder
     private var buttons: some View {
         switch editor.mode {
         case .fix:
-            primaryButton(fullWidth: true)
+            primaryRow
         case .log:
             if editor.timer != nil, let secondary = editor.secondary {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
                         secondaryButton(secondary, fullWidth: false)
-                        primaryButton(fullWidth: true)
+                        primaryRow
                     }
                     VStack(spacing: 8) {
-                        primaryButton(fullWidth: true)
+                        primaryRow
                         secondaryButton(secondary, fullWidth: true)
                     }
                 }
             } else {
                 VStack(spacing: 4) {
-                    primaryButton(fullWidth: true)
+                    primaryRow
                     if let secondary = editor.secondary {
                         Button(secondary.title) { run(secondary.action) }
                             .font(.subheadline.weight(.medium))
@@ -327,16 +317,44 @@ struct RowsEditorPanel: View {
         }
     }
 
-    private func primaryButton(fullWidth: Bool) -> some View {
+    private var primaryRow: some View {
+        HStack(spacing: 8) {
+            primaryButton
+            setMenu
+        }
+    }
+
+    /// As tall as Log, a glass circle its menu grows out of.
+    @ViewBuilder
+    private var setMenu: some View {
+        if let row {
+            Menu {
+                SetMenuItems(
+                    row: row,
+                    untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
+                    delete: { screen.delete(editor.row, name: name, session: session) })
+            } label: {
+                RowsGlassIcon(systemImage: "ellipsis", glyph: 36)
+            }
+            .rowsGlassCircle(tint: tint)
+            .accessibilityLabel("\(editor.title) options")
+            .accessibilityHint(editor.mode == .fix ? "Untick, delete, set kind, rest and note" : "Delete, set kind, rest and note")
+        }
+    }
+
+    private var primaryButton: some View {
         let primary = editor.primary
         return Button {
             run(primary.action)
         } label: {
+            // One line beside the `…`, a little smaller where it must be,
+            // so the button keeps its height; two at the accessibility sizes.
             Label(primary.title, systemImage: primary.action.symbol)
                 .labelStyle(.titleAndIcon)
-                .lineLimit(2)
+                .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.75)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: fullWidth ? .infinity : nil)
+                .frame(maxWidth: .infinity)
         }
         .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(editor.tint)))
         .disabled(!primary.isEnabled)
