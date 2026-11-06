@@ -14,6 +14,9 @@ type SiteInfo struct {
 	// Logo is the logo's server-relative URL under /site/, absent where
 	// site.yaml names none.
 	Logo string `json:"logo,omitempty"`
+	// Icon is the server-relative URL under /site/ of the browser tab's icon,
+	// absent where site.yaml names none; a client then uses the logo.
+	Icon string `json:"icon,omitempty"`
 	// Landing is the server-relative URL under /site/ of the HTML fragment a
 	// client renders at / for a signed-out visitor, absent where site.yaml
 	// names none.

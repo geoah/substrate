@@ -21,18 +21,20 @@ describe("readSite", () => {
     expect(readSite({ name: "  ", logo: "/site/logo.svg" })).toBeNull()
   })
 
-  it("keeps the name, the tagline and the two server paths", () => {
+  it("keeps the name, the tagline and the three server paths", () => {
     expect(
       readSite({
         name: "Crane",
         tagline: "A home for your people",
         logo: "/site/logo.svg",
+        icon: "/site/icon.png",
         landing: "/site/landing.html",
       })
     ).toEqual({
       name: "Crane",
       tagline: "A home for your people",
       logo: "/site/logo.svg",
+      icon: "/site/icon.png",
       landing: "/site/landing.html",
     })
   })
@@ -43,7 +45,9 @@ describe("readSite", () => {
     "site/x.svg",
     "/\\evil",
   ])("drops a path that leaves this server: %s", (path) => {
-    expect(readSite({ name: "Crane", logo: path, landing: path })).toEqual({
+    expect(
+      readSite({ name: "Crane", logo: path, icon: path, landing: path })
+    ).toEqual({
       name: "Crane",
     })
   })
@@ -119,5 +123,17 @@ describe("the tab", () => {
     const icon = document.querySelector('link[rel="icon"]')!
     expect(icon.getAttribute("href")).toBe("/site/logo.png")
     expect(icon.getAttribute("type")).toBe("image/png")
+  })
+
+  it("prefers the site's icon to its logo", async () => {
+    fetchMock.mockResolvedValue(
+      discovery({
+        site: { name: "Crane", logo: "/site/logo.png", icon: "/site/tab.svg" },
+      })
+    )
+    applySiteBranding(await loadSite())
+    const icon = document.querySelector('link[rel="icon"]')!
+    expect(icon.getAttribute("href")).toBe("/site/tab.svg")
+    expect(icon.getAttribute("type")).toBe("image/svg+xml")
   })
 })
