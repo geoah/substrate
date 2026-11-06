@@ -413,89 +413,103 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 // call's. On the person's own key a one-shot answer that broke after its
 // usage object arrived is retried, and the usage of the attempt that answered
 // adds to it, Partial when either report was; an attempt that reported nothing
-// adds nothing and leaves the sum whole. A RetryOnlyUnbilled client (the
-// operator's) still makes the one billable attempt, and returns its usage
-// beside the failure.
+// adds nothing and leaves the sum whole. A dropped body whose report is
+// ambiguous reports nothing. A RetryOnlyUnbilled client (the operator's)
+// still makes the one billable attempt, and returns its usage beside the
+// failure, or none, so the ledger keeps its ceiling.
 func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
 	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
-	answerWith := func(usage string) func(w http.ResponseWriter) {
-		return func(w http.ResponseWriter) {
-			body := head
-			if usage != "" {
-				body += `,"usage":` + usage
-			}
-			answer(w, "application/json", body+"}")
+	body := func(usage string) string {
+		if usage == "" {
+			return head
 		}
+		return head + `,"usage":` + usage
+	}
+	answerWith := func(usage string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) { answer(w, "application/json", body(usage)+"}") }
 	}
 	// droppedAfter answers a body that breaks after usage, or before any
 	// usage when usage is empty.
 	droppedAfter := func(usage string) func(w http.ResponseWriter) {
-		return func(w http.ResponseWriter) {
-			body := head
-			if usage != "" {
-				body += `,"usage":` + usage
-			}
-			cutOff(w, "application/json", body)
-		}
+		return func(w http.ResponseWriter) { cutOff(w, "application/json", body(usage)) }
 	}
+	refused := func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) }
 	const (
-		firstUsage  = `{"input_tokens":4,"output_tokens":2}`
-		secondUsage = `{"input_tokens":7,"output_tokens":3}`
+		// first is 7 prompt tokens (1 read, 2 written) and 2 completion
+		// tokens; second is 14 (3 read, 4 written) and 3.
+		first  = `{"input_tokens":4,"cache_read_input_tokens":1,"cache_creation_input_tokens":2,"output_tokens":2}`
+		second = `{"input_tokens":7,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":3}`
 	)
+	firstOnly := &Usage{PromptTokens: 7, CompletionTokens: 2, CacheReadTokens: 1, CacheWriteTokens: 2}
+	secondOnly := &Usage{PromptTokens: 14, CompletionTokens: 3, CacheReadTokens: 3, CacheWriteTokens: 4}
 	cases := []struct {
 		name     string
 		operator bool
 		serve    []func(w http.ResponseWriter)
 		failed   bool
-		want     usageReport
-		// prompt and completion are the counts the call's Usage holds.
-		prompt, completion int
+		want     *Usage
 	}{
 		{
 			"an answer dropped after its usage, then an answer", false,
-			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith(secondUsage)},
-			false, reportedWhole, 11, 5,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith(second)},
+			false, &Usage{PromptTokens: 21, CompletionTokens: 5, CacheReadTokens: 4, CacheWriteTokens: 6, Attempts: 2},
+		},
+		{
+			"two answers dropped after their usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(first), droppedAfter(first), answerWith(second)},
+			false, &Usage{PromptTokens: 28, CompletionTokens: 7, CacheReadTokens: 5, CacheWriteTokens: 8, Attempts: 3},
 		},
 		{
 			"an answer dropped before its usage, then an answer", false,
-			[]func(http.ResponseWriter){droppedAfter(""), answerWith(secondUsage)},
-			false, reportedWhole, 7, 3,
+			[]func(http.ResponseWriter){droppedAfter(""), answerWith(second)},
+			false, secondOnly,
 		},
 		{
 			"an answer dropped mid-usage, then an answer", false,
 			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
 				cutOff(w, "application/json", head+`,"usage":{"input_tokens":4,"output_tokens":2`)
-			}, answerWith(secondUsage)},
-			false, reportedWhole, 7, 3,
+			}, answerWith(second)},
+			false, secondOnly,
 		},
 		{
 			"an answer dropped after part of its usage, then an answer", false,
-			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":4}`), answerWith(secondUsage)},
-			false, reportedPart, 11, 3,
+			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":4}`), answerWith(second)},
+			false, &Usage{PromptTokens: 18, CompletionTokens: 3, CacheReadTokens: 3, CacheWriteTokens: 4, Partial: true, Attempts: 2},
 		},
 		{
 			"an answer dropped after its usage, then an answer without usage", false,
-			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith("")},
-			false, reportedPart, 4, 2,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith("")},
+			false, &Usage{PromptTokens: 7, CompletionTokens: 2, CacheReadTokens: 1, CacheWriteTokens: 2, Partial: true, Attempts: 2},
+		},
+		{
+			"an answer dropped after a repeated usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(first + `,"usage":` + first), answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer not served as JSON dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "text/plain", body(first)) }, answerWith(second)},
+			false, secondOnly,
 		},
 		{
 			"an answer dropped after its usage, then two 500s", false,
-			[]func(http.ResponseWriter){
-				droppedAfter(firstUsage),
-				func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) },
-				func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) },
-			},
-			true, reportedWhole, 4, 2,
+			[]func(http.ResponseWriter){droppedAfter(first), refused, refused},
+			true, firstOnly,
 		},
 		{
 			"a 500, then an answer", false,
-			[]func(http.ResponseWriter){func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) }, answerWith(secondUsage)},
-			false, reportedWhole, 7, 3,
+			[]func(http.ResponseWriter){refused, answerWith(second)},
+			false, secondOnly,
 		},
 		{
 			"the operator's: an answer dropped after its usage", true,
-			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith(secondUsage)},
-			true, reportedWhole, 4, 2,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith(second)},
+			true, firstOnly,
+		},
+		{
+			"the operator's: an answer dropped after a repeated usage", true,
+			[]func(http.ResponseWriter){droppedAfter(first + `,"usage":` + first), answerWith(second)},
+			true, nil,
 		},
 	}
 	for _, tc := range cases {
@@ -536,11 +550,108 @@ func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
 			if res != nil {
 				usage = res.Usage
 			}
-			if got := reportOf(usage); got != tc.want {
-				t.Fatalf("usage = %+v, reported %v, want %v", usage, got, tc.want)
+			if !sameUsage(usage, tc.want) {
+				t.Fatalf("usage = %+v, want %+v", usage, tc.want)
 			}
-			if usage.PromptTokens != tc.prompt || usage.CompletionTokens != tc.completion {
-				t.Fatalf("usage = %+v, want %d prompt and %d completion tokens", usage, tc.prompt, tc.completion)
+		})
+	}
+}
+
+// A 200 carrying x-should-retry: true is retried before its body is read,
+// streamed or one-shot, so the usage it carried is never seen and the call
+// counts only the retry's, as docs/agents.md says.
+func TestA200ThatAsksForARetryIsRetriedUnread(t *testing.T) {
+	const oneShot = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":2}}`
+	for _, tc := range []struct {
+		stream            bool
+		contentType, body string
+		want              *Usage
+	}{
+		{false, "application/json", oneShot, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{true, "text/event-stream", anthropicEventStream(anthropicStreamOK...), &Usage{PromptTokens: 1, CompletionTokens: 1}},
+	} {
+		t.Run(fmt.Sprintf("stream=%v", tc.stream), func(t *testing.T) {
+			t.Parallel()
+			var attempts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if attempts.Add(1) == 1 {
+					w.Header().Set("X-Should-Retry", "true")
+					w.Header().Set("Retry-After-Ms", "0")
+				}
+				answer(w, tc.contentType, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			res, err := completeAt(t, WireAnthropic, srv.URL, tc.stream)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if n := attempts.Load(); n != 2 || res.Content != "ok" || !sameUsage(res.Usage, tc.want) {
+				t.Fatalf("content %q, usage %+v after %d attempts, want %+v after 2", res.Content, res.Usage, n, tc.want)
+			}
+		})
+	}
+}
+
+// sameUsage reports whether two usages hold the same counts, nil only beside
+// nil.
+func sameUsage(a, b *Usage) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// A dropped one-shot body counts its usage only where every byte that arrived
+// agrees with the whole body's decoder: valid JSON so far, a top-level type
+// "message", and one usage object, whole, naming each count once. Anything
+// else reports nothing, so the operator's ledger keeps its ceiling and the
+// person's tally counts short, never over.
+func TestADroppedBodyCountsOnlyAUsageItReportedOnce(t *testing.T) {
+	const (
+		head  = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+		usage = `{"input_tokens":4,"output_tokens":2}`
+		later = `{"input_tokens":40,"output_tokens":20}`
+	)
+	reported := &Usage{PromptTokens: 4, CompletionTokens: 2}
+	cases := []struct {
+		name    string
+		payload string
+		want    *Usage
+	}{
+		{"cut after its usage", head + `,"usage":` + usage, reported},
+		{"cut after a comma", head + `,"usage":` + usage + `,`, reported},
+		{"cut inside a later key", head + `,"usage":` + usage + `,"stop_seq`, reported},
+		{"cut inside a later string", head + `,"usage":` + usage + `,"stop_sequence":"\u00`, reported},
+		{"cut inside a later array", head + `,"usage":` + usage + `,"more":[{"type":"text","text":"he`, reported},
+		{"whole, then whitespace", head + `,"usage":` + usage + "}\r\n", reported},
+		{"type after its usage", `{"usage":` + usage + `,"type":"message"`, reported},
+		{
+			"usage with keys no count reads",
+			head + `,"usage":{"input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":1},"output_tokens":2,"service_tier":"standard"}`,
+			reported,
+		},
+
+		{"the review's prefix: a second usage and no type", `{"usage":` + usage + `,"usage":` + later, nil},
+		{"a second usage", head + `,"usage":` + usage + `,"usage":` + later, nil},
+		{"a second usage in capitals", head + `,"usage":` + usage + `,"USAGE":` + later, nil},
+		{"a second usage cut off", head + `,"usage":` + usage + `,"usage":{"input_tok`, nil},
+		{"a count twice", head + `,"usage":{"input_tokens":4,"input_tokens":40,"output_tokens":2}`, nil},
+		{"a count twice in capitals", head + `,"usage":{"input_tokens":4,"output_tokens":2,"Output_Tokens":20}`, nil},
+		{"a cache count twice", head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":1,"cache_read_input_tokens":9,"output_tokens":2}`, nil},
+		{"a syntax error after usage", head + `,"usage":` + usage + `,"content":[}`, nil},
+		{"no comma after usage", head + `,"usage":` + usage + ` "stop_sequence":null`, nil},
+		{"a comma before the close", head + `,"usage":` + usage + `,}`, nil},
+		{"a bad escape after usage", head + `,"usage":` + usage + `,"stop_sequence":"\x"`, nil},
+		{"bytes after the close", head + `,"usage":` + usage + `}]`, nil},
+		{"no type", `{"id":"msg_1","usage":` + usage, nil},
+		{"an error's type", `{"type":"error","usage":` + usage, nil},
+		{"a type that is no string", `{"type":1,"usage":` + usage, nil},
+		{"a second type", head + `,"usage":` + usage + `,"type":"error"`, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := anthropicDroppedUsage([]byte(tc.payload)); !sameUsage(got, tc.want) {
+				t.Fatalf("usage = %+v, want %+v", got, tc.want)
 			}
 		})
 	}

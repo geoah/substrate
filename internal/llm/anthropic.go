@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -55,9 +56,11 @@ const (
 // context bounds the wait.
 //
 // A retried attempt may have been billed. Where it reported usage (a one-shot
-// answer that broke after its usage object arrived), the call's Usage adds
-// that usage to the answering attempt's, so the caller counts every attempt
-// the key paid for. An attempt that reported nothing adds nothing.
+// answer that broke after its usage object arrived whole and unambiguous,
+// anthropicDroppedUsage), the call's Usage adds that usage to the answering
+// attempt's, so the caller counts every attempt the key paid for. An attempt
+// that reported nothing adds nothing, and so does a 2xx that x-should-retry:
+// true retries before its body is read.
 const (
 	anthropicMaxRetries  = 2
 	anthropicBaseBackoff = 500 * time.Millisecond
@@ -650,8 +653,9 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	}
 	payload, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	_ = res.Body.Close()
-	if err != nil && refused {
-		// A refusal reports no usage, whatever its body says.
+	if err != nil && (refused || anthropicJSON(res) != nil) {
+		// A refusal reports no usage, whatever its body says, and nor does a
+		// body anthropicDecode would refuse whole.
 		payload = nil
 	}
 	switch {
@@ -803,11 +807,20 @@ func (n *anthropicCount) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func anthropicDecode(res *http.Response, payload []byte) (*anthropicMessage, error) {
+// anthropicJSON refuses a response whose content type is not JSON, the one
+// kind of one-shot body anthropicDecode reads.
+func anthropicJSON(res *http.Response) error {
 	contentType := res.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 	if !strings.Contains(mediaType, "application/json") && !strings.HasSuffix(mediaType, "+json") {
-		return nil, fmt.Errorf("anthropic: response content-type %q is not JSON", contentType)
+		return fmt.Errorf("anthropic: response content-type %q is not JSON", contentType)
+	}
+	return nil
+}
+
+func anthropicDecode(res *http.Response, payload []byte) (*anthropicMessage, error) {
+	if err := anthropicJSON(res); err != nil {
+		return nil, err
 	}
 	var msg anthropicMessage
 	if err := json.NewDecoder(bytes.NewReader(payload)).Decode(&msg); err != nil {
@@ -1058,36 +1071,111 @@ func anthropicUsageOf(msg *anthropicMessage) *Usage {
 }
 
 // anthropicDroppedUsage is the usage a one-shot body that broke midway
-// reported before the break: its top-level usage object, read only when the
-// object arrived whole, since a count cut short reads as a smaller number.
-// It is nil when the body reported none.
+// reported before the break, or nil where what arrived does not settle it.
+// Nil counts nothing on the person's own key and leaves the operator's
+// settlement at its ceiling, so an ambiguous body is counted short, never
+// over.
+//
+// Every byte that arrived is read, and they must be valid JSON as far as they
+// go: a top-level object whose type is "message" and whose usage object
+// arrived whole. A count cut short reads as a smaller number. The top-level
+// type and usage, and each count inside usage, must appear once, matched as
+// encoding/json matches a field: the whole body's decoder keeps the last of a
+// repeated key, which may not have arrived. A Messages body names its type
+// before its usage, so a body whose usage arrived without its type is not
+// read either.
 func anthropicDroppedUsage(payload []byte) *Usage {
-	if len(payload) == 0 {
+	top := jsonOnce("type", "usage")
+	var typ string
+	var usage json.RawMessage
+	read := jsonMembers(payload, func(key string, value json.RawMessage) bool {
+		switch {
+		case !top(key):
+			return false
+		case strings.EqualFold(key, "type"):
+			return json.Unmarshal(value, &typ) == nil
+		case strings.EqualFold(key, "usage"):
+			usage = value
+		}
+		return true
+	})
+	if !read || typ != "message" || usage == nil {
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(payload))
+	counts := jsonOnce(anthropicCountKeys...)
+	if !jsonMembers(usage, func(key string, _ json.RawMessage) bool { return counts(key) }) {
+		return nil
+	}
+	var msg anthropicMessage
+	if json.Unmarshal(usage, &msg.Usage) != nil {
+		return nil
+	}
+	return anthropicUsageOf(&msg)
+}
+
+// anthropicCountKeys are the keys anthropicUsage reads.
+var anthropicCountKeys = func() []string {
+	t := reflect.TypeFor[anthropicUsage]()
+	keys := make([]string, t.NumField())
+	for i := range keys {
+		keys[i], _, _ = strings.Cut(t.Field(i).Tag.Get("json"), ",")
+	}
+	return keys
+}()
+
+// jsonMembers walks the members of the JSON object that data holds or
+// begins, in order, calling member with each key and value. A value the end
+// of data cuts off is passed as nil and ends the walk, except a number, which
+// reads as whole because nothing tells it was cut. It reports false where
+// data is not a valid prefix of one object, anything but whitespace follows
+// the object's close, or member returned false.
+func jsonMembers(data []byte, member func(key string, value json.RawMessage) bool) bool {
+	cut := func(err error) bool {
+		return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
-		return nil
+		return false
 	}
-	for dec.More() {
-		key, err := dec.Token()
-		if err != nil {
-			return nil
+	for {
+		tok, err := dec.Token()
+		switch {
+		case cut(err):
+			return true
+		case err != nil:
+			return false
+		case tok == json.Delim('}'):
+			_, err := dec.Token()
+			return errors.Is(err, io.EOF)
 		}
-		if key != "usage" {
-			var skip json.RawMessage
-			if dec.Decode(&skip) != nil {
-				return nil
+		key, _ := tok.(string)
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return cut(err) && member(key, nil)
+		}
+		if !member(key, value) {
+			return false
+		}
+	}
+}
+
+// jsonOnce reports, key by key, whether none of names has appeared twice yet,
+// matching a key to a name as encoding/json matches one to a field: exactly
+// or case-folded.
+func jsonOnce(names ...string) func(key string) bool {
+	seen := make([]bool, len(names))
+	return func(key string) bool {
+		for i, name := range names {
+			if !strings.EqualFold(key, name) {
+				continue
 			}
-			continue
+			if seen[i] {
+				return false
+			}
+			seen[i] = true
 		}
-		var msg anthropicMessage
-		if dec.Decode(&msg.Usage) != nil {
-			return nil
-		}
-		return anthropicUsageOf(&msg)
+		return true
 	}
-	return nil
 }
 
 // sumUsage is the usage of two attempts of one call: the counts added, and
