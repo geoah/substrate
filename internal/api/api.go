@@ -97,6 +97,10 @@ type Config struct {
 	// checks. It changes no verification: refusing is the service's job either
 	// way.
 	TOTPDisabled bool
+	// HostDefaults says the server booted with a host defaults file
+	// (SUBSTRATE_HOST_DEFAULTS, decision 0230), so discovery lists the
+	// `hostServices` feature and a client knows to ask for the read.
+	HostDefaults bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -147,6 +151,7 @@ type handler struct {
 	authRate     *rateLimiter
 	inviteCode   string
 	totpDisabled bool
+	hostDefaults bool
 	catalog      *catalog.Catalog
 	// packages and refresher are the approval's two views of the catalog
 	// (appsetup.go): nil where the server ships no catalog, so a plan
@@ -199,6 +204,7 @@ func New(cfg Config) http.Handler {
 		authRate:     newRateLimiter(interval, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
+		hostDefaults: cfg.HostDefaults,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,
@@ -425,6 +431,13 @@ func (h *handler) mountResources(r chi.Router) {
 			// flow for an account record. The consent URL it answers carries
 			// the signed state, which is that flow's credential.
 			r.Post("/oauth/start", h.postOAuthStart)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(h.requireAuth)
+			// The host services read (hostservices.go): the owner's, and a
+			// full-access app token's, never a scoped one's.
+			r.Get(hostServicesRoute, h.getHostServices)
 		})
 
 		r.Group(func(r chi.Router) {

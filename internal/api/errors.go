@@ -125,6 +125,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusConflict, substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
 	case errors.Is(err, substrate.ErrLossyConversion):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeLossy, Message: err.Error()}
+	case errors.Is(err, substrate.ErrHostBudget):
+		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Reason: substrate.ReasonQuota, Message: err.Error()}
 	case errors.Is(err, substrate.ErrGuard):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):
