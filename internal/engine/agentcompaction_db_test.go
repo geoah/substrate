@@ -7,8 +7,13 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/llm"
@@ -412,5 +417,93 @@ func TestCompactionOverflowRetriesOnTheLastTurn(t *testing.T) {
 	}
 	if n := len(summaryRows(compactionRows(t, ds, thread))); n != 1 {
 		t.Fatalf("summary rows: %d", n)
+	}
+}
+
+// A completion retried after an answer that broke past its usage reports
+// both attempts' prompts added up, which is no measure of the context the
+// thread holds: the settle-time check estimates it instead, so a thread well
+// under its window is not compacted because one of its calls was retried.
+// The retry happens on a one-shot completion, which a resumed thread makes.
+func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	head := `{"id":"msg_1","type":"message","role":"assistant","model":"compact","content":[{"type":"text","text":"rc` + hundred + `"}],"stop_reason":"end_turn"`
+	stream := strings.Join([]string{
+		`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_0","type":"message","role":"assistant","model":"compact","content":[],"usage":{"input_tokens":100,"output_tokens":1}}}`,
+		`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"r` + hundred + `"}}`,
+		`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+		`event: message_delta` + "\n" + `data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`,
+		`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+	}, "\n\n") + "\n\n"
+	var mu sync.Mutex
+	var oneShots, streams, summaries int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		summarizer := strings.Contains(string(body), "You are a context summarization assistant")
+		streamed := strings.Contains(string(body), `"stream":true`)
+		switch {
+		case summarizer:
+			summaries++
+		case streamed:
+			streams++
+		default:
+			oneShots++
+		}
+		n := oneShots
+		mu.Unlock()
+		switch {
+		case summarizer:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"id":"msg_s","type":"message","role":"assistant","model":"compact","content":[{"type":"text","text":"SUMMARY"}],"stop_reason":"end_turn","usage":{"input_tokens":50,"output_tokens":5}}`)
+		case streamed:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, stream)
+		case n == 1:
+			// The resumed run's first attempt: 500 prompt tokens reported,
+			// then the body breaks. Its retry reports the same 500 again.
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			partial := head + `,"usage":{"input_tokens":500,"output_tokens":5}`
+			_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRetry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s",
+				len(partial)+1000, partial)
+			_ = buf.Flush()
+			_ = conn.Close()
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, head+`,"usage":{"input_tokens":500,"output_tokens":5}}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	// The window is 1000 with the threshold at 800: one attempt's 500 is under
+	// it, the two attempts' 1000 over it.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "compactllm",
+		Properties: map[string]any{
+			"wire": "anthropic", "baseURL": srv.URL, "apiKey": "row-key-compactllm",
+			"pricing": []any{map[string]any{"model": "compact", "inputPer1M": "1", "outputPer1M": "5", "contextWindow": 1000}},
+		},
+	}); err != nil {
+		t.Fatalf("put llm/provider row compactllm: %v", err)
+	}
+	// Two chat runs give the thread a history a compaction could fold.
+	res, _ := chat(t, ds, "", "q1"+hundred)
+	chat(t, ds, res.Thread, "q2"+hundred)
+	ds.continueThread(ctx, res.Thread)
+	mu.Lock()
+	defer mu.Unlock()
+	if streams != 2 || oneShots != 2 {
+		t.Fatalf("the endpoint saw %d streamed and %d one-shot requests, want the chats' two streams, the resumed run's dropped attempt and its retry", streams, oneShots)
+	}
+	if summaries != 0 {
+		t.Fatalf("the thread compacted (%d summarizer requests) on a summed prompt", summaries)
+	}
+	if rows := summaryRows(compactionRows(t, ds, res.Thread)); len(rows) != 0 {
+		t.Fatalf("the thread holds %d summary rows, want none", len(rows))
 	}
 }

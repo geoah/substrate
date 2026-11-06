@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,12 +70,20 @@ const openaiUsageJSON = `{"prompt_tokens":3,"completion_tokens":2,"total_tokens"
 // cutOff answers 200 with a length the body never reaches and drops the
 // connection: an answer the endpoint started and the client lost.
 func cutOff(w http.ResponseWriter, contentType, partial string) {
+	cutOffTypes(w, []string{contentType}, partial)
+}
+
+// cutOffTypes is cutOff with one Content-Type header per entry.
+func cutOffTypes(w http.ResponseWriter, contentTypes []string, partial string) {
 	conn, buf, err := w.(http.Hijacker).Hijack()
 	if err != nil {
 		return
 	}
-	_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nRetry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s",
-		contentType, len(partial)+1000, partial)
+	_, _ = fmt.Fprint(buf, "HTTP/1.1 200 OK\r\n")
+	for _, contentType := range contentTypes {
+		_, _ = fmt.Fprintf(buf, "Content-Type: %s\r\n", contentType)
+	}
+	_, _ = fmt.Fprintf(buf, "Retry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s", len(partial)+1000, partial)
 	_ = buf.Flush()
 	_ = conn.Close()
 }
@@ -406,5 +415,380 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Every attempt of one anthropic call that reported usage counts toward the
+// call's. On the person's own key a one-shot answer that broke after its
+// usage object arrived is retried, and the usage of the attempt that answered
+// adds to it, Partial when either report was; an attempt that reported nothing
+// adds nothing and leaves the sum whole. A dropped body whose report is
+// ambiguous, or that one Content-Type does not declare application/json,
+// reports nothing. A sum past math.MaxInt is held there and Partial, never
+// wrapped. A RetryOnlyUnbilled client (the operator's)
+// still makes the one billable attempt, and returns its usage beside the
+// failure, or none, so the ledger keeps its ceiling.
+func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
+	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+	body := func(usage string) string {
+		if usage == "" {
+			return head
+		}
+		return head + `,"usage":` + usage
+	}
+	answerWith := func(usage string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) { answer(w, "application/json", body(usage)+"}") }
+	}
+	// droppedAfter answers a body that breaks after usage, or before any
+	// usage when usage is empty.
+	droppedAfter := func(usage string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) { cutOff(w, "application/json", body(usage)) }
+	}
+	refused := func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) }
+	const (
+		// first is 7 prompt tokens (1 read, 2 written) and 2 completion
+		// tokens; second is 14 (3 read, 4 written) and 3.
+		first  = `{"input_tokens":4,"cache_read_input_tokens":1,"cache_creation_input_tokens":2,"output_tokens":2}`
+		second = `{"input_tokens":7,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":3}`
+	)
+	// huge is a usage two of which add up past math.MaxInt, input and output
+	// alike.
+	huge := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%[1]d}`, math.MaxInt/2+1)
+	firstOnly := &Usage{PromptTokens: 7, CompletionTokens: 2, CacheReadTokens: 1, CacheWriteTokens: 2}
+	secondOnly := &Usage{PromptTokens: 14, CompletionTokens: 3, CacheReadTokens: 3, CacheWriteTokens: 4}
+	cases := []struct {
+		name     string
+		operator bool
+		serve    []func(w http.ResponseWriter)
+		failed   bool
+		want     *Usage
+	}{
+		{
+			"an answer dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith(second)},
+			false, &Usage{PromptTokens: 21, CompletionTokens: 5, CacheReadTokens: 4, CacheWriteTokens: 6, Attempts: 2},
+		},
+		{
+			"two answers dropped after their usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(first), droppedAfter(first), answerWith(second)},
+			false, &Usage{PromptTokens: 28, CompletionTokens: 7, CacheReadTokens: 5, CacheWriteTokens: 8, Attempts: 3},
+		},
+		{
+			"an answer dropped before its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(""), answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer dropped mid-usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOff(w, "application/json", head+`,"usage":{"input_tokens":4,"output_tokens":2`)
+			}, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer dropped after part of its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":4}`), answerWith(second)},
+			false, &Usage{PromptTokens: 18, CompletionTokens: 3, CacheReadTokens: 3, CacheWriteTokens: 4, Partial: true, Attempts: 2},
+		},
+		{
+			"an answer dropped after its usage, then an answer without usage", false,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith("")},
+			false, &Usage{PromptTokens: 7, CompletionTokens: 2, CacheReadTokens: 1, CacheWriteTokens: 2, Partial: true, Attempts: 2},
+		},
+		{
+			"an answer dropped after a repeated usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(first + `,"usage":` + first), answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer not served as JSON dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "text/plain", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served as application/jsonp dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/jsonp", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served with a malformed parameter dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/json; charset", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served as a +json type dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/vnd.anthropic+json", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served with two content types dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOffTypes(w, []string{"application/json", "text/plain"}, body(first))
+			}, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served as application/json with a charset dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOff(w, "Application/JSON; charset=utf-8", body(first))
+			}, answerWith(second)},
+			false, &Usage{PromptTokens: 21, CompletionTokens: 5, CacheReadTokens: 4, CacheWriteTokens: 6, Attempts: 2},
+		},
+		{
+			"two answers dropped after counts whose sum passes the largest int, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(huge), droppedAfter(huge), answerWith(second)},
+			false, &Usage{
+				PromptTokens: math.MaxInt, CompletionTokens: math.MaxInt, CacheReadTokens: 3, CacheWriteTokens: 4,
+				Partial: true, Attempts: 3,
+			},
+		},
+		{
+			"the operator's: an answer dropped after counts that are no integers", true,
+			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":{},"output_tokens":false}`), answerWith(second)},
+			true, nil,
+		},
+		{
+			"an answer dropped after its usage, then two 500s", false,
+			[]func(http.ResponseWriter){droppedAfter(first), refused, refused},
+			true, firstOnly,
+		},
+		{
+			"a 500, then an answer", false,
+			[]func(http.ResponseWriter){refused, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"the operator's: an answer dropped after its usage", true,
+			[]func(http.ResponseWriter){droppedAfter(first), answerWith(second)},
+			true, firstOnly,
+		},
+		{
+			"the operator's: an answer dropped after a repeated usage", true,
+			[]func(http.ResponseWriter){droppedAfter(first + `,"usage":` + first), answerWith(second)},
+			true, nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var attempts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n := int(attempts.Add(1))
+				if n > len(tc.serve) {
+					t.Errorf("attempt %d, want %d at most", n, len(tc.serve))
+					refuse(w, http.StatusBadRequest)
+					return
+				}
+				tc.serve[n-1](w)
+			}))
+			t.Cleanup(srv.Close)
+			client, err := New(WireAnthropic, Config{BaseURL: srv.URL, APIKey: "sk-billing-fixture", RetryOnlyUnbilled: tc.operator})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := client.Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, nil)
+			if failed := err != nil; failed != tc.failed {
+				t.Fatalf("err = %v, want failed %v", err, tc.failed)
+			}
+			wantAttempts := len(tc.serve)
+			if tc.operator {
+				wantAttempts = 1
+			}
+			if n := int(attempts.Load()); n != wantAttempts {
+				t.Fatalf("%d attempts, want %d", n, wantAttempts)
+			}
+			if !tc.failed && res.Content != "ok" {
+				t.Fatalf("content = %q, want the answering attempt's", res.Content)
+			}
+			var usage *Usage
+			if res != nil {
+				usage = res.Usage
+			}
+			if !sameUsage(usage, tc.want) {
+				t.Fatalf("usage = %+v, want %+v", usage, tc.want)
+			}
+		})
+	}
+}
+
+// A 200 carrying x-should-retry: true is retried before its body is read,
+// streamed or one-shot, so the usage it carried is never seen and the call
+// counts only the retry's, as docs/agents.md says.
+func TestA200ThatAsksForARetryIsRetriedUnread(t *testing.T) {
+	const oneShot = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":2}}`
+	for _, tc := range []struct {
+		stream            bool
+		contentType, body string
+		want              *Usage
+	}{
+		{false, "application/json", oneShot, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{true, "text/event-stream", anthropicEventStream(anthropicStreamOK...), &Usage{PromptTokens: 1, CompletionTokens: 1}},
+	} {
+		t.Run(fmt.Sprintf("stream=%v", tc.stream), func(t *testing.T) {
+			t.Parallel()
+			var attempts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if attempts.Add(1) == 1 {
+					w.Header().Set("X-Should-Retry", "true")
+					w.Header().Set("Retry-After-Ms", "0")
+				}
+				answer(w, tc.contentType, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			res, err := completeAt(t, WireAnthropic, srv.URL, tc.stream)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if n := attempts.Load(); n != 2 || res.Content != "ok" || !sameUsage(res.Usage, tc.want) {
+				t.Fatalf("content %q, usage %+v after %d attempts, want %+v after 2", res.Content, res.Usage, n, tc.want)
+			}
+		})
+	}
+}
+
+// A whole one-shot answer is read as leniently as the SDK read one, so an
+// answer already paid for is never lost to its usage or its content type:
+// the counts a dropped body may not carry read as the number they can be
+// read as, or 0, and an answer served under a type the SDK decoded still
+// decodes. A prompt count past math.MaxInt is held there and Partial.
+func TestAWholeAnswerReadsOddCountsLeniently(t *testing.T) {
+	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+	cases := []struct {
+		name, contentType, usage string
+		want                     *Usage
+	}{
+		{"counts that are an object and a boolean", "application/json", `{"input_tokens":{},"output_tokens":false}`, &Usage{}},
+		{"a count that is a string", "application/json", `{"input_tokens":"4","output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"a count that is an array", "application/json", `{"input_tokens":[4],"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count with a fraction", "application/json", `{"input_tokens":4.5,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"a negative count", "application/json", `{"input_tokens":-4,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count with an exponent past an int64", "application/json", `{"input_tokens":1e30,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count one past an int64", "application/json", `{"input_tokens":9223372036854775808,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{
+			"a cache count that is an object", "application/json",
+			`{"input_tokens":4,"cache_read_input_tokens":{},"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2},
+		},
+		{"served as application/jsonp", "application/jsonp", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"served with a malformed parameter", "application/json; charset", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"served as a +json type", "application/vnd.anthropic+json", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{
+			"counts whose prompt sum passes the largest int", "application/json",
+			fmt.Sprintf(`{"input_tokens":%d,"cache_read_input_tokens":%[1]d,"output_tokens":2}`, math.MaxInt/2+1),
+			&Usage{PromptTokens: math.MaxInt, CompletionTokens: 2, CacheReadTokens: math.MaxInt/2 + 1, Partial: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				answer(w, tc.contentType, head+`,"usage":`+tc.usage+"}")
+			}))
+			t.Cleanup(srv.Close)
+			res, err := completeAt(t, WireAnthropic, srv.URL, false)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if res.Content != "ok" || !sameUsage(res.Usage, tc.want) {
+				t.Fatalf("content %q, usage %+v, want %q and %+v", res.Content, res.Usage, "ok", tc.want)
+			}
+		})
+	}
+}
+
+// sameUsage reports whether two usages hold the same counts, nil only beside
+// nil.
+func sameUsage(a, b *Usage) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// A dropped one-shot body counts its usage only where every byte that arrived
+// agrees with the whole body's decoder: valid JSON so far, a top-level type
+// "message", and one usage object, whole, naming each count once. Each count
+// is a JSON integer of zero or more that an int holds, or null, and the
+// prompt count they add up to fits an int. Anything else reports nothing, so
+// the operator's ledger keeps its ceiling and the person's tally counts
+// short, never over.
+func TestADroppedBodyCountsOnlyAUsageItReportedOnce(t *testing.T) {
+	const (
+		head  = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+		usage = `{"input_tokens":4,"output_tokens":2}`
+		later = `{"input_tokens":40,"output_tokens":20}`
+	)
+	reported := &Usage{PromptTokens: 4, CompletionTokens: 2}
+	cases := []struct {
+		name    string
+		payload string
+		want    *Usage
+	}{
+		{"cut after its usage", head + `,"usage":` + usage, reported},
+		{"cut after a comma", head + `,"usage":` + usage + `,`, reported},
+		{"cut inside a later key", head + `,"usage":` + usage + `,"stop_seq`, reported},
+		{"cut inside a later string", head + `,"usage":` + usage + `,"stop_sequence":"\u00`, reported},
+		{"cut inside a later array", head + `,"usage":` + usage + `,"more":[{"type":"text","text":"he`, reported},
+		{"whole, then whitespace", head + `,"usage":` + usage + "}\r\n", reported},
+		{"type after its usage", `{"usage":` + usage + `,"type":"message"`, reported},
+		{
+			"usage with keys no count reads",
+			head + `,"usage":{"input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":1},"output_tokens":2,"service_tier":"standard"}`,
+			reported,
+		},
+		{
+			"null cache counts",
+			head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":null,"cache_creation_input_tokens":null,"output_tokens":2}`,
+			reported,
+		},
+		{"spaces around the counts", head + `,"usage":{ "input_tokens" : 4 , "output_tokens" : 2 }`, reported},
+		{"a null input count", head + `,"usage":{"input_tokens":null,"output_tokens":2}`, &Usage{CompletionTokens: 2, Partial: true}},
+		{
+			"the largest counts that add up within an int",
+			head + fmt.Sprintf(`,"usage":{"input_tokens":%d,"cache_read_input_tokens":1,"output_tokens":%d}`, math.MaxInt-1, math.MaxInt),
+			&Usage{PromptTokens: math.MaxInt, CompletionTokens: math.MaxInt, CacheReadTokens: 1},
+		},
+
+		{"the review's prefix: a second usage and no type", `{"usage":` + usage + `,"usage":` + later, nil},
+		{"a second usage", head + `,"usage":` + usage + `,"usage":` + later, nil},
+		{"a second usage in capitals", head + `,"usage":` + usage + `,"USAGE":` + later, nil},
+		{"a second usage cut off", head + `,"usage":` + usage + `,"usage":{"input_tok`, nil},
+		{"a count twice", head + `,"usage":{"input_tokens":4,"input_tokens":40,"output_tokens":2}`, nil},
+		{"a count twice in capitals", head + `,"usage":{"input_tokens":4,"output_tokens":2,"Output_Tokens":20}`, nil},
+		{"a cache count twice", head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":1,"cache_read_input_tokens":9,"output_tokens":2}`, nil},
+		{"a syntax error after usage", head + `,"usage":` + usage + `,"content":[}`, nil},
+		{"no comma after usage", head + `,"usage":` + usage + ` "stop_sequence":null`, nil},
+		{"a comma before the close", head + `,"usage":` + usage + `,}`, nil},
+		{"a bad escape after usage", head + `,"usage":` + usage + `,"stop_sequence":"\x"`, nil},
+		{"bytes after the close", head + `,"usage":` + usage + `}]`, nil},
+		{"no type", `{"id":"msg_1","usage":` + usage, nil},
+		{"an error's type", `{"type":"error","usage":` + usage, nil},
+		{"a type that is no string", `{"type":1,"usage":` + usage, nil},
+		{"a second type", head + `,"usage":` + usage + `,"type":"error"`, nil},
+		{"the review's prefix: counts that are an object and a boolean", `{"type":"message","usage":{"input_tokens":{},"output_tokens":false}`, nil},
+		{"a count that is an object", head + `,"usage":{"input_tokens":{},"output_tokens":2}`, nil},
+		{"a count that is a boolean", head + `,"usage":{"input_tokens":4,"output_tokens":true}`, nil},
+		{"a count that is a string", head + `,"usage":{"input_tokens":"4","output_tokens":2}`, nil},
+		{"a count that is an array", head + `,"usage":{"input_tokens":[4],"output_tokens":2}`, nil},
+		{"a count with a fraction", head + `,"usage":{"input_tokens":4.5,"output_tokens":2}`, nil},
+		{"a whole count written with a fraction", head + `,"usage":{"input_tokens":4.0,"output_tokens":2}`, nil},
+		{"a negative count", head + `,"usage":{"input_tokens":-4,"output_tokens":2}`, nil},
+		{"a count with an exponent past an int64", head + `,"usage":{"input_tokens":1e30,"output_tokens":2}`, nil},
+		{"a count one past an int64", head + `,"usage":{"input_tokens":9223372036854775808,"output_tokens":2}`, nil},
+		{"a cache count that is an object", head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":{},"output_tokens":2}`, nil},
+		{"a negative cache count", head + `,"usage":{"input_tokens":4,"cache_creation_input_tokens":-1,"output_tokens":2}`, nil},
+		{
+			"counts whose prompt sum passes the largest int",
+			head + fmt.Sprintf(`,"usage":{"input_tokens":%d,"cache_read_input_tokens":1,"output_tokens":2}`, math.MaxInt),
+			nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := anthropicDroppedUsage([]byte(tc.payload)); !sameUsage(got, tc.want) {
+				t.Fatalf("usage = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }

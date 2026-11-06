@@ -970,7 +970,9 @@ loop:
 		if !l.measured {
 			l.measured = true
 			l.firstContext = l.estimateTokens(messages)
-			if usage != nil && (!usage.Partial || usage.PromptTokens > 0) {
+			// A usage that adds up retried attempts sums their prompts, which
+			// measures no window.
+			if usage != nil && usage.Attempts <= 1 && (!usage.Partial || usage.PromptTokens > 0) {
 				l.firstContext = usage.PromptTokens
 			}
 		}

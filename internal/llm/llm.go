@@ -180,6 +180,12 @@ type Usage struct {
 	// tally counts what is known while a caller that must not undercount (the
 	// allowance ledger) treats the usage as unreported.
 	Partial bool
+	// Attempts is how many attempts of one call the counts add up, when more
+	// than one reported usage; 0 and 1 both mean one attempt. The anthropic
+	// wire retries, and an attempt billed before its answer broke still
+	// counts. Above 1, PromptTokens is a sum and no longer measures the
+	// context window.
+	Attempts int
 }
 
 // UncachedPromptTokens is the part of PromptTokens priced at the input rate.
@@ -326,7 +332,8 @@ type Request struct {
 // Result is one settled completion. Usage is nil when the wire did not report
 // it whole (an openai-wire reply without prompt_tokens and completion_tokens,
 // an anthropic-wire one without input_tokens and a final output_tokens), so a
-// caller paying per call never prices a billed call at nothing.
+// caller paying per call never prices a billed call at nothing. On a wire that
+// retries, Usage adds up every attempt that reported any (Usage.Attempts).
 type Result struct {
 	Content   string
 	ToolCalls []ToolCall

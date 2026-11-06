@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +54,13 @@ const (
 // date), else 0.5 s doubling per retry up to 8 s, less up to a quarter of
 // jitter. A retry-after is honored uncapped, as the SDK did; the caller's
 // context bounds the wait.
+//
+// A retried attempt may have been billed. Where it reported usage (a one-shot
+// answer that broke after its usage object arrived whole and unambiguous,
+// anthropicDroppedUsage), the call's Usage adds that usage to the answering
+// attempt's, so the caller counts every attempt the key paid for. An attempt
+// that reported nothing adds nothing, and so does a 2xx that x-should-retry:
+// true retries before its body is read.
 const (
 	anthropicMaxRetries  = 2
 	anthropicBaseBackoff = 500 * time.Millisecond
@@ -166,24 +174,37 @@ func (c *anthropicClient) scrubbed(err error) error {
 // Complete runs one completion. A failure before any request wrote its
 // headers is marked egress.ErrUnprocessed, as post marks a refusal, and a
 // failure after the endpoint reported any of its usage still carries that
-// usage, Partial where it is: the endpoint may have billed it.
+// usage, Partial where it is: the endpoint may have billed it. Either way the
+// usage adds up every attempt that reported any.
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	ctx, watch := egress.WatchSends(ctx)
-	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
+	msg, dropped, err := c.complete(ctx, anthropicParams(req), onDelta)
 	if err != nil {
 		if !watch.Sent() {
 			err = egress.Unprocessed(err)
 		}
 		var res *Result
-		if usage := anthropicUsageOf(msg); usage != nil {
+		if usage := sumUsage(dropped, anthropicUsageOf(msg)); usage != nil {
 			res = &Result{Usage: usage}
 		}
 		return res, c.scrubbed(err)
 	}
-	return anthropicResult(msg), nil
+	res := anthropicResult(msg)
+	if dropped != nil {
+		answered := res.Usage
+		if answered == nil {
+			// The answering attempt was billed whether or not it said so, so
+			// the dropped attempts' counts are only part of the call's.
+			answered = &Usage{Partial: true}
+		}
+		res.Usage = sumUsage(dropped, answered)
+	}
+	return res, nil
 }
 
-func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(Delta)) (*anthropicMessage, error) {
+// complete returns the message the call ended on and, separately, the summed
+// usage of the attempts post dropped after they reported it.
+func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest, onDelta func(Delta)) (*anthropicMessage, *Usage, error) {
 	params.Stream = onDelta != nil
 	if !params.Stream {
 		ceiling := anthropicOneShotMaxTokens
@@ -191,22 +212,24 @@ func (c *anthropicClient) complete(ctx context.Context, params anthropicRequest,
 			ceiling = min(ceiling, limit)
 		}
 		if params.MaxTokens > ceiling {
-			return nil, errors.New("anthropic: streaming is required for operations that may take longer than 10 minutes")
+			return nil, nil, errors.New("anthropic: streaming is required for operations that may take longer than 10 minutes")
 		}
 	}
 	body, err := json.Marshal(params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	res, payload, err := c.post(ctx, body, params.Stream)
+	res, payload, dropped, err := c.post(ctx, body, params.Stream)
 	if err != nil {
-		return nil, err
+		return nil, dropped, err
 	}
 	if !params.Stream {
-		return anthropicDecode(res, payload)
+		msg, err := anthropicDecode(res, payload)
+		return msg, dropped, err
 	}
 	defer func() { _ = res.Body.Close() }()
-	return c.readStream(res, onDelta)
+	msg, err := c.readStream(res, onDelta)
+	return msg, dropped, err
 }
 
 // anthropicRequest is the Messages request body, each key spelled as the wire
@@ -515,10 +538,16 @@ func toolInput(arguments string) json.RawMessage {
 // the retries is enough to leave the mark off. Under retryOnlyUnbilled such
 // an attempt is the call's last, so a call answers for one billable attempt
 // at most: the one whose answer or error it returns.
-func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*http.Response, []byte, error) {
+//
+// dropped is the usage reported by the attempts whose answer broke after
+// their usage object arrived, summed (anthropicDroppedUsage). The response
+// post returns is never one of them, so the caller adds dropped to that
+// response's usage without counting an attempt twice.
+func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*http.Response, []byte, *Usage, error) {
 	if c.endpointErr != nil {
-		return nil, nil, c.endpointErr
+		return nil, nil, nil, c.endpointErr
 	}
+	var dropped *Usage
 	processed := false
 	failed := func(err error) error {
 		if processed {
@@ -530,22 +559,25 @@ func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*
 		last := retry == anthropicMaxRetries
 		res, payload, again, billable, err := c.attempt(ctx, body, stream, last)
 		processed = processed || billable
+		if err != nil {
+			dropped = sumUsage(dropped, anthropicDroppedUsage(payload))
+		}
 		// Once the caller's context is done there is nothing left to retry,
 		// and its error is the call's.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			if res != nil {
 				_ = res.Body.Close()
 			}
-			return nil, nil, failed(ctxErr)
+			return nil, nil, dropped, failed(ctxErr)
 		}
 		if last || !again {
 			switch {
 			case err != nil:
-				return nil, nil, failed(err)
+				return nil, nil, dropped, failed(err)
 			case res.StatusCode >= http.StatusBadRequest:
-				return nil, nil, failed(c.statusError(res, payload))
+				return nil, nil, dropped, failed(c.statusError(res, payload))
 			}
-			return res, payload, nil
+			return res, payload, dropped, nil
 		}
 		var header http.Header
 		if res != nil {
@@ -556,7 +588,7 @@ func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*
 		select {
 		case <-ctx.Done():
 			wait.Stop()
-			return nil, nil, failed(ctx.Err())
+			return nil, nil, dropped, failed(ctx.Err())
 		case <-wait.C:
 		}
 	}
@@ -578,7 +610,9 @@ func anthropicProcessed(res *http.Response, err error, watch *egress.SendWatch) 
 // attempt sends the request once and reports whether the policy retries what
 // came back, and whether the endpoint may have billed it (anthropicProcessed).
 // It reads the body only of a response that ends the call, and only where
-// post must: every refusal, and a one-shot answer.
+// post must: every refusal, and a one-shot answer. A one-shot answer that
+// broke midway fails with what arrived of its body as the payload, so post
+// can count the usage it reported.
 func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last bool) (*http.Response, []byte, bool, bool, error) {
 	ctx, watch := egress.WatchSends(ctx)
 	actx := ctx
@@ -619,16 +653,21 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	}
 	payload, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	_ = res.Body.Close()
+	if err != nil && (refused || !anthropicServedJSON(res)) {
+		// A refusal reports no usage, whatever its body says, and nor does a
+		// body not served as application/json.
+		payload = nil
+	}
 	switch {
 	case err != nil && actx.Err() != nil && ctx.Err() == nil:
 		// Only this attempt's ten minutes ran out: a failed attempt like a
 		// failed dial, retried.
-		return nil, nil, c.retries(true, billable), billable, actx.Err()
+		return nil, payload, c.retries(true, billable), billable, actx.Err()
 	case err != nil:
 		// A dropped body is a connection error whatever the status said, but
 		// an x-should-retry: false still stands.
 		again := c.retries(res.Header.Get("X-Should-Retry") != "false", billable)
-		return res, nil, again, billable, fmt.Errorf("error reading response body: %w", err)
+		return res, payload, again, billable, fmt.Errorf("error reading response body: %w", err)
 	case !refused && len(payload) > anthropicMaxMessage:
 		return res, nil, false, billable, fmt.Errorf("anthropic: response body exceeds %d bytes", anthropicMaxMessage)
 	}
@@ -748,7 +787,8 @@ type anthropicUsage struct {
 // anthropicCount is a token count read as leniently as the SDK read one: a
 // number is truncated to an integer, a numeric string is read as its number,
 // and anything else is 0. A gateway's odd usage must not discard an answer
-// already paid for.
+// already paid for. A dropped body's counts are read strictly instead
+// (anthropicExactCount).
 type anthropicCount int64
 
 func (n *anthropicCount) UnmarshalJSON(b []byte) error {
@@ -759,20 +799,69 @@ func (n *anthropicCount) UnmarshalJSON(b []byte) error {
 	*n = 0
 	switch v := v.(type) {
 	case float64:
-		*n = anthropicCount(v)
+		*n = anthropicTruncated(v)
 	case string:
-		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
-			*n = anthropicCount(f)
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			*n = anthropicTruncated(f)
 		}
 	}
 	return nil
 }
 
-func anthropicDecode(res *http.Response, payload []byte) (*anthropicMessage, error) {
+// anthropicTruncated is f truncated to an integer, or 0 where an int64 cannot
+// hold it: Go leaves that conversion's result to the platform.
+func anthropicTruncated(f float64) anthropicCount {
+	if math.IsNaN(f) || f < math.MinInt64 || f >= math.MaxInt64 {
+		return 0
+	}
+	return anthropicCount(f)
+}
+
+// anthropicExactCount reads one count of a dropped body's usage: a JSON
+// integer of zero or more that an int holds, or null, which reports no count
+// as it does in a whole body. Anything else is false, and the dropped body
+// then reports nothing (anthropicDroppedUsage).
+func anthropicExactCount(value json.RawMessage) (*anthropicCount, bool) {
+	if string(value) == "null" {
+		return nil, true
+	}
+	v, err := strconv.ParseInt(string(value), 10, strconv.IntSize)
+	if err != nil || v < 0 {
+		return nil, false
+	}
+	n := anthropicCount(v)
+	return &n, true
+}
+
+// anthropicJSON refuses a response whose content type is not JSON, the one
+// kind of one-shot body anthropicDecode reads. It is the SDK's test, so a
+// whole answer it decoded still decodes; anthropicServedJSON is the strict
+// one a dropped body must pass.
+func anthropicJSON(res *http.Response) error {
 	contentType := res.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 	if !strings.Contains(mediaType, "application/json") && !strings.HasSuffix(mediaType, "+json") {
-		return nil, fmt.Errorf("anthropic: response content-type %q is not JSON", contentType)
+		return fmt.Errorf("anthropic: response content-type %q is not JSON", contentType)
+	}
+	return nil
+}
+
+// anthropicServedJSON reports whether res has one Content-Type and it parses
+// as application/json with well-formed parameters, the type a Messages answer
+// is served as. A dropped body is counted only then: anthropicJSON's test
+// also passes application/jsonp, a +json type and a malformed parameter.
+func anthropicServedJSON(res *http.Response) bool {
+	values := res.Header.Values("Content-Type")
+	if len(values) != 1 {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(values[0])
+	return err == nil && mediaType == "application/json"
+}
+
+func anthropicDecode(res *http.Response, payload []byte) (*anthropicMessage, error) {
+	if err := anthropicJSON(res); err != nil {
+		return nil, err
 	}
 	var msg anthropicMessage
 	if err := json.NewDecoder(bytes.NewReader(payload)).Decode(&msg); err != nil {
@@ -998,8 +1087,20 @@ func settleInput(block *anthropicContent) {
 // reported neither an input_tokens nor a final output_tokens. A message that
 // reported one of the two returns a Partial tally of what it did report.
 func anthropicUsageOf(msg *anthropicMessage) *Usage {
-	if msg == nil || (msg.Usage.InputTokens == nil && msg.Usage.OutputTokens == nil) {
+	if msg == nil {
 		return nil
+	}
+	usage, _ := msg.Usage.tally()
+	return usage
+}
+
+// tally is u's neutral tally, as anthropicUsageOf describes it, and whether
+// its prompt count fit an int. One that did not is held at math.MaxInt and
+// Partial, so it never wraps below 0 and the allowance ledger keeps its
+// ceiling.
+func (u anthropicUsage) tally() (*Usage, bool) {
+	if u.InputTokens == nil && u.OutputTokens == nil {
+		return nil, true
 	}
 	// This wire reports cache reads and writes beside input_tokens, never
 	// inside it, and the window holds all three. A negative count reads as
@@ -1010,15 +1111,187 @@ func anthropicUsageOf(msg *anthropicMessage) *Usage {
 		}
 		return max(0, int(*n))
 	}
-	input := count(msg.Usage.InputTokens)
-	read := max(0, int(msg.Usage.CacheReadInputTokens))
-	write := max(0, int(msg.Usage.CacheCreationInputTokens))
+	read := max(0, int(u.CacheReadInputTokens))
+	write := max(0, int(u.CacheCreationInputTokens))
+	prompt, fits := addTokens(count(u.InputTokens), read)
+	prompt, fitsAll := addTokens(prompt, write)
+	fits = fits && fitsAll
 	return &Usage{
-		PromptTokens:     input + read + write,
-		CompletionTokens: count(msg.Usage.OutputTokens),
+		PromptTokens:     prompt,
+		CompletionTokens: count(u.OutputTokens),
 		CacheReadTokens:  read,
 		CacheWriteTokens: write,
-		Partial:          msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil,
+		Partial:          u.InputTokens == nil || u.OutputTokens == nil || !fits,
+	}, fits
+}
+
+// addTokens adds two counts of zero or more. A sum past math.MaxInt is held
+// there, with ok false.
+func addTokens(a, b int) (sum int, ok bool) {
+	if a > math.MaxInt-b {
+		return math.MaxInt, false
+	}
+	return a + b, true
+}
+
+// anthropicDroppedUsage is the usage a one-shot body that broke midway
+// reported before the break, or nil where what arrived does not settle it.
+// Nil counts nothing on the person's own key and leaves the operator's
+// settlement at its ceiling, so an ambiguous body is counted short, never
+// over.
+//
+// Every byte that arrived is read, and they must be valid JSON as far as they
+// go: a top-level object whose type is "message" and whose usage object
+// arrived whole. The top-level type and usage, and each count inside usage,
+// must appear once, matched as encoding/json matches a field: the whole
+// body's decoder keeps the last of a repeated key, which may not have
+// arrived. A Messages body names its type before its usage, so a body whose
+// usage arrived without its type is not read either. Each count must be a
+// JSON integer of zero or more that an int holds (anthropicExactCount), and
+// the prompt count they add up to must fit an int too: the lenient reading a
+// whole body gets would turn an object, a fraction or a negative into a
+// count and declare the report whole.
+func anthropicDroppedUsage(payload []byte) *Usage {
+	top := jsonOnce("type", "usage")
+	var typ string
+	var usage json.RawMessage
+	read := jsonMembers(payload, func(key string, value json.RawMessage) bool {
+		switch {
+		case !top(key):
+			return false
+		case strings.EqualFold(key, "type"):
+			return json.Unmarshal(value, &typ) == nil
+		case strings.EqualFold(key, "usage"):
+			usage = value
+		}
+		return true
+	})
+	if !read || typ != "message" || usage == nil {
+		return nil
+	}
+	var u anthropicUsage
+	slots := reflect.ValueOf(&u).Elem()
+	counts := jsonOnce(anthropicCountKeys...)
+	if !jsonMembers(usage, func(key string, value json.RawMessage) bool {
+		if !counts(key) {
+			return false
+		}
+		for i, name := range anthropicCountKeys {
+			if !strings.EqualFold(key, name) {
+				continue
+			}
+			n, ok := anthropicExactCount(value)
+			if !ok {
+				return false
+			}
+			switch slot := slots.Field(i).Addr().Interface().(type) {
+			case **anthropicCount:
+				*slot = n
+			case *anthropicCount:
+				if n != nil {
+					*slot = *n
+				}
+			}
+		}
+		return true
+	}) {
+		return nil
+	}
+	tally, fits := u.tally()
+	if !fits {
+		return nil
+	}
+	return tally
+}
+
+// anthropicCountKeys are the keys anthropicUsage reads.
+var anthropicCountKeys = func() []string {
+	t := reflect.TypeFor[anthropicUsage]()
+	keys := make([]string, t.NumField())
+	for i := range keys {
+		keys[i], _, _ = strings.Cut(t.Field(i).Tag.Get("json"), ",")
+	}
+	return keys
+}()
+
+// jsonMembers walks the members of the JSON object that data holds or
+// begins, in order, calling member with each key and value. A value the end
+// of data cuts off is passed as nil and ends the walk, except a number, which
+// reads as whole because nothing tells it was cut. It reports false where
+// data is not a valid prefix of one object, anything but whitespace follows
+// the object's close, or member returned false.
+func jsonMembers(data []byte, member func(key string, value json.RawMessage) bool) bool {
+	cut := func(err error) bool {
+		return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return false
+	}
+	for {
+		tok, err := dec.Token()
+		switch {
+		case cut(err):
+			return true
+		case err != nil:
+			return false
+		case tok == json.Delim('}'):
+			_, err := dec.Token()
+			return errors.Is(err, io.EOF)
+		}
+		key, _ := tok.(string)
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return cut(err) && member(key, nil)
+		}
+		if !member(key, value) {
+			return false
+		}
+	}
+}
+
+// jsonOnce reports, key by key, whether none of names has appeared twice yet,
+// matching a key to a name as encoding/json matches one to a field: exactly
+// or case-folded.
+func jsonOnce(names ...string) func(key string) bool {
+	seen := make([]bool, len(names))
+	return func(key string) bool {
+		for i, name := range names {
+			if !strings.EqualFold(key, name) {
+				continue
+			}
+			if seen[i] {
+				return false
+			}
+			seen[i] = true
+		}
+		return true
+	}
+}
+
+// sumUsage is the usage of two attempts of one call: the counts added, and
+// Partial when either was. A nil side reported nothing and adds nothing. A
+// count whose sum would pass math.MaxInt is held there and the sum is
+// Partial, so it never wraps below 0 and the allowance ledger keeps its
+// ceiling.
+func sumUsage(a, b *Usage) *Usage {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	}
+	prompt, okPrompt := addTokens(a.PromptTokens, b.PromptTokens)
+	completion, okCompletion := addTokens(a.CompletionTokens, b.CompletionTokens)
+	read, okRead := addTokens(a.CacheReadTokens, b.CacheReadTokens)
+	write, okWrite := addTokens(a.CacheWriteTokens, b.CacheWriteTokens)
+	return &Usage{
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		CacheReadTokens:  read,
+		CacheWriteTokens: write,
+		Partial:          a.Partial || b.Partial || !(okPrompt && okCompletion && okRead && okWrite),
+		Attempts:         max(1, a.Attempts) + max(1, b.Attempts),
 	}
 }
 

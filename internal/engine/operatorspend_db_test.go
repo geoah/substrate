@@ -214,7 +214,8 @@ func TestOperatorGateSettlesAFailedCallByWhatTheEndpointCanHaveBilled(t *testing
 // attempt after one that may have been billed. An anthropic answer dropped
 // mid-body, which the endpoint may have finished and billed, ends the call
 // with its ceiling settled, and the retry that would have answered never
-// leaves. A refusal (a 429) is still retried, and that call settles to the
+// leaves; one dropped after its usage object arrived settles to that usage
+// instead. A refusal (a 429) is still retried, and that call settles to the
 // usage the answering attempt reported.
 func TestOperatorCallMakesNoAttemptAfterOneThatMayHaveBeenBilled(t *testing.T) {
 	t.Parallel()
@@ -227,25 +228,32 @@ func TestOperatorCallMakesNoAttemptAfterOneThatMayHaveBeenBilled(t *testing.T) {
 	// 3 input tokens at 1 USD and 2 output tokens at 5 USD per million, in
 	// cents.
 	const usageCents = (3*1.0 + 2*5.0) / 1e6 * 100
+	dropAfter := func(partial string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) {
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRetry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s",
+				len(partial)+1000, partial)
+			_ = buf.Flush()
+			_ = conn.Close()
+		}
+	}
 	cases := []struct {
 		name     string
 		first    func(w http.ResponseWriter)
 		attempts int32
 		failed   bool
+		// atUsage is a call that settles to usageCents, failed or not.
+		atUsage bool
 	}{
-		{"an answer dropped mid-body", func(w http.ResponseWriter) {
-			conn, buf, err := w.(http.Hijacker).Hijack()
-			if err != nil {
-				return
-			}
-			_, _ = fmt.Fprint(buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRetry-After-Ms: 0\r\nContent-Length: 1000\r\n\r\n{\"id\":")
-			_ = buf.Flush()
-			_ = conn.Close()
-		}, 1, true},
+		{"an answer dropped mid-body", dropAfter(`{"id":`), 1, true, false},
+		{"an answer dropped after its usage", dropAfter(strings.TrimSuffix(answer, "}")), 1, true, true},
 		{"a 429", func(w http.ResponseWriter) {
 			w.Header().Set("Retry-After-Ms", "0")
 			http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, http.StatusTooManyRequests)
-		}, 2, false},
+		}, 2, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -282,11 +290,11 @@ func TestOperatorCallMakesNoAttemptAfterOneThatMayHaveBeenBilled(t *testing.T) {
 				t.Fatalf("the call wrote %d reservations, want 1", n-before)
 			}
 			row := lastReservation(t, ds)
-			if tc.failed && row.settled != row.ceiling {
+			if !tc.atUsage && row.settled != row.ceiling {
 				t.Fatalf("settled %v, want the ceiling %v the dropped attempt may have cost", row.settled, row.ceiling)
 			}
-			if !tc.failed && (!centsNear(row.settled, usageCents) || row.settled >= row.ceiling) {
-				t.Fatalf("settled %v of a %v ceiling, want the answering attempt's %v", row.settled, row.ceiling, usageCents)
+			if tc.atUsage && (!centsNear(row.settled, usageCents) || row.settled >= row.ceiling) {
+				t.Fatalf("settled %v of a %v ceiling, want the reported %v", row.settled, row.ceiling, usageCents)
 			}
 		})
 	}

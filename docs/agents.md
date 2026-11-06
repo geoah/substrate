@@ -857,7 +857,20 @@ the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. `promptTokens` is the whole input the model saw;
 `cacheReadTokens` and `cacheWriteTokens` are the parts of it the provider
 served from and wrote to its prompt cache, which `costUSD` prices at the
-row's cache rates ([providers](#providers)). A `message` carries role (`user`, `assistant`,
+row's cache rates ([providers](#providers)). On the `anthropic` wire one
+completion retries up to twice an attempt that failed on a connection error
+or answered 408, 409, 429 or a 5xx. An `x-should-retry` header overrides the
+status either way: `true` retries even a `200`, streamed or not, before its
+body is read, so that attempt's usage is never seen. The tallies add up every
+attempt that reported usage: a one-shot answer that broke after its whole
+`usage` object arrived counts beside the retry that answered. An attempt that
+reported nothing counts nothing, and so does a broken answer whose report is
+ambiguous: one not served as `application/json`, not valid JSON as far as
+it arrived, without a `type` of `message`, naming `usage` or one of its
+counts twice, or carrying a count other than `null` or a plain integer of
+zero or more.
+A row the operator pays for never retries an attempt that may have been
+billed. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
 sub-agent call's row), the engine-stamped `mentions` on a run's final reply
