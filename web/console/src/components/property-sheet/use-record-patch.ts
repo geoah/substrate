@@ -5,12 +5,12 @@
  * that may move a state, along a declared transition (engine/write.go).
  *
  * Inside a `SheetDraftContext` the record is not stored yet: the same write
- * lands in the draft and nothing reaches the server. */
+ * lands in the draft and nothing reaches the server or the mutation cache. */
 
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
-import { useSheetDraft } from "./draft"
+import { useSheetDraft, type SheetDraft } from "./draft"
 import { splitKind } from "@/lib/api/http"
 import { patchRecord, recordWriteReaches } from "@/lib/api/records"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
@@ -74,30 +74,77 @@ function afterWrite(
   })
 }
 
+/** What a surface reads off useRecordPatch: the members of useMutation's
+ * result that a draft can honor too. */
+export interface RecordPatch {
+  mutate: (
+    properties: Record<string, unknown>,
+    callbacks?: {
+      onSuccess?: (saved: SubstrateRecord) => void
+      onError?: (error: Error) => void
+    }
+  ) => void
+  mutateAsync: (properties: Record<string, unknown>) => Promise<SubstrateRecord>
+  isPending: boolean
+  error: Error | null
+  reset: () => void
+}
+
 /** `base`: the version the edit began from (see useEditBase); without one, a
  * write asserts the version on the page now, which is right only for a
  * one-gesture write that shows no draft (a checkbox). */
-export function useRecordPatch(record: SubstrateRecord, base?: number) {
+export function useRecordPatch(
+  record: SubstrateRecord,
+  base?: number
+): RecordPatch {
   const client = useQueryClient()
   const draft = useSheetDraft()
   const { authority, pkg, name } = splitKind(record.kind)
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: recordPatchKey(record),
-    mutationFn: async (properties: Record<string, unknown>) => {
-      if (draft) {
-        draft.write(properties)
-        return record
-      }
-      return patchRecord(authority, pkg, name, record.id, {
+    mutationFn: (properties: Record<string, unknown>) =>
+      patchRecord(authority, pkg, name, record.id, {
         properties,
         ifVersion: base ?? record.version,
-      })
-    },
-    onSuccess: (saved) => {
-      if (draft) return
-      return afterWrite(client, record, saved)
-    },
+      }),
+    onSuccess: (saved) => afterWrite(client, record, saved),
   })
+  if (draft) return draftPatch(draft, record)
+  return {
+    mutate: (properties, callbacks) => mutation.mutate(properties, callbacks),
+    mutateAsync: mutation.mutateAsync,
+    isPending: mutation.isPending,
+    error: mutation.error,
+    reset: mutation.reset,
+  }
+}
+
+/** A write to a draft, with no mutation at all: the draft's record carries
+ * whatever was typed into it, a secret included, and a mutation would keep
+ * its variables and its result (that record) for its gc time after the
+ * draft closed. The draft takes the write at once, so nothing is pending
+ * and there is no error to keep. */
+function draftPatch(draft: SheetDraft, record: SubstrateRecord): RecordPatch {
+  function mutateAsync(properties: Record<string, unknown>) {
+    return new Promise<SubstrateRecord>((resolve) => {
+      draft.write(properties)
+      resolve(record)
+    })
+  }
+  return {
+    mutate: (properties, callbacks) =>
+      void mutateAsync(properties).then(
+        (saved) => callbacks?.onSuccess?.(saved),
+        (error: unknown) =>
+          callbacks?.onError?.(
+            error instanceof Error ? error : new Error(String(error))
+          )
+      ),
+    mutateAsync,
+    isPending: false,
+    error: null,
+    reset: () => {},
+  }
 }
 
 /** One secret property (an API key) written in place, under `ifVersion:

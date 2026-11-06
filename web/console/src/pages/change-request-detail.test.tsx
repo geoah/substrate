@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
 
 const params = { id: "cr-1" }
 
@@ -49,6 +50,7 @@ vi.mock("@/router", () => ({
 import { ChangeRequestDetailPage } from "./change-request-detail"
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
+const CREDENTIAL_KIND = "samples.substrate.reamde.dev/vault/credential"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
 const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
@@ -66,6 +68,21 @@ const KINDS: KindInfo[] = [
       properties: {
         summary: { type: "string", description: "what it is" },
         note: { type: "string" },
+      },
+    },
+  },
+  {
+    identity: CREDENTIAL_KIND,
+    name: "credential",
+    authority: "samples.substrate.reamde.dev",
+    package: "vault",
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: {
+      properties: {
+        summary: { type: "string" },
+        apiKey: { type: "secret" },
       },
     },
   },
@@ -133,7 +150,7 @@ function renderPage(ui: ReactElement, technical = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const view = render(
     <ConsolePreferencesContext.Provider
       value={{
         preferences: {
@@ -151,6 +168,7 @@ function renderPage(ui: ReactElement, technical = false) {
       <QueryClientProvider client={client}>{ui}</QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
+  return { ...view, client }
 }
 
 /** The kinds a records-route URL lists, read off its `filter`: the list route
@@ -508,6 +526,63 @@ describe("ChangeRequestDetailPage", () => {
         ifVersion: 4,
       })
     })
+  })
+
+  // The review's record carries the owner's values as typed, a key
+  // included: editing another value after it must not keep that record in
+  // the mutation cache.
+  it("leaves nothing of a typed key in the mutation cache after another value is edited and the page closes", async () => {
+    serve(
+      request({
+        properties: {
+          op: "create",
+          targetKind: CREDENTIAL_KIND,
+          targetId: "mail",
+          diff: { properties: { summary: "Mail", apiKey: "proposed-key" } },
+        },
+      })
+    )
+    const { client, unmount } = renderPage(<ChangeRequestDetailPage />)
+    await screen.findByText("What it adds")
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Api key: change the value it applies",
+      })
+    )
+    const keyBox = () =>
+      document.querySelector<HTMLInputElement>("input[type=password]")
+    await waitFor(() => expect(keyBox()).not.toBeNull())
+    fireEvent.change(keyBox()!, { target: { value: "sk-review-secret" } })
+    fireEvent.keyDown(keyBox()!, { key: "Enter" })
+    await waitFor(() => expect(keyBox()).toBeNull())
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Summary: change the value it applies",
+      })
+    )
+    const box = await screen.findByDisplayValue("Mail")
+    fireEvent.change(box, { target: { value: "Work mail" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(await screen.findByText("New credential: Work mail")).toBeTruthy()
+
+    // Both values are the owner's: the accept carries them.
+    fireEvent.click(screen.getByRole("button", { name: "Add it" }))
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        ([, init]) => init?.method === "PATCH"
+      )
+      expect(
+        JSON.parse((patch![1] as RequestInit).body as string).properties
+          .adjustedDiff
+      ).toEqual({
+        properties: { summary: "Work mail", apiKey: "sk-review-secret" },
+      })
+    })
+
+    unmount()
+    expectNoTrace(client, "sk-review-secret")
   })
 
   it("is unmistakable about a delete, and summarizes what would go", async () => {

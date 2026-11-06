@@ -426,6 +426,50 @@ describe("a secret typed into the editor", () => {
     expectNoTrace(client, "sk-sheet-secret")
   })
 
+  // The sheet's record is the draft as typed so far, the token included: an
+  // ordinary row's write must not keep that record in the cache either.
+  it("leaves nothing of it in the mutation cache after another row is edited and the sheet closes", async () => {
+    const loginKind: KindInfo = {
+      ...credentialKind,
+      definition: {
+        properties: {
+          title: { type: "string", required: true },
+          token: { type: "secret", required: true },
+          username: { type: "string", required: true },
+        },
+      },
+    }
+    const { client, unmount } = renderEditor({ kind: loginKind })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "Mail" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /^Token .*edit$/ }))
+    fireEvent.change(keyBox()!, { target: { value: "sk-draft-secret" } })
+    fireEvent.keyDown(keyBox()!, { key: "Enter" })
+    await waitFor(() => expect(keyBox()).toBeNull())
+
+    fireEvent.click(screen.getByRole("button", { name: /^Username .*edit$/ }))
+    const username = screen.getByRole("textbox", { name: "Username" })
+    fireEvent.change(username, { target: { value: "ada" } })
+    fireEvent.keyDown(username, { key: "Enter" })
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Username" })).toBeNull()
+    )
+
+    // Both rows' writes landed in the draft the create sends.
+    createRecord.mockResolvedValueOnce({ ...stored, id: "c9" })
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }))
+    await waitFor(() => expect(createRecord).toHaveBeenCalledTimes(1))
+    expect(createRecord.mock.calls[0][3].properties).toEqual({
+      title: "Mail",
+      token: "sk-draft-secret",
+      username: "ada",
+    })
+
+    unmount()
+    expectNoTrace(client, "sk-draft-secret")
+  })
+
   it("leaves nothing of it in the mutation cache after an edit's save or refusal", async () => {
     const { client } = renderEditor({
       mode: "edit",
