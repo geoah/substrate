@@ -65,10 +65,10 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Twenty-three cases in this package guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly twenty-three must reach that guard: a
+// Twenty-four cases in this package guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly twenty-four must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and a twenty-fourth case cannot be added, or one of the twenty-three
+// behind, and a twenty-fifth case cannot be added, or one of the twenty-four
 // removed, without this number moving with it.
 //
 // The gate reads SUBSTRATE_SANDBOX_EGRESS_ALLOW once, at its first connect,
@@ -77,7 +77,7 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv(sandbox.EgressAllowVar, allowedLoopback); err != nil {
 		panic(err)
 	}
-	os.Exit(sandboxtest.Run(m, 23))
+	os.Exit(sandboxtest.Run(m, 24))
 }
 
 // allowedLoopback is the one loopback address the connect gate admits in

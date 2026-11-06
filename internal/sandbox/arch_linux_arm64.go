@@ -8,10 +8,11 @@ import "golang.org/x/sys/unix"
 const auditArch = 0xc00000b7
 
 const (
-	sysSocket   = unix.SYS_SOCKET
-	sysSendto   = unix.SYS_SENDTO
-	sysSendmsg  = unix.SYS_SENDMSG
-	sysSendmmsg = unix.SYS_SENDMMSG
+	sysSocket     = unix.SYS_SOCKET
+	sysSendto     = unix.SYS_SENDTO
+	sysSendmsg    = unix.SYS_SENDMSG
+	sysSendmmsg   = unix.SYS_SENDMMSG
+	sysSetsockopt = unix.SYS_SETSOCKOPT
 	// See the amd64 file: 435 on every architecture, unexported by x/sys.
 	sysClone3 = 435
 )

@@ -555,6 +555,7 @@ func TestFilterVerdicts(t *testing.T) {
 		eperm  = retErrno(unix.EPERM)
 		enosys = retErrno(unix.ENOSYS)
 		noAF   = retErrno(unix.EAFNOSUPPORT)
+		eacces = retErrno(unix.EACCES)
 	)
 	// neg is a pid as the 64-bit register a caller passes: sign-extended, so
 	// its high half is set and only the low half is the kernel's pid_t.
@@ -567,6 +568,7 @@ func TestFilterVerdicts(t *testing.T) {
 		nr      int
 		arg0    uint64
 		arg1    uint64
+		arg2    uint64
 		want    uint32
 	}{
 		{name: "kill the substrate", nr: unix.SYS_KILL, arg0: parent, want: eperm},
@@ -612,6 +614,12 @@ func TestFilterVerdicts(t *testing.T) {
 		{name: "an internet socket without network", nr: sysSocket, arg0: unix.AF_INET, want: noAF},
 		{name: "an internet socket with network", network: true, nr: sysSocket, arg0: unix.AF_INET, want: allow},
 		{name: "a packet socket with network", network: true, nr: sysSocket, arg0: unix.AF_PACKET, want: noAF},
+		{name: "set a linger time", nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: eacces},
+		{name: "set a linger time with network", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: eacces},
+		{name: "set a linger time, high halves set", nr: sysSetsockopt, arg0: 3, arg1: 1<<32 | unix.SOL_SOCKET, arg2: 1<<32 | unix.SO_LINGER, want: eacces},
+		{name: "set another socket option", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_KEEPALIVE, want: allow},
+		{name: "set a TCP option numbered like SO_LINGER", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_TCP, arg2: unix.TCP_CONGESTION, want: allow},
+		{name: "read the linger time", network: true, nr: unix.SYS_GETSOCKOPT, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: allow},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prog, err := buildFilter(Policy{Network: tc.network}, substrateProc{pid: parent, pgid: group, shared: tc.shared})
@@ -622,7 +630,7 @@ func TestFilterVerdicts(t *testing.T) {
 			if arch == 0 {
 				arch = auditArch
 			}
-			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.arg0, tc.arg1}}
+			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.arg0, tc.arg1, tc.arg2}}
 			if got := runFilter(t, prog, data); got != tc.want {
 				t.Fatalf("verdict = %#x, want %#x", got, tc.want)
 			}

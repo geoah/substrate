@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -651,6 +653,168 @@ def main(input, host):
 	}
 	if slowest, _ := out["slowest"].(float64); slowest > 1 {
 		t.Errorf("the slowest connect took %.2fs, want an answer at once", slowest)
+	}
+
+	torn := make(chan struct{})
+	go func() {
+		r.Reconcile(context.Background(), spec.Repository, nil)
+		close(torn)
+	}()
+	select {
+	case <-torn:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the body's process did not tear down within 10s")
+	}
+}
+
+// The supervisor duplicates a body's socket to inspect a connect, so a body
+// that drops its own reference meanwhile leaves the duplicate as the last one,
+// and the supervisor's close of it is then the socket's final close. With a
+// linger time set and data queued to a peer that never reads, that close
+// waits on the peer, and the gate, every connect behind it and the kill of the
+// body wait with it. The body here sets a linger time on such a socket and
+// hands it to a child, where one thread connects it in a loop and another
+// closes it. A close that lands while the supervisor holds the duplicate
+// returns at once and leaves the supervisor waiting; one that lands outside
+// waits itself, until the body kills the child and tries again. Every body is
+// refused SO_LINGER, so the invocation and the teardown both finish.
+func TestALingeringSocketCannotHoldTheGate(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	requireConnectGate(t, r)
+
+	// A peer with a small receive buffer that never reads, so a few kilobytes
+	// from the body stay queued.
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		var serr error
+		if err := c.Control(func(fd uintptr) {
+			serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_RCVBUF, 4096)
+		}); err != nil {
+			return err
+		}
+		return serr
+	}}
+	ln, err := lc.Listen(context.Background(), "tcp", net.JoinHostPort(allowedLoopback, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var (
+		heldMu sync.Mutex
+		held   []*net.TCPConn
+	)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			heldMu.Lock()
+			held = append(held, c.(*net.TCPConn))
+			heldMu.Unlock()
+		}
+	}()
+	// A reset ends a close that waits on its peer, so a failed run still
+	// releases the gate it held.
+	t.Cleanup(func() {
+		_ = ln.Close()
+		heldMu.Lock()
+		defer heldMu.Unlock()
+		for _, c := range held {
+			_ = c.SetLinger(0)
+			_ = c.Close()
+		}
+	})
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	const probe = `
+import os, random, select, signal, socket, struct, threading, time
+def main(input, host):
+    dest = (input["args"]["host"], int(input["args"]["port"]))
+    linger, attempts = None, 0
+    end = time.monotonic() + 1.5
+    while time.monotonic() < end:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        s.connect(dest)
+        s.setblocking(False)
+        try:
+            while True:
+                s.send(b"x" * 65536)
+        except BlockingIOError:
+            pass
+        s.setblocking(True)
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 3600))
+            result = "set"
+        except OSError as e:
+            result = "err:%d" % e.errno
+        if linger is None:
+            linger = result
+        r, w = os.pipe()
+        go_r, go_w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.close(r)
+                os.close(go_w)
+                os.read(go_r, 1)
+                def connect():
+                    while True:
+                        try:
+                            s.connect(dest)
+                        except OSError:
+                            pass
+                threading.Thread(target=connect, daemon=True).start()
+                time.sleep(random.uniform(0.001, 0.003))
+                os.close(s.fileno())
+                os.write(w, b"!")
+            finally:
+                os._exit(0)
+        os.close(w)
+        os.close(go_r)
+        s.close()
+        os.write(go_w, b"!")
+        os.close(go_w)
+        select.select([r], [], [], 0.05)
+        os.close(r)
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+        attempts += 1
+    return {"output": {"linger": linger, "attempts": attempts}}
+`
+	spec := Spec{
+		Repository: "t1", Function: "linger.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 10000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"host": allowedLoopback, "port": port}
+	type result struct {
+		res *Result
+		err error
+	}
+	invoked := make(chan result, 1)
+	go func() {
+		res, err := r.Invoke(context.Background(), spec, in, nil)
+		invoked <- result{res, err}
+	}()
+	var got result
+	select {
+	case got = <-invoked:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the invocation did not end within 30s: a lingering close held the connect gate")
+	}
+	if got.err != nil {
+		t.Fatalf("invoke: %v", got.err)
+	}
+	out, ok := got.res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", got.res.Output)
+	}
+	if out["linger"] != "err:13" {
+		t.Errorf("setsockopt(SO_LINGER) in a network body = %v, want err:13 (EACCES)", out["linger"])
+	}
+	if attempts, _ := out["attempts"].(float64); attempts == 0 {
+		t.Errorf("the body killed no child mid-connect: %v", out)
 	}
 
 	torn := make(chan struct{})

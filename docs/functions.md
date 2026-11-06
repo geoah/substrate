@@ -490,7 +490,10 @@ unprivileged, none requiring a container runtime:
   an association without `connect`, MPTCP is not the TCP the supervisor
   connects, and a raw socket writes packets to any address. A send with
   `MSG_FASTOPEN` (TCP Fast Open, which opens a connection from `sendto`,
-  `sendmsg` or `sendmmsg`) is refused too.
+  `sendmsg` or `sendmmsg`) is refused too. So is setting `SO_LINGER`
+  with `setsockopt`, in every body, with or without network: the
+  supervisor closes its own duplicate of a body's socket, and a linger
+  time would make that close wait on the body's peer.
   Binary-shipped code keeps the public-destination policy. Outside code is
   additionally held to its declared hosts through a per-body proxy. The supervisor half of that fine layer is the one
   piece of the sandbox that needs something from the deployment: it reads the

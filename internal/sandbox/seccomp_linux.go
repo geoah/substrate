@@ -307,10 +307,11 @@ func retErrno(e unix.Errno) uint32 { return seccompRetErrno | (uint32(e) & 0x000
 //
 // Layout, so the relative jumps below are readable: a prologue that pins the
 // architecture, one compare per denied syscall, one compare per syscall with
-// an argument rule, the socket-domain block, one argument block per rule,
-// then the three terminal returns. Every compare jumps FORWARD, so no offset
-// ever exceeds the number of remaining instructions, which stays far below
-// BPF's 255-offset and 4096-instruction ceilings.
+// an argument rule, the setsockopt compare, the socket-domain block, one
+// argument block per rule, the SO_LINGER block, then the three terminal
+// returns. Every compare jumps FORWARD, so no offset ever exceeds the number of
+// remaining instructions, which stays far below BPF's 255-offset and
+// 4096-instruction ceilings.
 func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 	if auditArch == 0 {
 		return nil, fmt.Errorf("seccomp: no audit arch for this platform")
@@ -339,11 +340,16 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		signalBlocks += 2 + len(s.targets)
 	}
 	// Absolute indices of the blocks and the terminals.
-	const prologue = 5
+	const (
+		prologue    = 5
+		lingerBlock = 5 // ld level, jeq, ld optname, jeq, the refusal
+	)
 	dispatchAt := prologue + len(deny)
-	socketAt := dispatchAt + len(signals)
+	setsockoptAt := dispatchAt + len(signals)
+	socketAt := setsockoptAt + 1
 	blocksAt := socketAt + socketBlock
-	allowAt := blocksAt + signalBlocks
+	lingerAt := blocksAt + signalBlocks
+	allowAt := lingerAt + lingerBlock
 	epermAt := allowAt + 1
 	enosysAt := allowAt + 2
 	lastAt := enosysAt
@@ -401,6 +407,10 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(s.nr)})
 		block += 2 + len(s.targets)
 	}
+	if jt, err = jumpTo(setsockoptAt, lingerAt); err != nil {
+		return nil, err
+	}
+	prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(sysSetsockopt)})
 
 	base := socketAt
 	jf, err := jumpTo(base, allowAt)
@@ -437,6 +447,32 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		}
 		prog = append(prog, sockFilter{Code: bpfRetK, K: seccompRetAllow})
 	}
+
+	// setsockopt(fd, SOL_SOCKET, SO_LINGER) is refused on every socket, in
+	// every body. The connect gate duplicates a body's socket to inspect or
+	// disconnect it, and a body that closes its own descriptor meanwhile makes
+	// the gate's duplicate the last one; with a linger time set, the gate's
+	// close then waits on a peer the body chose, and Close and the kill behind
+	// it wait on the gate. A body without network is refused too, because it
+	// can set the option on a network body's socket handed to it over a unix
+	// socket. level and optname are integers the kernel truncates to int, so
+	// the low halves are the whole values; both constants are this
+	// architecture's own (mips spells them differently).
+	notSocketLevel, err := jumpTo(lingerAt+1, allowAt)
+	if err != nil {
+		return nil, err
+	}
+	notLinger, err := jumpTo(lingerAt+3, allowAt)
+	if err != nil {
+		return nil, err
+	}
+	prog = append(prog,
+		sockFilter{Code: bpfLdAbsW, K: sdArg1},
+		sockFilter{Code: bpfJeqK, JT: 0, JF: notSocketLevel, K: unix.SOL_SOCKET},
+		sockFilter{Code: bpfLdAbsW, K: sdArg2},
+		sockFilter{Code: bpfJeqK, JT: 0, JF: notLinger, K: unix.SO_LINGER},
+		sockFilter{Code: bpfRetK, K: retErrno(unix.EACCES)},
+	)
 
 	prog = append(prog,
 		sockFilter{Code: bpfRetK, K: seccompRetAllow},
