@@ -865,9 +865,10 @@ body is read, so that attempt's usage is never seen. The tallies add up every
 attempt that reported usage: a one-shot answer that broke after its whole
 `usage` object arrived counts beside the retry that answered. An attempt that
 reported nothing counts nothing, and so does a broken answer whose report is
-ambiguous: one not served as JSON, not valid JSON as far as it arrived,
-without a `type` of `message`, naming `usage` or one of its counts twice,
-or carrying a count other than `null` or a plain integer of zero or more.
+ambiguous: one not served as `application/json`, not valid JSON as far as
+it arrived, without a `type` of `message`, naming `usage` or one of its
+counts twice, or carrying a count other than `null` or a plain integer of
+zero or more.
 A row the operator pays for never retries an attempt that may have been
 billed. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the

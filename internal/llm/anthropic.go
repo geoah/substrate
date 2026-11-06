@@ -653,9 +653,9 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	}
 	payload, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	_ = res.Body.Close()
-	if err != nil && (refused || anthropicJSON(res) != nil) {
+	if err != nil && (refused || !anthropicServedJSON(res)) {
 		// A refusal reports no usage, whatever its body says, and nor does a
-		// body anthropicDecode would refuse whole.
+		// body not served as application/json.
 		payload = nil
 	}
 	switch {
@@ -834,7 +834,9 @@ func anthropicExactCount(value json.RawMessage) (*anthropicCount, bool) {
 }
 
 // anthropicJSON refuses a response whose content type is not JSON, the one
-// kind of one-shot body anthropicDecode reads.
+// kind of one-shot body anthropicDecode reads. It is the SDK's test, so a
+// whole answer it decoded still decodes; anthropicServedJSON is the strict
+// one a dropped body must pass.
 func anthropicJSON(res *http.Response) error {
 	contentType := res.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
@@ -842,6 +844,19 @@ func anthropicJSON(res *http.Response) error {
 		return fmt.Errorf("anthropic: response content-type %q is not JSON", contentType)
 	}
 	return nil
+}
+
+// anthropicServedJSON reports whether res has one Content-Type and it parses
+// as application/json with well-formed parameters, the type a Messages answer
+// is served as. A dropped body is counted only then: anthropicJSON's test
+// also passes application/jsonp, a +json type and a malformed parameter.
+func anthropicServedJSON(res *http.Response) bool {
+	values := res.Header.Values("Content-Type")
+	if len(values) != 1 {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(values[0])
+	return err == nil && mediaType == "application/json"
 }
 
 func anthropicDecode(res *http.Response, payload []byte) (*anthropicMessage, error) {

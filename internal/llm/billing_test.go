@@ -70,12 +70,20 @@ const openaiUsageJSON = `{"prompt_tokens":3,"completion_tokens":2,"total_tokens"
 // cutOff answers 200 with a length the body never reaches and drops the
 // connection: an answer the endpoint started and the client lost.
 func cutOff(w http.ResponseWriter, contentType, partial string) {
+	cutOffTypes(w, []string{contentType}, partial)
+}
+
+// cutOffTypes is cutOff with one Content-Type header per entry.
+func cutOffTypes(w http.ResponseWriter, contentTypes []string, partial string) {
 	conn, buf, err := w.(http.Hijacker).Hijack()
 	if err != nil {
 		return
 	}
-	_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nRetry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s",
-		contentType, len(partial)+1000, partial)
+	_, _ = fmt.Fprint(buf, "HTTP/1.1 200 OK\r\n")
+	for _, contentType := range contentTypes {
+		_, _ = fmt.Fprintf(buf, "Content-Type: %s\r\n", contentType)
+	}
+	_, _ = fmt.Fprintf(buf, "Retry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s", len(partial)+1000, partial)
 	_ = buf.Flush()
 	_ = conn.Close()
 }
@@ -415,8 +423,9 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 // usage object arrived is retried, and the usage of the attempt that answered
 // adds to it, Partial when either report was; an attempt that reported nothing
 // adds nothing and leaves the sum whole. A dropped body whose report is
-// ambiguous reports nothing. A sum past math.MaxInt is held there and
-// Partial, never wrapped. A RetryOnlyUnbilled client (the operator's)
+// ambiguous, or that one Content-Type does not declare application/json,
+// reports nothing. A sum past math.MaxInt is held there and Partial, never
+// wrapped. A RetryOnlyUnbilled client (the operator's)
 // still makes the one billable attempt, and returns its usage beside the
 // failure, or none, so the ledger keeps its ceiling.
 func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
@@ -495,6 +504,35 @@ func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
 			"an answer not served as JSON dropped after its usage, then an answer", false,
 			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "text/plain", body(first)) }, answerWith(second)},
 			false, secondOnly,
+		},
+		{
+			"an answer served as application/jsonp dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/jsonp", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served with a malformed parameter dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/json; charset", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served as a +json type dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "application/vnd.anthropic+json", body(first)) }, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served with two content types dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOffTypes(w, []string{"application/json", "text/plain"}, body(first))
+			}, answerWith(second)},
+			false, secondOnly,
+		},
+		{
+			"an answer served as application/json with a charset dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOff(w, "Application/JSON; charset=utf-8", body(first))
+			}, answerWith(second)},
+			false, &Usage{PromptTokens: 21, CompletionTokens: 5, CacheReadTokens: 4, CacheWriteTokens: 6, Attempts: 2},
 		},
 		{
 			"two answers dropped after counts whose sum passes the largest int, then an answer", false,
@@ -610,10 +648,11 @@ func TestA200ThatAsksForARetryIsRetriedUnread(t *testing.T) {
 	}
 }
 
-// A whole one-shot answer's counts are read as leniently as the SDK read
-// them, so an answer already paid for is never lost to its usage: the counts
-// a dropped body may not carry read as the number they can be read as, or 0.
-// A prompt count past math.MaxInt is held there and Partial.
+// A whole one-shot answer is read as leniently as the SDK read one, so an
+// answer already paid for is never lost to its usage or its content type:
+// the counts a dropped body may not carry read as the number they can be
+// read as, or 0, and an answer served under a type the SDK decoded still
+// decodes. A prompt count past math.MaxInt is held there and Partial.
 func TestAWholeAnswerReadsOddCountsLeniently(t *testing.T) {
 	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
 	cases := []struct {
@@ -631,6 +670,9 @@ func TestAWholeAnswerReadsOddCountsLeniently(t *testing.T) {
 			"a cache count that is an object", "application/json",
 			`{"input_tokens":4,"cache_read_input_tokens":{},"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2},
 		},
+		{"served as application/jsonp", "application/jsonp", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"served with a malformed parameter", "application/json; charset", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"served as a +json type", "application/vnd.anthropic+json", `{"input_tokens":4,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
 		{
 			"counts whose prompt sum passes the largest int", "application/json",
 			fmt.Sprintf(`{"input_tokens":%d,"cache_read_input_tokens":%[1]d,"output_tokens":2}`, math.MaxInt/2+1),
