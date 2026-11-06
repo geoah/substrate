@@ -93,6 +93,11 @@ import { ProviderCount } from "@/components/app-sidebar"
 import { OverviewCards } from "@/components/home/overview-cards"
 import { llmProvidersQueryOptions } from "@/lib/api/agents"
 
+import {
+  expectNoTrace,
+  mutationText,
+} from "@/hooks/use-secret-mutation.test-fixtures"
+
 import { ProvidersPage } from "./providers"
 
 const PROV = "providers.substrate.reamde.dev"
@@ -365,17 +370,6 @@ function renderPage({
     </Preferences>
   )
   return client
-}
-
-/** Everything the mutation cache holds, as text: where a typed key would
- * show if any mutation kept it. */
-function mutationText(client: QueryClient): string {
-  return JSON.stringify(
-    client
-      .getMutationCache()
-      .getAll()
-      .map((m) => ({ key: m.options.mutationKey, state: m.state }))
-  )
 }
 
 /** One group's section, by its heading. */
@@ -757,6 +751,69 @@ describe("a key typed into a card", () => {
     expect(within(gemini).queryByLabelText(/API key/)).toBeNull()
     expect(mutationText(client)).not.toContain("sk-refused-secret")
     expect(client.getMutationCache().getAll()).toHaveLength(0)
+  })
+
+  it("leaves nothing in the mutation cache and an empty field after Cancel on a key never sent", async () => {
+    const client = renderPage()
+    const openai = await modelCard("OpenAI")
+    const open = () =>
+      fireEvent.click(
+        within(openai).getByRole("button", { name: "Use your own key" })
+      )
+    open()
+    fireEvent.change(within(openai).getByLabelText("Your OpenAI API key"), {
+      target: { value: "sk-never-sent" },
+    })
+    fireEvent.click(within(openai).getByRole("button", { name: "Cancel" }))
+    expect(within(openai).queryByLabelText(/API key/)).toBeNull()
+    expect(writes).toHaveLength(0)
+    expectNoTrace(client, "sk-never-sent")
+    open()
+    expect(
+      within(openai).getByLabelText<HTMLInputElement>("Your OpenAI API key")
+        .value
+    ).toBe("")
+  })
+
+  it("keeps no key in the mutation cache after Use the operator's key again clears the reader's own", async () => {
+    answer = {
+      operator: { name: "Crane" },
+      items: [OPENAI, ANTHROPIC_NONE, { ...GEMINI_OWN, operatorOffers: true }],
+    }
+    const client = renderPage()
+    const gemini = await modelCard("Gemini")
+    fireEvent.click(within(gemini).getByRole("button", { name: "Replace key" }))
+    fireEvent.change(within(gemini).getByLabelText("Your Gemini API key"), {
+      target: { value: "sk-own-replaced" },
+    })
+    fireEvent.click(within(gemini).getByRole("button", { name: "Save key" }))
+    await waitFor(() =>
+      expect(within(gemini).queryByLabelText(/API key/)).toBeNull()
+    )
+    fireEvent.click(
+      within(gemini).getByRole("button", { name: "Use Crane’s key again" })
+    )
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Use Crane’s key",
+      })
+    )
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes[1].body).toEqual({
+      properties: { apiKey: null },
+      ifVersion: 3,
+    })
+    await waitFor(() =>
+      expect(client.getMutationCache().getAll()[0]?.state.status).toBe(
+        "success"
+      )
+    )
+    // The clear is the one write left, and it carries no value at all.
+    const cached = client.getMutationCache().getAll()
+    expect(cached).toHaveLength(1)
+    expect(cached[0].state.variables).toBeUndefined()
+    expect(mutationText(client)).not.toContain("sk-own-replaced")
+    expect(mutationText(client)).not.toMatch(/"apiKey":"/)
   })
 
   it("is refused, not written over, where the row changed while the form was open", async () => {
