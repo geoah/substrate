@@ -18,6 +18,8 @@ struct SessionCover: View {
     /// The last session shown: Save and Discard clear the session before the
     /// cover has closed, and the closing cover keeps drawing it.
     @State private var lastPresentation: SessionPresentation?
+    /// The minute the bar's subtitle reads the session's length at.
+    @State private var clockNow = Date()
 
     /// `rowsScreen` lets a preview open with a fix or the keypad up.
     init(rowsScreen: RowsScreenModel = RowsScreenModel()) {
@@ -138,7 +140,17 @@ struct SessionCover: View {
             }
         }
         .navigationTitle(presentation.title)
-        .navigationBarTitleDisplayMode(.inline)
+        // Rows: the name as a large title over the session's length, folding
+        // into the bar, whole and on one line, as the list scrolls; the bar
+        // keeps its controls alone (owner, 2026-11-06). The Table keeps its
+        // inline title over its own header.
+        .modifier(RowsLargeTitle(isOn: layout == .rows, subtitle: RowsClock.text(presentation.header, at: clockNow)))
+        .task(id: layout) {
+            while !Task.isCancelled {
+                clockNow = Date()
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
         .toolbar { toolbar(presentation) }
         .toolbar { keyboardToolbar(presentation) }
         .onChange(of: focus) { old, new in focusChanged(from: old, to: new) }
@@ -262,14 +274,6 @@ struct SessionCover: View {
 
     @ToolbarContentBuilder
     private func toolbar(_ presentation: SessionPresentation) -> some ToolbarContent {
-        if layout == .rows {
-            // Rows has no header: the clock sits under the title (§7.6a).
-            ToolbarItem(placement: .principal) {
-                RowsTitleView(title: presentation.title, header: presentation.header) {
-                    session.run(presentation.header.isPaused ? .resumeClock : .pauseClock)
-                }
-            }
-        }
         ToolbarItem(placement: .topBarLeading) {
             Button {
                 focus = nil
@@ -279,22 +283,21 @@ struct SessionCover: View {
             }
             .accessibilityHint("Keeps the session running")
         }
+        // One menu: the exercises to jump to are its first item, so the bar
+        // leaves the title its width (owner, 2026-11-06).
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
-                ForEach(presentation.cards) { card in
-                    Button {
-                        session.scrollTarget = ScrollTarget(slot: card.slot)
-                    } label: {
-                        Text(card.name)
-                        Text(card.progress)
+                Menu("Go to exercise", systemImage: "list.bullet") {
+                    ForEach(presentation.cards) { card in
+                        Button {
+                            session.scrollTarget = ScrollTarget(slot: card.slot)
+                        } label: {
+                            Text(card.name)
+                            Text(card.progress)
+                        }
                     }
                 }
-            } label: {
-                Label("Exercises", systemImage: "list.bullet")
-            }
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
+                Divider()
                 Button("Add exercise", systemImage: "plus") { cover.sheet = .addExercise(after: nil) }
                 Button("Reorder exercises", systemImage: "arrow.up.arrow.down") { cover.sheet = .reorder }
                 Button("Timer…", systemImage: "timer") { cover.sheet = .rest(.timer) }

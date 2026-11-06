@@ -434,11 +434,13 @@ reset and (on reps left) why the set ended as round buttons; the keypad sets
 the field as each key is typed, so Log never takes the old value, with Done
 and Cancel; every other set on one line, with no round headers; every menu's
 button on Liquid Glass, so its menu grows out of it, the open set's `…` beside
-Log; and "Next", on one line, for the set after. They are `docs/screenshots/rows-input-*.jpg`.
+Log; "Next", on one line, for the set after; and the session's name as a large
+title over its length, folding into the bar as the list scrolls. They are
+`docs/screenshots/rows-input-*.jpg`.
 
-| The open set | Typing 12.75 | Why the set ended | A superset |
-| --- | --- | --- | --- |
-| ![Open set](docs/screenshots/rows-input-01-set-open.jpg) | ![Keypad](docs/screenshots/rows-input-02-keypad.jpg) | ![Why stop](docs/screenshots/rows-input-03-why-stop.jpg) | ![Superset](docs/screenshots/rows-input-04-superset.jpg) |
+| The open set | Typing 12.75 | Why the set ended | A superset | The top of the list |
+| --- | --- | --- | --- | --- |
+| ![Open set](docs/screenshots/rows-input-01-set-open.jpg) | ![Keypad](docs/screenshots/rows-input-02-keypad.jpg) | ![Why stop](docs/screenshots/rows-input-03-why-stop.jpg) | ![Superset](docs/screenshots/rows-input-04-superset.jpg) | ![Header](docs/screenshots/rows-input-05-header.jpg) |
 
 A routine's page and its progress after the owner's review of them
 (2026-11-03, iPhone 18 Pro simulator, signed in to a throwaway substrate,

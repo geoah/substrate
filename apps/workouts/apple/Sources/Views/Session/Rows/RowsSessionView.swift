@@ -243,49 +243,34 @@ struct RowsSessionView: View {
     }
 }
 
-/// The Rows layout's title: the session's name over how long it has run,
-/// to the minute and in grey (`24 min`), so it reads as the session's
-/// length and never as a clock running for the set at hand. A tap pauses or
-/// resumes the session clock (the Table shows the clock in its header).
-struct RowsTitleView: View {
-    let title: String
-    let header: SessionHeaderStats
-    let togglePause: () -> Void
+/// The Rows layout's large title and its subtitle, the session's length,
+/// which the bar keeps once the title folds into it. The system draws both;
+/// the clock is paused and resumed from the `…` menu. The Table keeps its
+/// inline title over its own header.
+struct RowsLargeTitle: ViewModifier {
+    let isOn: Bool
+    let subtitle: String
 
-    var body: some View {
-        Button(action: togglePause) {
-            VStack(spacing: 0) {
-                // The bar's buttons leave the title little room: a name that
-                // does not fit on one line takes two smaller ones, wrapped
-                // between its words, and only then is cut, at its end.
-                ViewThatFits(in: .horizontal) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text(title)
-                        .font(.footnote.weight(.semibold))
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(.primary)
-                TimelineView(.periodic(from: header.clockStart, by: 60)) { context in
-                    let end = header.clockPausedAt ?? context.date
-                    let length = Format.sessionLength(Seconds(max(0, end.timeIntervalSince(header.clockStart))))
-                    // The finish time, not a countdown: it stays right while
-                    // the plan holds, and moves when a set or a rest does.
-                    Text(header.isPaused ? "Paused, \(length)" : [length, header.endsText].compactMap { $0 }.joined(separator: " \u{00B7} "))
-                }
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(header.isPaused ? Color.orange : Color.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            }
-            .contentShape(.rect)
+    func body(content: Content) -> some View {
+        if isOn {
+            content
+                .navigationSubtitle(Text(subtitle))
+                .navigationBarTitleDisplayMode(.large)
+        } else {
+            content
+                .navigationBarTitleDisplayMode(.inline)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(header.isPaused ? "Resumes the session clock" : "Pauses the session clock")
+    }
+}
+
+/// How long the session has run, to the minute, and when it should end:
+/// `24 min · ends ~10:12`, `Paused, 24 min`. The finish time, not a
+/// countdown: it stays right while the plan holds, and moves when a set or
+/// a rest does.
+enum RowsClock {
+    static func text(_ header: SessionHeaderStats, at now: Date) -> String {
+        let end = header.clockPausedAt ?? now
+        let length = Format.sessionLength(Seconds(max(0, end.timeIntervalSince(header.clockStart))))
+        return header.isPaused ? "Paused, \(length)" : [length, header.endsText].compactMap { $0 }.joined(separator: " \u{00B7} ")
     }
 }
