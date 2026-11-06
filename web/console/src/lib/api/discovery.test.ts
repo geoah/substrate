@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   discoveryQueryOptions,
   fetchAuthPolicy,
+  fetchDoorFeature,
+  hasFeature,
   resetAuthPolicy,
 } from "./discovery"
 
@@ -102,6 +104,54 @@ describe("fetchAuthPolicy", () => {
       inviteRequired: false,
       totpRequired: false,
     })
+  })
+})
+
+describe("fetchDoorFeature", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    resetAuthPolicy()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("reads a feature off the same request the door's policy reads", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        registration: { totpRequired: false },
+        features: [{ name: "operatorDefaults", stability: "experimental" }],
+      })
+    )
+    const [policy, listed, other] = await Promise.all([
+      fetchAuthPolicy(),
+      fetchDoorFeature("operatorDefaults"),
+      fetchDoorFeature("somethingElse"),
+    ])
+    expect(policy.totpRequired).toBe(false)
+    expect(listed).toBe(true)
+    expect(other).toBe(false)
+    expect(fetchMock.mock.calls.length).toBe(1)
+  })
+
+  it("reads an unreachable discovery as not listing it", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("offline"))
+    expect(await fetchDoorFeature("operatorDefaults")).toBe(false)
+  })
+
+  it("reads a document with no features as listing none", () => {
+    expect(hasFeature({}, "operatorDefaults")).toBe(false)
+    expect(hasFeature(null, "operatorDefaults")).toBe(false)
+    expect(
+      hasFeature(
+        { features: [{ name: "operatorDefaults", stability: "stable" }] },
+        "operatorDefaults"
+      )
+    ).toBe(true)
   })
 })
 

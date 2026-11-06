@@ -56,12 +56,16 @@ const policy = vi.hoisted(() => ({
   inviteRequired: true,
   totpRequired: true,
   live: false,
+  /** The features server.json lists. */
+  features: [] as string[],
 }))
 vi.mock("@/lib/api/discovery", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api/discovery")>()
   return {
     ...real,
     useAuthPolicy: () => (policy.live ? real.useAuthPolicy() : policy),
+    useDoorFeature: (name: string) =>
+      policy.live ? real.useDoorFeature(name) : policy.features.includes(name),
   }
 })
 
@@ -130,6 +134,7 @@ describe("RegisterPage", () => {
     policy.inviteRequired = true
     policy.totpRequired = true
     policy.live = false
+    policy.features = []
     door.site = null
     registerSearch.redirect = undefined
   })
@@ -561,6 +566,122 @@ describe("RegisterPage", () => {
   })
 })
 
+/** Fill the one-step form (no second factor) and submit it. */
+function registerInOneStep(domain?: string) {
+  fireEvent.change(screen.getByLabelText("Invite code"), {
+    target: { value: "INV-1" },
+  })
+  if (domain) {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Advanced: use your own domain" })
+    )
+    fireEvent.change(screen.getByLabelText("Your domain"), {
+      target: { value: domain },
+    })
+  } else {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
+      target: { value: "geoah" },
+    })
+  }
+  fireEvent.change(screen.getByLabelText("Password"), {
+    target: { value: PASSWORD },
+  })
+  fireEvent.change(screen.getByLabelText("Confirm password"), {
+    target: { value: PASSWORD },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Create your Substrate" }))
+}
+
+/** Where a new repository lands on a deployment whose operator supplies
+ * keys (`operatorDefaults` in server.json): Providers, whose welcome says
+ * what works now, unless an app's approval page or Verify domain is
+ * waiting. */
+describe("RegisterPage where the operator supplies keys", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    navigate.mockClear()
+    policy.inviteRequired = true
+    policy.totpRequired = false
+    policy.live = false
+    policy.features = ["operatorDefaults"]
+    door.site = null
+    registerSearch.redirect = undefined
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it("lands on Providers", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<RegisterPage />)
+    registerInOneStep()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
+    )
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it("lands on Home where server.json lists no operatorDefaults", async () => {
+    policy.features = []
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<RegisterPage />)
+    registerInOneStep()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
+    )
+  })
+
+  it("returns to an app's approval page instead", async () => {
+    registerSearch.redirect = "/authorize/AbC123"
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<RegisterPage />)
+    registerInOneStep()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/authorize/AbC123",
+        replace: true,
+      })
+    )
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it("lands on Verify domain instead for the reader's own domain", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(201, { ...MINT, repository: "ada.example.org" })
+    )
+    render(<RegisterPage />)
+    registerInOneStep("ada.example.org")
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/settings",
+        hash: "verify-domain",
+        replace: true,
+      })
+    )
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it("lands on Providers after the recovery key is saved", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(201, { ...MINT, recoveryKey: "AGE-SECRET-KEY-1TEST" })
+    )
+    render(<RegisterPage />)
+    registerInOneStep()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Saved, continue" })
+    )
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
+    )
+  })
+})
+
 /** The same page against the REAL discovery hook: the reader (or a password
  * manager) can complete and submit the first step before
  * `GET /.well-known/substrate/server.json` answers, and the answer decides
@@ -639,6 +760,25 @@ describe("RegisterPage and the door's own answer", () => {
       totpCode: "",
       label: "console",
     })
+  })
+
+  it("lands on Providers when discovery lists operatorDefaults", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "/.well-known/substrate/server.json")
+        return jsonResponse(200, {
+          registration: { totpRequired: false },
+          features: [{ name: "operatorDefaults", stability: "experimental" }],
+        })
+      return jsonResponse(201, MINT)
+    })
+    render(<RegisterPage />)
+    // The one-step form is up once discovery said there is no second factor.
+    await screen.findByRole("button", { name: "Create your Substrate" })
+    registerInOneStep()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
+    )
   })
 
   it("keeps the enrollment step where discovery never answers", async () => {
