@@ -65,14 +65,25 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Sixteen cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly seventeen must reach that guard: a
+// Twenty-three cases in this package guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly twenty-three must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and an eighteenth case cannot be added, or one of the seventeen
+// behind, and a twenty-fourth case cannot be added, or one of the twenty-three
 // removed, without this number moving with it.
+//
+// The gate reads SUBSTRATE_SANDBOX_EGRESS_ALLOW once, at its first connect,
+// so allowedLoopback is listed there before any case runs.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 17))
+	if err := os.Setenv(sandbox.EgressAllowVar, allowedLoopback); err != nil {
+		panic(err)
+	}
+	os.Exit(sandboxtest.Run(m, 23))
 }
+
+// allowedLoopback is the one loopback address the connect gate admits in
+// this package, so a case can prove an allowed connect completes without
+// leaving the machine. Loopback is otherwise refused.
+const allowedLoopback = "127.0.0.77"
 
 // The exploit that motivated retiring the shared interpreter: a function in
 // ONE repository reading a secret handed to a function in ANOTHER. Both bodies

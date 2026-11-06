@@ -54,7 +54,10 @@
 // beyond rlimits, because cgroups are unavailable. And a body GRANTED network
 // has its connect destinations filtered (connectgate_linux.go): the runner
 // connects to the address it verified and injects the socket, so a
-// multi-threaded body cannot race the destination past the check. That filter
+// multi-threaded body cannot race the destination past the check. Its
+// internet sockets are TCP streams and datagram sockets, and none of its
+// sends carries MSG_FASTOPEN (seccomp_linux.go), so connect(2) is the only
+// call that opens a connection. That filter
 // is not optional — where the deployment denies the two
 // syscalls the supervisor answers notifications with, a body that declares
 // network is REFUSED rather than run unfiltered, in every mode but off. One
@@ -147,7 +150,7 @@ type Policy struct {
 	// internet socket but a TCP stream and refuses TCP Fast Open's send: no
 	// datagram, raw, SCTP or MPTCP socket reaches an address without passing
 	// the gate. It opens no Unix socket either, so a daemon on a pathname
-	// socket cannot relay its traffic (buildConfinedFilter). An outside
+	// socket cannot relay its traffic (buildInternetFilter). An outside
 	// body's proxy dials nothing outside it and asks no name server. It is a
 	// test binary's setting (runner.ConfineBodyEgress): a body a regression
 	// points at a real API is refused at connect(2), whatever its code does.

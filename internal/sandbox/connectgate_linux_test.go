@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -223,5 +224,59 @@ func TestConnectNotifyFilterAssembles(t *testing.T) {
 	}
 	if last[1].Code != bpfRetK || last[1].K != uint32(unix.SECCOMP_RET_USER_NOTIF) {
 		t.Fatalf("last terminal = %#x, want USER_NOTIF %#x", last[1].K, uint32(unix.SECCOMP_RET_USER_NOTIF))
+	}
+}
+
+// The unix address the runner connects to on a body's behalf: an absolute
+// path as the kernel would read it, a relative one through a descriptor on
+// the connecting thread's working directory, and an abstract one refused,
+// because Landlock holds a body's abstract connects to its own domain and the
+// runner's connect is outside it.
+func TestUnixAddressIsTheBodysPath(t *testing.T) {
+	sun := func(path string) []byte {
+		return append([]byte{unix.AF_UNIX, 0}, path...)
+	}
+	tid := unix.Gettid()
+	for _, tc := range []struct {
+		name  string
+		raw   []byte
+		want  string
+		errno unix.Errno
+	}{
+		{name: "an absolute path", raw: sun("/run/app.sock"), want: "/run/app.sock"},
+		{name: "an absolute path the kernel ends at its NUL", raw: sun("/run/app.sock\x00junk"), want: "/run/app.sock"},
+		{name: "an abstract address", raw: sun("\x00name"), errno: unix.EACCES},
+		{name: "no path at all", raw: sun(""), errno: unix.EINVAL},
+		{name: "longer than sockaddr_un", raw: sun("/" + strings.Repeat("a", 108)), errno: unix.EINVAL},
+		{name: "a relative path past the room the prefix leaves", raw: sun(strings.Repeat("a", 100)), errno: unix.ENAMETOOLONG},
+	} {
+		addr, dirfd, errno := unixAddress(tid, tc.raw)
+		if errno != tc.errno {
+			t.Errorf("%s: errno %v, want %v", tc.name, errno, tc.errno)
+			continue
+		}
+		if dirfd != -1 {
+			t.Errorf("%s: opened descriptor %d, want none", tc.name, dirfd)
+			_ = unix.Close(dirfd)
+		}
+		if errno == 0 && string(addr[2:]) != tc.want {
+			t.Errorf("%s: path %q, want %q", tc.name, addr[2:], tc.want)
+		}
+	}
+
+	addr, dirfd, errno := unixAddress(tid, sun("app.sock"))
+	if errno != 0 || dirfd < 0 {
+		t.Fatalf("a relative path: errno %v, descriptor %d", errno, dirfd)
+	}
+	defer func() { _ = unix.Close(dirfd) }()
+	if want := fmt.Sprintf("/proc/self/fd/%d/app.sock", dirfd); string(addr[2:]) != want {
+		t.Fatalf("a relative path: %q, want %q", addr[2:], want)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", dirfd)); err != nil || dir != cwd {
+		t.Fatalf("the descriptor names %q (%v), want the working directory %q", dir, err, cwd)
 	}
 }
