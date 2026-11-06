@@ -12,6 +12,11 @@ struct HevyImportTests {
     let london = TimeZone(identifier: "Europe/London")!
     let adapter = "substrate-workouts@test"
 
+    /// The id an exercise the import makes from a CSV title gets.
+    func newExercise(_ title: String) -> ExerciseID {
+        ExerciseID(HevyImport.derivedID("exercise", "title-\(HevyImport.normalized(title))"))
+    }
+
     func text(_ name: String) throws -> String {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "csv", subdirectory: "Fixtures/hevy"))
         return try String(contentsOf: url, encoding: .utf8)
@@ -45,7 +50,10 @@ struct HevyImportTests {
     @Test("two workouts, the rows that do not read listed with their lines")
     func workouts() throws {
         let plan = try importPlan()
-        #expect(plan.sessions.map(\.session.id.rawValue) == ["hevy-20261030-1343", "hevy-20261102-0805"])
+        // Derived from the workout's start, the key builds before the
+        // derived ids wrote the session under.
+        #expect(
+            plan.sessions.map(\.session.id.rawValue) == ["hevy-20261030-1343", "hevy-20261102-0805"].map { HevyImport.derivedID("session", $0) })
         #expect(plan.problems.map(\.line) == [27, 28])
         #expect(plan.problems[0].reason.contains("not a date"))
         #expect(plan.problems[1].reason.contains("weight_kg"))
@@ -55,7 +63,8 @@ struct HevyImportTests {
         #expect(push.endsAt == ISO8601DateFormatter().date(from: "2026-10-30T14:30:00Z"))
         #expect(push.name == "Push, Fri 30 Oct 13:43")
         #expect(push.notes == "Felt strong,\nslept well")
-        #expect(push.status == .finished && push.sport == .strength && push.revision == 1 && push.adapter == adapter)
+        #expect(push.status == .finished && push.sport == .strength && push.revision == 1)
+        #expect(push.adapter == "substrate-workouts-hevy-csv@test" && HevyImport.importPath(push) == .csv)
         #expect(push.timezone == "Europe/London" && push.utcOffsetStart == 0 && push.utcOffsetEnd == 0)
         #expect(push.routine == nil && push.healthKitWorkout == nil)
     }
@@ -63,12 +72,10 @@ struct HevyImportTests {
     @Test("slots by exercise run, a superset of neighbours, the same exercise again later")
     func slots() throws {
         let push = try #require(try importPlan().sessions.first).session
-        #expect(push.slots.map(\.key) == ["bench-press-barbell", "chest-press-machine", "lat-pulldown-cable", "plank", "bench-press-barbell-2"])
-        #expect(
-            push.slots.map(\.exercise.rawValue) == [
-                "bench-press-barbell", "chest-press-machine", "lat-pulldown-cable", "plank",
-                "bench-press-barbell",
-            ])
+        let bench = newExercise("Bench Press (Barbell)").rawValue
+        let pulldown = newExercise("Lat Pulldown (Cable)").rawValue
+        #expect(push.slots.map(\.key) == [bench, "chest-press-machine", pulldown, "plank", "\(bench)-2"])
+        #expect(push.slots.map(\.exercise.rawValue) == [bench, "chest-press-machine", pulldown, "plank", bench])
         #expect(push.slots[0].notes == "Pause at the chest")
         #expect(push.slots.map(\.group) == [nil, "superset-1", "superset-1", nil, nil])
         #expect(push.groups == [SessionGroup(key: "superset-1", groupKind: .superset)])
@@ -77,8 +84,8 @@ struct HevyImportTests {
     @Test("warm-up, working, failure and a drop chain")
     func sets() throws {
         let records = try #require(try importPlan().sessions.first)
-        let bench = records.sets.filter { $0.slot == "bench-press-barbell" }
-        #expect(bench.map(\.id.rawValue) == (0 ... 4).map { "hevy-20261030-1343-0-\($0)" })
+        let bench = records.sets.filter { $0.slot == newExercise("Bench Press (Barbell)").rawValue }
+        #expect(bench.map(\.id.rawValue) == (0 ... 4).map { HevyImport.derivedID("set", "hevy-20261030-1343-0-\($0)") })
         #expect(bench.map(\.role) == [.warmup, .working, .working, .working, .working])
         #expect(bench.map(\.ordinal) == [1, 1, 2, 2, 2])
         #expect(bench.map(\.order) == [1, 2, 3, 4, 5])
@@ -102,18 +109,21 @@ struct HevyImportTests {
     func exercises() throws {
         let plan = try importPlan()
         #expect(plan.matched == ["Chest Press (Machine)": "chest-press-machine", "Plank": "plank", "Leg Press (Machine)": "leg-press-machine"])
-        #expect(plan.exercises.map(\.id.rawValue) == ["bench-press-barbell", "lat-pulldown-cable", "pull-up-assisted", "treadmill"])
-        let byID = Dictionary(uniqueKeysWithValues: plan.exercises.map { ($0.id.rawValue, $0) })
-        #expect(byID["bench-press-barbell"]?.measurement == .weightreps && byID["bench-press-barbell"]?.equipment == .barbell)
-        #expect(byID["lat-pulldown-cable"]?.equipment == .cable)
-        #expect(byID["pull-up-assisted"]?.measurement == .bodyweightassistedreps)
-        #expect(byID["treadmill"]?.measurement == .distanceduration)
+        // Each under an id derived from its title, never the title slugged.
+        let titles = ["Bench Press (Barbell)", "Lat Pulldown (Cable)", "Pull Up (Assisted)", "Treadmill"]
+        #expect(plan.exercises.map(\.name) == titles)
+        #expect(plan.exercises.map(\.id) == titles.map(newExercise))
+        let byName = Dictionary(uniqueKeysWithValues: plan.exercises.map { ($0.name, $0) })
+        #expect(byName["Bench Press (Barbell)"]?.measurement == .weightreps && byName["Bench Press (Barbell)"]?.equipment == .barbell)
+        #expect(byName["Lat Pulldown (Cable)"]?.equipment == .cable)
+        #expect(byName["Pull Up (Assisted)"]?.measurement == .bodyweightassistedreps)
+        #expect(byName["Treadmill"]?.measurement == .distanceduration)
         #expect(plan.exercises.allSatisfy { $0.isLocal })
 
         let legs = try #require(plan.sessions.last)
-        let pullUp = try #require(legs.sets.first { $0.exercise == "pull-up-assisted" })
+        let pullUp = try #require(legs.sets.first { $0.exercise == newExercise("Pull Up (Assisted)") })
         #expect(pullUp.loadMode == .assisted && pullUp.assistance == Mass(value: 20, unit: .kg) && pullUp.load == nil)
-        let treadmill = try #require(legs.sets.first { $0.exercise == "treadmill" })
+        let treadmill = try #require(legs.sets.first { $0.exercise == newExercise("Treadmill") })
         #expect(treadmill.distance == Length(metres: 1500) && treadmill.duration == 600)
         #expect(legs.sets.first { $0.exercise == "leg-press-machine" }?.load == Mass(value: Decimal(string: "120.5")!, unit: .kg))
     }
@@ -133,6 +143,7 @@ struct HevyImportTests {
         let imported = first.sessions[0]
         var logged = first.sessions[1]
         logged.session.id = SessionID(UUIDv7.make(at: logged.session.at))
+        logged.session.adapter = adapter
         logged.session.at = logged.session.at.addingTimeInterval(120)
         let again = try importPlan(history: [imported, logged])
         #expect(again.sessions.isEmpty)

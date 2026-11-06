@@ -61,7 +61,7 @@ func sendIfLocal(_ exercise: Exercise, link: SubstrateLink) {
 #Preview("Duplicate") {
     let app = PreviewData.app()
     let routine = PreviewData.catalog.routines[SampleRoutine.id]!
-    RoutineEditorView(model: RoutineEditorModel(RoutineEditor.duplicate(routine, taken: [routine.id])) { _ in })
+    RoutineEditorView(model: RoutineEditorModel(RoutineEditor.duplicate(routine)) { _ in })
         .environment(app)
         .environment(PreviewData.noSession(app))
         .environment(WorkoutsRoot.shared.link)

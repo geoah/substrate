@@ -22,19 +22,23 @@ public extension StringID {
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
-/// An exercise's id, a slug the writer chooses: `chest-press-machine`.
+/// An exercise's id: minted (`ExerciseID.minted`), derived from a key
+/// (`DerivedMintedID`), or a slug an earlier build or another writer chose
+/// (`chest-press-machine`).
 public struct ExerciseID: StringID {
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
-/// A movement's id, the name slugged: `chest-press`.
+/// A movement's id: the library's, derived from its slug, or the slug an
+/// earlier build wrote it under (`chest-press`).
 public struct MovementID: StringID {
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
-/// A routine's id, a slug the writer chooses: `fully-body-collection-1`.
+/// A routine's id: minted (`RoutineID.minted`), derived from a key, or a
+/// slug an earlier build or another writer chose (`full-body-1`).
 public struct RoutineID: StringID {
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
@@ -46,13 +50,15 @@ public struct SetupID: StringID {
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
-/// A session's id: a lowercase UUIDv7 of its start, or an importer's key.
+/// A session's id: a lowercase UUIDv7 of its start, or derived from an
+/// importer's key.
 public struct SessionID: StringID {
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
-/// A set record's id: a lowercase UUIDv7 of its end, or an importer's key.
+/// A set record's id: a lowercase UUIDv7 of its end, or derived from an
+/// importer's key.
 public struct SetID: StringID {
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
@@ -71,30 +77,13 @@ public struct EventID: StringID {
 }
 
 public extension ExerciseID {
-    /// The id of an exercise added on the phone (§7.6): the name lowercased,
-    /// diacritics folded, every run of other characters one `-`, trimmed, and
-    /// `-2`, `-3` and so on when the slug is taken. Only ASCII letters and
-    /// digits survive, so the id is a safe path segment everywhere.
-    static func slug(for name: String, taken: Set<ExerciseID> = []) -> ExerciseID {
-        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-        var slug = ""
-        var pendingDash = false
-        for scalar in folded.unicodeScalars {
-            if scalar.isASCII, CharacterSet.alphanumerics.contains(scalar) {
-                if pendingDash, !slug.isEmpty { slug.append("-") }
-                pendingDash = false
-                slug.unicodeScalars.append(scalar)
-            } else {
-                pendingDash = true
-            }
-        }
-        let base = slug.isEmpty ? "exercise" : slug
-        var candidate = ExerciseID(base)
-        var suffix = 2
-        while taken.contains(candidate) {
-            candidate = ExerciseID("\(base)-\(suffix)")
-            suffix += 1
-        }
-        return candidate
-    }
+    /// A new exercise's id: a UUIDv7 of `date`, the shape a server takes
+    /// from an app for a record it creates. A name is never slugged into an
+    /// id, which would go stale on a rename.
+    static func minted(at date: Date = Date()) -> ExerciseID { ExerciseID(UUIDv7.make(at: date)) }
+}
+
+public extension RoutineID {
+    /// A new routine's id, minted as `ExerciseID.minted` is.
+    static func minted(at date: Date = Date()) -> RoutineID { RoutineID(UUIDv7.make(at: date)) }
 }

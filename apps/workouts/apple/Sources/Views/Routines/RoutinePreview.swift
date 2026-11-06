@@ -101,7 +101,7 @@ struct RoutinePreview: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu("More", systemImage: "ellipsis") {
                         Button("Duplicate", systemImage: "plus.square.on.square") {
-                            begin(RoutineEditor.duplicate(routine, taken: Set(catalog.routines.keys)), open: nil)
+                            begin(RoutineEditor.duplicate(routine), open: nil)
                         }
                         Button("Delete Routine", systemImage: "trash", role: .destructive) {
                             deleting = RoutineToDelete(id: routineID, name: routine.name)

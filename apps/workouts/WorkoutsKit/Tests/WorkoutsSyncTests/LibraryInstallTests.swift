@@ -65,6 +65,60 @@ struct LibraryInstallTests {
         return ExerciseLibrary(version: version, records: records)
     }
 
+    /// `library`, as the generator writes it now: each record under the id
+    /// derived from its slug, and its references naming those ids.
+    func derived(version: Int = 1, extra: Bool = false) -> ExerciseLibrary {
+        func id(_ kind: String, _ slug: String) -> String {
+            DerivedMintedID.make("workouts-library", String(kind.split(separator: "/").last!), slug)
+        }
+        var out = library(version: version, extra: extra)
+        for index in out.records.indices {
+            let record = out.records[index]
+            out.records[index].id = id(record.kind, record.id)
+            if case let .string(path)? = record.properties["movement"] {
+                out.records[index].properties["movement"] = .string("\(movement)/\(id(movement, String(path.split(separator: "/").last!)))")
+            }
+        }
+        return out
+    }
+
+    @Test("a repository an earlier build seeded under slug ids, its run cut short, is not seeded a second time")
+    func slugsCutShort() async throws {
+        let memory = MemoryRecords()
+        try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(memory.api, library: library())
+        memory.put(marker, "exercises", ["name": .string("Exercise library"), "seeding": .number(1)])
+        let outcome = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(memory.api, library: derived())
+        #expect(outcome.written == 0 && outcome.deferred == 0)
+        #expect(memory.all(exercise).map(\.id) == ["chest-press-dumbbell", "chest-press-machine", "row-cable"])
+        #expect(memory.all(movement).count == 2)
+        #expect(memory.get(marker, "exercises")?.properties["version"] == .number(1))
+    }
+
+    @Test("under derived ids, a record the owner deleted under its slug stays deleted, and a new one names the movement where it is held")
+    func slugsThenDerived() async throws {
+        let memory = MemoryRecords()
+        try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(memory.api, library: library())
+        memory.delete(exercise, "row-cable")
+        let next = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic)
+            .ensure(memory.api, library: derived(version: 2, extra: true))
+        #expect(next.written == 1)
+        let rowMachine = try #require(derived(version: 2, extra: true).records.last)
+        #expect(memory.all(exercise).count == 3 && memory.get(exercise, rowMachine.id) != nil)
+        #expect(memory.get(exercise, rowMachine.id)?.properties["movement"] == .string("\(movement)/row"), "named where nothing is")
+    }
+
+    @Test("an owner's exercise at a library slug is the library's, filled once, never written beside")
+    func ownersSlug() async throws {
+        let memory = MemoryRecords()
+        memory.put(exercise, "chest-press-dumbbell", ["name": .string("Chest Press (Dumbbell)"), "measurement": .string("weightreps")])
+        let outcome = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(memory.api, library: derived())
+        #expect(outcome.written == 4 && outcome.filled == 1)
+        #expect(memory.all(exercise).filter { $0.properties["name"] == .string("Chest Press (Dumbbell)") }.count == 1)
+        let held = try #require(memory.get(exercise, "chest-press-dumbbell")).properties
+        #expect(ExerciseLibrary.since(held) == 1)
+        #expect(held["movement"] == .string("\(movement)/\(derived().records[0].id)"), "the chest press movement, written at its derived id")
+    }
+
     @Test("a fresh repository gets every record and the marker; a second run, on any device, writes nothing")
     func fresh() async throws {
         let memory = MemoryRecords()

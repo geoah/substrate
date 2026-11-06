@@ -361,19 +361,22 @@ public enum HevyImport {
         }
 
         // Routines first: a session names the routine it was started from.
-        // A routine's id is Hevy's (`hevy-<routine id>`), so two routines of
-        // one name stay two, an import again finds its own, and an owner's
-        // routine of the same name is never touched.
+        // A routine's id is derived from Hevy's (`hevy-<routine id>`, the id
+        // builds before the derived ids wrote it under), so two routines of
+        // one name stay two, an import again finds its own under either id,
+        // and an owner's routine of the same name is never touched.
         var routineIDs: [String: RoutineID] = [:]
         let folderNames = Dictionary(folders.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         var positions: [String: Int] = [:]
         for hevy in hevyRoutines {
-            let id = RoutineID(rawValue: "hevy-\(hevy.id.lowercased())")
-            routineIDs[hevy.id] = id
-            if routines[id] != nil {
+            let key = "hevy-\(hevy.id.lowercased())"
+            let id = RoutineID(derivedID("routine", key))
+            if let held = [id, RoutineID(key)].first(where: { routines[$0] != nil }) {
+                routineIDs[hevy.id] = held
                 plan.routinesHeld.append(hevy.title)
                 continue
             }
+            routineIDs[hevy.id] = id
             let folder = hevy.folderId.flatMap { folderNames[$0] }
             // From 1, in Hevy's order within the folder (`routine.position`).
             let position = positions[folder ?? "", default: 0] + 1
@@ -400,14 +403,14 @@ public enum HevyImport {
                 plan.problems.append(Problem(line: 0, reason: "body measurement \(entry.date): not a date"))
                 continue
             }
-            plan.measurements.append(measurementRecord(entry, day: day, adapter: adapter))
+            plan.measurements.append(measurementRecord(entry, day: day, adapter: importAdapter(adapter, .api)))
             if let kg = entry.weightKg.flatMap(HevyAPI.decimal), kg > 0 { masses.append((day, Mass(value: kg, unit: .kg))) }
         }
         masses.sort { $0.day < $1.day }
 
         let held = Set(history.map(\.id.rawValue))
-        let spans = history.map { ($0.session.id, $0.session.at, $0.session.endsAt ?? $0.session.at) }
-        var ids = Set<String>()
+        let spans = history.map { ($0.session, $0.session.at, $0.session.endsAt ?? $0.session.at) }
+        var keys = Set<String>()
         for workout in workouts(file.rows) {
             let first = workout.rows[0]
             guard let start = first.startInstant ?? calendar.date(from: workout.start) else {
@@ -415,20 +418,23 @@ public enum HevyImport {
                 continue
             }
             let end = (first.endInstant ?? workout.end.flatMap(calendar.date(from:))).map { max($0, start) } ?? start
-            var id = first.workoutID.map { SessionID("hevy-\($0.lowercased())") } ?? sessionID(workout.start)
-            let base = id
+            // The workout's key, which builds before the derived ids wrote its
+            // session under as the id, and which the id is derived from.
+            var key = first.workoutID.map { "hevy-\($0.lowercased())" } ?? sessionKey(workout.start)
+            let base = key
             var suffix = 2
-            while ids.contains(id.rawValue) {
-                id = SessionID("\(base.rawValue)-\(suffix)")
+            while keys.contains(key) {
+                key = "\(base)-\(suffix)"
                 suffix += 1
             }
-            ids.insert(id.rawValue)
+            keys.insert(key)
+            let id = SessionID(derivedID("session", key))
             let title = workout.title.isEmpty ? "Hevy workout" : workout.title
-            if held.contains(id.rawValue) {
+            if held.contains(id.rawValue) || held.contains(key) {
                 plan.skipped.append(Skipped(title: title, start: start, reason: .imported))
                 continue
             }
-            if deleted.contains(id.rawValue) {
+            if deleted.contains(id.rawValue) || deleted.contains(key) {
                 plan.skipped.append(Skipped(title: title, start: start, reason: .deleted))
                 continue
             }
@@ -437,16 +443,17 @@ public enum HevyImport {
             // the API by Hevy's id). Two workouts the API names apart are two,
             // whenever they ran.
             let overlaps = spans.filter { $0.1 < end && start < $0.2 || $0.1 == start }
-                .filter { !(first.workoutID != nil && isAPIImport($0.0)) }
+                .filter { !(first.workoutID != nil && importPath($0.0) == .api) }
             if let overlap = overlaps.first {
-                let reason: Skip = overlap.0.rawValue.hasPrefix("hevy-") ? .imported : .overlaps(overlap.0)
+                let reason: Skip = importPath(overlap.0) != nil ? .imported : .overlaps(overlap.0.id)
                 plan.skipped.append(Skipped(title: title, start: start, reason: reason))
                 continue
             }
             var source: [SetID: HevyCSV.Row] = [:]
             let routine = first.routineID.flatMap { routineIDs[$0] }
             var records = session(
-                workout, id: id, title: title, start: start, end: end, timeZone: timeZone, adapter: adapter,
+                workout, id: id, key: key, title: title, start: start, end: end, timeZone: timeZone,
+                adapter: importAdapter(adapter, first.workoutID != nil ? .api : .csv),
                 routine: routine, pairs: pairs, source: &source
             ) { row in
                 resolve(row.exercise, template: row.templateID)
@@ -468,16 +475,53 @@ public enum HevyImport {
 
     static let hevySystem = "hevy"
 
-    /// A session an API import wrote: `hevy-` and Hevy's workout id, not the
-    /// CSV's `hevy-<yyyyMMdd>-<HHmm>`.
-    static func isAPIImport(_ id: SessionID) -> Bool {
-        guard id.rawValue.hasPrefix("hevy-") else { return false }
-        let rest = id.rawValue.dropFirst(5)
-        let parts = rest.split(separator: "-")
+    /// The first part of every id an import derives (`DerivedMintedID`), so
+    /// no other writer deriving from a Hevy key lands on an import's record.
+    static let idNamespace = "workouts-hevy"
+
+    /// The id a record of `kind` (`session`, `routine`, `bodymeasurement`,
+    /// `set`, `exercise`) imported from Hevy's `key` lands at: the minted
+    /// shape a server takes from an app, the same for the same key, so an
+    /// import run again finds what it wrote. For a session, a routine and a
+    /// body measurement the key is the id builds before the derived ids
+    /// wrote it under (`hevy-<Hevy's id>`, `hevy-<yyyyMMdd>-<HHmm>`).
+    public static func derivedID(_ kind: String, _ key: String) -> String {
+        DerivedMintedID.make(idNamespace, kind, key)
+    }
+
+    /// The way an imported record came from Hevy.
+    public enum Path: String, Sendable {
+        /// Read through Hevy's API, a workout keyed by Hevy's id.
+        case api = "hevy-api"
+        /// From Hevy's CSV export, a workout keyed by its start.
+        case csv = "hevy-csv"
+    }
+
+    /// The adapter an imported record carries: the app's, its name marked
+    /// with the way it came, `substrate-workouts-hevy-api@1.0.0`.
+    public static func importAdapter(_ adapter: String, _ path: Path) -> String {
+        guard let at = adapter.firstIndex(of: "@") else { return "\(adapter)-\(path.rawValue)" }
+        return "\(adapter[..<at])-\(path.rawValue)\(adapter[at...])"
+    }
+
+    /// How a session came from Hevy, or nil for one logged here: its
+    /// adapter says, or, for one written before the ids were derived, its
+    /// id, `hevy-` and Hevy's workout id from the API, the CSV's
+    /// `hevy-<yyyyMMdd>-<HHmm>` from a file.
+    public static func importPath(_ session: TrainingSession) -> Path? {
+        if let adapter = session.adapter {
+            let name = adapter.split(separator: "@", maxSplits: 1).first.map(String.init) ?? adapter
+            for path in [Path.api, .csv] where name.hasSuffix("-\(path.rawValue)") {
+                return path
+            }
+        }
+        let id = session.id.rawValue
+        guard id.hasPrefix("hevy-") else { return nil }
+        let parts = id.dropFirst(5).split(separator: "-")
         let isStamp =
             parts.count >= 2 && parts[0].count == 8 && parts[1].count == 4 && parts[0].allSatisfy(\.isNumber)
             && parts[1].allSatisfy(\.isNumber)
-        return !isStamp
+        return isStamp ? .csv : .api
     }
 
     /// A load as the library counts it: a pair logged together is halved
@@ -485,6 +529,24 @@ public enum HevyImport {
     static func perImplement(_ mass: Mass?, exercise: Exercise, pairs: PairedWeights) -> Mass? {
         guard let mass, pairs == .together, exercise.resolvedLoadBasis == .perimplement, exercise.resolvedImplements > 1 else { return mass }
         return Mass(value: mass.value / Decimal(exercise.resolvedImplements), unit: mass.unit)
+    }
+
+    /// The ids a repository holds that builds before the derived ids wrote
+    /// imports of `kind` under (`hevy-…`), by the id an import derives for
+    /// the same Hevy key now: where an import writes the record again, so
+    /// it updates the row it wrote before rather than adding a second.
+    public static func legacyIDs(_ kind: String, held: some Sequence<String>) -> [String: String] {
+        var out: [String: String] = [:]
+        for id in held where id.hasPrefix("hevy-") {
+            out[derivedID(kind, id)] = id
+        }
+        return out
+    }
+
+    /// The key a body measurement's id is derived from, the id builds before
+    /// the derived ids wrote it under: `hevy-` and Hevy's id, else its day.
+    public static func measurementKey(_ entry: HevyAPI.BodyMeasurement) -> String {
+        entry.id.map { "hevy-\($0)" } ?? "hevy-\(entry.date)"
     }
 
     /// One Hevy body measurement entry as a `~/training/bodymeasurement`
@@ -514,8 +576,7 @@ public enum HevyImport {
             length(key, value)
         }
         properties["adapter"] = .string(adapter)
-        let id = entry.id.map { "hevy-\($0)" } ?? "hevy-\(entry.date)"
-        return FlatRecord(kind: WorkoutsKinds.v1.bodyMeasurement, id: id, properties: properties)
+        return FlatRecord(kind: WorkoutsKinds.v1.bodyMeasurement, id: derivedID("bodymeasurement", measurementKey(entry)), properties: properties)
     }
 
     /// A Hevy routine as a workout routine: its exercises in order as slots,
@@ -633,9 +694,10 @@ public enum HevyImport {
 
     /// `hevy-20261030-1343`: the start on the wall, which the export keys a
     /// workout by and which stays the same in any zone, so importing the
-    /// same file again finds the sessions it wrote.
-    static func sessionID(_ start: DateComponents) -> SessionID {
-        SessionID("hevy-\(stamp(start))")
+    /// same file again finds the sessions it wrote. The session's id is
+    /// derived from it.
+    static func sessionKey(_ start: DateComponents) -> String {
+        "hevy-\(stamp(start))"
     }
 
     private static func stamp(_ c: DateComponents) -> String {
@@ -649,7 +711,7 @@ public enum HevyImport {
     /// One workout as a finished session and its sets. Every set sits at the
     /// session's start (`timeBasis: session`): Hevy records no set times.
     static func session(
-        _ workout: Workout, id: SessionID, title: String, start: Date, end: Date, timeZone: TimeZone, adapter: String,
+        _ workout: Workout, id: SessionID, key sessionKey: String, title: String, start: Date, end: Date, timeZone: TimeZone, adapter: String,
         routine: RoutineID? = nil, pairs: PairedWeights = .each, source: inout [SetID: HevyCSV.Row],
         exercise resolve: (HevyCSV.Row) -> Exercise
     ) -> SessionRecords {
@@ -682,7 +744,8 @@ public enum HevyImport {
             keys.insert(key)
             slots.append(SessionSlot(key: key, exercise: exercise.id, notes: run[0].exerciseNotes.nilIfEmpty))
             let performed = run.filter { !$0.placeholder }
-            let made = setRecords(performed, slot: key, slotIndex: index, session: id, at: start, exercise: exercise, pairs: pairs)
+            let made = setRecords(
+                performed, slot: key, slotIndex: index, session: id, sessionKey: sessionKey, at: start, exercise: exercise, pairs: pairs)
             for (set, row) in zip(made, performed) { source[set.id] = row }
             sets += made
         }
@@ -734,8 +797,10 @@ public enum HevyImport {
     /// One slot's rows as set records. `warmup` is a warm-up, `failure` a
     /// working set that reached failure, and each `dropset` row a drop of
     /// the set before it, which becomes the chain's head.
+    /// Each set's id is derived from the workout's key, the slot's index and
+    /// the set's position in it.
     static func setRecords(
-        _ run: [HevyCSV.Row], slot: String, slotIndex: Int, session: SessionID, at: Date,
+        _ run: [HevyCSV.Row], slot: String, slotIndex: Int, session: SessionID, sessionKey: String, at: Date,
         exercise: Exercise, pairs: PairedWeights = .each
     ) -> [PerformedSet] {
         var out: [PerformedSet] = []
@@ -744,7 +809,7 @@ public enum HevyImport {
         for (position, row) in run.enumerated() {
             let drop = row.setType == "dropset" || row.setType == "drop_set" || row.setType == "drop"
             var set = setRecord(
-                row, id: SetID("\(session.rawValue)-\(slotIndex)-\(position)"), slot: slot, order: position + 1,
+                row, id: SetID(derivedID("set", "\(sessionKey)-\(slotIndex)-\(position)")), slot: slot, order: position + 1,
                 session: session, at: at, exercise: exercise, pairs: pairs)
             if drop, let headIndex = head {
                 let chain = out.count(where: { $0.continues == out[headIndex].id }) + 2
@@ -843,7 +908,7 @@ public enum HevyImport {
             default: qualifier.contains("bodyweight") ? .bodyweightreps : .repsonly
             }
         return Exercise(
-            id: ExerciseID.slug(for: title, taken: taken), name: title, measurement: measurement,
+            id: exerciseID("title-\(normalized(title))", taken: taken), name: title, measurement: measurement,
             equipment: equipment(qualifier), isLocal: true)
     }
 
@@ -876,9 +941,21 @@ public enum HevyImport {
         let primary = template.primaryMuscleGroup.flatMap(group).map { [$0] } ?? []
         let secondary = (template.secondaryMuscleGroups ?? []).compactMap(group).filter { !primary.contains($0) }
         return Exercise(
-            id: ExerciseID.slug(for: template.title, taken: taken), name: template.title, measurement: measurement,
+            id: exerciseID("template-\(template.id)", taken: taken), name: template.title, measurement: measurement,
             equipment: equipment, primaryMuscles: primary, secondaryMuscles: secondary,
             codes: [Coding(system: hevySystem, code: template.id)], isLocal: true)
+    }
+
+    /// A new exercise's id, derived from Hevy's template id or its title,
+    /// and from a count as well should another exercise hold it.
+    static func exerciseID(_ key: String, taken: Set<ExerciseID>) -> ExerciseID {
+        var id = ExerciseID(derivedID("exercise", key))
+        var suffix = 2
+        while taken.contains(id) {
+            id = ExerciseID(derivedID("exercise", "\(key)-\(suffix)"))
+            suffix += 1
+        }
+        return id
     }
 
     private static func bracketed(_ title: String) -> String? {

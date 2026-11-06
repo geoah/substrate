@@ -47,7 +47,10 @@ Each JSON file names its YAML in its `source` field. The script loads the YAML w
 PyYAML's safe loader minus the timestamp resolver, so instants stay strings, and turns each
 document into `{kind, id: metadata.id, properties: data.properties}`. It also refuses an
 exercise id written differently in two files: the sample's exercises are the test vectors'
-records, value for value. The SwiftUI previews read no JSON: they run the bundled sample
+records, value for value. The bundled sample alone is written under ids derived from the
+YAML's slugs (`DerivedMintedID`, namespace `workouts-sample`), the shape a server takes
+from an app for a new record, and each exercise names its slug under the
+`substrate-workouts-sample` code. The SwiftUI previews read no JSON: they run the bundled sample
 through the engine, so they show what the app carries. On 2026-11-02 the script's output for
 the four test-vector files was byte for byte the JSON that had been kept in step by hand
 until then.

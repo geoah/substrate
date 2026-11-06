@@ -12,7 +12,8 @@ Two sources, both YAML in `substratectl apply -f` form under the authority
   installs a package from the authority document, under this very name.
 - The example records in apps/workouts/docs/examples/.
   sample.yaml is the sample routine and its exercises, the app's bundled
-  catalogue (Resources/Bundled); the other four files are the test vectors
+  catalogue (Resources/Bundled), written under ids derived from the YAML's
+  slugs (`bundled_sample`); the other four files are the test vectors
   (Tests/WorkoutsCoreTests/Fixtures/examples). Each record becomes the flat
   shape substrate's REST API speaks, `{"kind", "id", "properties"}`. An
   exercise id in more than one file must be the same record in each.
@@ -35,6 +36,7 @@ The output has no timestamps, so a run over unchanged YAML changes nothing.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -129,6 +131,12 @@ COACH_PROMPT_MAX = 20480
 FIXTURE = APP / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
 EXAMPLES = APP / "docs/examples"
 SAMPLE = "sample"
+# The first part of every bundled sample id (`derived_minted_id`), and the
+# code system an exercise of the sample names its slug in, which is the id
+# it was written under before the ids were derived.
+SAMPLE_NAMESPACE = "workouts-sample"
+SAMPLE_SYSTEM = "substrate-workouts-sample"
+CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
 BUNDLED = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled"
 # The test vectors: the owner's Hevy history and the methods it leaves out.
 VECTORS = ("exercises", "routines", "sessions", "coverage")
@@ -232,6 +240,44 @@ def example_records(name: str) -> list[dict]:
     return out
 
 
+def derived_minted_id(*parts: str) -> str:
+    """substrate's DerivedMintedID, as exercise-library.py spells it: the
+    first 16 bytes of the SHA-256 of the parts joined by a NUL, marked as a
+    UUIDv8, as 26 lowercase Crockford base32 characters."""
+    digest = bytearray(hashlib.sha256("\x00".join(parts).encode("utf-8")).digest()[:16])
+    digest[6] = digest[6] & 0x0F | 0x80
+    digest[8] = digest[8] & 0x3F | 0x80
+    value = int.from_bytes(digest, "big")
+    return "".join(CROCKFORD[(value >> (5 * (25 - index))) & 31] for index in range(26))
+
+
+def bundled_sample(exercises: list[dict], routines: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The sample as the app carries it: each record under an id derived from
+    its slug, the minted shape a server takes from an app, each exercise
+    naming its slug under SAMPLE_SYSTEM, and the routines' slots naming the
+    derived ids."""
+    def sample_id(record: dict) -> str:
+        return derived_minted_id(SAMPLE_NAMESPACE, record["kind"].rsplit("/", 1)[1], record["id"])
+
+    paths = {f"{record['kind']}/{record['id']}": f"{record['kind']}/{sample_id(record)}" for record in exercises}
+    out_exercises = []
+    for record in exercises:
+        properties = dict(record["properties"])
+        properties["codes"] = [{"system": SAMPLE_SYSTEM, "code": record["id"]}] + properties.get("codes", [])
+        out_exercises.append({"kind": record["kind"], "id": sample_id(record), "properties": properties})
+    out_routines = []
+    for record in routines:
+        properties = dict(record["properties"])
+        slots = []
+        for slot in properties.get("slots", []):
+            if slot.get("exercise") not in paths:
+                raise GenerateError(f"{SAMPLE}.yaml: {record['id']} names {slot.get('exercise')}, which the sample does not hold")
+            slots.append({**slot, "exercise": paths[slot["exercise"]]})
+        properties["slots"] = slots
+        out_routines.append({"kind": record["kind"], "id": sample_id(record), "properties": properties})
+    return out_exercises, out_routines
+
+
 def record_file(name: str, records: list[dict]) -> dict:
     return {"source": f"apps/workouts/docs/examples/{name}.yaml", "records": records}
 
@@ -254,6 +300,7 @@ def examples() -> dict[Path, dict]:
     routines = [record for record in sample if record["kind"].endswith("/routine")]
     if len(exercises) + len(routines) != len(sample):
         raise GenerateError(f"{SAMPLE}.yaml: only exercises and routines are bundled")
+    exercises, routines = bundled_sample(exercises, routines)
     out = {
         BUNDLED / "exercises.json": record_file(SAMPLE, exercises),
         BUNDLED / "routines.json": record_file(SAMPLE, routines),
@@ -312,7 +359,7 @@ def coach_guide(version: int) -> str:
         "",
         "Fields go under `input.properties`. `*` required, `[]` a list, no type a",
         "string. A reference is a record path",
-        "(`substrate.reamde.dev/training/exercise/bench-press`); a quantity is",
+        "(`substrate.reamde.dev/training/exercise/<id>`); a quantity is",
         '`{value: "60", unit: kg}`; a decimal is a string ("7.5"); a duration is',
         "ISO 8601 (`PT2M30S`). Clear a property by patching it `null`.",
         "",

@@ -82,16 +82,19 @@ session ──workout──► substrate.reamde.dev/health/workout
 
 - **movement**: what a person searches for (`chest-press`), with each muscle
   it works and its share of a set (`muscles[]`: 1 a prime mover, 0.5 a
-  synergist, less for a helper). Ids are the name slugged.
+  synergist, less for a helper). The library's ids are derived from the
+  name's slug, which its `substrate-workouts-library` code names.
 - **exercise**: a catalogue entry, one equipment version of a movement
   (`chest-press-machine`, `chest-press-cable`), each with its own history,
-  since their loads never compare. Ids are readable slugs chosen by the
-  writer. It counts from its movement's muscles unless it names its own.
+  since their loads never compare. The library's ids are derived from a
+  slug as a movement's are; one the app adds is minted. It counts from its
+  movement's muscles unless it names its own.
 - **setup**: one station an exercise is done on, such as one gym's chest
   press, with its own load grid. Ids are readable slugs chosen by the writer
   (`hotel-gym-chest-press`).
-- **routine**: the plan, written by the console or its agent. Ids are
-  readable slugs (`fully-body-collection-1`).
+- **routine**: the plan, written by the console or its agent. A new one is
+  written with no id, which the server mints, or under a UUIDv7 the app
+  mints; older ones keep their readable slugs (`fully-body-collection-1`).
 - **session**: one gym visit as the app ran it. Ids are lowercase UUIDv7s
   chosen on the phone.
 - **set**: one performed set, or one drop, mini-set, cluster or side of a
@@ -678,10 +681,11 @@ kind.
   a REST path percent-encodes.
 - None of these kinds may become a `recordmapping` target, whose ids are
   server-assigned (decision record 0049).
-- An importer composes ids from the upstream key, such as
-  `hevy-<workout id>` for a session and `hevy-<workout id>-<exercise
+- An importer derives ids in the minted shape from the upstream key, such
+  as `hevy-<workout id>` for a session and `hevy-<workout id>-<exercise
   index>-<set index>` for a set, so a re-import rewrites in place
-  ([Importing](#importing)).
+  ([Importing](#importing)). A server refuses a new record from an app
+  under an id of another shape.
 
 ## How the app writes
 
@@ -690,14 +694,14 @@ Substrate Workouts writes through an outbox on the phone (WorkoutsKit's
 
 | Step                                         | Write                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A new exercise or setup                      | `PUT` it at a slug before anything names it: a setup, a routine slot, a session slot and a set refuse an exercise that does not exist, and a set refuses a setup that does not exist.                                                                                                                                                                            |
+| A new exercise or setup                      | `PUT` it at a minted id before anything names it: a setup, a routine slot, a session slot and a set refuse an exercise that does not exist, and a set refuses a setup that does not exist.                                                                                                                                                                            |
 | Start                                        | `PUT` the session at its UUIDv7, without `status`, with `at`, `utcOffsetStart`, `timezone`, `name`, `sport: strength`, `routine`, `routineVersion`, `deload` and `activityType` (the routine's), `slots`, `groups`, `revision: 1`.                                                                                                                               |
 | Complete a set                               | `PUT` the set at its UUIDv7, `revision: 1`, with `completionMethod`, `timeBasis`, `rpeScale`, the copied `loadBasis`, `implements`, `bodyShare`, `laterality` and `repsBasis`, `rpeMethod` beside any `rpe`, `restMethod` beside any `restBefore`, and the full `target`. The session's create is earlier in the outbox (`mustExist`), and so is a chain's head. |
 | Edit a set                                   | `PATCH` the set with `ifVersion`, raising `revision`; `null` clears a property.                                                                                                                                                                                                                                                                                  |
 | Reorder, add, replace, group, change a rest  | `PATCH` the session's `slots` and `groups` whole, with `ifVersion`, raising `revision`.                                                                                                                                                                                                                                                                          |
 | Finish                                       | `PATCH` `status: finished`, `endsAt`, `utcOffsetEnd`, `sessionRPE`, and `slots` with each slot's planned-set snapshot (`slots[].sets`), with `ifVersion`, raising `revision`. Rows marked done in bulk are `PUT` first, `completionMethod: bulk`.                                                                                                                |
 | After the Health save, once the row is found | `PATCH` `healthKitWorkout` (at once) and `workout` (when found), with `ifVersion`, raising `revision` ([Apple Health](#apple-health)).                                                                                                                                                                                                                           |
-| Edit a routine (the app's editor)            | `PATCH` the top-level properties the edit changed (`slots` and `groups` whole, `null` clears) with `ifVersion` the version the owner edited. A `409` is parked for the owner to choose, never re-read and merged. A duplicate is a `PUT` of the whole routine at a new slug.                                                                                                                     |
+| Edit a routine (the app's editor)            | `PATCH` the top-level properties the edit changed (`slots` and `groups` whole, `null` clears) with `ifVersion` the version the owner edited. A `409` is parked for the owner to choose, never re-read and merged. A duplicate is a `PUT` of the whole routine at a newly minted id.                                                                                                                     |
 | Discard                                      | Drop every queued write for the session and its sets from the outbox, then `DELETE` the session with `?ifVersion=<version>&purge=true`.                                                                                                                                                                                                                          |
 
 - Never `status` in a PUT: a create replayed after Finish would try to move
@@ -930,11 +934,13 @@ target can hold:
 
 What the package expects of a Hevy importer. Substrate Workouts reads
 Hevy's API and Hevy's CSV export (the app's README, "Importing from Hevy"):
-an API session is `hevy-<workout id>`, a CSV one `hevy-<yyyyMMdd>-<HHmm>`
-from the workout's start on the wall in the zone the owner picks, each set
-`<session id>-<exercise index>-<set index>`, a routine `hevy-<routine id>`
-and a body measurement `hevy-<entry id>`; an exercise resolves by its Hevy
-template id in `codes`, else by name.
+each record's id is derived (`DerivedMintedID`, namespace `workouts-hevy`)
+from its key: an API session's `hevy-<workout id>`, a CSV one's
+`hevy-<yyyyMMdd>-<HHmm>` from the workout's start on the wall in the zone
+the owner picks, each set's `<session key>-<exercise index>-<set index>`, a
+routine's `hevy-<routine id>` and a body measurement's `hevy-<entry id>`.
+A record an earlier build wrote at the key itself is still found there. An
+exercise resolves by its Hevy template id in `codes`, else by name.
 
 - **Ids from upstream keys**: `hevy-<workout id>` for the session and
   `hevy-<workout id>-<exercise index>-<set index>` for each set, indices

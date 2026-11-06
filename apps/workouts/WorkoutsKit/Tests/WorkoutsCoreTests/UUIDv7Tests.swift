@@ -95,24 +95,19 @@ struct UUIDv7Tests {
     }
 }
 
-@Suite("Exercise slugs", .timeLimit(.minutes(10)))
-struct ExerciseSlugTests {
-    @Test(
-        "a new exercise's id is its name's slug",
-        arguments: [
-            ("Chest Press (Machine)", "chest-press-machine"),
-            ("Farmer's Carry (Dumbbell)", "farmer-s-carry-dumbbell"),
-            ("  Développé couché  ", "developpe-couche"),
-            ("21s — Curl", "21s-curl"),
-            ("***", "exercise"),
-        ])
-    func slug(name: String, id: String) {
-        #expect(ExerciseID.slug(for: name) == ExerciseID(id))
-    }
+@Suite("New record ids", .timeLimit(.minutes(10)))
+struct NewRecordIDTests {
+    /// The canonical text of a UUID, the shape a server takes from an app.
+    let canonical = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
-    @Test("a taken slug gets -2, -3")
-    func taken() {
-        let taken: Set<ExerciseID> = ["chest-press-machine", "chest-press-machine-2"]
-        #expect(ExerciseID.slug(for: "Chest Press (Machine)", taken: taken) == "chest-press-machine-3")
+    @Test("a new exercise's and a duplicated routine's ids are minted, never the name")
+    func minted() {
+        let date = Date(timeIntervalSince1970: 1_793_107_800)
+        let exercise = ExerciseID.minted(at: date)
+        let routine = RoutineID.minted(at: date)
+        #expect(exercise.rawValue.wholeMatch(of: canonical) != nil, "\(exercise)")
+        #expect(routine.rawValue.wholeMatch(of: canonical) != nil, "\(routine)")
+        #expect(UUIDv7.date(of: exercise.rawValue) == date)
+        #expect(ExerciseID.minted(at: date) != exercise)
     }
 }

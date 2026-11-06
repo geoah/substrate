@@ -18,7 +18,10 @@ import WorkoutsCore
 /// any device. A repository seeded before the marker existed reads its
 /// version from the library's movements, which only a seeding writes.
 ///
-/// A RECORD THE REPOSITORY HOLDS is the owner's. It is enriched once, and
+/// A RECORD THE REPOSITORY HOLDS is found by the library record's id, else
+/// by its slug (`HeldRecords`): a build before the ids were derived wrote
+/// the library under the slugs, and the sample's exercises name theirs. It
+/// is the owner's. It is enriched once, and
 /// only when it is plainly the library's exercise (the same name or alias,
 /// or the same Hevy code): it gains the movement, the muscles and the codes
 /// it lacks, never a field that changes how its sets count or run (load
@@ -51,6 +54,9 @@ public final class LibraryInstall: @unchecked Sendable {
         "secondaryMuscles",
     ]
 
+    /// The properties a library record names another by.
+    static let references = ["movement", "variationOf"]
+
     public let url: URL
     private let writingOptions: Data.WritingOptions
     // Guards `file`; `@unchecked Sendable` rests on it.
@@ -79,7 +85,7 @@ public final class LibraryInstall: @unchecked Sendable {
         let kinds = RecordCodec().kinds
         let marker = try await api.get(kinds.library, Self.markerID)
         let listed = try await api.list([kinds.movement, kinds.exercise])
-        let held = Dictionary(listed.map { ("\($0.kind)/\($0.id)", $0) }, uniquingKeysWith: { first, _ in first })
+        let held = HeldRecords(listed)
         // No marker at all: a repository an earlier build seeded reads its
         // version from the library's movements, which only a seeding writes.
         // A marker without a version is a first run cut short.
@@ -98,13 +104,20 @@ public final class LibraryInstall: @unchecked Sendable {
             properties: ["name": .string("Exercise library"), "seeding": .number(Decimal(library.version))])
 
         var outcome = Outcome()
-        for record in library.records {
-            let key = "\(record.kind)/\(record.id)"
-            if let existing = held[key] {
+        // A library record held under another id (its slug, from an earlier
+        // build), by the path the library names it: what a record written
+        // now names instead, so no reference points where nothing is.
+        var heldAt: [String: String] = [:]
+        for var record in library.records {
+            for key in Self.references {
+                if case let .string(path)? = record.properties[key], let held = heldAt[path] { record.properties[key] = .string(held) }
+            }
+            if let existing = held.matching(record) {
+                if existing.id != record.id { heldAt["\(record.kind)/\(record.id)"] = "\(existing.kind)/\(existing.id)" }
                 let patch = Self.fill(existing.properties, from: record.properties)
                 guard !patch.isEmpty else { continue }
                 do {
-                    try await api.write("PATCH", record.kind, record.id, properties: patch, ifVersion: existing.version)
+                    try await api.write("PATCH", existing.kind, existing.id, properties: patch, ifVersion: existing.version)
                     outcome.filled += 1
                 } catch let error as ServerError where error.status == 409 {
                     outcome.deferred += 1

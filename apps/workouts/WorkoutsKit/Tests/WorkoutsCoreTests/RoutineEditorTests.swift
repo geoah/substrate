@@ -192,12 +192,14 @@ struct RoutineEditorTests {
         #expect(Set(patch.map(\.key)) == ["slots", "groups"])
     }
 
-    @Test("a duplicate is a new routine at a free slug, whole, unknown fields kept, no version")
+    @Test("a duplicate is a new routine under a minted id, never its name, whole, unknown fields kept, no version")
     func duplicate() {
         let routine = Self.routine()
-        let editor = RoutineEditor.duplicate(routine, taken: ["day-1", "day-1-copy"])
+        let editor = RoutineEditor.duplicate(routine)
         #expect(editor.isNew && editor.hasChanges)
-        #expect(editor.routine.id == "day-1-copy-2")
+        #expect(editor.routine.id.rawValue.wholeMatch(of: /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) != nil)
+        #expect(RoutineEditor.duplicate(routine).routine.id != editor.routine.id)
+        #expect(RoutineEditor.duplicate(routine, id: "given").routine.id == "given")
         #expect(editor.routine.name == "Day 1 (copy)")
         #expect(editor.routine.version == nil)
         #expect(editor.baseVersion == nil)

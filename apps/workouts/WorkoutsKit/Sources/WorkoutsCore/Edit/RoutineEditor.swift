@@ -24,13 +24,13 @@ public struct RoutineEditor: Codable, Hashable, Sendable {
         isNew = false
     }
 
-    /// A copy of `source` under a fresh id from its new name, to save as a
-    /// new routine. The copy keeps everything the source holds, its unknown
+    /// A copy of `source` under a freshly minted id, to save as a new
+    /// routine. The copy keeps everything the source holds, its unknown
     /// fields included, and no version.
-    public static func duplicate(_ source: Routine, taken: Set<RoutineID>) -> RoutineEditor {
+    public static func duplicate(_ source: Routine, id: RoutineID = .minted()) -> RoutineEditor {
         var copy = source
         copy.name = "\(source.name) (copy)"
-        copy.id = RoutineID.slug(for: copy.name, taken: taken)
+        copy.id = id
         copy.version = nil
         var editor = RoutineEditor(copy)
         editor.isNew = true
@@ -438,20 +438,6 @@ public extension RoutineEditor {
             out[key] = .null
         }
         return out
-    }
-}
-
-extension RoutineID {
-    /// A slug of the name, then `-2`, `-3` when taken: `push-day-copy`.
-    public static func slug(for name: String, taken: Set<RoutineID>) -> RoutineID {
-        let base = ExerciseID.slug(for: name).rawValue
-        var candidate = RoutineID(base)
-        var suffix = 2
-        while taken.contains(candidate) {
-            candidate = RoutineID("\(base)-\(suffix)")
-            suffix += 1
-        }
-        return candidate
     }
 }
 

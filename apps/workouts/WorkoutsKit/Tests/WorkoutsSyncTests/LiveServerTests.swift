@@ -189,7 +189,7 @@ struct LiveServerTests {
         #expect(kept.properties["notes"] == .string(coachNotes))
 
         // Duplicated: a new routine, whole.
-        let copy = RoutineEditor.duplicate(try codec.decodeRoutine(kept), taken: [SampleRoutine.id])
+        let copy = RoutineEditor.duplicate(try codec.decodeRoutine(kept))
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         #expect(await outbox.flush(api) == .sent)
         let duplicated = try #require(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue))
@@ -207,29 +207,33 @@ struct LiveServerTests {
         #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
         try await outbox.discard(refusedCreate.id)
         print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
-        for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
-            try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.exercise, id), query: [("purge", "true")])
+        let split = SampleRoutine.exerciseID("bulgarian-split-squat-dumbbell")
+        let pushdown = SampleRoutine.exerciseID("triceps-pushdown")
+        for id in [split, pushdown] {
+            try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.exercise, id.rawValue), query: [("purge", "true")])
         }
         func recorded(_ name: String) throws -> [FlatRecord] {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var signedOut = try #require(codec.sessionRecords(from: recorded("list-sessions") + recorded("list-sets")).first)
-        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell", "seated-row-machine": "triceps-pushdown"]
+        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": split, "seated-row-machine": pushdown]
+        // The rest the recording names by the slugs the sample had then.
+        func sampled(_ id: ExerciseID) -> ExerciseID { onto[id] ?? SampleRoutine.exerciseID(id.rawValue) }
         signedOut.session.id = SessionID(UUIDv7.make(at: signedOut.session.at))
         for index in signedOut.session.slots.indices {
-            signedOut.session.slots[index].exercise = onto[signedOut.session.slots[index].exercise] ?? signedOut.session.slots[index].exercise
+            signedOut.session.slots[index].exercise = sampled(signedOut.session.slots[index].exercise)
         }
         var renamed: [SetID: SetID] = [:]
         for set in signedOut.sets { renamed[set.id] = SetID(UUIDv7.make(at: set.at)) }
         for index in signedOut.sets.indices {
-            signedOut.sets[index].exercise = onto[signedOut.sets[index].exercise] ?? signedOut.sets[index].exercise
+            signedOut.sets[index].exercise = sampled(signedOut.sets[index].exercise)
             signedOut.sets[index].session = signedOut.session.id
             signedOut.sets[index].id = renamed[signedOut.sets[index].id]!
             signedOut.sets[index].continues = signedOut.sets[index].continues.map { renamed[$0] ?? $0 }
         }
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         let missingFirst = OutboxPlan.exercisesFor([signedOut], server: held, known: bundled.exercises, codec: codec)
-        #expect(Set(missingFirst.map(\.recordID)) == ["bulgarian-split-squat-dumbbell", "triceps-pushdown"])
+        #expect(Set(missingFirst.map(\.recordID)) == [split.rawValue, pushdown.rawValue])
         try await outbox.enqueue(missingFirst + OutboxPlan.finished(signedOut, codec: codec))
         let signedOutSent = await outbox.flush(api)
         let signedOutParked = await outbox.parked.map(\.lastError)

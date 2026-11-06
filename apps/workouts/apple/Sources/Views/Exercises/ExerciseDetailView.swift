@@ -105,7 +105,7 @@ struct ExerciseDetailView: View {
 #Preview {
     let app = PreviewData.app()
     NavigationStack {
-        ExerciseDetailView(exerciseID: "leg-press-machine")
+        ExerciseDetailView(exerciseID: SampleRoutine.exerciseID("leg-press-machine"))
     }
     .environment(app)
     .environment(PreviewData.noSession(app))

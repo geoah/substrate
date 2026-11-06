@@ -390,8 +390,8 @@ gives the CR10 words.
   as `blocks` (a plain slot, or a group and its members) and has `rename`, `setFolder`, `setNotes`, `moveBlocks`,
   `moveMembers`, `moveSets`, `groupWithNext`, `leaveGroup`, `ungroup`, `updateGroup`, `addExercise`, `removeBlocks`,
   `removeMembers`, `removeSlot`, `update`, `addSet`, `removeSets` and `updateSet`. `patch(codec:)` is the PATCH body
-  (what changed, `null` for a cleared property), `problem` what stops a save, and `duplicate(_:taken:)` a copy at a
-  new slug. `RoutineDrafts` keeps one editor on disk.
+  (what changed, `null` for a cleared property), `problem` what stops a save, and `duplicate(_:id:)` a copy under a
+  newly minted id (`RoutineID.minted`). `RoutineDrafts` keeps one editor on disk.
 - `Outbox.edit(routine:patch:baseVersion:codec:)` queues a guarded routine PATCH; a `409` parks it with `conflict`,
   which `resolve(_:keepMine:)` answers. `waitingRoutines(codec:)` is what `RemoteCatalog.refresh(_:hiding:waiting:)`
   lays over the server's routines, and `RemoteCatalog.store(routine:)` keeps an edit in the cache at once.
@@ -428,7 +428,7 @@ gives the CR10 words.
   - `title`, and `points` with `hollow` for deloads
   - `points(lastMonths:now:calendar:)`
   - `hasTrend(_:)`; under two points show `ExerciseTrend.notEnough`
-- New exercise: `ExerciseID.slug(for:taken:)`, `MeasurementType.label`, `Equipment.label`, `Laterality.label` and
+- New exercise: `ExerciseID.minted(at:)`, `MeasurementType.label`, `Equipment.label`, `Laterality.label` and
   `RestClass.label`.
 
 ## Settings (§7.10)

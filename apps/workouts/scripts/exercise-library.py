@@ -14,11 +14,17 @@ library from two sources in apps/workouts/library/:
   curated exercise claims becomes a movement and exercise of its own, with
   the muscle groups free-exercise-db gives and no shares.
 
+Each record is named by a slug of its name (`chest-press`), its library
+code, and its id is derived from that slug in the minted shape a server
+accepts from an app (`derived_minted_id`), so every build writes a record
+under the same id and a name is never an id. The references between them
+name the derived ids.
+
 The library's version is derived, never bumped by hand: library.lock.json
-keeps the version, the hash of the records, and the version each record id
-first appeared in (`since`), which the seeding reads so an entry the owner
-deleted is never written back. A changed hash moves the version on the next
-write, and --check fails until it has.
+keeps the version, the hash of the records, and the version each record's
+slug first appeared in (`since`), which the seeding reads so an entry the
+owner deleted is never written back. A changed hash moves the version on the
+next write, and --check fails until it has.
 
     uv run --with pyyaml apps/workouts/scripts/exercise-library.py            # rewrite
     uv run --with pyyaml apps/workouts/scripts/exercise-library.py --check    # exit 1 and name each stale file
@@ -56,6 +62,12 @@ EXERCISE = "substrate.reamde.dev/training/exercise"
 LIBRARY_SYSTEM = "substrate-workouts-library"
 FEDB_SYSTEM = "free-exercise-db"
 HEVY_SYSTEM = "hevy"
+# The first part of every library id (`derived_minted_id`), so no other
+# writer deriving from the same slug lands on the library's record.
+ID_NAMESPACE = "workouts-library"
+# The references a record holds, by property, and the kind each names.
+REFERENCES = {"movement": MOVEMENT, "variationOf": EXERCISE}
+CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
 
 MOVEMENT_KEYS = {"id", "name", "aliases", "force", "mechanic", "muscles", "exercises"}
 EXERCISE_KEYS = {"name", "aliases", "equipment", "measurement", "laterality", "loadBasis", "implements", "restClass", "hevy", "fedb", "muscles"}
@@ -76,6 +88,36 @@ class GenerateError(Exception):
 def slug(text: str) -> str:
     """ExerciseID.slug's rule: ASCII letters and digits, every other run one `-`."""
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "exercise"
+
+
+def derived_minted_id(*parts: str) -> str:
+    """substrate's DerivedMintedID (WorkoutsCore's too): the first 16 bytes
+    of the SHA-256 of the parts joined by a NUL, marked as a UUIDv8, as 26
+    lowercase Crockford base32 characters, the first 0 to 7."""
+    digest = bytearray(hashlib.sha256("\x00".join(parts).encode("utf-8")).digest()[:16])
+    digest[6] = digest[6] & 0x0F | 0x80
+    digest[8] = digest[8] & 0x3F | 0x80
+    value = int.from_bytes(digest, "big")
+    return "".join(CROCKFORD[(value >> (5 * (25 - index))) & 31] for index in range(26))
+
+
+def library_id(kind: str, slug_id: str) -> str:
+    """A library record's id: derived from its kind's name and its slug."""
+    return derived_minted_id(ID_NAMESPACE, kind.rsplit("/", 1)[1], slug_id)
+
+
+def derive_ids(records: list[dict]) -> None:
+    """Each record's slug id replaced by its derived id, in the record and in
+    every reference to it, in place."""
+    for record in records:
+        for key, kind in REFERENCES.items():
+            value = record["properties"].get(key)
+            if value is None:
+                continue
+            if not value.startswith(kind + "/"):
+                raise GenerateError(f"{record['id']}: {key} names {value}, not a {kind}")
+            record["properties"][key] = f"{kind}/{library_id(kind, value[len(kind) + 1:])}"
+        record["id"] = library_id(record["kind"], record["id"])
 
 
 def decimal(value: float) -> str:
@@ -254,20 +296,23 @@ def library() -> tuple[dict, str | None]:
     taken = {record["id"] for record in movements} | {record["id"] for record in exercises}
     more_movements, more_exercises = uncurated(fedb, claimed, taken)
     records = movements + more_movements + exercises + more_exercises
+    # The lock and the library code stay keyed by the slug, so a record
+    # first written under its slug id is the same entry under its derived one.
+    slugs = [record["id"] for record in records]
+    derive_ids(records)
 
     digest = hashlib.sha256(json.dumps(records, sort_keys=True).encode("utf-8")).hexdigest()
     lock = json.loads(LOCK.read_text(encoding="utf-8")) if LOCK.exists() else {"version": 0, "sha256": "", "since": {}}
     version, since = lock["version"], dict(lock["since"])
     if lock["sha256"] != digest:
         version += 1
-    keys = [f"{record['kind']}/{record['id']}" for record in records]
+    keys = [f"{record['kind']}/{slug_id}" for record, slug_id in zip(records, slugs)]
     for key in keys:
         since.setdefault(key, version)
     since = {key: since[key] for key in sorted(since) if key in set(keys)}
     new_lock = {"version": version, "sha256": digest, "since": since}
-    for record in records:
-        key = f"{record['kind']}/{record['id']}"
-        coding = {"system": LIBRARY_SYSTEM, "code": record["id"], "version": str(since[key])}
+    for record, slug_id, key in zip(records, slugs, keys):
+        coding = {"system": LIBRARY_SYSTEM, "code": slug_id, "version": str(since[key])}
         record["properties"]["codes"] = [coding] + record["properties"].get("codes", [])
     out = {
         "source": "apps/workouts/library",

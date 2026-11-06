@@ -26,12 +26,18 @@ let package = Package(
         .library(name: "WorkoutsSync", targets: ["WorkoutsSync"]),
     ],
     dependencies: [
-        .package(path: "../../kit")
+        .package(path: "../../kit"),
+        // SHA-256 where CryptoKit is not: the ids an import or the bundled
+        // library derives from a key (DerivedMintedID).
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
     ],
     targets: [
         .target(
             name: "WorkoutsCore",
-            dependencies: [.product(name: "SubstrateCore", package: "kit"), .product(name: "SubstrateDevice", package: "kit")] + runtimeKit,
+            dependencies: [
+                .product(name: "SubstrateCore", package: "kit"), .product(name: "SubstrateDevice", package: "kit"),
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
+            ] + runtimeKit,
             // The starter exercises and routines, and the training package's
             // manifests (apps/workouts/scripts/workouts-package.py).
             resources: [.copy("Resources/Bundled"), .copy("Resources/Package")]

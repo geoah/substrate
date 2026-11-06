@@ -18,6 +18,9 @@ struct HevyAPITests {
         var templates: [String: HevyAPI.Template]
     }
 
+    /// The id an import derives for a record of `kind` from Hevy's key.
+    func hevy(_ kind: String, _ key: String) -> String { HevyImport.derivedID(kind, key) }
+
     func plan(routines held: [RoutineID: Routine] = [:]) throws -> HevyImport.Plan {
         let url = try #require(Bundle.module.url(forResource: "api", withExtension: "json", subdirectory: "Fixtures/hevy"))
         let fixture = try HevyAPI.decoder.decode(Fixture.self, from: Data(contentsOf: url))
@@ -27,23 +30,27 @@ struct HevyAPITests {
             library: try Library.catalog.get().exercises)
     }
 
-    @Test("a workout lands at Hevy's id, linked to its routine, its exercises by template id")
+    @Test("a workout lands at an id derived from Hevy's, linked to its routine, its exercises by template id")
     func workout() throws {
         let plan = try plan()
         let records = try #require(plan.sessions.first)
-        #expect(records.session.id == "hevy-w-1")
-        #expect(records.session.routine == "hevy-r-1")
-        #expect(records.session.slots.map(\.exercise.rawValue) == ["chest-press-machine", "lat-pulldown-cable", "my-stretch"])
+        #expect(records.session.id.rawValue == hevy("session", "hevy-w-1"))
+        #expect(records.session.routine?.rawValue == hevy("routine", "hevy-r-1"))
+        #expect(records.session.adapter == "x-hevy-api@1" && HevyImport.importPath(records.session) == .api)
+        let own = try #require(plan.exercises.first { $0.name == "My Stretch" }).id
+        #expect(
+            records.session.slots.map(\.exercise) == [Library.exercise("chest-press-machine"), Library.exercise("lat-pulldown-cable"), own])
         #expect(records.session.groups.count == 1 && records.session.slots[0].group == records.session.slots[1].group)
-        let set = try #require(records.sets.first { $0.exercise == "chest-press-machine" && $0.role == .working })
+        let set = try #require(records.sets.first { $0.exercise == Library.exercise("chest-press-machine") && $0.role == .working })
         #expect(set.load == Mass(value: Decimal(string: "3.757")!, unit: .kg) && set.rpe == Decimal(string: "8.5"))
     }
 
     @Test("a routine keeps its folder, superset, rests and set types")
     func routine() throws {
         let routine = try #require(try plan().routines.first)
-        #expect(routine.id == "hevy-r-1" && routine.name == "Push Day" && routine.folder == "Strength" && routine.position == 1)
-        #expect(routine.slots.map(\.exercise.rawValue) == ["chest-press-machine", "lat-pulldown-cable", "plank"])
+        #expect(routine.id.rawValue == hevy("routine", "hevy-r-1"))
+        #expect(routine.name == "Push Day" && routine.folder == "Strength" && routine.position == 1)
+        #expect(routine.slots.map(\.exercise) == ["chest-press-machine", "lat-pulldown-cable", "plank"].map(Library.exercise))
         #expect(routine.groups == [RoutineGroup(key: "superset-1", groupKind: .superset)])
         #expect(routine.slots.map(\.group) == ["superset-1", "superset-1", nil])
         #expect(routine.slots.map(\.setRest) == [90, 0, 60])
@@ -64,15 +71,23 @@ struct HevyAPITests {
         #expect(own.measurement == .repsonly && own.equipment == Equipment.none)
         #expect(own.primaryMuscles == [.lowerback] && own.secondaryMuscles == [.glutes])
         #expect(own.codes == [Coding(system: "hevy", code: "11111111-2222-3333-4444-555555555555")])
-        #expect(plan.exercises.first { $0.id == "chest-press-machine" }?.movement == "chest-press")
+        #expect(plan.exercises.first { $0.id == Library.exercise("chest-press-machine") }?.movement == Library.movement("chest-press"))
 
-        let held = Routine(id: "hevy-r-1", name: "Push Day, edited")
-        let again = try self.plan(routines: ["hevy-r-1": held])
+        let id = RoutineID(hevy("routine", "hevy-r-1"))
+        let again = try self.plan(routines: [id: Routine(id: id, name: "Push Day, edited")])
         #expect(again.routines.isEmpty && again.routinesHeld == ["Push Day"])
-        #expect(again.sessions.first?.session.routine == "hevy-r-1")
+        #expect(again.sessions.first?.session.routine == id)
         // An owner's own routine of the same name is another routine.
         let owners = try self.plan(routines: ["push-day": Routine(id: "push-day", name: "Push Day")])
-        #expect(owners.routines.map(\.id) == ["hevy-r-1"] && owners.routinesHeld.isEmpty)
+        #expect(owners.routines.map(\.id) == [id] && owners.routinesHeld.isEmpty)
+    }
+
+    @Test("a routine an import wrote before the ids were derived is held at its old id, and its sessions link to it")
+    func legacyRoutine() throws {
+        let held = Routine(id: "hevy-r-1", name: "Push Day, edited")
+        let again = try plan(routines: ["hevy-r-1": held])
+        #expect(again.routines.isEmpty && again.routinesHeld == ["Push Day"])
+        #expect(again.sessions.first?.session.routine == "hevy-r-1")
     }
 
     @Test("every routine and session encodes, decodes back and keeps to the package's kinds")

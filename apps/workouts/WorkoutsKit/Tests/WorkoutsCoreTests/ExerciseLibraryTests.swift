@@ -10,6 +10,12 @@ import Testing
 enum Library {
     static let bundled = Result { try ExerciseLibrary.bundled() }
     static let catalog = Result { try bundled.get().catalog() }
+
+    /// The id of the library's exercise of `slug`, derived from it.
+    static func exercise(_ slug: String) -> ExerciseID { ExerciseID(DerivedMintedID.make("workouts-library", "exercise", slug)) }
+
+    /// The id of the library's movement of `slug`.
+    static func movement(_ slug: String) -> MovementID { MovementID(DerivedMintedID.make("workouts-library", "movement", slug)) }
 }
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
@@ -53,10 +59,10 @@ struct ExerciseLibraryTests {
     @Test("an exercise counts from its movement's muscles unless it names its own")
     func inherited() throws {
         let catalog = try Library.catalog.get()
-        let press = try #require(catalog.exercises["chest-press-machine"])
-        #expect(press.movement == "chest-press" && press.muscles.isEmpty)
+        let press = try #require(catalog.exercises[Library.exercise("chest-press-machine")])
+        #expect(press.movement == Library.movement("chest-press") && press.muscles.isEmpty)
         #expect(press.groupShares[.chest] == 1 && press.groupShares[.triceps] == Decimal(string: "0.5"))
-        let cable = try #require(catalog.exercises["chest-press-cable"])
+        let cable = try #require(catalog.exercises[Library.exercise("chest-press-cable")])
         #expect(cable.movement == press.movement)
         // Without its movement it falls back to the two group lists.
         var alone = press
@@ -79,8 +85,8 @@ struct ExerciseLibraryTests {
             adapter: "x@1", library: library)
         let byName = Dictionary(uniqueKeysWithValues: plan.exercises.map { ($0.name, $0) })
         let raise = try #require(byName["Lateral Raise (Dumbbell)"])
-        #expect(raise.movement == "lateral-raise" && raise.loadBasis == .perimplement && raise.implements == 2)
-        #expect(byName["Bulgarian Split Squat (Dumbbell)"]?.id == "bulgarian-split-squat-dumbbell")
+        #expect(raise.movement == Library.movement("lateral-raise") && raise.loadBasis == .perimplement && raise.implements == 2)
+        #expect(byName["Bulgarian Split Squat (Dumbbell)"]?.id == Library.exercise("bulgarian-split-squat-dumbbell"))
         #expect(byName["Cat Camel"]?.movement == nil)
         let set = try #require(plan.sessions.first?.sets.first { $0.exercise == raise.id })
         #expect(set.loadBasis == .perimplement && set.implements == 2)

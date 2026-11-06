@@ -55,8 +55,8 @@ public final class BundledCatalog: CatalogSource, @unchecked Sendable {
                 let local = try localExercises.load()
                 catalog.unreadable += local.unreadable
                 for exercise in local.exercises {
-                    // A new exercise's slug avoids taken ids; should one collide
-                    // anyway, the bundled exercise, which routines name, wins.
+                    // Should a phone's exercise share an id with a bundled one,
+                    // the bundled exercise, which routines name, wins.
                     guard catalog.exercises[exercise.id] == nil else {
                         catalog.unreadable.append(
                             UnreadableRecord(
@@ -128,6 +128,20 @@ public enum CatalogError: Error, Hashable, Sendable {
 /// one exercise per idea. Shown signed out, and written into a repository
 /// with no routines the first time the app signs in there.
 public enum SampleRoutine {
-    /// Fixed, so the app knows its sample from a routine the agent wrote.
-    public static let id: RoutineID = "sample-every-feature"
+    /// Fixed, so the app knows its sample from a routine the agent wrote:
+    /// derived from its slug (`apps/workouts/scripts/workouts-package.py`).
+    public static let id = RoutineID(DerivedMintedID.make("workouts-sample", "routine", legacyID.rawValue))
+    /// The id builds before the derived ids wrote the sample under. A
+    /// repository may still hold it, and it is the sample all the same.
+    public static let legacyID: RoutineID = "sample-every-feature"
+    /// Both of them.
+    public static let ids: [RoutineID] = [id, legacyID]
+    /// The code system each of the sample's exercises names its slug in,
+    /// the id builds before the derived ids wrote it under.
+    public static let system = "substrate-workouts-sample"
+
+    /// The id of the sample's exercise of `slug` (`leg-press-machine`).
+    public static func exerciseID(_ slug: String) -> ExerciseID {
+        ExerciseID(DerivedMintedID.make("workouts-sample", "exercise", slug))
+    }
 }
