@@ -66,8 +66,18 @@ const (
 	xpAppState       = "e2e-app-state"
 )
 
-// xpScopes is what Substrate Sync asks for in `scope`.
-var xpScopes = []string{"write:" + xpApplePkg + "/*", "read:" + xpAccountKind, "read:" + xpExportKind}
+// xpScopes is what Substrate Sync asks for in `scope` (apps/sync/app.json):
+// enough to cover what the packages its approval installs read and write, or
+// their rows are blocked `reaches-past-scopes` (decision 0215).
+var xpScopes = []string{
+	"write:" + xpApplePkg + "/*",
+	"write:" + xpAccountKind,
+	"write:" + xpExportKind,
+	"write:" + xpAppleHealthPkg + "/*",
+	"write:" + xpHealthPkg + "/sleep",
+	"write:" + xpHealthPkg + "/workout",
+	"write:substrate.reamde.dev/observations/*",
+}
 
 // xpDetails is what Substrate Sync asks to have set up.
 var xpDetails = []map[string]any{
@@ -410,10 +420,11 @@ func xpCaseAppSetUp(c *C) {
 	c.stepf("the app reads `%s`'s parked list (%d rows) and is refused `%s`'s with 403", xpWebhook, len(parked.Items), xpAdapter)
 	c.xpReceipt(app, fire.Fire, parkedPath)
 
-	// Blobs: the app stores bytes a share points at, an upload of bytes the
-	// owner stored first answers the app's own name, and a reference read
-	// back carries no manifest the app does not read (its token reaches no
-	// substrate.reamde.dev/core/blob).
+	// Blobs: the app stores bytes a share points at and reads them back
+	// because a record it reads names them (decision 0219), not the owner's
+	// that none does; an upload of bytes the owner stored first answers the
+	// app's own name; and a reference read back carries no manifest the app
+	// does not read (its token reaches no substrate.reamde.dev/core/blob).
 	ownerBytes := []byte("APP-01: bytes the owner stored first, under a name of their own (" + r.repository + ")\n")
 	appBytes := []byte("APP-01: an image the app shares (" + r.repository + ")\n")
 	status, _, raw = c.xpSend(r.token, http.MethodPut, "/api/v1/blobs?name=owner-private-scan.png", "image/png", nil, ownerBytes)
@@ -437,9 +448,11 @@ func xpCaseAppSetUp(c *C) {
 	_, typed := img["mediaType"]
 	c.requiref(img["digest"] == appBlob.Digest && img["status"] == "stored" && !named && !typed,
 		"the share's images read %v, want the digest and status without the manifest's name and type", share.Properties["images"])
-	status, _, _ = c.xpSend(app, http.MethodGet, "/api/v1/blobs/"+appBlob.Digest, "", nil, nil)
-	c.requiref(status == http.StatusForbidden, "the app's read of a blob answered %d, want 403", status)
-	c.stepf("the app stored `%s` as `shared-from-sync.png` and share `%s` resolves it by digest, without the manifest's name and type; reading the bytes back is the owner's (403)",
+	status, _, raw = c.xpSend(app, http.MethodGet, "/api/v1/blobs/"+appBlob.Digest, "", nil, nil)
+	c.requiref(status == http.StatusOK && bytes.Equal(raw, appBytes), "the app's read of the blob its share names answered %d: %s", status, raw)
+	status, _, raw = c.xpSend(app, http.MethodGet, "/api/v1/blobs/"+ownerBlob.Digest, "", nil, nil)
+	c.requiref(status == http.StatusNotFound, "the app's read of the owner's blob, which no record it reads names, answered %d, want 404: %s", status, raw)
+	c.stepf("the app stored `%s` as `shared-from-sync.png` and share `%s` resolves it by digest, without the manifest's name and type; the app reads those bytes back and not the owner's (404)",
 		short(appBlob.Digest), share.ID)
 	status, _, raw = c.xpSend(app, http.MethodPut, "/api/v1/blobs?name=from-the-app.png", "image/png", nil, ownerBytes)
 	c.requiref(status == http.StatusCreated, "the app's upload of the owner's bytes answered %d: %s", status, raw)
