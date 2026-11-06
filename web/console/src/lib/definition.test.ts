@@ -428,4 +428,16 @@ describe("kindPurpose", () => {
       "primary"
     )
   })
+
+  it("lets the owner-data kinds of the machinery packages keep their declared purpose", () => {
+    expect(
+      kindPurpose({
+        ...withPurpose("primary", "substrate.reamde.dev"),
+        identity: "substrate.reamde.dev/core/contact",
+        package: "core",
+        name: "contact",
+      })
+    ).toBe("primary")
+    expect(kindPurpose("substrate.reamde.dev/llm/memory")).toBe("primary")
+  })
 })

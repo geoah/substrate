@@ -42,7 +42,7 @@ import {
   collectionSource,
   packageTitle,
 } from "@/lib/collections"
-import { isMachinery } from "@/lib/core-kinds"
+import { isMachinery, isSeededOwnerData } from "@/lib/core-kinds"
 import { kindByIdentity } from "@/lib/definition"
 import {
   displayName,
@@ -102,6 +102,17 @@ function collectionCrumbs(
         label: name,
         kind,
         mono: true,
+        ...(linkCollection && { to: collection }),
+      },
+    ]
+  }
+  // An owner-data kind of a machinery package is its own group, so the
+  // collection is the only crumb ("Contacts", not "Contacts / Contacts").
+  if (isSeededOwnerData(kind)) {
+    return [
+      {
+        label: displayPlural(kind),
+        kind,
         ...(linkCollection && { to: collection }),
       },
     ]

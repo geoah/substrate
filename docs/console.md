@@ -70,10 +70,15 @@ same sections:
   ([0211](decisions/0211-the-console-groups-collections-by-package.md)).
 - **From _Provider_**: one section per provider (**From Google**, **From
   GitHub**), holding the copies that provider keeps up to date.
+- **Contacts** and **Memories**: the two kinds of the substrate's machinery
+  packages that hold your own data (`core/contact` and `llm/memory`,
+  [0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)),
+  each a section of its own, named for the kind, and listed under the
+  purpose it declares. A contact's page has one crumb, the collection.
 - **Substrate**: the substrate's own machinery, the `core`, `llm` and
   `console` packages under `substrate.reamde.dev`, listed only with
-  Technical details on. Every kind in them reads as `internal`, whatever it
-  declares.
+  Technical details on. Every other kind in them reads as `internal`,
+  whatever it declares.
 
 What a section lists is decided by each kind's declared
 [`purpose`](vocabulary.md#the-reserved-keys)

@@ -344,13 +344,10 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 // reads the documents so the rule holds for every file in both trees, and adds
 // the one the loader cannot know: a kind of the substrate's own state (core,
 // llm, console) is machinery, so an unclassified one would read as primary and
-// seededOwnerData are the kinds of a substrate-state package whose rows are
-// the owner's own data, listed and edited like any record: llm/memory holds
-// the facts an owner keeps for their agents (record 0197).
-var seededOwnerData = map[string]bool{"substrate.reamde.dev/llm/memory": true}
-
 // land in every console's navigation. The seeded observations package and the
-// catalogues are the owner's data and keep their own purpose (record 0192).
+// catalogues are the owner's data and keep their own purpose (record 0192),
+// and so do the few kinds vocabulary.SeededOwnerData names inside the
+// machinery packages (llm/memory, core/contact).
 func TestEveryShippedPurposeIsValidAndTheSeedIsInternal(t *testing.T) {
 	valid := map[string]bool{
 		vocabulary.PurposePrimary:    true,
@@ -369,7 +366,7 @@ func TestEveryShippedPurposeIsValidAndTheSeedIsInternal(t *testing.T) {
 				t.Errorf("%s: purpose %v is not primary, supporting or internal", d.ID, raw)
 			}
 		}
-		if authority, pkg, _ := vocabulary.SplitKindRef(d.ID); vocabulary.SubstrateStatePackage(authority+"/"+pkg) && raw != vocabulary.PurposeInternal && !seededOwnerData[d.ID] {
+		if authority, pkg, _ := vocabulary.SplitKindRef(d.ID); vocabulary.SubstrateStatePackage(authority+"/"+pkg) && raw != vocabulary.PurposeInternal && !vocabulary.SeededOwnerData(d.ID) {
 			t.Errorf("%s is seeded machinery and declares purpose %v; declare `purpose: internal`", d.ID, raw)
 		}
 	}

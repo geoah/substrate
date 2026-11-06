@@ -36,7 +36,7 @@ import { downloadExport } from "@/lib/api/export"
 import { discoveryQueryOptions } from "@/lib/api/discovery"
 import { CORE_AUTHORITY, olderServerMessage } from "@/lib/api/http"
 import { assistantAddress, isAssistantToken } from "@/lib/assistants"
-import { isMachinery } from "@/lib/core-kinds"
+import { isMachineryKind } from "@/lib/core-kinds"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   CONSOLE_PREFERENCE_KIND,
@@ -321,7 +321,7 @@ function ShellPrivacyRow() {
 function DeveloperRows() {
   const kinds = useQuery(kindsQueryOptions)
   const system = (kinds.data ?? []).filter((k) =>
-    isMachinery(k.authority, k.package)
+    isMachineryKind(k.identity)
   ).length
   const [tokens, setTokens] = useState(false)
   return (

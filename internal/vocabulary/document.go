@@ -54,6 +54,22 @@ func SubstrateStatePackage(name string) bool {
 	return name == PackageCore || name == PackageLLM || name == PackageConsole
 }
 
+// KindContact is the owner's contacts: a person, a business, a group or a bot
+// (decision record 0231).
+const KindContact = PackageCore + "/contact"
+
+// KindLLMMemory is the facts an owner keeps for their agents (record 0197).
+const KindLLMMemory = PackageLLM + "/memory"
+
+// SeededOwnerData reports whether a kind of a substrate-state package holds
+// the owner's own data, so its records are listed, edited and merged like any
+// of the owner's: the generic merge admits them (engine merge.go) and the
+// console lists them under the purpose they declare. The console's
+// SEEDED_OWNER_DATA_KINDS (web/console/src/lib/core-kinds.ts) is this list.
+func SeededOwnerData(kind string) bool {
+	return kind == KindContact || kind == KindLLMMemory
+}
+
 // The manifest document kinds — the local names under PackageCore. The
 // envelope carries the full reference ("substrate.reamde.dev/core/kind"), so a
 // manifest names its own kind exactly as any other record does.

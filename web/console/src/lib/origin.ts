@@ -10,8 +10,7 @@ import {
   type ActorIdentity,
   type ProviderInfo,
 } from "@/lib/actor-identity"
-import { splitKind } from "@/lib/api/http"
-import { isMachinery } from "@/lib/core-kinds"
+import { isMachineryKind } from "@/lib/core-kinds"
 
 export type Origin =
   | { kind: "yours" }
@@ -34,13 +33,13 @@ export function originOfActor(actor: string): Origin {
 
 /** Where a kind's records come from: a provider's copy, substrate's own
  * machinery (core, llm, console), or yours: samples are imported onto your
- * own authority, and the records of observations and the well-known
- * catalogues are yours whoever wrote them. */
+ * own authority, and the records of observations, the well-known catalogues
+ * and the owner-data kinds of the machinery packages (contacts) are yours
+ * whoever wrote them. */
 export function originOfKind(kind: string): Origin {
   const provider = providerOfKind(kind)
   if (provider) return { kind: "provider", provider }
-  const { authority, pkg } = splitKind(kind)
-  if (isMachinery(authority, pkg)) return { kind: "core" }
+  if (isMachineryKind(kind)) return { kind: "core" }
   return { kind: "yours" }
 }
 

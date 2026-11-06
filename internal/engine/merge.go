@@ -283,9 +283,11 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 // two agent threads. The test is the SOURCE (record 0077), narrowed to the
 // seeded packages that hold the substrate's state: the observations package
 // is seeded too, but its sources and metrics are the owner's data, and two
-// records of one device are exactly what a merge is for (record 0192).
+// records of one device are exactly what a merge is for (record 0192). The
+// owner's data inside those packages merges too: two contacts of one person
+// are the duplicate every address book collects (record 0231).
 func guardMergeType(ty *vocabulary.Kind) error {
-	if systemKinds[ty.Identity] || (ty.Source == vocabulary.SourceBuiltin && vocabulary.SubstrateStatePackage(ty.Package)) {
+	if systemKinds[ty.Identity] || (ty.Source == vocabulary.SourceBuiltin && vocabulary.SubstrateStatePackage(ty.Package) && !vocabulary.SeededOwnerData(ty.Identity)) {
 		return fmt.Errorf("%w: %s records are managed by the substrate, not the generic merge surface",
 			substrate.ErrForbidden, ty.Identity)
 	}

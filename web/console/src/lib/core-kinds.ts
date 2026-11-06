@@ -51,6 +51,34 @@ export function isMachinery(authority: string, pkg: string): boolean {
   return authority === CORE_AUTHORITY && MACHINERY_PACKAGES.includes(pkg)
 }
 
+/** The owner's contacts: a person, a business, a group or a bot (decision
+ * record 0231). */
+export const CONTACT_KIND = `${CORE_PACKAGE}/contact`
+
+/** The facts an owner keeps for their agents (decision record 0197). */
+export const MEMORY_KIND = `${LLM_PACKAGE}/memory`
+
+/** The kinds of a machinery package whose records are the owner's own data:
+ * listed under the purpose they declare, in a group of their own, and theirs
+ * in every origin. The server's `vocabulary.SeededOwnerData` is this list. */
+export const SEEDED_OWNER_DATA_KINDS: readonly string[] = [
+  CONTACT_KIND,
+  MEMORY_KIND,
+]
+
+/** Whether a kind reference is one of the owner-data kinds inside the
+ * machinery packages. */
+export function isSeededOwnerData(kind: string): boolean {
+  return SEEDED_OWNER_DATA_KINDS.includes(kind)
+}
+
+/** Whether a kind is the substrate's machinery: a kind of core, llm or
+ * console that is not the owner's data. */
+export function isMachineryKind(kind: string): boolean {
+  const [authority = "", pkg = ""] = kind.split("/")
+  return isMachinery(authority, pkg) && !isSeededOwnerData(kind)
+}
+
 /** The id of the repository's daily spend cap: a core `setting` record the
  * engine reads over every agent's runs. Nothing seeds it. */
 export const REPOSITORY_SPEND_CAP_ID = `${LLM_PACKAGE}/spendCentsPerDay`

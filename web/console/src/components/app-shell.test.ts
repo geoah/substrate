@@ -79,6 +79,27 @@ describe("crumbsFor", () => {
     })
   })
 
+  it("reads an owner-data kind of core as its own collection, with no package crumb", () => {
+    expect(
+      crumbsFor(
+        "/data/substrate.reamde.dev/core/contact/0jv3q8m2x4b6c9d1e5f7g0h2k4"
+      )
+    ).toEqual([
+      {
+        label: "Contacts",
+        kind: "substrate.reamde.dev/core/contact",
+        to: "/data/substrate.reamde.dev/core/contact",
+      },
+      {
+        label: "Untitled contact",
+        record: {
+          kind: "substrate.reamde.dev/core/contact",
+          id: "0jv3q8m2x4b6c9d1e5f7g0h2k4",
+        },
+      },
+    ])
+  })
+
   it("spells the reference segment by segment in technical mode", () => {
     expect(crumbsFor("/data/a.example.com/tasks/task/t1", true)).toEqual([
       { label: "a.example.com", to: "/data/a.example.com", mono: true },
