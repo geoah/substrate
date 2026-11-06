@@ -5,9 +5,10 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// Lists retain native selection, swipe actions and manual reordering.
-/// Needs you draws its chips above the rows, its bands under their
-/// headings, and the Later band faded under a fold.
+/// Lists retain native selection, swipe actions and manual reordering. The
+/// rows sit in one card per section, hairlines between them: To Do and Done
+/// in a list; on Needs you one card per band under its heading, the chips
+/// above and the Later band faded under a fold.
 struct TaskListView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -19,7 +20,7 @@ struct TaskListView: View {
 
     var body: some View {
         List(selection: selection) { rows }
-            .listStyle(.plain)
+            .grouped()
             .scrollContentBackground(.hidden)
             .background { TasksSymbols.screen }
             .navigationTitle(list.title)
@@ -55,61 +56,73 @@ struct TaskListView: View {
 
     @ViewBuilder
     private var rows: some View {
-        if let empty = list.empty, list.closed.rows.isEmpty {
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.circle")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text(empty.title).font(.title2.weight(.semibold))
-                Text(empty.message)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                NewTaskButton(title: list.newTask)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
-            .plainRow(top: 32, bottom: 24)
-        }
         if !list.chips.isEmpty {
-            ChipsBar(chips: list.chips)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
+            Section {
+                // Pulled out past the card's margin, so the chips start at
+                // the cards' edge and scroll off the screen's.
+                ChipsBar(chips: list.chips)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: -20, bottom: 0, trailing: -20))
+            }
+            .tight()
+        }
+        if let empty = list.empty, list.closed.rows.isEmpty {
+            Section {
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text(empty.title).font(.title2.weight(.semibold))
+                    Text(empty.message)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    NewTaskButton(title: list.newTask)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .plainRow(top: 32, bottom: 24)
+            }
         }
         if !list.bands.isEmpty {
             if let clear = list.clear {
-                Label(clear, systemImage: "checkmark.circle")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .plainRow(top: 8, bottom: 6)
+                Section {
+                    Label(clear, systemImage: "checkmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .plainRow(top: 8, bottom: 0)
+                }
+                .tight()
             }
             ForEach(list.bands, id: \.band) { band in
                 Section {
+                    ForEach(list.open.rows.filter { $0.band == band.band }) { row in rowView(row) }
+                } header: {
                     if band.band == .upcoming {
                         heading(band.title, count: band.count, note: nil)
                     } else if band.band == .later {
                         fold(band.title)
                     }
-                    ForEach(list.open.rows.filter { $0.band == band.band }) { row in rowView(row) }
                 }
             }
         } else if !list.open.rows.isEmpty {
             Section {
+                ForEach(list.open.rows) { row in rowView(row) }
+                    .onMove(perform: reorder)
+            } header: {
                 if list.showsClosed, !list.closed.rows.isEmpty {
                     heading(list.openTitle, count: nil, note: list.orderNote)
                 } else if let note = list.orderNote {
-                    Text(note).font(.footnote).foregroundStyle(.secondary)
-                        .plainRow(top: 4, bottom: 2)
+                    Text(note).font(.footnote).foregroundStyle(.secondary).textCase(nil)
                 }
-                ForEach(list.open.rows) { row in rowView(row) }
-                    .onMove(perform: reorder)
             }
         }
         if list.showsClosed, !list.closed.rows.isEmpty {
             Section {
-                heading(list.closedTitle, count: list.closed.rows.count, note: nil)
                 ForEach(list.closed.rows) { row in rowView(row) }
+            } header: {
+                heading(list.closedTitle, count: list.closed.rows.count, note: nil)
             }
         }
     }
@@ -118,7 +131,7 @@ struct TaskListView: View {
     private func heading(_ title: String, count: Int?, note: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
                 if let count {
                     Text(count, format: .number)
                         .font(.caption.weight(.semibold))
@@ -130,7 +143,8 @@ struct TaskListView: View {
             }
             if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
         }
-        .plainRow(top: 12, bottom: 2)
+        .textCase(nil)
+        .padding(.top, 4)
     }
 
     /// The Later band's fold: its name between two dashed lines.
@@ -143,22 +157,26 @@ struct TaskListView: View {
                 .foregroundStyle(.tertiary)
             Line()
         }
-        .plainRow(top: 18, bottom: 8)
+        .textCase(nil)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
         .accessibilityElement(children: .combine)
     }
 
-    /// A card that opens its task, beside its round mark; the open task's
-    /// card is outlined.
+    /// A row of its section's card that opens its task, beside its round
+    /// mark; the open task's row is washed with the accent.
     @ViewBuilder
     private func rowView(_ row: TaskRow) -> some View {
+        let selected = app.detail?.id == row.id
         Group {
             if sizeClass == .compact {
-                TaskRowView(row: row, open: { shell.send(.open(task: row.id)) }, selected: app.detail?.id == row.id)
+                TaskRowView(row: row, open: { shell.send(.open(task: row.id)) }, selected: selected)
             } else {
-                TaskRowView(row: row, selected: app.detail?.id == row.id).tag(row.id)
+                TaskRowView(row: row, selected: selected).tag(row.id)
             }
         }
-        .plainRow(top: 2, bottom: 2)
+        .listRowBackground(selected ? Color.brandAccent.opacity(0.08) : TasksSymbols.card)
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 6))
         .swipeActions(edge: .leading) {
             Button(row.toggle) { shell.send(row.status == .open && !row.pending ? .complete(row.id) : .reopen(row.id)) }
                 .tint(.green)
@@ -319,7 +337,7 @@ private struct ChipsBar: View {
                     .accessibilityAddTraits(chip.selected ? .isSelected : [])
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .padding(.vertical, 4)
         }
         .animation(.snappy(duration: 0.2), value: chips.map(\.selected))
@@ -349,10 +367,29 @@ extension EnvironmentValues {
 }
 
 private extension View {
-    /// A row with no list chrome: its own card, or bare words, on the screen.
+    /// A row with no list chrome: bare words on the screen.
     func plainRow(top: CGFloat, bottom: CGFloat) -> some View {
         listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
+    }
+
+    /// A section with no gap before it (the chips, the all-clear line).
+    func tight() -> some View {
+        #if os(iOS)
+        listSectionSpacing(0)
+        #else
+        self
+        #endif
+    }
+
+    /// One card per section, hairlines between its rows: the system's
+    /// inset grouped list on iOS, its inset list on the Mac.
+    func grouped() -> some View {
+        #if os(iOS)
+        listStyle(.insetGrouped)
+        #else
+        listStyle(.inset)
+        #endif
     }
 }

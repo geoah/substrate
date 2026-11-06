@@ -3,12 +3,13 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// A task's card: its words on the left, which open it, and on the right
-/// the round mark, centred on the card, which completes it. The mark fills
-/// at once, with a ring that drains for the undo window, and a second tap
-/// within it takes the mark back; the card only leaves when the window
-/// closes and the write goes. On Needs you a late task's card also offers
-/// where to move it and Won't Do.
+/// A task's row in its band's or section's card: its words on the left,
+/// which open it, and on the right the round mark, centred on the row,
+/// which completes it. The mark fills at once, with a ring that drains for
+/// the undo window, and a second tap within it takes the mark back; the row
+/// only leaves when the window closes and the write goes. On Needs you a
+/// late task's row also offers where to move it and Won't Do. The card, the
+/// dividers and the open task's tint are the list's (`TaskListView`).
 struct TaskRowView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -34,24 +35,7 @@ struct TaskRowView: View {
             }
             mark
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
-        .padding(.vertical, 4)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(TasksSymbols.card.opacity(isOpen ? 1 : 0.6))
-        }
-        .overlay {
-            // The open task, beside its detail: a wash of the accent and a
-            // fine line, never an alarm.
-            if selected {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.brandAccent.opacity(0.06))
-                    .strokeBorder(Color.brandAccent.opacity(0.45), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-        }
-        .opacity(row.band == .later ? 0.62 : 1)
+        .opacity(row.band == .later || !isOpen ? 0.62 : 1)
         .onChange(of: row.pending, initial: true) { _, pending in
             markedAt = pending ? Date() : nil
         }
@@ -117,7 +101,7 @@ struct TaskRowView: View {
                 decisions.padding(.top, 6)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(.rect)
         .animation(.snappy(duration: 0.25), value: row.pending)
