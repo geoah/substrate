@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -92,6 +95,10 @@ func (h *handler) getChangeRuns(w http.ResponseWriter, r *http.Request, ds subst
 		return
 	}
 	runs := []substrate.ChangeRun{}
+	// principals[i] is the token behind runs[i], which splits a run of an
+	// app's or an `api` actor: two assistants on one device both write as
+	// `app:local` (decision 0230).
+	var principals []string
 	var records map[string]struct{}
 	more := false
 	cur := before
@@ -106,7 +113,8 @@ walk:
 			verb := substrate.RunVerb(c)
 			if n := len(runs); n > 0 {
 				last := &runs[n-1]
-				if last.Actor == c.Actor && last.Kind == c.Kind && last.Verb == verb {
+				if last.Actor == c.Actor && last.Kind == c.Kind && last.Verb == verb &&
+					(!splitsOnToken(c.Actor) || principals[n-1] == c.Principal) {
 					last.Count++
 					last.OldestSeq, last.OldestTS = c.Seq, c.TS
 					if _, seen := records[c.RecordID]; !seen {
@@ -122,6 +130,7 @@ walk:
 				}
 			}
 			records = map[string]struct{}{c.RecordID: {}}
+			principals = append(principals, c.Principal)
 			runs = append(runs, substrate.ChangeRun{
 				Actor: c.Actor, Kind: c.Kind, Verb: verb, Count: 1, Records: 1, RecordID: c.RecordID,
 				NewestSeq: c.Seq, OldestSeq: c.Seq, NewestTS: c.TS, OldestTS: c.TS,
@@ -131,6 +140,10 @@ walk:
 			break
 		}
 		cur = changes[len(changes)-1].Seq
+	}
+	if err := nameRunTokens(r.Context(), ds, runs, principals); err != nil {
+		writeSubstrateError(w, r, err)
+		return
 	}
 	body := substrate.ChangeRunPage{Runs: runs, Head: head.Seq, Generation: head.Generation}
 	if more {
@@ -216,3 +229,56 @@ func parseFirstParam(r *http.Request) (int, error) {
 	}
 	return min(n, changeBatch), nil
 }
+
+// splitsOnToken reports whether a run of actor splits on the token behind
+// its changes: an app's actor and `api` are shared by every token of their
+// kind, so the token is what tells two writers apart.
+func splitsOnToken(actor substrate.Actor) bool {
+	return actor == substrate.ActorAPI || strings.HasPrefix(string(actor), substrate.AppActorPrefix)
+}
+
+// nameRunTokens names the token behind each run that splits on one, from the
+// token record, a revoked one's tombstone included, so a revoked assistant is
+// still named. Only the owner's reads are named: an app's or an assistant's
+// dataset would read other apps' tokens.
+func nameRunTokens(ctx context.Context, ds substrate.Dataset, runs []substrate.ChangeRun, principals []string) error {
+	switch ds.(type) {
+	case *scopedDataset, *assistantDataset:
+		return nil
+	}
+	want := map[string]bool{}
+	for i, run := range runs {
+		if splitsOnToken(run.Actor) && principals[i] != "" {
+			want[principals[i]] = true
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	ids := slices.Sorted(maps.Keys(want))
+	names := map[string]string{}
+	for _, deleted := range []*bool{nil, ptrTo(true)} {
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{tokenType}, IDs: ids, Deleted: deleted}, First: len(ids)})
+		if err != nil {
+			return err
+		}
+		for _, rec := range page.Records {
+			if _, named := names[rec.ID]; named {
+				continue
+			}
+			name, _ := rec.Properties["clientName"].(string)
+			if name == "" {
+				name, _ = rec.Properties["label"].(string)
+			}
+			names[rec.ID] = name
+		}
+	}
+	for i := range runs {
+		if splitsOnToken(runs[i].Actor) {
+			runs[i].PrincipalName = names[principals[i]]
+		}
+	}
+	return nil
+}
+
+func ptrTo[T any](v T) *T { return &v }

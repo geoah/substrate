@@ -177,6 +177,12 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 	if namePrincipal != "tok_second" {
 		t.Fatalf("the name manager still names %q after tok_second wrote it", namePrincipal)
 	}
+	// The change reads carry it, for History to name the token behind a run
+	// (decision 0230); it never reaches the wire.
+	changes, err := ds.ChangesBefore(context.Background(), 0, substrate.ChangeFilter{RecordID: task.ID, Kinds: []string{task.Kind}}, 10)
+	if err != nil || len(changes) != 2 || changes[0].Principal != "tok_second" || changes[1].Principal != "tok_first" {
+		t.Fatalf("the change reads = %+v, %v; want each carrying its token", changes, err)
+	}
 
 	// The principal is covered by the checksum like every other column, so
 	// the entries that now carry one have to still verify.

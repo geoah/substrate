@@ -409,6 +409,7 @@ const changeRun: Shape<ChangeRun> = {
   oldestSeq: true,
   newestTs: true,
   oldestTs: true,
+  principalName: false,
 }
 
 const changeRunPage: Shape<ChangeRunPage> = {

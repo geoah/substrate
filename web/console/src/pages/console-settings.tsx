@@ -2,8 +2,9 @@
  * console preference record, so every browser signed in looks the same),
  * what every agent may spend in a day, the account and the proof of its
  * name, where you are signed in,
- * the apps you approved, a download of everything, and for developers the
- * system kinds, the raw tokens and what this server says about itself. */
+ * the apps you approved, the way to the AI assistants page, a download of
+ * everything, and for developers the system kinds, the raw tokens and what
+ * this server says about itself. */
 
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -30,9 +31,11 @@ import {
   useLayoutWidths,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import { tokensQueryOptions } from "@/lib/api/auth"
 import { downloadExport } from "@/lib/api/export"
 import { discoveryQueryOptions } from "@/lib/api/discovery"
 import { CORE_AUTHORITY, olderServerMessage } from "@/lib/api/http"
+import { isAssistantToken } from "@/lib/assistants"
 import { isMachinery } from "@/lib/core-kinds"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
@@ -136,6 +139,32 @@ function LayoutRows() {
         }
       />
     </>
+  )
+}
+
+/** The way to the AI assistants page, saying how many are connected. */
+function AssistantsRow() {
+  const tokens = useQuery(tokensQueryOptions)
+  const connected = (tokens.data ?? []).filter(isAssistantToken).length
+  return (
+    <SettingRow
+      title="Claude Code, Codex, Cursor and others"
+      description={
+        connected === 0
+          ? "Let an AI assistant work with your data. See how to connect each one."
+          : `${connected} connected. See them, revoke one, or connect another.`
+      }
+      control={
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link to="/settings/assistants" />}
+        >
+          Open
+        </Button>
+      }
+    />
   )
 }
 
@@ -367,6 +396,9 @@ export function ConsoleSettingsPage() {
         hint="apps you approved; each reaches only the records you let it"
       >
         <AppTokenRows />
+      </SettingsSection>
+      <SettingsSection title="AI assistants">
+        <AssistantsRow />
       </SettingsSection>
       <SettingsSection title="Your data">
         <DownloadRow />

@@ -147,6 +147,12 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
     // A bundle's own settings, the account and its tokens all redirect: the
     // first to its provider, the others here.
     case "settings":
+      if (rest[0] === "assistants")
+        return [
+          { label: "Settings", to: "/settings" },
+          { label: "AI assistants" },
+        ]
+      return [{ label: "Settings" }]
     case "account":
       return [{ label: "Settings" }]
     case "agents":

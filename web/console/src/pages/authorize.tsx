@@ -12,7 +12,13 @@
  * second until it is approved and carries `next`, or stopped with a failure.
  * The page navigates with `window.location.assign`: the console's CSP has
  * `form-action 'self'`, so a form post that redirects off the origin would
- * be blocked. An error never navigates anywhere. */
+ * be blocked. An error never navigates anywhere.
+ *
+ * An AI assistant's request (`mcp`, decision 0230) is approved whole, like
+ * `full`: the page says where its access works, what it can and cannot do,
+ * that code it writes reaches the owner's secrets, and whose name its
+ * changes carry, and offers "Until you revoke it" first, since an assistant
+ * holds no refresh token. */
 
 import { useEffect, useState, type ReactNode } from "react"
 import {
@@ -87,6 +93,12 @@ import {
   type SetupLine,
 } from "@/lib/app-setup"
 import { appTitle as titleOf } from "@/lib/app-publisher"
+import {
+  ASSISTANT_CAN,
+  ASSISTANT_CANNOT,
+  ASSISTANT_CODE_SENTENCE,
+} from "@/lib/app-scopes"
+import { assistantAddress } from "@/lib/assistants"
 import { relativeTime, shortDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { authorizeRoute } from "@/router"
@@ -219,6 +231,57 @@ function AccessWarning({ request }: { request: AuthorizationRequest }) {
     )
   }
   return null
+}
+
+/** What an assistant's approval lets in (decision 0230): where its access
+ * works, the lines Settings' AI assistants page shows too, and its code's
+ * reach, which the owner chose to say rather than guard. */
+function AssistantReach({ technical }: { technical: boolean }) {
+  return (
+    <>
+      <Fact label="Where it works">
+        <p>Only at this server’s address for AI assistants:</p>
+        <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+          {assistantAddress()}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Its access works nowhere else: not in this console, and not through
+          the API.
+        </p>
+      </Fact>
+      <Fact label="It will be able to">
+        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+          {ASSISTANT_CAN.map((line) => (
+            <li key={line} className="px-3 py-2.5">
+              {line}.
+            </li>
+          ))}
+        </ul>
+        {technical && (
+          <p className="font-mono text-xs text-muted-foreground">mcp</p>
+        )}
+      </Fact>
+      <Fact label="It won’t be able to">
+        <ul className="flex list-disc flex-col gap-0.5 pl-4">
+          {ASSISTANT_CANNOT.map((line) => (
+            <li key={line}>{line}.</li>
+          ))}
+        </ul>
+      </Fact>
+      <Warning title="Its code can reach your secrets">
+        {ASSISTANT_CODE_SENTENCE}, even though the assistant never sees a
+        secret’s value itself.
+      </Warning>
+    </>
+  )
+}
+
+/** The name an assistant's changes carry in History: the token's claimed
+ * name, which a verified publisher's name for the app replaces. */
+function assistantNameWords(request: AuthorizationRequest): string {
+  const { app } = request
+  if (app.verified) return app.publisher.appName || app.name || app.host
+  return app.name ? `“${app.name}”, the name it gives itself` : app.host
 }
 
 /** Everything the page showed before it had an everyday view: who claims
@@ -400,7 +463,12 @@ function Approval({
           )
       )
   )
-  const [lifetime, setLifetime] = useState(request.defaultLifetimeDays)
+  const mcp = request.scopes.some((s) => s.verb === "mcp")
+  // An assistant holds no refresh token, so one that lapses has to be
+  // approved again: until revoked is offered first.
+  const [lifetime, setLifetime] = useState(() =>
+    mcp && request.lifetimeDays.includes(0) ? 0 : request.defaultLifetimeDays
+  )
   // What moved when the server refused the plan the page had shown.
   const [moved, setMoved] = useState<string[] | null>(null)
   const chosen = request.scopes
@@ -593,9 +661,8 @@ function Approval({
     <Card>
       <CardHeader className="gap-1.5">
         <p className="text-xs text-muted-foreground">
-          {fold.reauth
-            ? "An app you approved asks "
-            : "An app wants to connect to "}
+          {mcp ? "An AI assistant" : "An app"}
+          {fold.reauth ? " you approved asks " : " wants to connect to "}
           <span className="[overflow-wrap:anywhere] text-foreground">
             {request.repository}
           </span>
@@ -634,6 +701,22 @@ function Approval({
               " This app is unverified: nothing confirms which program receives a token equal to your password."}
           </Warning>
         )}
+        {mcp && (
+          <Warning title="It asks to work with nearly everything you have">
+            It can see and change nearly everything you can, and run your code.
+            Approve only an assistant you trust that much.
+          </Warning>
+        )}
+        {/* A hosted assistant's client id and callback are every one of its
+            accounts', so a link someone else started lands here the same
+            way and hands them the access. */}
+        {mcp && !app.local && !request.redirect.loopback && (
+          <Warning title="Approve only a sign-in you just started">
+            Every {app.host} account connects with this same app and returns to
+            the same address, so nothing here tells your sign-in from someone
+            else’s. If you didn’t just connect this assistant yourself, deny it.
+          </Warning>
+        )}
         {technical ? (
           <AppFacts request={request} live={fold.live} />
         ) : (
@@ -647,7 +730,9 @@ function Approval({
           </p>
         )}
 
-        {fold.fresh.length > 0 && (
+        {mcp && <AssistantReach technical={technical} />}
+
+        {!mcp && fold.fresh.length > 0 && (
           <Fact label="It will be able to">
             {!full && (
               <p className="text-xs text-muted-foreground">
@@ -668,7 +753,7 @@ function Approval({
           </Fact>
         )}
 
-        {fold.allowed.length + fold.folded.length > 0 && (
+        {!mcp && fold.allowed.length + fold.folded.length > 0 && (
           <section aria-label="Already allowed">
             <Collapsible className="flex flex-col gap-2">
               <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -691,6 +776,20 @@ function Approval({
         {full ? (
           <Fact label="Its changes appear as">
             <p>Yours, as when you sign in, not under the app’s own name.</p>
+          </Fact>
+        ) : mcp ? (
+          <Fact label="Its changes appear as">
+            <p className="[overflow-wrap:anywhere]">
+              {assistantNameWords(request)}, not you.
+            </p>
+            {technical && (
+              <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+                {app.actor}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              History shows what it changed under that name, never as yours.
+            </p>
           </Fact>
         ) : (
           fold.writes &&
@@ -734,8 +833,10 @@ function Approval({
           />
           <p className="text-xs text-muted-foreground">
             {lifetime === 0
-              ? "It lasts until you revoke it in Settings, under Apps."
-              : `It ends on ${lifetimeEnd(lifetime)}. After that, the app has to ask you again. You can revoke it sooner in Settings, under Apps.`}
+              ? `It lasts until you revoke it in Settings, under ${mcp ? "AI assistants" : "Apps"}.`
+              : mcp
+                ? `It ends on ${lifetimeEnd(lifetime)}. After that, you sign the assistant in again. You can revoke it sooner in Settings, under AI assistants.`
+                : `It ends on ${lifetimeEnd(lifetime)}. After that, the app has to ask you again. You can revoke it sooner in Settings, under Apps.`}
           </p>
         </Fact>
 

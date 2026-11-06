@@ -11,7 +11,8 @@
  * A token with `scopes` or a client id is an app's (decisions 0194, 0204):
  * it reaches only what the owner approved, or everything where the owner
  * approved full access, and it is listed under Apps, never beside the
- * owner's own full-access tokens.
+ * owner's own full-access tokens. An AI assistant's token (scopes exactly
+ * `["mcp"]`, decision 0230) is listed on the AI assistants page alone.
  *
  * A minted secret is shown ONCE. Nothing can show it again, which is why the
  * panel that carries it stays until it is dismissed. */
@@ -44,20 +45,23 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { toast } from "@/components/ui/toast"
-import { listTokens, mintToken, revokeToken } from "@/lib/api/auth"
+import { mintToken, revokeToken, tokensQueryOptions } from "@/lib/api/auth"
 import { clearSession, getTokenId } from "@/lib/api/session"
 import { ApiError, type MintedToken, type TokenInfo } from "@/lib/api/types"
 import { FULL_ACCESS_SENTENCE, scopeWords } from "@/lib/app-scopes"
+import { isAssistantToken } from "@/lib/assistants"
 import { relativeTime, shortDateTime } from "@/lib/format"
 
-const TOKENS_KEY = ["tokens"] as const
+const TOKENS_KEY = tokensQueryOptions.queryKey
 
 function useTokens() {
-  return useQuery({ queryKey: TOKENS_KEY, queryFn: listTokens })
+  return useQuery(tokensQueryOptions)
 }
 
 /** An app's token: it carries the scopes the owner approved, or names the
- * app it was approved for where the owner approved full access. */
+ * app it was approved for where the owner approved full access. An AI
+ * assistant's token is one too, so neither Signed in nor the developer
+ * table lists it. */
 function isAppToken(t: TokenInfo): boolean {
   return t.scopes !== undefined || t.clientId !== undefined
 }
@@ -462,9 +466,10 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
   )
 }
 
-/** Settings' Apps rows: every app token, newest first, headed by the app's
- * name, with where it runs, who publishes it, what it writes as, the scopes
- * the owner approved, when and until when, and "Revoke…". A retired token
+/** Settings' Apps rows: every app token but an AI assistant's, newest
+ * first, headed by the app's name, with where it runs, who publishes it,
+ * what it writes as, the scopes the owner approved, when and until when,
+ * and "Revoke…". A retired token
  * (its grant holds a scope a later decision retired) says first that it
  * stopped working: its scopes are what the owner once approved, not access
  * it holds. */
@@ -488,7 +493,7 @@ export function AppTokenRows() {
     )
   }
   const apps = tokens.data
-    .filter(isAppToken)
+    .filter((t) => isAppToken(t) && !isAssistantToken(t))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   if (apps.length === 0) {
     return (

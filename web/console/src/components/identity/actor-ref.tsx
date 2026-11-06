@@ -66,6 +66,7 @@ export function ActorMark({
 
 export function ActorRef({
   actor,
+  name,
   link = "actor",
   inlineId = true,
   className,
@@ -73,6 +74,10 @@ export function ActorRef({
   /** The actor string as stored (`console`, `agent:<authority>:<pkg>:<name>`,
    * `substrate`, …). */
   actor: string
+  /** The name of the token behind the write where the server resolved one
+   * ("Claude Code"): it heads the mark, and the actor's own words move to the
+   * hover card's second line. */
+  name?: string
   /** Where a click goes: the actor view, the actor's declaration record
    * (falling back to the actor view), or nowhere. */
   link?: "actor" | "record" | false
@@ -115,8 +120,14 @@ export function ActorRef({
       card={
         <IdentityCard
           mark={<ActorMark identity={identity} />}
-          title={identity.name}
-          sub={identity.via ? `via ${identity.via}` : undefined}
+          title={name || identity.name}
+          sub={
+            name
+              ? identity.name
+              : identity.via
+                ? `via ${identity.via}`
+                : undefined
+          }
           description={identity.description}
           reference={actor}
         />
@@ -124,7 +135,7 @@ export function ActorRef({
     >
       <ActorMark identity={identity} />
       <span className="truncate underline-offset-2 group-hover/actor:underline">
-        {identity.name}
+        {name || identity.name}
       </span>
       {identity.cls === "agent" && <span className="text-faint">agent</span>}
       {technical && inlineId && (

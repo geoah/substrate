@@ -1,6 +1,7 @@
-/** An app's scopes in the owner's words (decisions 0194, 0195 and 0219):
- * what each verb lets the app do with its pattern, for the approval page and
- * the Apps list in Settings. Pure, so the words are tested here. */
+/** An app's scopes in the owner's words (decisions 0194, 0195, 0219 and
+ * 0230): what each verb lets the app do with its pattern, for the approval
+ * page, the Apps list and the AI assistants page in Settings. Pure, so the
+ * words are tested here. */
 
 import { agentName } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
@@ -29,12 +30,46 @@ const ACTIONS: Record<ScopeVerb, string> = {
   call: "Run the functions matching",
   webhook: "Send data to, and see the refused deliveries of, the webhook",
   full: "Everything you can do when you sign in",
+  mcp: "Work with your data as an AI assistant, at this server’s assistant address alone",
 }
 
 /** What `full` lets an app do, in every view that names it: the same as
  * signing in, which no other scope comes near. */
 export const FULL_ACCESS_SENTENCE =
   "Do everything you can do when you sign in: see, add, change and delete any record, change your kinds, settings and agents, run your functions, and make or revoke tokens, including this one"
+
+/** What `mcp` lets an AI assistant do (decision 0230): what you can, at this
+ * server's assistant address and nowhere else, short of the sign-in
+ * material, the export, a provider account's connection and a package's
+ * removal. */
+export const ASSISTANT_ACCESS_SENTENCE =
+  "Work with your data as you do, at this server’s AI assistant address and nowhere else, short of tokens and other sign-in material, your export, connecting provider accounts and removing packages"
+
+/** What an assistant can do, one line each. The approval page and Settings'
+ * AI assistants page both read these, so the two say the same. */
+export const ASSISTANT_CAN = [
+  "See everything you can, token and credential records included, though never a secret’s value",
+  "Change anything you can, including collections, agents, triggers and packages",
+  "Run your tools, agents and syncs",
+] as const
+
+/** What the MCP door refuses an assistant (decision 0230). */
+export const ASSISTANT_CANNOT = [
+  "Write, make or revoke tokens or other sign-in material",
+  "See a webhook’s key",
+  "Export your data",
+  "Connect a provider account",
+  "Uninstall or purge a package",
+] as const
+
+/** The owner kept an assistant's reach over guarding the code it declares
+ * (decision 0230), so every page that lets one in says this. */
+export const ASSISTANT_CODE_SENTENCE =
+  "Code it writes runs as your code does, and can reach your secrets"
+
+/** An assistant writes as its app's actor (decision 0209), never as you. */
+export const ASSISTANT_HISTORY_SENTENCE =
+  "Its changes show in History under its own name, not yours"
 
 function isVerb(word: string): word is ScopeVerb {
   return Object.hasOwn(ACTIONS, word)
@@ -43,8 +78,8 @@ function isVerb(word: string): word is ScopeVerb {
 /** A stored scope (`agents:ada.example.com/llm/*`) as words. A scope this
  * console does not know keeps its own spelling as the pattern. */
 export function scopeWords(scope: string): ScopeWords {
-  if (scope === "full")
-    return { verb: "full", action: ACTIONS.full, pattern: "" }
+  if (scope === "full" || scope === "mcp")
+    return { verb: scope, action: ACTIONS[scope], pattern: "" }
   const at = scope.indexOf(":")
   const word = at > 0 ? scope.slice(0, at) : ""
   if (!isVerb(word)) return { verb: undefined, action: "", pattern: scope }
@@ -249,6 +284,8 @@ export function scopeSentence(scope: SentenceScope): string {
       return webhookSentence(scope.pattern)
     case "full":
       return FULL_ACCESS_SENTENCE
+    case "mcp":
+      return ASSISTANT_ACCESS_SENTENCE
   }
 }
 

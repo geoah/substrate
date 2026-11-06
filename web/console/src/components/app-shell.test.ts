@@ -20,6 +20,16 @@ describe("crumbsFor", () => {
     expect(crumbsFor("/observations")).toEqual([{ label: "Observations" }])
   })
 
+  it("keeps AI assistants under Settings", () => {
+    expect(crumbsFor("/settings/assistants")).toEqual([
+      { label: "Settings", to: "/settings" },
+      { label: "AI assistants" },
+    ])
+    expect(pageTitle(crumbsFor("/settings/assistants"))).toBe(
+      "AI assistants · Settings"
+    )
+  })
+
   it("keeps the timeline under Observations", () => {
     expect(crumbsFor("/observations/timeline")).toEqual([
       { label: "Observations", to: "/observations" },
