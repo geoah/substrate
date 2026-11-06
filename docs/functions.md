@@ -469,7 +469,32 @@ unprivileged, none requiring a container runtime:
   `the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7`.
   The server's own dials (an `llm/provider` row's `baseURL`) obey
   `SUBSTRATE_EGRESS_ALLOW` instead, and fail with
-  `egress blocked by the server's dial gate`. Binary-shipped code keeps the public-destination policy. Outside code is
+  `egress blocked by the server's dial gate`. The kernel never finishes a
+  `connect` the supervisor has only inspected: the supervisor makes every
+  connect it allows itself, with its own copy of the address, so a second
+  thread that rewrites the address mid-check changes nothing. **A network
+  body cannot connect a unix socket**: every unix `connect`, by path or by
+  abstract name, is refused with `EACCES`. The supervisor would have to make
+  that connect, and the listener would then see the supervisor's process,
+  not the body's. A `socketpair` still works, so does the `AF_UNSPEC`
+  `connect` that drops a socket's peer, and glibc's name lookup reads its
+  refused nscd socket as no nscd. Python's `multiprocessing` connects a unix
+  socket to reach a manager and to start a process under its `forkserver`
+  method, the default on Linux from Python 3.14, so a network body uses no
+  manager and starts processes with `multiprocessing.get_context("spawn")`.
+  A body that declares no network connects unix sockets as before. A netlink
+  `connect` is refused too; runtimes bind a netlink socket and send on it
+  instead.
+  A network body's internet sockets are TCP streams and datagram sockets.
+  SCTP, MPTCP and raw sockets are refused with `EACCES`, because SCTP opens
+  an association without `connect`, MPTCP is not the TCP the supervisor
+  connects, and a raw socket writes packets to any address. A send with
+  `MSG_FASTOPEN` (TCP Fast Open, which opens a connection from `sendto`,
+  `sendmsg` or `sendmmsg`) is refused too. So is setting `SO_LINGER`
+  with `setsockopt`, in every body, with or without network: the
+  supervisor closes its own duplicate of a body's socket, and a linger
+  time would make that close wait on the body's peer.
+  Binary-shipped code keeps the public-destination policy. Outside code is
   additionally held to its declared hosts through a per-body proxy. The supervisor half of that fine layer is the one
   piece of the sandbox that needs something from the deployment: it reads the
   destination with `process_vm_readv(2)` and duplicates the body's socket with
@@ -511,7 +536,10 @@ quietly does less than it claims is worse than none. The destination filter is
 outside that choice: `best-effort` degrades a layer it cannot apply to the body
 itself, but where the *supervisor* cannot run, a body that declares network is
 refused under `best-effort` too, because running it would mean handing it the
-deployment's own network rather than a weaker version of the internet.
+deployment's own network rather than a weaker version of the internet. The
+same holds when the syscall filter itself cannot be installed: a body that
+declares network, or runs outside code, is refused rather than started with
+the connect gate alone, because its socket rules live in that filter.
 
 **What it does not do.** It is not a container. A body still shares a uid and a
 pid namespace with the substrate. On Landlock ABI 6 (Linux 6.12) and newer,
@@ -532,9 +560,9 @@ that reaches one takes the substrate down with it
 ([running a substrate](operations.md#the-published-image)). A body that *is* granted network has its
 `connect` destinations filtered: the runner connects to the address it verified
 and installs that socket into the body, so a multi-threaded body cannot race the
-destination past the check. One residual remains: a UDP body reaching a private
-service through `sendto` with no `connect` is not filtered (Postgres is TCP, so
-the proven path is closed). On non-Linux hosts (a macOS laptop running
+destination past the check. One residual remains: a datagram (UDP) body
+reaching a private service through `sendto` with no `connect` is not filtered
+(Postgres is TCP, so the proven path is closed). On non-Linux hosts (a macOS laptop running
 `mise run dev`) none of it applies, and the boot log says so.
 
 ### Shared modules
@@ -1705,7 +1733,8 @@ no network. Binary-shipped functions retain the destination rules above.
 Outside bodies reach the network only through the proxy named by the
 supplied `HTTP_PROXY` and `HTTPS_PROXY` settings, so their clients must
 honor those settings; an HTTPS request goes through it as HTTP CONNECT.
-Direct IP connections, DNS sockets and datagram sockets are refused. The proxy checks
+Direct IP connections, DNS sockets, datagram sockets and every internet
+socket but a TCP stream are refused. The proxy checks
 hostnames before resolution and applies the deployment-address deny rules
 to every resolved dial. `SUBSTRATE_SANDBOX_EGRESS_ALLOW` permits a declared
 host to resolve to a private address; it never grants an undeclared host.

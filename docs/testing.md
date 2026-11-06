@@ -335,7 +335,8 @@ provider's name. The gate checks `connect(2)`, so a confined body also gets
 no internet socket but a TCP stream, no TCP Fast Open send and no Unix
 socket: a datagram, raw, SCTP or MPTCP socket would reach an address without
 connecting, and a resolver or proxy daemon on a pathname socket would carry
-the body's traffic past the gate. `socketpair(2)` still works. An
+the traffic of a body granted no network, which has no gate. (The gate
+refuses a network body's Unix connect itself.) `socketpair(2)` still works. An
 outside body's proxy resolves a name from the hosts file alone. A shipped
 provider's body that a regression points at its
 real API (a dropped origin check, a lost `baseUrl`, an operator key that was

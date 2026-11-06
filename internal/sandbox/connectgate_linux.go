@@ -35,10 +35,11 @@ import (
 // listener descriptor back to the runner (an ancestor, so ptrace-scope 1 lets
 // it read the body's memory) over a unix socket. On each connect the runner
 // reads the target sockaddr and refuses the deployment's own ranges, letting the
-// public internet through.
+// public internet through. A connect it allows, the runner makes itself, with
+// its own copy of the address (service).
 
 // seccompIoctlNotifIDValid is the one notify ioctl x/sys does not name. RECV,
-// SEND and the CONTINUE flag it does.
+// SEND and ADDFD it does.
 const seccompIoctlNotifIDValid = 0x40082102
 
 // seccompData mirrors struct seccomp_data; seccompNotif and seccompNotifResp
@@ -437,29 +438,27 @@ func (g *connectGate) handleOne() bool {
 type verdict int
 
 const (
-	verdictDeny    verdict = iota // refuse with EACCES: the target could not be read or parsed
-	verdictRefuse                 // refuse with EACCES and record it: an INET destination the policy does not allow
-	verdictPass                   // let the kernel run it: a non-INET family
-	verdictConnect                // an allowed INET destination: emulate it
+	verdictDeny       verdict = iota // refuse with EACCES: the target could not be read or parsed, or its family is not one the gate connects
+	verdictRefuse                    // refuse with EACCES and record it: an INET destination the policy does not allow
+	verdictConnect                   // an allowed INET destination: emulate it on a fresh socket
+	verdictDisconnect                // AF_UNSPEC: dissolve the body's association from the runner
 )
 
-// service answers one notification. An allowed INET destination is NOT answered
-// with CONTINUE: the kernel would re-read the body's sockaddr when it resumed
-// the syscall, and a second thread could flip the address in between (a TOCTOU
-// race). Instead the runner connects to the address it verified and installs
-// that connected socket into the body, so the kernel never re-reads the body's
-// memory. Every other path refuses; nothing falls open.
+// service answers one notification. No answer is CONTINUE: the kernel would
+// then read the descriptor and the sockaddr from the body again when it
+// resumed the syscall, and a second thread can change either in between, so
+// a family or a destination the check never saw would reach the kernel.
+// Instead the runner makes every connect it allows: an allowed INET
+// destination on a fresh socket it installs into the body, and an AF_UNSPEC
+// disconnect on its own duplicate of the body's socket, each with its own copy
+// of the address. Every other path refuses; nothing falls open.
 func (g *connectGate) service(n *seccompNotif) bool {
-	v, family, dest := g.classify(n)
+	v, family, dest, addr := g.classify(n)
 	switch v {
-	case verdictPass:
-		// A non-INET family (AF_UNIX, AF_NETLINK). CONTINUE is safe here: these
-		// reach nothing off the IP stack, and the kernel and Landlock still
-		// mediate them when the syscall resumes. Only INET is raceable, and only
-		// INET is emulated.
-		return g.send(&seccompNotifResp{ID: n.ID, Flags: uint32(unix.SECCOMP_USER_NOTIF_FLAG_CONTINUE)})
 	case verdictConnect:
 		return g.emulateConnect(n, family, dest)
+	case verdictDisconnect:
+		return g.disconnect(n, addr)
 	case verdictRefuse:
 		// Recorded before the body is answered, so a runner that reads the
 		// record after the body's response sees this refusal.
@@ -475,58 +474,94 @@ func (g *connectGate) service(n *seccompNotif) bool {
 // notification, which ID_VALID confirms; anything it cannot read or parse is a
 // deny, and a destination the policy does not allow is a refusal. Both answer
 // EACCES; only a refusal names the allowlist, because only a refusal is one
-// SUBSTRATE_SANDBOX_EGRESS_ALLOW could lift.
+// SUBSTRATE_SANDBOX_EGRESS_ALLOW could lift. The copy it returns is the only
+// form of the address anything after it reads.
 //
-// SAFETY: treating every non-INET family as verdictPass is safe only because
-// the main seccomp socket-domain allowlist (seccomp_linux.go, buildFilter)
-// bounds a body to AF_UNIX, AF_INET, AF_INET6 and AF_NETLINK, none of which
-// reach an off-machine IP service without going through the AF_INET(6) arms
-// below. If that allowlist ever gains AF_PACKET or AF_VSOCK, this default would
-// pass them unfiltered and both sides must change together.
-func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort) {
+// A family the gate does not connect itself is a deny. AF_UNIX is one: a unix
+// connect the runner made would carry the runner's credentials to the
+// listener (SO_PEERCRED is fixed at connect), and on the body's own socket the
+// runner would share the flags and the send timeout the kernel waits by with
+// every thread of the body, so a body could hold the runner in a connect to a
+// full listener. glibc's getaddrinfo tries nscd's socket first and reads the
+// refusal as no nscd. AF_NETLINK is another: no runtime a body runs connects a
+// netlink socket (they bind it and send), and a connect the runner made would
+// be checked against the runner's credentials, not the body's.
+func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort, []byte) {
 	uaddr := uintptr(n.Data.Args[1])
 	alen := int(int32(n.Data.Args[2]))
 	if uaddr == 0 || alen < 2 || alen > 128 {
-		return verdictDeny, 0, netip.AddrPort{}
+		return verdictDeny, 0, netip.AddrPort{}, nil
 	}
 	buf := make([]byte, alen)
 	if !readTargetMem(int(n.Pid), uaddr, buf) {
-		return verdictDeny, 0, netip.AddrPort{}
+		return verdictDeny, 0, netip.AddrPort{}, nil
 	}
 	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
-		return verdictDeny, 0, netip.AddrPort{}
+		return verdictDeny, 0, netip.AddrPort{}, nil
 	}
 	family := int(binary.LittleEndian.Uint16(buf[0:2]))
 	switch family {
-	case unix.AF_UNIX:
-		return verdictPass, family, netip.AddrPort{}
+	case unix.AF_UNSPEC:
+		return verdictDisconnect, family, netip.AddrPort{}, buf
 	case unix.AF_INET:
 		if alen < 8 {
-			return verdictDeny, family, netip.AddrPort{}
+			return verdictDeny, family, netip.AddrPort{}, nil
 		}
 		port := binary.BigEndian.Uint16(buf[2:4])
 		var a [4]byte
 		copy(a[:], buf[4:8])
 		addr := netip.AddrFrom4(a)
 		if !g.allowDest(addr, port) {
-			return verdictRefuse, family, netip.AddrPortFrom(addr, port)
+			return verdictRefuse, family, netip.AddrPortFrom(addr, port), nil
 		}
-		return verdictConnect, family, netip.AddrPortFrom(addr, port)
+		return verdictConnect, family, netip.AddrPortFrom(addr, port), nil
 	case unix.AF_INET6:
 		if alen < 24 {
-			return verdictDeny, family, netip.AddrPort{}
+			return verdictDeny, family, netip.AddrPort{}, nil
 		}
 		port := binary.BigEndian.Uint16(buf[2:4])
 		var a [16]byte
 		copy(a[:], buf[8:24])
 		addr := netip.AddrFrom16(a)
 		if !g.allowDest(addr, port) {
-			return verdictRefuse, family, netip.AddrPortFrom(addr, port)
+			return verdictRefuse, family, netip.AddrPortFrom(addr, port), nil
 		}
-		return verdictConnect, family, netip.AddrPortFrom(addr, port)
+		return verdictConnect, family, netip.AddrPortFrom(addr, port), nil
 	default:
-		return verdictPass, family, netip.AddrPort{}
+		return verdictDeny, family, netip.AddrPort{}, nil
 	}
+}
+
+// disconnect runs an AF_UNSPEC connect, which dissolves a socket's
+// association and reaches nothing, on the runner's duplicate of the body's
+// socket, with the runner's copy of the address. glibc's getaddrinfo makes one
+// on its datagram socket between the addresses it orders. The duplicate shares
+// the body's flags and options, and no thread of the body can make this call
+// wait through them: a TCP or datagram internet socket, a unix datagram socket
+// and netlink each drop their peer without waiting, and a unix stream or
+// seqpacket socket refuses AF_UNSPEC with EINVAL.
+func (g *connectGate) disconnect(n *seccompNotif, addr []byte) bool {
+	dup, err := dupBodyFD(tgidOf(int(n.Pid)), int(int32(n.Data.Args[0])))
+	if err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	defer func() { _ = unix.Close(dup) }()
+	// Confirm the notification is still live, so the descriptor duplicated
+	// above was the body's.
+	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	if errno := rawConnect(dup, addr); errno != 0 {
+		return g.send(denyResp(n.ID, errno))
+	}
+	return g.send(&seccompNotifResp{ID: n.ID})
+}
+
+// rawConnect is connect(2) with an address already held as bytes, which no
+// unix.Sockaddr form carries for AF_UNSPEC.
+func rawConnect(fd int, addr []byte) unix.Errno {
+	_, _, errno := unix.Syscall(unix.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(len(addr)))
+	return errno
 }
 
 // emulateConnect connects to the verified destination in the runner and
@@ -726,12 +761,7 @@ func (s *sockInfo) close() {
 // runner's own copy, not the body's. It is read from the body's descriptor in
 // fdCloexec.
 func inspectSocket(tgid, fd int) (*sockInfo, error) {
-	pidfd, err := unix.PidfdOpen(tgid, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = unix.Close(pidfd) }()
-	dup, err := unix.PidfdGetfd(pidfd, fd, 0)
+	dup, err := dupBodyFD(tgid, fd)
 	if err != nil {
 		return nil, err
 	}
@@ -758,6 +788,18 @@ func inspectSocket(tgid, fd int) (*sockInfo, error) {
 		info.bound = sockaddrBound(sa)
 	}
 	return info, nil
+}
+
+// dupBodyFD duplicates the body's descriptor fd into the runner. The
+// duplicate shares the body's open file description, flags and options
+// included.
+func dupBodyFD(tgid, fd int) (int, error) {
+	pidfd, err := unix.PidfdOpen(tgid, 0)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = unix.Close(pidfd) }()
+	return unix.PidfdGetfd(pidfd, fd, 0)
 }
 
 // fdCloexec reads the body descriptor's true close-on-exec flag from

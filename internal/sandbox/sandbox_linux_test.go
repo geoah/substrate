@@ -5,6 +5,7 @@ package sandbox
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -554,6 +555,7 @@ func TestFilterVerdicts(t *testing.T) {
 		eperm  = retErrno(unix.EPERM)
 		enosys = retErrno(unix.ENOSYS)
 		noAF   = retErrno(unix.EAFNOSUPPORT)
+		eacces = retErrno(unix.EACCES)
 	)
 	// neg is a pid as the 64-bit register a caller passes: sign-extended, so
 	// its high half is set and only the low half is the kernel's pid_t.
@@ -566,6 +568,7 @@ func TestFilterVerdicts(t *testing.T) {
 		nr      int
 		arg0    uint64
 		arg1    uint64
+		arg2    uint64
 		want    uint32
 	}{
 		{name: "kill the substrate", nr: unix.SYS_KILL, arg0: parent, want: eperm},
@@ -611,6 +614,12 @@ func TestFilterVerdicts(t *testing.T) {
 		{name: "an internet socket without network", nr: sysSocket, arg0: unix.AF_INET, want: noAF},
 		{name: "an internet socket with network", network: true, nr: sysSocket, arg0: unix.AF_INET, want: allow},
 		{name: "a packet socket with network", network: true, nr: sysSocket, arg0: unix.AF_PACKET, want: noAF},
+		{name: "set a linger time", nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: eacces},
+		{name: "set a linger time with network", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: eacces},
+		{name: "set a linger time, high halves set", nr: sysSetsockopt, arg0: 3, arg1: 1<<32 | unix.SOL_SOCKET, arg2: 1<<32 | unix.SO_LINGER, want: eacces},
+		{name: "set another socket option", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_KEEPALIVE, want: allow},
+		{name: "set a TCP option numbered like SO_LINGER", network: true, nr: sysSetsockopt, arg0: 3, arg1: unix.SOL_TCP, arg2: unix.TCP_CONGESTION, want: allow},
+		{name: "read the linger time", network: true, nr: unix.SYS_GETSOCKOPT, arg0: 3, arg1: unix.SOL_SOCKET, arg2: unix.SO_LINGER, want: allow},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prog, err := buildFilter(Policy{Network: tc.network}, substrateProc{pid: parent, pgid: group, shared: tc.shared})
@@ -621,7 +630,7 @@ func TestFilterVerdicts(t *testing.T) {
 			if arch == 0 {
 				arch = auditArch
 			}
-			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.arg0, tc.arg1}}
+			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.arg0, tc.arg1, tc.arg2}}
 			if got := runFilter(t, prog, data); got != tc.want {
 				t.Fatalf("verdict = %#x, want %#x", got, tc.want)
 			}
@@ -643,7 +652,21 @@ func TestFilterVerdicts(t *testing.T) {
 	}
 }
 
-// The confined egress filter's verdicts (buildConfinedFilter): an internet
+// The policies each stacked socket filter is built for: a network body,
+// outside code with and without declared hosts, and a confined child
+// (Policy.EgressOnly) with no network, with network and running outside code.
+var (
+	networkPolicies  = []Policy{{Network: true}}
+	outsidePolicies  = []Policy{{Network: true, Outside: true}, {Outside: true}}
+	loopbackOnly     = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
+	confinedPolicies = []Policy{
+		{EgressOnly: loopbackOnly},
+		{Network: true, EgressOnly: loopbackOnly},
+		{Network: true, Outside: true, EgressOnly: loopbackOnly},
+	}
+)
+
+// The internet socket filter's verdicts for a confined child: an internet
 // socket is a TCP stream or nothing, no Unix socket opens but a socketpair,
 // and no send call may carry MSG_FASTOPEN, so connect(2), which the gate holds
 // to the prefixes, is a confined child's only way to a peer. Everything else
@@ -655,17 +678,6 @@ func TestConfinedFilterVerdicts(t *testing.T) {
 		allow  = uint32(seccompRetAllow)
 		eacces = retErrno(unix.EACCES)
 	)
-	prog := buildConfinedFilter()
-	for i, insn := range prog {
-		if insn.Code&0x07 != 0x05 { // not BPF_JMP
-			continue
-		}
-		for _, off := range []uint8{insn.JT, insn.JF} {
-			if target := i + 1 + int(off); target >= len(prog) {
-				t.Fatalf("instruction %d jumps to %d, past the end (%d)", i, target, len(prog))
-			}
-		}
-	}
 	const fastOpen = unix.MSG_FASTOPEN
 	for _, tc := range []struct {
 		name string
@@ -705,10 +717,103 @@ func TestConfinedFilterVerdicts(t *testing.T) {
 				arch = auditArch
 			}
 			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.args[0], tc.args[1], tc.args[2], tc.args[3]}}
-			if got := runFilter(t, prog, data); got != tc.want {
-				t.Fatalf("verdict = %#x, want %#x", got, tc.want)
+			for _, p := range confinedPolicies {
+				if got := runFilter(t, buildInternetFilter(p), data); got != tc.want {
+					t.Fatalf("network=%v outside=%v: verdict = %#x, want %#x", p.Network, p.Outside, got, tc.want)
+				}
 			}
 		})
+	}
+}
+
+// The internet socket filter's verdicts, run the way the kernel runs them. A
+// network body gets a TCP stream or a datagram socket, outside code the TCP
+// stream alone, and nobody sends with MSG_FASTOPEN. The live half is
+// internal/runner's egress_linux_test.go.
+func TestInternetFilterVerdicts(t *testing.T) {
+	var (
+		allow  = uint32(seccompRetAllow)
+		eacces = retErrno(unix.EACCES)
+	)
+	// sock is socket(2)'s arguments; send is a send call's flags in the
+	// argument that call reads them from.
+	sock := func(domain, typ, proto uint64) seccompData {
+		return seccompData{NR: int32(sysSocket), Arch: auditArch, Args: [6]uint64{domain, typ, proto}}
+	}
+	send := func(nr int, flags uint64) seccompData {
+		d := seccompData{NR: int32(nr), Arch: auditArch}
+		if nr == sysSendmsg {
+			d.Args[2] = flags
+		} else {
+			d.Args[3] = flags
+		}
+		return d
+	}
+	for _, tc := range []struct {
+		name    string
+		data    seccompData
+		network uint32
+		outside uint32
+	}{
+		{"a TCP stream", sock(unix.AF_INET, unix.SOCK_STREAM, 0), allow, allow},
+		{"a TCP stream named by protocol", sock(unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_TCP), allow, allow},
+		{"a TCP stream with its flags", sock(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0), allow, allow},
+		{"a TCP stream, high half set", sock(1<<32|unix.AF_INET, 1<<32|unix.SOCK_STREAM, 1<<32), allow, allow},
+		{"an SCTP stream", sock(unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_SCTP), eacces, eacces},
+		{"an IPv6 SCTP stream", sock(unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_SCTP), eacces, eacces},
+		{"an MPTCP stream", sock(unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_MPTCP), eacces, eacces},
+		{"a sequenced-packet socket", sock(unix.AF_INET, unix.SOCK_SEQPACKET, 0), eacces, eacces},
+		{"a raw socket", sock(unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_TCP), eacces, eacces},
+		{"a UDP socket", sock(unix.AF_INET, unix.SOCK_DGRAM, 0), allow, eacces},
+		{"an IPv6 UDP socket with its flags", sock(unix.AF_INET6, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, unix.IPPROTO_UDP), allow, eacces},
+		{"a unix socket of any kind", sock(unix.AF_UNIX, unix.SOCK_SEQPACKET, 0), allow, allow},
+		{"a netlink socket", sock(unix.AF_NETLINK, unix.SOCK_RAW, 0), allow, allow},
+		{"sendto with MSG_FASTOPEN", send(sysSendto, unix.MSG_FASTOPEN), eacces, eacces},
+		{"sendmsg with MSG_FASTOPEN", send(sysSendmsg, unix.MSG_FASTOPEN|unix.MSG_NOSIGNAL), eacces, eacces},
+		{"sendmmsg with MSG_FASTOPEN", send(sysSendmmsg, unix.MSG_FASTOPEN), eacces, eacces},
+		{"sendto without it", send(sysSendto, unix.MSG_NOSIGNAL|unix.MSG_DONTWAIT), allow, allow},
+		{"sendmsg without it", send(sysSendmsg, unix.MSG_NOSIGNAL), allow, allow},
+		{"sendmmsg without it", send(sysSendmmsg, 0), allow, allow},
+		{"connect, which the gate answers", seccompData{NR: unix.SYS_CONNECT, Arch: auditArch}, allow, allow},
+		// The main filter refuses both; this one leaves them to it.
+		{"a foreign architecture", seccompData{NR: int32(sysSocket), Arch: auditArch + 1, Args: [6]uint64{unix.AF_INET, unix.SOCK_RAW}}, allow, allow},
+		{"the x32 numbering", seccompData{NR: x32Bit | int32(sysSocket), Arch: auditArch, Args: [6]uint64{unix.AF_INET, unix.SOCK_RAW}}, allow, allow},
+	} {
+		for _, p := range networkPolicies {
+			if got := runFilter(t, buildInternetFilter(p), tc.data); got != tc.network {
+				t.Errorf("%s (network): verdict = %#x, want %#x", tc.name, got, tc.network)
+			}
+		}
+		for _, p := range outsidePolicies {
+			if got := runFilter(t, buildInternetFilter(p), tc.data); got != tc.outside {
+				t.Errorf("%s (outside, network=%v): verdict = %#x, want %#x", tc.name, p.Network, got, tc.outside)
+			}
+		}
+	}
+}
+
+// The internet filter is laid out by index, so a gap would be a zero
+// instruction and a misplaced index a jump past the end.
+func TestInternetFilterAssembles(t *testing.T) {
+	for _, p := range append(append(append([]Policy{}, networkPolicies...), outsidePolicies...), confinedPolicies...) {
+		prog := buildInternetFilter(p)
+		name := fmt.Sprintf("network=%v outside=%v confined=%v", p.Network, p.Outside, len(p.EgressOnly) > 0)
+		for i, insn := range prog {
+			if insn.Code == 0 {
+				t.Fatalf("%s: instruction %d is empty", name, i)
+			}
+			if insn.Code&0x07 != 0x05 { // not BPF_JMP
+				continue
+			}
+			for _, off := range []uint8{insn.JT, insn.JF} {
+				if target := i + 1 + int(off); target >= len(prog) {
+					t.Fatalf("%s: instruction %d jumps to %d, past the end (%d)", name, i, target, len(prog))
+				}
+			}
+		}
+		if last := prog[len(prog)-1]; last.Code != bpfRetK || last.K != retErrno(unix.EACCES) {
+			t.Fatalf("%s: last instruction %+v, want the EACCES return", name, last)
+		}
 	}
 }
 
@@ -764,4 +869,28 @@ func runFilter(t *testing.T, prog []sockFilter, d seccompData) uint32 {
 	}
 	t.Fatal("the program ran off its end without a return")
 	return 0
+}
+
+// A main filter that cannot be installed is a best-effort degradation only for
+// a body whose promises do not rest on the socket filter stacked over it.
+func TestFilterRequiredWhereTheSocketFilterIsPromised(t *testing.T) {
+	confined := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
+	for _, tc := range []struct {
+		name string
+		p    Policy
+		want bool
+	}{
+		{"offline best-effort body", Policy{}, false},
+		{"enforce", Policy{Require: true}, true},
+		{"confined egress", Policy{EgressOnly: confined}, true},
+		{"network body", Policy{Network: true}, true},
+		{"outside code", Policy{Outside: true}, true},
+	} {
+		if got := filterRequired(tc.p); got != tc.want {
+			t.Errorf("%s: filterRequired = %v, want %v", tc.name, got, tc.want)
+		}
+		if tc.want && filterRequiredWhy(tc.p) == "" {
+			t.Errorf("%s: no reason given", tc.name)
+		}
+	}
 }

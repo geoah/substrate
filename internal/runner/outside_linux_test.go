@@ -24,6 +24,11 @@ def main(input, host):
         socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     except OSError:
         refused += 1
+    for proto in (132, 262):  # SCTP and MPTCP: stream sockets that are not TCP
+        try:
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM, proto)
+        except OSError:
+            refused += 1
     try:
         urllib.request.urlopen("https://other.example.com/", timeout=1)
     except OSError:
@@ -34,15 +39,15 @@ def main(input, host):
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Output != float64(3) {
-		t.Fatalf("only %v of three bypasses refused", result.Output)
+	if result.Output != float64(5) {
+		t.Fatalf("only %v of five bypasses refused", result.Output)
 	}
 	spec.Network = nil
 	result, err = r.Invoke(context.Background(), spec, testInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Output != float64(3) {
-		t.Fatalf("outside body without network: %v", result.Output)
+	if result.Output != float64(5) {
+		t.Fatalf("outside body without network: %v of five refused", result.Output)
 	}
 }

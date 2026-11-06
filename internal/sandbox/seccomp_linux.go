@@ -151,31 +151,11 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		// boot (seccompAvailable says so), so carrying on here is the
 		// best-effort contract rather than a silent gap, and refusing would
 		// take down every delivery on a platform the operator was told about.
-		// A confined egress is a promise this filter keeps, so it refuses.
-		if p.Require || len(p.EgressOnly) > 0 {
+		// A policy whose promise this filter keeps refuses (filterRequired).
+		if filterRequired(p) {
 			return fmt.Errorf("no syscall table for this architecture")
 		}
 		return nil
-	}
-	if p.Outside {
-		stream := []sockFilter{
-			{Code: bpfLdAbsW, K: sdNR},
-			{Code: bpfJeqK, K: uint32(sysSocket), JF: 4},
-			{Code: bpfLdAbsW, K: sdArg1},
-			{Code: bpfAndK, K: sockTypeMask},
-			{Code: bpfJeqK, K: unix.SOCK_STREAM, JT: 1},
-			{Code: bpfRetK, K: seccompRetErrno | uint32(unix.EACCES)},
-			{Code: bpfRetK, K: seccompRetAllow},
-		}
-		if err := installFilter(&sockFprog{Len: uint16(len(stream)), Fil: &stream[0]}, 0); err != nil {
-			return err
-		}
-	}
-	if len(p.EgressOnly) > 0 {
-		confined := buildConfinedFilter()
-		if err := installFilter(&sockFprog{Len: uint16(len(confined)), Fil: &confined[0]}, 0); err != nil {
-			return fmt.Errorf("confined egress filter: %w", err)
-		}
 	}
 	prog, err := buildFilter(p, parent)
 	if err != nil {
@@ -197,45 +177,94 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		// Under enforce that has to stop the body, and under a confined egress,
 		// whose promise is this filter's socket rule; otherwise it is the
 		// degradation the operator was warned about at boot.
-		if p.Require {
-			return fmt.Errorf("set filter: %w (SUBSTRATE_SANDBOX=enforce)", err)
-		}
-		if len(p.EgressOnly) > 0 {
-			return fmt.Errorf("set filter: %w (egress is confined)", err)
+		if filterRequired(p) {
+			return fmt.Errorf("set filter: %w (%s)", err, filterRequiredWhy(p))
 		}
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("set filter: %w", err)
 	}
+	// Stacked over the main filter, which permits seccomp(2), so a kernel
+	// that took the one takes this one too: a failure here is not the
+	// degradation above, and the body does not start without it.
+	if p.Network || p.Outside || len(p.EgressOnly) > 0 {
+		internet := buildInternetFilter(p)
+		if err := installFilter(&sockFprog{Len: uint16(len(internet)), Fil: &internet[0]}, 0); err != nil {
+			return fmt.Errorf("internet socket filter: %w", err)
+		}
+	}
 	return nil
 }
 
-// buildConfinedFilter is the filter a policy's EgressOnly stacks over the main
-// one. The connect gate sees connect(2) alone, so a confined child's internet
-// socket must be one whose only way to a peer is connect(2): TCP over a
-// stream. A datagram or raw socket reaches any address through sendto(2),
-// sendmsg(2) or sendmmsg(2), and SCTP or MPTCP over a stream can open an
-// association without connect(2), so socket(2) refuses them with EACCES. TCP
-// Fast Open connects a stream socket from sendto(2) or sendmsg(2), so
-// MSG_FASTOPEN on any of the three send calls is refused too; sendmsg(2)
-// takes its flags from the argument, never from the msghdr. socket(2) refuses
-// AF_UNIX as well: the gate passes a Unix connect through, and a resolver or
-// proxy daemon on a pathname socket would carry the child's traffic past it.
-// socketpair(2) is another syscall and stays: asyncio's self-pipe is a
-// socketpair, and the stub sends the gate's listener over a descriptor its
-// parent made, so neither needs socket(2).
+// filterRequired reports whether a policy may not run when the main filter
+// cannot be installed. Enforce mode says so outright. A confined egress, a
+// network grant and outside code each rest on the socket rules the internet
+// filter stacks over the main one, and that filter is installed only after the
+// main one: a body run without it would open SCTP, raw or TCP Fast Open
+// sockets the connect gate never sees, and set SO_LINGER, which is the
+// unfiltered network decision 0035 refuses in every mode but off. A body that
+// asks for none of them keeps the best-effort degradation the boot line
+// reported.
+func filterRequired(p Policy) bool {
+	return p.Require || len(p.EgressOnly) > 0 || p.Network || p.Outside
+}
+
+// filterRequiredWhy names the reason filterRequired gave, for the refusal.
+func filterRequiredWhy(p Policy) string {
+	switch {
+	case p.Require:
+		return "SUBSTRATE_SANDBOX=enforce"
+	case len(p.EgressOnly) > 0:
+		return "egress is confined"
+	case p.Outside:
+		return "outside code needs its socket filter"
+	default:
+		return "a network body needs its socket filter"
+	}
+}
+
+// buildInternetFilter is the socket filter a policy stacks over the main one
+// when it grants network, runs outside code or confines egress
+// (Policy.EgressOnly). The connect gate sees connect(2) alone, so an internet
+// socket the child can open must be one that reaches a new peer only through
+// connect(2), or, for a network body, a datagram socket, whose sendto(2) to an
+// unchecked address is the documented residual. socket(2) gives an internet
+// domain a TCP stream, and a network body a datagram socket too, and refuses
+// the rest with EACCES: SCTP over a stream or a sequenced-packet socket opens
+// an association from sendmsg(2) or a socket option, MPTCP is not the TCP the
+// gate emulates, and a raw socket writes its own headers. Outside code and a
+// confined child get the TCP stream alone. TCP Fast Open connects a stream
+// socket from sendto(2), sendmsg(2) or sendmmsg(2), so MSG_FASTOPEN on any of
+// the three is refused too; sendmsg(2) takes its flags from the argument,
+// never from the msghdr.
+//
+// A confined child opens no AF_UNIX socket either: a resolver or proxy daemon
+// on a pathname socket would carry its traffic, and no connect gate watches a
+// child granted no network. socketpair(2) is another syscall and stays:
+// asyncio's self-pipe is a socketpair, and the stub sends the gate's listener
+// over a descriptor its parent made, so neither needs socket(2).
+//
 // Every other domain and syscall falls through to the main filter's verdict,
-// which refuses a foreign architecture.
-func buildConfinedFilter() []sockFilter {
+// which refuses a foreign architecture and the x32 numbering.
+func buildInternetFilter(p Policy) []sockFilter {
 	const (
 		socketAt = 8
 		inetAt   = 12
-		flags3At = 18
-		flags2At = 20
-		allowAt  = 22
-		refuseAt = 23
+		streamAt = 16
+		flags3At = 19
+		flags2At = 21
+		allowAt  = 23
+		refuseAt = 24
 	)
+	confined := len(p.EgressOnly) > 0
+	datagram, unixSocket := refuseAt, allowAt
+	if p.Network && !p.Outside && !confined {
+		datagram = allowAt
+	}
+	if confined {
+		unixSocket = refuseAt
+	}
 	// to is always past from, and the program is short enough that no
 	// offset nears BPF's 255.
 	jump := func(from, to int) uint8 { return uint8(to - from - 1) }
@@ -248,19 +277,21 @@ func buildConfinedFilter() []sockFilter {
 		5: {Code: bpfJeqK, K: uint32(sysSendmmsg), JT: jump(5, flags3At)},
 		6: {Code: bpfJeqK, K: uint32(sysSendmsg), JT: jump(6, flags2At)},
 		7: {Code: bpfRetK, K: seccompRetAllow},
-		// socket(domain, type, protocol): an internet domain must be a TCP
-		// stream, and AF_UNIX is refused. The protocol is 0 or IPPROTO_TCP,
-		// either of which the kernel makes TCP for a stream.
+		// socket(domain, type, protocol): all three are integers the kernel
+		// truncates to int, so the low halves are the whole values.
 		socketAt:     {Code: bpfLdAbsW, K: sdArg0},
 		socketAt + 1: {Code: bpfJeqK, K: unix.AF_INET, JT: jump(socketAt+1, inetAt)},
 		socketAt + 2: {Code: bpfJeqK, K: unix.AF_INET6, JT: jump(socketAt+2, inetAt)},
-		socketAt + 3: {Code: bpfJeqK, K: unix.AF_UNIX, JT: jump(socketAt+3, refuseAt), JF: jump(socketAt+3, allowAt)},
+		socketAt + 3: {Code: bpfJeqK, K: unix.AF_UNIX, JT: jump(socketAt+3, unixSocket), JF: jump(socketAt+3, allowAt)},
 		inetAt:       {Code: bpfLdAbsW, K: sdArg1},
 		inetAt + 1:   {Code: bpfAndK, K: sockTypeMask},
-		inetAt + 2:   {Code: bpfJeqK, K: unix.SOCK_STREAM, JF: jump(inetAt+2, refuseAt)},
-		inetAt + 3:   {Code: bpfLdAbsW, K: sdArg2},
-		inetAt + 4:   {Code: bpfJeqK, K: 0, JT: jump(inetAt+4, allowAt)},
-		inetAt + 5:   {Code: bpfJeqK, K: unix.IPPROTO_TCP, JT: jump(inetAt+5, allowAt), JF: jump(inetAt+5, refuseAt)},
+		inetAt + 2:   {Code: bpfJeqK, K: unix.SOCK_STREAM, JT: jump(inetAt+2, streamAt)},
+		inetAt + 3:   {Code: bpfJeqK, K: unix.SOCK_DGRAM, JT: jump(inetAt+3, datagram), JF: jump(inetAt+3, refuseAt)},
+		// A stream's protocol is 0 or IPPROTO_TCP, either of which the kernel
+		// makes TCP.
+		streamAt:     {Code: bpfLdAbsW, K: sdArg2},
+		streamAt + 1: {Code: bpfJeqK, K: 0, JT: jump(streamAt+1, allowAt)},
+		streamAt + 2: {Code: bpfJeqK, K: unix.IPPROTO_TCP, JT: jump(streamAt+2, allowAt), JF: jump(streamAt+2, refuseAt)},
 		// sendto(2) and sendmmsg(2) carry their flags in arg3, sendmsg(2) in
 		// arg2. MSG_FASTOPEN sits in the low half.
 		flags3At:     {Code: bpfLdAbsW, K: sdArg3},
@@ -300,10 +331,11 @@ func retErrno(e unix.Errno) uint32 { return seccompRetErrno | (uint32(e) & 0x000
 //
 // Layout, so the relative jumps below are readable: a prologue that pins the
 // architecture, one compare per denied syscall, one compare per syscall with
-// an argument rule, the socket-domain block, one argument block per rule,
-// then the three terminal returns. Every compare jumps FORWARD, so no offset
-// ever exceeds the number of remaining instructions, which stays far below
-// BPF's 255-offset and 4096-instruction ceilings.
+// an argument rule, the setsockopt compare, the socket-domain block, one
+// argument block per rule, the SO_LINGER block, then the three terminal
+// returns. Every compare jumps FORWARD, so no offset ever exceeds the number of
+// remaining instructions, which stays far below BPF's 255-offset and
+// 4096-instruction ceilings.
 func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 	if auditArch == 0 {
 		return nil, fmt.Errorf("seccomp: no audit arch for this platform")
@@ -316,7 +348,7 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 	// leave AF_PACKET, and the container's default capability set carries
 	// CAP_NET_RAW, so a body could send and receive raw Ethernet frames and the
 	// network capability would bound nothing. AF_UNIX is always allowed here (it
-	// addresses nothing off the machine, and buildConfinedFilter refuses it
+	// addresses nothing off the machine, and buildInternetFilter refuses it
 	// under a confined egress); the internet families only when the
 	// manifest declared egress, and AF_NETLINK with them because glibc's
 	// resolver enumerates interfaces through it.
@@ -332,11 +364,16 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		signalBlocks += 2 + len(s.targets)
 	}
 	// Absolute indices of the blocks and the terminals.
-	const prologue = 5
+	const (
+		prologue    = 5
+		lingerBlock = 5 // ld level, jeq, ld optname, jeq, the refusal
+	)
 	dispatchAt := prologue + len(deny)
-	socketAt := dispatchAt + len(signals)
+	setsockoptAt := dispatchAt + len(signals)
+	socketAt := setsockoptAt + 1
 	blocksAt := socketAt + socketBlock
-	allowAt := blocksAt + signalBlocks
+	lingerAt := blocksAt + signalBlocks
+	allowAt := lingerAt + lingerBlock
 	epermAt := allowAt + 1
 	enosysAt := allowAt + 2
 	lastAt := enosysAt
@@ -394,6 +431,10 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(s.nr)})
 		block += 2 + len(s.targets)
 	}
+	if jt, err = jumpTo(setsockoptAt, lingerAt); err != nil {
+		return nil, err
+	}
+	prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(sysSetsockopt)})
 
 	base := socketAt
 	jf, err := jumpTo(base, allowAt)
@@ -430,6 +471,32 @@ func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 		}
 		prog = append(prog, sockFilter{Code: bpfRetK, K: seccompRetAllow})
 	}
+
+	// setsockopt(fd, SOL_SOCKET, SO_LINGER) is refused on every socket, in
+	// every body. The connect gate duplicates a body's socket to inspect or
+	// disconnect it, and a body that closes its own descriptor meanwhile makes
+	// the gate's duplicate the last one; with a linger time set, the gate's
+	// close then waits on a peer the body chose, and Close and the kill behind
+	// it wait on the gate. A body without network is refused too, because it
+	// can set the option on a network body's socket handed to it over a unix
+	// socket. level and optname are integers the kernel truncates to int, so
+	// the low halves are the whole values; both constants are this
+	// architecture's own (mips spells them differently).
+	notSocketLevel, err := jumpTo(lingerAt+1, allowAt)
+	if err != nil {
+		return nil, err
+	}
+	notLinger, err := jumpTo(lingerAt+3, allowAt)
+	if err != nil {
+		return nil, err
+	}
+	prog = append(prog,
+		sockFilter{Code: bpfLdAbsW, K: sdArg1},
+		sockFilter{Code: bpfJeqK, JT: 0, JF: notSocketLevel, K: unix.SOL_SOCKET},
+		sockFilter{Code: bpfLdAbsW, K: sdArg2},
+		sockFilter{Code: bpfJeqK, JT: 0, JF: notLinger, K: unix.SO_LINGER},
+		sockFilter{Code: bpfRetK, K: retErrno(unix.EACCES)},
+	)
 
 	prog = append(prog,
 		sockFilter{Code: bpfRetK, K: seccompRetAllow},
