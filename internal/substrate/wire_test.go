@@ -75,6 +75,14 @@ var wireTypes = map[string]any{
 	// the landing read their brand from it.
 	"SiteInfo": SiteInfo{},
 
+	// The operator's defaults and allowance (decision 0230): the console's
+	// Providers page reads them, so a field that moves here moves a card.
+	"OperatorDefaults":  OperatorDefaults{},
+	"OperatorInfo":      OperatorInfo{},
+	"OperatorAllowance": OperatorAllowance{},
+	"OperatorSpend":     OperatorSpend{},
+	"OperatorDefault":   OperatorDefault{},
+
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and
 	// the watch stream serialize; a field that moves here moves the console's
