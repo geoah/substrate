@@ -327,6 +327,9 @@ type fakeDataset struct {
 	// status reads; nil is the empty repository's empty list.
 	triggerStatuses []substrate.TriggerStatus
 	syncStatuses    []substrate.SyncStatus
+	// hostServices is the canned answer of HostServices; nil is a
+	// deployment with no host file and no provider rows.
+	hostServices *substrate.HostServices
 
 	// exportErr refuses Export before a point is pinned; exportFailMidway
 	// makes the stream fail after its first entry (export_test.go).
@@ -1587,3 +1590,12 @@ func sortedRecordIDs(m map[string]*substrate.Record) []string {
 var errBoom = errors.New("boom")
 
 func (d *fakeDataset) CompleteAppAddon(context.Context, string, string) error { return nil }
+
+func (d *fakeDataset) HostServices(context.Context) (substrate.HostServices, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.hostServices == nil {
+		return substrate.HostServices{Items: []substrate.HostService{}}, nil
+	}
+	return *d.hostServices, nil
+}

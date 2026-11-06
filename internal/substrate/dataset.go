@@ -304,6 +304,15 @@ type Dataset interface {
 	// CompleteAppAddon removes a waiting approval after the catalog installs
 	// its package. Repeating it or completing a revoked token is a no-op.
 	CompleteAppAddon(ctx context.Context, tokenID, packageID string) error
+
+	// --- host defaults (decision 0230) ---
+	// HostServices answers each service the repository uses that a host
+	// could supply (its llm/provider rows and its embeddings provider), each
+	// resolved by the same reads dispatch and the embed drain use, and the
+	// host's budget for the UTC day. On a deployment with no host file Host
+	// is nil and every item's source is own or none. Host.Name is the
+	// API's to fill from the site directory.
+	HostServices(ctx context.Context) (HostServices, error)
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

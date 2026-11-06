@@ -539,6 +539,14 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		if ctx.Err() != nil {
 			return failed(err)
 		}
+		if isHostBudget(err) {
+			// The host's allowance, not the endpoint: the refusal names the
+			// limit and the reset, and semantic mode returns it as is.
+			return nil, &semanticDown{
+				note: "The host's allowance for today is spent, so the query was not embedded and the hits are ranked by their words only.",
+				err:  err,
+			}
+		}
 		// The note and the error name the row and not the endpoint's words:
 		// the client scrubs the row's own key, but a gateway's error can quote
 		// a masked key of the provider behind it, and an answer reaches
@@ -778,6 +786,15 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 		var group []*embedJob
 		group, buying = d.nextGroup(buying)
 		if err := d.buy(ctx, group); err != nil {
+			if isHostBudget(err) {
+				// The host's allowance for the day is spent: the queue waits,
+				// as it does for a repository with no provider, and the next
+				// day's passes drain it. Not an error, so the drain loop does
+				// not log one every tick.
+				ds.svc.log.Debug("substrate: embed queue waits for the host's allowance",
+					"repository", ds.Repository().ID, "error", err)
+				return d.done, nil
+			}
 			return d.done, err
 		}
 	}

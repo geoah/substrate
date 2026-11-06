@@ -104,6 +104,10 @@ import (
 //     bookkeeping the changelog never carried. A rebuild replays the effects
 //     the keys answer for, so the keys stay valid; only a fresh database
 //     forgets them, which docs/api.md states.
+//   - host_spend_reservations: the host's ledger of what it paid for on this
+//     repository's behalf (hostspend.go, decision 0230). It is the host's
+//     data, never the repository's, so a rebuild or a restore leaves the
+//     day's allowance where it was.
 //   - repositories — the control plane, one row per repository.
 
 // RebuildReport is what one rebuild did.

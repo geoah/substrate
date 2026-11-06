@@ -1202,3 +1202,9 @@ func (s *scopedDataset) RecordAppBuild(ctx context.Context, packages map[string]
 func (s *scopedDataset) CompleteAppAddon(context.Context, string, string) error {
 	return errScope("completing add-on approvals")
 }
+
+// HostServices is the owner's: which services the host pays for, and the
+// day's budget, say nothing about the kinds a grant reads.
+func (s *scopedDataset) HostServices(context.Context) (substrate.HostServices, error) {
+	return substrate.HostServices{}, errScope("the host services read")
+}

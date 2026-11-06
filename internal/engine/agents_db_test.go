@@ -79,6 +79,7 @@ type fakeLLM struct {
 	scripts  map[string][]fakeTurn
 	requests map[string][]map[string]any
 	auths    []string // every Authorization header the server saw
+	headers  []http.Header
 	srv      *httptest.Server
 }
 
@@ -94,6 +95,13 @@ func (f *fakeLLM) authsSeen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.auths...)
+}
+
+// headersSeen is every request's headers, in arrival order.
+func (f *fakeLLM) headersSeen() []http.Header {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]http.Header(nil), f.headers...)
 }
 
 func (f *fakeLLM) script(model string, turns ...fakeTurn) {
@@ -121,6 +129,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	model, _ := req["model"].(string)
 	f.mu.Lock()
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
+	f.headers = append(f.headers, r.Header.Clone())
 	f.requests[model] = append(f.requests[model], req)
 	queue := f.scripts[model]
 	if len(queue) == 0 {

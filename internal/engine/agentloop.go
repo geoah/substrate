@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/strictjson"
@@ -335,6 +336,10 @@ type providerConfig struct {
 	// cacheTTL is the row's cache.ttl as the wire spells it; empty leaves it
 	// to the run's mode (agentLoop.cache).
 	cacheTTL string
+	// host is the host entry serving the row (hostprovider.go), nil for a row
+	// the person keyed. Every field above then came from it, and every call
+	// goes through the host gate (hostspend.go).
+	host *hostdefaults.LLM
 }
 
 // providerCacheTTLs maps the declared cache.ttl words onto the wire's TTLs:
@@ -426,13 +431,18 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve — create it, or key one of the seeded rows (openai, anthropic, gemini)",
 			substrate.ErrValidation, id)
 	}
+	// apiKey is secret-typed: the stored value is a ref into the sealed
+	// store, resolved here, at the one read that pays with it. An empty one
+	// on a row the host lists is the host's transport, taken whole: nothing
+	// else on the row is read (decision 0230).
+	storedKey, _ := row.Props["apiKey"].(string)
+	if entry := ds.hostEntryFor(id, storedKey); entry != nil {
+		return hostProviderConfig(entry), nil
+	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
 	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)
-	// apiKey is secret-typed: the stored value is a ref into the sealed
-	// store, resolved here, at the one read that pays with it.
-	storedKey, _ := row.Props["apiKey"].(string)
 	pc.cfg.APIKey, err = ds.openSecretValue(ctx, storedKey)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: open llm/provider %q apiKey: %w", id, err)
@@ -486,6 +496,10 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
+		if ds.svc.host != nil {
+			return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and the host's defaults serve no row of this id",
+				substrate.ErrValidation, id)
+		}
 		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
 			substrate.ErrValidation, id)
 	}
@@ -775,6 +789,11 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	ds.mu.RUnlock()
 	if wrap != nil {
 		client = wrap(provider.wire, client)
+	}
+	if provider.host != nil {
+		// Outermost, so every call the loop makes on this client (its turns,
+		// their retries, compaction and the thread title) reserves first.
+		client = newHostLLMClient(ds, provider, client)
 	}
 	if root {
 		in.tally = &agentTally{effects: map[string]int{}}
@@ -1865,10 +1884,11 @@ func (l *agentLoop) queryLimits(ctx context.Context) string {
 	words := "Search with one or two distinctive words (a name, a code, a number, a place), never a list of common words: " +
 		"common words match most of the repository, and the lexical ranking reads words, not meaning. "
 	semantic := ""
-	// The claim is what the ranked read resolves (search.go): no row
-	// declaring embedModel is a repository whose ranked reads are lexical.
-	if claims, err := embedClaims(ctx, l.ds.db); err == nil {
-		if len(claims) == 0 {
+	// The pair is what the ranked read resolves (search.go): no row
+	// declaring embedModel and no host embeddings entry is a repository whose
+	// ranked reads are lexical.
+	if pair, err := l.ds.embedPair(ctx, l.ds.db); err == nil {
+		if pair == nil {
 			semantic = "This repository has no embeddings provider, so q matches words only: semantic and hybrid fall back to lexical. "
 		} else {
 			semantic = "This repository has an embeddings provider, so hybrid (the default) also ranks by meaning. "

@@ -458,9 +458,25 @@ func (ds *dataset) spendOf(ctx context.Context, ag *vocabulary.Agent) (agentUSD,
 }
 
 // spendHold says why a root run of ag is held, or "" when it may run: the
-// agent's own cap first, then the repository's, compared in cents against
-// the spend, so a zero cap holds every run.
+// person's caps (personSpendHold), then the host's allowance where the
+// agent's provider row is host-backed (hostspend.go hostHold), whose text
+// opens with hostHeldPrefix.
 func (ds *dataset) spendHold(ctx context.Context, ag *vocabulary.Agent) (string, error) {
+	text, err := ds.personSpendHold(ctx, ag)
+	if err != nil || text != "" {
+		return text, err
+	}
+	text, err = ds.hostHold(ctx, ag)
+	if err != nil || text == "" {
+		return "", err
+	}
+	return hostHeldPrefix + text, nil
+}
+
+// personSpendHold says why a root run of ag is held at the person's own caps,
+// or "" when it may run: the agent's own cap first, then the repository's,
+// compared in cents against the spend, so a zero cap holds every run.
+func (ds *dataset) personSpendHold(ctx context.Context, ag *vocabulary.Agent) (string, error) {
 	agentCap := ag.Budgets.SpendCentsPerDay
 	repo, err := ds.spendRepo(ctx)
 	if err != nil {
@@ -516,6 +532,9 @@ func (ds *dataset) refuseAtSpendCap(ctx context.Context, ag *vocabulary.Agent) (
 	text, err := ds.spendHold(ctx, ag)
 	if err != nil {
 		return ctx, err
+	}
+	if errHostHeld(text) {
+		return ctx, hostRefusal(text)
 	}
 	if text != "" {
 		return ctx, spendRefusal(text)
