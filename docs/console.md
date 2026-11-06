@@ -19,7 +19,9 @@ The console is built around four things, and Home opens on one card for each:
 
 - **Your data**: the collections you keep, and the copies your providers
   bring in. A collection is every record of one kind.
-- **Providers**: the services that bring data in and keep it up to date.
+- **Providers**: the outside services the substrate spends a key on: the
+  accounts that bring data in, the tools your agents call and the AI models
+  they run on.
 - **Agents**: the assistants that work on your data, in a chat.
 - **Tools**: everything that can act on your data besides you, each saying
   what it may see and change and when it runs.
@@ -39,7 +41,8 @@ The sidebar holds, top to bottom: the repository name, which opens the account
 menu (**Account and settings**, **Appearance**, the **Technical details**
 switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
 the five places (**Home**, **All data**, **Agents**, **Tools**,
-**Providers**, with the number of providers added beside the last, and
+**Providers**, with the number of things [Providers](#providers) shows as
+set up beside the last, and
 [**Observations**](#observations) after All data where some kind records
 measurements),
 **Favorites**, the collections, and at the foot **History**, **Settings** and
@@ -156,9 +159,10 @@ The console's preferences follow the person: they live on one record,
 signed in to the repository looks the same
 ([0132](decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
 It carries the sidebar's folded groups and favorites (`collapsed`,
-`favorites`), each collection's saved views (`views`) and the layout settings (`recordWidth`, `tableWidth`, `density`,
-`technicalDetails`, `theme`, and the timeline's `connectGaps`), each optional, so an absent one is the console's
-own default. Whether the sidebar is open is a fact about one window, so it is
+`favorites`), each collection's saved views (`views`), the layout settings (`recordWidth`, `tableWidth`, `density`,
+`technicalDetails`, `theme`, and the timeline's `connectGaps`) and whether
+the [Providers](#providers) welcome was dismissed (`welcomeDismissed`), each
+optional, so an absent one is the console's own default. Whether the sidebar is open is a fact about one window, so it is
 kept in this browser alone and never written to the record, and a
 `sidebarOpen` an older console stored there is ignored. A change is a
 read-modify-write under `ifVersion`, retried against fresh state after a
@@ -179,8 +183,9 @@ nesting and grouping, its columns, and the Search page's ranking choice.
 ## Home
 
 **Home** (`/`) is what the substrate holds and what just happened: the four
-cards (how many collections and providers, the agents by name, how many tools
-and how many of them came from your providers), up to nine **Collections**
+cards (how many collections, how many things Providers shows as set up, the
+agents by name, how many tools and how many of them came from your
+providers), up to nine **Collections**
 with their record counts and where each comes from ("Yours", "From Google",
 "Made by _agent_" where an agent declared its package; yours first, those
 holding something leading, then what providers bring in), and **Recent
@@ -886,10 +891,11 @@ panel on the right.
   and applies the suggestion. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
-- **The panel** says what the agent can see, change and ask, what it is
-  always allowed to do (each rule with **Revoke**), which tools it uses, its
-  model and its provider, and links **Runs and permissions** to the agent's
-  page and **Edit agent** to its record; with Technical details on it adds
+- **The panel** says what the agent runs on (**Runs on OpenAI, gpt-5**, the
+  AI model linking to its card on [Providers](#providers)), what it can see,
+  change and ask, what it is always allowed to do (each rule with
+  **Revoke**) and which tools it uses, and links **Runs and permissions** to
+  the agent's page and **Edit agent** to its record; with Technical details on it adds
   the system prompt, each tool's reference, the grants and the budgets.
 
 The address names what is open: `?thread=<id>` opens one conversation,
@@ -910,13 +916,15 @@ tokens and the cost, and per run what started it, how it ended (and why, when
 it failed), its tokens and its cost. With Technical details on it adds the
 references and the declaration.
 
-The [`llm/provider`](agents.md#providers) rows are not on this page: an agent
-names one by id, its panel shows which, and a provider without a key says so
-where the conversation would otherwise fail, with **Add your _Provider_ key**,
-which writes the row's sealed `apiKey` as the record page would. The rows are the
+The [`llm/provider`](agents.md#providers) rows are the **AI models** on
+[Providers](#providers): an agent names one by id, its panel says which and
+links to its card, and an agent whose model has no key that resolves (its
+own, or the operator's) says so where the conversation would otherwise
+fail, with **Add your _Provider_ key**, which opens that card's key form
+(`/providers?model=<row id>`). The rows are the
 `substrate.reamde.dev/llm/provider` collection, and
 [registering one](agents.md#registering-a-provider) is an ordinary record
-write.
+write that adds a card.
 
 ## Tools
 
@@ -949,11 +957,67 @@ and one trigger's record page is the trigger.
 
 ## Providers
 
-**Providers** (`/providers`) is every service that can bring data in, one card
-each: the shipped catalog's [providers](bundles-catalog.md) joined with what
-this repository holds of them. A card says in one pill where the provider
-stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
-**Add**, and one line says what is true right now. **Needs attention** lists
+**Providers** (`/providers`) lists every outside service the substrate spends
+a key on, in three groups
+([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-spends-a-key-on.md)):
+
+- **Accounts you connect**: the shipped catalog's
+  [providers](bundles-catalog.md) that bring data in, joined with what this
+  repository holds of them, one card each.
+- **Tools for your agents**: providers whose package declares no account
+  kind and offers functions to agents
+  ([0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)).
+  Before such a package is added, the catalog does not say which of its
+  functions are offered, so a package with no kinds and some functions
+  stands in. The group is shown only when it has a card.
+- **AI models**: one card per [`llm/provider`](agents.md#providers) row,
+  the three seeded and any you made, titled by the row's label.
+
+Every card says what it gives you, whether it works, and, only where someone
+else could supply a key or a sign-in, whose it is: "Using _Site_'s key",
+"Using your key", "Through _Site_'s Google sign-in" (with the operator's own
+note where it wrote one, such as a Google sign-in still in testing), or
+"Using your sign-in details". A provider nobody else supplies a key for
+(Linear, Notion, Apple, Apple Health's incoming key) has no such line. The
+operator is the one running the deployment, named by its
+[site](operations.md) name (_Site_ here) or "this server"; what it supplies is read from
+`GET /api/v1/operator/defaults` ([the plan](plans/host-defaults.md)).
+
+An AI model card says **On** when a key resolves, **Set up** when none does
+and **Needs attention** when its calls fail, with the server's reason; never
+**Paused**, because a row has no off switch. Its key form opens in place and
+writes the row's sealed `apiKey`: **Use your own key** over the operator's,
+**Replace key** over your own, **Add key** where there is none, and **Use
+_Site_'s again** where your key replaced one the operator still offers,
+which asks first and deletes your key. Where the operator serves a row, the
+card names the models its key allows. The card that search by meaning runs
+through adds "Search by meaning: _Site_'s key" or "Search by meaning: your
+key"; choosing another row for it is a Technical details action, on the
+row's record. A seeded row you deleted is an **Add** card, which writes it
+back with the fields it was seeded with and no key. The row's record page is
+linked only with Technical details on. `?model=<row id>` scrolls to one card
+and opens its key form where it has no key.
+
+Where the operator pays for any of them, the **AI models** heading carries
+today's allowance: what it has spent of the day's limit, split by what spent
+it (chat, search by meaning, tools, sign-in), and when it resets, in your own
+time zone. Your own keys do not count against it, and it is separate from
+your own daily spend cap in [Settings](#settings). Where a tool runs on the
+operator's key, the **Tools for your agents** heading says "Counts toward
+today's allowance from _Site_". The allowance is never at the top of the page
+or over the accounts.
+
+Where the deployment loaded an operator defaults file (`server.json` lists
+the `operatorDefaults` feature), registering lands here instead of Home,
+unless registration began from an app's approval page or chose your own
+domain, which keep their return addresses. The page then opens with a
+welcome that says what works now on the operator's keys, which accounts wait
+on you, and that any key can be your own; **Done** dismisses it for every
+browser, through the [preference record](#layout-preferences).
+
+On an account's card, a pill says where the provider stands (**On**, **Set
+up**, **Needs attention**, **Paused**) or the card offers **Add**, and one
+line says what is true right now. **Needs attention** lists
 each reason under **Why it needs attention**: a provider that failed to load,
 an account whose sign-in stopped working, an account whose last sync failed,
 a gap in its setup, a trigger that cannot run, failed runs waiting to be
@@ -979,7 +1043,9 @@ after the run that answers it.
 With Technical details on, **Other packages** lists every other bundle the
 repository holds (imported samples, the seeded `llm` and `console` packages,
 anything applied directly) with its version, state, update and removal, and
-states any pending upgrade of the seeded packages.
+states any pending upgrade of the seeded packages. The `llm` package is
+listed there too: its rows are the AI model cards, but the package itself is
+machinery.
 
 A provider's page, `/providers/{authority}/{package}` (a provider is a bundle,
 and a bundle's id is its package), is where it is set up and where you come
@@ -1027,7 +1093,8 @@ offered where the server would refuse it, with the guard lines that say what
 to migrate. The same page serves any other package the repository holds, such
 as an imported sample, without the setup steps and accounts.
 
-The old addresses land here: `/registry` and `/connections` open Providers,
+The old addresses land here: `/registry`, `/connections` and `/services`
+open Providers,
 `/registry/{bundle id}` that bundle's page (a shipped sample's opens All
 data), `/connections/{authority}/{package}/{kind}/{id}` its provider's page at
 that account, and `/settings/{bundle id}` that page's Settings.
@@ -1440,6 +1507,10 @@ how many values are pending.
   compact; the height of a collection's rows and All data's), Technical
   details, and appearance (system, light, dark), saved as
   [layout preferences](#layout-preferences).
+- **Agents**: the daily spend cap every agent's runs share, in US dollars,
+  and what they spent in the last 24 hours. It is your own cap and separate
+  from the operator's allowance, which is on [Providers](#providers) over the
+  AI models.
 - **Account**: the repository name you sign in with, and the two credential
   changes: change your password, and replace your authenticator where the
   second factor is on. Both ask for your current password (and code) in the
