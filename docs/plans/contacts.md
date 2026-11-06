@@ -1,9 +1,10 @@
 # Contacts: one core kind for everyone the owner deals with
 
-Status: proposal, 2026-11-06. Line numbers are against `main` at `b9cf1ffc2`.
-Nothing here is implemented, and no decision record is written yet. Two design
-reviews of earlier drafts are folded in; what each changed is listed at the
-end.
+Status: proposal, 2026-11-06. Line numbers are against `main` at
+`b9cf1ffc2`. Nothing here is merged: step 1 is
+[#1210](https://github.com/geoah/substrate/pull/1210), with decision record
+0229. Two design reviews of earlier drafts are folded in; what each changed
+is listed at the end.
 
 ## The problem
 
@@ -40,17 +41,14 @@ and sharing between substrates later.
 - **A key/value place for dates** on the contact.
 - **Shipped views**: the Contacts collection opens on People, with tabs for
   the other types.
-- **The people sample is retired.** A repository that imported it is
-  migrated by its owner's agent, following the steps in the release notes.
-  Mneme is the testbed.
+- **The people sample is retired.** Nothing migrates a repository off it:
+  the release note says the official contacts kind exists and that users
+  should move to it (third round, below).
 - `jobTitle`, not `title`: `title` is reserved on every kind
   (`internal/vocabulary/load.go:1336`, decision 0016).
 
 Settled in a second round, the same day:
 
-- **The migration runs only when the owner's agent asks.** No repository
-  migration moves a repository at boot. A repository nobody migrates keeps
-  the sample and its mappings, and the core mappings stay held for it.
 - **No `lastContactAt` on the contact.** It stays on Mneme's own kind.
 - **The owner's own contact is `substrate.reamde.dev/core/contact/me`** (see
   [The owner's own contact](#the-owners-own-contact)).
@@ -58,6 +56,14 @@ Settled in a second round, the same day:
   [#1208](https://github.com/geoah/substrate/issues/1208): the
   `console/collectionview` kind, its seed and the console's tabs. The
   contacts work adds the six contact views once both land.
+
+Settled in a third round, the same day:
+
+- **No migration.** There is no move operation, no `substratectl contacts
+  migrate` and no repository migration. The release note says that
+  `substrate.reamde.dev/core/contact` is the official contacts kind and that
+  users should move to it; a repository that imported the people sample
+  keeps its people kinds and records, and moves when its owner chooses.
 
 ## Prior art
 
@@ -226,9 +232,8 @@ Choices worth a sentence each:
   it. Changing the pattern later is a narrowing, refused while a stored value
   fails it, so the first pattern must be right.
 - **Ids.** Contacts are minted by the server. PR 1199 (open) would make every
-  non-internal kind a minted-id collection. The migration below carries the
-  sample's existing 12-character ids; that stays legal, because the move
-  writes as the engine and PR 1199's guard judges only new creates.
+  non-internal kind a minted-id collection, so a person or an agent creates a
+  contact without choosing its id; the engine still writes `contact/me`.
 
 ### Making a core kind visible
 
@@ -412,17 +417,15 @@ door, the catalog prunes on its own path, and mapping resolution refuses an
 absent source.
 
 **Proposed: core ships the mappings, and each is held back while its
-provider is not installed, or while the repository holds a mapping from the
-same source onto a kind named `people/person` under any authority.** The
-second condition keeps a repository that still runs the people sample, or a
-fork of it such as Mneme's, from minting a duplicate contact beside every
-person it already links. It names the old target on purpose: a mapping from
-`github/user` onto an owner's own `developer` kind is legal beside the core
-one (0049 item 2) and must not hold it. Nothing is stored: the registry
-recomputes which mappings are held whenever it is built, at every open and
-after every install, apply and move. The other way out (each provider
-declares its own mapping onto `core/contact`, amending 0049 and the loader
-check) spreads the same rule over every provider.
+provider is not installed.** Nothing is stored: the registry recomputes which
+mappings are held whenever it is built, at every open and after every install
+and apply. A repository that still runs the people sample, or a fork of it
+such as Mneme's, gets both: its own mapping fills the mirror's `person` slot
+and the core one fills the `contact` slot, which 0049 item 2 allows (one
+mapping per source kind and subject property). Its contacts fill in beside
+its people, so moving to contacts is a matter of switching what it reads. The
+other way out (each provider declares its own mapping onto `core/contact`,
+amending 0049 and the loader check) needs the same hold in every provider.
 
 | From | Match | Notes |
 | --- | --- | --- |
@@ -455,122 +458,67 @@ promotion). Making them declarative (a mapping that sets a constant,
 translates values or moves the subject's state on link) is new dialect and
 gets its own record.
 
-## Migration
+## Retiring the people sample
 
-### What the move must do
+There is no migration. `samples.substrate.reamde.dev/people` (`person`,
+`organization`, `team` and its four mappings) is deleted from `samples/`, as
+0192 did for the observation samples, so it can no longer be imported. The
+calendar, messaging and tasks samples get new versions that pin
+`substrate.reamde.dev/core/contact` where they pinned `people/person` (for
+example `samples/calendar/calendarevent.yaml:85`,
+`samples/tasks/task.yaml:137`) and no longer require the people sample.
+About 100 Go and console files name the people sample (tests, fixtures, docs
+examples); each moves to `core/contact` in the same change.
 
-A repository that imported `samples.substrate.reamde.dev/people` holds
-`<authority>/people/person`, `organization` and `team`. The sample ships four
-mappings onto `person` (`samples/people/bundle.yaml`), and the calendar,
-messaging and tasks samples pin `person` in their references (for example
-`samples/calendar/calendarevent.yaml:85`, `samples/tasks/task.yaml:137`) and
-require the people sample in their bundles.
-
-| From | To |
-| --- | --- |
-| `person` | `contact`, `contactType: person`, same id |
-| `person.name`, `emails`, `phones`, `pronouns`, `details`, `prominence` | same names |
-| `person.displayName` | `nickname`, only where it differs from `name` |
-| `person.memberOf` (organizations) | `memberOf`, pointing at the moved organizations |
-| the sample's enum of how a person relates (six values, `unknown` included) | `memberOf` a group contact per value in use (Friends, Acquaintances, Family, Coworkers, Public figures); `unknown` and absent add nothing |
-| `organization` | `contact`, `contactType: organization`; `domain` becomes a `urls` entry, `https://` prefixed |
-| `team` | `contact`, `contactType: group`; `groupEmail` to `emails`, `details` kept; each member gets `memberOf` it, leads with `role: lead`; `parent` becomes the group's own `memberOf` |
-| each mirror's `person` slot | its `contact` slot, same subject |
-| the four people mappings | deleted |
-| the core mappings onto `contact` | activated |
-| calendar, messaging and tasks declarations pinning `person` | their new versions, pinning `core/contact` |
-
-`movedFrom` (decision 0078) cannot do this. It moves only between kinds of
-one authority, and an imported sample lives under the repository's own. It
-also refuses an old kind that a mapping names or that declares a subject
-reference, a dropped property, and a reference declaration left pinned at the
-old kind; every one of those is in the table. An agent writing new records
-cannot keep the ids either once PR 1199 lands.
-
-**Proposed: a move operation the owner's agent calls**, built on 0078's
-machinery: same ids, manager rows, labels and history carried, references
-repointed and the old rows tombstoned, all in one transaction, with a preview
-first. Beyond 0078 it:
-
-- is requested with the owner's token, not run by the boot upgrade;
-- takes a property map: rename, drop, set a constant, and turn a dropped
-  enum's values into `memberOf` a named group;
-- deletes the mappings onto the old kind, carries each mirror's slot to the
-  new one, and activates the new kind's held mappings;
-- admits the new versions of the declarations that pin the old kind in the
-  same transaction, which 0078 refused at the apply door because that door
-  publishes its candidate registry before any rewrite runs.
-
-Turning teams into memberships is ordinary writes the agent makes after the
-move. Classifying minted contacts as bots or groups is too.
-
-### Retiring the sample
-
-The catalog has no "retired" state for a sample; decision 0055 retires names
-inside a declared package. The sample is deleted from `samples/`, as 0192 did
-for the observation samples, so it can no longer be imported. About 100 Go
-and console files name the people sample (tests, fixtures, docs examples);
-each moves to `core/contact` in the same change.
+A repository that imported the people sample keeps its
+`<authority>/people/*` kinds, records and mappings: they are its own copies,
+and nothing deletes or rewrites them. Its imported calendar, messaging and
+tasks samples are offered their new versions, and that upgrade is refused
+while records still point at `person`, because the new pin is a narrowing.
+The owner moves those references to contacts first, by hand or through an
+agent, or keeps the old versions.
 
 ### The release note
 
-The release that ships the kind carries this `BREAKING CHANGE:` footer, which
-release-please prints under BREAKING CHANGES. Command names are placeholders
-until the operation exists; the PR that builds it replaces them.
+Removing a sample from the catalog breaks `substratectl import
+samples.substrate.reamde.dev/people` and the requirement the old tasks
+sample declares, so the change that removes it is a break, and its
+`BREAKING CHANGE:` footer is the note:
 
 ```text
-BREAKING CHANGE: `substrate.reamde.dev/core/contact` replaces the people
-sample. `samples.substrate.reamde.dev/people` (person, organization, team) is
-removed from the catalog. A repository that imported it keeps working, but
-gets no contact mappings until it is migrated. To migrate, have your agent:
-1. Take a backup: `substratectl export -o backup.tar`.
-2. Re-pin every package of your own that references
-   `<authority>/people/person`, `organization` or `team` to
-   `substrate.reamde.dev/core/contact`, in a new version; step 4 refuses
-   while one still pins the old kinds.
-3. Preview: `substratectl contacts migrate --preview`. It lists every person,
-   organization and team row, what each property becomes, the groups it
-   creates for the how-they-relate values, and every reference it repoints.
-4. Apply: `substratectl contacts migrate`. Rows keep their ids; calendar,
-   messaging and tasks records point at contacts; the contact mappings start.
-5. For each former team, add `memberOf` to its members (`role: lead` for its
-   leads).
-6. Read the contacts with no `contactType` and set `bot` or `group` where the
-   address is a bot, a list or a shared mailbox.
-Rollback: the move cannot be undone in place. Ask your server's operator to
-restore `backup.tar` as docs/operations.md "Restore" describes: into a data
-root whose database holds no row for this repository, then `repository
-verify`. Extracting it over a live repository is not a rollback.
+BREAKING CHANGE: `substrate.reamde.dev/core/contact` is now the official
+contacts kind: a person, a business, a group or a bot, and every
+provider's contact, member and user record links to it. The people sample
+(`samples.substrate.reamde.dev/people`) is removed from the catalog, and the
+calendar, messaging and tasks samples now point at `core/contact`. Move to
+`core/contact`. A repository that imported the people sample keeps its
+people kinds and records; nothing moves or deletes them. Its calendar,
+messaging and tasks samples upgrade once no record of theirs points at a
+person any more. Rollback: an older binary still serves the people sample.
 ```
 
-### Mneme, the testbed
+### Mneme
 
-Mneme forked the sample, so its migration is the same operation with its own
-property map, driven by its agent. Before the move, the agent transitions
-every `notaperson` row (the new kind refuses the state) to `hidden` or
-`utility` and records which were `notaperson`, so it can set `contactType`
-after. What Mneme has, and where each piece goes:
+Mneme forked the sample and moves to `core/contact` on its own schedule. The
+core mappings fill its contacts beside its people from the first release.
+Where each part of Mneme's people package would go:
 
-| Mneme | After |
+| Mneme | On `core/contact` |
 | --- | --- |
-| `person` name, emails, phones, pronouns, details | the same properties on `contact` |
+| `person` name, emails, phones, pronouns, details | the same properties |
 | `person.displayName` | `nickname` only where it differs from `name`: Mneme's Google, Apple and Linear mappings write the full name there, and GitHub's writes the login |
-| the enum of how a person relates | group contacts and `memberOf`, by the move's property map |
+| the enum of how a person relates | group contacts and `memberOf` |
 | `prominence` `utility`, `known`, `hidden` | the same states |
-| `prominence: notaperson` | `contactType: bot` or `group`, decided per contact by the agent; not every one is a bot |
+| `prominence: notaperson` | `contactType: bot` or `group`, per contact; not every one is a bot |
 | `memberOf`, `role`, `employer` | `memberOf`, `jobTitle`, `organizationName` |
 | `birthday` | `dates.birthday` |
-| `location`, `timezone` | no home on the contact; stay on Mneme's own kind |
+| `location`, `timezone` | no home on the contact; Mneme's own kind |
 | `lastContactAt`, `lastContactVia`, `cadenceDays`, `owedByOwner`, `owedToOwner` | a Mneme kind with one record per contact, written by `standing` |
 | `organization` | a contact of type `organization` |
 | `team` | a contact of type `group`; `organization` becomes its `memberOf`, `groupEmail` an `emails` entry |
-| `commitment`, `forgotten`, `voiceprint` | stay Mneme kinds; their `person` references re-pin to `core/contact` |
-| `standing`, `teamsfromwork`, `owneridentity`, `promotecontact`, `promoteapplecontact` | stay Mneme functions, rewritten against `contact` |
-| eight mappings onto `person` (Apple, Beeper, GitHub, Google contact, Google address, Linear, Notion, Slack) | deleted by the move; core's mappings cover all but Notion's |
-| 39 files naming `people/person` (capture, memory, surfaces, rollup, reflection, commerce, tasks) | re-pinned before the move |
-
-Mneme loses nothing it cannot keep in its own kinds. What moves out of the
-person row is what only Mneme computes.
+| `commitment`, `forgotten`, `voiceprint` | Mneme kinds whose `person` reference re-pins to `core/contact` |
+| `standing`, `teamsfromwork`, `owneridentity`, `promotecontact`, `promoteapplecontact` | Mneme functions, rewritten against `contact` |
+| eight mappings onto `person` (Apple, Beeper, GitHub, Google contact, Google address, Linear, Notion, Slack) | core's mappings cover all but Notion's |
 
 ## Decisions this needs
 
@@ -581,37 +529,26 @@ implementation merges:
    generic merge treat it as owner data, and the owner's own contact is
    `contact/me`, written by the engine.
 2. Core declares mappings from provider kinds, held back while the provider
-   is absent or a mapping from the same source targets a `people/person`
-   kind, recomputed whenever the registry is built.
-3. A kind move on the owner's request, with a property map, the mappings and
-   pinning declarations carried in the same transaction (extends 0078).
-4. A collection's shipped saved views are records of a seeded console kind
+   is absent, recomputed whenever the registry is built.
+3. A collection's shipped saved views are records of a seeded console kind
    (a sibling of 0166), written by #1208.
-5. The people sample is removed from the catalog.
+4. The people sample is removed from the catalog, with no migration.
 
 ## Steps
 
 Each step is one pull request against `main`. A merge releases nothing, so
-steps 1 to 4 reach a release together; each is safe on `main` alone.
+steps 1 to 3 reach a release together; each is safe on `main` alone.
 
 1. Decision record 1. The `contact` kind in core with its three exceptions
-   (console, shipped-purpose test, merge) and the `contact/me` seed.
-   Additive: nothing maps onto the kind yet.
-2. Decision record 2 and the held mappings. A repository that imported the
-   people sample keeps its own mappings, and the core ones stay held.
-3. Decision record 3, the move operation with its preview, and
-   `substratectl contacts migrate`, tested against a repository that
-   imported the people sample.
-4. Decision record 5, with the footer above: calendar, messaging and tasks
+   (console, shipped-purpose test, merge) and the `contact/me` seed
+   ([#1210](https://github.com/geoah/substrate/pull/1210)). Additive:
+   nothing maps onto the kind yet.
+2. Decision record 2 and the core mappings, held while their provider is
+   absent.
+3. Decision record 4, with the footer above: calendar, messaging and tasks
    sample versions that pin `core/contact` and no longer require people, and
-   the people sample removed. Until this lands, a fresh repository importing
-   tasks also imports people, and the core mappings stay held for it. A
-   repository that imported the old samples is offered their upgrade, which
-   waits for the migration: the new pin is a narrowing while records still
-   point at `person`.
-5. The six contact views, after #1208 lands.
-6. Mneme migrated by its agent against a copy of the owner's repository
-   first, then the live one.
+   the people sample removed.
+4. The six contact views, after #1208 lands.
 
 ## Reviews
 
@@ -630,4 +567,5 @@ steps 1 to 4 reach a release together; each is safe on `main` alone.
   the console views and the rewrite added: the record seed, the console's
   `exists` filter and remembered All, the narrower hold rule, shipping the
   sample repins in the same release as the kind, and an operator restore as
-  the rollback.
+  the rollback. The owner then dropped the migration, which removed the
+  move operation and the hold on the people sample's mappings.
