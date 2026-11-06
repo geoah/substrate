@@ -376,7 +376,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("view = state %q hash %q, %d details, %d rows", v.State, v.PlanHash, len(v.Details), len(v.Setup))
 	}
 	apple := v.Setup[0]
-	if apple.Action != substrate.SetupInstall || apple.Package.Tier != substrate.TierProvider || apple.Package.Shipped != 3 ||
+	if apple.Action != substrate.SetupInstall || apple.Package.Tier != substrate.TierProvider || apple.Package.Shipped != 4 ||
 		apple.Package.Held != 0 || apple.Package.Required != 3 || len(apple.Package.Kinds) == 0 || len(apple.Package.Functions) != 0 {
 		t.Fatalf("apple row = %+v %+v", apple, apple.Package)
 	}
@@ -636,7 +636,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 		t.Fatalf("token scope = %q, want the webhook's", res.Scope)
 	}
 	got := res.AuthorizationDetails
-	if len(got) != 4 || got[0].Version != 3 || got[1].Version != 5 || got[2].Kind != healthAccount || got[2].ID != syncAccountID ||
+	if len(got) != 4 || got[0].Version != 4 || got[1].Version != 5 || got[2].Kind != healthAccount || got[2].ID != syncAccountID ||
 		got[2].Properties != nil || got[3].URL != "https://substrate.example.com/webhooks/"+fakeRepository+"/"+healthWebhook {
 		t.Fatalf("authorization_details = %+v", got)
 	}
@@ -654,7 +654,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 			t.Fatalf("row %d after the set up = %+v", i, row)
 		}
 	}
-	if v.Setup[0].Package.Held != 3 || v.Setup[3].Webhook.Keyed != true {
+	if v.Setup[0].Package.Held != 4 || v.Setup[3].Webhook.Keyed != true {
 		t.Fatalf("rows after the set up = %+v %+v", v.Setup[0].Package, v.Setup[3].Webhook)
 	}
 	if v.Previous == nil || !slices.Contains(v.Previous.Scopes, "webhook:"+healthWebhook) {
@@ -1162,7 +1162,7 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 			t.Fatalf("row %d = %+v", i, row)
 		}
 	}
-	if p := got.Setup[0].Package; p.Held != 3 || p.Shipped != 3 || p.Kinds != nil || p.Requires != nil || p.Tier != "" {
+	if p := got.Setup[0].Package; p.Held != 4 || p.Shipped != 4 || p.Kinds != nil || p.Requires != nil || p.Tier != "" {
 		t.Fatalf("a package row carries %+v, want versions alone", p)
 	}
 	if w := got.Setup[3].Webhook; w.Enabled || w.Keyed || w.Package != appleHealthPkg {
