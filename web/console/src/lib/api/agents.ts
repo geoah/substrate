@@ -56,8 +56,9 @@ export function providerEndpoint(record: SubstrateRecord): string {
 }
 
 /** Whether a provider row carries its own key. A secret-typed property reads
- * back redacted, so set / not set is the only question the console can answer;
- * every row needs its own, because there is no host key. */
+ * back redacted, so set / not set is the only question the console can answer.
+ * A row runs on its own key, or on the operator's where the server supplies
+ * one for that row id (`GET /api/v1/operator/defaults` says which). */
 export function providerHasKey(record: SubstrateRecord): boolean {
   const key = record.properties.apiKey
   return typeof key === "string" && key !== ""

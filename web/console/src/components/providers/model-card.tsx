@@ -3,9 +3,11 @@
  * attention; a row has no off switch, so never Paused), and whose key it
  * runs on. The key form opens in place: **Use your own key** over the
  * operator's, **Replace key** over your own, **Add key** where there is
- * none, and **Use _operator_’s again** where your key replaced one the
- * operator still offers. The row's record page is a Technical details
- * link only.
+ * none, and **Use _operator_’s key again** where your key replaced one the
+ * operator still offers. Until the operator's read answers, or where it
+ * failed, the card says so in a neutral pill and never Set up: a row with no
+ * key of its own may still be the operator's. The row's record page is a
+ * Technical details link only.
  *
  * A seeded row the person deleted is an Add card, which writes the row back
  * from the seed's fields with no key: the seed is create-only and never
@@ -42,13 +44,14 @@ import {
   type ModelState,
   type OperatorWords,
 } from "@/lib/operator-defaults"
-import { andList } from "@/lib/providers"
 import { cn } from "@/lib/utils"
 
 const STATE: Record<ModelState, { word: string; tone: PillTone }> = {
   on: { word: "On", tone: "ok" },
   setup: { word: "Set up", tone: "warn" },
   attention: { word: "Needs attention", tone: "bad" },
+  checking: { word: "Checking", tone: "neutral" },
+  unchecked: { word: "Couldn’t check", tone: "neutral" },
 }
 
 /** The element id a card is scrolled to by: `?model=<row id>`. */
@@ -144,13 +147,13 @@ function UseOperatorAgain({
   })
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Use {words.possessive} again
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        Use {words.possessive} key again
       </Button>
       <ConfirmDialog
         open={open}
         title={`Use ${words.possessive} ${name} key again?`}
-        consequence={`Your ${name} key is deleted, and your agents call ${name} with ${words.possessive} key, within its daily allowance. You can add your own key again at any time.`}
+        consequence={`This deletes your ${name} key. Your agents then call ${name} with ${words.possessive} key, which counts toward today’s allowance. You can add your own key again at any time.`}
         confirm={`Use ${words.possessive} key`}
         destructive
         pending={clear.isPending}
@@ -166,7 +169,8 @@ function UseOperatorAgain({
 }
 
 /** The key button's words and the form's mode, from where the key comes
- * from now. */
+ * from now. A source nobody can tell yet adds a key: what that says is true
+ * whoever's key the row runs on. */
 function keyAction(key: ModelKey): { label: string; mode: KeyFormMode } {
   if (key.source === "operator")
     return { label: "Use your own key", mode: "switch" }
@@ -196,10 +200,16 @@ export function ModelCard({
   const [editing, setEditing] = useState(
     Boolean(focused) && key.state === "setup"
   )
+  // A card an agent's link names opens its form once it is known to have no
+  // key; a card still checking learns that after it mounts.
+  const [checked, setChecked] = useState(key.state !== "checking")
+  if (!checked && key.state !== "checking") {
+    setChecked(true)
+    if (focused && key.state === "setup") setEditing(true)
+  }
   const state = STATE[key.state]
   const whose = modelWhoseKey(key, words)
   const action = keyAction(key)
-  const models = key.models?.length ? andList(key.models) : undefined
   return (
     <CardShell rowId={row.id} focused={focused}>
       <div className="flex items-center gap-2.5">
@@ -207,8 +217,7 @@ export function ModelCard({
         <Pill tone={state.tone}>{state.word}</Pill>
       </div>
       <p className="text-[12.5px] text-muted-foreground">
-        Chat models for your agents
-        {models ? `: ${models}` : ""}.
+        Chat models for your agents.
       </p>
       {whose && <p className="text-[12.5px]">{whose}</p>}
       {key.message && (
@@ -287,7 +296,7 @@ export function AddModelCard({
         </Button>
       </div>
       <p className="text-[12.5px] text-muted-foreground">
-        Chat models for your agents. You removed it.{" "}
+        Chat models for your agents. This one was removed.{" "}
         {operatorOffers
           ? `Add it back and ${words.possessive} key covers it again.`
           : "Add it back, then add a key."}

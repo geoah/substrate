@@ -8,6 +8,7 @@
  * deployment set none: never a deployment's or a person's name written
  * here. */
 
+import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { providerName } from "@/lib/agent-chat"
 import { capWords } from "@/lib/agent-runs"
 import { providerHasKey } from "@/lib/api/agents"
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/api/types"
 import { LLM_PACKAGE } from "@/lib/core-kinds"
 import { shortTime } from "@/lib/format"
+import { andList } from "@/lib/providers"
 
 /** The kind every AI model card's row is a record of. */
 export const LLM_PROVIDER_KIND = `${LLM_PACKAGE}/provider`
@@ -89,13 +91,16 @@ export function modelName(
   return providerName(row.id)
 }
 
-/** The pill an AI model card wears. Never Paused: a row has no off switch. */
-export type ModelState = "on" | "setup" | "attention"
+/** The pill an AI model card wears. Never Paused: a row has no off switch.
+ * `checking` while the operator's read has not answered, `unchecked` where
+ * it failed: a row without a key of its own may be the operator's, so
+ * neither says Set up. */
+export type ModelState = "on" | "setup" | "attention" | "checking" | "unchecked"
 
 export interface ModelKey {
   state: ModelState
-  /** Where the key comes from now. */
-  source: OperatorDefaultSource
+  /** Where the key comes from now; undefined while that cannot be told. */
+  source?: OperatorDefaultSource
   /** The operator serves this row, so deleting your own key falls back to
    * theirs. */
   operatorOffers: boolean
@@ -106,9 +111,9 @@ export interface ModelKey {
 }
 
 /** Where one AI model row's key comes from and whether it works: the
- * operator read's item where there is one, else the row's own `apiKey`. A
- * key that resolves is On, none is Set up, and a key whose calls fail
- * (`failing`) Needs attention. */
+ * operator read's item where there is one, else the row's own `apiKey` (a
+ * server older than the read). A key that resolves is On, none is Set up,
+ * and a key whose calls fail (`failing`) Needs attention. */
 export function modelKey(
   row: SubstrateRecord,
   item: OperatorDefault | undefined
@@ -136,13 +141,39 @@ export function modelKey(
   }
 }
 
-/** "Using Crane’s key", "Using your key"; nothing where no key resolves. */
+/** One row's key while the operator's read has not answered or failed. A
+ * key of its own is the row's, because the operator's is used only where the
+ * row holds none; without one, nobody can say yet whose it would be. */
+export function uncheckedKey(
+  row: SubstrateRecord,
+  state: "checking" | "unchecked"
+): ModelKey {
+  return {
+    state,
+    source: providerHasKey(row) ? "own" : undefined,
+    operatorOffers: false,
+  }
+}
+
+/** Whether a key in this state resolves: true for On and Needs attention,
+ * false for Set up, undefined while it cannot be told. */
+export function stateResolves(state: ModelState): boolean | undefined {
+  if (state === "on" || state === "attention") return true
+  if (state === "setup") return false
+  return undefined
+}
+
+/** "Using Crane’s key, for gpt-5 and gpt-5-mini.", "Using your key";
+ * nothing where no key resolves or nobody can say whose it is. */
 export function modelWhoseKey(
-  key: Pick<ModelKey, "source" | "state">,
+  key: Pick<ModelKey, "source" | "state" | "models">,
   words: OperatorWords
 ): string | undefined {
   if (key.state === "setup") return undefined
-  if (key.source === "operator") return `Using ${words.possessive} key`
+  if (key.source === "operator")
+    return key.models?.length
+      ? `Using ${words.possessive} key, for ${andList(key.models)}.`
+      : `Using ${words.possessive} key`
   if (key.source === "own") return "Using your key"
   return undefined
 }
@@ -275,8 +306,21 @@ export function percentOf(cents: number, centsPerDay: number): number {
 
 // ── the welcome ─────────────────────────────────────────────────────────────
 
+/** What a tool does, in the words its card and the welcome name it by:
+ * never the vendor's name, which says nothing to someone who has not used
+ * it. */
+const TOOL_WORDS: Record<string, string> = {
+  [`${PROVIDERS_AUTHORITY}/firecrawl`]: "web search",
+}
+
+/** "web search" for the Firecrawl provider; undefined for a package with no
+ * words here. */
+export function toolWords(pkg: string | undefined): string | undefined {
+  return pkg ? TOOL_WORDS[pkg] : undefined
+}
+
 /** What the welcome says works now: the operator-served slots that are
- * ready, in words ("chat", "search by meaning", a tool's label), and the
+ * ready, in words ("chat", "search by meaning", what a tool does), and the
  * accounts the operator's sign-in waits on the reader to connect. */
 export function welcomeFacts(items: readonly OperatorDefault[]): {
   works: string[]
@@ -290,7 +334,8 @@ export function welcomeFacts(items: readonly OperatorDefault[]): {
     if (item.source !== "operator" || item.readiness !== "ready") continue
     if (item.slot === "llm") add("chat")
     else if (item.slot === "embeddings") add("search by meaning")
-    else if (item.slot === "function") add(item.label)
+    else if (item.slot === "function")
+      add(toolWords(itemPackage(item)) ?? "tools for your agents")
   }
   const connect = items
     .filter(

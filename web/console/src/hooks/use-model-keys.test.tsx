@@ -2,8 +2,9 @@
 /** Where an AI model row's key comes from, read once for every surface that
  * asks: an agent's "can it answer yet" and the count beside Providers in the
  * sidebar and on Home. A row with no key of its own still resolves where
- * the operator serves it; the operator's read is asked for only where
- * server.json lists `operatorDefaults`. */
+ * the operator serves it. The operator's read is asked whatever server.json
+ * lists; only a server older than it falls back to the rows' own keys, and
+ * while it fails nothing is counted or said to be missing. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
@@ -40,11 +41,27 @@ function status(authority: string, pkg: string) {
   }
 }
 
+const SERVED = {
+  operator: { name: "Crane" },
+  items: [
+    {
+      id: "llm/anthropic",
+      slot: "llm",
+      label: "Anthropic",
+      source: "operator",
+      operatorOffers: true,
+      readiness: "ready",
+    },
+  ],
+}
+
 let features: string[] = []
+let answer: unknown = SERVED
 const asked: string[] = []
 
 beforeEach(() => {
   features = []
+  answer = SERVED
   asked.length = 0
   vi.stubGlobal(
     "fetch",
@@ -55,20 +72,15 @@ beforeEach(() => {
         return Response.json({
           features: features.map((name) => ({ name, stability: "beta" })),
         })
-      if (url === "/api/v1/operator/defaults")
-        return Response.json({
-          operator: { name: "Crane" },
-          items: [
-            {
-              id: "llm/anthropic",
-              slot: "llm",
-              label: "Anthropic",
-              source: "operator",
-              operatorOffers: true,
-              readiness: "ready",
-            },
-          ],
-        })
+      if (url === "/api/v1/operator/defaults") {
+        if (answer === "network") throw new TypeError("Failed to fetch")
+        if (typeof answer === "number")
+          return Response.json(
+            { error: { code: "internal", message: "the read failed" } },
+            { status: answer }
+          )
+        return Response.json(answer)
+      }
       if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
         return Response.json({
           items: [
@@ -102,6 +114,14 @@ function Probe() {
     <dl>
       <dt>anthropic</dt>
       <dd data-testid="anthropic">{String(keys.resolves("anthropic"))}</dd>
+      <dt>anthropic state</dt>
+      <dd data-testid="anthropic-state">
+        {keys.rows
+          ? keys.keyOf(keys.rows.find((r) => r.id === "anthropic")!).state
+          : ""}
+      </dd>
+      <dt>error</dt>
+      <dd data-testid="error">{inUse.error?.message ?? ""}</dd>
       <dt>count</dt>
       <dd data-testid="count">{String(inUse.count)}</dd>
       <dt>models</dt>
@@ -132,12 +152,60 @@ describe("useModelKeys and useProvidersInUse", () => {
     expect(screen.getByTestId("models").textContent).toBe("OpenAI, Anthropic")
   })
 
-  it("read a row's own key alone where server.json lists no operatorDefaults", async () => {
+  it("ask the operator read though server.json lists no operatorDefaults, and count what it says", async () => {
+    // A deployment with no defaults file still answers: the row's own key
+    // is refused by the server, so the page shows it as Set up.
+    answer = {
+      items: [
+        {
+          id: "llm/openai",
+          slot: "llm",
+          label: "OpenAI",
+          source: "own",
+          operatorOffers: false,
+          readiness: "not-set-up",
+          message: "openai: baseURL is not an https URL",
+        },
+      ],
+    }
     renderProbe()
     await waitFor(() =>
-      expect(screen.getByTestId("count").textContent).toBe("3")
+      expect(screen.getByTestId("count").textContent).toBe("2")
     )
-    expect(screen.getByTestId("anthropic").textContent).toBe("false")
-    expect(asked).not.toContain("/api/v1/operator/defaults")
+    expect(asked).toContain("/api/v1/operator/defaults")
+    expect(screen.getByTestId("models").textContent).toBe("")
   })
+
+  it.each([404, 405, 501])(
+    "read a row's own key alone where the server answers the operator read %i",
+    async (status) => {
+      answer = status
+      renderProbe()
+      await waitFor(() =>
+        expect(screen.getByTestId("count").textContent).toBe("3")
+      )
+      expect(screen.getByTestId("anthropic").textContent).toBe("false")
+      expect(screen.getByTestId("anthropic-state").textContent).toBe("setup")
+      expect(screen.getByTestId("error").textContent).toBe("")
+    }
+  )
+
+  it.each([
+    ["answers 500", 500],
+    ["cannot be reached", "network"],
+  ])(
+    "count nothing and say no key is missing while the operator read %s",
+    async (_, failure) => {
+      answer = failure
+      renderProbe()
+      await waitFor(() =>
+        expect(screen.getByTestId("error").textContent).not.toBe("")
+      )
+      expect(screen.getByTestId("count").textContent).toBe("undefined")
+      expect(screen.getByTestId("anthropic").textContent).toBe("undefined")
+      expect(screen.getByTestId("anthropic-state").textContent).toBe(
+        "unchecked"
+      )
+    }
+  )
 })

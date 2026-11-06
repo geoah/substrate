@@ -92,8 +92,11 @@ export function OverviewCards({
         groups.filter((g) => g.type === "provider").length
       )
     : undefined
-  const providers =
-    inUse.packages && inUse.models
+  // A failed check says so, never a count that guessed: Providers would
+  // disagree with it.
+  const providers = inUse.error
+    ? { big: "Couldn’t check", sub: "Open Providers to try again" }
+    : inUse.packages && inUse.models
       ? providersSummary(inUse.packages, inUse.models)
       : undefined
   const agentNames = (agents.data?.records ?? []).map((r) => agentName(r.id))

@@ -10,11 +10,14 @@ import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
 import {
   modelKey,
   modelName,
+  modelWhoseKey,
   operatorWords,
   packageWhoseKey,
   percentOf,
   resetWords,
   spendSplit,
+  stateResolves,
+  uncheckedKey,
   welcomeFacts,
 } from "./operator-defaults"
 
@@ -76,6 +79,47 @@ describe("modelKey", () => {
       operatorOffers: false,
     })
     expect(modelKey(row("a"), undefined).state).toBe("setup")
+  })
+})
+
+describe("uncheckedKey", () => {
+  it("never says Set up while the operator's read is unanswered or failed", () => {
+    expect(uncheckedKey(row("a"), "checking")).toEqual({
+      state: "checking",
+      source: undefined,
+      operatorOffers: false,
+    })
+    // A key of its own is the row's: the operator's is used only where the
+    // row holds none.
+    expect(uncheckedKey(row("a", { apiKey: "••••" }), "unchecked")).toEqual({
+      state: "unchecked",
+      source: "own",
+      operatorOffers: false,
+    })
+    expect(stateResolves("checking")).toBeUndefined()
+    expect(stateResolves("unchecked")).toBeUndefined()
+    expect(stateResolves("setup")).toBe(false)
+    expect(stateResolves("attention")).toBe(true)
+  })
+})
+
+describe("modelWhoseKey", () => {
+  it("names the operator's models in plain English, and your key plainly", () => {
+    expect(
+      modelWhoseKey(
+        { state: "on", source: "operator", models: ["gpt-5", "gpt-5-mini"] },
+        CRANE
+      )
+    ).toBe("Using Crane’s key, for gpt-5 and gpt-5-mini.")
+    expect(modelWhoseKey({ state: "on", source: "operator" }, CRANE)).toBe(
+      "Using Crane’s key"
+    )
+    expect(modelWhoseKey({ state: "on", source: "own" }, CRANE)).toBe(
+      "Using your key"
+    )
+    expect(
+      modelWhoseKey({ state: "checking", source: undefined }, CRANE)
+    ).toBeUndefined()
   })
 })
 
@@ -174,5 +218,24 @@ describe("welcomeFacts", () => {
         }),
       ])
     ).toEqual({ works: ["chat", "search by meaning"], connect: ["Google"] })
+  })
+
+  it("names a tool by what it does, never by its vendor", () => {
+    expect(
+      welcomeFacts([
+        item({ id: "llm/openai" }),
+        item({
+          id: "function/providers.substrate.reamde.dev/firecrawl",
+          slot: "function",
+          label: "Firecrawl",
+          target: "providers.substrate.reamde.dev/firecrawl",
+        }),
+        item({
+          id: "function/providers.substrate.reamde.dev/other",
+          slot: "function",
+          label: "Othervendor",
+        }),
+      ]).works
+    ).toEqual(["chat", "web search", "tools for your agents"])
   })
 })

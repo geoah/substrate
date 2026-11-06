@@ -1,5 +1,5 @@
-/** Providers (`/providers`): every outside service the substrate spends a
- * key on, in three groups (decision 0233):
+/** Providers (`/providers`): every outside service the substrate uses a key
+ * or a sign-in for, in three groups (decision 0233):
  *
  * - **Accounts you connect**: the shipped catalog's providers that bring
  *   data in, joined with what this repository holds of them and their
@@ -92,6 +92,8 @@ import {
   operatorServesTools,
   packageWhoseKey,
   searchLine,
+  sentenceCase,
+  toolWords,
   type OperatorWords,
 } from "@/lib/operator-defaults"
 import {
@@ -114,7 +116,7 @@ export function ProvidersPage() {
   const data = useProviders()
   const { connected, error, model } = providersRoute.useSearch()
   const navigate = useNavigate()
-  const keys = useModelKeys({ always: true })
+  const keys = useModelKeys()
   const functions = useQuery(functionsQueryOptions)
   const welcome = useWelcome()
   const items = keys.read?.items
@@ -162,7 +164,7 @@ export function ProvidersPage() {
         <ProvidersWelcome
           words={words}
           items={items ?? []}
-          allowance={Boolean(keys.read?.operator?.allowance)}
+          allowance={keys.read?.operator?.allowance}
           onDone={welcome.dismiss}
         />
       ) : (
@@ -280,6 +282,19 @@ function ModelsGroup({
       )
     : []
   let body: ReactNode
+  const unchecked = keys.readError && (
+    <div
+      role="alert"
+      className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border px-3.5 py-2.5 text-[13px]"
+    >
+      <span className="min-w-0 flex-1">
+        Couldn’t check whose key each AI model uses: {keys.readError.message}
+      </span>
+      <Button variant="outline" size="sm" onClick={keys.recheck}>
+        Try again
+      </Button>
+    </div>
+  )
   if (keys.error) {
     body = (
       <p role="alert" className="text-destructive">
@@ -330,6 +345,7 @@ function ModelsGroup({
       {allowance && operatorServesAny(items) && (
         <AllowanceBar allowance={allowance} words={words} />
       )}
+      {unchecked}
       {body}
     </section>
   )
@@ -359,6 +375,8 @@ function ProviderCard({
   const { row, info, standing } = entry
   const whose = packageWhoseKey(items, row.id, info.name, words)
   const failed = installFailure(items, row.id)
+  // A tool is described by what it does, in the welcome's words.
+  const purpose = toolWords(row.id)
   return (
     <div
       data-slot="provider-card"
@@ -388,16 +406,16 @@ function ProviderCard({
       {row.catalog?.publisher && (
         <PublisherDetails publisher={row.catalog.publisher} />
       )}
-      {row.catalog?.description && (
+      {(purpose || row.catalog?.description) && (
         <p className="line-clamp-2 text-[12.5px] text-muted-foreground">
-          {firstSentence(row.catalog.description)}
+          {purpose
+            ? `${sentenceCase(purpose)} for your agents.`
+            : firstSentence(row.catalog?.description)}
         </p>
       )}
       {whose && <p className="text-[12.5px]">{whose.line}</p>}
       {whose?.notice && (
-        <p className="rounded-md bg-warn-soft px-2 py-1 text-[12px] text-warning">
-          {whose.notice}
-        </p>
+        <p className="-mt-1.5 text-[12px] text-faint">{whose.notice}</p>
       )}
       {failed !== undefined && (
         <p className="text-[12.5px] text-destructive">

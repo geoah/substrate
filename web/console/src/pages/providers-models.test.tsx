@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-/** Providers as every outside service the substrate spends a key on
- * (decision 0233): the three groups in order, the AI model cards with their
- * key form in place, whose key each card runs on, the search line, the
+/** Providers as every outside service the substrate uses a key or a sign-in
+ * for (decision 0233): the three groups in order, the AI model cards with
+ * their key form in place, whose key each card runs on, the search line, the
  * operator's allowance on the AI models header and as a line on the Tools
- * header, and the welcome where the deployment loaded an operator defaults
- * file. The operator read is answered by a mocked fetch; the catalog's
+ * header, the welcome where the deployment loaded an operator defaults file,
+ * a typed key kept nowhere once sent, a failed operator read that never says
+ * Set up, and the counts beside Providers that agree with the page. The operator read is answered by a mocked fetch; the catalog's
  * providers come from a stubbed `useProviders`. The site is named "Crane"
  * so every operator word is seen to come from `operator.name`. The suite
  * runs in Europe/Athens (UTC+2 in November). */
@@ -87,6 +88,10 @@ vi.mock("@/components/providers/use-providers", () => ({
     refetch: () => {},
   }),
 }))
+
+import { ProviderCount } from "@/components/app-sidebar"
+import { OverviewCards } from "@/components/home/overview-cards"
+import { llmProvidersQueryOptions } from "@/lib/api/agents"
 
 import { ProvidersPage } from "./providers"
 
@@ -216,8 +221,14 @@ const EMBEDDINGS = item({
 const RESETS_AT = "2026-11-07T00:00:00Z"
 
 let features: string[] = []
-let answer: OperatorDefaults | { status: number } = { items: [] }
+let answer: OperatorDefaults | { status: number } | "network" = { items: [] }
 let rows: SubstrateRecord[] = []
+/** The installed packages the bundle status read lists. */
+let statuses: unknown[] = []
+/** Runs as a write reaches the server, before it answers. */
+let onWrite: (() => void) | undefined
+/** Holds the operator read's answer until it settles. */
+let holdDefaults: Promise<void> | undefined
 let functions: SubstrateRecord[] = []
 const writes: { method: string; url: string; body: unknown }[] = []
 const actions: ConsoleAction[] = []
@@ -248,6 +259,9 @@ beforeEach(() => {
     provider("linear"),
   ]
   route.search = {}
+  statuses = []
+  onWrite = undefined
+  holdDefaults = undefined
   writes.length = 0
   actions.length = 0
   vi.stubGlobal(
@@ -258,13 +272,28 @@ beforeEach(() => {
       if (method !== "GET") {
         const body = init?.body ? JSON.parse(String(init.body)) : undefined
         writes.push({ method, url, body })
+        onWrite?.()
+        // A patch under a version the row no longer has is refused, as the
+        // server refuses it.
+        const id = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1))
+        const held = rows.find((r) => r.id === id)
+        const asserted = (body as { ifVersion?: number } | undefined)?.ifVersion
+        if (held && asserted !== undefined && asserted !== held.version)
+          return Response.json(
+            { error: { code: "conflict", message: "version mismatch" } },
+            { status: 409 }
+          )
         return Response.json({ ...row("x"), version: 4 })
       }
       if (url === "/.well-known/substrate/server.json")
         return Response.json({
           features: features.map((name) => ({ name, stability: "beta" })),
         })
+      if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
+        return Response.json({ items: statuses })
       if (url === "/api/v1/operator/defaults") {
+        await holdDefaults
+        if (answer === "network") throw new TypeError("Failed to fetch")
         if ("status" in answer)
           return Response.json(
             { error: { code: "not_found", message: "no route" } },
@@ -326,7 +355,7 @@ function renderPage({
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  render(
     <Preferences initial={initial} technical={technical}>
       <QueryClientProvider client={client}>
         <Toaster>
@@ -334,6 +363,18 @@ function renderPage({
         </Toaster>
       </QueryClientProvider>
     </Preferences>
+  )
+  return client
+}
+
+/** Everything the mutation cache holds, as text: where a typed key would
+ * show if any mutation kept it. */
+function mutationText(client: QueryClient): string {
+  return JSON.stringify(
+    client
+      .getMutationCache()
+      .getAll()
+      .map((m) => ({ key: m.options.mutationKey, state: m.state }))
   )
 }
 
@@ -463,11 +504,11 @@ describe("an AI model card", () => {
     renderPage()
     const openai = await modelCard("OpenAI")
     expect(within(openai).getByText("On")).toBeTruthy()
-    expect(within(openai).getByText("Using Crane’s key")).toBeTruthy()
     expect(
-      within(openai).getByText(
-        "Chat models for your agents: gpt-5 and gpt-5-mini."
-      )
+      within(openai).getByText("Chat models for your agents.")
+    ).toBeTruthy()
+    expect(
+      within(openai).getByText("Using Crane’s key, for gpt-5 and gpt-5-mini.")
     ).toBeTruthy()
 
     const anthropic = await modelCard("Anthropic")
@@ -500,7 +541,9 @@ describe("an AI model card", () => {
       within(openai).getByRole("button", { name: "Use your own key" })
     )
     expect(
-      within(openai).getByText(/no longer count toward Crane’s allowance/)
+      within(openai).getByText(
+        "Your agents will call OpenAI with this key, billed to your OpenAI account, and those calls stop counting toward Crane’s allowance. The key is stored sealed and never shown again."
+      )
     ).toBeTruthy()
     fireEvent.change(within(openai).getByLabelText("Your OpenAI API key"), {
       target: { value: " sk-mine " },
@@ -521,15 +564,23 @@ describe("an AI model card", () => {
     }
     renderPage()
     const gemini = await modelCard("Gemini")
-    expect(
-      within(gemini).getByRole("button", { name: "Replace key" })
-    ).toBeTruthy()
-    fireEvent.click(
-      within(gemini).getByRole("button", { name: "Use Crane’s again" })
-    )
+    const replace = within(gemini).getByRole("button", { name: "Replace key" })
+    // An outline button beside a quiet one: the outline is the border.
+    expect(replace.className).toContain("border-border")
+    const again = within(gemini).getByRole("button", {
+      name: "Use Crane’s key again",
+    })
+    expect(again.className).not.toContain("border-border")
+    expect(again.className).not.toContain("bg-primary")
+    fireEvent.click(again)
     const dialog = await screen.findByRole("dialog")
     expect(
       within(dialog).getByText("Use Crane’s Gemini key again?")
+    ).toBeTruthy()
+    expect(
+      within(dialog).getByText(
+        "This deletes your Gemini key. Your agents then call Gemini with Crane’s key, which counts toward today’s allowance. You can add your own key again at any time."
+      )
     ).toBeTruthy()
     expect(writes).toHaveLength(0)
     fireEvent.click(
@@ -559,6 +610,11 @@ describe("an AI model card", () => {
     expect(
       within(anthropic).getByLabelText("Your Anthropic API key")
     ).toBeTruthy()
+    expect(
+      within(anthropic).getByText(
+        "Your agents will call Anthropic with this key, billed to your Anthropic account. It is stored sealed and never shown again."
+      )
+    ).toBeTruthy()
   })
 
   it("brings a deleted seeded row back from the seed, with no key", async () => {
@@ -570,7 +626,9 @@ describe("an AI model card", () => {
     renderPage()
     const anthropic = await modelCard("Anthropic")
     expect(
-      within(anthropic).getByText(/Add it back and Crane’s key covers it again/)
+      within(anthropic).getByText(
+        "Chat models for your agents. This one was removed. Add it back and Crane’s key covers it again."
+      )
     ).toBeTruthy()
     fireEvent.click(within(anthropic).getByRole("button", { name: "Add" }))
     await waitFor(() => expect(writes).toHaveLength(1))
@@ -643,7 +701,198 @@ describe("an AI model card", () => {
     answer = { operator: {}, items: [OPENAI, ANTHROPIC_NONE, GEMINI_OWN] }
     renderPage()
     expect(
-      within(await modelCard("OpenAI")).getByText("Using this server’s key")
+      within(await modelCard("OpenAI")).getByText(
+        "Using this server’s key, for gpt-5 and gpt-5-mini."
+      )
+    ).toBeTruthy()
+  })
+})
+
+describe("a key typed into a card", () => {
+  it("leaves nothing of the key in the mutation cache, while it is sent or after it saved", async () => {
+    let sending = ""
+    const client = renderPage()
+    onWrite = () => {
+      sending = mutationText(client)
+    }
+    const openai = await modelCard("OpenAI")
+    fireEvent.click(
+      within(openai).getByRole("button", { name: "Use your own key" })
+    )
+    fireEvent.change(within(openai).getByLabelText("Your OpenAI API key"), {
+      target: { value: "sk-typed-secret" },
+    })
+    fireEvent.click(within(openai).getByRole("button", { name: "Save key" }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].body).toEqual({
+      properties: { apiKey: "sk-typed-secret" },
+      ifVersion: 3,
+    })
+    await waitFor(() =>
+      expect(within(openai).queryByLabelText(/API key/)).toBeNull()
+    )
+    // The write was in the cache, pending, as the request left.
+    expect(sending).toContain('"record-patch"')
+    expect(sending).toContain('"pending"')
+    expect(sending).not.toContain("sk-typed-secret")
+    expect(mutationText(client)).not.toContain("sk-typed-secret")
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+  })
+
+  it("clears the key and leaves nothing of it in the mutation cache after a refused save, or after Cancel", async () => {
+    const client = renderPage()
+    const gemini = await modelCard("Gemini")
+    fireEvent.click(within(gemini).getByRole("button", { name: "Replace key" }))
+    // Someone else's write lands on the server while the form is open.
+    rows = rows.map((r) => (r.id === "gemini" ? { ...r, version: 4 } : r))
+    const input = within(gemini).getByLabelText<HTMLInputElement>(
+      "Your Gemini API key"
+    )
+    fireEvent.change(input, { target: { value: "sk-refused-secret" } })
+    fireEvent.click(within(gemini).getByRole("button", { name: "Save key" }))
+    expect(await within(gemini).findByRole("alert")).toBeTruthy()
+    expect(input.value).toBe("")
+    expect(mutationText(client)).not.toContain("sk-refused-secret")
+    fireEvent.click(within(gemini).getByRole("button", { name: "Cancel" }))
+    expect(within(gemini).queryByLabelText(/API key/)).toBeNull()
+    expect(mutationText(client)).not.toContain("sk-refused-secret")
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+  })
+
+  it("is refused, not written over, where the row changed while the form was open", async () => {
+    const client = renderPage()
+    const gemini = await modelCard("Gemini")
+    fireEvent.click(within(gemini).getByRole("button", { name: "Replace key" }))
+    // Another tab replaces the key; the page reads the row again.
+    rows = rows.map((r) => (r.id === "gemini" ? { ...r, version: 4 } : r))
+    await client.invalidateQueries({
+      queryKey: llmProvidersQueryOptions().queryKey,
+    })
+    await waitFor(() =>
+      expect(
+        client
+          .getQueryData(llmProvidersQueryOptions().queryKey)
+          ?.records.find((r) => r.id === "gemini")?.version
+      ).toBe(4)
+    )
+    fireEvent.change(within(gemini).getByLabelText("Your Gemini API key"), {
+      target: { value: "sk-late" },
+    })
+    fireEvent.click(within(gemini).getByRole("button", { name: "Save key" }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].body).toEqual({
+      properties: { apiKey: "sk-late" },
+      ifVersion: 3,
+    })
+    expect((await within(gemini).findByRole("alert")).textContent).toMatch(
+      /changed since you opened it/
+    )
+    expect(within(gemini).getByLabelText("Your Gemini API key")).toBeTruthy()
+  })
+})
+
+describe("where the operator read fails", () => {
+  it.each([
+    ["answers 500", { status: 500 } as const],
+    ["cannot be reached", "network" as const],
+  ])(
+    "says each card couldn't be checked, never Set up, while the read %s",
+    async (_, failure) => {
+      answer = failure
+      renderPage()
+      const models = group("AI models")
+      const alert = await within(models).findByRole("alert")
+      expect(alert.textContent).toMatch(
+        /^Couldn’t check whose key each AI model uses/
+      )
+      const openai = await modelCard("OpenAI")
+      expect(within(openai).getByText("Couldn’t check")).toBeTruthy()
+      expect(within(openai).queryByText(/^Using /)).toBeNull()
+      const gemini = await modelCard("Gemini")
+      expect(within(gemini).getByText("Couldn’t check")).toBeTruthy()
+      // Its own key is its own whatever the operator offers.
+      expect(within(gemini).getByText("Using your key")).toBeTruthy()
+      expect(within(models).queryByText("Set up")).toBeNull()
+
+      answer = {
+        operator: { name: "Crane" },
+        items: [OPENAI, ANTHROPIC_NONE, GEMINI_OWN],
+      }
+      fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+      await waitFor(() => expect(within(openai).getByText("On")).toBeTruthy())
+      expect(within(models).queryByRole("alert")).toBeNull()
+    }
+  )
+
+  it("opens the key form an agent's link names once the read says it has no key", async () => {
+    let release = () => {}
+    holdDefaults = new Promise((r) => {
+      release = r
+    })
+    route.search = { model: "anthropic" }
+    renderPage()
+    const anthropic = await modelCard("Anthropic")
+    expect(within(anthropic).getByText("Checking")).toBeTruthy()
+    expect(within(anthropic).queryByLabelText(/API key/)).toBeNull()
+    expect(within(group("AI models")).queryByText("Set up")).toBeNull()
+    release()
+    expect(
+      await within(anthropic).findByLabelText("Your Anthropic API key")
+    ).toBeTruthy()
+  })
+})
+
+describe("the counts beside Providers", () => {
+  it("agree with the page, the sidebar's and Home's, though server.json lists no operatorDefaults", async () => {
+    features = []
+    // No defaults file: the server still answers, and refuses Gemini's own
+    // key, so the page shows it as Set up.
+    answer = {
+      items: [
+        {
+          ...OPENAI,
+          source: "none",
+          operatorOffers: false,
+          readiness: "not-set-up",
+          models: undefined,
+        },
+        ANTHROPIC_NONE,
+        {
+          ...GEMINI_OWN,
+          readiness: "not-set-up",
+          message: "gemini: baseURL is not an https URL",
+        },
+      ],
+    }
+    statuses = [provider("google", { installed: true }).row.status]
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <Preferences initial={{ welcomeDismissed: true }} technical={false}>
+        <QueryClientProvider client={client}>
+          <Toaster>
+            <ProvidersPage />
+            <div data-testid="sidebar">
+              <ProviderCount />
+            </div>
+            <div data-testid="home">
+              <OverviewCards groups={[]} />
+            </div>
+          </Toaster>
+        </QueryClientProvider>
+      </Preferences>
+    )
+    const gemini = await modelCard("Gemini")
+    await waitFor(() => expect(within(gemini).getByText("Set up")).toBeTruthy())
+    // On the page: Google is the one thing set up.
+    const on = within(group("AI models")).queryAllByText("On")
+    expect(on).toHaveLength(0)
+    await waitFor(() =>
+      expect(screen.getByTestId("sidebar").textContent).toBe("1")
+    )
+    expect(
+      within(screen.getByTestId("home")).getByText("1 in use")
     ).toBeTruthy()
   })
 })
@@ -667,14 +916,15 @@ describe("whose key a provider runs on", () => {
     renderPage()
     await modelCard("OpenAI")
     const google = providerCard("Google")
-    expect(
-      within(google).getByText("Through Crane’s Google sign-in")
-    ).toBeTruthy()
-    expect(
-      within(google).getByText(
-        "Google shows a warning while this sign-in is in testing."
-      )
-    ).toBeTruthy()
+    const line = within(google).getByText("Through Crane’s Google sign-in")
+    const notice = within(google).getByText(
+      "Google shows a warning while this sign-in is in testing."
+    )
+    // Quiet text right under the line: the step line stays the one coloured
+    // status.
+    expect(line.nextElementSibling).toBe(notice)
+    expect(notice.className).toContain("text-faint")
+    expect(notice.className).not.toMatch(/bg-warn|text-warning/)
     const linear = providerCard("Linear")
     expect(within(linear).queryByText(/^Using |^Through /)).toBeNull()
   })
@@ -750,6 +1000,11 @@ describe("the allowance", () => {
     expect(within(box).getByText("search by meaning")).toBeTruthy()
     // Midnight UTC is 02:00 in Athens in November.
     expect(within(box).getByText(/^Resets at 02:00, in /)).toBeTruthy()
+    expect(
+      within(box).getByText(
+        "When it runs out, anything on Crane’s key pauses until it resets. Anything on your own key keeps working and is not counted."
+      )
+    ).toBeTruthy()
   })
 
   it("is not shown where the operator pays for nothing now", async () => {
@@ -785,10 +1040,13 @@ describe("the allowance", () => {
     await modelCard("OpenAI")
     const tools = group("Tools for your agents")
     expect(
-      within(tools).getByText("Counts toward today’s allowance from Crane")
+      within(tools).getByText("counts toward today’s allowance from Crane")
     ).toBeTruthy()
+    const firecrawl = providerCard("Firecrawl")
+    expect(within(firecrawl).getByText("Using Crane’s key")).toBeTruthy()
+    // Named by what it does, as the welcome names it.
     expect(
-      within(providerCard("Firecrawl")).getByText("Using Crane’s key")
+      within(firecrawl).getByText("Web search for your agents.")
     ).toBeTruthy()
   })
 })
@@ -815,6 +1073,50 @@ describe("the welcome", () => {
     expect(screen.queryByText("Welcome to Crane")).toBeNull()
     expect(
       screen.getByRole("heading", { level: 1, name: "Providers" })
+    ).toBeTruthy()
+  })
+
+  it("names what the operator pays for, a tool by what it does, and the day's limit", async () => {
+    catalog.providers = [
+      ...catalog.providers,
+      provider("firecrawl", {
+        kinds: [],
+        functions: [`${PROV}/firecrawl/websearch`],
+      }),
+    ]
+    answer = {
+      operator: {
+        name: "Crane",
+        allowance: { centsPerDay: 200, usedCents: 0, resetsAt: RESETS_AT },
+      },
+      items: [
+        OPENAI,
+        EMBEDDINGS,
+        item({
+          id: `function/${PROV}/firecrawl`,
+          slot: "function",
+          label: "Firecrawl",
+          target: `${PROV}/firecrawl`,
+        }),
+        ANTHROPIC_NONE,
+        GEMINI_OWN,
+      ],
+    }
+    renderPage({ initial: {} })
+    const welcome = (await screen.findByText("Welcome to Crane")).closest(
+      "section"
+    )!
+    expect(
+      within(welcome).getByText(
+        "Crane pays for chat, search by meaning and web search, up to $2.00 a day, so you can use them today. Your accounts, such as Google and WHOOP, wait on you to connect them. Anywhere you add your own key, it is used instead of Crane’s."
+      )
+    ).toBeTruthy()
+    expect(
+      within(welcome).getByText("Chat, search by meaning and web search")
+    ).toBeTruthy()
+    expect(within(welcome).queryByText(/Firecrawl/)).toBeNull()
+    expect(
+      within(welcome).getByText("Replace any of Crane’s keys under AI models.")
     ).toBeTruthy()
   })
 

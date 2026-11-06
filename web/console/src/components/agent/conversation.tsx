@@ -134,7 +134,7 @@ function KeylessCallout({ provider }: { provider: string }) {
           {providerName(provider)}
         </span>
         <span className="text-muted-foreground">
-          Agents run on your own key, kept sealed on the provider’s record.
+          Add one on its card under Providers.
         </span>
       </div>
       <AddKeyButton providerId={provider} />

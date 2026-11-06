@@ -102,8 +102,8 @@ export function AllowanceBar({
         </ul>
       )}
       <p className="mt-1.5 text-[12px] text-faint">
-        When it runs out, what {words.name} pays for stops until it resets. Your
-        own keys are not counted.
+        When it runs out, anything on {words.possessive} key pauses until it
+        resets. Anything on your own key keeps working and is not counted.
       </p>
     </div>
   )
@@ -113,7 +113,7 @@ export function AllowanceBar({
 export function AllowanceNote({ words }: { words: OperatorWords }) {
   return (
     <span data-slot="allowance-note">
-      Counts toward today’s allowance from {words.name}
+      counts toward today’s allowance from {words.name}
     </span>
   )
 }

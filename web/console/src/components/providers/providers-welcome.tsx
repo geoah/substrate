@@ -11,8 +11,9 @@ import { Link } from "@tanstack/react-router"
 import { Pill } from "@/components/identity/pill"
 import { pageTitleClass } from "@/components/identity/page-title"
 import { Button, buttonVariants } from "@/components/ui/button"
-import type { OperatorDefault } from "@/lib/api/types"
+import type { OperatorAllowance, OperatorDefault } from "@/lib/api/types"
 import {
+  centsWords,
   sentenceCase,
   welcomeFacts,
   type OperatorWords,
@@ -48,13 +49,15 @@ export function ProvidersWelcome({
 }: {
   words: OperatorWords
   items: readonly OperatorDefault[]
-  /** The operator pays up to a daily allowance. */
-  allowance: boolean
+  /** What the operator pays for in a day, where it set a limit. */
+  allowance?: OperatorAllowance
   onDone: () => void
 }) {
   const { works, connect } = welcomeFacts(items)
   const chat = works.includes("chat")
-  const limit = allowance ? ", up to a daily allowance" : ""
+  const limit = allowance
+    ? `, up to ${centsWords(allowance.centsPerDay)} a day`
+    : ""
   return (
     <section
       aria-labelledby="providers-welcome"
@@ -70,8 +73,8 @@ export function ProvidersWelcome({
         {works.length > 0
           ? `${words.Name} pays for ${andList(works)}${limit}, so you can use them today. `
           : ""}
-        Your own accounts are yours to connect. Anywhere you add your own key,
-        it is used instead of {words.possessive}.
+        Your accounts, such as Google and WHOOP, wait on you to connect them.
+        Anywhere you add your own key, it is used instead of {words.possessive}.
       </p>
       <ol className="mt-4 grid gap-2 text-[13.5px] sm:grid-cols-3">
         {works.length > 0 && (
@@ -102,7 +105,7 @@ export function ProvidersWelcome({
           }
           title="Your own keys"
         >
-          Replace any of {words.possessive} under AI models.
+          Replace any of {words.possessive} keys under AI models.
         </Step>
       </ol>
       <div className="mt-4 flex flex-wrap gap-2">
