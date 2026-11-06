@@ -58,7 +58,7 @@ const (
 	// turn (refreshCredential).
 	oauthPointRefreshTurn = "refresh-turn"
 	// oauthPointClientStamp: a client-change stamp is about to take the
-	// account's lock (noteOAuthClientChanged).
+	// account's lock (settleOAuthClientStamp).
 	oauthPointClientStamp = "client-stamp"
 )
 
@@ -287,8 +287,35 @@ func (ds *dataset) noClientTokenError(ctx context.Context, ref string, account e
 
 // noteOAuthClientChanged stamps account `erroring` with
 // reasonOAuthClientChanged when its grant at credential generation gen came
-// from another client than the one resolving now. A grant through the
-// operator's client while no client resolves at all counts as changed.
+// from another client than the one resolving now (settleOAuthClientStamp).
+func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen time.Time) {
+	ds.settleOAuthClientStamp(ctx, account, gen, false)
+}
+
+// clearOAuthClientStamp is noteOAuthClientChanged's other half, for an
+// access token without expiry. Such a token is never refreshed, so no
+// refresh clears a client-change stamp the owner has reverted, and no
+// refusal of it can have been overwritten by the stamp. Where the grant at
+// generation gen came from the client resolving now, an account stamped with
+// reasonOAuthClientChanged reads `connected` again. A token that expires is
+// left to its next refresh, which stamps the provider's answer: clearing its
+// stamp here could drop a refusal that the client-change stamp replaced.
+func (ds *dataset) clearOAuthClientStamp(ctx context.Context, account eref, gen time.Time) {
+	ds.settleOAuthClientStamp(ctx, account, gen, true)
+}
+
+// saysClientChanged reports whether row is stamped `erroring` with
+// reasonOAuthClientChanged.
+func saysClientChanged(row *erow) bool {
+	return propString(row, propTokenStatus) == tokenStatusErroring && propString(row, propTokenError) == reasonOAuthClientChanged
+}
+
+// settleOAuthClientStamp makes account's client-change stamp agree with the
+// client resolving now, for its grant at credential generation gen: a grant
+// from another client is stamped `erroring` with reasonOAuthClientChanged,
+// and with clear set, a stamped grant from the client resolving now reads
+// `connected` again. A grant through the operator's client while no client
+// resolves at all counts as changed.
 //
 // The client is resolved inside the stamp's transaction and read through
 // it. inTx holds the repository's changelog lock from before that read to
@@ -301,7 +328,7 @@ func (ds *dataset) noClientTokenError(ctx context.Context, ref string, account e
 // so does a refresh that stored one. A read outside the transaction first
 // skips the lock where the row already says so, because the refresh loop
 // meets a changed account on every pass.
-func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen time.Time) {
+func (ds *dataset) settleOAuthClientStamp(ctx context.Context, account eref, gen time.Time, clear bool) {
 	row, err := ds.loadRowDB(ctx, account)
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
@@ -310,7 +337,8 @@ func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen
 	if err != nil {
 		return
 	}
-	if len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
+	if clear && !saysClientChanged(row) ||
+		!clear && len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
 		return
 	}
 	ds.oauthPoint(oauthPointClientStamp)
@@ -351,10 +379,14 @@ func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen
 		if err != nil && !none {
 			return err
 		}
-		if none && !grantThroughOperator(row.Props[propOAuthClient]) || !none && !oauthClientChanged(ty, row, now) {
-			return nil
+		var props map[string]any
+		switch {
+		case none && grantThroughOperator(row.Props[propOAuthClient]),
+			!none && oauthClientChanged(ty, row, now):
+			props = tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)
+		case clear && !none && saysClientChanged(row):
+			props = tokenStampProps(ty, row, tokenStatusConnected, "")
 		}
-		props := tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)
 		if len(props) == 0 {
 			return nil
 		}
@@ -362,7 +394,7 @@ func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen
 		return err
 	})
 	if err != nil {
-		ds.svc.log.Warn("substrate: oauth: stamping an account whose client changed", "record", account.ID, "error", err)
+		ds.svc.log.Warn("substrate: oauth: settling an account's client-change stamp", "record", account.ID, "error", err)
 	}
 }
 

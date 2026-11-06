@@ -1168,6 +1168,8 @@ func (ds *dataset) storeRefreshedToken(ctx context.Context, ref string, account 
 // client is the bundle's client resolving now, the one the invocation's
 // config was built from: a grant issued to another client gets no token
 // (errOAuthClientChanged), checked on the same read that yields the token.
+// A token without expiry handed out through its own client clears a
+// client-change stamp the owner has since reverted (clearOAuthClientStamp).
 func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref, meta *vocabulary.BundleOAuth2, client oauthClient) (string, error) {
 	ds.oauthPoint(oauthPointTokenRead)
 	g, err := ds.getGrant(ctx, ref)
@@ -1182,6 +1184,9 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 		return "", err
 	}
 	if !accessTokenDue(tok) {
+		if tok.Expiry.IsZero() && g.stampedClientChange {
+			ds.clearOAuthClientStamp(ctx, account, g.gen)
+		}
 		return tok.AccessToken, nil
 	}
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {

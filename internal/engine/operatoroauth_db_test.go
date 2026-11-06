@@ -965,6 +965,40 @@ func TestOperatorOAuthClientStampRereadsTheClient(t *testing.T) {
 	opAccountConnectedThroughOperator(t, ds, account)
 }
 
+// A token without expiry is never refreshed, so no refresh clears a
+// client-change stamp its owner reverts. The token read does: once the
+// client the grant was issued to resolves again, the next token handed out
+// leaves the account `connected` and the operator defaults item ready.
+func TestOperatorOAuthRevertedClientChangeClearsOnTheNextToken(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.set(func(f *opTokenFake) { f.expiresIn = 0 }) // expires_in 0: a token without expiry
+	opConnect(t, ds, account)
+
+	opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+	if _, entry := opConfigEntry(t, ds); entry["tokenError"] != reasonOAuthClientChanged {
+		t.Fatalf("entry = %v, want the client-change refusal", entry)
+	}
+	if row := opAccountRow(t, ds, account); propString(row, propTokenStatus) != tokenStatusErroring || propString(row, propTokenError) != reasonOAuthClientChanged {
+		t.Fatalf("account = %v / %v, want the client-change stamp", row.Props[propTokenStatus], row.Props[propTokenError])
+	}
+
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the own client: %v", err)
+	}
+	if _, entry := opConfigEntry(t, ds); entry["token"] != "at-"+opClientID {
+		t.Fatalf("entry = %v, want the operator's grant's token", entry)
+	}
+	opAccountConnectedThroughOperator(t, ds, account)
+	if item := opMailItem(t, ds); item.Readiness != substrate.ReadinessReady {
+		t.Fatalf("item = %+v, want ready", item)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 0 {
+		t.Fatalf("the provider saw refreshes %+v", refreshes)
+	}
+}
+
 // `operatorOffers` says whether the operator's client would serve the
 // package once the person's own record is gone, so it is false where the
 // operator's client is refused: an install that cannot record the client,

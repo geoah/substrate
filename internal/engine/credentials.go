@@ -222,6 +222,9 @@ type credentialGrant struct {
 	gen time.Time
 	// client is the account's `oauthClient` value, nil where it holds none.
 	client any
+	// stampedClientChange is set where the account reads `erroring` with
+	// reasonOAuthClientChanged.
+	stampedClientChange bool
 }
 
 // getGrant reads the credential under ref and its account's recorded client
@@ -233,11 +236,12 @@ func (ds *dataset) getGrant(ctx context.Context, ref string) (credentialGrant, e
 	var g credentialGrant
 	var payload, recorded []byte
 	err := ds.db.QueryRowContext(ctx, `
-		SELECT s.payload, s.record_kind, s.record_id, s.updated_at, r.props -> $2
+		SELECT s.payload, s.record_kind, s.record_id, s.updated_at, r.props -> $2,
+		       COALESCE(r.props ->> $3 = $5 AND r.props ->> $4 = $6, false)
 		FROM sealed s
 		LEFT JOIN records r ON r.repository = s.repository AND r.kind = s.record_kind AND r.id = s.record_id
-		WHERE s.ref = $1`, ref, propOAuthClient).
-		Scan(&payload, &g.account.Kind, &g.account.ID, &g.gen, &recorded)
+		WHERE s.ref = $1`, ref, propOAuthClient, propTokenStatus, propTokenError, tokenStatusErroring, reasonOAuthClientChanged).
+		Scan(&payload, &g.account.Kind, &g.account.ID, &g.gen, &recorded, &g.stampedClientChange)
 	if errors.Is(err, sql.ErrNoRows) {
 		return g, fmt.Errorf("%w: credential %s", errCredentialGone, ref)
 	}

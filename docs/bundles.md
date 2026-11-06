@@ -539,6 +539,9 @@ then. The stamp is written only while the credential is still the one that was
 compared, so a reconnect that lands first keeps its `connected`, as a
 refusal's stamp does
 ([0180](decisions/0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md)).
+Once the client that issued the grant resolves again, the next refresh that
+succeeds clears the stamp; a token without expiry is never refreshed, so the
+next invocation that receives it clears the stamp instead.
 If the operator removes a provider from `oauthClients`, an account connected
 through its client has no client to refresh through: nothing is sent to the
 provider, and at its next refresh or invocation the account reads `erroring`
