@@ -116,8 +116,10 @@ func newAnthropic(cfg Config) *anthropicClient {
 		// Everything the client sends comes from the provider row, never from
 		// the host's environment: a host token or header would ride along to
 		// a repository-chosen base URL. That base URL is also why the dial is
-		// confined to public destinations (issue #241).
-		doer:        &headerDoer{inner: &http.Client{Transport: egress.Transport()}, headers: cfg.Headers},
+		// confined to public destinations (issue #241), and the key rides in
+		// x-api-key, which Go keeps on a redirect to another host, so no
+		// redirect is followed.
+		doer:        &headerDoer{inner: egress.CredentialClient(egress.Transport(), 0), headers: cfg.Headers},
 		endpoint:    endpoint,
 		endpointErr: err,
 		apiKey:      cfg.APIKey,

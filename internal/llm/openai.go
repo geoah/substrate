@@ -45,8 +45,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 	}
 	// The base URL is a repository-chosen address, so the dial is confined to
 	// public destinations (issue #241); a row's extra headers ride over the
-	// gated client, never around it.
-	oc.HTTPClient = &http.Client{Transport: egress.Transport()}
+	// gated client, never around it. The request carries the key, so it
+	// follows no redirect: Go would drop Authorization on another host but
+	// keep a row's own headers, and an azure key rides in one.
+	oc.HTTPClient = egress.CredentialClient(egress.Transport(), 0)
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}

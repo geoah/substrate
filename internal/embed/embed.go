@@ -139,18 +139,16 @@ func New(cfg Config) (*Client, error) {
 	}
 	clientCfg := openai.DefaultConfig(cfg.APIKey)
 	clientCfg.BaseURL = cfg.BaseURL
-	httpClient := &http.Client{Timeout: cfg.Timeout}
 	// The base URL is a repository-chosen address, so the embeddings dial is
 	// confined to public destinations (issue #241). This path drains on a
 	// background ticker, not only on user dispatch, so the gate is the only
 	// thing standing between a chosen URL and the deployment's own network.
-	gated := egress.Transport()
+	// The request carries the key, so it follows no redirect.
+	var transport http.RoundTripper = egress.Transport()
 	if len(cfg.Headers) > 0 {
-		httpClient.Transport = &headerTransport{base: gated, headers: cfg.Headers}
-	} else {
-		httpClient.Transport = gated
+		transport = &headerTransport{base: transport, headers: cfg.Headers}
 	}
-	clientCfg.HTTPClient = httpClient
+	clientCfg.HTTPClient = egress.CredentialClient(transport, cfg.Timeout)
 	return &Client{
 		client:    openai.NewClientWithConfig(clientCfg),
 		model:     cfg.Model,
@@ -159,10 +157,23 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
+// Usage is what one embeddings request consumed, as the endpoint reported it.
+// A zero PromptTokens means the endpoint reported none.
+type Usage struct {
+	PromptTokens int
+}
+
 // Embed returns one vector per input text, in order.
 func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	vecs, _, err := e.EmbedUsage(ctx, texts)
+	return vecs, err
+}
+
+// EmbedUsage is Embed, with the tokens the endpoint reported for the request:
+// what a caller paying per token settles to.
+func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, Usage, error) {
 	if len(texts) == 0 {
-		return nil, nil
+		return nil, Usage{}, nil
 	}
 	resp, err := e.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
 		Model: openai.EmbeddingModel(e.model),
@@ -174,14 +185,14 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		// sentinel is wrapped, and it carries no text of its own.
 		msg := providersecret.Scrub(e.apiKey, err.Error())
 		if rejected(err) {
-			return nil, fmt.Errorf("%w: %s", ErrRejected, msg)
+			return nil, Usage{}, fmt.Errorf("%w: %s", ErrRejected, msg)
 		}
-		return nil, fmt.Errorf("embed: embedding request failed: %s", msg)
+		return nil, Usage{}, fmt.Errorf("embed: embedding request failed: %s", msg)
 	}
 	// The queue pairs each vector with its input BY POSITION, so a short or
 	// long answer is a failure, never something to zip against.
 	if len(resp.Data) != len(texts) {
-		return nil, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
+		return nil, Usage{}, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
 	}
 	// The response's index field names each vector's input position —
 	// arrival order carries no meaning on this wire.
@@ -189,7 +200,7 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	seen := make([]bool, len(resp.Data))
 	for _, d := range resp.Data {
 		if d.Index < 0 || d.Index >= len(out) || seen[d.Index] {
-			return nil, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
+			return nil, Usage{}, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
 		}
 		seen[d.Index] = true
 		// The declared width is what the storage column holds, and a gateway
@@ -197,12 +208,12 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		// the write-time check (decision record 0026). Refuse here rather than
 		// let Postgres refuse the insert with no model in the message.
 		if len(d.Embedding) != e.dimension {
-			return nil, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",
+			return nil, Usage{}, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",
 				e.model, len(d.Embedding), e.dimension)
 		}
 		out[d.Index] = d.Embedding
 	}
-	return out, nil
+	return out, Usage{PromptTokens: resp.Usage.PromptTokens}, nil
 }
 
 // rejected reports whether the endpoint refused the request for its input.
