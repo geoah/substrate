@@ -6,16 +6,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
 // The record, reference, merge and split cases: CASES.md REC-03, REC-04,
 // REC-06, REC-07, REC-08, REF-01, REF-03, REF-04, MRG-01 and MRG-02. They run
 // after the stories, over the repository the stories built, and every record
-// they write or delete carries the `x-` id prefix so the acme world stays as
-// it was left.
-// The one exception is REC-06, which has to write the ids that were once
-// reserved; it says so where it does.
+// they write or delete is created under eid of an `x-` name, so the acme
+// world stays as it was left.
 func init() {
 	registerCase(210, "REC-03", "What a PATCH can do to a property",
 		"A null deletes the property outright, a state property is a transition that stamps its own time, and a "+
@@ -26,9 +25,12 @@ func init() {
 			"problem addressed to `props.bogusprop`, and no record is written.",
 		xrCaseUndeclaredProperty)
 	registerCase(240, "REC-06", "Who names a record: PUT's path does, POST never does",
-		"A PUT lands at the path's id whatever the body says, and no id is reserved: the words that once named "+
-			"sub-resources are ordinary ids in both directions. `POST /api/v1/records` creates under a server-assigned id "+
-			"and refuses a body carrying one, 422 naming the PUT at the record path, writing nothing.",
+		"A PUT that would create a task under a readable id is refused 422 `validation` naming the minted shape "+
+			"and writes nothing; `incoming` and `edges`, which once named sub-resources, are refused the same way "+
+			"by the record route. A PUT under a minted id, as 26 Crockford characters or a UUID's canonical text, "+
+			"creates at the path's id whatever the body says, and a second PUT at that id updates it. "+
+			"`POST /api/v1/records` creates under a server-assigned id and refuses a body carrying one, 422 naming "+
+			"the PUT at the record path, writing nothing.",
 		xrCaseChosenIDs)
 	registerCase(250, "REC-07", "Labels and annotations round-trip",
 		"Both maps demand namespaced `<actor>/<name>` keys; a list row carries the labels but never the "+
@@ -65,21 +67,30 @@ func init() {
 		xrCaseSplit)
 }
 
-// The ids this group writes. Everything is `x-` prefixed: the stories own
-// every other id in the repository.
+// The ids this group writes, each eid of an `x-` name: the stories own every
+// other name in the repository.
+var (
+	xrPatchTask   = eid("x-rec-patch")
+	xrPropTask    = eid("x-rec-prop")
+	xrChosenPut   = eid("x-chosen2")
+	xrChosenGhost = eid("x-chosen-elsewhere")
+	xrChosenPost  = eid("x-chosen-posted")
+	xrMetaTask    = eid("x-rec-meta")
+	xrActorsTask  = eid("x-rec-actors")
+	xrRefTask     = eid("x-ref-task")
+	xrRefVictim   = eid("x-ref-victim")
+	xrRefHolder   = eid("x-ref-holder")
+	xrDupWinner   = eid("x-dup-a")
+	xrDupLoser    = eid("x-dup-b")
+	xrDupTask     = eid("x-dup-task")
+)
+
 const (
-	xrPatchTask   = "x-rec-patch"
-	xrPropTask    = "x-rec-prop"
-	xrChosenPut   = "x-chosen2"
-	xrChosenGhost = "x-chosen-elsewhere"
-	xrMetaTask    = "x-rec-meta"
-	xrActorsTask  = "x-rec-actors"
-	xrRefTask     = "x-ref-task"
-	xrRefVictim   = "x-ref-victim"
-	xrRefHolder   = "x-ref-holder"
-	xrDupWinner   = "x-dup-a"
-	xrDupLoser    = "x-dup-b"
-	xrDupTask     = "x-dup-task"
+	// xrChosenReadable is the readable id REC-06 is refused, and
+	// xrChosenUUID the other minted spelling it creates under: a UUIDv7's
+	// canonical lowercase text, as the apps mint it.
+	xrChosenReadable = "x-chosen-readable"
+	xrChosenUUID     = "0192f3a4-5b6c-7d8e-9f0a-1b2c3d4e5f60"
 
 	xrMergeCollection = "/api/v1/substrate.reamde.dev/core/recordmerge"
 	xrMergeKind       = "substrate.reamde.dev/core/recordmerge"
@@ -298,11 +309,34 @@ func xrCaseUndeclaredProperty(c *C) {
 	c.stepf("the patch door refuses it identically, so an existing record cannot grow the property either")
 }
 
-// xrCaseChosenIDs: REC-06. Who names a record. A PUT's path does, a POST's
-// body never does, and no word is held back from being an id.
+// xrCaseChosenIDs: REC-06. Who names a record. A PUT's path addresses it, a
+// POST's body never does, and a person creates a record of a minted kind under
+// a minted id alone (decision 0228).
 func xrCaseChosenIDs(c *C) {
-	// PUT at a path, with a DIFFERENT id in the body: the path wins and the
-	// body's id is ignored, so nothing lands at the id the body named.
+	// A readable id names no new record: the PUT is refused naming the shape
+	// the id must have, and nothing lands. The two words that once named static
+	// sub-resources under a record are refused the same way, BY THE RECORD
+	// ROUTE: the refusal and the 404 after it are the record's, so no
+	// reservation of either word survives.
+	for _, id := range []string{xrChosenReadable, "incoming", "edges"} {
+		status, raw := c.do(http.MethodPut, xrTaskPath(id),
+			map[string]any{"properties": map[string]any{"name": "A create under the readable id " + id}}, nil)
+		c.requiref(status == http.StatusUnprocessableEntity, "PUT at the readable id %q answered %d, want 422: %s", id, status, raw)
+		p := xrRefusal(c, raw)
+		c.requiref(p.Error.Code == "validation" &&
+			strings.Contains(p.Error.Message, strconv.Quote(id)+" is not a minted id") &&
+			strings.Contains(p.Error.Message, "26 lowercase Crockford base32 characters") &&
+			strings.Contains(p.Error.Message, "canonical lowercase UUID text"),
+			"the refusal of the readable id %q does not name the minted shape: %s", id, raw)
+		status, raw = c.do(http.MethodGet, xrTaskPath(id), nil, nil)
+		c.requiref(status == http.StatusNotFound && strings.Contains(xrRefusal(c, raw).Error.Message, "record "+id),
+			"after the refused PUT the id %q answered %d, want the record route's 404: %s", id, status, raw)
+	}
+	c.stepf("a PUT creating a task at `%s`, `incoming` or `edges` is 422 `validation` naming the minted shape, and each id then reads the record route's 404: nothing landed, and neither former sub-resource word is reserved", xrChosenReadable)
+
+	// A minted id, in the 26 Crockford characters the server mints, with a
+	// DIFFERENT minted id in the body: the path wins and the body's id is
+	// ignored, so nothing lands at the id the body named.
 	var put xrRecord
 	status, raw := c.do(http.MethodPut, xrTaskPath(xrChosenPut), map[string]any{
 		"id":         xrChosenGhost,
@@ -312,44 +346,45 @@ func xrCaseChosenIDs(c *C) {
 	c.requiref(put.ID == xrChosenPut, "the PUT landed at %q, want the path's %q", put.ID, xrChosenPut)
 	status, _ = c.do(http.MethodGet, xrTaskPath(xrChosenGhost), nil, nil)
 	c.requiref(status == http.StatusNotFound, "the body's id answered %d, want 404: a PUT's path is the id", status)
-	c.stepf("`PUT %s` landed at the path's id and the body's `%s` was ignored", xrTaskPath(xrChosenPut), xrChosenGhost)
+	c.stepf("`PUT %s` created the task at the path's minted id and the body's `%s` was ignored", xrTaskPath(xrChosenPut), xrChosenGhost)
 
-	// Nothing is reserved. The two words that once named static sub-resources
-	// under a record name nothing on the wire now, so each is an ordinary id
-	// in both directions, write and read. Asserted rather than assumed, because
-	// a leftover reservation would refuse a perfectly ordinary id forever.
-	for _, id := range []string{"incoming", "edges"} {
-		status, raw = c.do(http.MethodPut, xrTaskPath(id),
-			map[string]any{"properties": map[string]any{"name": "An ordinary record that happens to be called " + id}}, nil)
-		c.requiref(status == http.StatusCreated, "PUT at the id %q answered %d, want 201: %s", id, status, raw)
-		ordinary := xrGet(c, xrTaskPath(id))
-		c.requiref(ordinary.ID == id, "the record at the id %q reads back as %q", id, ordinary.ID)
-		_, listed := xrListFind(c, listOf(tasksCollection, "first=200"), id)
-		c.requiref(listed, "the record at the id %q is missing from the task list", id)
-	}
-	var gone xrRecord
-	status, raw = c.do(http.MethodDelete, xrTaskPath("incoming"), nil, &gone)
-	c.requiref(status == http.StatusOK, "DELETE at the id `incoming` answered %d, want 200: %s", status, raw)
-	c.requiref(gone.DeletedAt != "", "the delete's answer carries no deletedAt")
-	c.stepf("`incoming` and `edges` are ordinary record ids: each write is a 201, each read answers it, and `DELETE` tombstones `incoming` like any record")
+	// The other spelling a client may mint: a UUID's canonical lowercase text.
+	var asUUID xrRecord
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrChosenUUID),
+		map[string]any{"properties": map[string]any{"name": "Named by a UUID"}}, &asUUID)
+	c.requiref(status == http.StatusCreated, "the PUT at a UUID's text answered %d, want 201: %s", status, raw)
+	c.requiref(asUUID.ID == xrChosenUUID && xrGet(c, xrTaskPath(xrChosenUUID)).ID == xrChosenUUID,
+		"the task created at %q reads back as %q", xrChosenUUID, asUUID.ID)
+	c.stepf("`PUT %s` created the task under the UUID's canonical text, the other minted spelling", xrTaskPath(xrChosenUUID))
+
+	// Addressing a record that exists is not naming it: a second PUT at the
+	// id is an update, which merges.
+	var merged xrRecord
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrChosenPut),
+		map[string]any{"properties": map[string]any{"description": "A second PUT at the same id"}}, &merged)
+	c.requiref(status == http.StatusOK && merged.Version == 2 && merged.prop("name") == "Named by the path",
+		"a second PUT at the minted id answered %d at version %d with name %q, want 200, version 2 and the name kept: %s",
+		status, merged.Version, merged.prop("name"), raw)
+	c.stepf("a second PUT at the minted id is a 200 update at version 2 that keeps the name: the rule judges a create alone")
 
 	// POST never takes an id: the body-addressed create lands under a
 	// server-assigned id, and a body carrying one is refused, pointing at the
-	// PUT that writes the record it named. Nothing is written by the refusal.
+	// PUT that writes the record it named. The id is minted, so the refusal is
+	// POST's and not the id's. Nothing is written by the refusal.
 	before := c.countRecords(tasksCollection)
 	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
 		"kind":       kindOf(tasksCollection),
-		"id":         "incoming",
+		"id":         xrChosenPost,
 		"properties": map[string]any{"name": "A create that tries to choose its id"},
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "the POST carrying an id answered %d, want 422: %s", status, raw)
 	p := xrRefusal(c, raw)
-	wantPut := "PUT " + xrTaskPath("incoming")
+	wantPut := "PUT " + xrTaskPath(xrChosenPost)
 	c.requiref(p.Error.Code == "validation" && strings.Contains(p.Error.Message, wantPut),
 		"the refusal does not name the PUT at the record path %q: %q", wantPut, p.Error.Message)
 	c.requiref(c.countRecords(tasksCollection) == before,
 		"the refused POST wrote a record: %d tasks before, %d after", before, c.countRecords(tasksCollection))
-	c.stepf("`POST %s` carrying `{\"id\":\"incoming\"}` is 422 `validation` naming `%s`, and the task list is unchanged", recordsRoute, wantPut)
+	c.stepf("`POST %s` carrying `{\"id\":\"%s\"}` is 422 `validation` naming `%s`, and the task list is unchanged", recordsRoute, xrChosenPost, wantPut)
 }
 
 // xrCaseLabelsAnnotations: REC-07. The two side maps, their key rule, and
@@ -455,7 +490,7 @@ func xrCaseReferenceWrites(c *C) {
 	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrRefTask, status, raw)
 
 	// The retired verbs are gone from the router, not merely deprecated.
-	status, raw = c.do(http.MethodPost, xrTaskPath(xrRefTask)+"/edges/assignee", map[string]any{"id": "sam"}, nil)
+	status, raw = c.do(http.MethodPost, xrTaskPath(xrRefTask)+"/edges/assignee", map[string]any{"id": eid("sam")}, nil)
 	c.requiref(status == http.StatusNotFound, "the retired link route answered %d, want 404: %s", status, raw)
 	c.stepf("`POST …/edges/assignee` is a 404: the link verbs are gone, not deprecated")
 
@@ -477,20 +512,20 @@ func xrCaseReferenceWrites(c *C) {
 
 	var linked xrRecord
 	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
-		"properties": map[string]any{"assignee": "sam"},
+		"properties": map[string]any{"assignee": eid("sam")},
 	}, &linked)
 	c.requiref(status == http.StatusOK, "writing the assignee answered %d, want 200: %s", status, raw)
-	c.requiref(sameSet(xrRefPaths(linked, "assignee"), recPath(personKind, "sam")),
+	c.requiref(sameSet(xrRefPaths(linked, "assignee"), recPath(personKind, eid("sam"))),
 		"the write's answer does not carry the reference: %v", linked.Properties["assignee"])
 	c.requiref(linked.Version > 1, "the write left the version at %d", linked.Version)
-	c.stepf("a put of `{\"assignee\": \"sam\"}` stored the canonical `%s` at version %d: a pinned reference completes the bare id",
-		recPath(personKind, "sam"), linked.Version)
+	c.stepf("a put of sam's bare id `{\"assignee\": \"%s\"}` stored the canonical `%s` at version %d: a pinned reference completes the bare id",
+		eid("sam"), recPath(personKind, eid("sam")), linked.Version)
 
 	// The reference reads from both ends while it is set.
 	got := xrGet(c, xrTaskPath(xrRefTask))
-	c.requiref(sameSet(xrRefPaths(got, "assignee"), recPath(personKind, "sam")),
+	c.requiref(sameSet(xrRefPaths(got, "assignee"), recPath(personKind, eid("sam"))),
 		"the source's GET does not carry the reference: %v", got.Properties["assignee"])
-	c.requiref(xrPointsAt(c, personKind, "sam", "assignee", xrRefTask),
+	c.requiref(xrPointsAt(c, personKind, eid("sam"), "assignee", xrRefTask),
 		"sam's reverse read does not list %s under assignee", xrRefTask)
 	c.stepf("the reference reads from both ends: on the task's GET, and on `sam`'s reverse read (`filter.referencing`) under `assignee`")
 
@@ -501,7 +536,7 @@ func xrCaseReferenceWrites(c *C) {
 		"properties": map[string]any{"name": "The reference probe, renamed"},
 	}, &kept)
 	c.requiref(status == http.StatusOK, "the second put answered %d: %s", status, raw)
-	c.requiref(sameSet(xrRefPaths(kept, "assignee"), recPath(personKind, "sam")),
+	c.requiref(sameSet(xrRefPaths(kept, "assignee"), recPath(personKind, eid("sam"))),
 		"a put that omitted `assignee` pruned it: %v", kept.Properties["assignee"])
 	c.stepf("a put that omits `assignee` keeps it: a put merges and never prunes")
 
@@ -512,7 +547,7 @@ func xrCaseReferenceWrites(c *C) {
 	c.requiref(status == http.StatusOK, "the clearing patch answered %d, want 200: %s", status, raw)
 	c.requiref(len(xrRefPaths(cleared, "assignee")) == 0,
 		"the null left the reference standing: %v", cleared.Properties["assignee"])
-	c.requiref(!xrPointsAt(c, personKind, "sam", "assignee", xrRefTask),
+	c.requiref(!xrPointsAt(c, personKind, eid("sam"), "assignee", xrRefTask),
 		"sam's reverse read still lists %s after the clearing patch", xrRefTask)
 	c.stepf("`PATCH` with `{\"assignee\": null}` dropped the pointer from both ends")
 }
@@ -607,7 +642,7 @@ func xrMatchProperties(c *C, page recordsPage) (props, from map[string]bool) {
 // transcript. It is an ordinary list with one more filter arm, so everything
 // a list takes, it takes.
 func xrCaseReferencing(c *C) {
-	all := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=200"))
+	all := xrReferencingRead(c, referencingList(personKind, eid("sam"), "", "first=200"))
 	c.requiref(len(all.Records) >= 4, "sam is pointed at by %d records; the stories left at least four", len(all.Records))
 	props, _ := xrMatchProperties(c, all)
 	c.requiref(props["assignee"] && props["members"], "sam is pointed at from %v; want at least assignee and members", props)
@@ -616,47 +651,47 @@ func xrCaseReferencing(c *C) {
 	// `referencing.property` narrows to one reference property, and the
 	// narrowing shows in `matches` too: no site from another property rides
 	// along on a record that also matched the named one.
-	byProp := xrReferencingRead(c, referencingList(personKind, "sam", "assignee", "first=200"))
+	byProp := xrReferencingRead(c, referencingList(personKind, eid("sam"), "assignee", "first=200"))
 	c.requiref(len(byProp.Records) > 0, "referencing.property=assignee answered nothing")
 	c.requiref(len(byProp.Records) <= len(all.Records), "the narrowed page %d exceeds the whole fan-in %d", len(byProp.Records), len(all.Records))
 	narrowed, from := xrMatchProperties(c, byProp)
 	c.requiref(len(narrowed) == 1 && narrowed["assignee"], "referencing.property=assignee answered sites from %v", narrowed)
-	c.requiref(from["task-invite-flow"], "referencing.property=assignee lost the task the stories assigned to sam")
+	c.requiref(from[eid("task-invite-flow")], "referencing.property=assignee lost the task the stories assigned to sam")
 	c.stepf("`referencing.property=assignee` narrowed %d records to %d, every match an assignee site, `task-invite-flow` among them", len(all.Records), len(byProp.Records))
 
 	// The source kind is narrowed the way any list narrows: `kinds` beside
 	// `referencing` in the same filter.
 	byKind := xrReferencingRead(c, listWhere(map[string]any{
 		"kinds":       []string{teamKind},
-		"referencing": map[string]any{"ref": recPath(personKind, "sam")},
+		"referencing": map[string]any{"ref": recPath(personKind, eid("sam"))},
 	}, "first=200"))
 	c.requiref(len(byKind.Records) > 0, "kinds=[%s] beside referencing answered nothing", teamKind)
 	fromTeam := false
 	for _, rec := range byKind.Records {
 		c.requiref(rec.Kind == teamKind, "kinds=[%s] answered a record of kind %s", teamKind, rec.Kind)
-		fromTeam = fromTeam || rec.ID == "product"
+		fromTeam = fromTeam || rec.ID == eid("product")
 	}
 	c.requiref(fromTeam, "kinds=[%s] beside referencing lost the team sam leads", teamKind)
 	c.stepf("`{\"kinds\":[%q],\"referencing\":…}` answered %d records, every one a team, `product` among them", teamKind, len(byKind.Records))
 
 	// The keyset page walks the fan-in one record at a time, and the cursor
 	// picks up at the next DISTINCT record rather than repeating the last one.
-	first := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=1"))
+	first := xrReferencingRead(c, referencingList(personKind, eid("sam"), "", "first=1"))
 	c.requiref(len(first.Records) == 1, "first=1 answered %d records", len(first.Records))
 	c.requiref(first.Cursor != "", "first=1 answered no cursor with more records to come")
-	next := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=1", "after="+url.QueryEscape(first.Cursor)))
+	next := xrReferencingRead(c, referencingList(personKind, eid("sam"), "", "first=1", "after="+url.QueryEscape(first.Cursor)))
 	c.requiref(len(next.Records) == 1, "the second page answered %d records", len(next.Records))
 	c.requiref(next.Records[0].ID != first.Records[0].ID || next.Records[0].Kind != first.Records[0].Kind,
 		"the second page repeated the first record: %s/%s", next.Records[0].Kind, next.Records[0].ID)
 	c.stepf("`first=1` answered one record and a cursor; `after` answered the next distinct record")
 
 	// The list grammar applies whole: a reverse read orders like any list.
-	ordered := xrReferencingRead(c, referencingList(personKind, "sam", "", "first=200", "orderBy=createdAt"))
+	ordered := xrReferencingRead(c, referencingList(personKind, eid("sam"), "", "first=200", "orderBy=createdAt"))
 	c.requiref(len(ordered.Records) == len(all.Records), "orderBy=createdAt answered %d records, want the same %d", len(ordered.Records), len(all.Records))
 
 	// A parameter the route does not take is refused, never ignored into an
 	// unnarrowed answer that looks narrowed.
-	status, raw := c.do(http.MethodGet, referencingList(personKind, "sam", "", "rel=assignee"), nil, nil)
+	status, raw := c.do(http.MethodGet, referencingList(personKind, eid("sam"), "", "rel=assignee"), nil, nil)
 	c.requiref(status == http.StatusBadRequest, "the `rel` parameter answered %d, want 400: %s", status, raw)
 	refused := xrRefusal(c, raw)
 	c.requiref(refused.Error.Code == "bad_request" && strings.Contains(refused.Error.Message, `unknown query parameter "rel"`),

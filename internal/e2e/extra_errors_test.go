@@ -332,19 +332,19 @@ func xeCaseEveryCode(c *C) {
 }
 
 func xeCodeCases() []xeCodeCase {
-	const lifecycle = xeNotePath + "/lifecycle"
+	lifecycle := xeNotePath + "/" + eid("lifecycle")
 	return []xeCodeCase{{
 		code: "conflict",
 		name: "a put carrying a stale ifVersion answers 409 naming both versions",
 		run: func(c *C) {
-			c.putRec(xeNotePath, "lifecycle", map[string]any{"subject": "the first write"})
-			c.putRec(xeNotePath, "lifecycle", map[string]any{"subject": "the second write"})
+			c.putRec(xeNotePath, eid("lifecycle"), map[string]any{"subject": "the first write"})
+			c.putRec(xeNotePath, eid("lifecycle"), map[string]any{"subject": "the second write"})
 			status, raw := c.do(http.MethodPut, lifecycle, map[string]any{
 				"ifVersion": 1, "properties": map[string]any{"subject": "written against a moved version"},
 			}, nil)
 			xeRequireError(c, "a stale ifVersion", status, raw, http.StatusConflict, "conflict")
 			c.requiref(strings.Contains(string(raw), "ifVersion 1, stored 2"), "the conflict does not name both versions: %s", raw)
-			rec := c.getRec(xeNotePath, "lifecycle")
+			rec := c.getRec(xeNotePath, eid("lifecycle"))
 			c.requiref(rec.Version == 2 && rec.prop("subject") == "the second write", "the refused put changed the record: %+v", rec)
 		},
 	}, {
@@ -360,17 +360,19 @@ func xeCodeCases() []xeCodeCase {
 		code: "lossy",
 		name: "a redeclaration that drops a property with live values answers 403 without a confirmation",
 		run: func(c *C) {
-			c.putRec(xeNotePath, "dated", map[string]any{"subject": "dated", "occurredAt": "2026-09-08T00:00:00Z"})
+			c.putRec(xeNotePath, eid("dated"), map[string]any{"subject": "dated", "occurredAt": "2026-09-08T00:00:00Z"})
 			status, raw := xeApply(c, xeNoteDoc(false))
 			xeRequireError(c, "a lossy redeclaration", status, raw, http.StatusForbidden, "lossy")
-			rec := c.getRec(xeNotePath, "dated")
+			rec := c.getRec(xeNotePath, eid("dated"))
 			c.requiref(rec.prop("occurredAt") != "", "the refused redeclaration dropped the value anyway")
 		},
 	}, {
 		code: "validation",
 		name: "a write missing a required property answers 422 naming it",
 		run: func(c *C) {
-			status, raw := c.do(http.MethodPut, xeNotePath+"/no-subject", map[string]any{
+			// A minted id, so the refusal is the missing property's and not
+			// the id's.
+			status, raw := c.do(http.MethodPut, xeNotePath+"/"+eid("no-subject"), map[string]any{
 				"properties": map[string]any{"occurredAt": "2026-08-17T09:00:00Z"},
 			}, nil)
 			e := xeRequireError(c, "a missing required property", status, raw, http.StatusUnprocessableEntity, "validation")
@@ -462,7 +464,7 @@ func xeParked(c *C) {
 		status, raw := c.do(http.MethodPatch, triggerCollection+"/"+xeTrigger, map[string]any{"properties": map[string]any{"enabled": false}}, nil)
 		c.requiref(status == http.StatusOK, "disabling %s answered %d: %s", xeTrigger, status, raw)
 	}()
-	c.putRec(xeNotePath, "parks", map[string]any{"subject": "a note whose delivery parks"})
+	c.putRec(xeNotePath, eid("parks"), map[string]any{"subject": "a note whose delivery parks"})
 
 	var parked struct {
 		Items []struct {

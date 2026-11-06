@@ -298,16 +298,17 @@ func (s *xqStream) row(c *C) (changeRow, bool) {
 func xqCaseListGrammar(c *C) {
 	// Three tasks the case owns, a day apart, so the order under test is
 	// total among them whatever else the collection holds.
-	due := [][2]string{
-		{"x-qry-first", "2027-03-01T09:00:00Z"},
-		{"x-qry-second", "2027-03-02T09:00:00Z"},
-		{"x-qry-third", "2027-03-03T09:00:00Z"},
+	first, second, third := eid("x-qry-first"), eid("x-qry-second"), eid("x-qry-third")
+	due := [][3]string{
+		{first, "x-qry-first", "2027-03-01T09:00:00Z"},
+		{second, "x-qry-second", "2027-03-02T09:00:00Z"},
+		{third, "x-qry-third", "2027-03-03T09:00:00Z"},
 	}
 	for _, d := range due {
-		c.putRec(tasksCollection, d[0], map[string]any{"name": "QRY-01 " + d[0], "dueAt": d[1]})
+		c.putRec(tasksCollection, d[0], map[string]any{"name": "QRY-01 " + d[1], "dueAt": d[2]})
 	}
 	var done record
-	status, raw := c.do(http.MethodPatch, tasksCollection+"/x-qry-third",
+	status, raw := c.do(http.MethodPatch, tasksCollection+"/"+third,
 		map[string]any{"properties": map[string]any{"status": "done"}}, &done)
 	c.requiref(status == http.StatusOK && done.prop("status") == "done",
 		"moving x-qry-third to done answered %d: %s", status, raw)
@@ -321,9 +322,9 @@ func xqCaseListGrammar(c *C) {
 			"the status filter returned `%s` with status %q", rec.ID, rec.prop("status"))
 	}
 	openIDs := xqIDs(open.Records)
-	c.requiref(xqIndexOf(openIDs, "x-qry-first") >= 0 && xqIndexOf(openIDs, "x-qry-second") >= 0,
+	c.requiref(xqIndexOf(openIDs, first) >= 0 && xqIndexOf(openIDs, second) >= 0,
 		"the status=open filter dropped a task that is open: %v", openIDs)
-	c.requiref(xqIndexOf(openIDs, "x-qry-third") < 0,
+	c.requiref(xqIndexOf(openIDs, third) < 0,
 		"the status=open filter returned `x-qry-third`, which is done")
 	c.stepf("`filter={\"properties\":{\"status\":{\"eq\":\"open\"}}}` answered %d records, every one `open`, "+
 		"with the done task absent", len(open.Records))
@@ -347,11 +348,11 @@ func xqCaseListGrammar(c *C) {
 	c.requiref(xqSameOrder(xqIDs(descJSON.Records), xqIDs(desc.Records)),
 		"the JSON orderBy answered a different order than `dueAt:desc`")
 	ascIDs, descIDs := xqIDs(asc.Records), xqIDs(desc.Records)
-	c.requiref(xqIndexOf(ascIDs, "x-qry-first") < xqIndexOf(ascIDs, "x-qry-second") &&
-		xqIndexOf(ascIDs, "x-qry-second") < xqIndexOf(ascIDs, "x-qry-third"),
+	c.requiref(xqIndexOf(ascIDs, first) < xqIndexOf(ascIDs, second) &&
+		xqIndexOf(ascIDs, second) < xqIndexOf(ascIDs, third),
 		"the case's three tasks are out of dueAt order ascending: %v", ascIDs)
-	c.requiref(xqIndexOf(descIDs, "x-qry-third") < xqIndexOf(descIDs, "x-qry-second") &&
-		xqIndexOf(descIDs, "x-qry-second") < xqIndexOf(descIDs, "x-qry-first"),
+	c.requiref(xqIndexOf(descIDs, third) < xqIndexOf(descIDs, second) &&
+		xqIndexOf(descIDs, second) < xqIndexOf(descIDs, first),
 		"the case's three tasks are out of dueAt order descending: %v", descIDs)
 	c.stepf("`orderBy=dueAt` ordered %d dated tasks ascending, `orderBy=dueAt:desc` and the JSON "+
 		"`[{\"property\":\"dueAt\",\"desc\":true}]` both answered the same descending order", len(asc.Records))
@@ -487,7 +488,7 @@ func xqCaseBackwardPage(c *C) {
 func xqCaseFeedFilters(c *C) {
 	// The case owns a delete, so the delete class is never empty whatever
 	// else ran first.
-	const doomed = "x-log-doomed"
+	doomed := eid("x-log-doomed")
 	c.putRec(tasksCollection, doomed, map[string]any{"name": "A task LOG-03 deletes"})
 	status, raw := c.do(http.MethodDelete, tasksCollection+"/"+doomed, nil, nil)
 	c.requiref(status == http.StatusOK, "deleting `%s` answered %d: %s", doomed, status, raw)
@@ -577,7 +578,7 @@ func xqCaseFeedFilters(c *C) {
 // xqCaseRecordHistory narrows the feed to one record, which takes the id and
 // the kind together because an id alone names one row per kind that uses it.
 func xqCaseRecordHistory(c *C) {
-	const id = "task-welcome-flow"
+	id := eid("task-welcome-flow")
 	all := xqReadFeed(c, url.Values{})
 	c.requiref(len(all) > 0, "the changelog is empty")
 	head := all[len(all)-1].Seq
@@ -634,9 +635,9 @@ func xqCaseRecordsWatch(c *C) {
 
 	// The person is written FIRST and lands at the lower seq: were the kind
 	// filter dropped, its row would arrive before the task's.
-	c.putRec(personCollection, "x-log-watcher",
+	c.putRec(personCollection, eid("x-log-watcher"),
 		map[string]any{"name": "Wren Watcher", "emails": []string{"wren@acme.example"}})
-	const probe = "x-log-watched"
+	probe := eid("x-log-watched")
 	c.putRec(tasksCollection, probe, map[string]any{"name": "The records watch probe"})
 
 	rows := 0

@@ -44,6 +44,16 @@ events, then a notetaker's transcripts.
 
 ## How the stories are built
 
+- The names in the table above are readable names, not ids. The owner and
+  the scripted agents create every story record under `eid(<name>)`, a
+  minted id derived from the name, because a person or an agent creates a
+  record of a minted kind under a minted id alone
+  ([decision 0228](../../docs/decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
+  The matcher writes its audit of a transcript under
+  `eid("mv-" + transcriptID)`, and reflection proposes each task under
+  `eid("task-…")`, so the accept lands it there. A function names its own
+  records: the resolver files an import's event under `ev-<import id>` and a
+  stranger under `person-<local part of the email>`.
 - The story-local declarations (the STORY-02 resolver function, the
   `scorecandidates` tool, and the three agents `transcriptMatcher`,
   `actionItemExtractor` and `changeRequestReviewer`) live in one story-local

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -380,6 +381,13 @@ func httpJSON(hc *http.Client, base, token, method, path string, body any) (int,
 	}
 	return resp.StatusCode, raw, nil
 }
+
+// eid is the id the suite creates a record of a minted kind under. A person
+// creates such a record under a minted id alone (decision 0228), and deriving
+// it from a readable name lets a case, a scripted agent turn and an assertion
+// name the record before the server answers. Kinds whose ids are named
+// (triggers, provider rows, settings, an input's `default`) keep their names.
+func eid(name string) string { return vocabulary.DerivedMintedID("e2e", name) }
 
 // recordsRoute is the one list route: every read of "some records" is a GET
 // here, told apart by its parameters, and the one body-addressed create is a

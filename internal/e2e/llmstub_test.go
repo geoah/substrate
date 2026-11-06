@@ -94,9 +94,46 @@ type llmReq struct {
 }
 
 type llmMessage struct {
-	Role    string `json:"role"`
-	Name    string `json:"name"`
-	Content string `json:"content"`
+	Role    string     `json:"role"`
+	Name    string     `json:"name"`
+	Content llmContent `json:"content"`
+}
+
+// llmContent is a message's content in either shape the OpenAI wire takes: a
+// string, or a list of text parts. The substrate sends a user turn that
+// carries a turn context (the time, the owner's zone, the records in view) as
+// two parts, the turn's own text first: every trigger delivery and every chat
+// turn arrives that way.
+type llmContent []string
+
+func (c *llmContent) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*c = llmContent{s}
+		return nil
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(b, &parts); err != nil {
+		return err
+	}
+	*c = nil
+	for _, p := range parts {
+		if p.Type == "text" {
+			*c = append(*c, p.Text)
+		}
+	}
+	return nil
+}
+
+// text is the turn's own text: the first part, ahead of any context.
+func (c llmContent) text() string {
+	if len(c) == 0 {
+		return ""
+	}
+	return c[0]
 }
 
 type llmTurn struct {
@@ -255,7 +292,7 @@ func (r llmReq) envelope() map[string]any {
 	for _, m := range r.Messages {
 		if m.Role == "user" {
 			var env map[string]any
-			if json.Unmarshal([]byte(m.Content), &env) == nil {
+			if json.Unmarshal([]byte(m.Content.text()), &env) == nil {
 				return env
 			}
 			return nil
@@ -289,7 +326,7 @@ func (r llmReq) lastToolResult(name string) map[string]any {
 	for i := len(r.Messages) - 1; i >= 0; i-- {
 		if r.Messages[i].Role == "tool" && r.Messages[i].Name == name {
 			var out map[string]any
-			if json.Unmarshal([]byte(r.Messages[i].Content), &out) == nil {
+			if json.Unmarshal([]byte(r.Messages[i].Content.text()), &out) == nil {
 				return out
 			}
 			return nil

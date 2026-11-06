@@ -299,21 +299,23 @@ func xfCaseFunctionFault(c *C) {
 
 func xfCaseHostFunctions(c *C) {
 	// `query` is a read, and the caller is a token that owns the whole
-	// repository: there is nothing narrower to hold it to, so it runs.
+	// repository: there is nothing narrower to hold it to, so it runs. The
+	// record is the task STORY-04's accept landed.
+	welcome := eid("task-welcome-flow")
 	var out xfCallOut
 	status, raw := xfCall(c, xfHostQuery,
-		map[string]any{"kind": taskKind, "id": "task-welcome-flow"}, &out)
+		map[string]any{"kind": taskKind, "id": welcome}, &out)
 	c.requiref(status == http.StatusOK, "calling %s answered %d: %s", xfHostQuery, status, raw)
 	rec, _ := out.Output["record"].(map[string]any)
-	c.requiref(rec != nil && rec["id"] == "task-welcome-flow" && rec["kind"] == taskKind,
+	c.requiref(rec != nil && rec["id"] == welcome && rec["kind"] == taskKind,
 		"%s answered the wrong record: %s", xfHostQuery, raw)
-	c.stepf("`%s` read `task-welcome-flow` back through the call API, under the token's own reach", xfHostQuery)
+	c.stepf("`%s` read the welcome-flow task `%s` back through the call API, under the token's own reach", xfHostQuery, welcome)
 
 	// The bare name is refused as malformed (decision record 0101), and the
 	// refusal names every function declared under the word, the built-in
 	// included, so the caller copies the identity it meant.
 	status, raw = c.do(http.MethodPost, xfFunctionPath+"query/call",
-		map[string]any{"input": map[string]any{"kind": taskKind, "id": "task-welcome-flow"}}, nil)
+		map[string]any{"input": map[string]any{"kind": taskKind, "id": welcome}}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity, "the bare name `query` answered %d, want 422: %s", status, raw)
 	refusal := xfDecodeError(c, raw)
 	c.requiref(strings.Contains(refusal.Error.Message, "is a bare name") && strings.Contains(refusal.Error.Message, xfHostQuery),
@@ -328,10 +330,10 @@ func xfCaseHostFunctions(c *C) {
 	// behind it.
 	inputs := map[string]map[string]any{
 		xfHostPropose: {
-			"op": "patch", "kind": taskKind, "target": "task-welcome-flow",
+			"op": "patch", "kind": taskKind, "target": welcome,
 			"diff": map[string]any{"properties": map[string]any{"priority": "low"}}, "rationale": "a direct call must not file this",
 		},
-		xfHostWrite: {"op": "patch", "kind": taskKind, "id": "task-welcome-flow", "input": map[string]any{}},
+		xfHostWrite: {"op": "patch", "kind": taskKind, "id": welcome, "input": map[string]any{}},
 	}
 	for _, name := range []string{xfHostPropose, xfHostWrite} {
 		status, raw = xfCall(c, name, inputs[name], nil)
@@ -516,7 +518,7 @@ func xfCounterResponder(req llmReq) llmTurn {
 		text := ""
 		for _, m := range req.Messages {
 			if m.Role == "user" {
-				text = m.Content
+				text = m.Content.text()
 			}
 		}
 		return llmTurn{calls: []llmCall{{"wordcount", map[string]any{"text": text}}}}
