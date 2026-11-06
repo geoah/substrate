@@ -307,6 +307,32 @@ async function seedObservations(page) {
   if (problem) throw new Error(`seeding measurements: ${problem}`)
 }
 
+/** The name on the owner's own contact, read the way an agent finds it: the
+ * core setting `ownerContact`, then the contact its value names. Null where
+ * either is missing. */
+async function ownerContactName(page) {
+  return page.evaluate(async () => {
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${localStorage.getItem("substrate.token")}`,
+      "X-Substrate-Actor": "console",
+    }
+    const read = async (path) => {
+      const res = await fetch(path, { headers })
+      return res.ok ? res.json() : null
+    }
+    const setting = await read(
+      `/api/v1/substrate.reamde.dev/core/setting/${encodeURIComponent("substrate.reamde.dev/core/ownerContact")}`
+    )
+    const id = setting?.properties?.value
+    if (!id) return null
+    const contact = await read(
+      `/api/v1/substrate.reamde.dev/core/contact/${encodeURIComponent(id)}`
+    )
+    return contact?.properties?.name ?? null
+  })
+}
+
 function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`
 }
@@ -363,13 +389,27 @@ const routes = [
         pageTitle(page, "Save your recovery key")
       )
       await page.getByRole("button", { name: "Saved, continue" }).click()
+      await shows(
+        page,
+        '"What should we call you?" heading',
+        pageTitle(page, "What should we call you?")
+      )
+      const owner = "Render Check"
+      await page.locator("#owner-name").fill(owner)
+      await page.getByRole("button", { name: "Continue", exact: true }).click()
       await at(page, "/")
       await shows(
         page,
         '"Your substrate" heading',
         pageTitle(page, "Your substrate")
       )
-      return `registered ${repository}, kept the recovery key, "Your substrate"`
+      const named = await ownerContactName(page)
+      if (named !== owner) {
+        throw new Error(
+          `the owner's contact is named ${JSON.stringify(named)}, not ${JSON.stringify(owner)}`
+        )
+      }
+      return `registered ${repository}, kept the recovery key, named the owner's contact, "Your substrate"`
     },
   },
   {

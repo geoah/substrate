@@ -30,6 +30,14 @@ describe("crumbsFor", () => {
     )
   })
 
+  it("keeps Your name under Settings", () => {
+    expect(crumbsFor("/settings/name")).toEqual([
+      { label: "Settings", to: "/settings" },
+      { label: "Your name" },
+    ])
+    expect(pageTitle(crumbsFor("/settings/name"))).toBe("Your name · Settings")
+  })
+
   it("keeps the timeline under Observations", () => {
     expect(crumbsFor("/observations/timeline")).toEqual([
       { label: "Observations", to: "/observations" },

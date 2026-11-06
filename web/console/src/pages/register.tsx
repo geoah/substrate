@@ -10,6 +10,7 @@ import { QRCodeCanvas } from "qrcode.react"
 
 import { DnsRecord } from "@/components/dns-record"
 import { DoorLayout, doorLinkClass } from "@/components/door/door-layout"
+import { OwnerNameForm } from "@/components/owner-name-form"
 import { Button } from "@/components/ui/button"
 import {
   Field,
@@ -204,7 +205,11 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * first token — ending LOGGED IN, because the response carries that token.
  *
  * Where the substrate verifies no second factor there IS no step two: the one
- * form commits, and the seed is minted server-side and enrolled nowhere. */
+ * form commits, and the seed is minted server-side and enrolled nowhere.
+ *
+ * Once the repository exists, and after the recovery key where one arrived,
+ * the page asks the owner's name and saves it as their own contact; skipping
+ * writes nothing. Either way `land()` then decides where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
   const { inviteRequired, totpRequired } = useAuthPolicy()
@@ -247,6 +252,9 @@ export function RegisterPage() {
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
+  // The repository's name once it exists and the session holds it: the name
+  // step is due.
+  const [registered, setRegistered] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
 
@@ -345,17 +353,13 @@ export function RegisterPage() {
       // write, so a blocked localStorage cannot take the only showing with it,
       // and the page holds the reader until they carry it off instead of
       // navigating past it.
-      const holdKeys = Boolean(minted.recoveryKey)
-      if (holdKeys) {
-        setRecoveryKey(minted.recoveryKey ?? null)
-      }
+      if (minted.recoveryKey) setRecoveryKey(minted.recoveryKey)
       saveSession(
         minted.secret,
         minted.repository ?? authority,
         minted.token.id
       )
-      if (holdKeys) return
-      await land()
+      setRegistered(minted.repository ?? authority)
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
         // Which factor was wrong is whichever this door reads: a substrate
@@ -403,7 +407,9 @@ export function RegisterPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            void land()
+            // Without a session there is nothing to save a name into.
+            if (registered !== null) setRecoveryKey(null)
+            else void land()
           }}
         >
           <FieldGroup>
@@ -427,6 +433,22 @@ export function RegisterPage() {
             </Field>
           </FieldGroup>
         </form>
+      </DoorLayout>
+    )
+  }
+
+  if (registered !== null) {
+    return (
+      <DoorLayout
+        eyebrow="Substrate created"
+        title="What should we call you?"
+        description="Your name is saved as your own contact, so your agents and apps know which contact is you."
+      >
+        <OwnerNameForm
+          repository={registered}
+          onSaved={() => land()}
+          onSecondary={() => void land()}
+        />
       </DoorLayout>
     )
   }

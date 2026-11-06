@@ -163,6 +163,8 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
           { label: "Settings", to: "/settings" },
           { label: "AI assistants" },
         ]
+      if (rest[0] === "name")
+        return [{ label: "Settings", to: "/settings" }, { label: "Your name" }]
       return [{ label: "Settings" }]
     case "account":
       return [{ label: "Settings" }]
