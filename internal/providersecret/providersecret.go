@@ -3,11 +3,14 @@
 // row's key, and on a 401 the endpoint quotes the bearer it refused, so an
 // error returned verbatim would carry that repository's key into a log, a
 // record or an API response. Both wire clients need this (internal/llm buys
-// completions, internal/embed buys embeddings), so the scrub lives here once.
+// completions, internal/embed buys embeddings), so the scrub lives here once,
+// and so does the mark that tells a refused key from every other failure.
 package providersecret
 
 import (
 	"bytes"
+	"errors"
+	"net/http"
 	"regexp"
 	"strings"
 )
@@ -74,4 +77,36 @@ func isSpace(r rune) bool {
 		return true
 	}
 	return false
+}
+
+// KeyRefusedError is an endpoint's refusal of the key a request carried: it
+// answered 401 or 403. The wire clients rebuild every provider error as
+// scrubbed text, so Status is the one fact about the refusal a caller can
+// read without parsing the endpoint's words.
+type KeyRefusedError struct {
+	Status int
+	err    error
+}
+
+func (e *KeyRefusedError) Error() string { return e.err.Error() }
+func (e *KeyRefusedError) Unwrap() error { return e.err }
+
+// MarkKeyRefused returns err marked as a refusal of the key when status is
+// 401 or 403, and err unchanged otherwise. The mark keeps err whole, so a
+// caller marks an error it has already scrubbed, or one it rebuilds with
+// Scrub before it leaves the client.
+func MarkKeyRefused(status int, err error) error {
+	if err == nil || (status != http.StatusUnauthorized && status != http.StatusForbidden) {
+		return err
+	}
+	return &KeyRefusedError{Status: status, err: err}
+}
+
+// KeyRefusal is the status of the key refusal err carries, or 0 for none.
+func KeyRefusal(err error) int {
+	var refused *KeyRefusedError
+	if errors.As(err, &refused) {
+		return refused.Status
+	}
+	return 0
 }

@@ -68,9 +68,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // A failure the endpoint cannot have acted on stays marked
 // egress.ErrUnprocessed through the rebuild: a refusal status (go-openai
 // answers one as an *APIError or a *RequestError carrying it), a redirect not
-// followed, or a mark an inner step already set.
+// followed, or a mark an inner step already set. A 401 or a 403 is marked
+// providersecret.KeyRefusedError, the endpoint refusing the row's key.
 func (c *openaiClient) scrubbed(err error) error {
-	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providersecret.MarkKeyRefused(openaiStatus(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
 	if errors.Is(err, egress.ErrUnprocessed) || egress.IsRedirect(err) || egress.RefusedStatus(openaiStatus(err)) {
 		return egress.Unprocessed(out)
 	}

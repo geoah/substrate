@@ -175,7 +175,8 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // still returns the usage it reported beside the error, because the endpoint
 // did the work. A failure the endpoint cannot have acted on is marked
 // egress.ErrUnprocessed: the request never wrote its headers, or the endpoint
-// refused it with a redirect or a 4xx.
+// refused it with a redirect or a 4xx. A 401 or a 403 is marked
+// providersecret.KeyRefusedError, the endpoint refusing the key.
 func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, Usage, error) {
 	if len(texts) == 0 {
 		return nil, Usage{}, nil
@@ -194,6 +195,7 @@ func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, U
 		if rejected(err) {
 			out = fmt.Errorf("%w: %s", ErrRejected, msg)
 		}
+		out = providersecret.MarkKeyRefused(status(err), out)
 		if !watch.Sent() || egress.IsRedirect(err) || egress.RefusedStatus(status(err)) {
 			out = egress.Unprocessed(out)
 		}
