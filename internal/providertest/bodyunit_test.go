@@ -2,6 +2,7 @@ package providertest
 
 import (
 	"bytes"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/sandbox"
 	"github.com/geoah/substrate/internal/sandboxtest"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -45,6 +48,41 @@ func TestBodyHelpersBeeper(t *testing.T) {
 		t.Fatalf("wrote %d beeper bodies, want messagessync alone", written)
 	}
 	runBodyCases(t, bodyPython(t, dir), "py/test_beeper_offline.py", dir)
+}
+
+// TestBodyHelpersFirecrawl runs internal/providertest/py/test_firecrawl_api.py
+// over the shipped firecrawl_api module: the origin the key may go to, that
+// a call with no baseUrl (what the operator's key arrives with) goes to the
+// pinned origin, and that the opener refuses every redirect.
+func TestBodyHelpersFirecrawl(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if written := writeModules(t, firecrawlDir+"/bundle.yaml", dir); written != 1 {
+		t.Fatalf("wrote %d firecrawl modules, want firecrawl_api.py alone", written)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_firecrawl_api.py", dir)
+}
+
+// writeModules writes every shared module the bundle document ships into dir
+// under its own file name, and returns how many.
+func writeModules(t *testing.T, bundle, dir string) int {
+	t.Helper()
+	written := 0
+	for _, d := range loadDocs(t, bundle) {
+		if d["kind"] != vocabulary.CoreKind(vocabulary.DocBundle) {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		modules, _ := data["modules"].(map[string]any)
+		for name, src := range modules {
+			text, _ := src.(string)
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			written++
+		}
+	}
+	return written
 }
 
 // bodyPython is an interpreter every body written into dir runs on. A body
@@ -91,6 +129,18 @@ func bodyPython(t *testing.T, dir string) string {
 	if err != nil {
 		sandboxtest.Unavailablef(t, "no installed Python satisfies %s, which the bodies require (uv python install '%s' adds one): uv python find: %v\n%s",
 			spec, spec, err, stderr.String())
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// realPython is the interpreter python runs as, sys.executable rather than
+// what PATH found: a version manager's shim re-execs it and writes its own
+// state, which the confined helper run is not granted.
+func realPython(t *testing.T, python string) string {
+	t.Helper()
+	out, err := exec.Command(python, "-I", "-c", "import sys; print(sys.executable)").Output()
+	if err != nil {
+		t.Fatalf("%s: ask for sys.executable: %v", python, err)
 	}
 	return strings.TrimSpace(string(out))
 }
@@ -149,14 +199,36 @@ func writeBodies(t *testing.T, bundle, dir string, want func(name string) bool) 
 	return written
 }
 
+// runBodyCases runs one helper suite, rel, over the bodies written into dir.
+// The interpreter runs with no internet socket at all: the sandbox's syscall
+// filter refuses AF_INET and AF_INET6, so a case that a regression sends past
+// its stubbed opener fails at socket(2) instead of reaching the provider. A
+// host that cannot apply the filter fails the test rather than run the cases
+// with the network open.
 func runBodyCases(t *testing.T, python, rel, dir string) {
 	t.Helper()
 	script, err := filepath.Abs(rel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "-I", script)
-	cmd.Env = append(os.Environ(), "SUBSTRATE_BODIES_DIR="+dir)
+	cmd := exec.Command(realPython(t, python), "-I", script)
+	tmp := t.TempDir()
+	cmd.Env = append(os.Environ(), "SUBSTRATE_BODIES_DIR="+dir, "TMPDIR="+tmp)
+	confiner := runner.Shared.Sandbox()
+	if err := confiner.EgressConfinable(false); err != nil {
+		t.Fatalf("the helper cases would run with internet sockets open: %v", err)
+	}
+	// Read and execute anywhere, write only the bodies' directory and the
+	// scratch: the filesystem is not what this confinement is for. No
+	// Network grant, so no internet socket; EgressOnly makes the child
+	// refuse to run where the syscall filter does not install.
+	if err := confiner.Wrap(cmd, sandbox.Policy{
+		ReadExec:   []string{"/"},
+		ReadWrite:  []string{dir, tmp, "/dev/null"},
+		EgressOnly: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+	}); err != nil {
+		t.Fatalf("confine the helper cases: %v", err)
+	}
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {

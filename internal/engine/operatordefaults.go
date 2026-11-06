@@ -18,11 +18,13 @@ import (
 const embeddingsLabel = "Search by meaning"
 
 // OperatorDefaults answers GET /api/v1/operator/defaults
-// (docs/plans/host-defaults.md): each llm/provider row and the embeddings
-// provider, with where its key comes from, whether the operator's file
-// offers it and whether it works, resolved by the same reads dispatch and the
-// embed drain use (operatorEntryFor, resolveProvider, resolveEmbedProvider),
-// and today's allowance. The operator's name is the site's, as the service
+// (docs/plans/host-defaults.md): each llm/provider row, the embeddings
+// provider, each provider the file lists under oauthClients and each package
+// it lists under functionSecrets, with where its key comes from, whether the
+// operator's file offers it and whether it works, resolved by the same reads
+// dispatch, the embed drain, client resolution and function injection use
+// (operatorEntryFor, resolveProvider, resolveEmbedProvider, oauthClientFrom,
+// operatorFunctionEntry), and today's allowance. The operator's name is the site's, as the service
 // was given it.
 func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefaults, error) {
 	out := substrate.OperatorDefaults{Items: []substrate.OperatorDefault{}}
@@ -83,6 +85,11 @@ func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefa
 		return out, err
 	}
 	out.Items = append(out.Items, oauth...)
+	functions, err := ds.functionDefaults(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Items = append(out.Items, functions...)
 	return out, nil
 }
 

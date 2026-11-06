@@ -1478,7 +1478,9 @@ repository.
   no pass reaches. `substratectl trigger status` prints them as `LASTPASS`
   and `LASTDELIVERED`. An agent trigger whose deliveries wait at a spend cap
   carries `held` ([the daily spend cap](agents.md#the-daily-spend-cap)),
-  printed as `HELD`. There is no per-trigger `status`.
+  printed as `HELD`, and so does a trigger of a function that runs on the
+  operator's key while the day's allowance leaves less than its price
+  ([operator defaults](operations.md#operator-defaults)). There is no per-trigger `status`.
 - `POST …/trigger/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
 - `POST …/trigger/{id}/run` takes `{"kind": …, "id": …}`, both required, and

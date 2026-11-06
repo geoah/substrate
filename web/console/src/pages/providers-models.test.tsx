@@ -949,6 +949,53 @@ describe("whose key a provider runs on", () => {
     ).toBeTruthy()
   })
 
+  it("says on an account's card and a tool's card why the operator couldn't add it", async () => {
+    catalog.providers = [
+      ...catalog.providers,
+      provider("firecrawl", {
+        kinds: [],
+        functions: [`${PROV}/firecrawl/websearch`],
+      }),
+    ]
+    answer = {
+      operator: { name: "Crane" },
+      items: [
+        OPENAI,
+        item({
+          id: `oauth/${PROV}/google`,
+          slot: "oauth",
+          label: "Google",
+          target: `${PROV}/google`,
+          readiness: "install-failed",
+          message: "the catalog is unreachable",
+        }),
+        item({
+          id: `function/${PROV}/firecrawl`,
+          slot: "function",
+          label: "Firecrawl",
+          target: `${PROV}/firecrawl`,
+          source: "none",
+          readiness: "install-failed",
+          message: "the catalog timed out",
+        }),
+      ],
+    }
+    renderPage()
+    await modelCard("OpenAI")
+    expect(
+      within(providerCard("Google")).getByText(
+        "Crane couldn’t add it for you: the catalog is unreachable"
+      )
+    ).toBeTruthy()
+    const firecrawl = providerCard("Firecrawl")
+    expect(group("Tools for your agents").contains(firecrawl)).toBe(true)
+    expect(
+      within(firecrawl).getByText(
+        "Crane couldn’t add it for you: the catalog timed out"
+      )
+    ).toBeTruthy()
+  })
+
   it("says nothing on an account card where the operator offers no sign-in", async () => {
     answer = {
       items: [

@@ -1,6 +1,6 @@
 // Package providertest holds the provider bundle suites: what the shipped
-// YAML under kinds/providers.substrate.reamde.dev (and samples/firecrawl)
-// does against a loopback fake of the provider's API.
+// YAML under kinds/providers.substrate.reamde.dev does against a loopback
+// fake of the provider's API.
 //
 // A suite belongs here and not in internal/engine when it proves a closure's
 // behavior: every case installs a provider closure, which warms its PEP 723

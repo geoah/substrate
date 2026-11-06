@@ -185,12 +185,17 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// runner boundary (logs, error text — and so run rows and parked
 	// failures — outputs, and so tool transcripts and API responses) may
 	// carry them verbatim.
+	// An operator-paid call (operatorfunction.go) settles once: at its price
+	// when the body may have started, at nothing when it never did.
+	var charge *operatorCharge
+	ran := false
+	defer func() { charge.settle(ctx, ds, ran) }()
 	if in.Config == nil {
-		cfg, secrets, err := ds.resolveFunctionConfig(ctx, fn)
+		cfg, secrets, ch, err := ds.resolveFunctionConfig(ctx, fn)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("run: config: %w", err)
+			return nil, nil, nil, fmt.Errorf("run: config: %w", unstartedAtAllowance(err))
 		}
-		in.Config = cfg
+		in.Config, charge = cfg, ch
 		inv.scrub.add(secrets...)
 	}
 	if hook := ds.svc.testInvokeHook; hook != nil {
@@ -207,7 +212,12 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
-		return runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package), in, backend)
+		// Started until the runner says otherwise: a panic in between settles
+		// at the price, never at nothing.
+		ran = true
+		res, err := runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package), in, backend)
+		ran = !errors.Is(err, runner.ErrNotStarted)
+		return res, err
 	}()
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
@@ -495,16 +505,19 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	// into another bundle's function. Its secrets join the SHARED invocation
 	// scrubber: whatever bubbles back up through the root's boundary is
 	// held to the whole tree's injected values.
-	cfg, secrets, err := ds.resolveFunctionConfig(ctx, target)
+	cfg, secrets, charge, err := ds.resolveFunctionConfig(ctx, target)
 	if err != nil {
 		return nil, fmt.Errorf("call %s: config: %w", target.Identity(), err)
 	}
+	ran := false
+	defer func() { charge.settle(ctx, ds, ran) }()
 	b.inv.scrub.add(secrets...)
 	callee, err := newCallBackend(b.inv, target, key, depth)
 	if err != nil {
 		b.inv.effects = b.inv.effects[:mark]
 		return nil, err
 	}
+	ran = true
 	res, err := runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(target), target.Package), runner.Input{
 		Mode:           runner.ModeCall,
 		Args:           args,
@@ -513,6 +526,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		CallDepth:      len(b.inv.stack) - 1,
 		IdempotencyKey: key,
 	}, callee)
+	ran = !errors.Is(err, runner.ErrNotStarted)
 	if err != nil {
 		b.inv.effects = b.inv.effects[:mark]
 		err = b.inv.scrub.err(fmt.Errorf("call %s: %w", target.Identity(), err))

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -44,7 +45,17 @@ func declaredHost(host string, patterns []string) bool {
 	return false
 }
 
-func newHostProxy(hosts []string) (*hostProxy, error) {
+// errConfinedLookup is the confined proxy resolver's answer to every name
+// server it would ask.
+var errConfinedLookup = errors.New("egress is confined: the proxy resolves a name from the hosts file alone and asks no name server")
+
+// newHostProxy starts the proxy for one outside body declaring hosts. only is
+// the policy's EgressOnly: when set, the proxy dials no address outside it,
+// whatever the host checks and the allowlist say, and resolves a declared name
+// from the hosts file alone. The dialer resolves before its Control check
+// runs, so without that a declared name would reach the system resolver, and
+// through it the network, even though the dial is then refused.
+func newHostProxy(hosts []string, only ...netip.Prefix) (*hostProxy, error) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -54,6 +65,12 @@ func newHostProxy(hosts []string) (*hostProxy, error) {
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil {
 			return err
+		}
+		if len(only) > 0 {
+			if !egressConfinedTo(only, ap.Addr().Unmap()) {
+				return fmt.Errorf("outside code cannot reach %s: egress is confined", address)
+			}
+			return nil
 		}
 		for _, p := range allow {
 			if p.Contains(ap.Addr().Unmap()) {
@@ -65,6 +82,13 @@ func newHostProxy(hosts []string) (*hostProxy, error) {
 		}
 		return nil
 	}}
+	if len(only) > 0 {
+		// The Go resolver reads the hosts file, then dials a name server for
+		// the rest through Dial, which refuses them all.
+		dialer.Resolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+			return nil, errConfinedLookup
+		}}
+	}
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil || !declaredHost(host, hosts) {
@@ -151,4 +175,16 @@ func (p *hostProxy) Close() error {
 	p.mu.Unlock()
 	p.transport.CloseIdleConnections()
 	return p.server.Close()
+}
+
+// egressConfinedTo reports whether addr lies in one of a confined egress's
+// prefixes.
+func egressConfinedTo(only []netip.Prefix, addr netip.Addr) bool {
+	addr = addr.Unmap().WithZone("")
+	for _, p := range only {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }

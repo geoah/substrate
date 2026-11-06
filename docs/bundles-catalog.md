@@ -2,8 +2,8 @@
 
 The catalog in the binary serves twenty-five bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fourteen in the provider tier (ten providers and four well-known
-catalogues) and eleven samples. This page covers the ten providers and five
+draws: fifteen in the provider tier (eleven providers and four well-known
+catalogues) and ten samples. This page covers the eleven providers and four
 of the samples; the catalogues (`health`, `labs`, `environment` and
 `clinical`, under `substrate.reamde.dev`,
 [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md),
@@ -11,10 +11,11 @@ of the samples; the catalogues (`health`, `labs`, `environment` and
 and the vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 `scheduling`) are in [built-in kinds](builtin-kinds.md).
 
-**Ten providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack,
-Slack live events, Apple and Apple Health. Each is a package its publisher
-owns, installed under `providers.substrate.reamde.dev` and upgraded there.
-Seven sync from the provider into the repository. Slack live events applies
+**Eleven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack,
+Slack live events, Apple, Apple Health and Firecrawl. Each is a package its
+publisher owns, installed under `providers.substrate.reamde.dev` and upgraded
+there. Seven sync from the provider into the repository. Firecrawl syncs
+nothing: its two functions are tools an agent calls. Slack live events applies
 Slack's pushed events to the Slack bundle's rows and needs that bundle
 ([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)).
 Apple's records are pushed by an app on the owner's device, so its package
@@ -32,7 +33,7 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble.
+**Four samples**: LLM, notes, the reading list and Pebble.
 Garmin and Google Fit providers, with their health adapters, are planned and
 not shipped.
 Each is a worked example to read and copy, imported under the repository's own
@@ -85,9 +86,9 @@ thing, and the Records column counts them.
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
 | Apple         | Provider | Owner token    | 10    | 0         | 0       | 0      |
 | Apple Health  | Provider | Webhook key    | 10    | 2         | 2       | 0      |
+| Firecrawl     | Provider | API key        | 1     | 2         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
-| Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 
@@ -2014,18 +2015,21 @@ a Seconds automation and a Minutes automation both carrying heart rate write
 the same trace ids from two rows, and each delivery replaces the other's
 points.
 
-## Firecrawl (sample)
+## Firecrawl
 
-Package `samples.substrate.reamde.dev/firecrawl`. Not a provider: no
-provider account is connected and nothing syncs. It is web search and page
-scraping over the Firecrawl API, exposed as two callables an agent binds as
-tools, behind an API key.
+Package `providers.substrate.reamde.dev/firecrawl`. No account is connected
+and nothing syncs. It is web search and page scraping over the Firecrawl API,
+as two functions that offer themselves to agents
+([offered functions](agents.md#offered-functions)), behind an API key. It was
+a sample until [record 0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md).
 
-- **Kinds (1)**: `webdocument`, a scraped page kept as markdown.
+- **Kinds (1)**: `webdocument`, a scraped page kept as markdown, titled by
+  its `pageTitle`.
 - **Functions (2)**: `websearch` returns hits as title, URL, and snippet and
-  writes nothing; `scrapepage` scrapes a page to markdown and upserts a
+  writes nothing; `webscrape` scrapes a page to markdown and upserts a
   `webdocument` at the URL's deterministic id, so re-scraping the same URL
-  updates the one document.
+  updates the one document. An agent whose `toolsFrom` matches them takes them
+  as `web_search` and `web_scrape`, the seeded assistant among them.
 - **Settings (2)**: a `secret` at `…/firecrawl/apiKey`, shipped empty and
   required, and a `setting` at `…/firecrawl/baseUrl`, shipped pinned at the
   Firecrawl origin. Both are ordinary records the closure ships
@@ -2036,17 +2040,32 @@ tools, behind an API key.
   directly, so the closure is `bundle.yaml` plus the two records in
   `settings.yaml`.
 
-The API key is a core `secret` record, sealed at rest and injected only into
-this bundle's two functions, and the bodies refuse any
-base URL that is not the pinned Firecrawl origin or loopback, so an edit of the
-`baseUrl` setting can never redirect the key. While the key is empty the bundle
-carries one setup item, coded `setting`. Keys come from
+**Where the key comes from.** The person's own key is the `apiKey` secret,
+sealed at rest and injected only into this bundle's two functions. Where the
+deployment's [operator defaults](operations.md#operator-defaults) list this
+package under `functionSecrets` and the secret is empty, a call of a function
+the file names gets the operator's key instead, with none of the person's
+settings beside it, and counts toward the day's allowance at the file's
+`pricePerCall`. While the operator covers the key the bundle carries no setup
+item; otherwise the empty key is one, coded `setting`.
+
+**Where the key goes.** Only to `https://api.firecrawl.dev` on port 443, at a
+fixed path, through an opener that refuses redirects. The bodies refuse a
+`baseUrl` naming any other origin, a path or credentials, so an edit of the
+setting can never redirect the key; loopback is the one exception, as the test
+seam, and only a key the person wrote can be sent there. Keys come from
 [firecrawl.dev](https://www.firecrawl.dev) and look like `fc-…`; a scraped
 page's markdown is capped at 24,000 characters, and `truncated: true` marks a
-cut. An agent that binds `scrapepage` must name `webdocument` in its own
+cut. An agent that takes `webscrape` must name `webdocument` in its own
 `permissions.writes` as well, because a tool's effective writes are its own
 intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
+
+**A copy of the old sample.** A repository that imported the Firecrawl sample
+keeps it under its own authority, with `scrapepage` and its own key, and the
+operator's key never reaches it. Its tools derive other names
+(`websearch` when an agent names it, `firecrawl_websearch` when its owner
+offers it), so the provider's two tools sit beside it rather than collide.
 
 ## Reading list (sample)
 

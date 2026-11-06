@@ -58,6 +58,9 @@ type syncStamp struct {
 	// stamped is set once `running` was written: the settle and the park
 	// write their half only after a start wrote its.
 	stamped bool
+	// prior is the syncState and lastSyncStartedAt the start replaced, nil
+	// for one the record did not hold, for syncUnstart to put back.
+	prior map[string]any
 }
 
 // syncStampFor answers the stamp a delivery of ch carries: nil when the
@@ -116,7 +119,17 @@ func (ds *dataset) syncStart(ctx context.Context, s *syncStamp, seq int64) error
 	return ds.inTx(ctx, s.actor, false, func(t *txn) error {
 		t.causedBy = seq
 		return t.asSyncWriter(s.actor, func() error {
-			_, err := t.patch(s.ref, substrate.PatchInput{Properties: map[string]any{
+			row, err := t.loadRow(s.ref, false)
+			if err != nil {
+				return err
+			}
+			if row != nil {
+				s.prior = map[string]any{
+					propSyncState:         row.Props[propSyncState],
+					propLastSyncStartedAt: row.Props[propLastSyncStartedAt],
+				}
+			}
+			_, err = t.patch(s.ref, substrate.PatchInput{Properties: map[string]any{
 				propSyncState:         substrate.SyncStateRunning,
 				propLastSyncStartedAt: s.started.Format(time.RFC3339Nano),
 			}})
@@ -129,6 +142,39 @@ func (ds *dataset) syncStart(ctx context.Context, s *syncStamp, seq int64) error
 			return err
 		})
 	})
+}
+
+// syncUnstart takes back the start of a delivery the allowance held before
+// its body ran (deliverWithRetry): nothing ran, and the hold may last until
+// the allowance resets, while every pass in between stops at the hold and
+// never reaches the record. So the record goes back to the syncState and
+// lastSyncStartedAt it had, in a transaction of its own, rather than read
+// `running` for a run that is not happening. A record whose state or start
+// another write moved since this start keeps that write's word.
+func (ds *dataset) syncUnstart(ctx context.Context, s *syncStamp, seq int64) error {
+	if s == nil || !s.stamped || s.prior == nil {
+		return nil
+	}
+	err := ds.inTx(ctx, s.actor, false, func(t *txn) error {
+		t.causedBy = seq
+		return t.asSyncWriter(s.actor, func() error {
+			row, err := t.loadRow(s.ref, false)
+			if err != nil || row == nil || row.DeletedAt != nil {
+				return err
+			}
+			state, _ := row.Props[propSyncState].(string)
+			started := syncTime(row.Props, propLastSyncStartedAt)
+			if state != substrate.SyncStateRunning || started == nil || !started.Equal(s.started) {
+				return nil
+			}
+			_, err = t.patch(s.ref, substrate.PatchInput{Properties: maps.Clone(s.prior)})
+			return err
+		})
+	})
+	if err == nil {
+		s.stamped = false
+	}
+	return err
 }
 
 // syncSettleOK rides the transaction that commits the delivery's last

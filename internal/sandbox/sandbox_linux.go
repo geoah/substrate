@@ -195,7 +195,7 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, child)
 		var proxy *hostProxy
 		if p.Outside {
-			proxy, err = newHostProxy(p.Hosts)
+			proxy, err = newHostProxy(p.Hosts, p.EgressOnly...)
 			if err != nil {
 				_ = parent.Close()
 				_ = child.Close()
@@ -205,7 +205,7 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 			endpoint := "http://" + p.ProxyAddress
 			cmd.Env = append(cmd.Env, "HTTP_PROXY="+endpoint, "HTTPS_PROXY="+endpoint, "http_proxy="+endpoint, "https_proxy="+endpoint, "NO_PROXY=", "no_proxy=")
 		}
-		c.pending.Store(cmd, &pendingGate{parent: parent, child: child, proxy: proxy, address: p.ProxyAddress})
+		c.pending.Store(cmd, &pendingGate{parent: parent, child: child, proxy: proxy, address: p.ProxyAddress, only: p.EgressOnly})
 	} else {
 		p.NotifyConnect = false
 	}

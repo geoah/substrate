@@ -355,9 +355,10 @@ func (s putBlobs) stage(ctx context.Context, up substrate.BlobUpload, data []byt
 // raised on, a header a decoder quoted) is sender-controlled text and never
 // enters the log.
 func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure) {
-	// An agent at a spend cap leaves the request pending, unclaimed: the
-	// next pass's resume fires it once the cap clears (spend.go).
-	ctx, held, err := ds.holdAgentDelivery(ctx, tr)
+	// An agent at a spend cap, or a function at the allowance, leaves the
+	// request pending, unclaimed: the next pass's resume fires it once the
+	// cap clears or the allowance resets (spend.go).
+	ctx, held, err := ds.holdDelivery(ctx, tr)
 	if err != nil {
 		ds.svc.log.Error("substrate: webhook fire could not read the spend cap, the entry stays pending",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
@@ -374,6 +375,11 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	}
 	_, _, err = ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
 	if err == nil {
+		return
+	}
+	if errors.Is(err, errUnstartedAtAllowance) {
+		// The allowance ran out after the hold: the entry stays pending.
+		ds.noteHold(tr, allowanceText(err))
 		return
 	}
 	outcome := webhookFireOutcome(err)

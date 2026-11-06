@@ -44,8 +44,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -229,6 +231,9 @@ type Runner struct {
 	// the roundtrip: the window a sweep or a Reconcile can kill in. A test
 	// seam for forcing that interleaving; nil in every production runner.
 	afterLookup func(p *proc)
+	// bodyEgress is ConfineBodyEgress's prefixes, every body policy's
+	// EgressOnly; guarded by mu. Nil in every production runner.
+	bodyEgress []netip.Prefix
 }
 
 // Shared is the process-wide runner every dataset dispatches through.
@@ -254,6 +259,51 @@ func New() *Runner {
 // is where an operator learns whether the deployment's kernel actually offers
 // what the mode claims.
 func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
+
+// ConfineBodyEgress holds every body this runner starts from now on to
+// prefixes: its connects reach those addresses and nothing else, whatever
+// `permissions.network` and SUBSTRATE_SANDBOX_EGRESS_ALLOW say, and a host
+// that cannot filter a body's connects refuses to start it. It is a test
+// binary's call, made before its first body starts, so a regression that
+// points a body at a real API fails at connect(2) instead of reaching it.
+// The live processes are closed, so none started before the call serves
+// again. A dependency resolve is not a body and keeps its own policy.
+func (r *Runner) ConfineBodyEgress(prefixes ...netip.Prefix) {
+	r.mu.Lock()
+	r.bodyEgress = slices.Clone(prefixes)
+	stop := make([]*proc, 0, len(r.pys))
+	for key, p := range r.pys {
+		delete(r.pys, key)
+		stop = append(stop, p)
+	}
+	r.mu.Unlock()
+	for _, p := range stop {
+		p.mu.Lock()
+		p.kill()
+		p.mu.Unlock()
+	}
+}
+
+// BodyEgressConfined answers why a network body this runner starts is not
+// held to ConfineBodyEgress's prefixes, or nil when it is: none were set, or
+// the host cannot enforce them. A test that relies on the confinement fails
+// on the answer rather than reaching a real API.
+func (r *Runner) BodyEgressConfined() error {
+	r.mu.Lock()
+	set := len(r.bodyEgress) > 0
+	r.mu.Unlock()
+	if !set {
+		return errors.New("runner: ConfineBodyEgress was not called, so a network body reaches the public internet")
+	}
+	return r.sandbox.EgressConfinable(true)
+}
+
+// bodyEgressOnly is the EgressOnly every body policy carries.
+func (r *Runner) bodyEgressOnly() []netip.Prefix {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.bodyEgress
+}
 
 // Warm prepares a body ahead of its first delivery — the registration-time
 // half of "bodies prepare at registration". Build and registration errors
@@ -328,7 +378,7 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 // applies.
 func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
 	if spec.Refusal != nil {
-		return nil, spec.Refusal
+		return nil, notStarted(spec.Refusal)
 	}
 	if spec.ReadCalls > 0 || spec.ReadRows > 0 {
 		in.Budgets = &Budgets{Calls: spec.ReadCalls, Rows: spec.ReadRows}
@@ -357,9 +407,33 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	_, retired := r.retired[spec.Key()]
 	r.mu.Unlock()
 	if retired {
-		return nil, fmt.Errorf("%w: %s", ErrRetired, spec.Function)
+		return nil, notStarted(fmt.Errorf("%w: %s", ErrRetired, spec.Function))
 	}
 	return r.invokeOnce(ctx, spec, in, backend)
+}
+
+// ErrNotStarted marks an invocation that failed before its invoke frame
+// reached the body: the spec's refusal, a process that could not be
+// provisioned, confined, started or registered within its bound, an
+// installation retired under it, or a child gone before the frame was
+// written. The body was never handed its input or config. A timeout, a
+// child that died mid-request and every failure after the frame left are
+// not this: the body may have used what it was given.
+var ErrNotStarted = errors.New("runner: the body was not started")
+
+// notStartedError is an error marked ErrNotStarted, its text unchanged.
+type notStartedError struct{ err error }
+
+func (e *notStartedError) Error() string        { return e.err.Error() }
+func (e *notStartedError) Unwrap() error        { return e.err }
+func (e *notStartedError) Is(target error) bool { return target == ErrNotStarted }
+
+// notStarted marks err ErrNotStarted.
+func notStarted(err error) error {
+	if err == nil || errors.Is(err, ErrNotStarted) {
+		return err
+	}
+	return &notStartedError{err: err}
 }
 
 // invokeOnce is one attempt: the process start it needs (a reaped, crashed or
@@ -379,7 +453,7 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	p, err := r.proc(sctx, spec)
 	scancel()
 	if err != nil {
-		return nil, err
+		return nil, notStarted(err)
 	}
 	if r.afterLookup != nil {
 		r.afterLookup(p)
@@ -395,6 +469,11 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	// state.log, whichever way the exchange ended.
 	if state.tripped != nil {
 		return nil, state.tripped
+	}
+	if errors.Is(err, errChildGone) {
+		// The frame went nowhere: Invoke retries once, and a second loss
+		// reaches the caller as a body that never started.
+		return nil, notStarted(err)
 	}
 	if err != nil {
 		return nil, err

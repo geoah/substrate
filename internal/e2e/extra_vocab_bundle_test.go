@@ -49,9 +49,9 @@ const (
 
 	// The bundle BUN-04's second half works: the one shipped closure whose
 	// configuration is records rather than an input.
-	xvFirecrawlBundle = "samples.substrate.reamde.dev/firecrawl"
-	xvFirecrawlKeyID  = "samples.substrate.reamde.dev/firecrawl/apiKey"
-	xvFirecrawlBaseID = "samples.substrate.reamde.dev/firecrawl/baseUrl"
+	xvFirecrawlBundle = "providers.substrate.reamde.dev/firecrawl"
+	xvFirecrawlKeyID  = "providers.substrate.reamde.dev/firecrawl/apiKey"
+	xvFirecrawlBaseID = "providers.substrate.reamde.dev/firecrawl/baseUrl"
 	xvSecretRecord    = "/api/v1/substrate.reamde.dev/core/secret"
 	xvSettingRecord   = "/api/v1/substrate.reamde.dev/core/setting"
 

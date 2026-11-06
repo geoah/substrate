@@ -217,9 +217,10 @@ func (ds *dataset) bundleSettings(ctx context.Context, b *vocabulary.Bundle) (ma
 
 // settingSetupItems lists the bundle's REQUIRED settings and secrets that are
 // still empty — the same refusal a body makes when it reaches for a key
-// nobody filled in, moved to the status page. A secret's emptiness is read
-// the way the OAuth client's completeness is: the stored string is the sealed
-// reference, so an absent one is an absent value and nothing has to be
+// nobody filled in, moved to the status page. A secret the operator's key
+// stands in for (operatorfunction.go) is not listed. A secret's emptiness is
+// read the way the OAuth client's completeness is: the stored string is the
+// sealed reference, so an absent one is an absent value and nothing has to be
 // opened to know it.
 func (ds *dataset) settingSetupItems(ctx context.Context, b *vocabulary.Bundle) ([]substrate.SetupItem, error) {
 	prefix := settingPrefix(b)
@@ -238,6 +239,11 @@ func (ds *dataset) settingSetupItems(ctx context.Context, b *vocabulary.Bundle) 
 				continue
 			}
 			if propString(row, propSettingValue) != "" {
+				continue
+			}
+			// The operator's key stands in for an empty one: a provider page
+			// never asks for what the operator covers.
+			if ident == kindSecret && ds.operatorCoversSetting(b, name) {
 				continue
 			}
 			label := propString(row, propSettingDisplayName)

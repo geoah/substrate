@@ -112,6 +112,11 @@ describe("providers", () => {
       letter: "G",
     })
     expect(providerInfo("acme")).toMatchObject({ name: "Acme", letter: "A" })
+    expect(providerInfo("firecrawl")).toMatchObject({
+      name: "Firecrawl",
+      letter: "F",
+      color: "#FA5D19",
+    })
   })
 
   it("finds the provider of a provider kind only", () => {

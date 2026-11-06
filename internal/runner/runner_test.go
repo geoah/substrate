@@ -588,6 +588,63 @@ func TestPythonTimeoutKillsAndRestarts(t *testing.T) {
 	}
 }
 
+// A failure before the invoke frame reaches the body is ErrNotStarted: the
+// spec's refusal, a body that cannot register, a second loss of the process
+// in the lookup window and a retired installation. A body that raised or ran
+// out its timeout was handed its input, so neither is. The engine settles an
+// operator-paid call at nothing on the first kind and at its price on the
+// second.
+func TestAFailureBeforeTheFrameIsNotStarted(t *testing.T) {
+	ctx := context.Background()
+	r := New()
+	body := func(name, src string, timeoutMs int) Spec {
+		return Spec{Repository: "t1", Function: name + ".g.test", Runtime: "python", Source: src, TimeoutMs: timeoutMs}
+	}
+	refused := body("refused", "def main(input, host):\n    return {}\n", 5000)
+	refused.Refusal = errors.New("the deployment refuses this body")
+	for name, tc := range map[string]struct {
+		spec    Spec
+		started bool
+	}{
+		"a refusal":                   {refused, false},
+		"a body that cannot register": {body("broken", "def main(input, host)\n    return {}\n", 5000), false},
+		"a body that raised":          {body("raises", "def main(input, host):\n    raise RuntimeError('no')\n", 5000), true},
+		"a timeout":                   {body("sleeps", "import time\ndef main(input, host):\n    time.sleep(30)\n", 200), true},
+	} {
+		_, err := r.Invoke(ctx, tc.spec, testInput(), nil)
+		if err == nil {
+			t.Fatalf("%s: no error", name)
+		}
+		if got := !errors.Is(err, ErrNotStarted); got != tc.started {
+			t.Errorf("%s: started = %v, want %v: %v", name, got, tc.started, err)
+		}
+	}
+	if _, err := r.Invoke(ctx, refused, testInput(), nil); !errors.Is(err, refused.Refusal) {
+		t.Errorf("the mark hides the refusal it wraps: %v", err)
+	}
+
+	// Two losses of the process in the lookup window: the frame never left.
+	lost := New()
+	lost.afterLookup = func(p *proc) {
+		p.mu.Lock()
+		p.kill()
+		p.mu.Unlock()
+	}
+	if _, err := lost.Invoke(ctx, windowSpec, testInput(), nil); !errors.Is(err, errChildGone) || !errors.Is(err, ErrNotStarted) {
+		t.Errorf("two losses in the window = %v, want errChildGone marked not started", err)
+	}
+
+	// A retirement in the window: the retry starts nothing.
+	retiring := New()
+	if err := retiring.Warm(ctx, windowSpec); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	retiring.afterLookup = func(*proc) { retiring.Reconcile(ctx, windowSpec.Repository, nil) }
+	if _, err := retiring.Invoke(ctx, windowSpec, testInput(), nil); !errors.Is(err, ErrRetired) || !errors.Is(err, ErrNotStarted) {
+		t.Errorf("a retirement in the window = %v, want ErrRetired marked not started", err)
+	}
+}
+
 func TestRegisterBoundFloorsTheBodyTimeout(t *testing.T) {
 	// A body's `timeout` bounds its invocation, not its start (#298): the
 	// register roundtrip gets at least registerTimeout, a longer declared

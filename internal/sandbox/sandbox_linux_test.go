@@ -643,6 +643,75 @@ func TestFilterVerdicts(t *testing.T) {
 	}
 }
 
+// The confined egress filter's verdicts (buildConfinedFilter): an internet
+// socket is a TCP stream or nothing, no Unix socket opens but a socketpair,
+// and no send call may carry MSG_FASTOPEN, so connect(2), which the gate holds
+// to the prefixes, is a confined child's only way to a peer. Everything else
+// is the main filter's to decide, so it is allowed here. The live halves are
+// TestAConfinedBodySendsNoDatagram and TestAConfinedBodyOpensNoUnixSocket in
+// internal/runner.
+func TestConfinedFilterVerdicts(t *testing.T) {
+	var (
+		allow  = uint32(seccompRetAllow)
+		eacces = retErrno(unix.EACCES)
+	)
+	prog := buildConfinedFilter()
+	for i, insn := range prog {
+		if insn.Code&0x07 != 0x05 { // not BPF_JMP
+			continue
+		}
+		for _, off := range []uint8{insn.JT, insn.JF} {
+			if target := i + 1 + int(off); target >= len(prog) {
+				t.Fatalf("instruction %d jumps to %d, past the end (%d)", i, target, len(prog))
+			}
+		}
+	}
+	const fastOpen = unix.MSG_FASTOPEN
+	for _, tc := range []struct {
+		name string
+		arch uint32
+		nr   int
+		args [4]uint64
+		want uint32
+	}{
+		{name: "a TCP socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_STREAM, 0}, want: allow},
+		{name: "a TCP socket named by protocol", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP}, want: allow},
+		{name: "a TCP socket with its flags", nr: sysSocket, args: [4]uint64{unix.AF_INET6, unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC, 0}, want: allow},
+		{name: "a UDP socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_DGRAM, 0}, want: eacces},
+		{name: "a UDP socket over IPv6", nr: sysSocket, args: [4]uint64{unix.AF_INET6, unix.SOCK_DGRAM | unix.SOCK_CLOEXEC, unix.IPPROTO_UDP}, want: eacces},
+		{name: "a ping socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_DGRAM, unix.IPPROTO_ICMP}, want: eacces},
+		{name: "a raw socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_RAW}, want: eacces},
+		{name: "an SCTP stream", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_SCTP}, want: eacces},
+		{name: "an MPTCP stream", nr: sysSocket, args: [4]uint64{unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_MPTCP}, want: eacces},
+		{name: "a sequenced packet socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_SEQPACKET, 0}, want: eacces},
+		{name: "a unix stream socket", nr: sysSocket, args: [4]uint64{unix.AF_UNIX, unix.SOCK_STREAM | unix.SOCK_CLOEXEC, 0}, want: eacces},
+		{name: "a unix datagram socket", nr: sysSocket, args: [4]uint64{unix.AF_UNIX, unix.SOCK_DGRAM, 0}, want: eacces},
+		{name: "a unix socketpair", nr: unix.SYS_SOCKETPAIR, args: [4]uint64{unix.AF_UNIX, unix.SOCK_STREAM, 0}, want: allow},
+		{name: "a netlink socket", nr: sysSocket, args: [4]uint64{unix.AF_NETLINK, unix.SOCK_RAW, 0}, want: allow},
+		{name: "sendto", nr: sysSendto, args: [4]uint64{3, 0, 16, unix.MSG_NOSIGNAL}, want: allow},
+		{name: "sendto with fast open", nr: sysSendto, args: [4]uint64{3, 0, 16, fastOpen}, want: eacces},
+		{name: "sendto with fast open among other flags", nr: sysSendto, args: [4]uint64{3, 0, 16, fastOpen | unix.MSG_NOSIGNAL}, want: eacces},
+		{name: "sendmsg", nr: sysSendmsg, args: [4]uint64{3, 0, unix.MSG_NOSIGNAL}, want: allow},
+		{name: "sendmsg with fast open", nr: sysSendmsg, args: [4]uint64{3, 0, fastOpen}, want: eacces},
+		{name: "sendmmsg", nr: sysSendmmsg, args: [4]uint64{3, 0, 2, 0}, want: allow},
+		{name: "sendmmsg with fast open", nr: sysSendmmsg, args: [4]uint64{3, 0, 2, fastOpen}, want: eacces},
+		{name: "connect, the gate's", nr: unix.SYS_CONNECT, args: [4]uint64{3}, want: allow},
+		{name: "an unrelated syscall", nr: unix.SYS_GETPID, want: allow},
+		{name: "a foreign architecture, the main filter's", arch: auditArch + 1, nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_DGRAM}, want: allow},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			arch := tc.arch
+			if arch == 0 {
+				arch = auditArch
+			}
+			data := seccompData{NR: int32(tc.nr), Arch: arch, Args: [6]uint64{tc.args[0], tc.args[1], tc.args[2], tc.args[3]}}
+			if got := runFilter(t, prog, data); got != tc.want {
+				t.Fatalf("verdict = %#x, want %#x", got, tc.want)
+			}
+		})
+	}
+}
+
 // runFilter executes a classic-BPF program over one seccomp_data, for the
 // instructions buildFilter emits, and returns the action it reaches. The
 // argument's halves are laid out little-endian, as on both image targets.
@@ -671,10 +740,16 @@ func runFilter(t *testing.T, prog []sockFilter, d seccompData) uint32 {
 		case bpfLdAbsW:
 			a = load(insn.K)
 			pc++
-		case bpfJeqK, bpfJgeK:
+		case bpfAndK:
+			a &= insn.K
+			pc++
+		case bpfJeqK, bpfJgeK, bpfJsetK:
 			taken := a == insn.K
-			if insn.Code == bpfJgeK {
+			switch insn.Code {
+			case bpfJgeK:
 				taken = a >= insn.K
+			case bpfJsetK:
+				taken = a&insn.K != 0
 			}
 			if taken {
 				pc += 1 + int(insn.JT)

@@ -938,8 +938,8 @@ as cards: **Tools your agents use**, **Syncs** (the functions your providers'
 triggers run), **Other tools** that nothing uses yet, and, in everyday mode,
 **Built in**, the substrate's own host functions, which technical mode files
 with the rest. Each card says what the tool is for and when it runs.
-**Add tools** lists the shipped samples that bring functions (Firecrawl,
-Notes and the rest), each by the tools it adds and with **Add**, the same
+**Add tools** lists the shipped samples that bring functions (Notes, the
+reading list and Pebble), each by the tools it adds and with **Add**, the same
 import as [Add a collection](#add-a-collection)'s samples.
 
 A tool is a [function](functions.md), and its page is at

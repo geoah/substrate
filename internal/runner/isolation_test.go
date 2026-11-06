@@ -2,8 +2,10 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/geoah/substrate/internal/sandbox"
 	"github.com/geoah/substrate/internal/sandboxtest"
 )
 
@@ -62,13 +65,13 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Thirteen cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly fourteen must reach that guard: a
+// Sixteen cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly seventeen must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and a fifteenth case cannot be added, or one of the fourteen
+// behind, and an eighteenth case cannot be added, or one of the seventeen
 // removed, without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 14))
+	os.Exit(sandboxtest.Run(m, 17))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -1000,5 +1003,337 @@ func TestEveryCertBundleTheRunnerMayChooseIsGranted(t *testing.T) {
 			t.Errorf("the runner may name %s in SSL_CERT_FILE, but no read grant covers it: "+
 				"add that FILE to systemReadOnly, never its directory", bundle)
 		}
+	}
+}
+
+// A runner whose bodies are confined (ConfineBodyEgress, what the engine and
+// provider test binaries set) holds a network body to the prefixes, whatever
+// it declared: a listener inside them is reached though loopback is the
+// deployment's own range, one outside them on loopback is refused, and the
+// failed call names the confinement rather than an allowlist that cannot
+// lift it. Nothing here dials off the host.
+func TestAConfinedBodyReachesOnlyItsPrefixes(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	requireConnectGate(t, r)
+	r.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.1/32"))
+	if err := r.BodyEgressConfined(); err != nil {
+		t.Fatalf("a runner with every layer reports its bodies unconfined: %v", err)
+	}
+	listen := func(addr string) string {
+		t.Helper()
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				_ = c.Close()
+			}
+		}()
+		return ln.Addr().String()
+	}
+	inside, outside := listen("127.0.0.1:0"), listen("127.0.0.2:0")
+
+	const probe = `
+import socket
+def dial(addr):
+    host, port = addr.rsplit(":", 1)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect((host, int(port)))
+        s.close()
+        return "ok"
+    except OSError as e:
+        return "err:%s" % e.errno
+def main(input, host):
+    a = input["args"]
+    out = {"inside": dial(a["inside"]), "outside": dial(a["outside"])}
+    if a.get("raise"):
+        raise RuntimeError(str(out))
+    return {"output": out}
+`
+	spec := Spec{
+		Repository: "t1", Function: "confined.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"inside": inside, "outside": outside}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["inside"] != "ok" || out["outside"] != "err:13" {
+		t.Fatalf("a confined body dialed %v, want the prefix reached and the rest refused with EACCES", out)
+	}
+
+	in.Args = map[string]any{"inside": inside, "outside": outside, "raise": true}
+	_, err = r.Invoke(context.Background(), spec, in, nil)
+	if err == nil {
+		t.Fatal("the raising body returned no error")
+	}
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	if !strings.Contains(first, "refused "+outside+": this process confines a body's egress") || strings.Contains(first, "SUBSTRATE_SANDBOX_EGRESS_ALLOW") {
+		t.Fatalf("the failed call does not name the confinement:\n%s", first)
+	}
+}
+
+// A confined body has no path to a peer but connect(2), which the gate holds
+// to the prefixes: a datagram socket, a raw or SCTP socket and a TCP Fast
+// Open send are refused with EACCES, and neither loopback listener outside
+// the prefix hears from it. A runner that never called ConfineBodyEgress, as
+// in production, still gives a network body a datagram socket, since the
+// resolver needs one, and the datagram arrives: decision 0035's documented
+// UDP residual, unchanged. Nothing here sends off the host.
+func TestAConfinedBodySendsNoDatagram(t *testing.T) {
+	confined := New()
+	requireSeccomp(t, confined)
+	requireConnectGate(t, confined)
+	confined.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.1/32"))
+
+	datagrams, err := net.ListenPacket("udp4", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = datagrams.Close() })
+	streams, err := net.Listen("tcp4", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = streams.Close() })
+	accepted := make(chan struct{}, 8)
+	go func() {
+		for {
+			c, err := streams.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			_ = c.Close()
+		}
+	}()
+	// heard answers the datagram the listener read within the window, or "".
+	heard := func(window time.Duration) string {
+		t.Helper()
+		_ = datagrams.SetReadDeadline(time.Now().Add(window))
+		buf := make([]byte, 64)
+		n, _, err := datagrams.ReadFrom(buf)
+		if err != nil {
+			return ""
+		}
+		return string(buf[:n])
+	}
+
+	const probe = `
+import socket
+def attempt(fn):
+    try:
+        fn()
+        return "ok"
+    except OSError as e:
+        return "err:%s" % e.errno
+def addr(a):
+    h, p = a.rsplit(":", 1)
+    return (h, int(p))
+def main(input, host):
+    a = input["args"]
+    def udp():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.sendto(b"leaked", addr(a["udp"]))
+        finally:
+            s.close()
+    out = {"udp": attempt(udp)}
+    if a.get("only_udp"):
+        return {"output": out}
+    def raw():
+        socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP).close()
+    def sctp():
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_SCTP).close()
+    def fastopen():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.sendto(b"leaked", socket.MSG_FASTOPEN, addr(a["tcp"]))
+        finally:
+            s.close()
+    out.update(raw=attempt(raw), sctp=attempt(sctp), fastopen=attempt(fastopen))
+    return {"output": out}
+`
+	spec := Spec{
+		Repository: "t1", Function: "datagram.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"udp": datagrams.LocalAddr().String(), "tcp": streams.Addr().String()}
+	res, err := confined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	for _, path := range []string{"udp", "raw", "sctp", "fastopen"} {
+		if out[path] != "err:13" {
+			t.Errorf("a confined body's %s = %v, want refused with EACCES (all: %v)", path, out[path], out)
+		}
+	}
+	if got := heard(500 * time.Millisecond); got != "" {
+		t.Errorf("a datagram from a confined body reached a listener outside its prefixes: %q", got)
+	}
+	select {
+	case <-accepted:
+		t.Error("a confined body's fast open send reached a listener outside its prefixes")
+	default:
+	}
+
+	unconfined := New()
+	in.Args = map[string]any{"udp": datagrams.LocalAddr().String(), "only_udp": true}
+	res, err = unconfined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke unconfined: %v", err)
+	}
+	out, _ = res.Output.(map[string]any)
+	if out["udp"] != "ok" {
+		t.Fatalf("an unconfined network body could not send a datagram: %v", out)
+	}
+	if got := heard(5 * time.Second); got != "leaked" {
+		t.Fatalf("an unconfined body's datagram did not arrive: %q", got)
+	}
+}
+
+// A confined body opens no Unix socket, so a resolver or proxy daemon on a
+// pathname socket cannot carry its traffic past the gate, while socketpair(2)
+// still gives it a connected pair. A runner that never called
+// ConfineBodyEgress, as in production, still reaches the socket. The
+// listener is a pathname socket in this test's own directory.
+func TestAConfinedBodyOpensNoUnixSocket(t *testing.T) {
+	confined := New()
+	requireSeccomp(t, confined)
+	requireConnectGate(t, confined)
+	confined.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.1/32"))
+
+	// os.MkdirTemp rather than t.TempDir: a socket path must fit sun_path's
+	// 108 bytes, and t.TempDir embeds the test's name.
+	dir, err := os.MkdirTemp("", "uds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "relay.sock")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	received := make(chan string, 8)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			buf := make([]byte, 64)
+			n, _ := c.Read(buf)
+			received <- string(buf[:n])
+			_ = c.Close()
+		}
+	}()
+
+	const probe = `
+import socket
+def attempt(fn):
+    try:
+        return fn()
+    except OSError as e:
+        return "err:%s" % e.errno
+def main(input, host):
+    path = input["args"]["path"]
+    def unix():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(5)
+            s.connect(path)
+            s.sendall(b"leaked")
+        finally:
+            s.close()
+        return "ok"
+    def pair():
+        a, b = socket.socketpair()
+        try:
+            a.sendall(b"x")
+            return "ok" if b.recv(1) == b"x" else "short"
+        finally:
+            a.close()
+            b.close()
+    return {"output": {"unix": attempt(unix), "pair": attempt(pair)}}
+`
+	spec := Spec{
+		Repository: "t1", Function: "unixsocket.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"path": path}
+	res, err := confined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["unix"] != "err:13" || out["pair"] != "ok" {
+		t.Fatalf("a confined body answered %v, want its Unix socket refused with EACCES and its socketpair working", out)
+	}
+	select {
+	case got := <-received:
+		t.Fatalf("a confined body reached a pathname Unix socket: %q", got)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	unconfined := New()
+	res, err = unconfined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke unconfined: %v", err)
+	}
+	out, _ = res.Output.(map[string]any)
+	if out["unix"] != "ok" {
+		t.Fatalf("an unconfined body could not reach a pathname Unix socket: %v", out)
+	}
+	select {
+	case got := <-received:
+		if got != "leaked" {
+			t.Fatalf("the unconfined body's write arrived as %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the unconfined body's write did not arrive")
+	}
+}
+
+// A runner that cannot hold its bodies to ConfineBodyEgress's prefixes says
+// so, and refuses to start a body rather than run it with the network open:
+// the failure a test meets instead of reaching a real API.
+func TestAConfinedRunnerRefusesABodyItCannotHold(t *testing.T) {
+	r := New()
+	if err := r.BodyEgressConfined(); err == nil || !strings.Contains(err.Error(), "ConfineBodyEgress was not called") {
+		t.Fatalf("an unconfined runner answered %v", err)
+	}
+	r.sandbox = sandbox.New(sandbox.ModeOff)
+	r.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.0/8"))
+	if err := r.BodyEgressConfined(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_SANDBOX=off") {
+		t.Fatalf("a runner with the sandbox off answered %v", err)
+	}
+	spec := Spec{
+		Repository: "t1", Function: "unheld.g.test", Runtime: "python",
+		Source: "def main(input, host):\n    return {\"output\": \"ran\"}\n", TimeoutMs: 5000,
+	}
+	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
+	if err == nil || !strings.Contains(err.Error(), "egress is confined") {
+		t.Fatalf("a body the runner cannot confine answered %+v, %v", res, err)
+	}
+	if !errors.Is(err, ErrNotStarted) {
+		t.Fatalf("a body refused before it started is not marked so: %v", err)
 	}
 }

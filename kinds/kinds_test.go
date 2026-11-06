@@ -306,14 +306,13 @@ func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
 // a kind that ships without a displayTemplate fails this test, and one that
 // gains a template has to leave the list.
 func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
-	// The three sample kinds that still carry the writer's title in the
+	// The two sample kinds that still carry the writer's title in the
 	// built-in slot and move with its retirement (issue 68). The provider
 	// mirrors that used to sit here declare a displayTemplate since the
 	// bundles were replaced with the mneme-tested versions.
 	onTheSlot := map[string]bool{
-		"samples.substrate.reamde.dev/firecrawl/webdocument": true,
-		"samples.substrate.reamde.dev/notes/note":            true,
-		"samples.substrate.reamde.dev/readinglist/page":      true,
+		"samples.substrate.reamde.dev/notes/note":       true,
+		"samples.substrate.reamde.dev/readinglist/page": true,
 	}
 	declared := map[string]bool{}
 	for _, d := range readTreeDocuments(t) {

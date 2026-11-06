@@ -217,7 +217,7 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
 `samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
 `calendar` and `tasks` require; `recurring` is core's now), and the function
-and agent examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble`
+and agent examples `notes`, `llm`, `readinglist` and `pebble`
 under the same authority (each a bundle you **import**); the substrate's
 own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
 `substrate.reamde.dev/llm`, the console's record views in

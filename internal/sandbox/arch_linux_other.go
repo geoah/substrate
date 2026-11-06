@@ -12,8 +12,11 @@ package sandbox
 const auditArch = 0
 
 const (
-	sysSocket = 0
-	sysClone3 = 435
+	sysSocket   = 0
+	sysSendto   = 0
+	sysSendmsg  = 0
+	sysSendmmsg = 0
+	sysClone3   = 435
 )
 
 func archDenied() []denial { return nil }

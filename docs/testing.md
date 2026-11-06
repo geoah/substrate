@@ -324,6 +324,35 @@ A `-run` or `-skip` relaxes the exact count, because a filter can only shrink
 the set, but it does not lift the gate: with the variable set, a filter that
 leaves no confinement case to run is a failure rather than a quiet pass.
 
+## No body in a test reaches the internet
+
+The `TestMain` of `internal/engine` and of `internal/providertest` calls
+`runner.Shared.ConfineBodyEgress` with loopback, before any body starts. From
+then on the sandbox's connect gate lets a body reach loopback and nothing
+else, whatever its `permissions.network` and `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
+say, and it refuses the system resolver too, so a body cannot even look up a
+provider's name. The gate checks `connect(2)`, so a confined body also gets
+no internet socket but a TCP stream, no TCP Fast Open send and no Unix
+socket: a datagram, raw, SCTP or MPTCP socket would reach an address without
+connecting, and a resolver or proxy daemon on a pathname socket would carry
+the body's traffic past the gate. `socketpair(2)` still works. An
+outside body's proxy resolves a name from the hosts file alone. A shipped
+provider's body that a regression points at its
+real API (a dropped origin check, a lost `baseUrl`, an operator key that was
+supposed to be refused) fails with `the sandbox's connect gate refused …:
+this process confines a body's egress` instead of sending anything. A host
+whose sandbox cannot filter a body's connects (`SUBSTRATE_SANDBOX=off`, macOS,
+no seccomp, no connect gate) refuses to start the body, so these suites fail
+there rather than run unconfined. The provider tests that hand a body a key
+also call `runner.Shared.BodyEgressConfined` first, and the Python helper
+suites (`TestBodyHelpers*`) run their interpreter with no internet socket at
+all. A dependency resolve through `uv` is not a body and keeps its own policy.
+
+This confinement assumes the bodies under test are not hostile: it stops an
+honest regression from reaching the internet, not a body written to defeat
+it. Keeping a production body off the deployment's network is the sandbox's
+job, and gaps there are fixed in the sandbox, not in this test setting.
+
 ## Coverage
 
 ```bash

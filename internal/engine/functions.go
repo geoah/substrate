@@ -729,10 +729,11 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			if i > 0 && deadline.spent() {
 				return ran, nil
 			}
-			// An agent at a spend cap holds the walk here, before the claim
-			// and before the trailing scan advance below: the cursor stays
-			// on the row still owed, and no run row or park is written.
-			dctx, held, err := ds.holdAgentDelivery(ctx, tr)
+			// An agent at a spend cap, or a function at the allowance, holds
+			// the walk here, before the claim and before the trailing scan
+			// advance below: the cursor stays on the row still owed, and no
+			// run row or park is written.
+			dctx, held, err := ds.holdDelivery(ctx, tr)
 			if err != nil {
 				return ran, err
 			}
@@ -742,6 +743,12 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			pass.startDelivery()
 			n, next, err := ds.deliverWithRetry(dctx, tr, ch, cursor)
 			ran += n
+			if errors.Is(err, errUnstartedAtAllowance) {
+				// The allowance ran out between the hold and the call's
+				// reservation: nothing ran, so the walk stops as a hold does.
+				ds.noteHold(tr, allowanceText(err))
+				return ran, nil
+			}
 			if errors.Is(err, errCursorMoved) {
 				ds.logYield(tr.ID, "delivery", ch.Seq)
 				return ran, nil
@@ -881,6 +888,17 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			return 0, from, rerr
 		}
 		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
+		if heldAtAllowance(err, threads) {
+			// Nothing ran and nothing parks: the walk holds the cursor on
+			// this change (processRecordTrigger), and a `sync` record this
+			// delivery marked `running` reads as it did before. That write
+			// lands even when the dispatcher is stopping, since no pass
+			// before the reset reaches the record again.
+			if uerr := ds.syncUnstart(context.WithoutCancel(ctx), settle.sync, ch.Seq); uerr != nil {
+				return 0, from, uerr
+			}
+			return 0, from, err
+		}
 		cause := err
 		err = agentRetryGate(threads, err)
 		if err == nil {
@@ -1818,7 +1836,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		// As in processRecordTrigger: a hold stops the walk before the fire
 		// is claimed, so the fire state stays and the occurrence is still
 		// due at the next pass.
-		dctx, held, err := ds.holdAgentDelivery(ctx, lt.trigger)
+		dctx, held, err := ds.holdDelivery(ctx, lt.trigger)
 		if err != nil {
 			return ran, fired, err
 		}
@@ -1841,6 +1859,12 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 			defer done()
 			return ds.deliverFire(dctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		}()
+		if errors.Is(err, errUnstartedAtAllowance) {
+			// As in processRecordTrigger: the fire state stays, and the
+			// occurrence is still due at the next pass.
+			ds.noteHold(lt.trigger, allowanceText(err))
+			return ran, fired, nil
+		}
 		ran += n
 		fired++
 		if errors.Is(err, errCallableGone) {
@@ -2170,6 +2194,11 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			applied, err = ds.agentFire(ctx, tr, mode, fid, at, envelope, settle)
 		} else {
 			applied, err = ds.functionFire(fctx, tr, mode, fid, at, envelope, settle)
+			if heldAtAllowance(err, threads) {
+				// Nothing ran and nothing settles: the fire state stays, an
+				// admitted request stays pending, and the caller holds.
+				return 0, false, err
+			}
 			cause = err
 			err = agentRetryGate(threads, err)
 		}
@@ -3459,8 +3488,14 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 		st.InFlight += owedInFlight + int64(delivering)
 		// The same check the dispatcher makes before it claims a delivery,
 		// so the status says held exactly when the next delivery would be.
-		if lt.Agent != nil && lt.Enabled && st.Error == "" {
-			if st.Held, err = ds.spendHold(ctx, lt.Agent); err != nil {
+		if lt.Enabled && st.Error == "" {
+			switch {
+			case lt.Agent != nil:
+				st.Held, err = ds.spendHold(ctx, lt.Agent)
+			case lt.Callable != nil:
+				st.Held, err = ds.functionAllowanceHold(ctx, lt.Callable)
+			}
+			if err != nil {
 				return nil, err
 			}
 		}
@@ -3590,6 +3625,9 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 			return 0, err
 		}
 	}
+	if err := ds.refuseAtAllowance(ctx, tr); err != nil {
+		return 0, err
+	}
 	switch {
 	case tr.Webhook:
 		wid, err := newID()
@@ -3710,6 +3748,9 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
 			return 0, err
 		}
+	}
+	if err := ds.refuseAtAllowance(ctx, tr); err != nil {
+		return 0, err
 	}
 	// The failure is held in this process before anything runs and until the
 	// retirement or the re-park ends: a second retry of the same failure, or

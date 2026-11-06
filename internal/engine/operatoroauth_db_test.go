@@ -294,7 +294,7 @@ var opOwnClientWithBase = map[string]any{
 // returns it with the first account's entry.
 func opConfigEntry(t *testing.T, ds *dataset) (map[string]any, map[string]any) {
 	t.Helper()
-	cfg, _, err := ds.resolveFunctionConfig(context.Background(), &vocabulary.Function{Package: opMailPackage})
+	cfg, _, _, err := ds.resolveFunctionConfig(context.Background(), &vocabulary.Function{Package: opMailPackage})
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestOperatorOAuthClientChangeNeedsAReconnect(t *testing.T) {
 		t.Fatalf("item = %+v, want reconnect-needed from the person's own client", item)
 	}
 
-	cfg, _, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
+	cfg, _, _, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -625,7 +625,7 @@ func TestOperatorOAuthClientSecretStaysInTheHost(t *testing.T) {
 		t.Fatalf("refreshes = %+v, want one through the operator's pair", refreshes)
 	}
 
-	cfg, secrets, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
+	cfg, secrets, _, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}

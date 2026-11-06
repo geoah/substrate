@@ -11,8 +11,8 @@ the other sample packages it can import. A kind is named `<authority>/<package>/
 the tables give the name, and each heading gives the package as the tree
 spells it, a sample's under the placeholder authority an import rewrites. Which door a
 package takes, what an import rewrites and how an upgrade is offered are in
-[bundles](bundles.md#the-two-doors); the provider packages, and the five
-samples this page does not table (notes, llm, readinglist, firecrawl and pebble, whose
+[bundles](bundles.md#the-two-doors); the provider packages, and the four
+samples this page does not table (notes, llm, readinglist and pebble, whose
 kinds are described beside the functions and agents that write them), are in
 the [bundles catalog](bundles-catalog.md). Every declaration is queryable in
 your own repository (`substratectl kinds`, or `GET /api/v1/records` with

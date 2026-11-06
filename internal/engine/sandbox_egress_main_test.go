@@ -1,10 +1,12 @@
 package engine_test
 
 import (
+	"net/netip"
 	"os"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/testdb"
 )
 
@@ -18,7 +20,16 @@ import (
 // each gate documents. Set before m.Run, so the runner reads the sandbox one
 // when it starts the first body and llm.New/embed.New read the server one when
 // they build the first client.
+//
+// Every body this binary starts is also confined to loopback
+// (runner.ConfineBodyEgress), whatever SUBSTRATE_SANDBOX_EGRESS_ALLOW and its
+// own `permissions.network` say: a body that a broken test or a regression
+// points at a real API, a shipped provider's default origin included, is
+// refused at connect(2) and never reaches it. A host that cannot filter a
+// body's connects refuses to start the body, so such a test fails there
+// instead of reaching the internet.
 func TestMain(m *testing.M) {
+	runner.Shared.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128"))
 	if os.Getenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"errors"
+	"net/netip"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -36,6 +37,47 @@ func TestEnforceRefusesWithoutTheKernel(t *testing.T) {
 	}
 	if !c.Degraded() {
 		t.Fatal("a confiner with no kernel support is degraded")
+	}
+}
+
+// A confined egress is a promise the host must keep: a confiner that cannot
+// filter refuses the child, rather than run it with the network open, and
+// says which layer is missing. A child granted no network needs the syscall
+// filter; one granted network needs the connect gate too.
+func TestAConfinedEgressIsRefusedWhereItCannotBeHeld(t *testing.T) {
+	only := Policy{EgressOnly: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}}
+	networked := only
+	networked.Network, networked.NotifyConnect = true, true
+	full := Report{OS: "linux", LandlockABI: MinLandlockABI, Seccomp: true, ConnectGate: true}
+	noGate := full
+	noGate.ConnectGate = false
+	noFilter := full
+	noFilter.Seccomp, noFilter.ConnectGate = false, false
+	for _, tc := range []struct {
+		name   string
+		c      *Confiner
+		p      Policy
+		reason string
+	}{
+		{"off", &Confiner{mode: ModeOff, report: full}, only, "SUBSTRATE_SANDBOX=off"},
+		{"no syscall filter", &Confiner{mode: ModeBestEffort, report: noFilter}, only, "no syscall filter"},
+		{"another platform", &Confiner{mode: ModeBestEffort, report: Report{OS: "darwin"}}, only, "no syscall filter"},
+		{"network with no gate", &Confiner{mode: ModeBestEffort, report: noGate}, networked, "connect gate"},
+	} {
+		err := tc.c.Wrap(exec.Command("/bin/true"), tc.p)
+		if err == nil || !strings.Contains(err.Error(), "egress is confined") || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: Wrap = %v, want a refusal naming %q", tc.name, err, tc.reason)
+		}
+	}
+	if err := (&Confiner{mode: ModeBestEffort, report: noGate}).EgressConfinable(false); err != nil {
+		t.Errorf("a child granted no network needs no connect gate: %v", err)
+	}
+	if err := (&Confiner{mode: ModeBestEffort, report: full}).EgressConfinable(true); err != nil {
+		t.Errorf("a host with every layer cannot hold a confined egress: %v", err)
+	}
+	// A policy with no EgressOnly is untouched by any of it.
+	if err := (&Confiner{mode: ModeOff, report: full}).Wrap(exec.Command("/bin/true"), Policy{}); err != nil {
+		t.Errorf("off refused an unconfined child: %v", err)
 	}
 }
 

@@ -139,6 +139,20 @@ type Policy struct {
 	// by Wrap, never by a caller.
 	NotifyConnect bool `json:"notifyConnect,omitempty"`
 	NotifyFD      int  `json:"notifyFD,omitempty"`
+	// EgressOnly, when set, is the whole address space the child may reach:
+	// the connect gate refuses every other destination, public addresses and
+	// SUBSTRATE_SANDBOX_EGRESS_ALLOW prefixes included, and a resolver on port
+	// 53 even inside it, since a resolver forwards the name off the host. The
+	// gate sees connect(2) alone, so the syscall filter gives the child no
+	// internet socket but a TCP stream and refuses TCP Fast Open's send: no
+	// datagram, raw, SCTP or MPTCP socket reaches an address without passing
+	// the gate. It opens no Unix socket either, so a daemon on a pathname
+	// socket cannot relay its traffic (buildConfinedFilter). An outside
+	// body's proxy dials nothing outside it and asks no name server. It is a
+	// test binary's setting (runner.ConfineBodyEgress): a body a regression
+	// points at a real API is refused at connect(2), whatever its code does.
+	// Wrap refuses a policy carrying it on a host that cannot enforce it.
+	EgressOnly []netip.Prefix `json:"egressOnly,omitempty"`
 	// NoFile, FileSize bound the cheap things rlimits actually bound well.
 	// RLIMIT_AS and RLIMIT_NPROC are deliberately absent: AS counts virtual
 	// address space, which the Go runtime and CPython reserve far more of than
@@ -408,6 +422,9 @@ type Gate interface {
 // about the allowlist.
 type Refusal struct {
 	ProxyOnly bool
+	// Confined marks a refusal outside a policy's EgressOnly, which no
+	// allowlist lifts.
+	Confined bool
 	// Addr is the destination, IPv4-mapped addresses unmapped, so its address
 	// is the value the allowlist takes.
 	Addr netip.AddrPort
@@ -419,6 +436,9 @@ type Refusal struct {
 func (r Refusal) String() string {
 	if r.ProxyOnly {
 		return fmt.Sprintf("the sandbox refused direct connection to %s: outside code must use its declared-host proxy", r.Addr)
+	}
+	if r.Confined {
+		return fmt.Sprintf("the sandbox's connect gate refused %s: this process confines a body's egress (sandbox.Policy.EgressOnly)", r.Addr)
 	}
 	return fmt.Sprintf("the sandbox's connect gate refused %s; allow it with %s=%s", r.Addr, EgressAllowVar, r.Addr.Addr())
 }
@@ -458,6 +478,11 @@ func (c *Confiner) Degraded() bool { return c.report.Degraded(c.mode) }
 func (c *Confiner) Wrap(cmd *exec.Cmd, p Policy) error {
 	if p.Outside && !p.UnconfinedOutside && (c.mode == ModeOff || !c.report.FS() || !c.report.Seccomp || !c.report.ConnectGate) {
 		return fmt.Errorf("sandbox: outside code requires confinement")
+	}
+	if len(p.EgressOnly) > 0 {
+		if err := c.EgressConfinable(p.Network || p.NotifyConnect || p.Outside); err != nil {
+			return err
+		}
 	}
 	if c.mode == ModeOff {
 		return nil
@@ -500,6 +525,23 @@ func (c *Confiner) connectGateRefusal() error {
 	}
 	return fmt.Errorf("sandbox: the connect gate is unavailable on this platform, so a body that declares " +
 		"network is refused rather than run with its destinations unfiltered")
+}
+
+// EgressConfinable answers why this confiner cannot hold a child to a
+// policy's EgressOnly, or nil when it can. Every child needs the syscall
+// filter, which denies an internet socket to a child granted no network; a
+// child granted network needs the connect gate too, which filters where it
+// connects.
+func (c *Confiner) EgressConfinable(network bool) error {
+	switch {
+	case c.mode == ModeOff:
+		return fmt.Errorf("sandbox: egress is confined, and SUBSTRATE_SANDBOX=off applies no filter to hold a child to it")
+	case !c.report.Supported() || !c.report.Seccomp:
+		return fmt.Errorf("sandbox: egress is confined, and this host has no syscall filter to hold a child to it: %s", c.report)
+	case network && !c.report.ConnectGate:
+		return fmt.Errorf("sandbox: egress is confined, and this host cannot run the connect gate that filters a network child's destinations: %s", c.report)
+	}
+	return nil
 }
 
 // Cancel releases startup resources when a wrapped command could not start.
