@@ -515,6 +515,21 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load the seed: %v", err)
 	}
+	// Core's mappings onto contacts wait on the seed alone, every one of
+	// them for its provider (decision record 0232).
+	contactKind := kinds.SeedAuthority + "/core/contact"
+	seeded := reg.HeldMappings()
+	if len(seeded) == 0 {
+		t.Fatal("the seed holds no mapping onto contacts")
+	}
+	for _, h := range seeded {
+		if !strings.Contains(h.Reason, "is not installed") {
+			t.Errorf("on the seed alone, %s waits because %s", h.Mapping.Identity(), h.Reason)
+		}
+	}
+	if got := reg.MappingsTo(contactKind); len(got) != 0 {
+		t.Errorf("%d mappings onto contacts are live on the seed alone", len(got))
+	}
 	done := map[string]bool{}
 	for _, tier := range []string{substrate.TierProvider, substrate.TierSample} {
 		for _, b := range cat.Bundles() {
@@ -550,6 +565,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	}{
 		{samples.Authority + "/people/person", 4},
 		{samples.Authority + "/tasks/task", 1},
+		{contactKind, len(seeded)},
 	} {
 		if got := reg.MappingsTo(want.to); len(got) != want.count {
 			var ids []string
@@ -558,6 +574,12 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 			}
 			t.Errorf("%d mappings onto %s, want %d: %v", len(got), want.to, want.count, ids)
 		}
+	}
+	// With every shipped provider installed, every core mapping fits its
+	// mirror and switched on: one that waits here is one that would never
+	// fill a contact.
+	for _, h := range reg.HeldMappings() {
+		t.Errorf("with every provider installed, %s still waits: %s", h.Mapping.Identity(), h.Reason)
 	}
 }
 
