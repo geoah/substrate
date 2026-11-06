@@ -387,4 +387,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0228](0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md) | A person, an app or an agent creates a record under a minted id, a UUIDv7 in 26 Crockford characters | accepted |
 | [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | proposed |
 | [0233](0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md) | The Providers page lists every outside service the substrate uses a key or a sign-in for | accepted |
+| [0234](0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md) | Firecrawl is a provider whose tools are offered to agents and may run on the operator's key | proposed |
 | [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
