@@ -232,11 +232,13 @@ func xpCaseAppSetUp(c *C) {
 	id := path.Base(loc)
 	c.stepf("`GET /oauth/authorize` with Sync's scopes and details parked request `%s` and sent the browser to the approval page", id)
 
-	// The approval page's read: one row per detail, nothing in place yet.
+	// The approval page's read: one row per detail, nothing in place yet. An
+	// app whose client id is a loopback URL acts as `app:local`, whatever its
+	// host (decision 0209).
 	var v xpRequest
 	status, raw = c.do(http.MethodGet, "/api/v1/authorizations/"+id, nil, &v)
 	c.requiref(status == http.StatusOK, "the approval page's read answered %d: %s", status, raw)
-	c.requiref(v.State == "pending" && v.App.Local && v.App.Actor == "app:127.0.0.1" && v.Repository == r.authority,
+	c.requiref(v.State == "pending" && v.App.Local && v.App.Actor == "app:local" && v.Repository == r.authority,
 		"the request reads state %q, local %t, actor %q, repository %q", v.State, v.App.Local, v.App.Actor, v.Repository)
 	c.requiref(len(v.Previous) == 0 || string(v.Previous) == "null", "a local app's request carries a previous token: %s", v.Previous)
 	c.requiref(v.PlanHash != "" && len(v.Setup) == 4, "the request plans %d rows under hash %q: %s", len(v.Setup), v.PlanHash, raw)
