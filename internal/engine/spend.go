@@ -344,13 +344,15 @@ func (ds *dataset) spendCap(ctx context.Context) (*spendRepoCap, error) {
 }
 
 // parseSpendCents reads a cap: a whole number of cents from 0 to the largest
-// integer an `int` property holds exactly.
+// integer an `int` property holds exactly. Parsed at the platform's int width,
+// so where int is 32 bits a cap past it is refused rather than truncated into
+// a smaller one.
 func parseSpendCents(value string) (int, bool) {
-	n, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || n < 0 || n > vocabulary.MaxAgentSpendCentsPerDay {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 || int64(n) > vocabulary.MaxAgentSpendCentsPerDay {
 		return 0, false
 	}
-	return int(n), true
+	return n, true
 }
 
 // spendRepo returns the repository cap, read again when the last read is

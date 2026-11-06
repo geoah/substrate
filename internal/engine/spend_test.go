@@ -157,3 +157,30 @@ func TestSpendFinishNilRunReturns(t *testing.T) {
 	var s spendLedger
 	s.finish(nil)
 }
+
+// A cap is a whole number of cents up to the largest integer an `int`
+// property holds exactly; anything past it, or past what strconv can hold at
+// all, is refused rather than wrapped into a smaller cap.
+func TestParseSpendCentsRefusesPastTheBound(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+		ok   bool
+	}{
+		{"0", 0, true},
+		{"1500", 1500, true},
+		{"9007199254740991", 1<<53 - 1, true},
+		{"9007199254740992", 0, false},
+		{"9223372036854775807", 0, false},
+		{"9223372036854775808", 0, false},
+		{"99999999999999999999", 0, false},
+		{"-1", 0, false},
+		{"1.5", 0, false},
+		{"", 0, false},
+	} {
+		got, ok := parseSpendCents(tc.in)
+		if int64(got) != tc.want || ok != tc.ok {
+			t.Errorf("parseSpendCents(%q) = %d, %v; want %d, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
