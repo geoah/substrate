@@ -97,7 +97,7 @@ export function DoorLayout({
         className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,var(--primary-soft),transparent)]"
       />
       <ColorSchemeMenu className="absolute top-3 right-3 z-10 sm:top-4 sm:right-4" />
-      <main className="relative mx-auto flex min-h-svh w-full max-w-[480px] flex-col px-4 pt-10 pb-10 sm:justify-center sm:px-6 sm:pt-10">
+      <main className="relative mx-auto flex min-h-svh w-full max-w-[600px] flex-col px-4 pt-10 pb-10 sm:justify-center sm:px-6 sm:pt-10">
         <div className="mb-6 flex justify-center sm:mb-8">
           <Link to="/" aria-label={site?.name ?? "Home"} className="rounded-lg">
             <DoorBrand site={site} showProvider />
