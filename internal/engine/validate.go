@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -852,13 +853,13 @@ func containsString(ss []string, s string) bool {
 
 // coerceLabels enforces namespaced keys, the writer's namespace, and the
 // scalar-only shape.
-func coerceLabels(actor substrate.Actor, clientID string, in map[string]any) (map[string]any, error) {
+func coerceLabels(ctx context.Context, actor substrate.Actor, clientID string, in map[string]any) (map[string]any, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
 	out := make(map[string]any, len(in))
 	for _, k := range sortedKeys(in) {
-		if err := metaKeyAllowed(actor, clientID, k); err != nil {
+		if err := metaKeyAllowed(ctx, actor, clientID, k); err != nil {
 			return nil, err
 		}
 		v := in[k]

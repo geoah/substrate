@@ -9,7 +9,9 @@ tool cards state the same rules in a shorter form.
 
 Everything here is the public API. There is no privileged path for an agent,
 and a token has the whole repository: what follows is discipline, not
-permission.
+permission. An assistant that speaks MCP connects to the MCP address
+instead and reaches the same API through its tools, with a token that works
+there alone ([connecting an assistant](mcp.md)).
 
 ## Before the first request
 

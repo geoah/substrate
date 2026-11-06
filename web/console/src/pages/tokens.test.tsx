@@ -300,6 +300,53 @@ describe("Signed in and API tokens", () => {
     expect(await screen.findByText("No apps")).toBeTruthy()
   })
 
+  it("leaves an AI assistant's tokens to their own page: no app, sign-in or developer row", async () => {
+    // Scopes of exactly ["mcp"], whether an assistant signed in or the
+    // owner made the token for one (decision 0230).
+    const claudeCode = {
+      id: "tok-claude-code",
+      label: "claude.ai",
+      createdAt: "2026-08-12T00:00:00Z",
+      scopes: ["mcp"],
+      clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+      clientName: "Claude Code",
+      appLocal: true,
+    }
+    const cursor = {
+      id: "tok-cursor",
+      label: "Cursor",
+      createdAt: "2026-08-12T00:00:00Z",
+      scopes: ["mcp"],
+    }
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [...TOKENS, claudeCode, cursor] })
+    )
+    renderWithClient(<AppTokenRows />)
+    await screen.findAllByText("Notes for Ada")
+    expect(screen.queryByText("Claude Code")).toBeNull()
+    expect(screen.queryByText("Cursor")).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Revoke Claude Code" })
+    ).toBeNull()
+    cleanup()
+    renderWithClient(<SignedInRows />)
+    await screen.findByText("ci runner")
+    expect(screen.queryByText("Cursor")).toBeNull()
+    expect(screen.queryByText("claude.ai")).toBeNull()
+    cleanup()
+    renderWithClient(<ApiTokens />)
+    await screen.findByText("ci runner")
+    expect(screen.queryByText("Cursor")).toBeNull()
+    expect(screen.queryByText("tok-claude-code")).toBeNull()
+    // With nothing but assistants, Apps has no app to list.
+    cleanup()
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [claudeCode, cursor] })
+    )
+    renderWithClient(<AppTokenRows />)
+    expect(await screen.findByText("No apps")).toBeTruthy()
+  })
+
   it("revokes an app's token, after asking", async () => {
     renderWithClient(<AppTokenRows />)
     fireEvent.click(

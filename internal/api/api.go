@@ -24,8 +24,10 @@ import (
 
 	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
+	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/domains"
+	"github.com/geoah/substrate/internal/mcp"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
@@ -175,6 +177,10 @@ type handler struct {
 	setUpEnded func(request string)
 	checks     checkMemo
 	checkTurns *checkTurns
+	// mcp is the MCP door's protocol and tools (mcp.go), and router this
+	// server's own routes, which the door's tools request in process.
+	mcp    *mcp.Server
+	router http.Handler
 }
 
 // New builds the router.
@@ -214,6 +220,7 @@ func New(cfg Config) http.Handler {
 		h.refresher = cfg.Catalog
 	}
 	h.setups = appsetup.NewRunner(h.packages)
+	h.mcp = mcp.NewServer("substrate", build.Version())
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
 	}
@@ -271,6 +278,12 @@ func New(cfg Config) http.Handler {
 	// credential or the way to one, so none may be stored.
 	r.Get(asMetadataPath, h.getAuthorizationServerMetadata)
 	r.Get(prMetadataPath, h.getProtectedResourceMetadata)
+	// The MCP door (decision 0230) and its own resource metadata, at the
+	// path-suffixed address a client derives from the door's. Every method
+	// is the door's, so none falls through to the console, and no answer is
+	// stored.
+	r.Get(prMetadataPath+mcpPath, h.getMCPResourceMetadata)
+	r.With(noStore).HandleFunc(mcpPath, h.serveMCP)
 	r.Group(func(r chi.Router) {
 		r.Use(noStore)
 		r.Get("/oauth/authorize", h.getAuthorize)
@@ -375,6 +388,7 @@ func New(cfg Config) http.Handler {
 		}
 		fallback(w, req)
 	})
+	h.router = r
 	return r
 }
 

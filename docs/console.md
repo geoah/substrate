@@ -1451,7 +1451,13 @@ how many values are pending.
   token record, and signing one out deletes it.
 - **Apps**: each app you approved through [app authorization](apps.md), with
   its client id, the name it claims, its scopes, when you approved it and
-  when it expires, each **Revoke…** away.
+  when it expires, each **Revoke…** away. An assistant is listed under AI
+  assistants instead.
+- **AI assistants** (`/settings/assistants`): this server's MCP address, how
+  to connect Claude Code, Codex, Claude, Cursor or another client, what an
+  assistant can and cannot do, and the connected ones, each **Revoke…** away.
+  The Cursor and Other tabs make a token for a client that takes a pasted
+  header and show it once ([connecting an assistant](mcp.md)).
 - **Your data**: **Download everything**, the recovery export of the
   repository as of now ([backups](operations.md#backups)).
 - **Developer**, with Technical details on: the system kinds under

@@ -441,6 +441,16 @@ describe("runEntry", () => {
     expect(entry.run).toMatchObject({ newestSeq: 200, oldestSeq: 141 })
   })
 
+  it("names the token behind a run the server named", () => {
+    expect(
+      runEntry(
+        run({ actor: "app:local", principalName: "Claude Code" }),
+        source
+      ).actorName
+    ).toBe("Claude Code")
+    expect(runEntry(run(), source).actorName).toBeUndefined()
+  })
+
   it("speaks each run verb in the words a row's would", () => {
     const said = (verb: string) => runEntry(run({ verb }), source).verb
     expect(said("create")).toBe("added")
@@ -505,6 +515,25 @@ describe("joinLive", () => {
   it("keeps a different act as a sentence of its own", () => {
     const told = [runEntry(run(), source)]
     const live = foldHistory([row({ seq: 201, op: "delete" })])
+    expect(joinLive(live, told)).toHaveLength(2)
+  })
+
+  // The server splits a named run on its token, which a live row does not
+  // carry, so the tail never claims to continue it.
+  it("never continues a run named by its token", () => {
+    const told = [
+      runEntry(
+        run({
+          records: 1,
+          count: 3,
+          recordId: "t1",
+          verb: "update",
+          principalName: "Claude Code",
+        }),
+        source
+      ),
+    ]
+    const live = foldHistory([row({ seq: 202, op: "patch", recordId: "t1" })])
     expect(joinLive(live, told)).toHaveLength(2)
   })
 })

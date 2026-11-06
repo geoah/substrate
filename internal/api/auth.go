@@ -21,7 +21,22 @@ const (
 	ctxKeyRequestID
 	// ctxKeyLease is an app token's standing for a stream (tokenlease.go).
 	ctxKeyLease
+	// ctxKeyMCPDoor marks a request the MCP door makes (mcp.go): the one
+	// place an assistant's token authenticates (decision 0230). It is set on
+	// the context alone, never read from a header, so no client can claim it.
+	ctxKeyMCPDoor
 )
+
+// withMCPDoor marks ctx as the MCP door's.
+func withMCPDoor(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeyMCPDoor, true)
+}
+
+// onMCPDoor reports whether the MCP door made the request.
+func onMCPDoor(ctx context.Context) bool {
+	on, _ := ctx.Value(ctxKeyMCPDoor).(bool)
+	return on
+}
 
 // actorHeader names the door the caller writes as. A full-access token
 // carries no actor set, so the header is checked against one rule only: the
@@ -107,6 +122,25 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	ctx = r.Context()
+	if scope.IsMCP(tok.Scopes) {
+		// An assistant's token (decision 0230): the owner's tier, no scope
+		// mark, at the MCP door alone, on the dataset that keeps the auth
+		// material out of its writes. Its writes are its app's derived
+		// actor whatever actor it names, as an app's are.
+		if !onMCPDoor(ctx) {
+			return nil, http.StatusForbidden, codeForbidden,
+				"an assistant's token works at " + h.issuerOf(r) + mcpPath + " alone", nil
+		}
+		actor := appActorOf(tok)
+		if actor != substrate.ActorAPI {
+			ctx = substrate.WithClientID(ctx, tok.ClientID)
+		}
+		// The owner's hand at the gates a person's door alone passes
+		// (installing, importing, the owner's label keys), under the
+		// assistant's own actor.
+		ctx = substrate.WithAssistant(ctx)
+		return withRequestAuth(ctx, newAssistantDataset(ds), tok, actor), 0, "", "", nil
+	}
 	if tok.Scoped() {
 		// An app's token: the dataset it gets is held to its scopes, the
 		// engine's owner-only gates see the mark, and its writes are its own
@@ -218,6 +252,11 @@ func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 				w.Header().Set("WWW-Authenticate", challenge)
 			}
 			writeError(w, status, code, msg)
+			return
+		}
+		if _, assistant := DatasetFrom(ctx).(*assistantDataset); assistant && !mcpRouteAllowed(r) {
+			writeError(w, http.StatusForbidden, codeForbidden,
+				"an assistant's token does not reach "+r.Method+" "+r.URL.Path)
 			return
 		}
 		if _, scoped := substrate.ScopesFrom(ctx); scoped && !apps {

@@ -28,6 +28,8 @@ API call that completes a task.
 - [Getting started](getting-started.md) — register, log in, write a record
 - [Using a substrate from an agent](for-agents.md): what a program acting
   with a token reads first, how it reads and writes, and what it never does
+- [Connecting an assistant](mcp.md): Claude Code, Codex, Cursor or Claude
+  over MCP, signed in once and revoked in Settings
 
 ## The model
 

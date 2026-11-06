@@ -8,6 +8,8 @@
  * bearer on them is refused outright (RB-6). Login and registration end LOGGED
  * IN — the response carries a freshly minted token secret, shown once. */
 
+import { queryOptions } from "@tanstack/react-query"
+
 import { request } from "./http"
 import { appHoldsSession, clearSession, getToken, getTokenId } from "./session"
 import type {
@@ -163,6 +165,13 @@ export async function listTokens(): Promise<TokenInfo[]> {
   return res?.items ?? []
 }
 
+/** Every token record, one cache entry for every list in Settings, so a
+ * revoke or a mint on one page refreshes the others. */
+export const tokensQueryOptions = queryOptions({
+  queryKey: ["tokens"],
+  queryFn: listTokens,
+})
+
 /** Mint a token for a script or a device. The secret comes back ONCE. */
 export function mintToken(
   label: string,
@@ -171,6 +180,13 @@ export function mintToken(
   const body: { label: string; expiresAt?: string } = { label }
   if (expiresAt) body.expiresAt = expiresAt
   return request<MintedToken>("POST", "/tokens", body)
+}
+
+/** Mint an AI assistant's token (decision 0230), for a client that takes a
+ * pasted one: it works at the MCP address alone, and `label` is the name it
+ * goes by. The secret comes back ONCE. */
+export function mintAssistantToken(label: string): Promise<MintedToken> {
+  return request<MintedToken>("POST", "/tokens", { label, scopes: ["mcp"] })
 }
 
 /** Revoking IS deleting the token record — the endpoint, the generic record

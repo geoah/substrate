@@ -11,7 +11,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { clearSession, saveSession } from "@/lib/api/session"
-import { scopeSentence } from "@/lib/app-scopes"
+import {
+  ASSISTANT_CAN,
+  ASSISTANT_CANNOT,
+  scopeSentence,
+} from "@/lib/app-scopes"
 
 vi.mock("@/router", () => ({
   authorizeRoute: {
@@ -304,6 +308,56 @@ const MODES = [
   { name: "everyday", technical: false },
   { name: "technical", technical: true },
 ] as const
+
+/** An AI assistant's scope (decision 0230): asked for alone, like `full`. */
+const MCP = {
+  scope: "mcp",
+  requested: "mcp",
+  verb: "mcp",
+  write: false,
+  pattern: "",
+  glob: false,
+  kinds: [],
+  agents: [],
+}
+
+/** Claude Code: a hosted client id, its access sent to a loopback address. */
+const CLAUDE_CODE_REQUEST = {
+  ...REQUEST,
+  app: {
+    clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+    host: "claude.ai",
+    local: false,
+    name: "Claude Code",
+    actor: "app:local",
+    verified: false,
+    publisher: { listed: false },
+  },
+  redirect: {
+    uri: "http://localhost:53021/callback",
+    host: "localhost:53021",
+    loopback: true,
+  },
+  scopes: [MCP],
+}
+
+/** A claude.ai connector: its client id and callback are every claude.ai
+ * account's. */
+const CONNECTOR_REQUEST = {
+  ...CLAUDE_CODE_REQUEST,
+  app: {
+    ...CLAUDE_CODE_REQUEST.app,
+    clientId: "https://claude.ai/oauth/mcp-oauth-client-metadata",
+    name: "Claude",
+    actor: "app:claude.ai",
+  },
+  redirect: {
+    uri: "https://claude.ai/api/mcp/auth_callback",
+    host: "claude.ai",
+  },
+}
+
+const SHARED_CALLBACK = "Approve only a sign-in you just started"
 
 describe("AuthorizePage", () => {
   const fetchMock = vi.fn<typeof fetch>()
@@ -773,6 +827,118 @@ describe("AuthorizePage", () => {
       expect(body("POST")).toEqual({ scopes: ["full"], lifetimeDays: 30 })
     }
   )
+
+  it.each(MODES)(
+    "asks for an AI assistant's access whole: where it works, what it can and can't do, its code's reach and its own name ($name)",
+    async ({ technical }) => {
+      answers.GET = () => jsonResponse(200, CLAUDE_CODE_REQUEST)
+      renderPage({ technical })
+      expect(
+        await screen.findByText(
+          "It asks to work with nearly everything you have"
+        )
+      ).toBeTruthy()
+      expect(
+        screen.getByText(/An AI assistant wants to connect to/).textContent
+      ).toBe("An AI assistant wants to connect to ada.example.com")
+      expect(screen.queryByText("It asks for full access")).toBeNull()
+      expect(screen.queryByRole("checkbox")).toBeNull()
+      expect(screen.queryByText(/Uncheck anything/)).toBeNull()
+
+      const where = screen.getByRole("region", { name: "Where it works" })
+      expect(
+        within(where).getByText(`${window.location.origin}/mcp`)
+      ).toBeTruthy()
+      expect(where.textContent).toContain(
+        "not in this console, and not through the API"
+      )
+      const can = screen.getByRole("region", { name: "It will be able to" })
+      for (const line of ASSISTANT_CAN)
+        expect(within(can).getByText(`${line}.`)).toBeTruthy()
+      const cannot = screen.getByRole("region", {
+        name: "It won’t be able to",
+      })
+      for (const line of ASSISTANT_CANNOT)
+        expect(within(cannot).getByText(`${line}.`)).toBeTruthy()
+      expect(screen.getByText("Its code can reach your secrets")).toBeTruthy()
+      expect(
+        screen.getByText(
+          /Code it writes runs as your code does, so it can read what your code can, secrets included, and hand them back to it/
+        )
+      ).toBeTruthy()
+
+      const changes = screen.getByRole("region", {
+        name: "Its changes appear as",
+      })
+      expect(changes.textContent).toContain(
+        "“Claude Code”, the name it gives itself, not you."
+      )
+      expect(changes.textContent).not.toMatch(/Yours/)
+      expect(within(changes).queryByText("app:local") !== null).toBe(technical)
+
+      // A program on this device receives it: the loopback warning, not the
+      // shared callback's.
+      expect(screen.queryByText(SHARED_CALLBACK)).toBeNull()
+
+      // No refresh token, so until revoked comes first.
+      expect(
+        screen
+          .getByRole("radio", { name: "Until you revoke it" })
+          .getAttribute("aria-checked")
+      ).toBe("true")
+      expect(
+        screen.getByText(
+          "It lasts until you revoke it in Settings, under AI assistants."
+        )
+      ).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+      expect(body("POST")).toEqual({ scopes: ["mcp"], lifetimeDays: 0 })
+    }
+  )
+
+  it("approves an assistant for a stretch when the owner picks one, and says it signs in again after", async () => {
+    answers.GET = () => jsonResponse(200, CLAUDE_CODE_REQUEST)
+    renderPage()
+    fireEvent.click(await screen.findByRole("radio", { name: "30 days" }))
+    expect(
+      screen.getByText(/After that, you sign the assistant in again\./)
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    expect(body("POST")).toEqual({ scopes: ["mcp"], lifetimeDays: 30 })
+  })
+
+  it.each(MODES)(
+    "warns that a hosted assistant's sign-in may be someone else's ($name)",
+    async ({ technical }) => {
+      answers.GET = () => jsonResponse(200, CONNECTOR_REQUEST)
+      renderPage({ technical })
+      expect(await screen.findByText(SHARED_CALLBACK)).toBeTruthy()
+      expect(
+        screen.getByText(/Every claude.ai account connects with this same app/)
+          .textContent
+      ).toContain(
+        "If you didn’t just connect this assistant yourself, deny it."
+      )
+      expect(
+        screen.queryByText("A program on this device receives the access")
+      ).toBeNull()
+    }
+  )
+
+  it("keeps the shared-callback warning to assistants", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...CONNECTOR_REQUEST,
+        scopes: [TASKS],
+      })
+    renderPage()
+    await screen.findByRole("checkbox", { name: TASKS_WORDS })
+    expect(screen.queryByText(SHARED_CALLBACK)).toBeNull()
+    expect(screen.queryByRole("region", { name: "Where it works" })).toBeNull()
+    expect(screen.getByText(/An app wants to connect to/)).toBeTruthy()
+  })
 
   it("denies, then goes to the app with the refusal", async () => {
     renderPage()

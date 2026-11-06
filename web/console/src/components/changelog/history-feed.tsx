@@ -145,7 +145,7 @@ export function HistoryEntryRow({
       className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2.5 border-b border-border py-[9px]"
     >
       <div className="min-w-0 leading-[1.6]">
-        <ActorRef actor={entry.actor} inlineId={false} />{" "}
+        <ActorRef actor={entry.actor} name={entry.actorName} inlineId={false} />{" "}
         {phrase ? (
           <Phrase phrase={phrase} />
         ) : (

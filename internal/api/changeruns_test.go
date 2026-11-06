@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -150,4 +151,64 @@ func TestChangeRunsRefusals(t *testing.T) {
 	// refusal, not an answer from another history.
 	rec := env.do(t, http.MethodGet, "/api/v1/changes?runs=1&before=2", tok, nil)
 	wantStatus(t, rec, http.StatusGone)
+}
+
+// Two assistants on one device both write as `app:local`: the runs split on
+// the token behind them and the owner's read names each by its token, while
+// an `api` run is named by its token's label and a person's door is never
+// split or named (decision 0230).
+func TestChangeRunsSplitAndNameTheTokenBehindAnApp(t *testing.T) {
+	env := newTestEnv(t)
+	ds := env.svc.datasets[fakeRepository]
+	ds.records["tokclaude"] = &substrate.Record{ID: "tokclaude", Kind: tokenType, Properties: map[string]any{"clientName": "Claude Code", "label": "claude.ai"}}
+	ds.records["tokcodex"] = &substrate.Record{ID: "tokcodex", Kind: tokenType, Properties: map[string]any{"clientName": "Codex", "label": "chatgpt.com"}}
+	ds.records["tokcursor"] = &substrate.Record{ID: "tokcursor", Kind: tokenType, Properties: map[string]any{"label": "Cursor"}}
+	created := map[string]any{"created": true}
+	commit := func(n int, actor substrate.Actor, principal string) {
+		for range n {
+			ds.commit(substrate.Change{
+				TS: time.Unix(int64(len(ds.changes)+1), 0).UTC(), Actor: actor, Op: substrate.OpPut,
+				RecordID: fmt.Sprintf("r%d", len(ds.changes)+1), Kind: runTask, Payload: created, Principal: principal,
+			})
+			<-ds.signals
+		}
+	}
+	commit(2, substrate.AppActorLocal, "tokclaude")
+	commit(3, substrate.AppActorLocal, "tokcodex")
+	commit(1, substrate.ActorAPI, "tokcursor")
+	commit(2, "console", "tok1")
+	commit(1, "console", "tok2")
+
+	page := getRuns(t, env, "first=10")
+	want := []struct {
+		actor substrate.Actor
+		count int
+		name  string
+	}{{"console", 3, ""}, {substrate.ActorAPI, 1, "Cursor"}, {substrate.AppActorLocal, 3, "Codex"}, {substrate.AppActorLocal, 2, "Claude Code"}}
+	if len(page.Runs) != len(want) {
+		t.Fatalf("runs = %+v, want %d", page.Runs, len(want))
+	}
+	for i, w := range want {
+		if r := page.Runs[i]; r.Actor != w.actor || r.Count != w.count || r.PrincipalName != w.name {
+			t.Fatalf("run %d = %+v, want %s ×%d named %q", i, r, w.actor, w.count, w.name)
+		}
+	}
+	// An assistant reading the history names no token.
+	for _, r := range runsAs(t, env, assistantToken(env.svc)) {
+		if r.PrincipalName != "" {
+			t.Fatalf("an assistant's read named a token: %+v", r)
+		}
+	}
+}
+
+// runsAs reads the runs through the MCP door's own route, as an assistant.
+func runsAs(t *testing.T, env *testEnv, token string) []substrate.ChangeRun {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/changes?runs=1&first=10", nil)
+	req = req.WithContext(withMCPDoor(req.Context()))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	env.h.ServeHTTP(rec, req)
+	wantStatus(t, rec, http.StatusOK)
+	return decodeJSON[substrate.ChangeRunPage](t, rec).Runs
 }

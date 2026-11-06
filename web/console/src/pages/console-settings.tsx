@@ -2,8 +2,9 @@
  * console preference record, so every browser signed in looks the same),
  * what every agent may spend in a day, the account and the proof of its
  * name, where you are signed in,
- * the apps you approved, a download of everything, and for developers the
- * system kinds, the raw tokens and what this server says about itself. */
+ * the apps you approved, the way to the AI assistants page, a download of
+ * everything, and for developers the system kinds, the raw tokens and what
+ * this server says about itself. */
 
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -30,9 +31,11 @@ import {
   useLayoutWidths,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import { tokensQueryOptions } from "@/lib/api/auth"
 import { downloadExport } from "@/lib/api/export"
 import { discoveryQueryOptions } from "@/lib/api/discovery"
 import { CORE_AUTHORITY, olderServerMessage } from "@/lib/api/http"
+import { assistantAddress, isAssistantToken } from "@/lib/assistants"
 import { isMachinery } from "@/lib/core-kinds"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
@@ -136,6 +139,49 @@ function LayoutRows() {
         }
       />
     </>
+  )
+}
+
+/** The way to the AI assistants page, saying how many are connected and,
+ * in three lines, how one connects: the page has each client's commands. */
+export function AssistantsRow() {
+  const tokens = useQuery(tokensQueryOptions)
+  const connected = (tokens.data ?? []).filter(isAssistantToken).length
+  return (
+    <SettingRow
+      title="Claude Code, Codex, Cursor and others"
+      description={
+        connected === 0
+          ? "Let an AI assistant work with your data."
+          : `${connected} connected. Open the page to see them or revoke one.`
+      }
+      control={
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link to="/settings/assistants" />}
+        >
+          Open
+        </Button>
+      }
+    >
+      <ol
+        aria-label="How to connect an assistant"
+        className="flex list-decimal flex-col gap-1 pl-5 text-[13px] text-muted-foreground"
+      >
+        <li>
+          Give your assistant this address:{" "}
+          <code className="font-mono text-[12px] [overflow-wrap:anywhere] text-foreground">
+            {assistantAddress()}
+          </code>
+        </li>
+        <li>When your browser opens this console, approve it.</li>
+        <li>
+          Open shows the exact steps for Claude Code, Codex, Claude and Cursor.
+        </li>
+      </ol>
+    </SettingRow>
   )
 }
 
@@ -367,6 +413,9 @@ export function ConsoleSettingsPage() {
         hint="apps you approved; each reaches only the records you let it"
       >
         <AppTokenRows />
+      </SettingsSection>
+      <SettingsSection title="AI assistants">
+        <AssistantsRow />
       </SettingsSection>
       <SettingsSection title="Your data">
         <DownloadRow />

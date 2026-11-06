@@ -1,6 +1,9 @@
 package substrate
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Actor is the attributed identity of a writer ("console", "substratectl",
 // "bundle:example.com:mail", "substrate"). Attribution, not
@@ -146,6 +149,28 @@ func IsBundleActor(a Actor) bool {
 // ordinary claimable names — attribution is not authorization — and they are
 // the whole of what a human write can say about itself.
 var HumanActors = map[Actor]bool{ActorAPI: true, ActorConsole: true, ActorCLI: true}
+
+type assistantKey struct{}
+
+// WithAssistant marks ctx as an assistant's request at the MCP door
+// (decision 0230). The owner approved the assistant to do what they do, so
+// it holds the owner's hand at the gates a person's door alone passes,
+// while its writes keep its own `app:` actor.
+func WithAssistant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, assistantKey{}, true)
+}
+
+// OwnersHand reports whether actor acts as the repository's owner: one of
+// the person's doors, or an app's actor on a request the MCP door marked.
+// Code the assistant runs writes under its own actor (`function:`,
+// `agent:`), which the mark never covers.
+func OwnersHand(ctx context.Context, actor Actor) bool {
+	if HumanActors[actor] {
+		return true
+	}
+	marked, _ := ctx.Value(assistantKey{}).(bool)
+	return marked && strings.HasPrefix(string(actor), AppActorPrefix)
+}
 
 // ReservedActor reports whether an actor name is one the substrate derives and
 // therefore may never be claimed by a request: the `substrate` namespace, the

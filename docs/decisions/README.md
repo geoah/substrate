@@ -384,3 +384,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0224](0224-an-app-is-one-folder-named-once-by-its-app-json-and-the-kits-layering-is-checked.md) | An app is one folder named once by its app.json, and the kit's layering is checked | accepted |
 | [0225](0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md) | An app's scope may name a trait, and covers what `*` covers among the kinds that bind it | accepted |
 | [0226](0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `lifecycle` trait, and names its done and dropped states | accepted |
+| [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | proposed |

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestAnAppsKeyNamespaceIsItsActorOrItsClientIDsHost(t *testing.T) {
 		{substrate.AppActor("example.org"), "", "app:cdn.example.net/seen", false},
 		{"agent:example.org:coach:coach", cdn, "app:cdn.example.net/seen", false},
 	} {
-		err := metaKeyAllowed(c.actor, c.clientID, c.key)
+		err := metaKeyAllowed(context.Background(), c.actor, c.clientID, c.key)
 		if c.ok && err != nil || !c.ok && !errors.Is(err, substrate.ErrForbidden) {
 			t.Errorf("%s (%s) writes %s: %v, want allowed %v", c.actor, c.clientID, c.key, err, c.ok)
 		}

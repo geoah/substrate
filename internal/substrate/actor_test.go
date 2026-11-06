@@ -1,6 +1,7 @@
 package substrate_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -99,6 +100,31 @@ func TestAnAppActorIsReservedAndDerived(t *testing.T) {
 	for _, a := range []substrate.Actor{"app", "apps", "application:x", "app:"} {
 		if substrate.IsAppActor(a) {
 			t.Errorf("IsAppActor(%q) = true", a)
+		}
+	}
+}
+
+// An assistant at the MCP door holds the owner's hand under its own app
+// actor (decision 0230); the mark never covers code it runs, which writes
+// under a function's or an agent's actor, nor an app without the mark.
+func TestAnAssistantHoldsTheOwnersHandOnlyAtTheDoor(t *testing.T) {
+	marked := substrate.WithAssistant(context.Background())
+	for _, c := range []struct {
+		ctx   context.Context
+		actor substrate.Actor
+		want  bool
+	}{
+		{context.Background(), substrate.ActorConsole, true},
+		{context.Background(), substrate.ActorAPI, true},
+		{context.Background(), substrate.AppActorLocal, false},
+		{marked, substrate.AppActorLocal, true},
+		{marked, substrate.AppActor("claude.ai"), true},
+		{marked, substrate.Actor("function:ada.example.com:notes:stats"), false},
+		{marked, substrate.Actor("agent:ada.example.com:notes:scribe"), false},
+		{marked, substrate.ActorSystem, false},
+	} {
+		if got := substrate.OwnersHand(c.ctx, c.actor); got != c.want {
+			t.Errorf("substrate.OwnersHand(%v, %q) = %v, want %v", c.ctx == marked, c.actor, got, c.want)
 		}
 	}
 }

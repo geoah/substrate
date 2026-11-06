@@ -599,6 +599,7 @@
     "newestTs": true,
     "oldestSeq": true,
     "oldestTs": true,
+    "principalName": false,
     "recordId": false,
     "records": true,
     "verb": true

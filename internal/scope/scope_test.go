@@ -493,6 +493,48 @@ func TestFullIsRequestedAloneAndNeverStored(t *testing.T) {
 	}
 }
 
+// An assistant's scope (decision 0230) is asked for alone like `full`, but
+// it IS stored, as `["mcp"]`, so a binary that does not know the word fails
+// the token closed; and it holds no grant, so a path that reads one for it
+// refuses the token.
+func TestMCPIsRequestedAloneStoredAloneAndHoldsNoGrant(t *testing.T) {
+	got, err := ParseRequest("mcp offline_access mcp")
+	if err != nil {
+		t.Fatalf("ParseRequest(mcp) = %v", err)
+	}
+	if len(got) != 1 || got[0] != MCPScope || got[0].String() != "mcp" || !RequestsMCP(got) || !RequestsWhole(got) || RequestsFull(got) {
+		t.Fatalf("ParseRequest(mcp) = %v, want the mcp scope once", got)
+	}
+	for _, raw := range []string{"mcp read:*", "agents:* mcp", "mcp full", "full mcp"} {
+		if _, err := ParseRequest(raw); err == nil {
+			t.Errorf("ParseRequest(%q) admitted, want mcp refused beside another scope", raw)
+		}
+	}
+	for _, raw := range []string{"mcp:", "mcp:*", "MCP"} {
+		if _, err := ParseRequest(raw); err == nil {
+			t.Errorf("ParseRequest(%q) admitted, want refused: mcp is the bare word", raw)
+		}
+	}
+	if !IsMCP([]string{"mcp"}) || IsMCP(nil) || IsMCP([]string{"mcp", "read:*"}) || IsMCP([]string{"read:*"}) {
+		t.Error("IsMCP misreads a stored list")
+	}
+	if err := CheckStored([]string{"mcp"}); err != nil {
+		t.Errorf("CheckStored([mcp]) = %v, want admitted: the token stores it", err)
+	}
+	for _, stored := range [][]string{{"mcp", "read:example.org/*"}, {"read:example.org/*", "mcp"}, {"mcp", "mcp"}} {
+		if err := CheckStored(stored); err == nil {
+			t.Errorf("CheckStored(%v) admitted, want mcp stored alone", stored)
+		}
+	}
+	if _, err := NewGrant([]string{"mcp"}); err == nil {
+		t.Error("NewGrant([mcp]) admitted, want refused: an assistant's token holds no grant")
+	}
+	approved, err := ApprovalOf([]string{"mcp"})
+	if err != nil || !approved.Full() {
+		t.Errorf("ApprovalOf([mcp]) = %v, %v; want it whole", approved, err)
+	}
+}
+
 // A package of agents alone, such as a coach, is named by the scope that
 // talks to them, so the app may learn whether it is set up; a webhook scope
 // names one trigger and never a package.

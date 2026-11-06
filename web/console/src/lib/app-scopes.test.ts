@@ -4,6 +4,11 @@ import type { AuthorizationKind, SubstrateRecord } from "@/lib/api/types"
 import { packageName } from "@/lib/app-setup"
 
 import {
+  ASSISTANT_ACCESS_SENTENCE,
+  ASSISTANT_CAN,
+  ASSISTANT_CANNOT,
+  ASSISTANT_CODE_SENTENCE,
+  ASSISTANT_HISTORY_SENTENCE,
   FULL_ACCESS_SENTENCE,
   overAgents,
   scopeSentence,
@@ -64,6 +69,46 @@ describe("scopeWords", () => {
       })
     ).toBe(FULL_ACCESS_SENTENCE)
     expect(FULL_ACCESS_SENTENCE).toMatch(/make or revoke tokens/)
+  })
+
+  it("names an AI assistant's access, which has no pattern, by where it works and what it leaves out", () => {
+    expect(scopeWords("mcp")).toEqual({
+      verb: "mcp",
+      action:
+        "Work with your data as an AI assistant, at this server’s assistant address alone",
+      pattern: "",
+    })
+    expect(
+      scopeSentence({
+        verb: "mcp",
+        pattern: "",
+        glob: false,
+        kinds: [],
+        agents: [],
+        functions: [],
+      })
+    ).toBe(ASSISTANT_ACCESS_SENTENCE)
+    expect(ASSISTANT_ACCESS_SENTENCE).toMatch(/nowhere else/)
+    expect(ASSISTANT_ACCESS_SENTENCE).toMatch(/sign-in material/)
+  })
+
+  it("says what an assistant can and cannot do, and what its code reaches", () => {
+    expect(ASSISTANT_CAN).toEqual([
+      "See everything you can, token and credential records included; a secret’s value reads back hidden",
+      "Change anything you can, including collections, agents, triggers and packages",
+      "Run your tools, agents and syncs",
+    ])
+    expect(ASSISTANT_CANNOT).toEqual([
+      "Write, make or revoke tokens or other sign-in material",
+      "See a webhook’s key",
+      "Export your data",
+      "Connect a provider account",
+      "Uninstall or purge a package",
+    ])
+    expect(ASSISTANT_CODE_SENTENCE).toMatch(
+      /secrets included, and hand them back/
+    )
+    expect(ASSISTANT_HISTORY_SENTENCE).toMatch(/under its own name, not yours/)
   })
 
   it("keeps a scope it does not know as written", () => {

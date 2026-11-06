@@ -666,6 +666,10 @@ export interface ChangeRun {
   oldestSeq: number
   newestTs: string
   oldestTs: string
+  /** The name of the token behind an app's or an `api` run (its app's
+   * claimed name, else its label), which tells apart two assistants that both
+   * write as `app:local`. Only the owner's reads carry it (decision 0230). */
+  principalName?: string
 }
 
 /** The `runs=1` history page (`substrate.ChangeRunPage`): `first` counts
@@ -1046,7 +1050,8 @@ export interface AuthorizationScope {
   requested: string
   /** `read` and `write` name kinds; `agents` and `decide` name agents
    * (decision 0195); `full` is everything, with no pattern, and asked for
-   * alone (decision 0204). A request never asks for `webhook`. */
+   * alone (decision 0204), and so is `mcp`, an assistant's access at the
+   * MCP address (decision 0230). A request never asks for `webhook`. */
   verb: ScopeVerb
   write: boolean
   pattern: string
@@ -1074,9 +1079,11 @@ export interface AuthorizationScope {
  * one trigger, and only an approved `webhook` detail puts it on a token.
  * `call` runs the matching functions where the token's reads and writes
  * cover their reach (decision 0219). `full` is only ever requested:
- * approving it mints a token without scopes (decision 0204). */
+ * approving it mints a token without scopes (decision 0204). `mcp` is asked
+ * for alone like `full`, and its token stores `["mcp"]` and works at the
+ * MCP address alone (decision 0230). */
 export type ScopeVerb =
-  "read" | "write" | "agents" | "decide" | "call" | "webhook" | "full"
+  "read" | "write" | "agents" | "decide" | "call" | "webhook" | "full" | "mcp"
 
 /** One function a `call:` scope matches today: its id and description, the
  * kinds (or globs) it and what it calls read and write, and whether the

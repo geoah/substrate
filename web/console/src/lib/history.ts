@@ -68,6 +68,9 @@ export interface HistoryEntry {
   /** The newest row's seq: stable while the entry grows at its old end. */
   key: string
   actor: string
+  /** Who, among the writers sharing the actor: the name of the token behind
+   * a run the server summarized ("Claude Code" for an `app:local` run). */
+  actorName?: string
   verb: string
   kind: string
   /** How many changes the sentence says. */
@@ -164,6 +167,7 @@ export function runEntry(
   return {
     key: String(run.newestSeq),
     actor: run.actor,
+    actorName: run.principalName,
     verb: runVerb(run.verb),
     kind: run.kind,
     count: run.count,
@@ -197,9 +201,12 @@ export function joinLive(
 ): HistoryEntry[] {
   const newer = live.at(-1)
   const older = history[0]
+  // A named run splits on its token, which the live rows do not carry, so a
+  // live sentence never claims to continue one.
   if (
     !newer ||
     !older ||
+    older.actorName !== undefined ||
     newer.actor !== older.actor ||
     newer.verb !== older.verb ||
     newer.kind !== older.kind

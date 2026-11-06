@@ -3220,7 +3220,7 @@ func (ds *dataset) changesPast(ctx context.Context, tr *trigger, after int64) ([
 // planner either sorts every remaining entry of the kinds or walks the
 // primary key and filters out every entry of another kind (#637 review).
 func triggerRead(kinds []string, after, head int64) (string, []any) {
-	const cols = `SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog`
+	const cols = `SELECT ` + changeColumns + ` FROM changelog`
 	args := []any{after, head, triggerBatch}
 	if len(kinds) == 0 {
 		return cols + ` WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, args
@@ -3612,7 +3612,7 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 // addressed to it and are not changes to it.
 func (ds *dataset) latestChangeOf(ctx context.Context, typ, recordID string) (substrate.Change, error) {
 	return ds.oneChange(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
+		SELECT `+changeColumns+` FROM changelog
 		WHERE kind = $1 AND record_id = $2 AND op <> $3 ORDER BY seq DESC LIMIT 1`,
 		fmt.Sprintf("record %s has no changes", recordID), typ, recordID, string(substrate.OpDelivery))
 }
@@ -3961,7 +3961,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envel
 // changeAt reads one changelog row by seq.
 func (ds *dataset) changeAt(ctx context.Context, seq int64) (substrate.Change, error) {
 	return ds.oneChange(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
+		SELECT `+changeColumns+` FROM changelog
 		WHERE seq = $1`,
 		fmt.Sprintf("changelog seq %d", seq), seq)
 }
@@ -3984,12 +3984,15 @@ func (ds *dataset) oneChange(ctx context.Context, query, missing string, args ..
 	return ch, rows.Err()
 }
 
-// scanChange reads one changelog row from a query over the eight columns.
+// changeColumns are a changelog row as scanChange reads it.
+const changeColumns = `seq, ts, actor, op, record_id, kind, payload, hash, principal`
+
+// scanChange reads one changelog row from a query over changeColumns.
 func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	var c substrate.Change
 	var actor, op string
 	var raw, hash []byte
-	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw, &hash); err != nil {
+	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw, &hash, &c.Principal); err != nil {
 		return c, err
 	}
 	c.Actor = substrate.Actor(actor)

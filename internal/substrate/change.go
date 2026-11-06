@@ -48,6 +48,11 @@ type Change struct {
 	// independently recomputable from this wire shape: the payload here is
 	// redacted, and the checksum covers what is stored.
 	Hash string `json:"hash,omitempty"`
+	// Principal is the token id the door verified behind the write, "" where
+	// none stood (the seed, the boot upgrade). It is never on the wire, since
+	// it names a token; History resolves it to the token's name on the
+	// owner's reads alone (ChangeRun.PrincipalName).
+	Principal string `json:"-"`
 }
 
 // ChangeRow is one row of the change feed, history page and watch stream
@@ -124,6 +129,11 @@ type ChangeRun struct {
 	OldestSeq int64     `json:"oldestSeq"`
 	NewestTS  time.Time `json:"newestTs"`
 	OldestTS  time.Time `json:"oldestTs"`
+	// PrincipalName names the token behind an app's or an `api` run, its
+	// app's claimed name or its label, so two assistants writing as
+	// `app:local` read apart (decision 0230). A run splits on the token for
+	// those actors. Only the owner's reads carry it.
+	PrincipalName string `json:"principalName,omitempty"`
 }
 
 // ChangeRunPage is one history page of run summaries, newest first: the

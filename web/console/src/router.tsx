@@ -46,6 +46,7 @@ import { searchText } from "@/lib/search-params"
 import { loadSite } from "@/lib/site"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
+import { AssistantsPage } from "@/pages/assistants"
 
 const rootRoute = createRootRoute()
 
@@ -241,6 +242,14 @@ export const settingsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings",
   component: ConsoleSettingsPage,
+})
+
+// The AI assistants page (decision 0230). A static segment outranks the
+// bundle redirect's `$id` below, so `assistants` never reads as a bundle.
+export const assistantsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings/assistants",
+  component: AssistantsPage,
 })
 
 // A bundle's settings live on its Providers page; the `$id` is the bundle id
@@ -456,6 +465,7 @@ const routeTree = rootRoute.addChildren([
     connectionsRoute,
     connectionDetailRoute,
     settingsRoute,
+    assistantsRoute,
     bundleSettingsRoute,
     agentsRoute,
     agentRoute,

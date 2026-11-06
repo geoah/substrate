@@ -674,7 +674,7 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 // same rule as the install door's applies, and without a consent the engine
 // refuses the lossy plan and names it.
 func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
-	if !substrate.HumanActors[actor] {
+	if !substrate.OwnersHand(ctx, actor) {
 		return nil, nil, fmt.Errorf("%w: importing is the owner's action", substrate.ErrForbidden)
 	}
 	b, ok := c.ByID(id)
@@ -826,7 +826,7 @@ func heldVersions(ctx context.Context, ds substrate.Dataset) (map[string]int64, 
 
 // installable is the gate both doors share: the owner check and the lookup.
 func (c *Catalog) installable(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
-	if !substrate.HumanActors[actor] {
+	if !substrate.OwnersHand(ctx, actor) {
 		return nil, fmt.Errorf("%w: taking a bundle is the repository user's action, not a machine's", substrate.ErrForbidden)
 	}
 	return c.ResolveFor(ctx, id, 0, ds)
