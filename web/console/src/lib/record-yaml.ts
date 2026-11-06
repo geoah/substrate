@@ -368,7 +368,7 @@ export function validateApplyDoc(
   ) {
     problems.push({
       severity: "error",
-      message: `\`metadata.id\` is not accepted on a new ${kind.name}. The substrate assigns its id, so remove the line.`,
+      message: `\`metadata.id\` is not a minted id. Remove the line and the substrate assigns one, or write a minted id: 26 lowercase Crockford base32 characters, the first 0 to 7.`,
       path: "metadata.id",
       line: lineOfKey(text, "id"),
     })

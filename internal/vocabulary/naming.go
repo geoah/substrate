@@ -146,7 +146,10 @@ func EncodeMintedID(b [16]byte) string {
 // first 16 bytes of their sha256, marked as a UUIDv8 (RFC 9562's version for
 // custom layouts). A writer that must name the same record again, a mirror
 // keyed by an upstream id or a retried request, derives it instead of
-// minting (decision 0228).
+// minting (decision 0228). It mirrors host.py's `ids.minted` in the
+// algorithm, not the argument check: the body refuses an empty part, and
+// every caller here passes non-empty ones, which the vectors in
+// internal/runner/testdata/id_vectors.json hold.
 func DerivedMintedID(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	var u [16]byte

@@ -107,7 +107,17 @@ ids are names, as it is for its purpose
   (`DerivedMintedID` over the store and Apple's identifier) instead of
   composing readable ones. Rows it already wrote keep their ids, and a PUT
   at one of them is an update, so the app must keep addressing a row it
-  already pushed by the id it pushed it under.
+  already pushed by the id it pushed it under. The readable composed ids of
+  [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)
+  now hold for functions alone; an app's mirror row takes a derived one.
+- Bad, because an id minted before this record (12 characters of `a-z2-7`)
+  does not have the minted shape: a person cannot create a record under one
+  elsewhere, such as a copy into another repository by `get -o yaml` and
+  `apply`. The copy is created without an id, or written by a function.
+  Accepting the old shape would admit 12-letter words (`weeklyreview`).
+- Bad, because the rule holds a direct write alone: a function the owner
+  declares writes under any id, as 0162 needs, and so does an app whose
+  approval installs a package with one.
 - Bad, because a script that imports data with its own stable keys under
   the owner's token can no longer use them as ids on a minted kind: it
   derives a minted id from the key, keeps the key in a property, or runs as
