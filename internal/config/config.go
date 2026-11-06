@@ -48,7 +48,7 @@ type Config struct {
 	// must be an absolute path, and an invalid site.yaml refuses the boot.
 	SiteDir string `envconfig:"SUBSTRATE_SITE_DIR" default:""`
 	// OperatorDefaults is the operator's defaults file
-	// (internal/operatordefaults, decision 0232): the LLM transports and
+	// (internal/operatordefaults, decision 0235): the LLM transports and
 	// embeddings the operator pays for on behalf of every repository, and the
 	// daily allowance bounding them. Unset is no operator defaults and no
 	// change to anything; set, it must be an absolute path outside SiteDir,

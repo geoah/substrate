@@ -1,6 +1,6 @@
 package engine
 
-// The operator defaults (decision 0232): an empty, operator-listed
+// The operator defaults (decision 0235): an empty, operator-listed
 // llm/provider row runs on the operator's transport whole, the operator's
 // embeddings entry serves a repository whose rows claim none, and every
 // operator-paid call reserves against the allowance ledger first. Each test

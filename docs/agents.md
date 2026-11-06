@@ -1159,7 +1159,7 @@ requires the row's own `apiKey`. Only `anthropic` may leave `baseURL` empty,
 for its official endpoint.
 
 **An empty key on a row the operator lists runs on the operator's
-transport** ([decision 0232](decisions/0232-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)). The operator, whoever runs the
+transport** ([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)). The operator, whoever runs the
 deployment, may name a defaults file, `SUBSTRATE_OPERATOR_DEFAULTS`
 ([operations](operations.md#operator-defaults)), whose `llm` entries are
 keyed by provider row id. A live row with an empty `apiKey` whose id the file

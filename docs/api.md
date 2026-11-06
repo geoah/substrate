@@ -2125,7 +2125,7 @@ routes read the repository's graph at one revision.
 
 `GET /api/v1/operator/defaults` answers each slot the repository spends a
 key through that the operator, whoever runs the deployment, could fill
-([decision 0232](decisions/0232-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)):
+([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)):
 one item per `llm/provider` row and one `embeddings` item. Each item has its
 `slot` (`llm` or `embeddings` today), its `source` (`operator`, `own` or
 `none`), `operatorOffers`, its `readiness` and, where it is not `ready`, a

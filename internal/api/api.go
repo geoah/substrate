@@ -98,7 +98,7 @@ type Config struct {
 	// way.
 	TOTPDisabled bool
 	// OperatorDefaults says the server booted with an operator defaults file
-	// (SUBSTRATE_OPERATOR_DEFAULTS, decision 0232), so discovery lists the
+	// (SUBSTRATE_OPERATOR_DEFAULTS, decision 0235), so discovery lists the
 	// `operatorDefaults` feature and a client knows to ask for the read.
 	OperatorDefaults bool
 	// Now is an optional clock seam for the auth rate limiter.

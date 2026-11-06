@@ -1,4 +1,4 @@
--- The allowance ledger (decision 0232, engine/operatorspend.go): one row per
+-- The allowance ledger (decision 0235, engine/operatorspend.go): one row per
 -- call the operator, whoever runs the deployment, pays for on a repository's
 -- behalf under the operator defaults file (SUBSTRATE_OPERATOR_DEFAULTS). A
 -- call reserves its ceiling before it runs and settles to its reported cost

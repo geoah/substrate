@@ -433,7 +433,7 @@ func WithUnitSeed(on bool) Option {
 }
 
 // WithOperatorDefaults gives the service the operator's defaults file
-// (decision 0232, internal/operatordefaults): an empty, operator-listed
+// (decision 0235, internal/operatordefaults): an empty, operator-listed
 // llm/provider row runs on the operator's transport, the operator's embeddings
 // entry serves a repository whose rows claim none, and every such call is
 // charged to the repository's allowance for the UTC day. name is the site's

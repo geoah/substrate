@@ -72,7 +72,7 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 	case 0:
 		// No row claims the job: the operator's embeddings entry is the
 		// repository's provider where the defaults file names one (decision
-		// 0232).
+		// 0235).
 		if entry := ds.svc.operatorDefaults.EmbeddingsEntry(); entry != nil {
 			return ds.openOperatorEmbedProvider(entry)
 		}
@@ -172,7 +172,7 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 	}
 	if pc.operator != nil {
 		// A claimed embedModel is the person's choice of model and price, so
-		// it never runs on an operator key (decision 0232).
+		// it never runs on an operator key (decision 0235).
 		return nil, fmt.Errorf("%w: llm/provider row %q declares %s but no apiKey of its own: a row that claims embeddings pays for them with its own key, and %s's embeddings serve only a repository whose rows claim none",
 			substrate.ErrValidation, id, propEmbedModel, ds.siteName())
 	}

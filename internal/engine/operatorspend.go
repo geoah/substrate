@@ -1,6 +1,6 @@
 package engine
 
-// The allowance ledger and its gate (decision 0232). Every call the operator
+// The allowance ledger and its gate (decision 0235). Every call the operator
 // pays for, an LLM completion on an operator-served row or an embeddings
 // request on the operator's embeddings entry, first RESERVES a conservative
 // ceiling in operator_spend_reservations, in one transaction that sums the

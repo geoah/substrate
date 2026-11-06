@@ -775,7 +775,7 @@ func refreshPublishers(ctx context.Context, svc substrate.Service, cat *catalog.
 	}
 }
 
-// loadOperatorDefaults reads the operator defaults file (decision 0232),
+// loadOperatorDefaults reads the operator defaults file (decision 0235),
 // refusing one inside the site directory, and says at boot what the operator
 // pays for. An empty path is no operator defaults.
 func loadOperatorDefaults(path, siteDir string) (*operatordefaults.Config, error) {

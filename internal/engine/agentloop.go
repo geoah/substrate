@@ -434,7 +434,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	// apiKey is secret-typed: the stored value is a ref into the sealed
 	// store, resolved here, at the one read that pays with it. An empty one
 	// on a row the operator lists is the operator's transport, taken whole:
-	// nothing else on the row is read (decision 0232).
+	// nothing else on the row is read (decision 0235).
 	storedKey, _ := row.Props["apiKey"].(string)
 	if entry := ds.operatorEntryFor(id, storedKey); entry != nil {
 		return operatorProviderConfig(entry), nil
