@@ -57,8 +57,11 @@ package engine
 // its lifetime, so a second process that opens a repository for writing (an
 // operator's `rebuild` or `user reset` beside a running server) is refused
 // with ErrChangelogLocked instead of appending seqs the server is about to
-// append too. The boot check's own writers are opened and closed inside
-// reconcileDir, so a server never holds a lock against itself. A process that
+// append too. The flock conflicts inside one process as well, so the server
+// keeps one writer per repository itself: the boot check's own writers are
+// opened and closed inside reconcileDir before anything is served, and a
+// creation holds open's slot (claimOpen) while its reconcile writes, so no
+// open of the new repository runs beside that writer. A process that
 // must run beside the server opens with WithDirectoryReadOnly: no migration,
 // no boot check, no writer, every inTx write refused, and a verify that
 // reports rather than repairs.
@@ -304,8 +307,9 @@ func (s *service) logReconcile(out reconcileOutcome) {
 // reconcileRow reconciles one repository that HAS a control-plane row with its
 // directory: cases 1, 2, 4 and 5, and case 3's file-ahead half when
 // allowImport is set. It opens its own scoped pool and its own writer; no
-// dataset may be open on the repository while it runs, which is true at boot
-// and at creation.
+// dataset may be open or opening on the repository while it runs. At boot
+// nothing opens one until the check is done; at creation the creation holds
+// open's slot for the repository (claimOpen) across this call.
 func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport bool) (reconcileOutcome, error) {
 	out := reconcileOutcome{Repository: repo.ID}
 	// The lease first: this reconcile WRITES (a catch-up, an import, the
@@ -396,7 +400,7 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		if err != nil {
 			return writerErr(err)
 		}
-		n, err := appendFromTable(ctx, ds.db, w, fileHead, ds.svc.catchUpBatch)
+		n, err := ds.appendFromTable(ctx, ds.db, w, fileHead)
 		if cerr := w.Close(); err == nil {
 			err = cerr
 		}
@@ -519,7 +523,8 @@ func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64
 }
 
 // appendFromTable appends every table row above the writer's head (after) to
-// the file, in pages of batch rows, and returns how many it wrote.
+// the file, in pages of the service's catchUpBatch rows, and returns how many
+// it wrote.
 //
 // Every append is whole transactions: the writer refuses anything else, and
 // rotating only after an append is what keeps a transaction inside one
@@ -535,7 +540,8 @@ func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64
 // divergence (case 4): every row was stamped by this format, so a mismatch is
 // a row whose content or stamp changed after it committed, and it is refused
 // rather than written out as history.
-func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64, batch int) (int64, error) {
+func (ds *dataset) appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64) (int64, error) {
+	batch := ds.svc.catchUpBatch
 	head, err := tableChangelogHead(ctx, q)
 	if err != nil {
 		return 0, err
@@ -589,7 +595,15 @@ func appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after 
 			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
 			after = e.Seq
 		}
-		if err := w.AppendLines(lines); err != nil {
+		// Prepare and Commit are AppendLines, split so a test can act while
+		// the file ends in the prepared transaction.
+		if err := w.Prepare(lines); err != nil {
+			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", lines[0].Seq, after, err)
+		}
+		if ds.svc.testCatchUpPrepared != nil {
+			ds.svc.testCatchUpPrepared(ds.info.ID)
+		}
+		if err := w.Commit(); err != nil {
 			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", lines[0].Seq, after, err)
 		}
 		n += int64(len(lines))
@@ -1298,7 +1312,7 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	ds.writer = w
 	ds.unread = log
 	if tableHead > log.Head() {
-		n, err := appendFromTable(ctx, ds.db, w, log.Head(), ds.svc.catchUpBatch)
+		n, err := ds.appendFromTable(ctx, ds.db, w, log.Head())
 		if err != nil {
 			return err
 		}
@@ -1360,7 +1374,7 @@ func (ds *dataset) catchUpOnOwnConnection(ctx context.Context, head int64) (int6
 		return 0, err
 	}
 	defer func() { _ = db.Close() }()
-	n, err := appendFromTable(ctx, db, ds.writer, head, ds.svc.catchUpBatch)
+	n, err := ds.appendFromTable(ctx, db, ds.writer, head)
 	if err != nil {
 		return n, err
 	}
