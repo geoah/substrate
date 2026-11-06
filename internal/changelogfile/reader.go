@@ -90,9 +90,9 @@ type Log struct {
 // log with head 0.
 //
 // The truncation is a write, so it is done under the directory's writer lock
-// and refused with ErrLocked while another process holds it: a tail that
-// looks incomplete to a second process may be one the live writer is still
-// writing.
+// and refused with ErrLocked while another writer holds it, in another
+// process or in this one: a tail that looks incomplete to a second open may
+// be a transaction the live writer has prepared and not yet committed.
 func Open(dir string) (*Log, error) { return OpenWith(dir, OpenOptions{}) }
 
 // OpenReadOnly reads and checks a changelog directory exactly as Open does

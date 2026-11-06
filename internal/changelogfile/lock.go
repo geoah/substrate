@@ -15,12 +15,13 @@ import (
 // releases it. Every listing skips it.
 const LockFileName = ".lock"
 
-// ErrLocked is returned when another process holds a repository's changelog
-// writer lock: a running server, or an operator command that opened the
-// repository for writing. One writer per directory is what keeps the seqs in
-// the file gapless (decision 0017), so the second one is refused, never
-// queued.
-var ErrLocked = errors.New("changelogfile: another process holds the changelog writer lock")
+// ErrLocked is returned when another writer holds a repository's changelog
+// writer lock: a running server, an operator command that opened the
+// repository for writing, or another open of the directory in this same
+// process, since the lock is per open file description (lockDir). One writer
+// per directory is what keeps the seqs in the file gapless (decision 0017),
+// so the second one is refused, never queued.
+var ErrLocked = errors.New("changelogfile: another writer holds the changelog writer lock")
 
 // dirLock is an exclusive advisory lock on a changelog directory, held through
 // the open lock file's descriptor.

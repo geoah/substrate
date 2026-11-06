@@ -122,18 +122,21 @@ var ErrChangelogFileAhead = errors.New("substrate/engine: the changelog file is 
 // not the changelog's. The boot check resumes the import; nothing else does.
 var ErrImportIncomplete = errors.New("substrate/engine: the import of the repository directory has not completed; restart the server so the boot check resumes it")
 
-// ErrChangelogLocked is the refusal a process meets when another one holds a
-// repository's changelog writer lock: the operator ran `rebuild` or `user
-// reset` beside a running server. It wraps changelogfile.ErrLocked.
-var ErrChangelogLocked = errors.New("substrate/engine: another process holds the repository's changelog writer lock; stop the server before running this command")
+// ErrChangelogLocked is the refusal an open meets when another writer holds a
+// repository's changelog writer lock: in an operator command (`rebuild`,
+// `user reset`), the running server; in the server, such a command or a
+// second server on the same data root. The text names no remedy, because the
+// remedy depends on which side met it, and stopping the server is advice only
+// the command can take: substratectl adds it (lockHint). It wraps
+// changelogfile.ErrLocked.
+var ErrChangelogLocked = errors.New("substrate/engine: another writer holds the repository's changelog writer lock")
 
 // ErrDirectoryReadOnly is the refusal every write meets on a service opened
 // with WithDirectoryReadOnly: this process is not the directory's writer.
 var ErrDirectoryReadOnly = errors.New("substrate/engine: the service is open read-only (WithDirectoryReadOnly) and refuses to write")
 
 // writerErr classifies an error from opening a repository's changelog for
-// writing: another process's lock is named as such, the operator's cue to stop
-// the server; damage keeps its own name.
+// writing: another writer's lock is named as such; damage keeps its own name.
 func writerErr(err error) error {
 	if errors.Is(err, changelogfile.ErrLocked) {
 		return fmt.Errorf("%w: %w", ErrChangelogLocked, err)
