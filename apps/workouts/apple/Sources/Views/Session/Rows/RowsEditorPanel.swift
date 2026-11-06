@@ -26,7 +26,6 @@ struct RowsEditorPanel: View {
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var indent: CGFloat = 32
 
     private var tint: Color { RowsStyle.tint(editor.tint) }
 
@@ -46,7 +45,6 @@ struct RowsEditorPanel: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
                 .padding(.bottom, 4)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Cue: \(cue)")
@@ -54,7 +52,6 @@ struct RowsEditorPanel: View {
             // Running, the clock and the track replace the duration field.
             if let timer = editor.timer, timer.phase != .ready {
                 RowsTimerView(timer: timer, tint: tint)
-                    .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             ForEach(editor.fields) { field in
                 RowsFieldRow(
@@ -64,12 +61,10 @@ struct RowsEditorPanel: View {
                     onKeypad: { screen.openKeypad(field, in: editor, session: session) },
                     onPatch: { screen.apply($0, row: editor.row, mode: editor.mode, session: session) }
                 )
-                .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             // Ready, the track under the duration shows the goal and last time.
             if let timer = editor.timer, timer.phase == .ready {
                 RowsTimerView(timer: timer, tint: tint)
-                    .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             if let effort = editor.effort, !effort.isCollapsed || screen.openStrips.contains(editor.row) {
                 // A third value under load and reps, built like them, so the
@@ -79,7 +74,6 @@ struct RowsEditorPanel: View {
                     tint: tint,
                     onPatch: { screen.step($0, in: editor, session: session) }
                 )
-                .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
             buttons
                 .padding(.top, 10)
@@ -154,7 +148,6 @@ struct RowsEditorPanel: View {
                     trailing
                 }
                 noteSlot(lines: typeSize.isAccessibilitySize ? nil : 2)
-                    .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

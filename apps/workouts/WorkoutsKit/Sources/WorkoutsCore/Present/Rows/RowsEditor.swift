@@ -35,7 +35,8 @@ public struct RowsEditor: Codable, Equatable, Sendable {
     public var title: String
     /// The set's small label, as its line shows it: `W`, `2`, `2a`.
     public var setLabel: String
-    /// Beside the label: the exercise in a group, `Drop`, `Mini-set 3`; nil for a plain set.
+    /// Beside the label: the exercise, with a chain's part after it
+    /// (`Leg Press (Machine), drop`).
     public var caption: String?
     /// The header line after the title: the suggestion's reason, `after the rest`,
     /// `of 2` (in a group `warm-up 1 of 2`), `to failure`, `at 6 kg`, `holding`,

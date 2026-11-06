@@ -155,7 +155,8 @@ struct RowsOpenSetTests {
 
         let editor = try #require(set2.editor)
         #expect(editor.mode == .log && editor.tint == .accent && editor.title == "Set 2" && editor.setLabel == "2")
-        #expect(editor.caption == nil)
+        // The editor names its exercise even outside a group; the line does not.
+        #expect(editor.caption == "Leg Press (Machine)" && set2.caption == nil)
         #expect(editor.note == RowsNote(text: "Set 1: 105 kg × 10, assuming 2 left; try 105 kg × 10", kind: .reason))
         #expect(editor.fields.map(\.field) == [.load, .reps])
         let load = try #require(editor.field(.load))
@@ -320,7 +321,7 @@ struct RowsOpenSetTests {
         #expect(warmup.role == .warmup && warmup.values == "40 kg × 12" && warmup.last == "last 40 × 12")
         let editor = try #require(warmup.editor)
         #expect(editor.tint == .orange && editor.title == "Warm-up 1")
-        #expect(editor.note == RowsNote(text: "of 2", kind: .status))
+        #expect(editor.note == RowsNote(text: "warm-up 1 of 2", kind: .status))
         #expect(editor.effort?.isCollapsed == true && editor.effort?.addTitle == "Reps left")
         // A warm-up says no reason for stopping.
         #expect(editor.effort?.stop == nil)

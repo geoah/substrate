@@ -195,8 +195,9 @@ open row; apply it to the draft when fixing (below).
 
 - `mode`: `log` for the set to do now, `fix` for a done one. `tint`: `accent`, `orange` (warm-up, drop) or `neutral`
   (fix).
-- The header: `title` and `badge`, `note` and `trailingNote` ("no rest").
-  - `note.kind` is `reason` (a sparkle before the suggestion's words) or `status` ("of 2", "to failure", "at 6 kg",
+- The header: `setLabel` and `caption` (the exercise's name, a chain's part after it, on every editor; a line shows
+  it only in a group), `note` and `trailingNote` ("no rest"). `title` is the set as said aloud.
+  - `note.kind` is `reason` (a sparkle before the suggestion's words) or `status` ("warm-up 1 of 2", "to failure", "at 6 kg",
     "logged at 12:06"). There is no "after the rest": a set waits for nothing.
   - It is `running` (a red dot) for "holding".
 - `fields`, each a `RowsField`:
