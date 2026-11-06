@@ -377,7 +377,8 @@ file the server behaves as the section above says. With it:
   installed again, and that survives a rebuild and an export restored
   elsewhere, because the changelog travels with it. A failed install is
   logged, tried again at the next open (in practice, the next restart), and
-  shown as `install-failed` with the error on the package's `oauth` item.
+  shown as `install-failed` with the error on the package's `oauth` item and
+  its `function` item, whichever the file lists.
 - `GET /api/v1/operator/defaults` answers each slot, its source, whether the
   operator offers it, and today's allowance, and discovery lists the
   `operatorDefaults` feature ([operator defaults](api.md#operator-defaults)).

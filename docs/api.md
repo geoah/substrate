@@ -2153,7 +2153,8 @@ client](bundles.md#the-operators-oauth-client)). A `function` item's
 `target` is the package; its source is `own` while the package's `apiKey`
 secret holds a value, `operator` while it is empty and the package is
 installed as the published provider, and `none`, `not-set-up`, while the
-package is not installed. Where the deployment
+package is not installed, or `install-failed`, with the error, when the
+operator's install of it failed. Where the deployment
 loaded an [operator defaults](operations.md#operator-defaults) file,
 `operator` carries the site's name from `site.yaml` and today's `allowance`:
 `centsPerDay`, `usedCents` (open reservations count at their ceiling),

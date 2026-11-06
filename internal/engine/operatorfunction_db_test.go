@@ -470,6 +470,36 @@ func TestOperatorDefaultsReportsFunctionSecrets(t *testing.T) {
 	}
 }
 
+// A package the file lists under both install and functionSecrets whose
+// install failed reads install-failed with the installer's message on its
+// function item, as an oauth item does, until the package is installed.
+func TestOperatorDefaultsReportsAFailedFunctionInstall(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cfg := firecrawlOperatorConfig(100, "0.1", "websearch")
+	cfg.Install = []string{firecrawlProvider}
+	installer := func(context.Context, substrate.Dataset, string) error {
+		return errors.New("the catalog is unreachable")
+	}
+	ds := openInternalDataset(t, WithOperatorDefaults(cfg, "Example"), WithOperatorInstaller(installer))
+	read := func() substrate.OperatorDefault {
+		t.Helper()
+		got, err := ds.OperatorDefaults(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return operatorItem(t, got, "function/"+firecrawlProvider)
+	}
+	if it := read(); it.Source != substrate.SourceNone || !it.OperatorOffers || it.Readiness != substrate.ReadinessInstallFailed ||
+		!strings.Contains(it.Message, "the catalog is unreachable") {
+		t.Fatalf("after the failed install = %+v", it)
+	}
+	installShippedProvider(t, ds, firecrawlProvider)
+	if it := read(); it.Source != substrate.SourceOperator || it.Readiness != substrate.ReadinessReady || it.Message != "" {
+		t.Fatalf("installed = %+v", it)
+	}
+}
+
 // The seeded assistant takes both Firecrawl tools by its `toolsFrom`, under
 // the names the provider declares, and a copy offering the names a copy
 // derives sits beside them instead of shadowing them.

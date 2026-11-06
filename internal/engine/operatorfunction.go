@@ -247,7 +247,9 @@ func (ds *dataset) functionDefaults(ctx context.Context) ([]substrate.OperatorDe
 
 // functionDefault is one listed package's slot. Its source is the person's
 // own key where they wrote one, else the operator's where the package is
-// installed as the published provider, else none.
+// installed as the published provider, else none. A package the operator's
+// install list failed to install reads install-failed with the error, as its
+// oauth item does.
 func (ds *dataset) functionDefault(ctx context.Context, pkg string) (substrate.OperatorDefault, error) {
 	_, word := vocabulary.SplitPackageRef(pkg)
 	item := substrate.OperatorDefault{
@@ -258,6 +260,9 @@ func (ds *dataset) functionDefault(ctx context.Context, pkg string) (substrate.O
 	if !installed {
 		item.Source, item.Readiness = substrate.SourceNone, substrate.ReadinessNotSetUp
 		item.Message = fmt.Sprintf("%s is not installed: install it to use %s's key", pkg, ds.siteName())
+		if msg := ds.svc.operatorInstalls.failure(ds.scope.Repository, pkg); msg != "" {
+			item.Readiness, item.Message = substrate.ReadinessInstallFailed, msg
+		}
 		return item, nil
 	}
 	own, err := ds.ownFunctionSecret(ctx, b)
