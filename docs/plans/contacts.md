@@ -43,7 +43,7 @@ and sharing between substrates later.
   the other types.
 - **The people sample is retired.** Nothing migrates a repository off it:
   the release note says the official contacts kind exists and that users
-  should move to it (third round, below).
+  should move to it (third round, below). It is not a break.
 - `jobTitle`, not `title`: `title` is reserved on every kind
   (`internal/vocabulary/load.go:1336`, decision 0016).
 
@@ -64,6 +64,9 @@ Settled in a third round, the same day:
   `substrate.reamde.dev/core/contact` is the official contacts kind and that
   users should move to it; a repository that imported the people sample
   keeps its people kinds and records, and moves when its owner chooses.
+- **Removing the people sample is not a break.** Nothing a repository holds
+  changes; only importing the sample by name stops working. The change is a
+  `feat:` whose title is the note.
 
 ## Prior art
 
@@ -480,22 +483,24 @@ agent, or keeps the old versions.
 
 ### The release note
 
-Removing a sample from the catalog breaks `substratectl import
-samples.substrate.reamde.dev/people` and the requirement the old tasks
-sample declares, so the change that removes it is a break, and its
-`BREAKING CHANGE:` footer is the note:
+The change is not a break. Nothing a repository holds changes: its imported
+people kinds stay, and an imported sample is only ever offered an upgrade
+(docs/bundles.md), never given one. The one thing that stops working is
+importing the people sample by name, which a script or an old walkthrough
+might do.
+
+release-please prints a `feat:` title under Added and no body, so the title is
+the note:
 
 ```text
-BREAKING CHANGE: `substrate.reamde.dev/core/contact` is now the official
-contacts kind: a person, a business, a group or a bot, and every
-provider's contact, member and user record links to it. The people sample
-(`samples.substrate.reamde.dev/people`) is removed from the catalog, and the
-calendar, messaging and tasks samples now point at `core/contact`. Move to
-`core/contact`. A repository that imported the people sample keeps its
-people kinds and records; nothing moves or deletes them. Its calendar,
-messaging and tasks samples upgrade once no record of theirs points at a
-person any more. Rollback: an older binary still serves the people sample.
+feat(samples): replace the people sample with the core contact kind
 ```
+
+The body says the rest, for anyone who opens the pull request:
+`substrate.reamde.dev/core/contact` is the official contacts kind; move to
+it; a repository that imported the people sample keeps its people kinds and
+records; its calendar, messaging and tasks samples are offered their new
+versions, which wait until no record of theirs points at a person.
 
 ### Mneme
 
@@ -545,7 +550,7 @@ steps 1 to 3 reach a release together; each is safe on `main` alone.
    nothing maps onto the kind yet.
 2. Decision record 2 and the core mappings, held while their provider is
    absent.
-3. Decision record 4, with the footer above: calendar, messaging and tasks
+3. Decision record 4, under the title above: calendar, messaging and tasks
    sample versions that pin `core/contact` and no longer require people, and
    the people sample removed.
 4. The six contact views, after #1208 lands.
