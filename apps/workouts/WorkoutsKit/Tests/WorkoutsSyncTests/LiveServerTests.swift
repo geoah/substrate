@@ -258,7 +258,9 @@ struct LiveServerTests {
         // The recorded session's exercises the sample does not carry, as the
         // phone adds them.
         let missing = [("romanian-deadlift-dumbbell", "Romanian Deadlift (Dumbbell)"), ("seated-row-machine", "Seated Row (Machine)")]
-        try await outbox.enqueue(missing.map { OutboxPlan.exerciseAdded(Exercise(id: ExerciseID($0.0), name: $0.1, measurement: .weightreps), codec: codec) })
+        let added = Dictionary(uniqueKeysWithValues: missing.map { (ExerciseID($0.0), ExerciseID.minted()) })
+        try await outbox.enqueue(
+            missing.map { OutboxPlan.exerciseAdded(Exercise(id: added[ExerciseID($0.0)]!, name: $0.1, measurement: .weightreps), codec: codec) })
         #expect(await outbox.flush(api) == .sent)
 
         // A finished session and its 20 sets, four of them drops, through
@@ -266,7 +268,14 @@ struct LiveServerTests {
         func records(_ name: String) throws -> [FlatRecord] {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
-        let finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
+        var finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
+        func onServer(_ id: ExerciseID) -> ExerciseID { added[id] ?? SampleRoutine.exerciseID(id.rawValue) }
+        for index in finished.session.slots.indices {
+            finished.session.slots[index].exercise = onServer(finished.session.slots[index].exercise)
+        }
+        for index in finished.sets.indices {
+            finished.sets[index].exercise = onServer(finished.sets[index].exercise)
+        }
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
 
