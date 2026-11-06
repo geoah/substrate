@@ -58,7 +58,11 @@ function is one of that entry's `consumers`, the repository's own
 `pricePerCall`. The call reserves that price before the body runs and
 settles at it once the body may have started, whatever it answered, and at
 nothing when the runner never started it; at the limit it is refused with
-reason `quota`, never run on an empty key. An operator-paid
+reason `quota`, never run on an empty key. A trigger of such a function is
+held at the limit as an agent trigger is
+([0149](0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md)):
+the dispatcher leaves the change or occurrence unclaimed, nothing parks, and
+the first pass after the reset delivers it. An operator-paid
 call gets the key alone in `config.settings`: no setting the person wrote
 rides beside it. That is 0232's rule that nothing the person writes reaches
 an operator-paid request, and it keeps the key off loopback: the bodies send
@@ -94,10 +98,11 @@ catalog.
 `internal/engine/operatorfunction_db_test.go` holds the injection (listed
 consumers only, the key alone, an own key winning, an empty one counting as
 none, no copy, the allowance's refusal, reserve and settle at the price or at
-nothing for a body the runner never started, the read's `function/<package>`
-item) and the seeded assistant taking both tools beside an offering copy.
-The engine and provider test binaries confine every body to loopback, so a
-Firecrawl body these tests run cannot reach Firecrawl.
+nothing for a body the runner never started, a record and a schedule trigger
+held until the reset, the read's `function/<package>` item) and the seeded
+assistant taking both tools beside an offering copy. The engine and provider
+test binaries confine every body to loopback, so a Firecrawl body these
+tests run cannot reach Firecrawl.
 `internal/providertest/firecrawl_test.go` holds the closure, the refused
 origins and redirects, and `webscrape` behaving as `scrapepage` did;
 `TestBodyHelpersFirecrawl` holds where the module sends a key that arrives

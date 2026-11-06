@@ -538,19 +538,40 @@ func (ds *dataset) refuseAtSpendCap(ctx context.Context, ag *vocabulary.Agent) (
 	return withSpendAdmitted(ctx, ag), nil
 }
 
-// holdAgentDelivery is the dispatcher's check before it claims one delivery
-// of an agent trigger. Held means the walk stops where it stands: nothing is
-// claimed, so the cursor or fire state does not move, and the next pass asks
-// again. A trigger whose callable is not an agent is never held here; a
-// function that runs an agent meets the refusal inside its body.
-func (ds *dataset) holdAgentDelivery(ctx context.Context, tr *trigger) (context.Context, bool, error) {
-	if tr.Agent == nil {
+// holdDelivery is the dispatcher's check before it claims one delivery of a
+// trigger. Held means the walk stops where it stands: nothing is claimed, so
+// the cursor or fire state does not move, and the next pass asks again. An
+// agent trigger is held at the person's caps and at the allowance
+// (spendHold); a function trigger at the allowance when its function runs on
+// the operator's key (functionAllowanceHold). A function that runs an agent,
+// or calls an operator-paid function, meets the refusal inside its body.
+func (ds *dataset) holdDelivery(ctx context.Context, tr *trigger) (context.Context, bool, error) {
+	var text string
+	var err error
+	switch {
+	case tr.Agent != nil:
+		text, err = ds.spendHold(ctx, tr.Agent)
+	case tr.Callable != nil:
+		text, err = ds.functionAllowanceHold(ctx, tr.Callable)
+	default:
 		return ctx, false, nil
 	}
-	text, err := ds.spendHold(ctx, tr.Agent)
 	if err != nil {
 		return ctx, false, err
 	}
+	ds.noteHold(tr, text)
+	if text != "" {
+		return ctx, true, nil
+	}
+	if tr.Agent != nil {
+		return withSpendAdmitted(ctx, tr.Agent), false, nil
+	}
+	return ctx, false, nil
+}
+
+// noteHold records whether tr is held, text saying why or "" when it is not,
+// and logs the change either way.
+func (ds *dataset) noteHold(tr *trigger, text string) {
 	s := &ds.spend
 	s.mu.Lock()
 	was := s.held[tr.ID]
@@ -563,18 +584,33 @@ func (ds *dataset) holdAgentDelivery(ctx context.Context, tr *trigger) (context.
 		delete(s.held, tr.ID)
 	}
 	s.mu.Unlock()
+	held, resumed := "substrate: agent trigger held at a spend cap, its deliveries wait",
+		"substrate: agent trigger under its spend cap again, its deliveries resume"
+	if tr.Agent == nil {
+		held, resumed = "substrate: function trigger held at the allowance, its deliveries wait",
+			"substrate: function trigger within the allowance again, its deliveries resume"
+	}
 	switch {
 	case text != "" && !was:
-		ds.svc.log.Warn("substrate: agent trigger held at a spend cap, its deliveries wait",
-			"trigger", logSafeID(tr.ID), "callable", tr.CallableID, "held", text)
+		ds.svc.log.Warn(held, "trigger", logSafeID(tr.ID), "callable", tr.CallableID, "held", text)
 	case text == "" && was:
-		ds.svc.log.Info("substrate: agent trigger under its spend cap again, its deliveries resume",
-			"trigger", logSafeID(tr.ID), "callable", tr.CallableID)
+		ds.svc.log.Info(resumed, "trigger", logSafeID(tr.ID), "callable", tr.CallableID)
 	}
-	if text != "" {
-		return ctx, true, nil
+}
+
+// refuseAtAllowance checks a hand's wake or retry of a function trigger: one
+// whose function runs on the operator's key is refused with the allowance's
+// words while the day's spend leaves less than its price, before anything
+// runs, rather than answered with nothing ran or re-parked one attempt older.
+func (ds *dataset) refuseAtAllowance(ctx context.Context, tr *trigger) error {
+	if tr.Callable == nil {
+		return nil
 	}
-	return withSpendAdmitted(ctx, tr.Agent), false, nil
+	text, err := ds.functionAllowanceHold(ctx, tr.Callable)
+	if err != nil || text == "" {
+		return err
+	}
+	return allowanceHoldRefusal(text)
 }
 
 // spendAdmittedKey marks a context whose root run of one agent was already

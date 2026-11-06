@@ -4,10 +4,11 @@ package engine
 // key in the defaults file's functionSecrets reaches the listed consumers of
 // the published package and nothing else, steps aside for the person's own
 // key, never reaches a copy, and every call it pays for reserves and settles
-// at its price, or at nothing when its body never started. Most of these
-// tests resolve the invocation config directly; the ones that run a body run
-// it held to loopback (requireConfinedBodies), so even a Firecrawl body a
-// regression hands the operator's key cannot reach Firecrawl.
+// at its price, or at nothing when its body never started. A trigger of such
+// a function waits at the allowance and delivers after the reset. Most of
+// these tests resolve the invocation config directly; the ones that run a
+// body run it held to loopback (requireConfinedBodies), so even a Firecrawl
+// body a regression hands the operator's key cannot reach Firecrawl.
 // internal/providertest holds what the bodies do with the key.
 
 import (
@@ -579,6 +580,239 @@ def main(input, host):
 		t.Fatalf("install the meter bundle: %v", err)
 	}
 	return ds, clock
+}
+
+// spendFunctionCents settles one function reservation of cents, today, as a
+// call that already ran.
+func spendFunctionCents(t *testing.T, ds *dataset, cents float64) {
+	t.Helper()
+	r, err := ds.reserveOperator(context.Background(), substrate.SlotFunction, cents)
+	if err != nil {
+		t.Fatalf("reserve %v cents: %v", cents, err)
+	}
+	ds.settleOperator(context.Background(), r, cents)
+}
+
+// meterTrigger writes a trigger of `stamp` from source and answers its id.
+func meterTrigger(t *testing.T, ds *dataset, source map[string]any) string {
+	t.Helper()
+	rec, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: typeTrigger, Properties: map[string]any{
+		"enabled": true, "source": source,
+		"callable": vocabulary.RecordPath(kindFunction, meterPackage+"/stamp"),
+	}})
+	if err != nil {
+		t.Fatalf("put the trigger: %v", err)
+	}
+	return rec.ID
+}
+
+// requireReading fails unless the reading id exists, or, with want false,
+// unless it does not.
+func requireReading(t *testing.T, ds *dataset, id string, want bool) {
+	t.Helper()
+	_, err := ds.Get(context.Background(), meterReading, id)
+	switch {
+	case want && err != nil:
+		t.Fatalf("reading %s was not written: %v", id, err)
+	case !want && err == nil:
+		t.Fatalf("reading %s was written while the trigger was held", id)
+	case !want && !errors.Is(err, substrate.ErrNotFound):
+		t.Fatal(err)
+	}
+}
+
+// requireNoFailures fails if the trigger parked anything.
+func requireNoFailures(t *testing.T, ds *dataset, triggerID string) {
+	t.Helper()
+	failures, err := ds.TriggerFailures(context.Background(), triggerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("the trigger parked %+v; an allowance hold parks nothing", failures)
+	}
+}
+
+// heldText is the trigger's status `held`.
+func heldText(t *testing.T, ds *dataset, triggerID string) string {
+	t.Helper()
+	statuses, err := ds.TriggerStatuses(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range statuses {
+		if st.ID == triggerID {
+			return st.Held
+		}
+	}
+	t.Fatalf("no status for trigger %s", triggerID)
+	return ""
+}
+
+// A record trigger of a function on the operator's key waits at the
+// allowance: the change is not claimed, nothing parks, its status says held,
+// and the first pass after the reset delivers that same change with no hand's
+// retry. A call the allowance refuses after the walk let it through, its room
+// taken by a call racing it, leaves the cursor on the change too.
+func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, clock := openMeterDataset(t, 1)
+	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterPing}}})
+	ping := func(id string) {
+		t.Helper()
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	process := func() {
+		t.Helper()
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+	}
+
+	ping("a")
+	process()
+	requireReading(t, ds, "rec-a", true)
+
+	// 0.6 of the 1 cent is spent: the next call does not fit.
+	ping("b")
+	process()
+	process()
+	requireReading(t, ds, "rec-b", false)
+	requireNoFailures(t, ds, trigger)
+	if held := heldText(t, ds, trigger); !strings.HasPrefix(held, allowancePrefix) {
+		t.Fatalf("status held = %q, want the allowance's words", held)
+	}
+
+	// The walk holds before the claim.
+	tr, _, err := ds.triggerByID(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, held, err := ds.holdDelivery(ctx, tr); err != nil || !held {
+		t.Fatalf("the walk's hold = %v, %v; want the delivery held before its claim", held, err)
+	}
+
+	// The race: the walk let the delivery through, then another call took the
+	// room before this one reserved. Nothing runs, the cursor stays on b.
+	cursor, err := ds.ensureCursor(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, _, err := ds.changesPast(ctx, tr, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
+	if len(matched) != 1 || matched[0].RecordID != "b" {
+		t.Fatalf("the change owed is %+v, want b's", matched)
+	}
+	_, next, err := ds.deliverWithRetry(ctx, tr, matched[0], cursor)
+	if !errors.Is(err, errUnstartedAtAllowance) || !errors.Is(err, substrate.ErrAllowance) || next != cursor {
+		t.Fatalf("a delivery refused at its reservation = next %d (cursor %d), %v; want the cursor kept and the allowance's refusal", next, cursor, err)
+	}
+	requireReading(t, ds, "rec-b", false)
+	requireNoFailures(t, ds, trigger)
+
+	clock.Set(time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC))
+	if held := heldText(t, ds, trigger); held != "" {
+		t.Fatalf("status held after the reset = %q", held)
+	}
+	process()
+	requireReading(t, ds, "rec-b", true)
+	requireNoFailures(t, ds, trigger)
+}
+
+// A schedule trigger of a function on the operator's key waits at the
+// allowance the same way: the fire state stays on the occurrence, nothing
+// parks, and the first pass after the reset fires that occurrence, not the
+// next one. A call refused at its reservation after the walk let it through
+// leaves the fire state too.
+func TestAnOperatorPaidScheduleTriggerWaitsForTheReset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, clock := openMeterDataset(t, 1)
+	startsAt := nowUTC().Add(-30 * time.Minute).Truncate(time.Minute)
+	trigger := meterTrigger(t, ds, map[string]any{"schedule": map[string]any{
+		"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
+	}})
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	before := startsAt.Add(-time.Minute)
+	if _, err := ds.db.ExecContext(ctx, `UPDATE trigger_schedule SET fired_at = $2 WHERE trigger_id = $1`, trigger, before); err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+	firedAt := func() time.Time {
+		t.Helper()
+		var at time.Time
+		if err := ds.db.QueryRowContext(ctx, `SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, trigger).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at.UTC()
+	}
+	occurrence := "fire-" + fireID(startsAt)
+
+	spendFunctionCents(t, ds, 0.6)
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	requireReading(t, ds, occurrence, false)
+	requireNoFailures(t, ds, trigger)
+	if got := firedAt(); !got.Equal(before) {
+		t.Fatalf("the held occurrence moved the fire state to %s", got)
+	}
+	if held := heldText(t, ds, trigger); !strings.HasPrefix(held, allowancePrefix) {
+		t.Fatalf("status held = %q, want the allowance's words", held)
+	}
+
+	// The walk holds before the claim; and the race, as in the record case.
+	tr, _, err := ds.triggerByID(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, held, err := ds.holdDelivery(ctx, tr); err != nil || !held {
+		t.Fatalf("the walk's hold = %v, %v; want the occurrence held before its claim", held, err)
+	}
+	last := before
+	_, settled, err := ds.deliverFire(ctx, tr, runner.ModeSchedule, fireID(startsAt), startsAt, &last, nil, nil)
+	if !errors.Is(err, errUnstartedAtAllowance) || settled {
+		t.Fatalf("a fire refused at its reservation = settled %v, %v; want it unsettled with the allowance's refusal", settled, err)
+	}
+	requireReading(t, ds, occurrence, false)
+	requireNoFailures(t, ds, trigger)
+	if got := firedAt(); !got.Equal(before) {
+		t.Fatalf("the refused fire moved the fire state to %s", got)
+	}
+
+	clock.Set(time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC))
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	requireReading(t, ds, occurrence, true)
+	requireNoFailures(t, ds, trigger)
+	if got := firedAt(); !got.Equal(startsAt) {
+		t.Fatalf("after the reset the fire state is %s, want the held occurrence %s", got, startsAt)
+	}
+}
+
+// A hand's wake or retry of a held function trigger is told so, with the
+// allowance's words, before anything runs.
+func TestAHandsWakeOfAnOperatorPaidTriggerIsRefusedAtTheAllowance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openMeterDataset(t, 1)
+	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterPing}}})
+	spendFunctionCents(t, ds, 0.6)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: "w", Properties: map[string]any{"name": "w"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.WakeTrigger(ctx, trigger); !errors.Is(err, substrate.ErrAllowance) || !strings.Contains(err.Error(), "today's allowance from Example") {
+		t.Fatalf("a wake at the allowance = %v, want the allowance's refusal", err)
+	}
+	requireReading(t, ds, "rec-w", false)
 }
 
 // A call whose body never started settles at nothing, at the root and as a

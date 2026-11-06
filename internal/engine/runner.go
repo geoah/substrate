@@ -193,7 +193,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	if in.Config == nil {
 		cfg, secrets, ch, err := ds.resolveFunctionConfig(ctx, fn)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("run: config: %w", err)
+			return nil, nil, nil, fmt.Errorf("run: config: %w", unstartedAtAllowance(err))
 		}
 		in.Config, charge = cfg, ch
 		inv.scrub.add(secrets...)

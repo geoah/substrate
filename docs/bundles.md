@@ -598,7 +598,9 @@ uninstall leaves them, as it leaves every record.
 as `config.settings.apiKey` and no other setting beside it, so a value the
 person wrote never reaches a call the operator pays for. The call reserves the
 file's `pricePerCall` against the day's allowance first, and is refused with
-reason `quota` when it does not fit. The key never becomes a record, and the
+reason `quota` when it does not fit; a trigger of that function waits at the
+limit instead, unclaimed, and the first dispatcher pass after the reset
+delivers it. The key never becomes a record, and the
 empty secret is no setup item while the operator covers it. A key the person
 writes wins, and clearing it returns the calls to the operator's
 ([0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
