@@ -78,6 +78,11 @@ func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefa
 		return out, err
 	}
 	out.Items = append(out.Items, item)
+	oauth, err := ds.oauthDefaults(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Items = append(out.Items, oauth...)
 	return out, nil
 }
 

@@ -293,38 +293,6 @@ func bundleOAuthMeta(b *vocabulary.Bundle) (*vocabulary.BundleOAuth2, error) {
 	return b.OAuth2, nil
 }
 
-// oauthClientOf reads the OAuth CLIENT credentials off the bundle's resolved
-// client input — the only oauth values that live on a (mutable) row. An
-// unresolved input is a first-class refusal: no client record, no flow. The
-// sealed-at-rest clientSecret is opened HERE, the one host read that needs
-// the plaintext.
-func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (clientID, clientSecret string, err error) {
-	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
-		return "", "", err
-	}
-	if b.OAuth2 == nil {
-		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
-	}
-	ri, err := ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput)
-	if err != nil {
-		return "", "", err
-	}
-	if ri.Row == nil {
-		return "", "", fmt.Errorf("%w: bundle %s's %q input does not resolve (%s) — the OAuth client record carries clientId and clientSecret",
-			substrate.ErrGuard, b.Package, b.OAuth2.ClientInput, ri.Detail)
-	}
-	clientID = propString(ri.Row, "clientId")
-	clientSecret, err = ds.openSecretValue(ctx, propString(ri.Row, "clientSecret"))
-	if err != nil {
-		return "", "", err
-	}
-	if clientID == "" || clientSecret == "" {
-		return "", "", fmt.Errorf("%w: bundle %s's client record %s/%s is missing clientId or clientSecret",
-			substrate.ErrGuard, b.Package, ri.Input.Kind, ri.Row.ID)
-	}
-	return clientID, clientSecret, nil
-}
-
 // oauthScopesForAccount unions the OAuth scopes an account's ENABLED feature
 // toggles request: a toggle absent from the manifest's
 // featureScopes (an unwired feature) contributes nothing, so gmail/calendar
@@ -387,11 +355,11 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if err != nil {
 		return "", err
 	}
-	clientID, clientSecret, err := ds.oauthClientOf(ctx, b)
+	client, err := ds.oauthClientOf(ctx, b)
 	if err != nil {
 		return "", err
 	}
-	ep := oauthEndpointsFor(meta, clientID, clientSecret, oauthScopesForAccount(meta, row))
+	ep := oauthEndpointsFor(meta, client.ID, client.Secret, oauthScopesForAccount(meta, row))
 	nonce, err := newID()
 	if err != nil {
 		return "", err
@@ -514,7 +482,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	if err != nil {
 		return err
 	}
-	clientID, clientSecret, err := ds.oauthClientOf(ctx, b)
+	client, err := ds.oauthClientOf(ctx, b)
 	if err != nil {
 		return err
 	}
@@ -522,7 +490,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	// enabled toggles — persisted with the credential so a later feature that
 	// needs an absent grant can require a reconnect.
 	grantedScopes := oauthScopesForAccount(meta, row0)
-	ep := oauthEndpointsFor(meta, clientID, clientSecret, grantedScopes)
+	ep := oauthEndpointsFor(meta, client.ID, client.Secret, grantedScopes)
 	// The pending flow is consumed BEFORE the exchange: the state is
 	// one-time even when the exchange then fails — a captured state must not
 	// be retryable ammunition. A pre-nonce or replayed state has no row and
@@ -612,6 +580,12 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 				if oauthWrites(ty, name) && row.Props[name] != nil {
 					props[name] = nil
 				}
+			}
+			// The client the grant was issued to, so a refresh through
+			// another client is caught before it is sent (operatoroauth.go).
+			// The id and whose client it was; never the secret.
+			if oauthWrites(ty, propOAuthClient) {
+				props[propOAuthClient] = client.provenance()
 			}
 		}
 		// The derived email lands only when the bundle names a real `writer:
@@ -1259,12 +1233,19 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 			ds.svc.log.Warn("substrate: oauth refresh: bundle metadata", "bundle", b.Package, "error", err)
 			continue
 		}
-		clientID, clientSecret, err := ds.oauthClientOf(ctx, b)
+		client, err := ds.oauthClientOf(ctx, b)
 		if err != nil {
 			ds.svc.log.Warn("substrate: oauth refresh: bundle configuration", "bundle", b.Package, "error", err)
 			continue
 		}
-		ep := oauthEndpointsFor(meta, clientID, clientSecret, nil)
+		// A grant is bound to the client that obtained it: one from another
+		// client than the one resolving now is not sent to the provider, and
+		// the account asks for a reconnect.
+		if oauthClientChanged(ty, row, client) {
+			ds.noteOAuthClientChanged(ctx, account, client)
+			continue
+		}
+		ep := oauthEndpointsFor(meta, client.ID, client.Secret, nil)
 		out, err := ds.refreshCredential(ctx, ref, account, seen, ep)
 		if errors.Is(err, errCredentialGone) {
 			continue // torn down since the list was read

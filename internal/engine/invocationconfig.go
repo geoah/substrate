@@ -101,13 +101,22 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	// no scopes) are resolved once for the whole bundle. A configuration that
 	// cannot yield client credentials simply injects no tokens — each account
 	// carries a tokenError the body can surface.
+	//
+	// The operator's client (operatoroauth.go) resolves only where the client
+	// input resolves to no record, so `inputs` above carries no client record
+	// beside it: a body of an account connected through the operator's client
+	// reads no `apiBase` and calls the provider's own API. An account whose
+	// grant came from another client than the one resolving now gets no
+	// token, so a grant through the operator's client never meets a base the
+	// person's own record names.
 	var refreshEP oauthEndpoints
+	var client oauthClient
 	haveClient := false
 	if oauthEnabled {
-		clientID, clientSecret, cerr := ds.oauthClientOf(ctx, b)
+		c, cerr := ds.oauthClientOf(ctx, b)
 		if cerr == nil {
-			refreshEP = oauthEndpointsFor(b.OAuth2, clientID, clientSecret, nil)
-			haveClient = true
+			client, haveClient = c, true
+			refreshEP = oauthEndpointsFor(b.OAuth2, c.ID, c.Secret, nil)
 		}
 	}
 
@@ -130,6 +139,9 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 				case ref == "":
 				case !haveClient:
 					entry["tokenError"] = "the bundle configuration is missing its client credentials"
+				case oauthClientChanged(t, row, client):
+					entry["tokenError"] = reasonOAuthClientChanged
+					ds.noteOAuthClientChanged(ctx, eref{Kind: t.Identity, ID: row.ID}, client)
 				default:
 					// The ref is bound to THIS account: a credential row
 					// names the account it was issued for, and a tokenRef

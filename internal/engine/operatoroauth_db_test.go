@@ -1,0 +1,635 @@
+package engine
+
+// The operator's OAuth clients (docs/plans/host-defaults.md): a published
+// provider the defaults file lists signs in through the operator's client
+// where its client input resolves to no record at all, each account records
+// the client its grant came from, and a grant from another client than the
+// one resolving now is not refreshed. The provider is a loopback fake, and
+// the closure is a small published one built here, so no test reaches a real
+// vendor.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/geoah/substrate/internal/operatordefaults"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+const (
+	opMailAuthority = "opclient.test.dev"
+	opMailPackage   = opMailAuthority + "/mail"
+	opMailConfig    = opMailPackage + "/config"
+	opMailAccount   = opMailPackage + "/account"
+
+	// The operator's client in these fixtures; neither is a real client.
+	opClientID     = "operator-client"
+	opClientSecret = "operator-secret-fixture"
+	// The person's own client.
+	ownClientID     = "own-client"
+	ownClientSecret = "own-secret-fixture"
+)
+
+// opTokenFake is a provider's token endpoint: every exchange and refresh is
+// recorded with the client id and secret it carried.
+type opTokenFake struct {
+	srv *httptest.Server
+
+	mu        sync.Mutex
+	expiresIn int
+	exchanges []opClientPair
+	refreshes []opClientPair
+}
+
+type opClientPair struct{ id, secret string }
+
+func newOpTokenFake(t *testing.T) *opTokenFake {
+	t.Helper()
+	f := &opTokenFake{expiresIn: 3600}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		pair := opClientPair{r.Form.Get("client_id"), r.Form.Get("client_secret")}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		out := map[string]any{"token_type": "Bearer", "expires_in": f.expiresIn}
+		switch r.Form.Get("grant_type") {
+		case "authorization_code":
+			f.exchanges = append(f.exchanges, pair)
+			out["access_token"], out["refresh_token"] = "at-"+pair.id, "rt-"+pair.id
+		case "refresh_token":
+			f.refreshes = append(f.refreshes, pair)
+			out["access_token"] = "at2-" + pair.id
+		default:
+			http.Error(w, "bad grant", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("/revoke", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	f.srv = httptest.NewServer(mux)
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func (f *opTokenFake) seen() (exchanges, refreshes []opClientPair) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]opClientPair(nil), f.exchanges...), append([]opClientPair(nil), f.refreshes...)
+}
+
+// opMailDocs is a provider closure with one OAuth client input and one
+// account kind; withProvenance declares the account's `oauthClient`.
+func opMailDocs(tokenURL string, withProvenance bool) []map[string]any {
+	accountProps := map[string]any{
+		"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
+		"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
+		"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
+		"tokenError":    map[string]any{"type": "string", "writer": "oauth"},
+		"tokenErrorAt":  map[string]any{"type": "datetime", "writer": "oauth"},
+		"address":       map[string]any{"type": "email", "writer": "owner"},
+		"enabledMail":   map[string]any{"type": "bool", "writer": "owner"},
+	}
+	if withProvenance {
+		accountProps[propOAuthClient] = map[string]any{
+			"type": "object", "writer": "oauth",
+			"fields": map[string]any{
+				"clientId": map[string]any{"type": "string"},
+				"source": map[string]any{"type": "enum", "values": []any{
+					map[string]any{"value": "operator"}, map[string]any{"value": "own"},
+				}},
+			},
+		}
+	}
+	return []map[string]any{
+		vocabulary.PackageManifest(opMailPackage, 0),
+		vocabulary.ActorManifest(opMailPackage, vocabulary.PackageActor(opMailPackage)),
+		vocabulary.BundleManifest(opMailPackage, map[string]any{
+			"description": "a mail provider",
+			"inputs": map[string]any{
+				"client": map[string]any{"kind": opMailConfig, "inject": "functions"},
+			},
+			"installs": []any{opMailConfig, opMailAccount},
+			"oauth2": map[string]any{
+				"clientInput":           "client",
+				"authorizationEndpoint": "https://provider.example/authorize",
+				"tokenEndpoint":         tokenURL,
+				"revocationEndpoint":    strings.TrimSuffix(tokenURL, "/token") + "/revoke",
+				"featureScopes": map[string]any{
+					"enabledMail": map[string]any{"scopes": []any{"mail.read"}},
+				},
+			},
+		}),
+		vocabulary.KindManifest(opMailPackage, map[string]any{"singular": "config"}, map[string]any{
+			"traits": []any{"substrate.reamde.dev/core/oauth2"},
+			"properties": map[string]any{
+				"clientId":     map[string]any{"type": "string"},
+				"clientSecret": map[string]any{"type": "secret"},
+				"apiBase":      map[string]any{"type": "url"},
+			},
+		}),
+		vocabulary.KindManifest(opMailPackage, map[string]any{"singular": "account"}, map[string]any{
+			"traits":     []any{"substrate.reamde.dev/core/accountconfig"},
+			"properties": accountProps,
+		}),
+	}
+}
+
+// installOpMail installs the closure as the catalog installs a provider:
+// published, under the bundle's own actor. published false is a hand apply,
+// which the repository owns.
+func installOpMail(t *testing.T, ds *dataset, tokenURL string, published, withProvenance bool) {
+	t.Helper()
+	docs := opMailDocs(tokenURL, withProvenance)
+	actor := substrate.BundleActor(opMailAuthority, "mail")
+	if _, err := ds.InstallBundleClosure(context.Background(), actor, docs, nil, substrate.BundleInstall{Published: published}); err != nil {
+		t.Fatalf("install the mail closure: %v", err)
+	}
+}
+
+func opClientsConfig() *operatordefaults.Config {
+	return &operatordefaults.Config{
+		OAuthClients: map[string]*operatordefaults.OAuthClient{
+			opMailPackage: {
+				ClientID: opClientID, ClientSecret: operatordefaults.NewSecret(opClientSecret),
+				Notice: "Example's sign-in is in testing.",
+			},
+		},
+	}
+}
+
+// openOpMail opens a core repository with the OAuth facility on against the
+// fake, the operator's file listing the mail provider, and the provider
+// installed published, with one account.
+func openOpMail(t *testing.T) (*dataset, *opTokenFake, eref) {
+	t.Helper()
+	f := newOpTokenFake(t)
+	ds := openCoreDataset(t,
+		WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", f.srv.Client()),
+		WithOperatorDefaults(opClientsConfig(), "Example"))
+	installOpMail(t, ds, f.srv.URL+"/token", true, true)
+	return ds, f, opPutAccount(t, ds, "a1")
+}
+
+func opPutAccount(t *testing.T, ds *dataset, id string) eref {
+	t.Helper()
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: opMailAccount, ID: id, Properties: map[string]any{"address": id + "@example.com", "enabledMail": true},
+	}); err != nil {
+		t.Fatalf("put account: %v", err)
+	}
+	return eref{Kind: opMailAccount, ID: id}
+}
+
+// opPutOwnClient writes the person's own client record.
+func opPutOwnClient(t *testing.T, ds *dataset, id string, props map[string]any) {
+	t.Helper()
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: opMailConfig, ID: id, Properties: props,
+	}); err != nil {
+		t.Fatalf("put client record %s: %v", id, err)
+	}
+}
+
+// opConnect runs the consent and the callback for one account and returns
+// the consent URL's client id.
+func opConnect(t *testing.T, ds *dataset, account eref) string {
+	t.Helper()
+	ctx := context.Background()
+	consent, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	u, err := url.Parse(consent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.svc.CompleteOAuth(ctx, u.Query().Get("state"), "code-1"); err != nil {
+		t.Fatalf("callback: %v", err)
+	}
+	return u.Query().Get("client_id")
+}
+
+// propText is a property value as text, empty for none.
+func propText(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func opMailItem(t *testing.T, ds *dataset) substrate.OperatorDefault {
+	t.Helper()
+	read, err := ds.OperatorDefaults(context.Background())
+	if err != nil {
+		t.Fatalf("operator defaults: %v", err)
+	}
+	for _, it := range read.Items {
+		if it.ID == "oauth/"+opMailPackage {
+			return it
+		}
+	}
+	t.Fatalf("no oauth item for %s in %+v", opMailPackage, read.Items)
+	return substrate.OperatorDefault{}
+}
+
+func opClientSetupItems(t *testing.T, ds *dataset) []substrate.SetupItem {
+	t.Helper()
+	st, err := ds.BundleStatus(context.Background(), opMailPackage)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	var out []substrate.SetupItem
+	for _, it := range st.Setup {
+		if it.Input == "client" {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func opAccountRow(t *testing.T, ds *dataset, account eref) *erow {
+	t.Helper()
+	row, err := ds.loadRowDB(context.Background(), account)
+	if err != nil || row == nil {
+		t.Fatalf("load %s: %v", account.ID, err)
+	}
+	return row
+}
+
+// With no client record of the person's, the published provider the file
+// lists signs in through the operator's client: the consent names its id,
+// the exchange carries its id and secret together, the account records it,
+// and neither the bundle status nor the operator defaults read asks for a
+// client. The item reads needs-connect before the connect and ready after.
+func TestOperatorOAuthClientServesWhereNoClientRecordExists(t *testing.T) {
+	t.Parallel()
+	ds, f, account := openOpMail(t)
+
+	if items := opClientSetupItems(t, ds); len(items) != 0 {
+		t.Fatalf("the bundle status asks for a client the operator covers: %+v", items)
+	}
+	item := opMailItem(t, ds)
+	if item.Slot != substrate.SlotOAuth || item.Target != opMailPackage || item.Label != "mail" ||
+		item.Source != substrate.SourceOperator || !item.OperatorOffers ||
+		item.Readiness != substrate.ReadinessNeedsConnect || item.Notice != "Example's sign-in is in testing." {
+		t.Fatalf("item before the connect = %+v", item)
+	}
+
+	if got := opConnect(t, ds, account); got != opClientID {
+		t.Fatalf("the consent named client %q, want the operator's", got)
+	}
+	exchanges, _ := f.seen()
+	if len(exchanges) != 1 || exchanges[0] != (opClientPair{opClientID, opClientSecret}) {
+		t.Fatalf("the exchange carried %+v, want the operator's id and secret together", exchanges)
+	}
+	recorded, _ := opAccountRow(t, ds, account).Props[propOAuthClient].(map[string]any)
+	if recorded["clientId"] != opClientID || recorded["source"] != oauthClientOperator {
+		t.Fatalf("the account recorded %v, want the operator's client", recorded)
+	}
+	if item := opMailItem(t, ds); item.Readiness != substrate.ReadinessReady || item.Source != substrate.SourceOperator {
+		t.Fatalf("item after the connect = %+v", item)
+	}
+}
+
+// The person's own complete client record wins over the operator's, and the
+// account records it as theirs.
+func TestOperatorOAuthClientYieldsToAnOwnRecord(t *testing.T) {
+	t.Parallel()
+	ds, f, account := openOpMail(t)
+	opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+
+	if got := opConnect(t, ds, account); got != ownClientID {
+		t.Fatalf("the consent named client %q, want the person's own", got)
+	}
+	exchanges, _ := f.seen()
+	if len(exchanges) != 1 || exchanges[0] != (opClientPair{ownClientID, ownClientSecret}) {
+		t.Fatalf("the exchange carried %+v, want the person's own pair", exchanges)
+	}
+	recorded, _ := opAccountRow(t, ds, account).Props[propOAuthClient].(map[string]any)
+	if recorded["clientId"] != ownClientID || recorded["source"] != oauthClientOwn {
+		t.Fatalf("the account recorded %v, want the person's own client", recorded)
+	}
+	if item := opMailItem(t, ds); item.Source != substrate.SourceOwn || !item.OperatorOffers || item.Readiness != substrate.ReadinessReady {
+		t.Fatalf("item = %+v, want own, offered, ready", item)
+	}
+}
+
+// The operator's client stands in only for NO record. Records that resolve
+// wrong (two with none chosen, a binding to a deleted one) or an incomplete
+// one keep their setup item and refuse the flow, and the operator's secret is
+// never paired with the person's client id. A copy the repository owns, and a
+// published install that cannot record the client, are not covered either.
+func TestOperatorOAuthClientNeverStandsInForARecordOrMixesThePair(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	refuses := func(t *testing.T, ds *dataset, account eref, wantCode string) {
+		t.Helper()
+		_, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
+		if !errors.Is(err, substrate.ErrGuard) {
+			t.Fatalf("start = %v, want a refusal", err)
+		}
+		items := opClientSetupItems(t, ds)
+		if len(items) != 1 || items[0].Code != wantCode {
+			t.Fatalf("setup items = %+v, want one %s", items, wantCode)
+		}
+		item := opMailItem(t, ds)
+		if item.Source == substrate.SourceOperator || item.Readiness != substrate.ReadinessNotSetUp {
+			t.Fatalf("item = %+v, want not set up and not the operator's", item)
+		}
+	}
+
+	t.Run("incomplete", func(t *testing.T) {
+		t.Parallel()
+		ds, f, account := openOpMail(t)
+		opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID})
+		refuses(t, ds, account, substrate.SetupOAuthClient)
+		if exchanges, refreshes := f.seen(); len(exchanges)+len(refreshes) != 0 {
+			t.Fatalf("the provider saw %v %v", exchanges, refreshes)
+		}
+	})
+	t.Run("ambiguous", func(t *testing.T) {
+		t.Parallel()
+		ds, _, account := openOpMail(t)
+		opPutOwnClient(t, ds, "c1", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+		opPutOwnClient(t, ds, "c2", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+		refuses(t, ds, account, substrate.SetupAmbiguous)
+	})
+	t.Run("dangling", func(t *testing.T) {
+		t.Parallel()
+		ds, _, account := openOpMail(t)
+		opPutOwnClient(t, ds, "c1", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+		if err := ds.BindBundleInput(ctx, opMailPackage, "client", "c1"); err != nil {
+			t.Fatalf("bind: %v", err)
+		}
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "c1", substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+		refuses(t, ds, account, substrate.SetupDangling)
+	})
+	t.Run("the repository's own copy", func(t *testing.T) {
+		t.Parallel()
+		f := newOpTokenFake(t)
+		ds := openCoreDataset(t,
+			WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+			WithOperatorDefaults(opClientsConfig(), "Example"))
+		installOpMail(t, ds, f.srv.URL+"/token", false, true)
+		refuses(t, ds, opPutAccount(t, ds, "a1"), substrate.SetupMissing)
+	})
+	t.Run("an install that cannot record the client", func(t *testing.T) {
+		t.Parallel()
+		f := newOpTokenFake(t)
+		ds := openCoreDataset(t,
+			WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+			WithOperatorDefaults(opClientsConfig(), "Example"))
+		installOpMail(t, ds, f.srv.URL+"/token", true, false)
+		refuses(t, ds, opPutAccount(t, ds, "a1"), substrate.SetupMissing)
+		if msg := opMailItem(t, ds).Message; !strings.Contains(msg, "upgrade it") {
+			t.Fatalf("item message = %q, want the upgrade ask", msg)
+		}
+	})
+}
+
+// An account connected through the operator's client is not refreshed once
+// the person's own client resolves instead: the provider sees no refresh, the
+// account says why in tokenError, the item reads reconnect-needed, and an
+// invocation hands the body no token beside the person's apiBase. The
+// person's reconnect records their client and refreshes again.
+func TestOperatorOAuthClientChangeNeedsAReconnect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.expiresIn = 120 // inside the refresh window
+	opConnect(t, ds, account)
+
+	opPutOwnClient(t, ds, "default", map[string]any{
+		"clientId": ownClientID, "clientSecret": ownClientSecret, "apiBase": "http://127.0.0.1:9/",
+	})
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refresh pass = %d, %v; want nothing refreshed", n, err)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 0 {
+		t.Fatalf("the provider saw refreshes %+v through a client the grant was not issued to", refreshes)
+	}
+	row := opAccountRow(t, ds, account)
+	if propString(row, propTokenStatus) != tokenStatusErroring || propString(row, propTokenError) != reasonOAuthClientChanged {
+		t.Fatalf("account = %v / %q, want erroring with the client-change reason", row.Props[propTokenStatus], row.Props[propTokenError])
+	}
+	if item := opMailItem(t, ds); item.Readiness != substrate.ReadinessReconnectNeeded || item.Message != reasonOAuthClientChanged || item.Source != substrate.SourceOwn {
+		t.Fatalf("item = %+v, want reconnect-needed from the person's own client", item)
+	}
+
+	cfg, _, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	client, _ := cfg["inputs"].(map[string]any)["client"].(map[string]any)
+	if props, _ := client["properties"].(map[string]any); !strings.Contains(propText(props["apiBase"]), "127.0.0.1:9") {
+		t.Fatalf("the person's record is not injected: %v", client)
+	}
+	entry := cfg["accounts"].([]any)[0].(map[string]any)
+	if _, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
+		t.Fatalf("an operator-issued grant reached a body beside the person's apiBase: %v", entry)
+	}
+
+	if got := opConnect(t, ds, account); got != ownClientID {
+		t.Fatalf("the reconnect named %q", got)
+	}
+	row = opAccountRow(t, ds, account)
+	if propString(row, propTokenStatus) != tokenStatusConnected || row.Props[propTokenError] != nil {
+		t.Fatalf("after the reconnect: %v / %v", row.Props[propTokenStatus], row.Props[propTokenError])
+	}
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 1 {
+		t.Fatalf("refresh after the reconnect = %d, %v", n, err)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 1 || refreshes[0] != (opClientPair{ownClientID, ownClientSecret}) {
+		t.Fatalf("refreshes = %+v, want one through the person's own pair", refreshes)
+	}
+}
+
+// An account connected before the client was recorded counts as connected
+// through the person's own client: it refreshes while that client resolves,
+// and reads as needing a reconnect once only the operator's does.
+func TestOperatorOAuthLegacyAccountCountsAsOwn(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.expiresIn = 120
+	opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+	opConnect(t, ds, account)
+	if err := ds.inTx(ctx, actorOAuth, true, func(t *txn) error {
+		_, err := t.patch(account, substrate.PatchInput{Properties: map[string]any{propOAuthClient: nil}})
+		return err
+	}); err != nil {
+		t.Fatalf("clear the record: %v", err)
+	}
+	if _, ok := opAccountRow(t, ds, account).Props[propOAuthClient]; ok {
+		t.Fatal("the account still records its client")
+	}
+
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 1 {
+		t.Fatalf("refresh through the person's own client = %d, %v; want one", n, err)
+	}
+
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the own client: %v", err)
+	}
+	// The refreshed token expires inside the window too, so the next pass
+	// finds it due.
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refresh through the operator's client = %d, %v; want none", n, err)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 1 {
+		t.Fatalf("refreshes = %+v, want only the one through the person's own client", refreshes)
+	}
+	if propString(opAccountRow(t, ds, account), propTokenError) != reasonOAuthClientChanged {
+		t.Fatal("the account does not ask for a reconnect")
+	}
+	if item := opMailItem(t, ds); item.Source != substrate.SourceOperator || item.Readiness != substrate.ReadinessReconnectNeeded {
+		t.Fatalf("item = %+v", item)
+	}
+}
+
+// The operator's client secret reaches the provider's token endpoint and
+// nothing else: not the function config, not a record, not a file of the
+// repository (changelog segments, sealed files, the manifest), not the
+// operator defaults read. A body of an operator-connected account reads no
+// client record, so it calls the provider's own API whatever apiBase the
+// person could write, and it still gets its token.
+func TestOperatorOAuthClientSecretStaysInTheHost(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.expiresIn = 120
+	opConnect(t, ds, account)
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 1 {
+		t.Fatalf("refresh = %d, %v", n, err)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 1 || refreshes[0] != (opClientPair{opClientID, opClientSecret}) {
+		t.Fatalf("refreshes = %+v, want one through the operator's pair", refreshes)
+	}
+
+	cfg, secrets, err := ds.resolveFunctionConfig(ctx, &vocabulary.Function{Package: opMailPackage})
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	if _, has := cfg["inputs"]; has {
+		t.Fatalf("a body of an operator-connected account reads a client record: %v", cfg["inputs"])
+	}
+	entry := cfg["accounts"].([]any)[0].(map[string]any)
+	if entry["token"] != "at2-"+opClientID {
+		t.Fatalf("account entry = %v, want the refreshed token", entry)
+	}
+	raw, err := json.Marshal(map[string]any{"config": cfg, "secrets": secrets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), opClientSecret) {
+		t.Fatalf("the function config carries the operator's client secret: %s", raw)
+	}
+
+	read, err := ds.OperatorDefaults(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := json.Marshal(read); strings.Contains(string(raw), opClientSecret) {
+		t.Fatalf("the operator defaults read carries the secret: %s", raw)
+	}
+	var n int
+	if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE props::text LIKE '%' || $1 || '%'`, opClientSecret).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("%d records carry the operator's client secret (%v)", n, err)
+	}
+	if err := filepath.WalkDir(ds.dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), opClientSecret) {
+			t.Errorf("%s carries the operator's client secret", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A failed install of a listed package reads install-failed with the
+// installer's message, and the next open tries again: here, a restart.
+func TestOperatorInstallFailureIsReportedAndRetried(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newOpTokenFake(t)
+	cfg := opClientsConfig()
+	cfg.Install = []string{opMailPackage}
+	var mu sync.Mutex
+	calls := 0
+	installer := func(ctx context.Context, d substrate.Dataset, pkg string) error {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			return errors.New("the catalog is unreachable")
+		}
+		docs := opMailDocs(f.srv.URL+"/token", true)
+		_, err := d.InstallBundleClosure(ctx, substrate.BundleActor(opMailAuthority, "mail"), docs, nil, substrate.BundleInstall{Published: true})
+		return err
+	}
+	dsn, root := MigratedDSN(t), t.TempDir()
+	start := func() substrate.Service {
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root),
+			WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+			WithOperatorDefaults(cfg, "Example"), WithOperatorInstaller(installer))
+		if err != nil {
+			t.Fatalf("open engine: %v", err)
+		}
+		return svc
+	}
+	svc := start()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	d, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := opMailItem(t, d.(*dataset))
+	if item.Readiness != substrate.ReadinessInstallFailed || !strings.Contains(item.Message, "the catalog is unreachable") {
+		t.Fatalf("item after the failed install = %+v", item)
+	}
+	_ = svc.Close()
+
+	svc = start()
+	t.Cleanup(func() { _ = svc.Close() })
+	d, err = svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	ran := calls
+	mu.Unlock()
+	if ran != 2 {
+		t.Fatalf("the installer ran %d times, want a retry at the next open", ran)
+	}
+	if item := opMailItem(t, d.(*dataset)); item.Readiness != substrate.ReadinessNeedsConnect || item.Message == "the catalog is unreachable" {
+		t.Fatalf("item after the retry = %+v", item)
+	}
+}

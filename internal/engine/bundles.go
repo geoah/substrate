@@ -1050,6 +1050,9 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 		}
 		st.Inputs = append(st.Inputs, is)
 		switch {
+		case b.OAuth2 != nil && ri.Name == b.OAuth2.ClientInput && ds.operatorCovers(b, ri) != nil:
+			// No record of the person's, and the operator's client serves
+			// the package: oauthClientOf resolves it, so nothing is asked.
 		case ri.Problem != "":
 			st.Setup = append(st.Setup, substrate.SetupItem{
 				Code: ri.Problem, Input: ri.Name, Kind: ri.Input.Kind, Message: ri.Detail,
