@@ -33,7 +33,7 @@ var defaultLLMProviders = []struct {
 	{
 		id: "openai",
 		props: map[string]any{
-			"label":   "openai",
+			"label":   "OpenAI",
 			"wire":    "openai",
 			"baseURL": "https://api.openai.com/v1",
 			// No reasoningEffort default: the accepted set is the MODEL's, not
@@ -54,7 +54,7 @@ var defaultLLMProviders = []struct {
 	{
 		id: "anthropic",
 		props: map[string]any{
-			"label": "anthropic",
+			"label": "Anthropic",
 			"wire":  "anthropic",
 			// The SDK resolves "v1/messages" against this, so the trailing
 			// slash is load-bearing.
@@ -72,7 +72,7 @@ var defaultLLMProviders = []struct {
 	{
 		id: "gemini",
 		props: map[string]any{
-			"label":   "gemini",
+			"label":   "Gemini",
 			"wire":    "openai",
 			"baseURL": "https://generativelanguage.googleapis.com/v1beta/openai",
 			"pricing": []any{
