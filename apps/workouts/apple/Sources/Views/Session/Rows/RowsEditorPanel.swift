@@ -347,12 +347,13 @@ struct RowsEditorPanel: View {
         return Button {
             run(primary.action)
         } label: {
-            // One line beside the `…`, a little smaller where it must be,
-            // so the button keeps its height; two at the accessibility sizes.
+            // One line beside the `…`, cut short at its end where it must
+            // be, so the button keeps its height (owner, 2026-11-06); two at
+            // the accessibility sizes. VoiceOver reads it whole.
             Label(primary.title, systemImage: primary.action.symbol)
                 .labelStyle(.titleAndIcon)
                 .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.75)
+                .truncationMode(.tail)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
