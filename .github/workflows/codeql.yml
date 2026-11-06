@@ -78,6 +78,17 @@ jobs:
           # security-and-quality over the default `security` pack: the extra
           # queries catch an ignored error or a resource that is never closed.
           queries: security-and-quality
+          # go/log-injection is off because no request value can forge a log
+          # line here: every line goes through log/slog's TextHandler or
+          # JSONHandler (or a filter over one), which quote or escape a value
+          # carrying a newline, and the depguard rule `slog-only` in
+          # .golangci.yml refuses the stdlib log package outside tests. Its
+          # findings were each a slog attribute, and dismissing them one by
+          # one reopened them whenever a line moved.
+          config: |
+            query-filters:
+              - exclude:
+                  id: go/log-injection
 
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
