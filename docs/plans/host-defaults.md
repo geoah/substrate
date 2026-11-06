@@ -349,7 +349,7 @@ show there as Google's syncs do.
 
 ## What this amends
 
-- Decision 0232 (new, PR #1213): an empty key on an operator-listed row runs on
+- Decision 0235 (new, PR #1213): an empty key on an operator-listed row runs on
   the operator's whole transport; operator keys never enter a repository; the
   allowance is the operator's ledger; the embeddings stamp.
 - A new console decision (PR #1212): the Providers page lists every outside
@@ -366,7 +366,7 @@ show there as Google's syncs do.
 | --- | --- | --- |
 | #1205 | this plan | open |
 | #1209 | the wire shape, `OperatorDefaults` | open, stacked on #1205 |
-| #1213 | phase 1 engine: the file, the operator transport, embeddings, the ledger and gate, redirect refusal, the read, decision 0232 | draft, stacked on #1209; three Astra rounds, all findings fixed; being renamed to operator words |
+| #1213 | phase 1 engine: the file, the operator transport, embeddings, the ledger and gate, redirect refusal, the read, decision 0235 | draft, stacked on #1209; three Astra rounds, all findings fixed; being renamed to operator words |
 | #1212 | phase 1 console: the Providers page, AI model cards, the welcome landing, the console decision | draft, stacked on #1209; being reworked from the Services page |
 | phase 2 | OAuth client defaults with `oauthClient` provenance (Google first), `install:` | after #1213 |
 | phase 3 | Firecrawl as a provider with `websearch` and `webscrape`, function secrets, the sample's removal | after #1213 |
