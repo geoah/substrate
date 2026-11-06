@@ -186,6 +186,7 @@ boot.
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
+| `SUBSTRATE_TRUSTED_PROXIES`   | —                                      | The reverse proxies in front of the server, as comma-separated CIDRs or addresses (`10.42.0.0/16`). A request that arrives from one of them is paced by the client its `X-Forwarded-For` names, read from the right past every listed hop, so login, webhook token lookups and app sign-in pace each client rather than the proxy. Empty reads no forwarded header. List only proxies that write `X-Forwarded-For` themselves and drop or append to the one a client sends; see [Behind a reverse proxy](#tls-and-the-reverse-proxy). |
 | `SUBSTRATE_PUBLIC_URL`         | —                                      | This server's origin as apps reach it (`https://` and a host, no path): the issuer of [app authorization](apps.md). Empty derives it from each request's `Host`, `https` unless the host is loopback. Set it when the server answers under more than one name. |
 | `SUBSTRATE_OUTSIDE_CODE` | `allow` | `allow` or `refuse`: admission and execution of code from document-published packages. A refusal also stops code installed before the setting changed. |
 | `SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE` | `false` | Permits an outside function body ([decision 0220](decisions/0220-outside-code-is-confined-and-reviewed.md)) where the sandbox cannot confine it: macOS, sandbox mode `off`, or a kernel missing a layer such as Landlock. An outside agent, trigger, mapping or OAuth block needs no sandbox and is admitted without it. Boots with a warning. It does not override `SUBSTRATE_OUTSIDE_CODE=refuse`. |
@@ -800,14 +801,22 @@ it trusts:
   `Content-Length` and write lines as they happen; Caddy flushes a response
   with no `Content-Length` to the client as it arrives, so nothing needs
   setting.
-- **No forwarded header is read.** The server ignores `X-Forwarded-For`,
-  `X-Forwarded-Proto`, `X-Real-IP` and `Forwarded` (the `RealIP` comment in
-  `internal/api/api.go` says why: a header anyone can send cannot name the
-  caller), so there is no trusted-proxy list to configure. The auth rate
-  limiter keys on the transport peer, which behind the proxy is the proxy for
-  every caller, so its per-address bucket becomes one bucket per repository
-  name. The per-repository and substrate-wide buckets pace exactly as they
-  would without a proxy.
+- **The client's address, if you list the proxy.** By default the server
+  reads no `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Real-IP` or `Forwarded`
+  header, because a header anyone can send cannot name the caller. The
+  per-address paces (login, webhook token lookups, `GET /oauth/authorize`)
+  then key on the transport peer, which behind a proxy is the proxy for every
+  caller: two people signing in to an app within a few seconds of each other
+  share one pace, and one client sending made-up webhook tokens pauses every
+  app's deliveries. Set `SUBSTRATE_TRUSTED_PROXIES` to the address the
+  server sees the proxy connect from (`127.0.0.1` for the binary behind the
+  Caddyfile above; a container's port mapping shows the bridge gateway
+  instead) and the server reads the client from `X-Forwarded-For`, from the
+  right, past every listed hop. Caddy writes the header and ignores one a
+  client sent unless told to trust it. The proxy itself must see the client's
+  address: a Kubernetes `LoadBalancer` Service with the default
+  `externalTrafficPolicy: Cluster` rewrites it to a node's, so set the
+  proxy's Service to `Local`.
 - **HTTPS in the settings that name the deployment.** `SUBSTRATE_CONSOLE_URL`
   is `https://substrate.example.com` and `SUBSTRATE_OAUTH_CALLBACK_URL` is
   `https://substrate.example.com/api/v1/oauth/callback`. The OAuth return page

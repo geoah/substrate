@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -201,6 +202,16 @@ type Config struct {
 	// ingress. The instruments record either way; this is only the door.
 	Metrics bool `envconfig:"SUBSTRATE_METRICS" default:"false"`
 
+	// TrustedProxies lists the reverse proxies in front of the server, as
+	// comma-separated CIDRs or addresses. A request whose transport peer is
+	// one of them is paced by the client its X-Forwarded-For names (read
+	// from the right, past every listed hop) rather than by the proxy, so
+	// the per-address paces on login, webhooks and app sign-in do not lump
+	// every client together. Empty, the default, reads no forwarded header:
+	// a header a client can send cannot name the client. List only proxies
+	// that overwrite or append to X-Forwarded-For.
+	TrustedProxies string `envconfig:"SUBSTRATE_TRUSTED_PROXIES" default:""`
+
 	// There is NO LLM configuration here. Completions and embeddings alike are
 	// bought through a repository's own llm/provider records, which carry the
 	// wire, the endpoint, the key and (for embeddings) the model, so the
@@ -280,7 +291,33 @@ func (c Config) Validate() error {
 			return fmt.Errorf("SUBSTRATE_DNS_RESOLVER %q is not host:port, such as 127.0.0.1:53", c.DNSResolver)
 		}
 	}
+	if _, err := c.TrustedProxyPrefixes(); err != nil {
+		return err
+	}
 	return ValidateCredentialKey(c.CredentialKey)
+}
+
+// TrustedProxyPrefixes parses SUBSTRATE_TRUSTED_PROXIES: each entry is a CIDR
+// (`10.42.0.0/16`) or one address, which stands for itself alone.
+func (c Config) TrustedProxyPrefixes() ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, raw := range strings.Split(c.TrustedProxies, ",") {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(entry); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(entry)
+		if err != nil {
+			return nil, fmt.Errorf("SUBSTRATE_TRUSTED_PROXIES entry %q is neither a CIDR (10.42.0.0/16) nor an address (10.42.0.7)", entry)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }
 
 // AuthorityDocs parses SUBSTRATE_INSECURE_AUTHORITY_DOCS into authority and
