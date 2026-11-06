@@ -44,7 +44,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRoundIcon, SquareIcon } from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
-import { AddKeyButton } from "@/components/agent/model-key-dialog"
+import { AddKeyButton } from "@/components/agent/model-key-link"
 import { Composer } from "@/components/agent/composer"
 import { ThreadHeading } from "@/components/agent/thread-heading"
 import { ContextChips, Transcript } from "@/components/agent/transcript"

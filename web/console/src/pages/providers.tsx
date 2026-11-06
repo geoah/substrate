@@ -1,9 +1,21 @@
-/** Providers (`/providers`): every service that can bring data in, one card
- * each — the shipped catalog's providers joined with what this repository
- * holds of them and their accounts. A card says in one pill where the
- * provider stands (On, Set up, Needs attention, Paused) or offers to add it,
- * and one line under the description says what is true right now. The card
- * opens the provider's page, where the set-up continues.
+/** Providers (`/providers`): every outside service the substrate spends a
+ * key on, in three groups (decision 0233):
+ *
+ * - **Accounts you connect**: the shipped catalog's providers that bring
+ *   data in, joined with what this repository holds of them and their
+ *   accounts, one card each, opening the provider's page.
+ * - **Tools for your agents**: providers whose package declares no account
+ *   kind and offers functions to agents.
+ * - **AI models**: one card per `llm/provider` row, with its key form in
+ *   place (components/providers/model-card.tsx).
+ *
+ * A card says what it gives you, in one pill whether it works (On, Set up,
+ * Needs attention, Paused) or offers to add it, and, only where someone
+ * other than the reader could supply a key or a sign-in, whose it is. The
+ * operator's daily allowance sits on the AI models header and as one line
+ * on the Tools header, never over the cards that bring data in. Where the
+ * deployment loaded an operator defaults file the page opens with a welcome
+ * until the reader dismisses it.
  *
  * Technical mode adds OTHER PACKAGES: every bundle this repository holds that
  * is not a provider (imported samples, the seeded llm package, anything
@@ -11,7 +23,8 @@
  * removal, so nothing the old Registry listed is out of reach. */
 
 import { PublisherDetails } from "@/components/packages/publisher"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { SearchXIcon, TriangleAlertIcon } from "lucide-react"
 
@@ -28,10 +41,13 @@ import {
 } from "@/components/providers/bundle-actions"
 import { Pill, type PillTone } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
+import { AllowanceBar, AllowanceNote } from "@/components/providers/allowance"
+import { AddModelCard, ModelCard } from "@/components/providers/model-card"
 import {
   ProviderLogo,
   StandingPill,
 } from "@/components/providers/provider-marks"
+import { ProvidersWelcome } from "@/components/providers/providers-welcome"
 import {
   useProviders,
   type ProviderEntry,
@@ -51,32 +67,107 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { bundleState, setupCount } from "@/lib/api/bundles"
 import {
+  useTechnicalDetails,
+  useWelcome,
+} from "@/hooks/use-console-preferences"
+import { useModelKeys, type ModelKeys } from "@/hooks/use-model-keys"
+import { bundleState, setupCount } from "@/lib/api/bundles"
+import { functionsQueryOptions } from "@/lib/api/functions"
+import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
+import {
+  accountKindOf,
   upgradeAvailable,
   upgradeBlocked,
   blockerWords,
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
-import { bundleParams, firstSentence } from "@/lib/providers"
+import { LLM_PROVIDER_SEED } from "@/lib/llm-provider-seed"
+import {
+  installFailure,
+  modelItem,
+  modelName,
+  operatorServesAny,
+  operatorServesTools,
+  packageWhoseKey,
+  searchLine,
+  type OperatorWords,
+} from "@/lib/operator-defaults"
+import {
+  bundleParams,
+  firstSentence,
+  offeredFunctionCount,
+  providerGroup,
+} from "@/lib/providers"
 import { cn } from "@/lib/utils"
 import { packageDisplayName } from "@/lib/kind-names"
 import { providersRoute } from "@/router"
 
+const DESCRIPTION =
+  "Everything your substrate connects to: the accounts that bring your data in, the tools your agents use and the AI models they run on."
+
+const GRID = "grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5"
+
 export function ProvidersPage() {
   const [technical] = useTechnicalDetails()
   const data = useProviders()
-  const { connected, error } = providersRoute.useSearch()
+  const { connected, error, model } = providersRoute.useSearch()
   const navigate = useNavigate()
+  const keys = useModelKeys({ always: true })
+  const functions = useQuery(functionsQueryOptions)
+  const welcome = useWelcome()
+  const items = keys.read?.items
+  const words = keys.words
+
+  const groups = useMemo(() => {
+    const out: Record<"accounts" | "tools", ProviderEntry[]> = {
+      accounts: [],
+      tools: [],
+    }
+    const records = functions.data ?? []
+    for (const entry of data.providers) {
+      const closure = entry.row.catalog?.closure
+      const group = providerGroup({
+        installed: Boolean(entry.row.status?.installed),
+        accountKind: Boolean(
+          entry.view?.accountKind ?? accountKindOf(data.kinds, entry.row.id)
+        ),
+        offeredFunctions: offeredFunctionCount(records, entry.row.id),
+        closureKinds: closure?.kinds?.length ?? 0,
+        closureFunctions: closure?.functions?.length ?? 0,
+      })
+      out[group].push(entry)
+    }
+    return out
+  }, [data.providers, data.kinds, functions.data])
+
+  const showWelcome =
+    keys.offered && Boolean(keys.read) && !welcome.busy && !welcome.dismissed
+
+  const providerCard = (p: ProviderEntry) => (
+    <ProviderCard
+      key={p.row.key}
+      entry={p}
+      chain={data.chains(p.row)}
+      technical={technical}
+      items={items}
+      words={words}
+    />
+  )
 
   return (
     <TablePage>
-      <PageHeader
-        title="Providers"
-        description="Services that bring your data in and keep it up to date. What they bring in is a copy: you can read it, link to it and let agents use it."
-      />
+      {showWelcome ? (
+        <ProvidersWelcome
+          words={words}
+          items={items ?? []}
+          allowance={Boolean(keys.read?.operator?.allowance)}
+          onDone={welcome.dismiss}
+        />
+      ) : (
+        <PageHeader title="Providers" description={DESCRIPTION} />
+      )}
       <OAuthReturnNote
         connected={connected}
         error={error}
@@ -85,43 +176,64 @@ export function ProvidersPage() {
           void navigate({ to: "/providers", search: {}, replace: true })
         }
       />
-      {data.error ? (
-        <Empty className="mt-6 rounded-[10px] border py-10">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <SearchXIcon />
-            </EmptyMedia>
-            <EmptyTitle>The providers didn’t load</EmptyTitle>
-            <EmptyDescription>{data.error.message}</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button variant="outline" size="sm" onClick={data.refetch}>
-              Try again
-            </Button>
-          </EmptyContent>
-        </Empty>
-      ) : data.pending ? (
-        <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className="h-[118px] rounded-[10px]" />
-          ))}
-        </div>
-      ) : data.providers.length === 0 ? (
-        <p className="mt-6 text-muted-foreground">
-          This substrate ships no providers.
-        </p>
-      ) : (
-        <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
-          {data.providers.map((p) => (
-            <ProviderCard
-              key={p.row.key}
-              entry={p}
-              chain={data.chains(p.row)}
-              technical={technical}
-            />
-          ))}
-        </div>
+      <section aria-labelledby="accounts">
+        <SectionHead
+          id="accounts"
+          title="Accounts you connect"
+          hint="bring your data in and keep it up to date"
+        />
+        {data.error ? (
+          <Empty className="rounded-[10px] border py-10">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <SearchXIcon />
+              </EmptyMedia>
+              <EmptyTitle>The providers didn’t load</EmptyTitle>
+              <EmptyDescription>{data.error.message}</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button variant="outline" size="sm" onClick={data.refetch}>
+                Try again
+              </Button>
+            </EmptyContent>
+          </Empty>
+        ) : data.pending ? (
+          <div className={GRID}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-[118px] rounded-[10px]" />
+            ))}
+          </div>
+        ) : groups.accounts.length === 0 ? (
+          <p className="text-muted-foreground">
+            This substrate ships no providers that bring data in.
+          </p>
+        ) : (
+          <div className={GRID}>{groups.accounts.map(providerCard)}</div>
+        )}
+      </section>
+      {groups.tools.length > 0 && (
+        <section aria-labelledby="tools">
+          <SectionHead
+            id="tools"
+            title="Tools for your agents"
+            hint={
+              operatorServesTools(items) ? (
+                <AllowanceNote words={words} />
+              ) : (
+                "services your agents call for you"
+              )
+            }
+          />
+          <div className={GRID}>{groups.tools.map(providerCard)}</div>
+        </section>
       )}
+      <ModelsGroup
+        keys={keys}
+        items={items}
+        words={words}
+        technical={technical}
+        focused={model}
+      />
       {technical && !data.pending && !data.error && (
         <OtherPackages
           rows={data.others}
@@ -130,6 +242,96 @@ export function ProvidersPage() {
         />
       )}
     </TablePage>
+  )
+}
+
+/** The seeded rows first, in the seed's order, then the reader's own by
+ * name. */
+function modelOrder(rows: readonly SubstrateRecord[]): SubstrateRecord[] {
+  const seeded = Object.keys(LLM_PROVIDER_SEED)
+  const rank = (id: string) => {
+    const at = seeded.indexOf(id)
+    return at < 0 ? seeded.length : at
+  }
+  return [...rows].sort(
+    (a, b) =>
+      rank(a.id) - rank(b.id) || modelName(a).localeCompare(modelName(b))
+  )
+}
+
+function ModelsGroup({
+  keys,
+  items,
+  words,
+  technical,
+  focused,
+}: {
+  keys: ModelKeys
+  items: readonly OperatorDefault[] | undefined
+  words: OperatorWords
+  technical: boolean
+  focused?: string
+}) {
+  const allowance = keys.read?.operator?.allowance
+  const rows = keys.rows ? modelOrder(keys.rows) : undefined
+  const removed = rows
+    ? Object.keys(LLM_PROVIDER_SEED).filter(
+        (id) => !rows.some((r) => r.id === id)
+      )
+    : []
+  let body: ReactNode
+  if (keys.error) {
+    body = (
+      <p role="alert" className="text-destructive">
+        The AI models didn’t load: {keys.error.message}
+      </p>
+    )
+  } else if (!rows) {
+    body = (
+      <div className={GRID}>
+        {Array.from({ length: 3 }, (_, i) => (
+          <Skeleton key={i} className="h-[118px] rounded-[10px]" />
+        ))}
+      </div>
+    )
+  } else {
+    body = (
+      <div className={GRID}>
+        {rows.map((row) => (
+          <ModelCard
+            key={row.id}
+            row={row}
+            modelKey={keys.keyOf(row)}
+            words={words}
+            search={searchLine(items, row.id, words)}
+            technical={technical}
+            focused={focused === row.id}
+          />
+        ))}
+        {removed.map((id) => (
+          <AddModelCard
+            key={id}
+            id={id}
+            words={words}
+            operatorOffers={Boolean(modelItem(items, id)?.operatorOffers)}
+            technical={technical}
+          />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <section aria-labelledby="ai-models">
+      <SectionHead
+        id="ai-models"
+        title="AI models"
+        hint="what your agents think with"
+      />
+      {allowance && operatorServesAny(items) && (
+        <AllowanceBar allowance={allowance} words={words} />
+      )}
+      {body}
+    </section>
   )
 }
 
@@ -145,12 +347,18 @@ function ProviderCard({
   entry,
   chain,
   technical,
+  items,
+  words,
 }: {
   entry: ProviderEntry
   chain: RequirementNode[]
   technical: boolean
+  items: readonly OperatorDefault[] | undefined
+  words: OperatorWords
 }) {
   const { row, info, standing } = entry
+  const whose = packageWhoseKey(items, row.id, info.name, words)
+  const failed = installFailure(items, row.id)
   return (
     <div
       data-slot="provider-card"
@@ -183,6 +391,18 @@ function ProviderCard({
       {row.catalog?.description && (
         <p className="line-clamp-2 text-[12.5px] text-muted-foreground">
           {firstSentence(row.catalog.description)}
+        </p>
+      )}
+      {whose && <p className="text-[12.5px]">{whose.line}</p>}
+      {whose?.notice && (
+        <p className="rounded-md bg-warn-soft px-2 py-1 text-[12px] text-warning">
+          {whose.notice}
+        </p>
+      )}
+      {failed !== undefined && (
+        <p className="text-[12.5px] text-destructive">
+          {words.Name} couldn’t add it for you
+          {failed ? `: ${failed}` : "."}
         </p>
       )}
       <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -237,7 +457,7 @@ function OtherPackages({
       <SectionHead
         id="other-packages"
         title="Other packages"
-        hint="Samples you added and packages added by hand. They are not providers: nothing syncs them."
+        hint="Samples you added, packages added by hand, and the substrate’s own."
       />
       {pendingUpgrades.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">

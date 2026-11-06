@@ -252,6 +252,16 @@ export const assistantsRoute = createRoute({
   component: AssistantsPage,
 })
 
+// Services was a page of its own before Providers listed the AI models and
+// the operator's keys (decision 0233); a bookmark lands on Providers.
+export const servicesRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/services",
+  beforeLoad: () => {
+    throw redirect({ to: "/providers", replace: true })
+  },
+})
+
 // A bundle's settings live on its Providers page; the `$id` is the bundle id
 // (`<authority>/<package>`), the same prefix its setting records carry.
 export const bundleSettingsRoute = createRoute({
@@ -433,8 +443,15 @@ export const toolRoute = createRoute({
 export const providersRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/providers",
-  validateSearch: (search: Record<string, unknown>): OAuthReturnSearch =>
-    oauthReturnSearch(search),
+  // `model` names an AI model card (an llm/provider row id) to scroll to,
+  // with its key form open where it has no key: an agent's "Add your key"
+  // links there.
+  validateSearch: (
+    search: Record<string, unknown>
+  ): OAuthReturnSearch & { model?: string } => ({
+    model: searchText(search.model),
+    ...oauthReturnSearch(search),
+  }),
   component: ProvidersPage,
 })
 
@@ -466,6 +483,7 @@ const routeTree = rootRoute.addChildren([
     connectionDetailRoute,
     settingsRoute,
     assistantsRoute,
+    servicesRoute,
     bundleSettingsRoute,
     agentsRoute,
     agentRoute,

@@ -77,9 +77,8 @@ import {
   useSidebarPreferences,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
-import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
+import { useProvidersInUse } from "@/hooks/use-model-keys"
 import { logout } from "@/lib/api/auth"
-import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
@@ -493,12 +492,10 @@ export function Favorites() {
   )
 }
 
-/** How many providers this repository has added, beside the Providers row. */
-function ProviderCount() {
-  const statuses = useQuery(bundleStatusesQueryOptions)
-  const count = (statuses.data ?? []).filter(
-    (b) => b.authority === PROVIDERS_AUTHORITY
-  ).length
+/** How many things Providers shows as set up, beside its row: the installed
+ * provider packages and the AI models whose key resolves. */
+export function ProviderCount() {
+  const { count } = useProvidersInUse()
   if (!count) return null
   return (
     <span className="ml-auto text-[11.5px] text-faint tabular-nums">

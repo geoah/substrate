@@ -49,11 +49,24 @@ describe("providersSummary", () => {
         package: "tasks",
       }),
     ])
-    expect(summary).toEqual({ big: "1 added", sub: "Google connected" })
+    expect(summary).toEqual({ big: "1 in use", sub: "Google connected" })
+  })
+
+  it("counts the AI models whose key resolves beside the providers", () => {
+    expect(
+      providersSummary([status({ accounts: 1 })], ["OpenAI", "Anthropic"])
+    ).toEqual({
+      big: "3 in use",
+      sub: "Google connected · AI models: OpenAI and Anthropic",
+    })
+    expect(providersSummary([], ["OpenAI"])).toEqual({
+      big: "1 in use",
+      sub: "AI models: OpenAI",
+    })
   })
 
   it("invites a first provider when there is none", () => {
-    expect(providersSummary([]).big).toBe("None added")
+    expect(providersSummary([]).big).toBe("None in use")
   })
 })
 

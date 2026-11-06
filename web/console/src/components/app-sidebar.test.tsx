@@ -43,7 +43,12 @@ import type { KindInfo } from "@/lib/api/types"
 import { saveSession } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
 import { useSidebarPeek } from "./app-shell"
-import { AppSidebar, CollectionGroupNav, Favorites } from "./app-sidebar"
+import {
+  AppSidebar,
+  CollectionGroupNav,
+  Favorites,
+  ProviderCount,
+} from "./app-sidebar"
 import { ConsolePreferencesProvider } from "./console-preferences"
 import { SidebarProvider, SidebarTrigger } from "./ui/sidebar"
 
@@ -473,5 +478,55 @@ describe("a collapsed sidebar", () => {
     fireEvent.click(toggle)
     await screen.findByTestId("edge")
     expect(sidebar().dataset.peek).toBeUndefined()
+  })
+})
+
+/** The count beside Providers is what that page shows as set up: the
+ * installed provider packages and the AI models whose key resolves. */
+describe("the Providers count", () => {
+  it("adds the AI models with a key to the installed providers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const url = String(input)
+        if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
+          return Response.json({
+            items: [
+              {
+                id: "providers.substrate.reamde.dev/google",
+                name: "google",
+                authority: "providers.substrate.reamde.dev",
+                package: "google",
+                installed: true,
+                enabled: true,
+                accounts: 1,
+                functions: 0,
+                kinds: 0,
+                liveRecords: 0,
+              },
+            ],
+          })
+        if (url.startsWith("/api/v1/records"))
+          return Response.json({
+            records: [
+              {
+                id: "openai",
+                kind: "substrate.reamde.dev/llm/provider",
+                version: 1,
+                properties: { apiKey: "••••" },
+              },
+              {
+                id: "gemini",
+                kind: "substrate.reamde.dev/llm/provider",
+                version: 1,
+                properties: {},
+              },
+            ],
+          })
+        return Response.json({ features: [] })
+      })
+    )
+    renderTree(<ProviderCount />)
+    expect(await screen.findByText("2")).toBeTruthy()
   })
 })

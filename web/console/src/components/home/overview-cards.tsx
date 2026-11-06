@@ -13,10 +13,10 @@ import {
 } from "lucide-react"
 
 import { Skeleton } from "@/components/ui/skeleton"
+import { useProvidersInUse } from "@/hooks/use-model-keys"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { agentName } from "@/lib/agent-chat"
 import { agentsQueryOptions } from "@/lib/api/agents"
-import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, splitKind } from "@/lib/api/http"
 import { recordsQueryOptions } from "@/lib/api/records"
 import type { CollectionGroup } from "@/lib/collections"
@@ -80,7 +80,7 @@ export function OverviewCards({
   /** The collection groups, when the kind registry has answered. */
   groups: CollectionGroup[] | undefined
 }): ReactNode {
-  const statuses = useQuery(bundleStatusesQueryOptions)
+  const inUse = useProvidersInUse()
   const agents = useQuery(agentsQueryOptions())
   const functions = useQuery(functionsQueryOptions)
 
@@ -92,7 +92,10 @@ export function OverviewCards({
         groups.filter((g) => g.type === "provider").length
       )
     : undefined
-  const providers = statuses.data ? providersSummary(statuses.data) : undefined
+  const providers =
+    inUse.packages && inUse.models
+      ? providersSummary(inUse.packages, inUse.models)
+      : undefined
   const agentNames = (agents.data?.records ?? []).map((r) => agentName(r.id))
   const agentSummary = agents.data
     ? {

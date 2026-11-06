@@ -33,18 +33,24 @@ export function providerState(b: BundleStatus): string {
   return `${name} needs an account`
 }
 
-export function providersSummary(statuses: BundleStatus[]): CardSummary {
+/** Home's Providers card: what the Providers page shows as set up, counted
+ * as the sidebar counts it (the installed provider packages and the AI models
+ * whose key resolves), each provider's state and the models by name. */
+export function providersSummary(
+  statuses: BundleStatus[],
+  models: string[] = []
+): CardSummary {
   const providers = statuses.filter((b) => b.authority === PROVIDERS_AUTHORITY)
-  if (!providers.length) {
+  const count = providers.length + models.length
+  if (!count) {
     return {
-      big: "None added",
+      big: "None in use",
       sub: "Bring in your mail, calendar or contacts",
     }
   }
-  return {
-    big: `${providers.length.toLocaleString()} added`,
-    sub: providers.map(providerState).join(" · "),
-  }
+  const sub = providers.map(providerState)
+  if (models.length) sub.push(`AI models: ${namesSummary(models)}`)
+  return { big: `${count.toLocaleString()} in use`, sub: sub.join(" · ") }
 }
 
 export function dataSummary(
