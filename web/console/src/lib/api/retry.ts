@@ -4,7 +4,9 @@
  * which the server answers while its aggregate slots are busy and always
  * with a Retry-After. One narrowed to `observed_rederiving` is not asked
  * again: the re-derivation takes minutes, and the page says so with a
- * button to read again. Nor is one whose Retry-After is longer than
+ * button to read again. Nor is one narrowed to `key_refused`: the vendor
+ * answers the same until someone writes a working key. Nor is one whose
+ * Retry-After is longer than
  * `MAX_WAIT_S`: a refusal only a restart lifts names 30 seconds, and a
  * page that sat loading for a minute before saying so would hide it.
  * Every other refusal is definitive. */
@@ -27,7 +29,9 @@ export function retryRead(failureCount: number, error: unknown): boolean {
     const transient =
       error.code === "network" ||
       error.code === "rate_limited" ||
-      (error.code === "unavailable" && error.reason !== "observed_rederiving")
+      (error.code === "unavailable" &&
+        error.reason !== "observed_rederiving" &&
+        error.reason !== "key_refused")
     if (!transient) return false
     if (error.retryAfter && error.retryAfter > MAX_WAIT_S) return false
   }

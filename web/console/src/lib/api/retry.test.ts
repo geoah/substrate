@@ -1,6 +1,6 @@
 /** The retry policy every console query follows: a busy server's 503 is
  * asked again twice after the Retry-After it names, a re-derivation never,
- * and a definitive refusal never. */
+ * a refused key never, and a definitive refusal never. */
 
 import { describe, expect, it } from "vitest"
 
@@ -17,6 +17,15 @@ const rederiving = new ApiError(
   30,
   "observed_rederiving"
 )
+const refusedKey = new ApiError(
+  "unavailable",
+  "OpenAI refused this key (401).",
+  503,
+  [],
+  [],
+  1,
+  "key_refused"
+)
 const invalid = new ApiError("validation", "no", 422, ["aggregate.range: no"])
 const offline = new ApiError("network", "offline", 0)
 
@@ -30,6 +39,10 @@ describe("retryRead", () => {
   it("never asks again while the server re-derives, or after a definitive refusal", () => {
     expect(retryRead(0, rederiving)).toBe(false)
     expect(retryRead(0, invalid)).toBe(false)
+  })
+
+  it("never asks again after the vendor refused the key, however short the Retry-After", () => {
+    expect(retryRead(0, refusedKey)).toBe(false)
   })
 
   it("never waits out a long Retry-After, such as a restart's 30 seconds", () => {

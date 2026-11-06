@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -552,5 +553,66 @@ func TestATokenLeaseEndsAtItsExpiryAndOnARefusedRead(t *testing.T) {
 	var none *tokenLease
 	if err := none.alive(ctx, 0); err != nil {
 		t.Fatalf("a full-access token's absent lease = %v", err)
+	}
+}
+
+// keyRefusal is the engine's refusal of a model call whose key the vendor
+// refused: plain text under substrate.ErrKeyRefused.
+type keyRefusal string
+
+func (e keyRefusal) Error() string        { return string(e) }
+func (e keyRefusal) Is(target error) bool { return target == substrate.ErrKeyRefused }
+
+// refusingChatDataset answers every chat with err before its first event.
+type refusingChatDataset struct {
+	*agentDataset
+	err error
+}
+
+func (d *refusingChatDataset) ChatAgent(context.Context, substrate.Actor, string, substrate.ChatInput, func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	return nil, d.err
+}
+
+// A chat the token may hold that fails because the vendor refused the key,
+// or because the operator's allowance is spent, is no scope failure: a key
+// refusal answers 503 `unavailable` with the reason `key_refused` and a
+// Retry-After, the allowance 403 `guard`, and neither carries
+// `WWW-Authenticate: insufficient_scope`, which would send the app to ask
+// for scopes that change nothing.
+func TestAScopedChatRefusedForTheKeyOrTheAllowanceIsNoScopeFailure(t *testing.T) {
+	e, _ := newAgentEnv(t)
+	app := e.grant("agents:~/chat/*", []string{"agents:" + fakeRepository + "/chat/*"})
+	wrap := e.svc.wrap
+	var refusal error
+	e.svc.wrap = func(d *fakeDataset) substrate.Dataset {
+		return &refusingChatDataset{agentDataset: wrap(d).(*agentDataset), err: refusal}
+	}
+	chat := func() *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, "/api/v1/"+corePackage+"/agent/"+url.PathEscape(talkedAgent)+"/chat", app, []byte(`{"message":"hi"}`), "application/json")
+	}
+
+	const text = "OpenAI refused this key (401). Add a working key on the OpenAI card under Providers."
+	refusal = keyRefusal(text)
+	got := chat()
+	wantStatus(t, got, http.StatusServiceUnavailable)
+	p := decodeJSON[substrate.ErrorEnvelope](t, got).Error
+	if p.Code != codeUnavailable || p.Reason != substrate.ReasonKeyRefused || p.Message != text {
+		t.Fatalf("the refusal answered %+v, want unavailable/key_refused with the plain text", p)
+	}
+	if ra := got.Header().Get("Retry-After"); ra != "60" {
+		t.Fatalf("Retry-After = %q, want 60", ra)
+	}
+	if wa := got.Header().Get("WWW-Authenticate"); wa != "" {
+		t.Fatalf("a refused key answered WWW-Authenticate %q", wa)
+	}
+
+	refusal = fmt.Errorf("%w: today's allowance from Example is used up", substrate.ErrAllowance)
+	got = chat()
+	wantStatus(t, got, http.StatusForbidden)
+	if p := decodeJSON[substrate.ErrorEnvelope](t, got).Error; p.Code != codeGuard || p.Reason != substrate.ReasonQuota {
+		t.Fatalf("the allowance answered %+v, want guard/quota", p)
+	}
+	if wa := got.Header().Get("WWW-Authenticate"); wa != "" {
+		t.Fatalf("the allowance answered WWW-Authenticate %q", wa)
 	}
 }

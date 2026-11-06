@@ -103,6 +103,16 @@ var (
 	// `guard`, and the payload's reason is ReasonQuota so a client tells it
 	// from every other guard.
 	ErrAllowance = fmt.Errorf("%w: daily allowance", ErrGuard)
+	// ErrKeyRefused refuses a model call because the vendor refused the key
+	// it carried (a 401, or a 403 whose error names the key): the
+	// operator's key or the owner's own on an llm/provider row. The caller's
+	// own access is not in question, so it is neither ErrGuard nor
+	// ErrForbidden, and nothing changes until someone writes a working key,
+	// so it is not ErrUnavailable, which an engine caller may retry. The API
+	// answers it 503 `unavailable` with Retry-After, as it answers
+	// ErrRestartRequired, and the payload's reason is ReasonKeyRefused. The
+	// message names the vendor and where to add a key.
+	ErrKeyRefused = errors.New("substrate: the provider refused its key")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -110,6 +120,9 @@ const ReasonObservedRederiving = "observed_rederiving"
 
 // ReasonQuota is the ErrorPayload reason of ErrAllowance.
 const ReasonQuota = "quota"
+
+// ReasonKeyRefused is the ErrorPayload reason of ErrKeyRefused.
+const ReasonKeyRefused = "key_refused"
 
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
@@ -123,7 +136,8 @@ type ErrorEnvelope struct {
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
-// set: ReasonObservedRederiving on `unavailable` and ReasonQuota on `guard`.
+// set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`, and
+// ReasonQuota on `guard`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

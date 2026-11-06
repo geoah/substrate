@@ -67,6 +67,11 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems ..
 // lifts (substrate.ErrRestartRequired).
 const restartRetryAfter = 30 * time.Second
 
+// keyRefusedRetryAfter is the Retry-After on a model call the vendor refused
+// for its key (substrate.ErrKeyRefused): the embed drain's first wait on a
+// refused key, and longer than the console waits out on its own.
+const keyRefusedRetryAfter = time.Minute
+
 // writeUnavailable is the 503 emit: a transient condition the caller should
 // retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
@@ -135,6 +140,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
 	case errors.Is(err, substrate.ErrTooLarge):
 		return http.StatusRequestEntityTooLarge, substrate.ErrorPayload{Code: codeBadRequest, Message: err.Error()}
+	case errors.Is(err, substrate.ErrKeyRefused):
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonKeyRefused, Message: err.Error()}
 	case errors.Is(err, substrate.ErrObservedRederiving):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonObservedRederiving, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
@@ -145,7 +152,11 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 }
 
 // writeSubstrateError maps the engine's sentinel errors onto the wire
-// envelope; unknown errors are 500 without leaking their text shape.
+// envelope; unknown errors are 500 without leaking their text shape. A
+// `forbidden` to an app's scoped token carries `WWW-Authenticate:
+// insufficient_scope`, because the scoped surface refuses with
+// substrate.ErrForbidden; no other refusal does, since no scope the app
+// could ask for changes it.
 //
 // A 5xx is logged at ERROR with the request's method, route and repository,
 // because a line without them cannot be traced to anything. A failure that is
@@ -154,7 +165,7 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 // nobody. A 503 is logged by writeUnavailableCause.
 func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
-	if status == http.StatusForbidden {
+	if p.Code == codeForbidden {
 		if _, scoped := substrate.ScopesFrom(r.Context()); scoped {
 			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 		}
@@ -177,8 +188,9 @@ func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 // with the request, because the cause (a full disk under the data root, a
 // database that refused the token lookup) is a server condition the operator
 // must see. A refusal only a restart lifts is an ERROR, and its client is
-// told to come back later than a moment's wait. Any other is a WARN, and a
-// client's own cancellation a DEBUG.
+// told to come back later than a moment's wait; so is a key the vendor
+// refused, as a WARN. Any other is a WARN, and a client's own cancellation a
+// DEBUG.
 func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p substrate.ErrorPayload) {
 	retryAfter := time.Second
 	attrs := append(requestLogAttrs(r), "error", err)
@@ -186,6 +198,9 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p 
 	case errors.Is(err, substrate.ErrRestartRequired):
 		slog.Error("request refused until the server restarts", attrs...)
 		retryAfter = restartRetryAfter
+	case errors.Is(err, substrate.ErrKeyRefused):
+		slog.Warn("request answered unavailable: the vendor refused the key", attrs...)
+		retryAfter = keyRefusedRetryAfter
 	case clientCanceled(r.Context(), err):
 		slog.Debug("request canceled by the client", attrs...)
 	default:
