@@ -1,6 +1,6 @@
 package engine
 
-// The operator's OAuth clients (docs/plans/host-defaults.md, decision 0232):
+// The operator's OAuth clients (docs/plans/host-defaults.md, decision 0235):
 // a published provider the operator's defaults file lists under
 // `oauthClients` signs in through the operator's client wherever the
 // provider's OAuth client input resolves to no record at all. The fallback
