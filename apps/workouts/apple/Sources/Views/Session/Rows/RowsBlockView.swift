@@ -145,9 +145,9 @@ struct RowsBlockView: View {
                 Button {
                     withAnimation(.smooth(duration: 0.25)) { _ = screen.expanded.remove(block.id) }
                 } label: {
-                    roundIcon("chevron.up")
+                    RowsGlassIcon(systemImage: "chevron.up")
                 }
-                .buttonStyle(.plain)
+                .rowsGlassCircle(tint: .accentColor)
                 .accessibilityLabel("Fold \(spokenTitle)")
             }
             menu
@@ -201,19 +201,10 @@ struct RowsBlockView: View {
                 ExerciseMenuItems(card: card, group: nil, allCards: presentation.cards)
             }
         } label: {
-            roundIcon("ellipsis")
+            RowsGlassIcon(systemImage: "ellipsis")
         }
+        .rowsGlassCircle(tint: .accentColor)
         .accessibilityLabel("\(spokenTitle) options")
-    }
-
-    private func roundIcon(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.body.weight(.bold))
-            .foregroundStyle(Color.accentColor)
-            .frame(width: 34, height: 34)
-            .background(Color(.tertiarySystemFill), in: .circle)
-            .frame(width: 44, height: 44)
-            .contentShape(.rect)
     }
 
     // MARK: - Lines

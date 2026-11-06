@@ -6,7 +6,7 @@ import WorkoutsCore
 /// being fixed and its draft, which field the keypad types into, which
 /// finished blocks and warm-up folds are open, the RPE meaning shown for a
 /// moment, the undo offer after a Log, an untick or a delete, the set a
-/// "Then" tap marks, the island's RPE picker, and what the list reports for
+/// "Next" tap marks, the island's RPE picker, and what the list reports for
 /// the island's dock (`RowsDock` decides it). The session lives in
 /// `SessionController`; this never holds a rule. Every value it shows and
 /// every change it sends comes from `SessionPresentation.rowsLayout`.
@@ -61,7 +61,7 @@ final class RowsScreenModel {
         var kind: Kind = .logged
     }
 
-    /// A set a "Then" tap took the list to, marked for a moment.
+    /// A set a "Next" tap took the list to, marked for a moment.
     struct Mark: Equatable {
         var row: RowID
         var token: Int
@@ -79,7 +79,7 @@ final class RowsScreenModel {
     var undo: Undo?
     /// The set just logged: tinted green for a moment.
     var fresh: RowID?
-    /// The set a "Then" tap took the list to.
+    /// The set a "Next" tap took the list to.
     var mark: Mark?
     /// The island's reps left, open on the docked set.
     var islandRPE: RowID?
@@ -381,7 +381,7 @@ final class RowsScreenModel {
         }
     }
 
-    /// "Then …": the list goes to that set and marks it for a moment; nothing opens.
+    /// "Next …": the list goes to that set and marks it for a moment; nothing opens.
     func showLine(_ row: RowID, session: SessionModel) {
         let mark = Mark(row: row, token: next())
         self.mark = mark

@@ -931,7 +931,7 @@ struct RowsBuilder {
         let after = afterRow(open)
         guard let next = after.next, next != open else { return nil }
         let text = nextText(next, from: open, in: after.state).capitalizedFirst
-        return RowsAfterPart(row: lineShowing(next, in: blocks), label: "Then", text: text, sentence: "Then \(text)")
+        return RowsAfterPart(row: lineShowing(next, in: blocks), label: "Next", text: text, sentence: "Next: \(text)")
     }
 
     /// The line a tap on "Then" takes the list to: the set's own, or for a

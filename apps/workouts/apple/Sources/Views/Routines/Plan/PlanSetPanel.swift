@@ -84,12 +84,9 @@ struct PlanSetPanel<MenuItems: View>: View {
             Menu {
                 menuItems()
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
+                RowsGlassIcon(systemImage: "ellipsis")
             }
+            .rowsGlassCircle(tint: .secondary)
             .accessibilityLabel("\(editor.title) options")
         }
         .frame(minHeight: 44)

@@ -2169,7 +2169,7 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 | Leg Press (Machine)  Set 3                    ⌃  |     the next set, docked once its editor is
 | (− 110 kg +) (− 8 reps +)   2 left   [✓ Log]     |     scrolled out of view,
 |  ----------------------------------------------  |
-| Then  Iso-Lateral Chest Press, set 1, 25 kg × 7 › |     and the one after it
+| Next  Iso-Lateral Chest Press, set 1, 25 kg × 7 › |     and the one after it
 +--------------------------------------------------+
 ```
 
@@ -2240,8 +2240,8 @@ line when fixing). In order:
   2026-11-06): the number at 26 pt semibold with monospaced digits and a faint dotted underline (a tap opens the
   keypad; the target is at least 44 pt tall), its unit (15 pt secondary) and `last` (13 pt secondary) under them; on
   the right, under the thumb, the row's round buttons and then the stepper: one tinted capsule, 44 pt tall, two 56 pt
-  halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05") that repeat while held. The first round button, a 44 pt tinted
-  circle with `arrow.uturn.backward`, is the reset (back to the suggestion, or to what was logged when fixing; VoiceOver
+  halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05") that repeat while held. The first round button, a 44 pt glass
+  circle (§8) with `arrow.uturn.backward`, is the reset (back to the suggestion, or to what was logged when fixing; VoiceOver
   reads "Back to 8"); its place is kept while there is nothing to go back to, so a step never shifts the row. A changed number is drawn in the accent colour. A value with nothing to log shows a hint
   ("≈15") or a dash in grey italics, outlined in orange when it is required. A field holds a number, never words: a
   drop or a mini-set the plan takes to failure says so once, in the header's note ("to failure", "at 25 kg, to
@@ -2301,7 +2301,7 @@ its "up next" tag, and the rest keeps running.
 
 **Any order.** A tap on any pending set, in any exercise, opens it at once; it can be edited and logged like the
 suggested one. Sets passed over stay plain pending sets: no tag, no waiting state. After a Log the suggestion, and the
-island's "Then …", pick up after the set just logged (§4.6 rule 2): a set skipped earlier is not pulled forward, it
+island's "Next …", pick up after the set just logged (§4.6 rule 2): a set skipped earlier is not pulled forward, it
 comes back when the plan wraps round to it (the owner's call,
 [decisions U8](docs/decisions.md#u8-after-an-out-of-order-log-then-follows-the-plan-from-that-set)).
 
@@ -2365,7 +2365,8 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    moves the bar keeps its height until the list is idle, then gives it back animated (a plain fade's curve under
    Reduce Motion), so the content neither moves under a finger nor jumps after it lifts; a list that never says it
    is idle gives the height back after four seconds.
-3. **After that** (`RowsAfterPart`): one line, "Then" in the accent and the set after the next one with its values. A
+3. **After that** (`RowsAfterPart`): one line, "Next" in the accent and the set after the next one with its values,
+   cut short at its end when it does not fit (owner, 2026-11-06). A
    tap takes the list to that set and washes it in the accent for a moment; it never opens it, and the open set stays
    open (the owner opens the other with a tap of its own, owner, 2026-11-02). Any set in the list is a target, a
    second side, a drop or a cluster's next part as much as any; a drop still waiting on its set is drawn as "+ drop"
@@ -2592,7 +2593,12 @@ Glass is a functional layer for navigation and controls; content never gets it (
 - menus (set kind, exercise, group, rest presets, toolbar overflow) and confirmation dialogs and alerts.
 
 **Glass, custom, in the Rows layout** (§7.6a): the island at the bottom, the keypad that floats in its place, and the
-undo offer above it, each `.glassEffect(.regular)`, with opaque fills for the buttons on them. Nothing else in Rows is glass.
+undo offer above it, each `.glassEffect(.regular)`, with opaque fills for the buttons on them; and every round button
+that opens a menu, with the round buttons beside them: a block's and a set's `…`, a block's fold chevron, a value's
+reset and why the set ended (`.buttonStyle(.glass)`, `.glassProminent` once a reason is chosen, a circle in the
+panel's tint; `RowsGlassIcon`, `rowsGlassCircle`). A system menu grows out of a glass button it was opened from,
+rather than fading in beside it, so the owner sees where it came from (owner, 2026-11-06); a routine's plan cards and
+set panel draw their `…` the same. Nothing else in Rows is glass.
 
 **Glass, custom, in the Table layout, exactly one element**: the rest bar in the session cover: a `safeAreaBar(edge: .bottom)` holding a
 `GlassEffectContainer(spacing: 6)` (under the row's spacing, so the controls stay separate shapes); the countdown pill uses `.glassEffect(.regular.tint(color))` and

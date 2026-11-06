@@ -210,8 +210,8 @@ struct RowsOpenSetTests {
         #expect(
             island.after
                 == RowsAfterPart(
-                    row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
-                    sentence: "Then Set 3, 105 kg × 10"))
+                    row: set3.id, label: "Next", text: "Set 3, 105 kg × 10",
+                    sentence: "Next: Set 3, 105 kg × 10"))
         #expect(!island.isCounting)
     }
 
@@ -683,8 +683,8 @@ struct RowsStructureTests {
         #expect(
             pausing.island.after
                 == RowsAfterPart(
-                    row: nil, label: "Then", text: "Mini-set 2",
-                    sentence: "Then Mini-set 2"))
+                    row: nil, label: "Next", text: "Mini-set 2",
+                    sentence: "Next: Mini-set 2"))
 
         try session.tick("lateral-raise", 2, SetValues(load: .kg(6), reps: 4), at: 230)
         try session.tick("lateral-raise", 3, SetValues(load: .kg(6), reps: 4), at: 260)

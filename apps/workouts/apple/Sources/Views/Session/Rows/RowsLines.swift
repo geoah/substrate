@@ -20,7 +20,7 @@ struct RowsSetLine<MenuItems: View>: View {
     var isResting = false
     /// Just logged: a green wash for a moment.
     var isFresh = false
-    /// A "Then" tap took the list here: an accent wash for a moment.
+    /// A "Next" tap took the list here: an accent wash for a moment.
     var isMarked = false
     /// A done set: a tap on its check unticks it.
     var onUntick: (() -> Void)?
@@ -47,12 +47,9 @@ struct RowsSetLine<MenuItems: View>: View {
                 Menu {
                     menuItems()
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(.rect)
+                    RowsGlassIcon(systemImage: "ellipsis", glyph: 16)
                 }
+                .rowsGlassCircle(tint: .secondary)
                 .accessibilityLabel("\(item.sentence) options")
                 .accessibilityHint("Untick, delete, set kind, rest and note")
                 .padding(.trailing, 4)

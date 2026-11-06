@@ -23,7 +23,7 @@ struct RowsIslandTests {
         let next = RowsNextPart(
             row: RowID("r1"), exercise: "Leg Press (Machine)", setLabel: "1", label: "", tint: .accent,
             fields: [], rpe: nil, primary: button, timerStartedAt: nil, sentence: "")
-        let after = RowsAfterPart(row: RowID("r2"), label: "Then", text: "Set 2, 90 kg × 10", sentence: "")
+        let after = RowsAfterPart(row: RowID("r2"), label: "Next", text: "Set 2, 90 kg × 10", sentence: "")
         let rest = RowsRestPart(
             kind: .rest, title: "Rest", startedAt: engineEpoch, endsAt: engineEpoch.addingTimeInterval(90),
             totalText: "of 1:30", minus: button, plus: button, skip: button)
