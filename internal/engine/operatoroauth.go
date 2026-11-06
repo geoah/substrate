@@ -18,10 +18,13 @@ package engine
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
@@ -42,6 +45,29 @@ const (
 // reasonOAuthClientChanged is what an account whose grant came from another
 // client than the one resolving now says in its tokenError.
 const reasonOAuthClientChanged = "the OAuth client changed since this account connected; reconnect the account"
+
+// The points testOAuthPoint runs at.
+const (
+	// oauthPointConfigInputs: an invocation's config has its inputs, and its
+	// accounts have no token yet (resolveFunctionConfig).
+	oauthPointConfigInputs = "config-inputs"
+	// oauthPointTokenRead: an account's token is about to be read
+	// (accountAccessToken).
+	oauthPointTokenRead = "token-read"
+	// oauthPointRefreshTurn: a refresh is about to take its credential's
+	// turn (refreshCredential).
+	oauthPointRefreshTurn = "refresh-turn"
+	// oauthPointClientStamp: a client-change stamp is about to take the
+	// account's lock (noteOAuthClientChanged).
+	oauthPointClientStamp = "client-stamp"
+)
+
+// oauthPoint runs the test hook at point p.
+func (ds *dataset) oauthPoint(p string) {
+	if hook := ds.svc.testOAuthPoint; hook != nil {
+		hook(p)
+	}
+}
 
 // oauthClient is the client a provider's flow runs through: the person's own,
 // read off the client input's resolved record, or the operator's, from the
@@ -75,9 +101,6 @@ func (c oauthClient) provenance() map[string]any {
 // the setup item says which. The sealed clientSecret of an own record is
 // opened here, the one read that needs its plaintext.
 func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (oauthClient, error) {
-	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
-		return oauthClient{}, err
-	}
 	if b.OAuth2 == nil {
 		return oauthClient{}, fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
 	}
@@ -85,20 +108,36 @@ func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (oau
 	if err != nil {
 		return oauthClient{}, err
 	}
+	return ds.oauthClientFrom(ctx, b, ri)
+}
+
+// oauthClientFrom is oauthClientOf over ri, a resolution of b's client input
+// the caller already holds. An invocation injects the record it resolved and
+// checks grants against the client from the same resolution: two
+// resolutions would let a client record deleted between them pair the
+// record's apiBase with the operator's client.
+func (ds *dataset) oauthClientFrom(ctx context.Context, b *vocabulary.Bundle, ri resolvedInput) (oauthClient, error) {
+	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
+		return oauthClient{}, err
+	}
+	if b.OAuth2 == nil {
+		return oauthClient{}, fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
+	}
+	var err error
 	if ri.Row == nil {
 		if op := ds.operatorCovers(b, ri); op != nil {
 			return oauthClient{ID: op.ClientID, Secret: op.ClientSecret.Value(), Operator: true}, nil
 		}
-		return oauthClient{}, fmt.Errorf("%w: bundle %s's %q input does not resolve (%s) — the OAuth client record carries clientId and clientSecret",
-			substrate.ErrGuard, b.Package, b.OAuth2.ClientInput, ri.Detail)
+		return oauthClient{}, noClientError{fmt.Errorf("%w: bundle %s's %q input does not resolve (%s) — the OAuth client record carries clientId and clientSecret",
+			substrate.ErrGuard, b.Package, b.OAuth2.ClientInput, ri.Detail)}
 	}
 	c := oauthClient{ID: propString(ri.Row, "clientId")}
 	if c.Secret, err = ds.openSecretValue(ctx, propString(ri.Row, propClientSecret)); err != nil {
 		return oauthClient{}, err
 	}
 	if c.ID == "" || c.Secret == "" {
-		return oauthClient{}, fmt.Errorf("%w: bundle %s's client record %s/%s is missing clientId or clientSecret",
-			substrate.ErrGuard, b.Package, ri.Input.Kind, ri.Row.ID)
+		return oauthClient{}, noClientError{fmt.Errorf("%w: bundle %s's client record %s/%s is missing clientId or clientSecret",
+			substrate.ErrGuard, b.Package, ri.Input.Kind, ri.Row.ID)}
 	}
 	return c, nil
 }
@@ -155,41 +194,133 @@ func (ds *dataset) operatorOAuthClient(pkg string) (*operatordefaults.OAuthClien
 	return c, ""
 }
 
+// noClientError marks a client input that yields no usable client: no record
+// and no operator's client, records that resolve wrong, or a record missing
+// its id or its secret. Its text and its ErrGuard are the wrapped error's.
+type noClientError struct{ err error }
+
+func (e noClientError) Error() string { return e.err.Error() }
+func (e noClientError) Unwrap() error { return e.err }
+
+// isNoClient reports whether err says the client input yields no usable
+// client, as opposed to a refusal or a failure that says nothing about it.
+func isNoClient(err error) bool {
+	var nc noClientError
+	return errors.As(err, &nc)
+}
+
 // oauthClientChanged reports whether row, an account of kind ty, holds a
-// grant from another client than now. An account that recorded no client
-// connected before the record existed, through the person's own client. A
-// kind that cannot record one is held to nothing, as before the record
-// existed; the operator's client never serves such a kind.
+// grant from another client than now (grantClientChanged).
 func oauthClientChanged(ty *vocabulary.Kind, row *erow, now oauthClient) bool {
+	return grantClientChanged(ty, row.Props[propOAuthClient], now)
+}
+
+// grantClientChanged reports whether a grant to an account of kind ty, which
+// recorded `recorded` as the grant's client, came from another client than
+// now. An account that recorded no client connected before the record
+// existed, through the person's own client. A kind that cannot record one is
+// held to nothing, as before the record existed; the operator's client never
+// serves such a kind.
+func grantClientChanged(ty *vocabulary.Kind, recorded any, now oauthClient) bool {
 	if ty == nil || !oauthWrites(ty, propOAuthClient) {
 		return false
 	}
-	recorded, ok := row.Props[propOAuthClient].(map[string]any)
+	m, ok := recorded.(map[string]any)
 	if !ok {
 		return now.Operator
 	}
-	source, _ := recorded["source"].(string)
-	id, _ := recorded["clientId"].(string)
+	source, _ := m["source"].(string)
+	id, _ := m["clientId"].(string)
 	return source != now.source() || id != now.ID
 }
 
-// noteOAuthClientChanged stamps an account whose grant came from another
-// client than now as erroring, with reasonOAuthClientChanged. The change is
-// checked again under the account's lock, so a reconnect that landed in
-// between keeps its `connected`. A read outside the transaction first skips
-// the lock where the row already says so, because the refresh loop meets a
-// changed account on every pass.
-func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, now oauthClient) {
+// grantThroughOperator reports whether recorded, an account's `oauthClient`
+// value, names the operator's client.
+func grantThroughOperator(recorded any) bool {
+	m, _ := recorded.(map[string]any)
+	source, _ := m["source"].(string)
+	return source == oauthClientOperator
+}
+
+// errOAuthClientChanged refuses a token whose grant came from another client
+// than the one resolving now.
+var errOAuthClientChanged = errors.New(reasonOAuthClientChanged)
+
+// refuseOtherClient refuses g, a grant read with its account's recorded
+// client (getGrant), when the grant came from another client than now, and
+// stamps the account (noteOAuthClientChanged). A token is handed out or
+// refreshed only after the read that produced it passed this check, so a
+// reconnect through another client that lands after an earlier check cannot
+// slip its token past it.
+func (ds *dataset) refuseOtherClient(ctx context.Context, g credentialGrant, now oauthClient) error {
+	ty, err := ds.resolveType(g.account.Kind)
+	if err != nil || !grantClientChanged(ty, g.client, now) {
+		return nil
+	}
+	ds.noteOAuthClientChanged(ctx, g.account, g.gen)
+	return errOAuthClientChanged
+}
+
+// noClientTokenError is why an account gets no token while its bundle's
+// client resolution failed with clientErr. A grant through the operator's
+// client while no client resolves at all, as after the operator removes its
+// client from the file, needs a reconnect, and the account is stamped so;
+// any other failure is the bundle's configuration.
+func (ds *dataset) noClientTokenError(ctx context.Context, ref string, account eref, clientErr error) string {
+	const missing = "the bundle configuration is missing its client credentials"
+	if !isNoClient(clientErr) {
+		return missing
+	}
+	g, err := ds.getGrant(ctx, ref)
+	if err != nil || g.account != account || !grantThroughOperator(g.client) {
+		return missing
+	}
+	ds.noteOAuthClientChanged(ctx, account, g.gen)
+	return reasonOAuthClientChanged
+}
+
+// noteOAuthClientChanged stamps account `erroring` with
+// reasonOAuthClientChanged when its grant at credential generation gen came
+// from another client than the one resolving now. The caller's client may
+// predate a change that already settled the mismatch, so the client is
+// resolved again here; a grant through the operator's client while no
+// client resolves at all counts as changed. Under the account's lock the
+// credential must still be generation gen, as for a refusal's stamp (0180):
+// a reconnect that stored a new grant meanwhile keeps its `connected`, and
+// so does a refresh that stored one through the client resolving then. A
+// read outside the transaction first skips the lock where the row already
+// says so, because the refresh loop meets a changed account on every pass.
+func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen time.Time) {
 	row, err := ds.loadRowDB(ctx, account)
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
 	}
 	ty, err := ds.resolveType(row.Kind)
-	if err != nil || !oauthClientChanged(ty, row, now) ||
-		len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
+	if err != nil || len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
 		return
 	}
+	b, ok := ds.registry().BundleOf(ty.Package)
+	if !ok || b.OAuth2 == nil {
+		return
+	}
+	now, err := ds.oauthClientOf(ctx, b)
+	none := isNoClient(err)
+	if err != nil && !none {
+		return
+	}
+	changed := func(ty *vocabulary.Kind, row *erow) bool {
+		if none {
+			return grantThroughOperator(row.Props[propOAuthClient])
+		}
+		return oauthClientChanged(ty, row, now)
+	}
+	if !changed(ty, row) {
+		return
+	}
+	ds.oauthPoint(oauthPointClientStamp)
 	err = ds.inTx(ctx, actorOAuth, true, func(t *txn) error {
+		// completeOAuth's order: the shared registry-dependency lock, then
+		// the record, then the credential row it stores under that lock.
 		if err := t.lockRegistryDepShared(); err != nil {
 			return err
 		}
@@ -200,11 +331,22 @@ func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, now
 		if err != nil || row == nil || row.DeletedAt != nil {
 			return err
 		}
+		var current time.Time
+		err = t.row(`SELECT updated_at FROM sealed WHERE ref = $1`, propString(row, propTokenRef)).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !current.Equal(gen) {
+			return nil
+		}
 		ty, err := t.resolveType(row.Kind)
 		if err != nil {
 			return err
 		}
-		if !oauthClientChanged(ty, row, now) {
+		if !changed(ty, row) {
 			return nil
 		}
 		props := tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)

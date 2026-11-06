@@ -501,6 +501,10 @@ type service struct {
 	// stamped on the account (oauth.go refreshCredential), so a test can land
 	// a reconnect in that window.
 	testOAuthBeforeStamp func()
+	// testOAuthPoint, when set (tests only), runs at each oauthPoint* point
+	// of the OAuth facility (operatoroauth.go), so a test can land a client
+	// change or a reconnect in the window the point names.
+	testOAuthPoint func(point string)
 	// appRole is the role every repository-scoped pool assumes; empty when the
 	// cluster would not let the engine create its roles.
 	appRole string

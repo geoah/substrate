@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +52,10 @@ type opTokenFake struct {
 	expiresIn int
 	exchanges []opClientPair
 	refreshes []opClientPair
+	// onRefresh runs once, outside mu, before the next refresh is answered,
+	// and refuseRefresh answers every refresh 400 `invalid_grant`.
+	onRefresh     func()
+	refuseRefresh bool
 }
 
 type opClientPair struct{ id, secret string }
@@ -66,7 +71,25 @@ func newOpTokenFake(t *testing.T) *opTokenFake {
 		}
 		pair := opClientPair{r.Form.Get("client_id"), r.Form.Get("client_secret")}
 		f.mu.Lock()
+		hook := f.onRefresh
+		if r.Form.Get("grant_type") == "refresh_token" {
+			f.onRefresh = nil
+		} else {
+			hook = nil
+		}
+		f.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		f.mu.Lock()
 		defer f.mu.Unlock()
+		if r.Form.Get("grant_type") == "refresh_token" && f.refuseRefresh {
+			f.refreshes = append(f.refreshes, pair)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
+			return
+		}
 		out := map[string]any{"token_type": "Bearer", "expires_in": f.expiresIn}
 		switch r.Form.Get("grant_type") {
 		case "authorization_code":
@@ -86,6 +109,13 @@ func newOpTokenFake(t *testing.T) *opTokenFake {
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+// set changes the fake under its lock.
+func (f *opTokenFake) set(change func(f *opTokenFake)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	change(f)
 }
 
 func (f *opTokenFake) seen() (exchanges, refreshes []opClientPair) {
@@ -211,19 +241,84 @@ func opPutOwnClient(t *testing.T, ds *dataset, id string, props map[string]any) 
 // the consent URL's client id.
 func opConnect(t *testing.T, ds *dataset, account eref) string {
 	t.Helper()
-	ctx := context.Background()
-	consent, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	u, err := url.Parse(consent)
+	got, err := opConnectErr(ds, account)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.svc.CompleteOAuth(ctx, u.Query().Get("state"), "code-1"); err != nil {
-		t.Fatalf("callback: %v", err)
+	return got
+}
+
+// opConnectErr is opConnect for a hook off the test's goroutine.
+func opConnectErr(ds *dataset, account eref) (string, error) {
+	ctx := context.Background()
+	consent, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
+	if err != nil {
+		return "", fmt.Errorf("start: %w", err)
 	}
-	return u.Query().Get("client_id")
+	u, err := url.Parse(consent)
+	if err != nil {
+		return "", err
+	}
+	if _, err := ds.svc.CompleteOAuth(ctx, u.Query().Get("state"), "code-1"); err != nil {
+		return "", fmt.Errorf("callback: %w", err)
+	}
+	return u.Query().Get("client_id"), nil
+}
+
+// opReconnectThroughOperator deletes the person's own `default` client
+// record and reconnects the account, through the operator's client now.
+func opReconnectThroughOperator(ds *dataset, account eref) error {
+	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+		return fmt.Errorf("delete the own client: %w", err)
+	}
+	got, err := opConnectErr(ds, account)
+	if err == nil && got != opClientID {
+		err = fmt.Errorf("the reconnect named client %q, want the operator's", got)
+	}
+	return err
+}
+
+// opOwnClientWithBase is the person's own client record with an apiBase,
+// the field a body would call instead of the provider's API.
+var opOwnClientWithBase = map[string]any{
+	"clientId": ownClientID, "clientSecret": ownClientSecret, "apiBase": "http://127.0.0.1:9/",
+}
+
+// opConfigEntry builds an invocation's config for the mail package and
+// returns it with the first account's entry.
+func opConfigEntry(t *testing.T, ds *dataset) (map[string]any, map[string]any) {
+	t.Helper()
+	cfg, _, err := ds.resolveFunctionConfig(context.Background(), &vocabulary.Function{Package: opMailPackage})
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	accounts, _ := cfg["accounts"].([]any)
+	if len(accounts) != 1 {
+		t.Fatalf("config accounts = %v", cfg["accounts"])
+	}
+	return cfg, accounts[0].(map[string]any)
+}
+
+// opInjectedBase is the apiBase the config's client input carries, empty
+// for none.
+func opInjectedBase(cfg map[string]any) string {
+	inputs, _ := cfg["inputs"].(map[string]any)
+	client, _ := inputs["client"].(map[string]any)
+	props, _ := client["properties"].(map[string]any)
+	return propText(props["apiBase"])
+}
+
+// opAccountConnectedThroughOperator fails unless the account says connected,
+// carries no tokenError and records the operator's client.
+func opAccountConnectedThroughOperator(t *testing.T, ds *dataset, account eref) {
+	t.Helper()
+	row := opAccountRow(t, ds, account)
+	recorded, _ := row.Props[propOAuthClient].(map[string]any)
+	if propString(row, propTokenStatus) != tokenStatusConnected || row.Props[propTokenError] != nil ||
+		recorded["source"] != oauthClientOperator {
+		t.Fatalf("account = %v / %v / %v, want connected through the operator's client with no error",
+			row.Props[propTokenStatus], row.Props[propTokenError], recorded)
+	}
 }
 
 // propText is a property value as text, empty for none.
@@ -631,5 +726,261 @@ func TestOperatorInstallFailureIsReportedAndRetried(t *testing.T) {
 	}
 	if item := opMailItem(t, d.(*dataset)); item.Readiness != substrate.ReadinessNeedsConnect || item.Message == "the catalog is unreachable" {
 		t.Fatalf("item after the retry = %+v", item)
+	}
+}
+
+// An invocation resolves the client input once, for the record it injects
+// and the client it checks grants against. The person's own record goes
+// after the inputs are injected and before the accounts get their tokens, so
+// the operator's client resolves again by then: the operator-connected
+// account still gets no token beside the person's apiBase, and is not
+// stamped, because the operator's client is the one resolving now. The next
+// invocation reads no client record and gets the token.
+func TestOperatorOAuthConfigResolvesTheClientOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _, account := openOpMail(t)
+	opConnect(t, ds, account)
+	opPutOwnClient(t, ds, "default", opOwnClientWithBase)
+
+	var once sync.Once
+	ds.svc.testOAuthPoint = func(p string) {
+		if p != oauthPointConfigInputs {
+			return
+		}
+		once.Do(func() {
+			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+				t.Errorf("delete the own client: %v", err)
+			}
+		})
+	}
+	cfg, entry := opConfigEntry(t, ds)
+	ds.svc.testOAuthPoint = nil
+	if opInjectedBase(cfg) == "" {
+		t.Fatalf("the config does not carry the record it resolved: %v", cfg["inputs"])
+	}
+	if _, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
+		t.Fatalf("an operator-issued token reached a body beside the person's apiBase: %v", entry)
+	}
+	opAccountConnectedThroughOperator(t, ds, account)
+
+	cfg, entry = opConfigEntry(t, ds)
+	if _, has := cfg["inputs"]; has || entry["token"] != "at-"+opClientID {
+		t.Fatalf("after the record went: inputs %v, entry %v; want no client record and the token", cfg["inputs"], entry)
+	}
+}
+
+// A token is handed out, and a refresh is sent, only for the grant whose
+// recorded client was checked: the check reads the credential and the
+// account's recorded client in one statement, under the refresh's turn too.
+// Each case connects through the person's own client, whose record names an
+// apiBase, and reconnects through the operator's at one boundary of the
+// token's resolution. The account gets no token, the provider sees no
+// refresh through the stale client, and the reconnect keeps its `connected`.
+func TestOperatorOAuthTokenComesFromTheCheckedGrant(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// connectOwn opens the provider and connects an account through the
+	// person's own client, its tokens living expiresIn seconds.
+	connectOwn := func(t *testing.T, expiresIn int) (*dataset, *opTokenFake, eref) {
+		t.Helper()
+		ds, f, account := openOpMail(t)
+		f.set(func(f *opTokenFake) { f.expiresIn = expiresIn })
+		opPutOwnClient(t, ds, "default", opOwnClientWithBase)
+		if got := opConnect(t, ds, account); got != ownClientID {
+			t.Fatalf("the connect named %q", got)
+		}
+		return ds, f, account
+	}
+	// reconnectAt reconnects through the operator's client the first time
+	// the facility reaches point.
+	reconnectAt := func(t *testing.T, ds *dataset, account eref, point string) {
+		var once sync.Once
+		ds.svc.testOAuthPoint = func(p string) {
+			if p != point {
+				return
+			}
+			once.Do(func() {
+				if err := opReconnectThroughOperator(ds, account); err != nil {
+					t.Errorf("reconnect at %s: %v", point, err)
+				}
+			})
+		}
+	}
+	noToken := func(t *testing.T, ds *dataset, f *opTokenFake, account eref, cfg, entry map[string]any) {
+		t.Helper()
+		ds.svc.testOAuthPoint = nil
+		if opInjectedBase(cfg) == "" {
+			t.Fatalf("the config does not carry the person's record: %v", cfg["inputs"])
+		}
+		if tok, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
+			t.Fatalf("the operator's grant reached a body beside the person's apiBase: token %v, entry %v", tok, entry)
+		}
+		if _, refreshes := f.seen(); len(refreshes) != 0 {
+			t.Fatalf("the provider saw refreshes %+v", refreshes)
+		}
+		opAccountConnectedThroughOperator(t, ds, account)
+	}
+
+	t.Run("before the token is read", func(t *testing.T) {
+		t.Parallel()
+		ds, f, account := connectOwn(t, 3600)
+		reconnectAt(t, ds, account, oauthPointTokenRead)
+		cfg, entry := opConfigEntry(t, ds)
+		noToken(t, ds, f, account, cfg, entry)
+	})
+	t.Run("before the refresh takes its turn", func(t *testing.T) {
+		t.Parallel()
+		ds, f, account := connectOwn(t, 30) // due: inside a minute of expiry
+		reconnectAt(t, ds, account, oauthPointRefreshTurn)
+		cfg, entry := opConfigEntry(t, ds)
+		noToken(t, ds, f, account, cfg, entry)
+	})
+	t.Run("while a refused refresh is in flight", func(t *testing.T) {
+		t.Parallel()
+		ds, f, account := connectOwn(t, 30)
+		f.set(func(f *opTokenFake) {
+			f.refuseRefresh = true
+			f.onRefresh = func() {
+				if err := opReconnectThroughOperator(ds, account); err != nil {
+					t.Errorf("reconnect in flight: %v", err)
+				}
+			}
+		})
+		cfg, entry := opConfigEntry(t, ds)
+		ds.svc.testOAuthPoint = nil
+		if opInjectedBase(cfg) == "" {
+			t.Fatalf("the config does not carry the person's record: %v", cfg["inputs"])
+		}
+		if tok, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
+			t.Fatalf("the reconnect's grant reached a body beside the person's apiBase: token %v, entry %v", tok, entry)
+		}
+		if _, refreshes := f.seen(); len(refreshes) != 1 || refreshes[0].id != ownClientID {
+			t.Fatalf("refreshes = %+v, want the one refused refresh of the person's grant", refreshes)
+		}
+		opAccountConnectedThroughOperator(t, ds, account)
+	})
+	t.Run("the refresh loop and a replacement grant", func(t *testing.T) {
+		t.Parallel()
+		ds, f, account := connectOwn(t, 120) // inside the refresh window
+		var once sync.Once
+		ds.svc.testOAuthPoint = func(p string) {
+			if p != oauthPointRefreshTurn {
+				return
+			}
+			once.Do(func() {
+				// The replacement grant is already expired, so nothing but
+				// the client check stands between it and a refresh through
+				// the person's client.
+				f.set(func(f *opTokenFake) { f.expiresIn = -10 })
+				if err := opReconnectThroughOperator(ds, account); err != nil {
+					t.Errorf("reconnect: %v", err)
+				}
+			})
+		}
+		if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+			t.Fatalf("refresh pass = %d, %v; want nothing refreshed", n, err)
+		}
+		ds.svc.testOAuthPoint = nil
+		if _, refreshes := f.seen(); len(refreshes) != 0 {
+			t.Fatalf("the operator's grant was refreshed through %+v", refreshes)
+		}
+		opAccountConnectedThroughOperator(t, ds, account)
+	})
+}
+
+// A client-change stamp is about the grant its caller checked: a reconnect
+// that lands before the stamp takes the account's lock keeps its
+// `connected`. Here the refresh pass resolves the person's own client while
+// the account records the operator's; the owner then removes their record
+// and reconnects through the operator's client before the stamp runs.
+func TestOperatorOAuthClientStampSparesAReconnect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.set(func(f *opTokenFake) { f.expiresIn = 120 })
+	opConnect(t, ds, account)
+	opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+
+	var once sync.Once
+	ds.svc.testOAuthPoint = func(p string) {
+		if p != oauthPointClientStamp {
+			return
+		}
+		once.Do(func() {
+			if err := opReconnectThroughOperator(ds, account); err != nil {
+				t.Errorf("reconnect: %v", err)
+			}
+		})
+	}
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refresh pass = %d, %v; want nothing refreshed", n, err)
+	}
+	ds.svc.testOAuthPoint = nil
+	if _, refreshes := f.seen(); len(refreshes) != 0 {
+		t.Fatalf("the provider saw refreshes %+v", refreshes)
+	}
+	opAccountConnectedThroughOperator(t, ds, account)
+}
+
+// openOpMailAt opens a service over dsn and root with the OAuth facility on
+// against f and cfg as the operator's file, and returns it with the test
+// repository's dataset, creating the repository when create is set.
+func openOpMailAt(t *testing.T, dsn, root string, f *opTokenFake, cfg *operatordefaults.Config, create bool, opts ...Option) (*service, *dataset) {
+	t.Helper()
+	ctx := context.Background()
+	svc, err := OpenForTest(t, ctx, dsn, append([]Option{
+		WithDataRoot(root), WithKindsFS(SeedKinds), WithCredentialKey(TestCredentialKey),
+		WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+		WithOperatorDefaults(cfg, "Example"),
+	}, opts...)...)
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if create {
+		if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+			t.Fatalf("create repository: %v", err)
+		}
+	}
+	d, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	return svc.(*service), d.(*dataset)
+}
+
+// An operator that removes its client from the file leaves the accounts
+// connected through it with no client to refresh through: nothing is sent
+// to the provider, with or without a secret, and each account reads
+// `erroring` with the reconnect ask at the next refresh pass, and an
+// invocation gets the same reason in place of a token.
+func TestOperatorOAuthClientRemovedFromTheFileNeedsAReconnect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root := MigratedDSN(t), t.TempDir()
+	f := newOpTokenFake(t)
+	f.set(func(f *opTokenFake) { f.expiresIn = 120 })
+	svc, ds := openOpMailAt(t, dsn, root, f, opClientsConfig(), true)
+	installOpMail(t, ds, f.srv.URL+"/token", true, true)
+	account := opPutAccount(t, ds, "a1")
+	opConnect(t, ds, account)
+	_ = svc.Close()
+
+	_, ds = openOpMailAt(t, dsn, root, f, &operatordefaults.Config{}, false)
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refresh pass = %d, %v; want nothing refreshed", n, err)
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 0 {
+		t.Fatalf("the provider saw refreshes %+v with the operator's client gone", refreshes)
+	}
+	row := opAccountRow(t, ds, account)
+	if propString(row, propTokenStatus) != tokenStatusErroring || propString(row, propTokenError) != reasonOAuthClientChanged {
+		t.Fatalf("account = %v / %q, want erroring with the reconnect ask", row.Props[propTokenStatus], row.Props[propTokenError])
+	}
+	_, entry := opConfigEntry(t, ds)
+	if _, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
+		t.Fatalf("account entry = %v, want no token and the reconnect ask", entry)
 	}
 }

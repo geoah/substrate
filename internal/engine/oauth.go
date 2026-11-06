@@ -884,6 +884,13 @@ type refreshOutcome struct {
 // provider may have rotated away. A credential in backoff answers with its
 // last refusal and the provider is not asked.
 //
+// The refresh is sent through client, and only for a grant issued to it: the
+// read under the turn takes the account's recorded client with the token
+// (getGrant) and refuses one from another client (refuseOtherClient), and so
+// does every later read whose token this call returns, so a reconnect
+// through another client cannot hand its token, or its refresh token, to a
+// caller that resolved this one.
+//
 // Once the provider is asked, nothing the caller does reaches the call or
 // the store (0180): both run detached, under their own bounds, because a
 // provider that rotates refresh tokens has spent the old one by the time
@@ -895,22 +902,28 @@ type refreshOutcome struct {
 // the generation the refused token came from. The error is the
 // engine's own failure (the turn, reading the credential); everything else
 // is the outcome's.
-func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref, seen time.Time, ep oauthEndpoints) (refreshOutcome, error) {
+func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref, seen time.Time, meta *vocabulary.BundleOAuth2, client oauthClient) (refreshOutcome, error) {
+	ds.oauthPoint(oauthPointRefreshTurn)
 	k := refreshKey{repository: ds.scope.Repository, ref: ref}
 	e, err := oauthRefreshes.take(ctx, k)
 	if err != nil {
 		return refreshOutcome{}, err
 	}
 	defer oauthRefreshes.give(k, e)
-	tok, account, gen, err := ds.getCredential(ctx, ref)
+	g, err := ds.getGrant(ctx, ref)
 	if err != nil {
 		return refreshOutcome{}, err
 	}
+	tok, account, gen := g.tok, g.account, g.gen
 	out := refreshOutcome{gen: gen}
 	if account != want {
 		out.failed = errors.New("the stored credential reference belongs to another account")
 		return out, nil
 	}
+	if out.failed = ds.refuseOtherClient(ctx, g, client); out.failed != nil {
+		return out, nil
+	}
+	ep := oauthEndpointsFor(meta, client.ID, client.Secret, nil)
 	landed := false
 	// A token an earlier refresh could not store is the live grant: it is
 	// stored before anything else, and while it cannot be, it stands in for
@@ -944,10 +957,18 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 				oauthRefreshes.clear(e)
 				ds.noteTokenRefresh(storeCtx, account, nil, time.Time{})
 				ds.svc.log.Info("substrate: oauth refresh: the token kept in memory is stored", "record", account.ID, "ref", ref)
-				if tok, _, gen, err = ds.getCredential(storeCtx, ref); err != nil {
+				if g, err = ds.getGrant(storeCtx, ref); err != nil {
 					return refreshOutcome{}, err
 				}
+				tok, gen = g.tok, g.gen
 				out.gen, landed = gen, true
+				if g.account != account {
+					out.failed = errors.New("the stored credential reference belongs to another account")
+					return out, nil
+				}
+				if out.failed = ds.refuseOtherClient(storeCtx, g, client); out.failed != nil {
+					return out, nil
+				}
 				if !accessTokenDue(tok) {
 					out.tok, out.refreshed = tok, true
 					return out, nil
@@ -1006,9 +1027,14 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 		if rerr == nil && replaced {
 			ds.svc.log.Info("substrate: oauth refresh refused, but a reconnect replaced the credential first; nothing is recorded",
 				"record", account.ID, "error", err)
-			if now, nowAccount, _, gerr := ds.getCredential(storeCtx, ref); gerr == nil && nowAccount == account &&
-				(now.Expiry.IsZero() || nowUTC().Before(now.Expiry)) {
-				out.tok = now
+			if now, gerr := ds.getGrant(storeCtx, ref); gerr == nil && now.account == account &&
+				(now.tok.Expiry.IsZero() || nowUTC().Before(now.tok.Expiry)) {
+				// The reconnect may have gone through another client than
+				// the one this caller resolved.
+				if out.failed = ds.refuseOtherClient(storeCtx, now, client); out.failed != nil {
+					return out, nil
+				}
+				out.tok = now.tok
 				return out, nil
 			}
 			out.failed = err
@@ -1139,13 +1165,21 @@ func (ds *dataset) storeRefreshedToken(ctx context.Context, ref string, account 
 // ever reach one, and a ref re-pointed at ANOTHER account's row would hand
 // this bundle a live grant issued for a different connection (and, across
 // bundles, for a different provider). Refuse rather than resolve.
-func (ds *dataset) accountAccessToken(ctx context.Context, ref string, ep oauthEndpoints, want eref) (string, error) {
-	tok, account, seen, err := ds.getCredential(ctx, ref)
+// client is the bundle's client resolving now, the one the invocation's
+// config was built from: a grant issued to another client gets no token
+// (errOAuthClientChanged), checked on the same read that yields the token.
+func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref, meta *vocabulary.BundleOAuth2, client oauthClient) (string, error) {
+	ds.oauthPoint(oauthPointTokenRead)
+	g, err := ds.getGrant(ctx, ref)
 	if err != nil {
 		return "", err
 	}
+	tok, account := g.tok, g.account
 	if account != want {
 		return "", errors.New("the stored credential reference belongs to another account")
+	}
+	if err := ds.refuseOtherClient(ctx, g, client); err != nil {
+		return "", err
 	}
 	if !accessTokenDue(tok) {
 		return tok.AccessToken, nil
@@ -1153,7 +1187,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, ep oauthE
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {
 		return "", fmt.Errorf("token for %s expired and cannot refresh", account.ID)
 	}
-	out, err := ds.refreshCredential(ctx, ref, account, seen, ep)
+	out, err := ds.refreshCredential(ctx, ref, account, g.gen, meta, client)
 	if err != nil {
 		return "", err
 	}
@@ -1203,11 +1237,12 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return n, ctx.Err()
 		}
-		tok, account, seen, err := ds.getCredential(ctx, ref)
+		g, err := ds.getGrant(ctx, ref)
 		if err != nil {
 			ds.svc.log.Warn("substrate: oauth refresh: reading a credential", "ref", ref, "error", err)
 			continue
 		}
+		tok, account, seen := g.tok, g.account, g.gen
 		if tok.RefreshToken == "" {
 			continue
 		}
@@ -1235,18 +1270,21 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		}
 		client, err := ds.oauthClientOf(ctx, b)
 		if err != nil {
+			// A grant through the operator's client with no client resolving
+			// at all, as after the operator removes its client from the
+			// file, has nothing to refresh through: the account asks for a
+			// reconnect.
+			if isNoClient(err) && grantThroughOperator(g.client) {
+				ds.noteOAuthClientChanged(ctx, account, seen)
+				continue
+			}
 			ds.svc.log.Warn("substrate: oauth refresh: bundle configuration", "bundle", b.Package, "error", err)
 			continue
 		}
-		// A grant is bound to the client that obtained it: one from another
-		// client than the one resolving now is not sent to the provider, and
-		// the account asks for a reconnect.
-		if oauthClientChanged(ty, row, client) {
-			ds.noteOAuthClientChanged(ctx, account, client)
-			continue
-		}
-		ep := oauthEndpointsFor(meta, client.ID, client.Secret, nil)
-		out, err := ds.refreshCredential(ctx, ref, account, seen, ep)
+		// A grant is bound to the client that obtained it: refreshCredential
+		// sends none from another client than the one resolving now, and the
+		// account asks for a reconnect.
+		out, err := ds.refreshCredential(ctx, ref, account, seen, meta, client)
 		if errors.Is(err, errCredentialGone) {
 			continue // torn down since the list was read
 		}
@@ -1259,6 +1297,9 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		case out.failed == nil:
 			// Another hand's token, or a fresh token kept in memory because
 			// its store failed, which logged it.
+		case errors.Is(out.failed, errOAuthClientChanged):
+			// Stamped on the account where it was found; the next pass meets
+			// it again until the account reconnects.
 		case ctx.Err() != nil:
 			// The pass is over: nothing is concluded from its last answer.
 		case oauthflow.GrantRefused(out.failed):

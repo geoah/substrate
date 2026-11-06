@@ -193,15 +193,66 @@ func (ds *dataset) getCredential(ctx context.Context, ref string) (*oauth2.Token
 	if err != nil {
 		return nil, eref{}, time.Time{}, err
 	}
+	tok, err := ds.openToken(ref, account, payload)
+	if err != nil {
+		return nil, eref{}, time.Time{}, err
+	}
+	return tok, account, updatedAt, nil
+}
+
+// openToken opens and decodes one credential row's payload.
+func (ds *dataset) openToken(ref string, account eref, payload []byte) (*oauth2.Token, error) {
 	raw, err := ds.openPayload(payload, sealedAAD(ref, account.Kind, account.ID))
 	if err != nil {
-		return nil, eref{}, time.Time{}, fmt.Errorf("substrate/engine: open credential %s: %w", ref, err)
+		return nil, fmt.Errorf("substrate/engine: open credential %s: %w", ref, err)
 	}
 	var tok oauth2.Token
 	if err := json.Unmarshal(raw, &tok); err != nil {
-		return nil, eref{}, time.Time{}, fmt.Errorf("substrate/engine: decode credential %s: %w", ref, err)
+		return nil, fmt.Errorf("substrate/engine: decode credential %s: %w", ref, err)
 	}
-	return &tok, account, updatedAt, nil
+	return &tok, nil
+}
+
+// credentialGrant is a stored credential with the client its account
+// recorded for it (operatoroauth.go).
+type credentialGrant struct {
+	tok     *oauth2.Token
+	account eref
+	// gen is the credential's updated_at generation.
+	gen time.Time
+	// client is the account's `oauthClient` value, nil where it holds none.
+	client any
+}
+
+// getGrant reads the credential under ref and its account's recorded client
+// in one statement. The callback writes both in one transaction
+// (completeOAuth), so the client is the one the token's grant was issued
+// to: two reads would let a reconnect through another client land between
+// them and pair one grant's token with the other grant's client.
+func (ds *dataset) getGrant(ctx context.Context, ref string) (credentialGrant, error) {
+	var g credentialGrant
+	var payload, recorded []byte
+	err := ds.db.QueryRowContext(ctx, `
+		SELECT s.payload, s.record_kind, s.record_id, s.updated_at, r.props -> $2
+		FROM sealed s
+		LEFT JOIN records r ON r.repository = s.repository AND r.kind = s.record_kind AND r.id = s.record_id
+		WHERE s.ref = $1`, ref, propOAuthClient).
+		Scan(&payload, &g.account.Kind, &g.account.ID, &g.gen, &recorded)
+	if errors.Is(err, sql.ErrNoRows) {
+		return g, fmt.Errorf("%w: credential %s", errCredentialGone, ref)
+	}
+	if err != nil {
+		return g, err
+	}
+	if g.tok, err = ds.openToken(ref, g.account, payload); err != nil {
+		return g, err
+	}
+	if len(recorded) > 0 {
+		if err := json.Unmarshal(recorded, &g.client); err != nil {
+			return g, fmt.Errorf("substrate/engine: decode the client recorded for credential %s: %w", ref, err)
+		}
+	}
+	return g, nil
 }
 
 // credentialReplaced reports whether the credential under ref is no longer
