@@ -257,6 +257,10 @@ type dataset struct {
 	// runAgent). The engine builds its clients from provider rows, so this is
 	// the one place the live chain can meter a completion before it is sent.
 	wrapLLMClient func(wire llm.Wire, c llm.Client) llm.Client
+	// beforeProviderRead, under mu, is set only by tests: it runs in
+	// resolveProvider before the llm/provider row is read, so a test can
+	// commit a new key between a call's start and the read that pays for it.
+	beforeProviderRead func(id string)
 	// skipThreadTitles, under mu, is set only by tests: it keeps a chat's
 	// first turn from spending a scripted completion on its title
 	// (agenttitle.go), which suites that script a model's queue turn by turn

@@ -374,21 +374,22 @@ func TestLateRefusalOfAReplacedKeyKeepsTheNewKeysState(t *testing.T) {
 
 // Deleting a row forgets its key's refusal: written again, with the very same
 // key, it reads ready until a call is refused. A chat that read the deleted
-// row and is refused after the delete does not bring the refusal back.
+// row and is refused after the row was written again with another key does
+// not bring the refusal back. (The same key written again keeps its stored
+// value, so it is the key the late call carried, and that refusal stands.)
 func TestDeletedRowsRefusalIsForgotten(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	row := map[string]any{
-		"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-chatllm",
-		"pricing": []any{map[string]any{"model": "chat", "inputPer1M": "1", "outputPer1M": "5"}},
-	}
-	recreate := func() {
+	recreate := func(key string) {
 		t.Helper()
 		if _, err := ds.Delete(ctx, substrate.ActorAPI, typeProvider, "chatllm", substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete the row: %v", err)
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: row}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{
+			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": key,
+			"pricing": []any{map[string]any{"model": "chat", "inputPer1M": "1", "outputPer1M": "5"}},
+		}}); err != nil {
 			t.Fatalf("write the row again: %v", err)
 		}
 	}
@@ -396,7 +397,7 @@ func TestDeletedRowsRefusalIsForgotten(t *testing.T) {
 	fake.script("chat", fakeTurn{status: http.StatusUnauthorized, errBody: refusedKeyBody})
 	wantKeyRefused(t, chatOn(ds), "Chatllm refused this key (401). Add a working key on the Chatllm card under Providers.")
 	wantReadiness(t, ds, "llm/chatllm", substrate.ReadinessFailing, "Chatllm refused the key (401)")
-	recreate()
+	recreate("row-key-chatllm")
 	wantReadiness(t, ds, "llm/chatllm", substrate.ReadinessReady, "")
 
 	arrived, release := make(chan struct{}), make(chan struct{})
@@ -406,8 +407,80 @@ func TestDeletedRowsRefusalIsForgotten(t *testing.T) {
 	out := make(chan error, 1)
 	go func() { out <- chatOn(ds) }()
 	<-arrived
-	recreate()
+	recreate("row-key-recreated")
 	releaseOnce()
 	wantKeyRefused(t, <-out, "Chatllm refused this key (401). Add a working key on the Chatllm card under Providers.")
 	wantReadiness(t, ds, "llm/chatllm", substrate.ReadinessReady, "")
+}
+
+// A chat starts while the row holds its old key, and the owner's new key
+// commits before the chat reads the row: the chat carries the new key, the
+// vendor refuses it, and the row reads failing at once.
+func TestRefusalOfAKeyWrittenBeforeTheChatReadsTheRowReadsFailing(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	var rotated atomic.Bool
+	ds.mu.Lock()
+	ds.beforeProviderRead = func(id string) {
+		if id == "chatllm" && rotated.CompareAndSwap(false, true) {
+			mustPatchInternal(t, ds, typeProvider, "chatllm", map[string]any{"apiKey": "row-key-replaced"})
+		}
+	}
+	ds.mu.Unlock()
+	fake.script("chat", fakeTurn{status: http.StatusUnauthorized, errBody: refusedKeyBody})
+	err := chatOn(ds)
+	ds.mu.Lock()
+	ds.beforeProviderRead = nil
+	ds.mu.Unlock()
+	wantKeyRefused(t, err, "Chatllm refused this key (401). Add a working key on the Chatllm card under Providers.")
+	if auths := fake.authsSeen(); len(auths) != 1 || auths[0] != "Bearer row-key-replaced" {
+		t.Fatalf("the vendor saw %q, want the new key alone", auths)
+	}
+	wantReadiness(t, ds, "llm/chatllm", substrate.ReadinessFailing, "Chatllm refused the key (401)")
+}
+
+// The owner's new key commits, and a chat reads the row before the fold's
+// notice of the change reaches the key table: the vendor refuses the new key
+// after the notice, and the row reads failing.
+func TestRefusalOfANewKeyReadBeforeItsNoticeReadsFailing(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	arrived, release := make(chan struct{}), make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+	fake.script("chat", fakeTurn{status: http.StatusUnauthorized, errBody: refusedKeyBody, arrived: arrived, release: release})
+	out := make(chan error, 1)
+	var started atomic.Bool
+	ds.mu.Lock()
+	// beforeSignal runs after the commit and before the transaction's
+	// afterCommit hooks, the notice among them. It holds the patch there
+	// until the chat's request reached the vendor, so the chat read the row
+	// first.
+	ds.beforeSignal = func(tx *txn) {
+		for _, e := range tx.entries {
+			if e.kind != typeProvider || e.id != "chatllm" || !started.CompareAndSwap(false, true) {
+				continue
+			}
+			go func() { out <- chatOn(ds) }()
+			select {
+			case <-arrived:
+			case err := <-out:
+				out <- err
+			}
+		}
+	}
+	ds.mu.Unlock()
+	mustPatchInternal(t, ds, typeProvider, "chatllm", map[string]any{"apiKey": "row-key-replaced"})
+	ds.mu.Lock()
+	ds.beforeSignal = nil
+	ds.mu.Unlock()
+	if !started.Load() {
+		t.Fatal("the patch never reached the signal")
+	}
+	releaseOnce()
+	wantKeyRefused(t, <-out, "Chatllm refused this key (401). Add a working key on the Chatllm card under Providers.")
+	if auths := fake.authsSeen(); len(auths) != 1 || auths[0] != "Bearer row-key-replaced" {
+		t.Fatalf("the vendor saw %q, want the new key alone", auths)
+	}
+	wantReadiness(t, ds, "llm/chatllm", substrate.ReadinessFailing, "Chatllm refused the key (401)")
 }

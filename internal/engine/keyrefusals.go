@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,22 +28,29 @@ import (
 //
 // The operator's key is one fact for the whole deployment: a refusal of an
 // operator entry's key is every repository's, and every repository reads it.
-// A person's own key is one repository's row, and no other repository reads
-// or clears it. A refusal is also bound to the stored apiKey value it was
-// made with, so a key the person writes over a refused one reads ready
-// before any call.
+// The defaults file is read once at start, so an entry's key never changes
+// under a running server. A person's own key is one repository's row, and no
+// other repository reads or clears it.
 //
-// A row's key changes while calls on the old one are still out. The fold
-// tells the table when a row's stored apiKey changes or the row goes away
-// (txn.noteProviderKey), the table drops what it held for the row and moves
-// the row's generation, and an answer to a call that read the key before
-// that change is ignored. So a late refusal of a replaced key neither
-// overwrites the new key's state nor brings back a deleted row's.
+// A row's key changes while calls on the old one are still out, so a refusal
+// is recorded against the stored apiKey value the call read (ownKeyID), and
+// every reader asks about the value the row stores when it reads it. A late
+// answer about a replaced value lands under that value, which the row no
+// longer stores, and never reaches the new one; a refusal of the new value
+// counts from the call that read it, however late the table hears of the
+// change. A key written through the API is stored as a fresh secret ref, so
+// a new key is a new value; the same material written again keeps the ref
+// the row stored (txn.storeSecretProps), so it is the same key here too.
+// The fold tells the table which value a change replaced or a delete took
+// away (txn.noteProviderKey), and the table forgets that value's refusal.
+// That frees the row's memory and touches no other value, so a notice that
+// arrives late never drops the refusal of a different key.
 //
-// The table is memory only, and holds at most keyTableCapacity rows: past
-// it the row touched longest ago goes. A restart forgets every refusal, the
-// slots read ready, and the first call after it meets the refusal again and
-// records it.
+// The table is memory only. It holds at most keyTableCapacity rows, past
+// which the row whose newest refusal is oldest goes, and per row the
+// refusals of at most keyRowValues stored values, past which the one
+// recorded longest ago goes. A restart forgets every refusal, the slots read
+// ready, and the first call after it meets the refusal again and records it.
 
 const (
 	// keyDrainBackoffFirst is how long the embed drain leaves a refused key
@@ -52,6 +61,10 @@ const (
 	// keyTableCapacity bounds the rows the table holds across every
 	// repository. A row it drops reads ready until its next refusal.
 	keyTableCapacity = 4096
+	// keyRowValues bounds the stored values one row holds refusals for: the
+	// value it stores now, and values it replaced whose late refusals came in
+	// after the change's notice.
+	keyRowValues = 4
 )
 
 // keySlot is where a key lives: an operator entry, with no repository, or
@@ -62,19 +75,14 @@ type keySlot struct {
 	row        string
 }
 
-// keyID names the key a call carries: its slot, the digest of the row's
-// stored apiKey value (blank for an operator entry), and the table's
-// generation when the call read the row (keyRefusals.generation). A read
-// that only asks for a status leaves the generation 0.
+// keyID names the key a call carries: its slot and the digest of the stored
+// apiKey value the call read (blank for an operator entry).
 type keyID struct {
 	slot keySlot
 	key  string
-	gen  uint64
 }
 
-// operatorKeyID is the operator entry id's key. The operator's keys come
-// from the defaults file, which a running server never reloads, so they have
-// no generation.
+// operatorKeyID is the operator entry id's key.
 func operatorKeyID(entry string) keyID { return keyID{slot: keySlot{operator: entry}} }
 
 // ownKeyID is the key a row of the repository holds, by its stored apiKey
@@ -89,34 +97,26 @@ func ownKeyID(repository, row, stored string) keyID {
 
 // keyRefusals is the service's table of refused keys.
 type keyRefusals struct {
-	mu sync.Mutex
-	// gen counts the key changes the table was told of (changed).
-	gen uint64
-	// floor is the newest change generation of a row the table dropped at
-	// capacity: an answer to a call older than it, on a row the table holds
-	// nothing for, may be about a replaced key, and is ignored.
-	floor uint64
+	mu    sync.Mutex
 	slots map[keySlot]*keySlotState
 	// capacity overrides keyTableCapacity where it is above 0 (tests).
 	capacity int
 }
 
-// keySlotState is what the table holds for one slot.
+// keySlotState is what the table holds for one slot: the refusals of its
+// stored values, by keyID.key, and when the newest of them was recorded,
+// which orders what goes at capacity.
 type keySlotState struct {
-	// changed is the generation of the slot's newest key change; an answer
-	// to a call that read the row before it is ignored.
-	changed uint64
-	// touched is the slot's newest change or refusal, which orders what
-	// goes at capacity.
-	touched time.Time
-	// refusal is the newest refusal of the key the slot holds, nil for none.
-	refusal *keyRefusal
+	touched  time.Time
+	refusals map[string]*keyRefusal
 }
 
 // keyRefusal is the newest refusal of one key and the drain's backoff on it.
 type keyRefusal struct {
-	key    string
 	status int
+	// at is when the refusal was recorded, which orders what goes at
+	// keyRowValues.
+	at time.Time
 	// step is the drain's current wait and until when it ends.
 	step  time.Duration
 	until time.Time
@@ -125,69 +125,51 @@ type keyRefusal struct {
 	probing bool
 }
 
-// generation is the table's generation now. A call takes it before it reads
-// its row, so a change committed after the read moves the row's generation
-// past it.
-func (t *keyRefusals) generation() uint64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.gen
-}
-
-// refusal is k's refusal, or nil where none stands for the key k holds now.
-// Called with mu held.
+// refusal is k's refusal, or nil where none stands. Called with mu held.
 func (t *keyRefusals) refusal(k keyID) *keyRefusal {
-	st := t.slots[k.slot]
-	if st == nil || st.refusal == nil || st.refusal.key != k.key {
-		return nil
-	}
-	return st.refusal
-}
-
-// current reports whether an answer to a call made with k is about the key
-// the slot holds now: no change reached the slot since the call read it.
-// Called with mu held.
-func (t *keyRefusals) current(k keyID) bool {
-	if k.slot.repository == "" {
-		return true
-	}
 	if st := t.slots[k.slot]; st != nil {
-		return k.gen >= st.changed
+		return st.refusals[k.key]
 	}
-	return k.gen >= t.floor
+	return nil
 }
 
-// changed tells the table that slot's stored key changed or its row went
-// away: it forgets the slot's refusal, and answers to calls that read the
-// row before now are ignored.
-func (t *keyRefusals) changed(slot keySlot, now time.Time) {
+// drop forgets k's refusal, and its slot with it where the slot holds no
+// other. Called with mu held.
+func (t *keyRefusals) drop(k keyID) {
+	st := t.slots[k.slot]
+	if st == nil {
+		return
+	}
+	delete(st.refusals, k.key)
+	if len(st.refusals) == 0 {
+		delete(t.slots, k.slot)
+	}
+}
+
+// replaced tells the table that k's stored value was replaced on its row, or
+// its row went away: it forgets the value's refusal.
+func (t *keyRefusals) replaced(k keyID) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.gen++
-	st := t.slot(slot)
-	st.changed, st.touched, st.refusal = t.gen, now, nil
-	t.bound()
+	t.drop(k)
 }
 
-// slot is slot's state, made where the table held none: it starts at the
-// floor, the newest generation the table may have dropped for it. Called
-// with mu held.
-func (t *keyRefusals) slot(slot keySlot) *keySlotState {
-	if t.slots == nil {
-		t.slots = map[keySlot]*keySlotState{}
+// bound drops refusals until the table is within its capacity: in k's slot
+// the values recorded longest ago past keyRowValues, keeping k's, then the
+// slots touched longest ago, keeping every operator entry's. Called with mu
+// held.
+func (t *keyRefusals) bound(k keyID) {
+	if st := t.slots[k.slot]; st != nil {
+		for len(st.refusals) > keyRowValues {
+			oldest := ""
+			for key, e := range st.refusals {
+				if key != k.key && (oldest == "" || e.at.Before(st.refusals[oldest].at)) {
+					oldest = key
+				}
+			}
+			delete(st.refusals, oldest)
+		}
 	}
-	st := t.slots[slot]
-	if st == nil {
-		st = &keySlotState{changed: t.floor}
-		t.slots[slot] = st
-	}
-	return st
-}
-
-// bound drops the slots touched longest ago until the table is within its
-// capacity, keeping every operator entry's, and moves the floor past each
-// dropped slot's generation. Called with mu held.
-func (t *keyRefusals) bound() {
 	capacity := t.capacity
 	if capacity <= 0 {
 		capacity = keyTableCapacity
@@ -203,7 +185,6 @@ func (t *keyRefusals) bound() {
 		if at == nil {
 			return
 		}
-		t.floor = max(t.floor, at.changed)
 		delete(t.slots, oldest)
 	}
 }
@@ -211,8 +192,7 @@ func (t *keyRefusals) bound() {
 // observe records what the vendor answered a call made with k: a refusal of
 // the key (providersecret.KeyRefusedError) is recorded, a success forgets
 // the refusal, and any other failure (a timeout, a 429, a refused input, a
-// 403 about the request, the allowance) says nothing about the key. An
-// answer to a call that read a key since replaced is ignored.
+// 403 about the request, the allowance) says nothing about the key.
 func (t *keyRefusals) observe(k keyID, err error, now time.Time) {
 	status := providersecret.KeyRefusal(err)
 	if status == 0 && err != nil {
@@ -220,38 +200,29 @@ func (t *keyRefusals) observe(k keyID, err error, now time.Time) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.current(k) {
-		return
-	}
 	if status == 0 {
-		t.accept(k)
+		t.drop(k)
 		return
 	}
 	step := keyDrainBackoffFirst
 	if e := t.refusal(k); e != nil {
 		step = min(2*e.step, keyDrainBackoffMax)
 	}
-	st := t.slot(k.slot)
-	st.touched = now
-	st.refusal = &keyRefusal{key: k.key, status: status, step: step, until: now.Add(step)}
-	t.bound()
-}
-
-// accept forgets k's refusal, and the slot with it where the slot carries no
-// generation the floor does not. Called with mu held.
-func (t *keyRefusals) accept(k keyID) {
-	if t.refusal(k) == nil {
-		return
+	if t.slots == nil {
+		t.slots = map[keySlot]*keySlotState{}
 	}
 	st := t.slots[k.slot]
-	st.refusal = nil
-	if st.changed <= t.floor {
-		delete(t.slots, k.slot)
+	if st == nil {
+		st = &keySlotState{refusals: map[string]*keyRefusal{}}
+		t.slots[k.slot] = st
 	}
+	st.touched = now
+	st.refusals[k.key] = &keyRefusal{status: status, at: now, step: step, until: now.Add(step)}
+	t.bound(k)
 }
 
 // status is the status the vendor refused k with, or 0 where no refusal of
-// the key k holds now stands.
+// it stands.
 func (t *keyRefusals) status(k keyID) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -304,23 +275,43 @@ func (t *keyRefusals) endProbe(k keyID, now time.Time) {
 }
 
 // noteProviderKey tells the refused-key table, once the transaction commits,
-// that the fold changed an llm/provider row's stored apiKey from before to
-// after, or deleted the row (gone): the table forgets the row's refusal and
-// ignores answers to calls that read the row before (keyRefusals.changed). A
-// replay writes no new key and tells nothing.
-func (t *txn) noteProviderKey(ref eref, before, after any, gone bool) {
+// that the fold replaced an llm/provider row's stored apiKey value before
+// with after, or deleted the row (after nil): the table forgets the refusal
+// of before (keyRefusals.replaced). A value the row still stores, and a row
+// that stored none, leave the table alone. A replay writes no new key and
+// tells nothing.
+func (t *txn) noteProviderKey(ref eref, before, after any) {
 	if ref.Kind != typeProvider || t.replaying {
 		return
 	}
-	if !gone {
-		was, _ := before.(string)
-		is, _ := after.(string)
-		if was == is {
-			return
-		}
+	was, _ := before.(string)
+	is, _ := after.(string)
+	if was == "" || was == is {
+		return
 	}
-	svc, slot := t.ds.svc, keySlot{repository: t.ds.Repository().ID, row: ref.ID}
-	t.afterCommit = append(t.afterCommit, func() { svc.keyRefusals.changed(slot, svc.operatorNow()) })
+	svc, k := t.ds.svc, ownKeyID(t.ds.Repository().ID, ref.ID, was)
+	t.afterCommit = append(t.afterCommit, func() { svc.keyRefusals.replaced(k) })
+}
+
+// providerKeyOf is the apiKey value ref stores, read in the transaction
+// before a fold deletes it, so noteProviderKey can name it. It is nil for any
+// other kind, and during a replay, which tells the table nothing.
+func (t *txn) providerKeyOf(ref eref) (any, error) {
+	if ref.Kind != typeProvider || t.replaying {
+		return nil, nil
+	}
+	var stored sql.NullString
+	err := t.row(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		ref.Kind, ref.ID).Scan(&stored)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("substrate/engine: read the apiKey of llm/provider %q: %w", ref.ID, err)
+	case !stored.Valid:
+		return nil, nil
+	}
+	return stored.String, nil
 }
 
 // keyWatchClient tells the service's key table what the vendor answered each
