@@ -2232,7 +2232,8 @@ line when fixing). In order:
   2026-11-06), the note (a sparkle and the suggestion's reason in 13 pt; a status such as "warm-up 1 of 2" (none in a
   warm-up circuit, whose round says it) or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
   rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and Cancel when fixing; the set menu `…` is
-  beside Log, not in the header, so the title keeps the width (owner, 2026-11-06). The note sits beside the title when it fits, else on its own line under it. After
+  beside Log, not in the header, so the title keeps the width (owner, 2026-11-06). The note sits beside the title when it fits, else on its own line under it, as far below the title as
+  the values sit below the note and the cue (owner, 2026-11-06). After
   a reps-left step the new value's meaning ("1 left: very hard") shows in the note's place for 2.5 s without
   changing the header's height.
 - The slot's cue, when the routine gives one (`RowsEditor.cue`): a lightbulb and one line in 13 pt secondary,

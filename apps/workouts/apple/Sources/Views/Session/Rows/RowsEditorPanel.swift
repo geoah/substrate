@@ -45,7 +45,6 @@ struct RowsEditorPanel: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.bottom, 4)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Cue: \(cue)")
             }
@@ -141,7 +140,9 @@ struct RowsEditorPanel: View {
                 noteSlot(lines: 1)
                 trailing
             }
-            VStack(alignment: .leading, spacing: 2) {
+            // The note under the title sits as far from it as the values sit
+            // from the lines above them (owner, 2026-11-06).
+            VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 8) {
                     titleGroup
                     Spacer(minLength: 4)
