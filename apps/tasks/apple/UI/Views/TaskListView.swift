@@ -52,11 +52,6 @@ struct TaskListView: View {
 
     @ViewBuilder
     private var rows: some View {
-        // Empty states carry their own heading and action.
-        if list.empty == nil {
-            SummaryCard(summary: list.summary)
-                .plainRow(top: 4, bottom: 6)
-        }
         if let empty = list.empty, list.closed.rows.isEmpty {
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle")
@@ -75,7 +70,12 @@ struct TaskListView: View {
         }
         if !list.open.rows.isEmpty {
             Section {
-                heading(list.openTitle, count: nil, note: list.orderNote)
+                if list.showsClosed, !list.closed.rows.isEmpty {
+                    heading(list.openTitle, count: nil, note: list.orderNote)
+                } else if let note = list.orderNote {
+                    Text(note).font(.footnote).foregroundStyle(.secondary)
+                        .plainRow(top: 4, bottom: 2)
+                }
                 ForEach(list.open.rows) { row in rowView(row) }
                     .onMove(perform: reorder)
             }
@@ -232,29 +232,6 @@ struct TaskMenu: View {
         }
         Divider()
         Button(words.delete, systemImage: "trash", role: .destructive) { shell.send(.deleteTask(task)) }
-    }
-}
-
-/// Keep the date, workload and overdue count readable without a second card hierarchy.
-private struct SummaryCard: View {
-    let summary: ListSummary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let detail = summary.detail {
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
-            }
-            Text(summary.headline)
-                .font(.title2.weight(.semibold))
-            if let overdue = summary.overdue {
-                Label(overdue, systemImage: "exclamationmark.circle")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.red)
-            }
-        }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
 
