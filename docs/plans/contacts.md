@@ -3,7 +3,8 @@
 Status: proposal, 2026-11-06. Line numbers are against `main` at
 `b9cf1ffc2`. Nothing here is merged: step 1 is
 [#1210](https://github.com/geoah/substrate/pull/1210), with decision record
-0231. Two design reviews of earlier drafts are folded in; what each changed
+0231, and step 2 is [#1222](https://github.com/geoah/substrate/pull/1222),
+with decision record 0232. Two design reviews of earlier drafts are folded in; what each changed
 is listed at the end.
 
 ## The problem
@@ -420,7 +421,10 @@ door, the catalog prunes on its own path, and mapping resolution refuses an
 absent source.
 
 **Proposed: core ships the mappings, and each is held back while its
-provider is not installed.** Nothing is stored: the registry recomputes which
+provider is not installed.** Built in step 2, which holds a core mapping in
+three more cases with no owner to fix them: the installed provider is an
+older version the mapping does not fit, another package's mapping holds its
+slot or its target, or the mirror declares the slot's name itself. Nothing is stored: the registry recomputes which
 mappings are held whenever it is built, at every open and after every install
 and apply. A repository that still runs the people sample, or a fork of it
 such as Mneme's, gets both: its own mapping fills the mirror's `person` slot
@@ -436,13 +440,23 @@ amending 0049 and the loader check) needs the same hold in every provider.
 | `google/contact` | `emailAddresses[].value` to `emails` | |
 | `google/contactgroup` | none, mints | `where:` user labels only |
 | `google/emailaddress` | `address` to `emails` | an address seen in mail; no name |
-| `slack/user` | `profile.email` to `emails`, then `realName` to `name` | |
+| `slack/user` | `profile.email` to `emails`, then `realName` to `name` | `where: isBot: false`, so a bot is one contact, from `slack/bot` |
 | `slack/bot` | none, mints | |
-| `github/user` | `email` to `emails` | |
+| `github/user` | `email` to `emails` | the profile link into `urls` |
 | `linear/user` | `email` to `emails` | |
 | `beeper/user` | as Mneme's `mappings.beeper.yaml` | |
 
-Each mapping's subject slot on the mirror is named `contact`.
+Each mapping's subject slot on the mirror is named `contact`. No `urls`
+mapping reads Apple or Google: both store a link as a plain string, and
+`urls` is the `url` type.
+
+Two things step 2 found that step 1 had to change. A mapped kind's ids are
+server-assigned, so the engine's own seed is let past that rule to name
+`contact/me` on a repository whose providers already map onto contacts; a
+client still is not. And `me` is written by the shipped tree's hand,
+`bundle:core`, at the bundle tier: the engine's own actor holds at the
+machine tier, so the first recompute would have emptied `contactType` and
+marked `me` an orphan.
 
 **Writers a mapping cannot be.** A mapping cannot move a state
 (`internal/vocabulary/mapping.go:536`), translate enum values or write a
@@ -548,8 +562,10 @@ steps 1 to 3 reach a release together; each is safe on `main` alone.
    (console, shipped-purpose test, merge) and the `contact/me` seed
    ([#1210](https://github.com/geoah/substrate/pull/1210)). Additive:
    nothing maps onto the kind yet.
-2. Decision record 2 and the core mappings, held while their provider is
-   absent.
+2. Decision record 2 (0232) and the core mappings, held while their
+   provider is absent or does not fit
+   ([#1222](https://github.com/geoah/substrate/pull/1222)). The boot
+   upgrade links the mirrors a provider synced before the mapping.
 3. Decision record 4, under the title above: calendar, messaging and tasks
    sample versions that pin `core/contact` and no longer require people, and
    the people sample removed.
