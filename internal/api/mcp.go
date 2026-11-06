@@ -204,7 +204,9 @@ func (d *doorAPI) Do(ctx context.Context, req mcp.Request) mcp.Response {
 	if len(req.Query) > 0 {
 		target += "?" + req.Query.Encode()
 	}
-	var body io.Reader
+	// A server's request always has a body, empty or not, and handlers read
+	// it as such: http.NoBody, not nil, for a request without one.
+	var body io.Reader = http.NoBody
 	ctype := ""
 	switch {
 	case req.Raw != nil:

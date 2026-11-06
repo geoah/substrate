@@ -251,7 +251,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err != nil {
 		return nil, err
 	}
-	labels, err := coerceLabels(t.actor, substrate.ClientIDFrom(t.ctx), in.Labels)
+	labels, err := coerceLabels(t.ctx, t.actor, substrate.ClientIDFrom(t.ctx), in.Labels)
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +696,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	if err != nil {
 		return nil, err
 	}
-	labels, err := coerceLabels(t.actor, substrate.ClientIDFrom(t.ctx), in.Labels)
+	labels, err := coerceLabels(t.ctx, t.actor, substrate.ClientIDFrom(t.ctx), in.Labels)
 	if err != nil {
 		return nil, err
 	}
@@ -1156,7 +1156,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 
 	// Annotations.
 	for _, k := range sortedKeys(sp.annotations) {
-		if err := metaKeyAllowed(t.actor, substrate.ClientIDFrom(t.ctx), k); err != nil {
+		if err := metaKeyAllowed(t.ctx, t.actor, substrate.ClientIDFrom(t.ctx), k); err != nil {
 			return nil, err
 		}
 		ok, err := t.putAnnotation(sp.ref(), k, sp.annotations[k])
@@ -2433,7 +2433,7 @@ func validatePatchShape(c coercer, ty *vocabulary.Kind, in substrate.PatchInput)
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	if _, err := coerceLabels(substrate.ActorAPI, "", in.Labels); err != nil {
+	if _, err := coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels); err != nil {
 		return err
 	}
 	return nil
@@ -2451,7 +2451,7 @@ func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) 
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	_, err = coerceLabels(substrate.ActorAPI, "", in.Labels)
+	_, err = coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels)
 	return err
 }
 

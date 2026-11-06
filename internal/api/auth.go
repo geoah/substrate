@@ -135,6 +135,10 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		if actor != substrate.ActorAPI {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
+		// The owner's hand at the gates a person's door alone passes
+		// (installing, importing, the owner's label keys), under the
+		// assistant's own actor.
+		ctx = substrate.WithAssistant(ctx)
 		return withRequestAuth(ctx, newAssistantDataset(ds), tok, actor), 0, "", "", nil
 	}
 	if tok.Scoped() {

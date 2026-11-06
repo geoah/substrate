@@ -62,7 +62,10 @@ The rules this binds:
   flow, domain verification, a package takeover and a package's uninstall
   and purge. It reads what the owner reads.
 - **It writes as its app's derived actor** (0209), never as the owner, and
-  History names it by the token's claimed name.
+  History names it by the token's claimed name. At the gates that admit a
+  person's door alone (installing, importing, the owner's label keys), that
+  actor on a request the door marked holds the owner's hand; code the
+  assistant runs keeps its own `function:` or `agent:` actor and never does.
 - **`/oauth/authorize` and `/oauth/token` accept `resource` equal to the
   issuer or to `<issuer>/mcp`**. One server is still one issuer.
 

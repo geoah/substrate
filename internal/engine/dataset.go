@@ -1270,11 +1270,11 @@ func legacyAppNamespace(actor substrate.Actor, clientID string) string {
 // of its client id (clientID, substrate.ClientIDFrom): the namespace a binary
 // before decision 0209 gave the same token, so keys it wrote then stay its to
 // change once its actor is `app:local` or `app:<authority>`.
-func metaKeyAllowed(actor substrate.Actor, clientID, key string) error {
+func metaKeyAllowed(ctx context.Context, actor substrate.Actor, clientID, key string) error {
 	if problem := vocabulary.MetaKeyProblem(key); problem != "" {
 		return fmt.Errorf("%w: %s", substrate.ErrValidation, problem)
 	}
-	if substrate.HumanActors[actor] || actor == substrate.ActorSystem {
+	if substrate.OwnersHand(ctx, actor) || actor == substrate.ActorSystem {
 		return nil
 	}
 	ns := vocabulary.MetaKeyNamespace(key)

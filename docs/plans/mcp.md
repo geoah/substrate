@@ -159,8 +159,14 @@ puts in a path.
 
 At the door the token holds the owner's tier with no scope mark, so a
 vocabulary apply, an install, a function call or an agent chat goes
-through as the owner's would, and every request runs on a dataset wrapper
-that refuses:
+through as the owner's would. The gates that admit a person's door alone
+(`api`, `console`, `substratectl`: installing a provider, importing a
+sample, writing label and annotation keys outside the writer's own
+namespace) admit an `app:` actor on a request the door marked
+(`substrate.OwnersHand`), so the assistant does what the console does while
+its writes keep its own actor; code it runs writes under a `function:` or
+`agent:` actor, which the mark never covers. Every request runs on a dataset
+wrapper that refuses:
 
 - a put, patch, delete or merge of `substrate.reamde.dev/core/token`,
   `/credential`, `/secret` or `/recoverykey`, and a decision on a change

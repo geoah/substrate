@@ -286,6 +286,12 @@ func TestADoorToolReachesTheRoutesItsToolsUseAlone(t *testing.T) {
 			t.Fatalf("%s %s from the door = %d %s, want 403", c.method, c.path, rec.Code, rec.Body.String())
 		}
 	}
+	// A bodiless request the door makes reads as an empty body, as a
+	// server's request does, never a nil one a handler would panic on.
+	text, isErr := callTool(t, env.h, tok, "packages", map[string]any{"action": "install", "id": "providers.substrate.reamde.dev/google"})
+	if strings.Contains(text, "500") || strings.Contains(text, "internal") {
+		t.Fatalf("a bodiless install = %v %s", isErr, text)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/units", nil)
 	req = req.WithContext(withMCPDoor(req.Context()))
 	req.Header.Set("Authorization", "Bearer "+tok)
