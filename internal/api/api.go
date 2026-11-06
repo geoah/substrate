@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
@@ -139,6 +140,10 @@ type Config struct {
 	// fetches its server.json through the confined client, which never dials
 	// a loopback or private address; a test answers from memory.
 	ServerInstances serverInstances
+	// TrustedProxies are the proxies whose X-Forwarded-For names the client
+	// every per-address pace keys on (SUBSTRATE_TRUSTED_PROXIES). Empty reads
+	// no forwarded header.
+	TrustedProxies []netip.Prefix
 
 	// setUpEnded, when set, is told each set up's request id once its
 	// detached run has returned and nothing more lands for it.
@@ -247,10 +252,10 @@ func New(cfg Config) http.Handler {
 	// X-Real-IP or True-Client-IP whether or not anything in front of this
 	// server sets them, so a caller could name its own address by sending a
 	// header (GHSA-3fxj-6jh8-hvhx and friends; chi deprecated it in v5.3.0).
-	// Nothing here wanted the rewrite: peerAddress records the TRANSPORT peer,
-	// which is what the rate limiter keys on, and no other handler reads
-	// RemoteAddr. Anything that needs a client address behind a proxy has to
-	// name which proxies it trusts first.
+	// peerAddress records the transport peer, which is what the rate limiter
+	// keys on, and no other handler reads RemoteAddr. It reads
+	// X-Forwarded-For only from a peer the operator lists in
+	// SUBSTRATE_TRUSTED_PROXIES (peer.go).
 	//
 	// securityHeaders is first so that every response carries them, the
 	// router's own 404 and 405 and a recovered panic's 500 among them. cors
@@ -259,7 +264,7 @@ func New(cfg Config) http.Handler {
 	// requestID sits outside recoverer so a panic's log line names the
 	// request, and both sit inside httpMetrics so a recovered panic is
 	// counted as the 500 it answered.
-	r.Use(securityHeaders, cors, httpMetrics, peerAddress, requestID, recoverer)
+	r.Use(securityHeaders, cors, httpMetrics, peerAddress(cfg.TrustedProxies), requestID, recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

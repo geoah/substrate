@@ -343,6 +343,13 @@ func run() error {
 	// Closed by the server's shutdown (newServer), so the streams it would
 	// otherwise wait on end first.
 	draining := make(chan struct{})
+	trustedProxies, err := cfg.TrustedProxyPrefixes()
+	if err != nil {
+		return err
+	}
+	if len(trustedProxies) > 0 {
+		slog.Info("SUBSTRATE_TRUSTED_PROXIES is set: per-address paces key on the X-Forwarded-For client of a listed proxy", "proxies", cfg.TrustedProxies)
+	}
 	handler := api.New(api.Config{
 		Service:          svc,
 		WebDir:           cfg.WebDir,

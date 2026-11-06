@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"math"
 	"net"
 	"net/http"
@@ -186,18 +185,6 @@ func retryAfterSeconds(d time.Duration) int {
 		s = 1
 	}
 	return s
-}
-
-// peerAddress records the transport peer, so the rate limit keys on the
-// connection and never on something a request can say about itself. No
-// header-rewriting middleware is installed today (see api.go), and this is
-// what keeps that a local decision rather than a load-bearing one: if one is
-// ever added, the limiter is already reading the address it wants.
-func peerAddress(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), ctxKeyPeer, r.RemoteAddr)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 // peerIP is the rate-limiting identity: the real peer address, never a

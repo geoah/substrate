@@ -425,3 +425,22 @@ func TestTheDNSResolverIsHostAndPort(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedProxyPrefixes(t *testing.T) {
+	got, err := Config{TrustedProxies: " 10.42.0.0/16, 127.0.0.1 ,,fd00::/8, ::ffff:10.0.0.9"}.TrustedProxyPrefixes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"10.42.0.0/16", "127.0.0.1/32", "fd00::/8", "10.0.0.9/32"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i].String() != want[i] {
+			t.Fatalf("entry %d = %s, want %s", i, got[i], want[i])
+		}
+	}
+	if _, err := (Config{TrustedProxies: "10.42.0.0/16, proxy.internal"}).TrustedProxyPrefixes(); err == nil || !strings.Contains(err.Error(), `"proxy.internal"`) {
+		t.Fatalf("a hostname entry = %v, want a refusal naming it", err)
+	}
+}
