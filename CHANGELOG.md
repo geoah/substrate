@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.119.0](https://github.com/geoah/substrate/compare/v0.118.0...v0.119.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sandbox:** a function body that declares network access can no longer open SCTP, MPTCP or raw internet sockets, send with TCP Fast Open, or connect a Unix socket (pathname or abstract). Every function body, with or without network access, now gets EACCES from setsockopt(SOL_SOCKET, SO_LINGER). In a body that declares network access, Python multiprocessing managers and the forkserver start method fail with EACCES. multiprocessing.set_start_method("spawn") or "fork" restores starting processes, but NOT managers: remove multiprocessing.Manager() and anything built on it from such a body, or move the work that uses it into a function that declares no network access. On a host whose seccomp policy refuses the main filter, a body that declares network access or runs outside code is now refused instead of starting with only the connect gate. Nothing else is needed on upgrade; rolling back to an older binary restores the old behaviour, including the isolation gaps this closes.
+* **engine:** a PUT, a `substratectl apply` or an agent write that creates a record of a kind whose ids are minted (every kind that is not `internal` and does not declare `ids: {type: named}`) under an id not in the minted shape now answers `422 validation`. The minted shape is 26 lowercase Crockford base32 characters (the first `0` to `7`) or a UUID's canonical lowercase text. To upgrade, create such records with `POST /api/v1/records` (send an `Idempotency-Key` to retry safely) or `substratectl apply` of a document without `metadata.id`, and read the id from the reply; a client that must know the id first writes a UUIDv7 in either spelling, or derives one from its own key. Records already stored keep their ids, and a PUT at an existing id still updates it. An id minted before this change (12 characters of `a-z2-7`) cannot be used to create a record elsewhere: create the copy without an id. Metrics and the Apple provider's mirror kinds are named, so their writers are unaffected. Upgrade the Workouts app first (geoah/substrate `feat/workouts-minted-ids`). A rollback to an older binary quarantines the observations and apple packages, whose stored declarations now carry `ids`; the way back is this binary.
+
+### Added
+
+* **api:** declare the operator defaults wire shape ([#1209](https://github.com/geoah/substrate/issues/1209)) ([9bcb1e3](https://github.com/geoah/substrate/commit/9bcb1e3b81c1b78033df75779bc6148c2bdb2cfa))
+* **api:** pace clients behind a listed proxy by X-Forwarded-For ([#1238](https://github.com/geoah/substrate/issues/1238)) ([1ba6225](https://github.com/geoah/substrate/commit/1ba6225df22fba564334caa9c762dd0b52bc556c)), closes [#1114](https://github.com/geoah/substrate/issues/1114)
+* **console:** ask a new owner's name and save it as their contact ([#1229](https://github.com/geoah/substrate/issues/1229)) ([d38d547](https://github.com/geoah/substrate/commit/d38d547ed077d9ae61263e6ae2ea81c2af27f9d6))
+* **console:** list AI models and operator keys on the Providers page ([#1212](https://github.com/geoah/substrate/issues/1212)) ([0311c59](https://github.com/geoah/substrate/commit/0311c599534ad196ce5952c3ac657847176ab021))
+* **console:** read and edit objects and lists of objects in place ([#1198](https://github.com/geoah/substrate/issues/1198)) ([41847c5](https://github.com/geoah/substrate/commit/41847c5bbacd157b38f438574ec3537fbb5ce44b))
+* **engine:** refuse chosen ids on new records unless the kind names them ([424751c](https://github.com/geoah/substrate/commit/424751caf53ce8616bfaee3a5ff25d430b32e807))
+* **engine:** serve LLM and embeddings on operator keys under a daily allowance ([#1213](https://github.com/geoah/substrate/issues/1213)) ([d6db60c](https://github.com/geoah/substrate/commit/d6db60c694cf3af550196a0a99172bc51201df6d))
+* **engine:** supply operator OAuth clients and install listed packages ([#1223](https://github.com/geoah/substrate/issues/1223)) ([b8c23c9](https://github.com/geoah/substrate/commit/b8c23c98d6c23b60da95363f716dc90f606e1a58))
+* **kinds:** ship Firecrawl as a provider that can run on the operator's key ([#1221](https://github.com/geoah/substrate/issues/1221)) ([8e88583](https://github.com/geoah/substrate/commit/8e885836cb0b93f4d0b570772162f88619954bb7))
+* **mcp:** let Claude Code, Codex and other assistants work a substrate over MCP ([#1214](https://github.com/geoah/substrate/issues/1214)) ([c08b022](https://github.com/geoah/substrate/commit/c08b0227819ae65ebbd2d561c8cb67c0d4af05e8))
+* **site:** serve the site's icon as the console's favicon ([#1207](https://github.com/geoah/substrate/issues/1207)) ([9d6e751](https://github.com/geoah/substrate/commit/9d6e751cb61566a0890116627f24f60d467b73ab))
+* **tasks:** a Needs you home screen with undoable completion ([#1216](https://github.com/geoah/substrate/issues/1216)) ([fdb7583](https://github.com/geoah/substrate/commit/fdb758336ad4d38c14f729215f1b4bb95e16c000))
+* **vocabulary:** add the core contact kind ([#1210](https://github.com/geoah/substrate/issues/1210)) ([ea0fb82](https://github.com/geoah/substrate/commit/ea0fb82254276e9dbcdf0a0a923cb537ac81c3f4))
+* **vocabulary:** map the shipped providers' people onto core contacts ([#1222](https://github.com/geoah/substrate/issues/1222)) ([399f91d](https://github.com/geoah/substrate/commit/399f91dbe405cfc5c09d1c978b2c31cf59f87c5a))
+* **workouts:** menus grow out of glass buttons, and the island's after-line reads Next on one line ([b0602a3](https://github.com/geoah/substrate/commit/b0602a3ba74e34a9e97bb757773900f6a756ddcf))
+* **workouts:** mint record ids instead of slugging names ([0cbcd74](https://github.com/geoah/substrate/commit/0cbcd7488d18e8c6b6915cb50f8be1d12f31def0))
+* **workouts:** notes render Markdown and collapse past five lines with Show more ([d0992a1](https://github.com/geoah/substrate/commit/d0992a133ee2758a71baacd1dbb25db47438452b))
+* **workouts:** offer the next load when two sessions reached the top of the range ([16dc751](https://github.com/geoah/substrate/commit/16dc751b27ea4e8486bdf7e4a60f267b903f2cc4))
+* **workouts:** reps left replace RPE, with why the set ended beside them ([c720d5a](https://github.com/geoah/substrate/commit/c720d5ad31cb64d9b8283faeede5ebbf7e15706f))
+* **workouts:** the open set names its exercise, and its contents sit flush with the panel's edge ([87e2203](https://github.com/geoah/substrate/commit/87e220384db7c7e84031ac1e542ea0762cec0482))
+* **workouts:** the open set's … sits beside Log, so the header keeps its width for the title ([86402c9](https://github.com/geoah/substrate/commit/86402c925fbca6697cc733c070bc1301d55eaa9f))
+* **workouts:** the sample routine shows a warm-up circuit, cues and reps left ([401e7e2](https://github.com/geoah/substrate/commit/401e7e20c67e8a502357942e3e14411d15562b17))
+* **workouts:** the session's name is a large title over its length, and the bar keeps one … menu ([af134f4](https://github.com/geoah/substrate/commit/af134f49f10e0aa1decda75462cb638ee78214f9))
+* **workouts:** the time the session should end, from today's sets and the plan's rests ([5409ec8](https://github.com/geoah/substrate/commit/5409ec81dbddaffe5a88a5a03182ee0e1bc5a896))
+* **workouts:** training 6, with cues beside the set and warm-up circuits run in rounds ([ecb5a95](https://github.com/geoah/substrate/commit/ecb5a95de654cfaa59d851b0247d3245a89d2de3))
+* **workouts:** training 7 and the review's fixes to reps left, stop reasons and the offer ([6965265](https://github.com/geoah/substrate/commit/69652657d695cae8c1251493959ca807da9e26b0))
+* **workouts:** typed values apply as they are typed, and the open set's three values share one layout ([90b1c71](https://github.com/geoah/substrate/commit/90b1c71c32bff57c2821f4c6134f71707648b5b9))
+
+
+### Fixed
+
+* **api:** answer 200 to a PUT that changes nothing on a fresh record ([ff41aae](https://github.com/geoah/substrate/commit/ff41aaecdb4a36748f73f568837b6de68c72762d)), closes [#1220](https://github.com/geoah/substrate/issues/1220)
+* **console:** draw the border on links styled as outline buttons ([#1230](https://github.com/geoah/substrate/issues/1230)) ([68446b0](https://github.com/geoah/substrate/commit/68446b0f1682d641c6270b1669ac7ffb18676291))
+* **console:** keep typed secrets out of the mutation cache on every form ([#1232](https://github.com/geoah/substrate/issues/1232)) ([b5aac81](https://github.com/geoah/substrate/commit/b5aac812811268c2c1a0deb6a6a943678777e507))
+* **console:** show provider brand names and plain setup text ([#1234](https://github.com/geoah/substrate/issues/1234)) ([c4a4e39](https://github.com/geoah/substrate/commit/c4a4e3987b6b2cb4340ee16ec1db2db651f9c5ae))
+* **deps:** klauspost/compress v1.20.2, for GO-2026-6865 ([#1204](https://github.com/geoah/substrate/issues/1204)) ([fedb81f](https://github.com/geoah/substrate/commit/fedb81f7ba107eab91f846fc57c12306ad165c59))
+* **engine:** make an open wait for a new repository's directory write ([#1236](https://github.com/geoah/substrate/issues/1236)) ([bd47b63](https://github.com/geoah/substrate/commit/bd47b634fb49f85719d26b61b20d975d08b163f2))
+* **engine:** mark a refused key failing and say so plainly ([#1237](https://github.com/geoah/substrate/issues/1237)) ([1eda773](https://github.com/geoah/substrate/commit/1eda773595dc62d4b54ba4eae2ff3b7391411f4e))
+* **llm:** count the usage a dropped Anthropic answer reported ([#1233](https://github.com/geoah/substrate/issues/1233)) ([d01f7aa](https://github.com/geoah/substrate/commit/d01f7aa3df0c4fb0b2f8d594e1d870423e3c5c5b))
+* **llm:** seed the provider rows with their vendors' names as labels ([#1235](https://github.com/geoah/substrate/issues/1235)) ([35595df](https://github.com/geoah/substrate/commit/35595df579b4972e2f4e0fe19819d173ab116eba))
+* **sandbox:** refuse unchecked connects and TCP Fast Open sends ([#1228](https://github.com/geoah/substrate/issues/1228)) ([cb4e372](https://github.com/geoah/substrate/commit/cb4e3729b3b1ef8192015668420c6a8ea4fb4925))
+* **workouts:** a back-off set never takes the load the offer went up to ([d78a58b](https://github.com/geoah/substrate/commit/d78a58ba153e0e9a26dd488bddc96e6eaff51ab4))
+* **workouts:** a rated reps left is drawn at full strength ([e449924](https://github.com/geoah/substrate/commit/e449924cda4927728e879536f03579109f7c673c))
+* **workouts:** a warm-up in a group names itself, and a warm-up circuit's round says which ([b9cf1ff](https://github.com/geoah/substrate/commit/b9cf1ffc2654781b333932fe07f1d0944b53272d))
+* **workouts:** line up the timers' text ([05a287b](https://github.com/geoah/substrate/commit/05a287b8258ef14caebf70db0bf46182a0fd9d30))
+* **workouts:** Log's label is cut short at its end beside the …, not shrunk ([63aa8e7](https://github.com/geoah/substrate/commit/63aa8e7661b4cab125127700ecc8f140bd687672))
+* **workouts:** name the held sample exercises when a signed-out session uploads ([5444340](https://github.com/geoah/substrate/commit/54443401d4e1c9a4b417df31485575705cd4bd2e)), closes [#1217](https://github.com/geoah/substrate/issues/1217)
+* **workouts:** the open set's note sits as far below its title as the values sit below it ([5f2ac2b](https://github.com/geoah/substrate/commit/5f2ac2b11d71efa828ce6232b60723c661a28b7b))
+* **workouts:** the reset sits next to the steps on every row, why the set ended before it ([785ba07](https://github.com/geoah/substrate/commit/785ba072763f4e410392773c9a5d09898e0ce9d5))
+* **workouts:** the session asks before a load goes up, and a warm-up circuit says so ([1de3c6a](https://github.com/geoah/substrate/commit/1de3c6ab6e220afe63359659188fda8c1a0ddb0d))
+
 ## [0.118.0](https://github.com/geoah/substrate/compare/v0.117.0...v0.118.0) (2026-11-05)
 
 
