@@ -332,8 +332,10 @@ then on the sandbox's connect gate lets a body reach loopback and nothing
 else, whatever its `permissions.network` and `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
 say, and it refuses the system resolver too, so a body cannot even look up a
 provider's name. The gate checks `connect(2)`, so a confined body also gets
-no internet socket but a TCP stream and no TCP Fast Open send: a datagram,
-raw, SCTP or MPTCP socket would reach an address without connecting. An
+no internet socket but a TCP stream, no TCP Fast Open send and no Unix
+socket: a datagram, raw, SCTP or MPTCP socket would reach an address without
+connecting, and a resolver or proxy daemon on a pathname socket would carry
+the body's traffic past the gate. `socketpair(2)` still works. An
 outside body's proxy resolves a name from the hosts file alone. A shipped
 provider's body that a regression points at its
 real API (a dropped origin check, a lost `baseUrl`, an operator key that was
@@ -345,6 +347,11 @@ there rather than run unconfined. The provider tests that hand a body a key
 also call `runner.Shared.BodyEgressConfined` first, and the Python helper
 suites (`TestBodyHelpers*`) run their interpreter with no internet socket at
 all. A dependency resolve through `uv` is not a body and keeps its own policy.
+
+This confinement assumes the bodies under test are not hostile: it stops an
+honest regression from reaching the internet, not a body written to defeat
+it. Keeping a production body off the deployment's network is the sandbox's
+job, and gaps there are fixed in the sandbox, not in this test setting.
 
 ## Coverage
 

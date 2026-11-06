@@ -122,8 +122,11 @@ assistant taking both tools beside an offering copy;
 `internal/engine/offeredtools_test.go` holds a copy given the provider's
 tool name. The engine and provider test binaries confine every body to
 loopback, so a Firecrawl body these tests run cannot reach Firecrawl: it gets
-no datagram socket, and its connects and its proxy's lookups stay on the
-host.
+no datagram or Unix socket, and its connects and its proxy's lookups stay on
+the host. That confinement assumes bodies that are not hostile: it stops an
+honest regression from reaching Firecrawl, not a body written to defeat it.
+Keeping a production body off the deployment's network is the sandbox's job,
+and gaps there are fixed in the sandbox, separately from this record.
 `internal/providertest/firecrawl_test.go` holds the closure, the refused
 origins and redirects, and `webscrape` behaving as `scrapepage` did;
 `TestBodyHelpersFirecrawl` holds where the module sends a key that arrives
