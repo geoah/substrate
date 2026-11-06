@@ -716,9 +716,11 @@ func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
 	ctx := context.Background()
 	ds, clock := openMeterDataset(t, 1)
 	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterPing}}})
-	ping := func(id string) {
+	// A ping's id is minted (decision 0228); stamp names its reading
+	// rec-<that id>.
+	ping := func(name string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: fid(name), Properties: map[string]any{"name": name}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -731,13 +733,13 @@ func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
 
 	ping("a")
 	process()
-	requireReading(t, ds, "rec-a", true)
+	requireReading(t, ds, "rec-"+fid("a"), true)
 
 	// 0.6 of the 1 cent is spent: the next call does not fit.
 	ping("b")
 	process()
 	process()
-	requireReading(t, ds, "rec-b", false)
+	requireReading(t, ds, "rec-"+fid("b"), false)
 	requireNoFailures(t, ds, trigger)
 	if held := heldText(t, ds, trigger); !strings.HasPrefix(held, allowancePrefix) {
 		t.Fatalf("status held = %q, want the allowance's words", held)
@@ -763,14 +765,14 @@ func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
-	if len(matched) != 1 || matched[0].RecordID != "b" {
+	if len(matched) != 1 || matched[0].RecordID != fid("b") {
 		t.Fatalf("the change owed is %+v, want b's", matched)
 	}
 	_, next, err := ds.deliverWithRetry(ctx, tr, matched[0], cursor)
 	if !errors.Is(err, errUnstartedAtAllowance) || !errors.Is(err, substrate.ErrAllowance) || next != cursor {
 		t.Fatalf("a delivery refused at its reservation = next %d (cursor %d), %v; want the cursor kept and the allowance's refusal", next, cursor, err)
 	}
-	requireReading(t, ds, "rec-b", false)
+	requireReading(t, ds, "rec-"+fid("b"), false)
 	requireNoFailures(t, ds, trigger)
 
 	clock.Set(time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC))
@@ -778,7 +780,7 @@ func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
 		t.Fatalf("status held after the reset = %q", held)
 	}
 	process()
-	requireReading(t, ds, "rec-b", true)
+	requireReading(t, ds, "rec-"+fid("b"), true)
 	requireNoFailures(t, ds, trigger)
 }
 
@@ -874,7 +876,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	}
 	syncOf := func() (any, any) {
 		t.Helper()
-		rec, err := ds.Get(ctx, meterAccount, "acct")
+		rec, err := ds.Get(ctx, meterAccount, fid("acct"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -888,7 +890,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	}
 
 	// The first run fits, and spends 0.6 of the 1 cent.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: "acct", Properties: map[string]any{"name": "first"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
 		t.Fatal(err)
 	}
 	process()
@@ -898,7 +900,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	}
 
 	// The owner's edit is owed a run that does not fit: the walk holds it.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, meterAccount, "acct", substrate.PatchInput{Properties: map[string]any{"name": "second"}}); err != nil {
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, meterAccount, fid("acct"), substrate.PatchInput{Properties: map[string]any{"name": "second"}}); err != nil {
 		t.Fatal(err)
 	}
 	process()
@@ -919,7 +921,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 		t.Fatal(err)
 	}
 	matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
-	if len(matched) != 1 || matched[0].RecordID != "acct" {
+	if len(matched) != 1 || matched[0].RecordID != fid("acct") {
 		t.Fatalf("the change owed is %+v, want the account's edit", matched)
 	}
 	_, next, err := ds.deliverWithRetry(ctx, tr, matched[0], cursor)
@@ -1022,13 +1024,13 @@ func TestAHandsWakeOfAnOperatorPaidTriggerIsRefusedAtTheAllowance(t *testing.T) 
 	ds, _ := openMeterDataset(t, 1)
 	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterPing}}})
 	spendFunctionCents(t, ds, 0.6)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: "w", Properties: map[string]any{"name": "w"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: fid("w"), Properties: map[string]any{"name": "w"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.WakeTrigger(ctx, trigger); !errors.Is(err, substrate.ErrAllowance) || !strings.Contains(err.Error(), "today's allowance from Example") {
 		t.Fatalf("a wake at the allowance = %v, want the allowance's refusal", err)
 	}
-	requireReading(t, ds, "rec-w", false)
+	requireReading(t, ds, "rec-"+fid("w"), false)
 }
 
 // A call whose body never started settles at nothing, at the root and as a
