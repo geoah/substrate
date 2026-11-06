@@ -236,6 +236,25 @@ Three behaviors fall out of this one document:
 - **Ids that never lie.** After a merge, the losing id resolves to the winner
   forever, and any read by it says so.
 
+### Core's mappings onto contacts
+
+Core ships nine mappings onto its own `contact` kind: Apple's `contact`,
+Google's `contact`, user-made `contactgroup` labels and `emailaddress`, Slack's
+`user` (bots excluded) and `bot`, GitHub's `user`, Linear's `user` and
+Beeper's `user`, each filling a slot named `contact` on its mirror
+(`kinds/substrate.reamde.dev/core/contactmappings.yaml`). Every repository
+holds core and nobody can edit it, so these mappings never refuse a
+repository's vocabulary. Each one **waits** instead, out of every mapping read,
+while its provider is not installed, while the installed provider does not fit
+it (an older version lacking a path it reads), or while another package's
+mapping fills its slot or its target
+([decision record 0232](decisions/0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md)).
+The registry decides it again at every build, so installing the provider is
+what switches its mapping on, and uninstalling it is not refused on core's
+account. A mapping that waits although its provider is installed is logged at
+every open. Your own mapping of the same mirror on the slot `contact` wins it;
+on another slot (the people sample's `person`), both run.
+
 ### Sources that exist before their mapping
 
 **The apply that admits a mapping links the sources that already exist**
