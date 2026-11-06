@@ -25,7 +25,7 @@ import {
   XIcon,
 } from "lucide-react"
 
-import { listItems, listWrite } from "./sheet-model"
+import { liftWrite, listItems, listWrite, type Lift } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
 import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { MoneyInput } from "@/components/record/money-input"
@@ -59,11 +59,14 @@ export function ListEditor({
   record,
   onDone,
   onError,
+  lift,
 }: {
   row: SheetRow & { field: FormField }
   record: SubstrateRecord
   onDone: () => void
   onError: (message: string | undefined) => void
+  /** Set for a list held inside a structured property. */
+  lift?: Lift
 }) {
   const { field } = row
   const item = elementSpec(field.spec)
@@ -143,10 +146,14 @@ export function ListEditor({
     onDone()
   }
   async function save() {
-    const write = listWrite(
-      field,
-      row.value,
-      items.map((i) => i.text)
+    const write = liftWrite(
+      listWrite(
+        field,
+        row.value,
+        items.map((i) => i.text)
+      ),
+      field.name,
+      lift
     )
     if (write.error) return onError(write.error)
     if (!write.properties) return cancel()

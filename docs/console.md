@@ -385,12 +385,27 @@ A value with a comparator is a bound and reads every digit (`<0.005
 ng/mL`). Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
-moves a state may make, a record picker for a reference, and, for the shapes
-that need room (lists, objects, maps, JSON), the whole control in a panel under
-the row. Enter or leaving the box saves, Esc cancels. A save is a `patch`
+moves a state may make, a record picker for a reference, and, for a list of
+plain values, a keyed map or JSON, the whole control in a panel under the row.
+Enter or leaving the box saves, Esc cancels. A save is a `patch`
 naming only that property and carrying the version the page read (`ifVersion`),
 so an edit against a stale page is refused and says to reload rather than
 silently winning; a state move is the same patch along a declared transition.
+
+A declared object, or a list of them, is a section of its own under the other
+properties, read and edited where it sits. A list of items with a few short
+fields reads as a table, one row per item. A list of items holding text or
+lists of their own reads as stacked items: each is headed by the field that
+names it (a `name`, the one record it points at, or its `key`), shows its
+values as labelled facts, and shows each of its own lists as a table under
+it. A field no item holds is not shown, and two fields named like `repsMin`
+and `repsMax` read as one range (`12–15`). Clicking any value, however deep,
+opens that value's editor in its place, and the save is the same `patch`,
+carrying the whole property with that one value changed. An item's menu adds
+an item below it, duplicates it, moves it, sets a field it does not hold, or
+removes it after asking. A new or duplicated item is a small form, written
+once it holds every field an item must. On a narrow screen a table reads as
+labelled rows.
 A row that is not yours to edit says why: the engine stamps it, the host keeps
 it (a declared `writer:` other than the owner), the whole record is a
 provider's copy, or the kind never declared it. The record's prose, where the
@@ -450,8 +465,7 @@ Under the properties, in order:
   page, each to its metric's places. Both open the timeline on the record's stream. The property sheet
   under it folds the properties the section shows into one line ("12 shown
   under Measurement"), which opens them for editing, and keeps the rest (a
-  lab result's coding, specimen and report). A list of objects numbers its
-  items only where it holds more than one. A summary opens the timeline
+  lab result's coding, specimen and report). A summary opens the timeline
   on its own statistic. A `form` reads in the same words everywhere the
   console shows it: **Level**, **Amount**, **Running total** or **Vendor
   summary**.
