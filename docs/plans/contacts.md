@@ -51,7 +51,9 @@ and sharing between substrates later.
 Settled in a second round, the same day:
 
 - **No `lastContactAt` on the contact.** It stays on Mneme's own kind.
-- **The owner's own contact is `substrate.reamde.dev/core/contact/me`** (see
+- **The owner's own contact is named by a setting**,
+  `substrate.reamde.dev/core/ownerContact`, and the console asks the owner's
+  name after registration (fourth round; see
   [The owner's own contact](#the-owners-own-contact)).
 - **The shipped views are built separately**, as
   [#1208](https://github.com/geoah/substrate/issues/1208): the
@@ -68,6 +70,13 @@ Settled in a third round, the same day:
 - **Removing the people sample is not a break.** Nothing a repository holds
   changes; only importing the sample by name stops working. The change is a
   `feat:` whose title is the note.
+
+Settled in a fourth round, the same day:
+
+- **No `contact/me`.** The owner's own contact is an ordinary card named by
+  the setting `substrate.reamde.dev/core/ownerContact`, and the console asks
+  the owner's name after registration, on top of the host-defaults console
+  (#1212), whose `land()` still decides where a new owner goes next.
 
 ## Prior art
 
@@ -237,7 +246,7 @@ Choices worth a sentence each:
   fails it, so the first pattern must be right.
 - **Ids.** Contacts are minted by the server. PR 1199 (open) would make every
   non-internal kind a minted-id collection, so a person or an agent creates a
-  contact without choosing its id; the engine still writes `contact/me`.
+  contact without choosing its id. PR 1199 has merged.
 
 ### Making a core kind visible
 
@@ -307,31 +316,32 @@ is a function's job.
 
 ### The owner's own contact
 
-The owner is the contact with the id `me`. The engine writes
-`substrate.reamde.dev/core/contact/me` when it creates a repository
-(`contactType: person`, `prominence: known`, `substrate` set to the
-repository's name), and at the first open of a repository created before the
-kind existed. It follows the pattern of the three keyless `llm/provider` rows
-(`internal/engine/seedproviders.go`): written only where no hand but the
-engine's ever wrote or deleted the record, so an owner's edit stands and a
-deleted `me` stays deleted.
+The owner's own contact is an ordinary contact under a minted id. The core
+setting `substrate.reamde.dev/core/ownerContact` names it: its `value` is the
+contact's id, as Apple Contacts' "My Card" points at one card. Nothing seeds
+either record. After registration the console asks "What should we call
+you?", creates the contact (`contactType: person`, `prominence: known`,
+`substrate` set to the repository's name) and writes the setting; the same
+form is reachable later for a repository registered before it existed, and
+the owner may point the setting at another card.
 
-- **Why an id and not a property.** A flag or a matching `substrate` value
-  can be held by two contacts; an id cannot. A `contact` reference on the
-  core `repository` record is not writable: `repository` is a system kind that
-  takes only lifecycle transitions (`internal/engine/dataset.go:60`,
-  `internal/engine/write.go:640`).
+- **Why a setting and not a property.** A flag or a matching `substrate`
+  value can be held by two contacts; a setting names one. A `contact`
+  reference on the core `repository` record is not writable: `repository` is
+  a system kind that takes only lifecycle transitions.
+- **Why not a fixed id.** A seeded `contact/me` was built first (fourth
+  round, owner). It was the one chosen id in a minted kind, so it needed an
+  exemption from the rule that a mapped kind's ids are server-assigned and had
+  to be written above the machine tier, or the first recompute would have
+  emptied it. Every repository would also hold a `contact/me`, so a card
+  shared between substrates would collide on it.
 - **A merge keeps it reachable.** A read by a former id returns the winner
-  (docs/projection.md, "Former ids resolve to the winner"), so merging `me`
-  with the owner's Google contact leaves `contact/me` resolving to the
+  (docs/projection.md, "Former ids resolve to the winner"), so merging the
+  owner's card with their Google contact leaves the setting reaching the
   merged record whichever side wins.
-- **The id is legal under PR 1199.** That PR makes `contact` a minted-id
-  kind (it is not `internal` and declares no `ids`), and the engine is one of
-  the writers that keep an id they choose; a person or an agent could not
-  create `me`.
 
 Mneme's `owneridentity` then proposes merging each connected account's
-identity into `contact/me`, instead of choosing a winner between two persons.
+identity into the card the setting names.
 
 ## Console views
 
@@ -450,13 +460,10 @@ Each mapping's subject slot on the mirror is named `contact`. No `urls`
 mapping reads Apple or Google: both store a link as a plain string, and
 `urls` is the `url` type.
 
-Two things step 2 found that step 1 had to change. A mapped kind's ids are
-server-assigned, so the engine's own seed is let past that rule to name
-`contact/me` on a repository whose providers already map onto contacts; a
-client still is not. And `me` is written by the shipped tree's hand,
-`bundle:core`, at the bundle tier: the engine's own actor holds at the
-machine tier, so the first recompute would have emptied `contactType` and
-marked `me` an orphan.
+Step 2 is what showed a seeded `contact/me` would not hold: once providers
+map onto contacts, a chosen id needs an exemption, and a contact the engine
+writes is held at the machine tier, which the first recompute empties. The
+owner's card is now written by the console under the owner's hand.
 
 **Writers a mapping cannot be.** A mapping cannot move a state
 (`internal/vocabulary/mapping.go:536`), translate enum values or write a
@@ -545,8 +552,8 @@ Each is a record in [docs/decisions](../decisions/README.md) before the
 implementation merges:
 
 1. `contact` is a core kind with `purpose: primary`; the console and the
-   generic merge treat it as owner data, and the owner's own contact is
-   `contact/me`, written by the engine.
+   generic merge treat it as owner data, and the setting
+   `substrate.reamde.dev/core/ownerContact` names the owner's own contact.
 2. Core declares mappings from provider kinds, held back while the provider
    is absent, recomputed whenever the registry is built.
 3. A collection's shipped saved views are records of a seeded console kind
@@ -559,7 +566,7 @@ Each step is one pull request against `main`. A merge releases nothing, so
 steps 1 to 3 reach a release together; each is safe on `main` alone.
 
 1. Decision record 1. The `contact` kind in core with its three exceptions
-   (console, shipped-purpose test, merge) and the `contact/me` seed
+   (console, shipped-purpose test, merge), and the owner's-contact setting
    ([#1210](https://github.com/geoah/substrate/pull/1210)). Additive:
    nothing maps onto the kind yet.
 2. Decision record 2 (0232) and the core mappings, held while their
@@ -570,6 +577,9 @@ steps 1 to 3 reach a release together; each is safe on `main` alone.
    sample versions that pin `core/contact` and no longer require people, and
    the people sample removed.
 4. The six contact views, after #1208 lands.
+5. The console's name step after registration and its later route, writing
+   the contact and the setting; built on #1223's branch, so it merges after
+   #1213, #1212 and #1223.
 
 ## Reviews
 
