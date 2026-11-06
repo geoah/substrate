@@ -339,11 +339,13 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 }
 
 // eraseRepository erases a repository whole: every repository-scoped row, then
-// the control-plane row if one was ever written. It exists for ONE caller, a
+// the control-plane row if one was ever written. It exists for two callers: a
 // creation that failed (eraseFailedCreation, which decides whether the
 // creation owns what it is about to erase), because "a failed registration
 // creates nothing" is a promise, and it must keep that promise even when the
-// request that triggered the failure has already gone away.
+// request that triggered the failure has already gone away; and an owner
+// deleting their repository (auth.go DeleteRepository), which holds the
+// registration lock and the open slot around it.
 //
 //   - It runs on a context DECOUPLED from the caller's (context.WithoutCancel
 //     plus a bounded budget): a registration is frequently failing BECAUSE the

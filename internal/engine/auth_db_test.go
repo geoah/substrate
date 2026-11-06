@@ -349,6 +349,60 @@ func TestLoginGivesNoOracle(t *testing.T) {
 // The password-factor rule at the engine: changing the password
 // takes the CURRENT password and code, the new one works, the old one stops,
 // and the second factor survives the change.
+// Deleting a repository takes both factors, leaves nothing a login, a token
+// or a lookup can reach, and frees the name for a new registration that
+// inherits none of it.
+func TestDeleteRepositoryErasesItAndFreesTheName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	repository := testdb.Repository(t)
+	user, _, secret := registerUser(t, svc, repository)
+	ds, err := svc.Dataset(ctx, repository)
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	kept, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind:       "substrate.reamde.dev/llm/memory",
+		Properties: map[string]any{"text": "the old repository's"},
+	})
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	waitStep(t)
+	if err := svc.DeleteRepository(ctx, substrate.LoginInput{
+		Repository: repository, Password: "not-the-password", TOTPCode: user.code(t),
+	}); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("delete with a wrong password = %v, want ErrAuth", err)
+	}
+	if _, _, err := svc.Authenticate(ctx, secret); err != nil {
+		t.Fatalf("a refused delete touched the repository: %v", err)
+	}
+
+	if err := svc.DeleteRepository(ctx, substrate.LoginInput{
+		Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, _, err := svc.Authenticate(ctx, secret); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("the deleted repository's token = %v, want ErrAuth", err)
+	}
+	if _, err := svc.Dataset(ctx, repository); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the deleted repository's dataset = %v, want ErrNotFound", err)
+	}
+
+	waitStep(t)
+	registerUser(t, svc, repository)
+	ds, err = svc.Dataset(ctx, repository)
+	if err != nil {
+		t.Fatalf("dataset of the new repository: %v", err)
+	}
+	if _, err := ds.Get(ctx, "substrate.reamde.dev/llm/memory", kept.ID); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the new repository holds the old one's record: %v", err)
+	}
+}
+
 func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

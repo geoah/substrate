@@ -259,6 +259,17 @@ POST /totp/enroll     # {"repository","password","totpCode"} → 200 {totpSecret
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
 ```
 
+Deleting the repository takes the same two factors, and nothing else:
+
+```http
+POST /repository/delete  # {"repository","password","totpCode"} → 204
+```
+
+It erases every record, token and file the repository holds and frees the
+name for the next registration
+([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
+The console offers it under Settings, Danger zone.
+
 **The password-factor rule: changing auth material requires the current
 password and TOTP code, presented directly in the request body. A bearer token
 alone is refused — `403 forbidden`, because the endpoint does not accept tokens

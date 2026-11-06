@@ -48,6 +48,12 @@ type Service interface {
 	BeginTOTPReenrollment(ctx context.Context, in LoginInput) (TOTPEnrollment, error)
 	ReenrollTOTP(ctx context.Context, in LoginInput, newSecret, newCode string) error
 
+	// DeleteRepository takes both current factors, like the credential
+	// changes, and erases the repository whole: every record, token, file
+	// and the control-plane row. Nothing survives it, so the name is free to
+	// register again.
+	DeleteRepository(ctx context.Context, in LoginInput) error
+
 	// Authenticate resolves a bearer secret to its dataset and token: one
 	// SHA-256 lookup ACROSS repositories, which is what scopes the request to
 	// the repository holding the matching token record.

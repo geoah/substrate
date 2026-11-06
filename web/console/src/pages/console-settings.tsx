@@ -44,7 +44,7 @@ import {
   type ThemePreference,
 } from "@/lib/console-preferences"
 import { changeServer, checkForUpdates, nativeShell } from "@/lib/shell"
-import { AccountRows } from "@/pages/account"
+import { AccountRows, DeleteRepositoryRow } from "@/pages/account"
 import { ApiTokens, AppTokenRows, SignedInRows } from "@/pages/tokens"
 
 const RECORD_WIDTHS = [
@@ -427,6 +427,14 @@ export function ConsoleSettingsPage() {
           <DeveloperRows />
         </SettingsSection>
       )}
+      <SettingsSection
+        title="Danger zone"
+        hint="nothing here can be undone"
+        id="danger"
+        danger
+      >
+        <DeleteRepositoryRow />
+      </SettingsSection>
     </DocPage>
   )
 }

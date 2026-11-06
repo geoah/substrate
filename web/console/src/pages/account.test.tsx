@@ -7,14 +7,17 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { clearSession, saveSession } from "@/lib/api/session"
+import { clearSession, getToken, saveSession } from "@/lib/api/session"
 
+const navigate = vi.hoisted(() => vi.fn())
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
     <a href={to}>{children}</a>
   ),
+  useNavigate: () => navigate,
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
@@ -26,7 +29,7 @@ vi.mock("@/components/identity/unverified-mark", () => ({
   UnverifiedMark: () => null,
 }))
 
-import { AccountRows } from "./account"
+import { AccountRows, DeleteRepositoryRow } from "./account"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -187,5 +190,93 @@ describe("AccountRows", () => {
       totpCode: "",
       newPassword: "hunter2hunter2",
     })
+  })
+})
+
+describe("DeleteRepositoryRow", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    saveSession("substrate_tok_current", "geoah", "tok-1")
+    policy.totpRequired = true
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    navigate.mockReset()
+  })
+
+  function renderRow() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <DeleteRepositoryRow />
+      </QueryClientProvider>
+    )
+  }
+
+  it("deletes only once the name is typed, with both factors in the body", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+    renderRow()
+    const card = within(open("Delete…", "Delete your Substrate"))
+    const submit = card.getByRole("button", { name: "Delete forever" })
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "old-passphrase" },
+    })
+    fireEvent.change(card.getByLabelText("Current code"), {
+      target: { value: "123 456" },
+    })
+    fireEvent.change(card.getByLabelText("Confirm the name"), {
+      target: { value: "geoa" },
+    })
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(card.getByLabelText("Confirm the name"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.click(submit)
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/register", replace: true })
+    )
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/repository/delete"
+    )!
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      repository: "geoah",
+      password: "old-passphrase",
+      totpCode: "123456",
+    })
+    expect(
+      ((call[1] as RequestInit).headers as Record<string, string>).Authorization
+    ).toBeUndefined()
+    expect(getToken()).toBeNull()
+  })
+
+  it("keeps the session when the factors are refused", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "auth", message: "bad" } }),
+        { status: 401 }
+      )
+    )
+    renderRow()
+    const card = within(open("Delete…", "Delete your Substrate"))
+    fireEvent.change(card.getByLabelText("Confirm the name"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "wrong" },
+    })
+    fireEvent.change(card.getByLabelText("Current code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Delete forever" }))
+
+    await card.findByRole("alert")
+    expect(navigate).not.toHaveBeenCalled()
+    expect(getToken()).toBe("substrate_tok_current")
   })
 })

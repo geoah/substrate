@@ -97,8 +97,9 @@ over the first and tells you to set `SUBSTRATE_DEV_PORT`.
 `.dev/` around it, and it has to: a data root that outlives its database is
 imported at the next boot, and a database that outlives its root is written
 back out ([what happens at boot](operations.md#what-happens-at-boot)).
-Registration is one-shot per repository and there is no unregister, so testing
-the door a second time means wiping first. `mise run dev:reset` is the wipe and
+Registration is one-shot per repository, so testing the door a second time
+means wiping first, or deleting the repository from Settings, Danger zone,
+which frees its name. `mise run dev:reset` is the wipe and
 a fresh start in one.
 
 It stops at this tree. The container and its volume hold every other
