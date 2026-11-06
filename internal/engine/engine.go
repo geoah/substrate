@@ -1261,7 +1261,15 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 	if cached != nil || err != nil {
 		return cached, err
 	}
-	ds, err := s.openNew(ctx, repo)
+	// The row is read again under the slot: this open may have waited on a
+	// creation that failed and erased the repository it had begun, and that
+	// answer is not found, not the storage error the stale row would draw.
+	fresh, err := s.repositoryByID(ctx, repo.ID)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	ds, err := s.openNew(ctx, fresh)
 	release()
 	// The operator's install list, once per open of the repository in this
 	// process, after the open is published: an install is an ordinary write

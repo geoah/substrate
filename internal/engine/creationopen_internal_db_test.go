@@ -9,8 +9,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // An open that finds the new row while the creation's catch-up has prepared
@@ -70,5 +73,52 @@ func TestAnOpenDuringACreationsDirectoryWriteWaitsForIt(t *testing.T) {
 	s.mu.Unlock()
 	if !cached {
 		t.Fatal("the open returned no error and cached no dataset")
+	}
+}
+
+// An open that waited on a creation that then failed answers not found: the
+// failed creation erased the repository, and the stale row the open was
+// handed must not draw a storage error from the keys it no longer has.
+func TestAnOpenWaitingOnAFailedCreationAnswersNotFound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := openBareService(t)
+	const authority = "dave.example.com"
+
+	createCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	opened := make(chan error, 1)
+	parked := make(chan struct{})
+	var parkOnce, fireOnce sync.Once
+	s.testOpenWaits = func(id string) {
+		if id == authority {
+			parkOnce.Do(func() { close(parked) })
+		}
+	}
+	s.testCatchUpPrepared = func(id string) {
+		if id != authority {
+			return
+		}
+		fireOnce.Do(func() {
+			go func() {
+				_, err := s.Dataset(ctx, authority)
+				opened <- err
+			}()
+			select {
+			case err := <-opened:
+				opened <- err
+			case <-parked:
+			}
+			// The creation fails from here on: everything after the
+			// prepared write runs on its canceled context.
+			cancel()
+		})
+	}
+	if _, err := s.CreateRepository(createCtx, authority); err == nil {
+		t.Fatal("the creation succeeded on a canceled context; this test is not watching a failed creation")
+	}
+	err := <-opened
+	if !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("an open that waited on a failed creation answered %v, want not found", err)
 	}
 }
