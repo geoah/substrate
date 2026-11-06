@@ -26,9 +26,13 @@
  * grid heads each run of rows (lib/grouping.ts); under a tree a subtree stays
  * in its top-level row's group.
  *
- * SAVED VIEWS sit on a strip above the toolbar: All, each view saved for this
- * collection, and Save view (lib/saved-views.ts). They live on the console
- * preference record, beside the favorites the header's star edits. */
+ * SAVED VIEWS sit on a strip above the toolbar: All, the views a package
+ * shipped for this collection (lib/collection-views.ts, decision record
+ * 0229), each view the owner saved, and Save view (lib/saved-views.ts). The
+ * owner's live on the console preference record, beside the favorites the
+ * header's star edits; a shipped one is a record its menu writes. A bare
+ * address opens on the shipped default view the first time, and on the tab
+ * the reader left after that, All included. */
 
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -91,6 +95,10 @@ import {
   useLiveInvalidation,
 } from "@/hooks/use-live-invalidation"
 import { useRecordTree } from "@/hooks/use-record-tree"
+import {
+  useCollectionViewRecords,
+  useCollectionViewWrite,
+} from "@/hooks/use-collection-views"
 import { providerOfKind } from "@/lib/actor-identity"
 import {
   formatCount,
@@ -99,6 +107,12 @@ import {
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import {
+  collectionViewWrite,
+  collectionViewsOf,
+  defaultView,
+  tokensWhere,
+} from "@/lib/collection-views"
 import {
   expandableReferences,
   filterableProperties,
@@ -180,6 +194,28 @@ function childNoun(kind: KindInfo): string {
   return plural.includes(" ") ? `nested ${plural}` : `sub${plural}`
 }
 
+/** The address parameters that name a view of the collection. */
+const VIEW_PARAMS = ["filter", "sort", "nest", "group", "search"]
+
+/** What this browser remembers for a collection as the page first draws it:
+ * the tab the reader picked last (at a bare address only, since an address
+ * that names a view is that view), and whether the address opens on the
+ * default view a package shipped, which it does when nothing is stored. */
+function rememberedTab(
+  authority: string,
+  pkg: string,
+  name: string
+): { collection: string; view?: string; opensOnDefault: boolean } {
+  const params = new URLSearchParams(window.location.search)
+  const bare = !VIEW_PARAMS.some((k) => params.has(k))
+  const stored = loadBrowsePrefs(`${authority}/${pkg}`, name)
+  return {
+    collection: `${authority}/${pkg}/${name}`,
+    view: bare ? stored?.view : undefined,
+    opensOnDefault: bare && !stored,
+  }
+}
+
 export function KindBrowsePage() {
   const units = useUnits()
   // The route params are the kind reference, segment for segment.
@@ -220,11 +256,26 @@ export function KindBrowsePage() {
   // stored prefs beside the rest of the view's shape.
   const [group, setGroup] = useQueryState("group", parseAsString)
   const { preferences, busy: preferencesBusy, change } = useConsolePreferences()
+  const collection = `${authority}/${pkg}/${name}`
+  // The tab picked last on this collection, so a view the reader has since
+  // changed can take those changes or drop them; `id` is absent for All.
+  const [picked, setPicked] = useState<{ collection: string; id?: string }>()
+  // What this browser remembered for the collection when the page first drew
+  // it, read again for the next collection (state adjusted while rendering,
+  // as the table's own stored columns are).
+  const [remembered, setRemembered] = useState(() =>
+    rememberedTab(authority, pkg, name)
+  )
+  if (remembered.collection !== collection) {
+    setRemembered(rememberedTab(authority, pkg, name))
+  }
 
   // A BARE url restores the last-used view from localStorage, one dimension
   // at a time; an explicit ?filter=/?sort= always wins (shareable views stay
   // exact). Writes happen in the change handlers below, never here — an
   // effect writing on mount would wipe the store before this restore ran.
+  // A collection this browser stored nothing for opens on the default view
+  // a package shipped for it, if any (the effect after the views are read).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const stored = loadBrowsePrefs(`${authority}/${pkg}`, name)
@@ -253,12 +304,14 @@ export function KindBrowsePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per collection
   }, [authority, pkg, name])
 
-  /** Write-through: the store always mirrors the view the handlers just set. */
+  /** Write-through: the store always mirrors the view the handlers just set,
+   * and the tab picked, when a pick set it. A change by hand names no tab. */
   function persist(next: {
     filter?: string[]
     sort?: string
     nest?: boolean
     group?: string | null
+    view?: string
   }) {
     saveBrowsePrefs(`${authority}/${pkg}`, name, {
       filter: next.filter ?? filterTokens,
@@ -266,6 +319,7 @@ export function KindBrowsePage() {
         (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
       nest: (next.nest ?? nest) ? undefined : false,
       group: (next.group === undefined ? group : next.group) ?? undefined,
+      view: next.view,
     })
   }
 
@@ -506,8 +560,32 @@ export function KindBrowsePage() {
     autoHidden: emptyIds,
   })
 
+  // The views a package shipped lead the owner's, in record id order.
+  const shippedRecords = useCollectionViewRecords(kindInfo)
+  const columnNames = useMemo(
+    () => ({
+      idOf: columnIdOf,
+      all: columns
+        .map((c) => c.id)
+        .filter((id): id is string => typeof id === "string"),
+    }),
+    [columns]
+  )
+  const shippedViews = useMemo(
+    () =>
+      kindInfo
+        ? collectionViewsOf(
+            shippedRecords.records,
+            kindInfo.identity,
+            filterFields,
+            columnNames
+          )
+        : [],
+    [kindInfo, shippedRecords.records, filterFields, columnNames]
+  )
+  const writeShipped = useCollectionViewWrite()
   const views = kindInfo
-    ? viewsOf(preferences.views ?? [], kindInfo.identity)
+    ? [...shippedViews, ...viewsOf(preferences.views ?? [], kindInfo.identity)]
     : []
   const viewState: ViewState = {
     filter: filterTokens,
@@ -517,11 +595,14 @@ export function KindBrowsePage() {
     columns: table.state.columnOrder,
     hidden: table.options.meta?.readerHidden ?? [],
   }
-  // The view picked last on this collection, so a view the reader has since
-  // changed can take those changes or drop them.
-  const [picked, setPicked] = useState<{ collection: string; id: string }>()
+  // The tab picked last: the reader's pick on this page, else the one this
+  // browser remembered, else the default view a bare address opened on.
+  const shippedDefault = defaultView(shippedViews)
   const pickedId =
-    picked && picked.collection === kindInfo?.identity ? picked.id : undefined
+    picked?.collection === collection
+      ? picked.id
+      : (remembered.view ??
+        (remembered.opensOnDefault ? shippedDefault?.id : undefined))
   const matchedView = matchingView(views, viewState, DEFAULT_SORT, pickedId)
   const activeView = matchedView
     ? matchedView.id
@@ -545,7 +626,7 @@ export function KindBrowsePage() {
       DEFAULT_SORT
     )
     change({ type: "view", view })
-    setPicked({ collection: kindInfo.identity, id: view.id })
+    setPicked({ collection, id: view.id })
   }
 
   function changeGroup(next: string | null) {
@@ -554,15 +635,18 @@ export function KindBrowsePage() {
     persist({ group: next })
   }
 
-  /** Show a saved view, or with none the collection as it opens. The columns
-   * change only where the view names them; a search is the question of the
-   * moment and is cleared. */
+  /** Pick a saved view, or with none the collection as it opens, and
+   * remember the pick, All included. */
   function pickView(view: SavedView | null) {
-    setPicked(
-      view && kindInfo
-        ? { collection: kindInfo.identity, id: view.id }
-        : undefined
-    )
+    setPicked({ collection, id: view?.id })
+    const shown = showView(view)
+    persist({ ...shown, view: view?.id ?? "all" })
+  }
+
+  /** Show a saved view, or with none the collection as it opens, in the
+   * address alone. The columns change only where the view names them; a
+   * search is the question of the moment and is cleared. */
+  function showView(view: SavedView | null) {
     const filter = view?.filter ?? []
     const nextSort = view?.sort ?? DEFAULT_SORT
     const nextNest = view?.nest ?? true
@@ -579,7 +663,32 @@ export function KindBrowsePage() {
         hidden: view.hidden,
       })
     }
-    persist({ filter, sort: nextSort, nest: nextNest, group: nextGroup })
+    return { filter, sort: nextSort, nest: nextNest, group: nextGroup }
+  }
+
+  // The first open of a collection this browser remembers nothing for, at a
+  // bare address, shows the default view a package shipped for it, once the
+  // views are read. Not while the reader has since chosen anything (the
+  // store says so) or the page shows something else, and not remembered as
+  // their pick: the next bare address opens on the default again until they
+  // choose.
+  const opening =
+    remembered.collection === collection &&
+    remembered.opensOnDefault &&
+    shippedRecords.settled
+  useEffect(() => {
+    if (!opening || !shippedDefault || search) return
+    if (loadBrowsePrefs(`${authority}/${pkg}`, name)) return
+    if (isAllView(viewState, DEFAULT_SORT)) showView(shippedDefault)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per open
+  }, [opening])
+
+  /** Write a shipped view's record: its properties, or null to delete it. */
+  function writeView(
+    view: SavedView,
+    properties: Record<string, unknown> | null
+  ) {
+    if (view.record) writeShipped.mutate({ record: view.record, properties })
   }
 
   // Only the REGISTRY gates the whole page — it names the collection and it
@@ -894,16 +1003,46 @@ export function KindBrowsePage() {
         onPick={pickView}
         onSave={saveView}
         onRename={(view, viewName) =>
-          change({ type: "view", view: { ...view, name: viewName } })
+          view.record
+            ? writeView(view, { name: viewName })
+            : change({ type: "view", view: { ...view, name: viewName } })
         }
         onReplace={(view) =>
-          change({
-            type: "view",
-            view: viewFromState(view, viewState, DEFAULT_SORT),
-          })
+          view.record
+            ? writeView(
+                view,
+                collectionViewWrite(
+                  viewState,
+                  DEFAULT_SORT,
+                  tokensWhere(units, viewState.filter, filterFields),
+                  (id) =>
+                    id === "title" || id === "id"
+                      ? undefined
+                      : sortPropertyOf(id)
+                )
+              )
+            : change({
+                type: "view",
+                view: viewFromState(view, viewState, DEFAULT_SORT),
+              })
         }
-        onDelete={(view) => change({ type: "forget-view", id: view.id })}
+        onDelete={(view) =>
+          view.record
+            ? writeView(view, null)
+            : change({ type: "forget-view", id: view.id })
+        }
       />
+      {writeShipped.isError && (
+        <p
+          role="alert"
+          className={cn("mt-2 text-[12.5px] text-destructive", GUTTER_MX)}
+        >
+          The view could not be saved:{" "}
+          {writeShipped.error instanceof Error
+            ? writeShipped.error.message
+            : String(writeShipped.error)}
+        </p>
+      )}
       <div
         className={cn(
           "flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border py-2.5",
@@ -953,6 +1092,7 @@ export function KindBrowsePage() {
           kinds={registry.data ?? []}
           labelOf={technical ? undefined : propertyLabel}
           words
+          presence
           onChange={(next) => {
             const tokens = next.map(encodeFilter)
             void setFilterTokens(tokens.length ? tokens : null)

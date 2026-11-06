@@ -39,6 +39,8 @@ describe("the URL codec", () => {
       { field: "email", op: "prefix", value: "geo" },
       { field: "name", op: "match", value: `rack lay* -"weekly sync"` },
       { field: "n", op: "eq", value: "" },
+      { field: "contactType", op: "exists", value: "false" },
+      { field: "contactType", op: "exists", value: "true" },
     ]
     for (const f of cases) {
       expect(decodeFilter(encodeFilter(f))).toEqual(f)
@@ -47,9 +49,46 @@ describe("the URL codec", () => {
 
   it("drops malformed tokens instead of crashing the page", () => {
     expect(
-      decodeFilters(["junk", "a~gt~1", "prominence~eq~known", null as never])
+      decodeFilters([
+        "junk",
+        "a~gt~1",
+        "a~exists~maybe",
+        "prominence~eq~known",
+        null as never,
+      ])
     ).toEqual([{ field: "prominence", op: "eq", value: "known" }])
     expect(decodeFilters(null)).toEqual([])
+  })
+})
+
+describe("exists", () => {
+  it("is the wire's exists, beside another condition on the same field", () => {
+    expect(
+      toRecordFilter(
+        SHIPPED_UNITS,
+        [
+          { field: "contactType", op: "exists", value: "false" },
+          { field: "prominence", op: "exists", value: "true" },
+        ],
+        []
+      )
+    ).toEqual({
+      properties: {
+        contactType: { exists: false },
+        prominence: { exists: true },
+      },
+    })
+  })
+
+  it("reads as whether a value is there, and leaves the editor empty", () => {
+    const has = { field: "a", op: "exists", value: "true" } as const
+    const none = { field: "a", op: "exists", value: "false" } as const
+    const text = prop({ kind: "string" })
+    expect(filterValueText(has, text, true)).toBe("has a value")
+    expect(filterValueText(none, prop({ kind: "enum" }), true)).toBe(
+      "has no value"
+    )
+    expect(displayValue(none, text)).toBe("")
   })
 })
 
@@ -436,11 +475,23 @@ describe("browse prefs persistence", () => {
     ).toBeNull()
   })
 
-  it("an all-default save removes the stored entry (clear clears)", () => {
+  it("an all-default save stores an empty entry, which is All", () => {
     saveBrowsePrefs("g", "t", { filter: ["a~eq~b"], sort: "name:asc" })
     saveBrowsePrefs("g", "t", { filter: [], sort: undefined })
-    expect(loadBrowsePrefs("g", "t")).toBeNull()
-    expect(localStorage.getItem("substrate.browse.g/t")).toBeNull()
+    // Not null: a collection the reader left on All is not one they never
+    // opened, and a default view must not replace it (decision 0229).
+    expect(loadBrowsePrefs("g", "t")).toEqual({})
+    expect(localStorage.getItem("substrate.browse.g/t")).toBe("{}")
+  })
+
+  it("remembers the tab picked last, All included", () => {
+    saveBrowsePrefs("g", "t", { view: "all" })
+    expect(loadBrowsePrefs("g", "t")).toEqual({ view: "all" })
+    saveBrowsePrefs("g", "t", { filter: ["a~exists~false"], view: "v1" })
+    expect(loadBrowsePrefs("g", "t")).toEqual({
+      filter: ["a~exists~false"],
+      view: "v1",
+    })
   })
 
   it("remembers the tree switched off, and only off", () => {
@@ -448,7 +499,7 @@ describe("browse prefs persistence", () => {
     expect(loadBrowsePrefs("g", "t")).toEqual({ nest: false })
     // on is the default, so it is nothing to store
     saveBrowsePrefs("g", "t", { nest: true })
-    expect(loadBrowsePrefs("g", "t")).toBeNull()
+    expect(loadBrowsePrefs("g", "t")).toEqual({})
     saveBrowsePrefs("g", "t", { filter: ["a~eq~b"], nest: undefined })
     expect(loadBrowsePrefs("g", "t")).toEqual({ filter: ["a~eq~b"] })
   })
@@ -457,14 +508,15 @@ describe("browse prefs persistence", () => {
     saveBrowsePrefs("g", "t", { group: "priority" })
     expect(loadBrowsePrefs("g", "t")).toEqual({ group: "priority" })
     saveBrowsePrefs("g", "t", { group: undefined })
-    expect(loadBrowsePrefs("g", "t")).toBeNull()
+    expect(loadBrowsePrefs("g", "t")).toEqual({})
   })
 
   it("survives garbage in the store", () => {
     localStorage.setItem("substrate.browse.g/t", "{not json")
     expect(loadBrowsePrefs("g", "t")).toBeNull()
+    // An entry whose dimensions are garbage keeps none of them.
     localStorage.setItem("substrate.browse.g/t", '{"filter":[1,2]}')
-    expect(loadBrowsePrefs("g", "t")).toBeNull()
+    expect(loadBrowsePrefs("g", "t")).toEqual({})
   })
 })
 

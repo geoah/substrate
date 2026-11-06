@@ -4,7 +4,8 @@
  * when the kind's metadata arrives and the view turns into a tree. Only a
  * reader's own change to the view renumbers it. The head names the
  * collection for a reader and keeps the kind reference for technical mode.
- * Saved views and the star are held through the real preference record, and
+ * Saved views and the star are held through the real preference record, the
+ * views a package shipped through their records (decision record 0229), and
  * a grouped page through its heads, counts, folds and page notes. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -86,6 +87,10 @@ const countFilters: unknown[] = []
 // What a count answers, by the filter it was asked for.
 const EVERY_COUNT = () => 400
 let countOf: (filter: unknown) => number = EVERY_COUNT
+// What the read of the collection's shipped views answers; never the page's
+// rows, and never counted among the page reads.
+const COLLECTION_VIEW = "substrate.reamde.dev/console/collectionview"
+let shippedViewRecords: unknown[] = []
 
 vi.mock("@/lib/api/kinds", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/kinds")>()
@@ -110,6 +115,8 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
     ) => ({
       ...actual.recordsQueryOptions(p),
       queryFn: () => {
+        if (p.kinds?.includes(COLLECTION_VIEW))
+          return Promise.resolve({ records: shippedViewRecords })
         offsets.push(p.offset)
         orders.push(p.orderBy)
         return Promise.resolve({ records: pageRecords, cursor: pageCursor })
@@ -137,6 +144,7 @@ afterEach(() => {
   pageCursor = "next"
   countFilters.length = 0
   countOf = EVERY_COUNT
+  shippedViewRecords = []
   localStorage.clear()
 })
 
@@ -374,6 +382,9 @@ describe("through the preference record", () => {
   let stored: Record<string, unknown> = {}
   let version = 1
   const writes: Record<string, unknown>[] = []
+  // Writes to a shipped view's record: the method, the record path and the
+  // body.
+  const viewWrites: { method: string; path: string; body?: unknown }[] = []
 
   beforeAll(() => {
     // `SidebarProvider`, inside the preference provider, asks whether the
@@ -395,9 +406,24 @@ describe("through the preference record", () => {
     stored = {}
     version = 1
     writes.length = 0
+    viewWrites.length = 0
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
+        const at = String(url).indexOf(COLLECTION_VIEW)
+        if (at >= 0) {
+          viewWrites.push({
+            method: init?.method ?? "GET",
+            path: String(url).slice(at),
+            body: init?.body ? JSON.parse(String(init.body)) : undefined,
+          })
+          return init?.method === "DELETE"
+            ? new Response(null, { status: 204 })
+            : new Response(
+                JSON.stringify({ id: "x", kind: COLLECTION_VIEW, version: 2 }),
+                { status: 200 }
+              )
+        }
         if (!String(url).endsWith("/consolepreference/navigation"))
           return new Response("{}", { status: 404 })
         if (init?.method === "PUT") {
@@ -626,6 +652,169 @@ describe("through the preference record", () => {
       hidden: [],
     })
     await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+  })
+
+  // A shipped view: a record of the console's collectionview kind naming the
+  // team collection, read through the mocked records read.
+  const shipped = (
+    id: string,
+    properties: Record<string, unknown>
+  ): Record<string, unknown> => ({
+    id,
+    kind: COLLECTION_VIEW,
+    version: 1,
+    createdAt: "2026-11-06T00:00:00Z",
+    updatedAt: "2026-11-06T00:00:00Z",
+    properties: {
+      appliesTo: { ref: `substrate.reamde.dev/core/kind/${TEAM}` },
+      ...properties,
+    },
+  })
+  const tabNames = () =>
+    [...tabs().querySelectorAll("button[aria-pressed]")].map(
+      (b) => b.textContent
+    )
+  const PREFS_KEY = "substrate.browse.acme.example.com/people/team"
+
+  it("lists the shipped views after All and before the owner's, and lights the one shown", async () => {
+    shippedViewRecords = [
+      shipped("team-small", {
+        name: "Small",
+        where: { size: { eq: "small" } },
+      }),
+      shipped("team-large", {
+        name: "Large",
+        where: { size: { eq: "large" } },
+      }),
+    ]
+    stored = {
+      favorites: [],
+      views: [{ id: "v1", collection: TEAM, name: "By size", group: "size" }],
+    }
+    await renderPage("?filter=size~eq~large")
+    await waitFor(() =>
+      expect(tabNames()).toEqual(["All", "Large", "Small", "By size"])
+    )
+    expect(pressedTabs()).toEqual(["Large"])
+  })
+
+  it("opens a bare address on the shipped default view, and on All once the reader picks it", async () => {
+    shippedViewRecords = [
+      shipped("team-unsized", {
+        name: "Unsized",
+        where: { size: { exists: false } },
+        default: true,
+      }),
+    ]
+    const page = await renderPage("")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Unsized"]))
+    expect(page.url().getAll("filter")).toEqual(["size~exists~false"])
+    // The toolbar shows the condition it filters on.
+    expect(screen.getByText("has no value")).toBeTruthy()
+    // Opened for the reader, so not remembered as their choice.
+    expect(localStorage.getItem(PREFS_KEY)).toBeNull()
+
+    await press("All")
+    await waitFor(() => expect(pressedTabs()).toEqual(["All"]))
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "null")).toEqual({
+      view: "all",
+    })
+  })
+
+  it("opens on All when the reader left the collection on All", async () => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ view: "all" }))
+    shippedViewRecords = [
+      shipped("team-unsized", {
+        name: "Unsized",
+        where: { size: { exists: false } },
+        default: true,
+      }),
+    ]
+    await renderPage("")
+    await waitFor(() => expect(tabNames()).toContain("Unsized"))
+    expect(pressedTabs()).toEqual(["All"])
+  })
+
+  it("lists a shipped view the bar cannot show, and does not open it", async () => {
+    shippedViewRecords = [
+      shipped("team-big", { name: "Big", where: { size: { gt: "small" } } }),
+    ]
+    await renderPage("")
+    const big = await screen.findByRole("button", { name: /^Big/ })
+    expect(big.getAttribute("aria-disabled")).toBe("true")
+    expect(big.getAttribute("title")).toContain("cannot show its “gt”")
+    fireEvent.click(big)
+    expect(pressedTabs()).toEqual(["All"])
+  })
+
+  it("renames, saves and deletes a shipped view on its record", async () => {
+    shippedViewRecords = [
+      shipped("team-small", {
+        name: "Small",
+        where: { size: { eq: "small" } },
+        sort: "size:asc",
+      }),
+    ]
+    await renderPage("?filter=size~eq~small&sort=size:asc")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small"]))
+    const path = `${COLLECTION_VIEW}/team-small`
+
+    await press("More for the “Small” view")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }))
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Little" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    await waitFor(() => expect(viewWrites).toHaveLength(1))
+    expect(viewWrites[0]).toEqual({
+      method: "PATCH",
+      path,
+      body: { properties: { name: "Little" } },
+    })
+    // The preference record is not written for a shipped view.
+    expect(writes).toEqual([])
+
+    await press("Small")
+    // No row matches, so the empty grid offers to clear the filter.
+    await press("Clear filters")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small, changed"]))
+    await press("More for the “Small” view")
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Save changes to this view…",
+      })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(viewWrites).toHaveLength(2))
+    expect(viewWrites[1]).toMatchObject({
+      method: "PATCH",
+      path,
+      body: {
+        properties: {
+          where: null,
+          sort: "size:asc",
+          group: null,
+          columns: expect.any(Array),
+        },
+      },
+    })
+    // A view names properties, never this console's column ids.
+    const saved = viewWrites[1].body as { properties: { columns: string[] } }
+    expect(saved.properties.columns).toEqual(
+      expect.arrayContaining(["name", "size"])
+    )
+    expect(
+      saved.properties.columns.filter((c) => c === "title" || c.includes(":"))
+    ).toEqual([])
+
+    await press("More for the “Small” view")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }))
+    expect(
+      screen.getByText(/a later version of the package that shipped it/)
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await waitFor(() => expect(viewWrites).toHaveLength(3))
+    expect(viewWrites[2]).toEqual({ method: "DELETE", path, body: undefined })
   })
 
   it("stars and unstars the collection in the favorites the sidebar lists", async () => {
