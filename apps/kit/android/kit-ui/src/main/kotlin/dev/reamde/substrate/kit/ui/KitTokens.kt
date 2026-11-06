@@ -79,6 +79,7 @@ public fun menuIcon(name: String): ImageVector = when (name) {
     "inbox" -> Icons.Rounded.Inbox // tray
     "list" -> Icons.AutoMirrored.Rounded.List // list.bullet
     "lists" -> Icons.Rounded.Checklist // checklist
+    "needs" -> Icons.Rounded.CheckCircle // checkmark.circle
     "person" -> Icons.Rounded.AccountCircle // person.crop.circle
     "records" -> Icons.Rounded.ViewAgenda // square.stack
     "search" -> Icons.Rounded.Search // magnifyingglass

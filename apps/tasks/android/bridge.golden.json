@@ -2,6 +2,16 @@
   "version": 1,
   "types": [
     {
+      "name": "BandHeading",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "band", "type": "TaskBand"},
+        {"name": "title", "type": "String"},
+        {"name": "count", "type": "Int"}
+      ]
+    },
+    {
       "name": "Confirmation",
       "module": "TasksCore",
       "kind": "enum",
@@ -88,6 +98,17 @@
       ]
     },
     {
+      "name": "FilterChip",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "selection", "type": "ListSelection?"},
+        {"name": "selected", "type": "Bool"}
+      ]
+    },
+    {
       "name": "ListAction",
       "module": "TasksCore",
       "kind": "enum",
@@ -114,6 +135,9 @@
         {"name": "selection", "type": "ListSelection"},
         {"name": "title", "type": "String"},
         {"name": "summary", "type": "ListSummary"},
+        {"name": "chips", "type": "[FilterChip]"},
+        {"name": "bands", "type": "[BandHeading]"},
+        {"name": "clear", "type": "String?"},
         {"name": "open", "type": "KeyedList<TaskRow>"},
         {"name": "openTitle", "type": "String"},
         {"name": "closed", "type": "KeyedList<TaskRow>"},
@@ -135,7 +159,7 @@
       "kind": "enum",
       "cases": [
         {
-          "name": "today",
+          "name": "needsYou",
           "fields": []
         },
         {
@@ -167,6 +191,26 @@
       "fields": [
         {"name": "text", "type": "String"},
         {"name": "priority", "type": "TaskPriority"}
+      ]
+    },
+    {
+      "name": "Reschedule",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "today", "value": "today"},
+        {"name": "tomorrow", "value": "tomorrow"},
+        {"name": "nextWeek", "value": "nextWeek"},
+        {"name": "pickDay", "value": "pickDay"}
+      ]
+    },
+    {
+      "name": "RescheduleMenu",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "options", "type": "[ActionButton<Reschedule>]"}
       ]
     },
     {
@@ -221,6 +265,16 @@
       ]
     },
     {
+      "name": "TaskBand",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "needsYou", "value": "needsYou"},
+        {"name": "upcoming", "value": "upcoming"},
+        {"name": "later", "value": "later"}
+      ]
+    },
+    {
       "name": "TaskDetailPresentation",
       "module": "TasksCore",
       "kind": "struct",
@@ -228,6 +282,7 @@
         {"name": "id", "type": "String"},
         {"name": "title", "type": "String"},
         {"name": "status", "type": "TaskStatus"},
+        {"name": "pending", "type": "Bool"},
         {"name": "fields", "type": "[DetailField]"},
         {"name": "actions", "type": "[ActionButton<TaskAction>]"},
         {"name": "edit", "type": "String"}
@@ -360,10 +415,14 @@
         {"name": "id", "type": "String"},
         {"name": "title", "type": "String"},
         {"name": "status", "type": "TaskStatus"},
+        {"name": "pending", "type": "Bool"},
         {"name": "toggle", "type": "String"},
         {"name": "due", "type": "DueBadge?"},
         {"name": "priority", "type": "PriorityBadge?"},
         {"name": "listName", "type": "String?"},
+        {"name": "band", "type": "TaskBand?"},
+        {"name": "reschedule", "type": "RescheduleMenu?"},
+        {"name": "decisions", "type": "[ActionButton<TaskAction>]"},
         {"name": "hasNotes", "type": "Bool"},
         {"name": "notes", "type": "String?"},
         {"name": "spoken", "type": "String"}
@@ -403,6 +462,12 @@
           ]
         },
         {
+          "name": "filter",
+          "fields": [
+            {"name": "_0", "type": "ListSelection?"}
+          ]
+        },
+        {
           "name": "quickAdd",
           "fields": [
             {"name": "_0", "type": "String"}
@@ -434,6 +499,13 @@
           "name": "abandon",
           "fields": [
             {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "reschedule",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "_1", "type": "Reschedule"}
           ]
         },
         {

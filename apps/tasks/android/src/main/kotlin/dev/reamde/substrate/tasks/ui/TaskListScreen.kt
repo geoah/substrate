@@ -2,8 +2,10 @@ package dev.reamde.substrate.tasks.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.input.ImeAction
@@ -59,6 +64,8 @@ import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.ListAction
 import dev.reamde.substrate.tasks.bridge.ListPresentation
 import dev.reamde.substrate.tasks.bridge.ListSelection
+import dev.reamde.substrate.tasks.bridge.TaskAction
+import dev.reamde.substrate.tasks.bridge.TaskBand
 import dev.reamde.substrate.tasks.bridge.TaskMenuWords
 import dev.reamde.substrate.tasks.bridge.TaskPriority
 import dev.reamde.substrate.tasks.bridge.TaskRow
@@ -68,7 +75,8 @@ import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
  * One list's tasks: the open ones in the order the presentation gives, then the completed ones where shown, the quick add field at the bottom and New Task as
- * the floating button. A row's mark completes or reopens it, a tap opens it and a long press offers the rest. Every change is a command.
+ * the floating button. Needs you draws its chips above the rows and its rows under their bands' headings. A row's mark completes or reopens it, a tap opens it
+ * and a long press offers the rest. Every change is a command.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,11 +98,11 @@ internal fun TaskListScreen(
                     onBack?.let { IconButton(onClick = it) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } }
                 },
                 actions = {
-                    if (list.selection != ListSelection.Today || list.actions.isNotEmpty()) {
+                    if (list.selection != ListSelection.NeedsYou || list.actions.isNotEmpty()) {
                         Box {
                             IconButton(onClick = { options = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List Options") }
                             DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
-                                if (list.selection != ListSelection.Today) {
+                                if (list.selection != ListSelection.NeedsYou) {
                                     DropdownMenuItem(
                                         text = { Text(list.toggleClosed) },
                                         onClick = {
@@ -138,6 +146,17 @@ internal fun TaskListScreen(
         PullToRefreshBox(isRefreshing = false, onRefresh = { actions.send(TasksApp.Command.Refresh) }, modifier = Modifier.padding(padding)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { Notices(banner, app.notices, actions) }
+                if (list.chips.isNotEmpty()) item { Chips(list, actions) }
+                list.clear?.let { clear ->
+                    item {
+                        Text(
+                            clear,
+                            style = KitText.secondary.style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = KitSpacing.content, vertical = KitSpacing.small),
+                        )
+                    }
+                }
                 list.orderNote?.let { note ->
                     item {
                         Text(
@@ -148,7 +167,25 @@ internal fun TaskListScreen(
                         )
                     }
                 }
-                items(list.open.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
+                if (list.bands.isEmpty()) {
+                    items(list.open.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
+                } else {
+                    for (band in list.bands) {
+                        if (band.band != TaskBand.needsYou) {
+                            item(key = "band-" + band.band.name) {
+                                Text(
+                                    band.title,
+                                    style = KitText.heading.style,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
+                                )
+                            }
+                        }
+                        items(list.open.rows.filter { it.band == band.band }, key = { it.id }) { row ->
+                            TaskRowView(row, row.id == selected, list.rowMenu, app, actions)
+                        }
+                    }
+                }
                 if (list.showsClosed && list.closed.rows.isNotEmpty()) {
                     item {
                         Text(
@@ -164,6 +201,19 @@ internal fun TaskListScreen(
             }
             val empty = list.empty
             if (empty != null && list.open.rows.isEmpty() && list.closed.rows.isEmpty()) Placeholder(empty.title, empty.message)
+        }
+    }
+}
+
+/** Needs you's chips: All, then each list, one chosen. */
+@Composable
+private fun Chips(list: ListPresentation, actions: TasksActions) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(KitSpacing.small),
+        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = KitSpacing.content, vertical = KitSpacing.small),
+    ) {
+        for (chip in list.chips) {
+            FilterChip(selected = chip.selected, onClick = { actions.send(TasksApp.Command.Filter(chip.selection)) }, label = { Text(chip.title) })
         }
     }
 }
@@ -193,35 +243,42 @@ private fun QuickAdd(prompt: String, add: (String) -> Unit) {
 }
 
 /**
- * A task as a row: the round mark that completes or reopens it, its name, and under it, each under its own mark, when it is due, how urgent it is, the list it
- * is in and whether it has notes. Read aloud as the presentation words it.
+ * A task as a row: its name, and under it, each under its own mark, when it is due, how urgent it is, the list it is in and whether it has notes; on its right
+ * the round mark that completes or reopens it, filled while a completion waits its undo window, when a tap on it takes the mark back. On Needs you a late
+ * task's row also offers where to move it and Won't Do. Read aloud as the presentation words it.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, app: TasksPresentation, actions: TasksActions) {
     var menu by remember { mutableStateOf(false) }
     val open = row.status == TaskStatus.open
-    Box {
+    val marked = row.pending || row.status == TaskStatus.done
+    Box(Modifier.alpha(if (row.band == TaskBand.later) 0.62f else 1f)) {
         ListItem(
-            leadingContent = {
-                IconButton(onClick = { actions.send(if (open) TasksApp.Command.Complete(row.id) else TasksApp.Command.Reopen(row.id)) }) {
+            trailingContent = {
+                IconButton(onClick = { actions.send(if (open && !row.pending) TasksApp.Command.Complete(row.id) else TasksApp.Command.Reopen(row.id)) }) {
                     Icon(
-                        TasksMarks.mark(row.status),
+                        if (row.pending) TasksMarks.mark(TaskStatus.done) else TasksMarks.mark(row.status),
                         contentDescription = row.toggle,
-                        tint = if (open) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.brandAccent,
+                        tint = if (marked) MaterialTheme.brandAccent else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
             headlineContent = {
                 Text(
                     row.title,
-                    textDecoration = if (row.status == TaskStatus.abandoned) TextDecoration.LineThrough else null,
-                    color = if (open) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textDecoration = if (row.status == TaskStatus.abandoned || row.pending) TextDecoration.LineThrough else null,
+                    color = if (open && !row.pending) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
             supportingContent =
-                if (row.due != null || row.priority != null || row.listName != null || row.hasNotes) {
-                    { Facts(row) }
+                if (row.due != null || row.priority != null || row.listName != null || row.hasNotes || row.reschedule != null || row.decisions.isNotEmpty()) {
+                    {
+                        Column(verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                            if (row.due != null || row.priority != null || row.listName != null || row.hasNotes) Facts(row)
+                            if (row.reschedule != null || row.decisions.isNotEmpty()) Decisions(row, actions)
+                        }
+                    }
                 } else {
                     null
                 },
@@ -234,6 +291,51 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
                 ),
         )
         TaskMenu(menu, dismiss = { menu = false }, row, words, app, actions)
+    }
+}
+
+/** What a late task's row decides from where it is: the days it can move to, and Won't Do. */
+@Composable
+private fun Decisions(row: TaskRow, actions: TasksActions) {
+    var days by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(KitSpacing.small), verticalAlignment = Alignment.CenterVertically) {
+        row.reschedule?.let { menu ->
+            Box {
+                androidx.compose.material3.Button(
+                    onClick = { days = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(menu.title)
+                }
+                DropdownMenu(expanded = days, onDismissRequest = { days = false }) {
+                    for (option in menu.options) {
+                        DropdownMenuItem(
+                            text = { Text(option.title) },
+                            onClick = {
+                                days = false
+                                actions.send(TasksApp.Command.Reschedule(row.id, option.action))
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        for (decision in row.decisions) {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    actions.send(
+                        when (decision.action) {
+                            TaskAction.Complete -> TasksApp.Command.Complete(row.id)
+                            TaskAction.Reopen -> TasksApp.Command.Reopen(row.id)
+                            TaskAction.Abandon -> TasksApp.Command.Abandon(row.id)
+                            TaskAction.Delete -> TasksApp.Command.DeleteTask(row.id)
+                        }
+                    )
+                }
+            ) {
+                Text(decision.title)
+            }
+        }
     }
 }
 
@@ -290,7 +392,7 @@ private fun TaskMenu(expanded: Boolean, dismiss: () -> Unit, row: TaskRow, words
                     )
                 }
             words.move ->
-                for (destination in app.sidebar.fixed.filter { it.selection != ListSelection.Today } + app.sidebar.lists.rows) {
+                for (destination in app.sidebar.fixed.filter { it.selection != ListSelection.NeedsYou } + app.sidebar.lists.rows) {
                     DropdownMenuItem(
                         text = { Text(destination.title) },
                         onClick = {
@@ -299,7 +401,9 @@ private fun TaskMenu(expanded: Boolean, dismiss: () -> Unit, row: TaskRow, words
                     )
                 }
             else -> {
-                if (row.status == TaskStatus.open) {
+                if (row.pending) {
+                    DropdownMenuItem(text = { Text(row.toggle) }, onClick = { send(TasksApp.Command.Reopen(row.id)) })
+                } else if (row.status == TaskStatus.open) {
                     DropdownMenuItem(text = { Text(words.complete) }, onClick = { send(TasksApp.Command.Complete(row.id)) })
                     DropdownMenuItem(text = { Text(words.abandon) }, onClick = { send(TasksApp.Command.Abandon(row.id)) })
                 } else {

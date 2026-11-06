@@ -11,8 +11,15 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "a2d0c9aa46f8cc99179326b74a0035803c83a38cedd51c06c9ca230aba1491ee"
+    public const val VALUE: String = "3ec8c4f7faa07617eb7b0b7aeab440f6514be36b5b741646628df6a31d34ff79"
 }
+
+@Serializable
+public data class BandHeading(
+    val band: TaskBand,
+    val title: String,
+    val count: Long,
+)
 
 @Serializable(with = Confirmation.Serializer::class)
 public sealed interface Confirmation {
@@ -81,6 +88,14 @@ public data class EditorText(
     val prompt: String,
 )
 
+@Serializable
+public data class FilterChip(
+    val id: String,
+    val title: String,
+    val selection: ListSelection? = null,
+    val selected: Boolean,
+)
+
 @Serializable(with = ListAction.Serializer::class)
 public sealed interface ListAction {
     @Serializable
@@ -107,6 +122,9 @@ public data class ListPresentation(
     val selection: ListSelection,
     val title: String,
     val summary: ListSummary,
+    val chips: List<FilterChip>,
+    val bands: List<BandHeading>,
+    val clear: String? = null,
     val open: KeyedList<TaskRow>,
     val openTitle: String,
     val closed: KeyedList<TaskRow>,
@@ -125,7 +143,7 @@ public data class ListPresentation(
 @Serializable(with = ListSelection.Serializer::class)
 public sealed interface ListSelection {
     @Serializable
-    public data object Today : ListSelection
+    public data object NeedsYou : ListSelection
 
     @Serializable
     public data object Inbox : ListSelection
@@ -138,7 +156,7 @@ public sealed interface ListSelection {
     public object Serializer : KSerializer<ListSelection> by SwiftEnumSerializer(
         "ListSelection",
         listOf(
-            SwiftEnumSerializer.Case("today", Today::class, Today.serializer()),
+            SwiftEnumSerializer.Case("needsYou", NeedsYou::class, NeedsYou.serializer()),
             SwiftEnumSerializer.Case("inbox", Inbox::class, Inbox.serializer()),
             SwiftEnumSerializer.Case("list", List::class, List.serializer()),
         ),
@@ -156,6 +174,20 @@ public data class ListSummary(
 public data class PriorityBadge(
     val text: String,
     val priority: TaskPriority,
+)
+
+@Serializable
+public enum class Reschedule {
+    @SerialName("today") today,
+    @SerialName("tomorrow") tomorrow,
+    @SerialName("nextWeek") nextWeek,
+    @SerialName("pickDay") pickDay,
+}
+
+@Serializable
+public data class RescheduleMenu(
+    val title: String,
+    val options: List<ActionButton<Reschedule>>,
 )
 
 @Serializable
@@ -206,10 +238,18 @@ public sealed interface TaskAction {
 }
 
 @Serializable
+public enum class TaskBand {
+    @SerialName("needsYou") needsYou,
+    @SerialName("upcoming") upcoming,
+    @SerialName("later") later,
+}
+
+@Serializable
 public data class TaskDetailPresentation(
     val id: String,
     val title: String,
     val status: TaskStatus,
+    val pending: Boolean,
     val fields: List<DetailField>,
     val actions: List<ActionButton<TaskAction>>,
     val edit: String,
@@ -270,10 +310,14 @@ public data class TaskRow(
     val id: String,
     val title: String,
     val status: TaskStatus,
+    val pending: Boolean,
     val toggle: String,
     val due: DueBadge? = null,
     val priority: PriorityBadge? = null,
     val listName: String? = null,
+    val band: TaskBand? = null,
+    val reschedule: RescheduleMenu? = null,
+    val decisions: List<ActionButton<TaskAction>>,
     val hasNotes: Boolean,
     val notes: String? = null,
     val spoken: String,
@@ -442,6 +486,11 @@ public object TasksApp {
         ) : Command
 
         @Serializable
+        public data class Filter(
+            @SerialName("_0") val value: ListSelection? = null,
+        ) : Command
+
+        @Serializable
         public data class QuickAdd(
             @SerialName("_0") val value: String,
         ) : Command
@@ -467,6 +516,12 @@ public object TasksApp {
         @Serializable
         public data class Abandon(
             @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class Reschedule(
+            @SerialName("_0") val value0: String,
+            @SerialName("_1") val value1: dev.reamde.substrate.tasks.bridge.Reschedule,
         ) : Command
 
         @Serializable
@@ -553,12 +608,14 @@ public object TasksApp {
                 SwiftEnumSerializer.Case("select", Select::class, Select.serializer()),
                 SwiftEnumSerializer.Case("show", Show::class, Show.serializer()),
                 SwiftEnumSerializer.Case("open", Open::class, Open.serializer()),
+                SwiftEnumSerializer.Case("filter", Filter::class, Filter.serializer()),
                 SwiftEnumSerializer.Case("quickAdd", QuickAdd::class, QuickAdd.serializer()),
                 SwiftEnumSerializer.Case("newTask", NewTask::class, NewTask.serializer()),
                 SwiftEnumSerializer.Case("edit", Edit::class, Edit.serializer()),
                 SwiftEnumSerializer.Case("complete", Complete::class, Complete.serializer()),
                 SwiftEnumSerializer.Case("reopen", Reopen::class, Reopen.serializer()),
                 SwiftEnumSerializer.Case("abandon", Abandon::class, Abandon.serializer()),
+                SwiftEnumSerializer.Case("reschedule", Reschedule::class, Reschedule.serializer()),
                 SwiftEnumSerializer.Case("setPriority", SetPriority::class, SetPriority.serializer()),
                 SwiftEnumSerializer.Case("move", Move::class, Move.serializer()),
                 SwiftEnumSerializer.Case("reorderTask", ReorderTask::class, ReorderTask.serializer()),
@@ -583,6 +640,7 @@ public object TasksApp {
 
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
+    "BandHeading" to BandHeading.serializer(),
     "Confirmation" to Confirmation.Serializer,
     "DetailField" to DetailField.serializer(),
     "DueBadge" to DueBadge.serializer(),
@@ -591,14 +649,18 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "EditorDue" to EditorDue.serializer(),
     "EditorOption" to EditorOption.serializer(),
     "EditorText" to EditorText.serializer(),
+    "FilterChip" to FilterChip.serializer(),
     "ListAction" to ListAction.Serializer,
     "ListPresentation" to ListPresentation.serializer(),
     "ListSelection" to ListSelection.Serializer,
     "ListSummary" to ListSummary.serializer(),
     "PriorityBadge" to PriorityBadge.serializer(),
+    "Reschedule" to Reschedule.serializer(),
+    "RescheduleMenu" to RescheduleMenu.serializer(),
     "SidebarPresentation" to SidebarPresentation.serializer(),
     "SidebarRow" to SidebarRow.serializer(),
     "TaskAction" to TaskAction.Serializer,
+    "TaskBand" to TaskBand.serializer(),
     "TaskDetailPresentation" to TaskDetailPresentation.serializer(),
     "TaskEditor.Command" to TaskEditor.Command.Serializer,
     "TaskEditorPresentation" to TaskEditorPresentation.serializer(),

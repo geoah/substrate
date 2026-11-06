@@ -40,30 +40,44 @@ enum TasksSymbols {
         }
     }
 
-    /// The screen behind the cards: the grouped background, washed with the
-    /// accent at the top.
     static var screen: some View {
-        LinearGradient(
-            stops: [.init(color: Color.brandAccent.opacity(0.06), location: 0), .init(color: grouped, location: 0.45)],
-            startPoint: .top, endPoint: .bottom
-        )
-        .ignoresSafeArea()
+        grouped.ignoresSafeArea()
     }
 
     static var grouped: Color {
         #if os(iOS)
-        Color(uiColor: .systemGroupedBackground)
+        Color(
+            uiColor: UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(red: 0.065, green: 0.070, blue: 0.085, alpha: 1)
+                    : .systemGroupedBackground
+            })
         #else
-        Color(nsColor: .windowBackgroundColor)
+        Color(
+            nsColor: NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(srgbRed: 0.065, green: 0.070, blue: 0.085, alpha: 1)
+                    : .windowBackgroundColor
+            })
         #endif
     }
 
     /// A card on the screen: white in light mode, raised grey in dark.
     static var card: Color {
         #if os(iOS)
-        Color(uiColor: .secondarySystemGroupedBackground)
+        Color(
+            uiColor: UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(red: 0.115, green: 0.125, blue: 0.145, alpha: 1)
+                    : .secondarySystemGroupedBackground
+            })
         #else
-        Color(nsColor: .controlBackgroundColor)
+        Color(
+            nsColor: NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(srgbRed: 0.115, green: 0.125, blue: 0.145, alpha: 1)
+                    : .controlBackgroundColor
+            })
         #endif
     }
 

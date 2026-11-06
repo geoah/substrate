@@ -84,19 +84,19 @@ private fun Section(
     val back = { command: TasksApp.Command -> actions.send(command) }
     when (id) {
         MENU_SETTINGS -> SettingsPane(settings, actions)
-        MENU_TODAY ->
+        MENU_NEEDS ->
             when {
                 panes == Panes.One && detail != null -> {
                     BackHandler { back(TasksApp.Command.Open(null)) }
                     TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
                 }
-                list != null && list.selection == ListSelection.Today && panes != Panes.One ->
+                list != null && list.selection == ListSelection.NeedsYou && panes != Panes.One ->
                     Row(Modifier.fillMaxSize()) {
                         Box(Modifier.weight(1f)) { TaskListScreen(list, app, banner, actions, name, onBack = null, selected = detail?.id) }
                         VerticalDivider()
                         Box(Modifier.weight(1f)) { DetailPane(app, actions) }
                     }
-                list != null && list.selection == ListSelection.Today -> TaskListScreen(list, app, banner, actions, name, onBack = null)
+                list != null && list.selection == ListSelection.NeedsYou -> TaskListScreen(list, app, banner, actions, name, onBack = null)
                 else -> Box(Modifier.fillMaxSize())
             }
         else ->
@@ -111,13 +111,13 @@ private fun Section(
                             BackHandler { back(TasksApp.Command.Show(null)) }
                             TaskListScreen(list, app, banner, actions, name, onBack = { back(TasksApp.Command.Show(null)) })
                         }
-                        else -> SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = false)
+                        else -> SidebarScreen(app.sidebar, app, banner, actions, name, showsNeedsYou = false)
                     }
                 Panes.Two,
                 Panes.Three ->
                     Row(Modifier.fillMaxSize()) {
                         Box(Modifier.width(if (panes == Panes.Three) 300.dp else 280.dp).fillMaxHeight()) {
-                            SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = true, selected = app.sidebar.selected)
+                            SidebarScreen(app.sidebar, app, banner, actions, name, showsNeedsYou = true, selected = app.sidebar.selected)
                         }
                         VerticalDivider()
                         Box(Modifier.weight(1f)) {
@@ -166,5 +166,5 @@ internal fun Placeholder(title: String, message: String? = null) {
 }
 
 /** The App menu's sections, by the ids TasksKit's `TasksMenu` gives them. */
-internal const val MENU_TODAY = "today"
+internal const val MENU_NEEDS = "needs"
 internal const val MENU_SETTINGS = "settings"

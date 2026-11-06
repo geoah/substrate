@@ -3,34 +3,25 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// A task as a card: the round mark that completes or reopens it, its name
-/// in the serif the lists are headed in, the opening of its notes, and its
-/// facts as small tinted chips that wrap: how urgent it is, when it is due,
-/// the list it is in. Red is lateness and the most urgent; a done task is
-/// struck through and faded. The mark and the rest are two controls: `open`,
-/// where a card is a button (a phone, an iPad's middle column), opens the
-/// task; `selected` outlines the open one.
+/// A task's row in its band's or section's card: its words on the left,
+/// which open it, and on the right the round mark, centred on the row,
+/// which completes it. The mark fills at once, with a ring that drains for
+/// the undo window, and a second tap within it takes the mark back; the row
+/// only leaves when the window closes and the write goes. On Needs you a
+/// late task's row also offers where to move it and Won't Do. The card, the
+/// dividers and the open task's tint are the list's (`TaskListView`).
 struct TaskRowView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .title3) private var markSize = 22
+    @ScaledMetric(relativeTo: .title2) private var markSize = 26
     let row: TaskRow
     var open: (() -> Void)?
     var selected = false
+    /// When the mark filled: the ring drains from then over the window.
+    @State private var markedAt: Date?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Button(action: toggle) {
-                Image(systemName: row.status == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.status))
-                    .font(.system(size: markSize))
-                    .foregroundStyle(row.status == .done ? Color.green : Color.secondary)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(row.toggle)
-
+        HStack(alignment: .center, spacing: 8) {
             if let open {
                 Button(action: open) { content }
                     .buttonStyle(.plain)
@@ -42,40 +33,59 @@ struct TaskRowView: View {
                     .accessibilityLabel(row.spoken)
                     .accessibilityAction(named: Text(row.toggle), toggle)
             }
+            mark
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 14)
-        .padding(.vertical, 6)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(TasksSymbols.card.opacity(isOpen ? 1 : 0.6))
-                .shadow(color: .black.opacity(isOpen ? 0.03 : 0), radius: 6, y: 2)
+        .opacity(row.band == .later || !isOpen ? 0.62 : 1)
+        .onChange(of: row.pending, initial: true) { _, pending in
+            markedAt = pending ? Date() : nil
         }
-        .overlay {
-            // The open task, beside its detail: a wash of the accent and a
-            // fine line, never an alarm.
-            if selected {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.brandAccent.opacity(0.06))
-                    .strokeBorder(Color.brandAccent.opacity(0.45), lineWidth: 1)
-                    .allowsHitTesting(false)
+        .sensoryFeedback(.impact(weight: .light), trigger: row.pending)
+    }
+
+    /// The round mark: open, done (filled, the ring draining while the
+    /// window is open), or abandoned.
+    private var mark: some View {
+        Button(action: toggle) {
+            ZStack {
+                if row.pending, let markedAt {
+                    // Drawn from the clock, not a state the list's own
+                    // animations could override: the ring is the window.
+                    TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                        let elapsed = context.date.timeIntervalSince(markedAt)
+                        Circle()
+                            .trim(from: 0, to: max(0, 1 - elapsed / TasksApp.undoWindow))
+                            .stroke(Color.brandAccent.opacity(0.55), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    }
+                    .frame(width: markSize + 10, height: markSize + 10)
+                }
+                Image(systemName: row.pending || row.status == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.status))
+                    .font(.system(size: markSize))
+                    .foregroundStyle(row.pending || row.status == .done ? Color.brandAccent : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .scaleEffect(row.pending ? 1.08 : 1)
             }
+            .animation(.bouncy(duration: 0.35), value: row.pending)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(row.toggle)
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(row.title)
-                .font(.system(.title3, design: .serif).weight(.semibold))
-                .foregroundStyle(isOpen ? Color.primary : Color.secondary)
-                .strikethrough(!isOpen)
+                .font(.body.weight(.medium))
+                .foregroundStyle(isOpen && !row.pending ? Color.primary : Color.secondary)
+                .strikethrough(!isOpen || row.pending)
                 .fixedSize(horizontal: false, vertical: true)
             if let notes = row.notes {
                 Text(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .strikethrough(!isOpen)
-                    .lineLimit(2)
+                    .strikethrough(!isOpen || row.pending)
+                    .lineLimit(1)
             }
             if isOpen, hasChips {
                 Group {
@@ -87,25 +97,63 @@ struct TaskRowView: View {
                 }
                 .padding(.top, 2)
             }
+            if hasDecisions {
+                decisions.padding(.top, 6)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(.rect)
+        .animation(.snappy(duration: 0.25), value: row.pending)
     }
 
     private var isOpen: Bool { row.status == .open }
 
     private var hasChips: Bool { row.due != nil || row.priority != nil || row.listName != nil }
 
+    private var hasDecisions: Bool { row.reschedule != nil || !row.decisions.isEmpty }
+
     @ViewBuilder
     private var chips: some View {
-        if let priority = row.priority {
-            Chip(text: priority.text, symbol: "flag.fill", color: TasksSymbols.color(priority.priority), emphasis: true)
-        }
         if let due = row.due {
             Chip(text: due.text, symbol: "clock", color: dueColor(due.tone), emphasis: due.tone == .overdue)
         }
+        if let priority = row.priority {
+            Chip(text: priority.text, symbol: "flag", color: TasksSymbols.color(priority.priority), emphasis: false)
+        }
         if let list = row.listName {
             Chip(text: list, symbol: "list.bullet", color: .secondary, emphasis: false)
+        }
+    }
+
+    /// What a late task's card decides from where it is: the days it can
+    /// move to, and Won't Do.
+    private var decisions: some View {
+        HStack(spacing: 8) {
+            if let reschedule = row.reschedule {
+                Menu {
+                    ForEach(reschedule.options, id: \.self) { option in
+                        Button(option.title) { shell.send(.reschedule(row.id, option.action)) }
+                    }
+                } label: {
+                    DecisionLabel(title: reschedule.title, symbol: "calendar", prominent: true)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+            ForEach(row.decisions, id: \.self) { decision in
+                Button {
+                    switch decision.action {
+                    case .complete: shell.send(.complete(row.id))
+                    case .reopen: shell.send(.reopen(row.id))
+                    case .abandon: shell.send(.abandon(row.id))
+                    case .delete: shell.send(.deleteTask(row.id))
+                    }
+                } label: {
+                    DecisionLabel(title: decision.title, symbol: nil, prominent: false)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -118,12 +166,33 @@ struct TaskRowView: View {
     }
 
     private func toggle() {
-        shell.send(row.status == .open ? .complete(row.id) : .reopen(row.id))
+        shell.send(row.status == .open && !row.pending ? .complete(row.id) : .reopen(row.id))
     }
 }
 
-/// One fact on a card: a small symbol and its words, on a tint of its
-/// colour.
+/// A decision's button on a card: a small capsule, the first one filled.
+private struct DecisionLabel: View {
+    let title: String
+    let symbol: String?
+    let prominent: Bool
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            if let symbol { Image(systemName: symbol) }
+        }
+        .labelStyle(TightLabelStyle(spacing: 5))
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(prominent ? TasksSymbols.card : Color.primary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(prominent ? Color.primary : Color.primary.opacity(0.07), in: .capsule)
+        .contentShape(.capsule)
+    }
+}
+
+/// Reserve a filled badge for overdue dates so neutral facts stay quiet.
 private struct Chip: View {
     let text: String
     let symbol: String
@@ -135,9 +204,9 @@ private struct Chip: View {
             .labelStyle(TightLabelStyle(spacing: 4))
             .font(.caption.weight(emphasis ? .semibold : .medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.07), in: .capsule)
+            .padding(.horizontal, emphasis ? 6 : 0)
+            .padding(.vertical, 2)
+            .background(color.opacity(emphasis ? 0.08 : 0), in: .capsule)
     }
 }
 

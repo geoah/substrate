@@ -16,11 +16,17 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
     /// The settings and the folder's sizes were read from the device.
     public var settingsRead = false
     public var settings = SettingsValues()
-    public var section = TasksMenu.today
+    public var section = TasksMenu.needsYou
     /// The list column's; nil in Lists before one is chosen, where a phone
     /// shows the lists themselves.
-    public var selection: ListSelection? = .today
+    public var selection: ListSelection? = .needsYou
+    /// Needs you narrowed to one list (or the inbox); nil is every list.
+    public var filter: ListSelection?
     public var openTask: String?
+    /// Each task marked done whose undo window is still open, with the
+    /// write the window ends in: the row shows done, a second tap takes it
+    /// back, and nothing reaches the outbox until the window closes.
+    public var completing: [String: LocalWrite] = [:]
     /// A reminder's task, tapped before its record was read (a cold
     /// launch): opened as soon as the record is there, unless the owner
     /// went elsewhere first.

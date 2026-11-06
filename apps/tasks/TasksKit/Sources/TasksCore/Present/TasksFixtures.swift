@@ -76,6 +76,12 @@ public enum TasksFixtures {
                     "name": "Renew passport", "status": "open", "priority": "medium", "position": "1",
                     "dueDay": "2026-11-20",
                 ]),
+            record(
+                "insurance", TasksKinds.task,
+                ["name": "Renew the car insurance", "list": list("home"), "position": "3", "status": "open", "priority": "high"]),
+            record(
+                "plants", TasksKinds.task,
+                ["name": "Water the plants", "list": list("home"), "position": "4", "status": "open", "priority": "low", "dueDay": "2026-11-05"]),
         ])
     }
 
@@ -90,7 +96,7 @@ public enum TasksFixtures {
         state.linked.link = LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true)
         state.linked.phase = .following
         state.settingsRead = true
-        state.section = selection == .today ? TasksMenu.today : TasksMenu.lists
+        state.section = selection == .needsYou ? TasksMenu.needsYou : TasksMenu.lists
         state.selection = selection
         state.openTask = open
         state.confirmation = confirmation
@@ -138,7 +144,13 @@ public enum TasksFixtures {
 
     public static var all: [Fixture] {
         let lists = present(state(.list("groceries")))
-        let today = present(state(.today))
+        let needsYou = present(state(.needsYou))
+        var completingState = state(.needsYou)
+        completingState.completing = ["rent": LocalWrite(entries: [])]
+        let completing = present(completingState)
+        var narrowedState = state(.needsYou)
+        narrowedState.filter = .list("groceries")
+        let narrowed = present(narrowedState)
         let detail = present(state(.list("home"), open: "plumber"))
         let key = ChildKey("editor")
         let editState = state(.list("home"), open: "plumber", editors: [key: .task("plumber")])
@@ -155,7 +167,9 @@ public enum TasksFixtures {
         return [
             Fixture(name: "tasks-sidebar", app: lists, screen: .sidebar),
             Fixture(name: "tasks-list", app: lists, screen: .list),
-            Fixture(name: "tasks-today", app: today, screen: .list),
+            Fixture(name: "tasks-needs-you", app: needsYou, screen: .list),
+            Fixture(name: "tasks-needs-you-undo", app: completing, screen: .list),
+            Fixture(name: "tasks-needs-you-narrowed", app: narrowed, screen: .list),
             Fixture(name: "tasks-empty-inbox", app: nothing, screen: .list),
             Fixture(name: "tasks-detail", app: detail, screen: .detail),
             Fixture(name: "tasks-edit", app: edit, screen: .editor(key)),

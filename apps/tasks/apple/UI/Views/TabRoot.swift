@@ -5,8 +5,9 @@ import TasksCore
 
 /// On a phone: a tab per section of the App menu, and apart from them at
 /// the bar's trailing end the system's prominent tab, the round + that adds
-/// a task (seeded with the list shown, and today in Today). Lists pushes a
-/// list, then a task; Today shows its list at once and pushes a task. What
+/// a task (seeded with the list shown, and today on Needs you). Lists
+/// pushes a list, then a task; Needs you shows its rows at once and pushes
+/// a task. What
 /// is pushed is the presentation's, never the view's: the list shown and
 /// the task open, so a reminder's tap or a command from anywhere moves the
 /// stack, and going back is a command.
@@ -28,9 +29,9 @@ struct TabRoot: View {
     @ViewBuilder
     private func content(_ section: String) -> some View {
         switch section {
-        case TasksMenu.today:
+        case TasksMenu.needsYou:
             NavigationStack(path: path(listed: false)) {
-                if let list = app.list, list.selection == .today {
+                if let list = app.list, list.selection == .needsYou {
                     TaskListView(list: list, app: app, link: link)
                         .navigationDestination(for: PhoneRoute.self) { _ in LivePushedDetail() }
                 } else {

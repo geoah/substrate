@@ -37,7 +37,7 @@ internal object TasksFixtures {
         val none = TasksActions.None
         return when (fixture.screen) {
             TasksGalleryFixture.Screen.sidebar -> {
-                { SidebarScreen(app.sidebar, app, null, none, {}, showsToday = true, selected = app.sidebar.selected) }
+                { SidebarScreen(app.sidebar, app, null, none, {}, showsNeedsYou = true, selected = app.sidebar.selected) }
             }
             TasksGalleryFixture.Screen.list ->
                 app.list?.let { list ->
@@ -98,6 +98,6 @@ class TasksWideGalleryTest(private val name: String) {
     companion object {
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
-        fun fixtures(): List<Array<Any>> = listOf(arrayOf<Any>("tasks-detail"), arrayOf<Any>("tasks-today"))
+        fun fixtures(): List<Array<Any>> = listOf(arrayOf<Any>("tasks-detail"), arrayOf<Any>("tasks-needs-you"))
     }
 }

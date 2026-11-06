@@ -61,6 +61,8 @@ struct TaskEditorView: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background { TasksSymbols.screen }
             // A new task starts at its name; an edit leaves the keyboard down.
             .onAppear { if editor.name.value.isEmpty { naming = true } }
             .navigationTitle(editor.title)

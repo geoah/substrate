@@ -23,6 +23,9 @@ public extension TasksApp {
             let editors = state.saves.filter { $0.value.writes(ids) }.keys
             for key in editors { next.saves[key] = .notKept(words) }
             if editors.isEmpty { next.problem = words }
+        case let .records(.wrote(write)):
+            // A completion's write went to the outbox: its window is over.
+            for (id, pending) in state.completing where pending == write { next.completing[id] = nil }
         case .records:
             break
         case let .settingsRead(settings, usage):
@@ -37,13 +40,19 @@ public extension TasksApp {
             next.openTask = nil
             next.section = section
             next.tapped = nil
-            if section == TasksMenu.today { next.selection = .today }
-            if section == TasksMenu.lists, next.selection == .today { next.selection = nil }
+            if section == TasksMenu.needsYou { next.selection = .needsYou }
+            if section == TasksMenu.lists, next.selection == .needsYou { next.selection = nil }
         case let .shown(selection):
             guard selection != state.selection || state.openTask != nil else { break }
             next.selection = selection
             next.openTask = nil
             next.tapped = nil
+        case let .filtered(filter):
+            next.filter = filter
+        case let .completing(id, write):
+            next.completing[id] = write
+        case let .uncompleted(id):
+            next.completing[id] = nil
         case let .opened(task):
             guard task != state.openTask else { break }
             next.openTask = task
@@ -75,7 +84,9 @@ public extension TasksApp {
             next.problem = nil
         }
         openTapped(&next)
-        if next.records != previous.records || next.settings != previous.settings || next.selection != previous.selection {
+        if next.records != previous.records || next.settings != previous.settings || next.selection != previous.selection
+            || next.filter != previous.filter || next.completing != previous.completing
+        {
             next.revision += 1
         }
         return next

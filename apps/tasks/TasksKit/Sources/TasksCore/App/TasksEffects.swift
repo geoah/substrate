@@ -18,6 +18,10 @@ public extension TasksApp {
             out += [.readUsage, .readPermission]
         case .records(.cleared):
             out.append(.readUsage)
+        case let .completing(id, write):
+            out.append(.settle(id, write))
+        case let .uncompleted(id):
+            out.append(.unsettle(id))
         case let .settingsChanged(settings):
             out.append(.saveSettings(settings))
             // Asked when the owner turns reminders on, never before: the
@@ -45,6 +49,7 @@ public extension TasksApp {
         case .saveSettings: "settings"
         case .schedule: "reminders"
         case .readUsage: "usage"
+        case let .settle(id, _), let .unsettle(id): "complete.\(id)"
         }
     }
 
@@ -80,6 +85,16 @@ public extension TasksApp {
         case .readUsage:
             guard let folder else { return .none }
             return .once { .usage(folder.usage()) }
+        case let .settle(_, write):
+            // The window is the clock's, so a test moves it; a cancelled
+            // wait (the mark taken back) writes nothing.
+            let clock = environment.clock
+            return .once {
+                try? await clock.sleep(until: clock.now.addingTimeInterval(Self.undoWindow))
+                return Task.isCancelled ? nil : .records(.wrote(write))
+            }
+        case .unsettle:
+            return .cancel
         }
     }
 }
