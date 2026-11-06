@@ -44,11 +44,18 @@ imported stays as it is, `installed`, with its own key and `scrapepage`.
 [0198](0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)),
 so an agent whose `toolsFrom` matches them, the seeded assistant among them,
 takes them. Their tool names are declared, `web_search` and `web_scrape`,
-not derived. A copy derives `firecrawl_websearch` when its owner offers it
-and `websearch` when an agent names it under `tools:`, so the provider's
-names cannot collide with a copy's and the copy cannot shadow them. The
-plan's alternative, an install that reports the copy so the console can
-offer its removal, is not needed while the names differ.
+not derived. A copy's default names avoid them: it derives
+`firecrawl_websearch` when its owner offers it, and an agent that names it
+under `tools:` without an alias calls it `websearch`. A copy can still be
+given one of the provider's names, through its own `offer.name` or an
+agent's alias, and then 0198's precedence decides: a tool the agent names
+under `tools:` wins over every offer, and of two offers of one name the
+first by function reference keeps it. A copy offered as `web_search` under
+an authority that sorts before `providers.substrate.reamde.dev` therefore
+shadows the provider's tool, and one that sorts after is shadowed by it;
+either way the run logs the function it left out. The plan's alternative, an
+install that reports the copy so the console can offer its removal, is not
+built: only an owner who renames a copy's tool meets the collision.
 
 **The operator's key.** At invocation the engine sets
 `config.settings.apiKey` to the operator's key only when the function's
@@ -100,9 +107,10 @@ consumers only, the key alone, an own key winning, an empty one counting as
 none, no copy, the allowance's refusal, reserve and settle at the price or at
 nothing for a body the runner never started, a record and a schedule trigger
 held until the reset, the read's `function/<package>` item) and the seeded
-assistant taking both tools beside an offering copy. The engine and provider
-test binaries confine every body to loopback, so a Firecrawl body these
-tests run cannot reach Firecrawl.
+assistant taking both tools beside an offering copy;
+`internal/engine/offeredtools_test.go` holds a copy given the provider's
+tool name. The engine and provider test binaries confine every body to
+loopback, so a Firecrawl body these tests run cannot reach Firecrawl.
 `internal/providertest/firecrawl_test.go` holds the closure, the refused
 origins and redirects, and `webscrape` behaving as `scrapepage` did;
 `TestBodyHelpersFirecrawl` holds where the module sends a key that arrives
