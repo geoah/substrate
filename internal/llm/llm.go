@@ -178,7 +178,7 @@ type Usage struct {
 	// others out: an input count with no output count, say. The counts it
 	// did report are kept and the missing ones read as 0, so the owner's
 	// tally counts what is known while a caller that must not undercount (the
-	// host's ledger) treats the usage as unreported.
+	// allowance ledger) treats the usage as unreported.
 	Partial bool
 }
 

@@ -13,12 +13,12 @@ import (
 	"github.com/geoah/substrate/internal/egress"
 )
 
-// A caller paying per call (the host's ledger, internal/engine/hostspend.go)
-// releases a reservation only on what these tests hold: a failure is marked
-// egress.ErrUnprocessed only when the endpoint cannot have acted on the
-// request, a Result's Usage is Partial unless the reply reported it whole,
-// and a RetryOnlyUnbilled client makes no attempt after one that may have
-// been billed.
+// A caller paying per call (the allowance ledger,
+// internal/engine/operatorspend.go) releases a reservation only on what these
+// tests hold: a failure is marked egress.ErrUnprocessed only when the
+// endpoint cannot have acted on the request, a Result's Usage is Partial
+// unless the reply reported it whole, and a RetryOnlyUnbilled client makes no
+// attempt after one that may have been billed.
 
 // usageReport is how much of its usage a reply reported.
 type usageReport int
@@ -336,7 +336,7 @@ func TestAFailureAfterTheUsageKeepsIt(t *testing.T) {
 	}
 }
 
-// A client with RetryOnlyUnbilled (the host's) makes no attempt after one
+// A client with RetryOnlyUnbilled (the operator's) makes no attempt after one
 // that may have been billed, so a call never spends past the one attempt its
 // caller reserved for: an answer dropped mid-body, a 5xx and a connection
 // dropped after the request went out each end the call, and the failure is

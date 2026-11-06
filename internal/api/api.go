@@ -97,10 +97,10 @@ type Config struct {
 	// checks. It changes no verification: refusing is the service's job either
 	// way.
 	TOTPDisabled bool
-	// HostDefaults says the server booted with a host defaults file
-	// (SUBSTRATE_HOST_DEFAULTS, decision 0230), so discovery lists the
-	// `hostServices` feature and a client knows to ask for the read.
-	HostDefaults bool
+	// OperatorDefaults says the server booted with an operator defaults file
+	// (SUBSTRATE_OPERATOR_DEFAULTS, decision 0230), so discovery lists the
+	// `operatorDefaults` feature and a client knows to ask for the read.
+	OperatorDefaults bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -151,8 +151,9 @@ type handler struct {
 	authRate     *rateLimiter
 	inviteCode   string
 	totpDisabled bool
-	hostDefaults bool
-	catalog      *catalog.Catalog
+	// operatorDefaults lists the operator defaults read in discovery.
+	operatorDefaults bool
+	catalog          *catalog.Catalog
 	// packages and refresher are the approval's two views of the catalog
 	// (appsetup.go): nil where the server ships no catalog, so a plan
 	// offers nothing rather than reading a nil catalog through an
@@ -204,7 +205,6 @@ func New(cfg Config) http.Handler {
 		authRate:     newRateLimiter(interval, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
-		hostDefaults: cfg.HostDefaults,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,
@@ -219,6 +219,7 @@ func New(cfg Config) http.Handler {
 		setUpEnded:   cfg.setUpEnded,
 		checkTurns:   newCheckTurns(maxCheckPlans),
 	}
+	h.operatorDefaults = cfg.OperatorDefaults
 	if h.packages == nil && cfg.Catalog != nil {
 		h.packages = cfg.Catalog
 	}
@@ -435,9 +436,9 @@ func (h *handler) mountResources(r chi.Router) {
 
 		r.Group(func(r chi.Router) {
 			r.Use(h.requireAuth)
-			// The host services read (hostservices.go): the owner's, and a
-			// full-access app token's, never a scoped one's.
-			r.Get(hostServicesRoute, h.getHostServices)
+			// The operator defaults read (operatordefaults.go): the owner's,
+			// and a full-access app token's, never a scoped one's.
+			r.Get(operatorDefaultsRoute, h.getOperatorDefaults)
 		})
 
 		r.Group(func(r chi.Router) {

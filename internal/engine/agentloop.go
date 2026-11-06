@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
@@ -336,10 +336,10 @@ type providerConfig struct {
 	// cacheTTL is the row's cache.ttl as the wire spells it; empty leaves it
 	// to the run's mode (agentLoop.cache).
 	cacheTTL string
-	// host is the host entry serving the row (hostprovider.go), nil for a row
-	// the person keyed. Every field above then came from it, and every call
-	// goes through the host gate (hostspend.go).
-	host *hostdefaults.LLM
+	// operator is the operator entry serving the row (operatorprovider.go),
+	// nil for a row the person keyed. Every field above then came from it,
+	// and every call goes through the allowance gate (operatorspend.go).
+	operator *operatordefaults.LLM
 }
 
 // providerCacheTTLs maps the declared cache.ttl words onto the wire's TTLs:
@@ -433,11 +433,11 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	}
 	// apiKey is secret-typed: the stored value is a ref into the sealed
 	// store, resolved here, at the one read that pays with it. An empty one
-	// on a row the host lists is the host's transport, taken whole: nothing
-	// else on the row is read (decision 0230).
+	// on a row the operator lists is the operator's transport, taken whole:
+	// nothing else on the row is read (decision 0230).
 	storedKey, _ := row.Props["apiKey"].(string)
-	if entry := ds.hostEntryFor(id, storedKey); entry != nil {
-		return hostProviderConfig(entry), nil
+	if entry := ds.operatorEntryFor(id, storedKey); entry != nil {
+		return operatorProviderConfig(entry), nil
 	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
 	wire, _ := row.Props["wire"].(string)
@@ -496,12 +496,8 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
-		if ds.svc.host != nil {
-			return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and the host's defaults serve no row of this id",
-				substrate.ErrValidation, id)
-		}
-		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
-			substrate.ErrValidation, id)
+		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and %s supplies no key for a row of this id",
+			substrate.ErrValidation, id, ds.siteName())
 	}
 	return pc, nil
 }
@@ -790,10 +786,10 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	if wrap != nil {
 		client = wrap(provider.wire, client)
 	}
-	if provider.host != nil {
+	if provider.operator != nil {
 		// Outermost, so every call the loop makes on this client (its turns,
 		// their retries, compaction and the thread title) reserves first.
-		client = newHostLLMClient(ds, provider, client)
+		client = newOperatorLLMClient(ds, provider, client)
 	}
 	if root {
 		in.tally = &agentTally{effects: map[string]int{}}
@@ -1892,8 +1888,8 @@ func (l *agentLoop) queryLimits(ctx context.Context) string {
 		"common words match most of the repository, and the lexical ranking reads words, not meaning. "
 	semantic := ""
 	// The pair is what the ranked read resolves (search.go): no row
-	// declaring embedModel and no host embeddings entry is a repository whose
-	// ranked reads are lexical.
+	// declaring embedModel and no operator embeddings entry is a repository
+	// whose ranked reads are lexical.
 	if pair, err := l.ds.embedPair(ctx, l.ds.db); err == nil {
 		if pair == nil {
 			semantic = "This repository has no embeddings provider, so q matches words only: semantic and hybrid fall back to lexical. "

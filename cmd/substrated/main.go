@@ -31,7 +31,7 @@ import (
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/engine"
-	"github.com/geoah/substrate/internal/hostdefaults"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
@@ -138,12 +138,12 @@ func run() error {
 	if siteDir != nil {
 		slog.Info("serving the site directory at "+site.URLPrefix, "dir", siteDir.Dir(), "name", siteDir.Info().Name)
 	}
-	// The host defaults file the same way, and before the boot: a missing key
-	// file is a refusal in the first second. It holds key references, so it
-	// may not sit in the site directory, which is served.
-	hostDefaults, err := loadHostDefaults(cfg.HostDefaults, cfg.SiteDir)
+	// The operator defaults file the same way, and before the boot: a missing
+	// key file is a refusal in the first second. It holds key references, so
+	// it may not sit in the site directory, which is served.
+	operatorDefaults, err := loadOperatorDefaults(cfg.OperatorDefaults, cfg.SiteDir)
 	if err != nil {
-		return fmt.Errorf("SUBSTRATE_HOST_DEFAULTS: %w", err)
+		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
 	}
 
 	ctx, cancelCause := context.WithCancelCause(context.Background())
@@ -219,8 +219,13 @@ func run() error {
 	if cfg.InsecureUnconfinedOutsideCode {
 		slog.Warn("SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE is set: outside code may run without sandbox confinement")
 	}
-	if hostDefaults != nil {
-		opts = append(opts, engine.WithHostDefaults(hostDefaults))
+	if operatorDefaults != nil {
+		// The site's name is how a refusal and the console name the operator.
+		name := ""
+		if siteDir != nil {
+			name = siteDir.Info().Name
+		}
+		opts = append(opts, engine.WithOperatorDefaults(operatorDefaults, name))
 	}
 	if cfg.InsecureAllowForeignPackages {
 		slog.Warn("SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES is set: a token may declare packages under any authority; local development only")
@@ -300,11 +305,11 @@ func run() error {
 	for _, warn := range cat.Warnings() {
 		slog.Warn("catalog: dropped a shipped bundle directory", "detail", warn)
 	}
-	if err := hostDefaults.CheckPackages(func(id string) bool {
+	if err := operatorDefaults.CheckPackages(func(id string) bool {
 		b, ok := cat.ByID(id)
 		return ok && b.Tier == substrate.TierProvider
 	}); err != nil {
-		return fmt.Errorf("SUBSTRATE_HOST_DEFAULTS: %w", err)
+		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
 	}
 	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
 	loops.Add(1)
@@ -331,19 +336,19 @@ func run() error {
 	// otherwise wait on end first.
 	draining := make(chan struct{})
 	handler := api.New(api.Config{
-		Service:        svc,
-		WebDir:         cfg.WebDir,
-		Site:           siteDir,
-		Catalog:        cat,
-		ConsoleURL:     cfg.ConsoleURL,
-		PublicURL:      cfg.PublicURL,
-		InviteCode:     cfg.InviteCode,
-		TOTPDisabled:   cfg.InsecureDisableTOTP,
-		HostDefaults:   hostDefaults != nil,
-		Publishers:     authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
-		DomainResolver: resolver,
-		Metrics:        cfg.Metrics,
-		Draining:       draining,
+		Service:          svc,
+		WebDir:           cfg.WebDir,
+		Site:             siteDir,
+		Catalog:          cat,
+		ConsoleURL:       cfg.ConsoleURL,
+		PublicURL:        cfg.PublicURL,
+		InviteCode:       cfg.InviteCode,
+		TOTPDisabled:     cfg.InsecureDisableTOTP,
+		OperatorDefaults: operatorDefaults != nil,
+		Publishers:       authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
+		DomainResolver:   resolver,
+		Metrics:          cfg.Metrics,
+		Draining:         draining,
 	})
 	if cfg.Metrics {
 		// Loud, and at boot, like the other doors: this port answers /metrics
@@ -770,10 +775,10 @@ func refreshPublishers(ctx context.Context, svc substrate.Service, cat *catalog.
 	}
 }
 
-// loadHostDefaults reads the host defaults file (decision 0230), refusing one
-// inside the site directory, and says at boot what the host pays for. An
-// empty path is no host defaults.
-func loadHostDefaults(path, siteDir string) (*hostdefaults.Config, error) {
+// loadOperatorDefaults reads the operator defaults file (decision 0230),
+// refusing one inside the site directory, and says at boot what the operator
+// pays for. An empty path is no operator defaults.
+func loadOperatorDefaults(path, siteDir string) (*operatordefaults.Config, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -782,7 +787,7 @@ func loadHostDefaults(path, siteDir string) (*hostdefaults.Config, error) {
 			return nil, fmt.Errorf("%s is inside SUBSTRATE_SITE_DIR, which the server serves; keep the file with the deployment's secrets", path)
 		}
 	}
-	c, err := hostdefaults.Load(path)
+	c, err := operatordefaults.Load(path)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +796,7 @@ func loadHostDefaults(path, siteDir string) (*hostdefaults.Config, error) {
 	if e := c.EmbeddingsEntry(); e != nil {
 		embeddings = e.ID + "/" + e.Embeddings.Model
 	}
-	slog.Info("host defaults loaded: empty llm/provider rows of these ids run on the host's keys, under its daily budget",
+	slog.Info("operator defaults loaded: empty llm/provider rows of these ids run on the operator's keys, under a daily allowance per repository",
 		"providers", strings.Join(providers, ","), "embeddings", embeddings, "centsPerDay", c.Budget.CentsPerDay)
 	return c, nil
 }

@@ -96,19 +96,19 @@ var (
 	// the API answers 503 with Retry-After, and the payload's reason is
 	// ReasonObservedRederiving so a client tells it from every other 503.
 	ErrObservedRederiving = fmt.Errorf("%w: the observed index this read selects is being re-derived", ErrUnavailable)
-	// ErrHostBudget refuses a call the host would pay for (decision 0230)
-	// because the repository's host allowance for the UTC day is spent, or
-	// would be by this call's reserved ceiling. The message names the limit,
-	// the spend and when it resets. It wraps ErrGuard, so the API answers 403
+	// ErrAllowance refuses a call the operator would pay for (decision 0230)
+	// because the repository's allowance for the UTC day is used up, or would
+	// be by this call's reserved ceiling. The message names the site, the
+	// reset and the way out. It wraps ErrGuard, so the API answers 403
 	// `guard`, and the payload's reason is ReasonQuota so a client tells it
 	// from every other guard.
-	ErrHostBudget = fmt.Errorf("%w: the host's daily allowance", ErrGuard)
+	ErrAllowance = fmt.Errorf("%w: daily allowance", ErrGuard)
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
 const ReasonObservedRederiving = "observed_rederiving"
 
-// ReasonQuota is the ErrorPayload reason of ErrHostBudget.
+// ReasonQuota is the ErrorPayload reason of ErrAllowance.
 const ReasonQuota = "quota"
 
 // ErrorEnvelope is the one body every refused request answers with.

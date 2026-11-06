@@ -12,10 +12,10 @@ import (
 	"github.com/geoah/substrate/internal/egress"
 )
 
-// A caller paying per request (the host's ledger) settles on what these hold:
-// an answer the client refuses after the endpoint sent it still reports the
-// usage it carried, and a failure is marked egress.ErrUnprocessed only where
-// the endpoint cannot have done the work.
+// A caller paying per request (the allowance ledger) settles on what these
+// hold: an answer the client refuses after the endpoint sent it still
+// reports the usage it carried, and a failure is marked egress.ErrUnprocessed
+// only where the endpoint cannot have done the work.
 func TestEmbedFailuresSayWhatTheEndpointBilled(t *testing.T) {
 	vector := func(width int) string { return strings.TrimSuffix(strings.Repeat("0.1,", width), ",") }
 	closed := httptest.NewServer(http.NotFoundHandler())

@@ -1397,9 +1397,10 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 
 func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	t.Parallel()
-	// The P0 boundary, now held by construction: there is no host gateway and
-	// no host key, so every row names its own endpoint and its own key and
-	// nothing host-wide can travel to a repository-chosen endpoint.
+	// The P0 boundary, now held by construction: without an operator
+	// defaults file there is no server-wide gateway or key, so every row
+	// names its own endpoint and its own key and nothing server-wide can
+	// travel to a repository-chosen endpoint.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 

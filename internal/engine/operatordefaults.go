@@ -14,32 +14,33 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// hostEmbeddingsLabel is the embeddings service as the person reads it.
-const hostEmbeddingsLabel = "Search by meaning"
+// embeddingsLabel is the embeddings slot as the person reads it.
+const embeddingsLabel = "Search by meaning"
 
-// HostServices answers GET /api/v1/host/services (docs/plans/host-defaults.md):
-// each llm/provider row and the embeddings provider, with where its
-// credential comes from and whether it works, resolved by the same reads
-// dispatch and the embed drain use (hostEntryFor, resolveProvider,
-// resolveEmbedProvider), and the host's budget for the UTC day. Host.Name is
-// the API's to fill from site.yaml; the engine does not read the site.
-func (ds *dataset) HostServices(ctx context.Context) (substrate.HostServices, error) {
-	out := substrate.HostServices{Items: []substrate.HostService{}}
-	host := ds.svc.host
-	if host != nil {
-		used, byService, resets, err := ds.hostSpendToday(ctx)
+// OperatorDefaults answers GET /api/v1/operator/defaults
+// (docs/plans/host-defaults.md): each llm/provider row and the embeddings
+// provider, with where its key comes from, whether the operator's file
+// offers it and whether it works, resolved by the same reads dispatch and the
+// embed drain use (operatorEntryFor, resolveProvider, resolveEmbedProvider),
+// and today's allowance. The operator's name is the site's, as the service
+// was given it.
+func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefaults, error) {
+	out := substrate.OperatorDefaults{Items: []substrate.OperatorDefault{}}
+	op := ds.svc.operatorDefaults
+	if op != nil {
+		used, bySlot, resets, err := ds.operatorSpendToday(ctx)
 		if err != nil {
 			return out, err
 		}
-		budget := &substrate.HostBudget{
-			CentsPerDay: host.Budget.CentsPerDay, UsedCents: wholeCents(used), ResetsAt: resets.UTC(),
+		allowance := &substrate.OperatorAllowance{
+			CentsPerDay: op.Budget.CentsPerDay, UsedCents: wholeCents(used), ResetsAt: resets.UTC(),
 		}
-		for _, svc := range slices.Sorted(maps.Keys(byService)) {
-			if c := wholeCents(byService[svc]); c > 0 {
-				budget.ByService = append(budget.ByService, substrate.HostSpend{Service: svc, Cents: c})
+		for _, slot := range slices.Sorted(maps.Keys(bySlot)) {
+			if c := wholeCents(bySlot[slot]); c > 0 {
+				allowance.BySlot = append(allowance.BySlot, substrate.OperatorSpend{Slot: slot, Cents: c})
 			}
 		}
-		out.Host = &substrate.HostInfo{Budget: budget}
+		out.Operator = &substrate.OperatorInfo{Name: ds.svc.operatorName, Allowance: allowance}
 	}
 
 	rows, err := ds.providerRows(ctx)
@@ -53,25 +54,26 @@ func (ds *dataset) HostServices(ctx context.Context) (substrate.HostServices, er
 	live := map[string]bool{}
 	for _, row := range rows {
 		live[row.ID] = true
-		out.Items = append(out.Items, ds.llmService(ctx, row, failing[row.ID]))
+		out.Items = append(out.Items, ds.llmDefault(ctx, row, failing[row.ID]))
 	}
-	if host != nil {
-		for id := range host.LLM {
+	if op != nil {
+		for id := range op.LLM {
 			if live[id] {
 				continue
 			}
-			// A host-listed row the person deleted stays deleted (the seed is
-			// create-only); the service says how to have it back.
-			out.Items = append(out.Items, substrate.HostService{
-				ID: "llm/" + id, Service: substrate.HostServiceLLM, Label: id,
+			// An operator-listed row the person deleted stays deleted (the
+			// seed is create-only): no key resolves, and the item says how to
+			// have it back.
+			out.Items = append(out.Items, substrate.OperatorDefault{
+				ID: "llm/" + id, Slot: substrate.SlotLLM, Label: id,
 				Target: vocabulary.RecordPath(typeProvider, id),
-				Source: substrate.HostSourceHost, Readiness: substrate.HostReadyNotSetUp,
-				Message: fmt.Sprintf("there is no llm/provider row %s: create it without an apiKey to use the host's", id),
+				Source: substrate.SourceNone, OperatorOffers: true, Readiness: substrate.ReadinessNotSetUp,
+				Message: fmt.Sprintf("there is no llm/provider row %s: create it without an apiKey to use %s's key", id, ds.siteName()),
 			})
 		}
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
-	item, err := ds.embeddingsService(ctx)
+	item, err := ds.embeddingsDefault(ctx, live)
 	if err != nil {
 		return out, err
 	}
@@ -79,10 +81,10 @@ func (ds *dataset) HostServices(ctx context.Context) (substrate.HostServices, er
 	return out, nil
 }
 
-// wholeCents rounds a fractional spend up, so a budget never reads as less
-// used than it is.
+// wholeCents rounds a fractional spend up, so an allowance never reads as
+// less used than it is.
 func wholeCents(c float64) int64 {
-	return int64(math.Ceil(c - hostBudgetEpsilon))
+	return int64(math.Ceil(c - allowanceEpsilon))
 }
 
 // providerRows is every live llm/provider row, by id.
@@ -119,69 +121,80 @@ func (ds *dataset) providerRows(ctx context.Context) ([]*erow, error) {
 	return out, nil
 }
 
-// llmService is one provider row as a service. failing is the newest open
-// alert's error of an agent running on the row, empty for none.
-func (ds *dataset) llmService(ctx context.Context, row *erow, failing string) substrate.HostService {
-	item := substrate.HostService{
-		ID: "llm/" + row.ID, Service: substrate.HostServiceLLM, Label: propString(row, "label"),
-		Target: vocabulary.RecordPath(typeProvider, row.ID),
+// llmDefault is one provider row's slot. failing is the newest open alert's
+// error of an agent running on the row, empty for none.
+func (ds *dataset) llmDefault(ctx context.Context, row *erow, failing string) substrate.OperatorDefault {
+	item := substrate.OperatorDefault{
+		ID: "llm/" + row.ID, Slot: substrate.SlotLLM, Label: propString(row, "label"),
+		Target:         vocabulary.RecordPath(typeProvider, row.ID),
+		OperatorOffers: ds.operatorOffersLLM(row.ID),
 	}
 	if item.Label == "" {
 		item.Label = row.ID
 	}
 	storedKey, _ := row.Props["apiKey"].(string)
-	switch entry := ds.hostEntryFor(row.ID, storedKey); {
+	switch entry := ds.operatorEntryFor(row.ID, storedKey); {
 	case entry != nil:
-		item.Source, item.Readiness, item.Models = substrate.HostSourceHost, substrate.HostReadyReady, entry.ModelIDs()
+		item.Source, item.Readiness, item.Models = substrate.SourceOperator, substrate.ReadinessReady, entry.ModelIDs()
 	case storedKey != "":
-		item.Source, item.Readiness = substrate.HostSourceOwn, substrate.HostReadyReady
+		item.Source, item.Readiness = substrate.SourceOwn, substrate.ReadinessReady
 		if _, err := ds.resolveProvider(ctx, row.ID); err != nil {
-			item.Readiness, item.Message = substrate.HostReadyNotSetUp, refusalText(err)
+			item.Readiness, item.Message = substrate.ReadinessNotSetUp, refusalText(err)
 		}
 	default:
-		item.Source, item.Readiness = substrate.HostSourceNone, substrate.HostReadyNotSetUp
-		item.Message = "no apiKey: write your key on the row to use it"
+		item.Source, item.Readiness = substrate.SourceNone, substrate.ReadinessNotSetUp
+		item.Message = "no apiKey: add your own key to the row to use it"
 	}
-	if item.Readiness == substrate.HostReadyReady && failing != "" {
-		item.Readiness, item.Message = substrate.HostReadyFailing, failing
+	if item.Readiness == substrate.ReadinessReady && failing != "" {
+		item.Readiness, item.Message = substrate.ReadinessFailing, failing
 	}
 	return item
 }
 
-// embeddingsService is the repository's embeddings provider as a service.
-func (ds *dataset) embeddingsService(ctx context.Context) (substrate.HostService, error) {
-	item := substrate.HostService{ID: substrate.HostServiceEmbeddings, Service: substrate.HostServiceEmbeddings, Label: hostEmbeddingsLabel}
+// embeddingsDefault is the repository's embeddings provider as a slot. Its
+// target is the row whose card shows the search line: the one row claiming
+// embedModel, else the live row whose id the operator's embeddings entry is
+// nested under, else none. live is every live provider row id.
+func (ds *dataset) embeddingsDefault(ctx context.Context, live map[string]bool) (substrate.OperatorDefault, error) {
+	entry := ds.svc.operatorDefaults.EmbeddingsEntry()
+	item := substrate.OperatorDefault{
+		ID: substrate.SlotEmbeddings, Slot: substrate.SlotEmbeddings, Label: embeddingsLabel,
+		OperatorOffers: entry != nil,
+	}
 	claims, err := embedClaims(ctx, ds.db)
 	if err != nil {
 		return item, err
 	}
-	if len(claims) == 1 {
+	switch {
+	case len(claims) == 1:
 		item.Target = vocabulary.RecordPath(typeProvider, claims[0].id)
 		row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: claims[0].id})
 		if err != nil {
 			return item, err
 		}
-		item.Source = substrate.HostSourceNone
+		item.Source = substrate.SourceNone
 		if row != nil {
 			if key, _ := row.Props["apiKey"].(string); key != "" {
-				item.Source = substrate.HostSourceOwn
+				item.Source = substrate.SourceOwn
 			}
 		}
+	case len(claims) == 0 && entry != nil && live[entry.ID]:
+		item.Target = vocabulary.RecordPath(typeProvider, entry.ID)
 	}
 	p, err := ds.resolveEmbedProvider(ctx)
 	switch {
 	case err != nil:
 		if item.Source == "" {
-			item.Source = substrate.HostSourceOwn
+			item.Source = substrate.SourceOwn
 		}
-		item.Readiness, item.Message = substrate.HostReadyNotSetUp, refusalText(err)
+		item.Readiness, item.Message = substrate.ReadinessNotSetUp, refusalText(err)
 	case p == nil:
-		item.Source, item.Readiness = substrate.HostSourceNone, substrate.HostReadyNotSetUp
+		item.Source, item.Readiness = substrate.SourceNone, substrate.ReadinessNotSetUp
 		item.Message = "no llm/provider row declares " + propEmbedModel + ": name a model on a keyed openai-wire row to search by meaning"
 	case p.gate != nil:
-		item.Source, item.Readiness = substrate.HostSourceHost, substrate.HostReadyReady
+		item.Source, item.Readiness = substrate.SourceOperator, substrate.ReadinessReady
 	default:
-		item.Readiness = substrate.HostReadyReady
+		item.Readiness = substrate.ReadinessReady
 	}
 	return item, nil
 }

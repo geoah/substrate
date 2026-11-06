@@ -1,4 +1,4 @@
-package hostdefaults
+package operatordefaults
 
 import (
 	"fmt"
@@ -19,10 +19,10 @@ func keyFile(t *testing.T, value string) string {
 	return p
 }
 
-// validFile is a host file every refusal case edits one line of.
+// validFile is a defaults file every refusal case edits one line of.
 func validFile(t *testing.T) string {
 	t.Helper()
-	t.Setenv("HOSTDEFAULTS_TEST_ANTHROPIC", "anthropic-fixture")
+	t.Setenv("OPERATORDEFAULTS_TEST_ANTHROPIC", "anthropic-fixture")
 	return fmt.Sprintf(`install:
   - providers.substrate.reamde.dev/google
 llm:
@@ -42,7 +42,7 @@ llm:
     embeddings: {model: text-embedding-3-small, per1M: "0.02"}
   anthropic:
     wire: anthropic
-    apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC}
+    apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC}
     models:
       - {model: claude-sonnet-5-5, inputPer1M: "3", outputPer1M: "15"}
     maxOutputTokens: 8000
@@ -50,12 +50,12 @@ oauthClients:
   providers.substrate.reamde.dev/google:
     clientId: 1234.apps.example.com
     clientSecret: {file: %s}
-    notice: Ask the host to add your address first.
+    notice: Ask us to add your address first.
 functionSecrets:
   providers.substrate.reamde.dev/firecrawl:
-    apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC}
-    consumers: [websearch, scrapepage]
-    pricePerCall: {websearch: "0.1", scrapepage: "0.1"}
+    apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC}
+    consumers: [websearch, webscrape]
+    pricePerCall: {websearch: "0.1", webscrape: "0.1"}
 budget:
   centsPerDay: 200
 `, keyFile(t, "openai-fixture"), keyFile(t, "client-secret-fixture"))
@@ -123,9 +123,9 @@ func TestParseRefuses(t *testing.T) {
 		name, from, to, want string
 	}{
 		{"a missing key file", "apiKey: {file: ", "apiKey: {file: /nonexistent/key-", "llm.openai: apiKey: file /nonexistent/key-"},
-		{"an unset variable", "{env: HOSTDEFAULTS_TEST_ANTHROPIC}\n    models", "{env: HOSTDEFAULTS_TEST_UNSET}\n    models", "env HOSTDEFAULTS_TEST_UNSET is not set"},
-		{"an inline key", "apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC}\n    models", "apiKey: sk-inline-fixture\n    models", "never the key itself"},
-		{"a key reference naming both", "apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC}\n    models", "apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC, file: /x}\n    models", "exactly one of file and env"},
+		{"an unset variable", "{env: OPERATORDEFAULTS_TEST_ANTHROPIC}\n    models", "{env: OPERATORDEFAULTS_TEST_UNSET}\n    models", "env OPERATORDEFAULTS_TEST_UNSET is not set"},
+		{"an inline key", "apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC}\n    models", "apiKey: sk-inline-fixture\n    models", "never the key itself"},
+		{"a key reference naming both", "apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC}\n    models", "apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC, file: /x}\n    models", "exactly one of file and env"},
 		{"a plain http base URL", "https://llm.example.com/v1", "http://llm.example.com/v1", "baseURL is an https URL"},
 		{"a base URL carrying credentials", "https://llm.example.com/v1", "https://user:pw@llm.example.com/v1", "baseURL is an https URL"},
 		{"an openai entry with no base URL", "    baseURL: https://llm.example.com/v1\n", "", "baseURL is required"},
@@ -134,14 +134,14 @@ func TestParseRefuses(t *testing.T) {
 		{"an entry with no models", "    models:\n      - {model: claude-sonnet-5-5, inputPer1M: \"3\", outputPer1M: \"15\"}\n", "", "models is required"},
 		{"no maxOutputTokens", "    maxOutputTokens: 8000\n", "", "maxOutputTokens is required"},
 		{"a title model off the list", "titleModel: gpt-5-mini", "titleModel: gpt-4", "titleModel gpt-4 is not one of models"},
-		{"two embeddings entries", "  anthropic:\n", "  gateway:\n    wire: openai\n    baseURL: https://gateway.example.com/v1\n    apiKey: {env: HOSTDEFAULTS_TEST_ANTHROPIC}\n    models: [{model: m, inputPer1M: \"1\", outputPer1M: \"1\"}]\n    maxOutputTokens: 10\n    embeddings: {model: text-embedding-3-small, per1M: \"0.02\"}\n  anthropic:\n", "a host serves embeddings from one entry"},
+		{"two embeddings entries", "  anthropic:\n", "  gateway:\n    wire: openai\n    baseURL: https://gateway.example.com/v1\n    apiKey: {env: OPERATORDEFAULTS_TEST_ANTHROPIC}\n    models: [{model: m, inputPer1M: \"1\", outputPer1M: \"1\"}]\n    maxOutputTokens: 10\n    embeddings: {model: text-embedding-3-small, per1M: \"0.02\"}\n  anthropic:\n", "the file serves embeddings from one entry"},
 		{"embeddings on a wire without them", "    wire: anthropic\n", "    wire: anthropic\n    embeddings: {model: text-embedding-3-small, per1M: \"0.02\"}\n", "no embeddings endpoint"},
 		{"an embeddings model of another width", "model: text-embedding-3-small", "model: text-embedding-3-large", "3072 wide"},
 		{"embeddings without a price", `per1M: "0.02"}`, `}`, "per1M is required"},
 		{"an unknown top-level key", "budget:\n", "budgett: {}\nbudget:\n", "field budgett not found"},
 		{"an unknown key in an entry", "    maxOutputTokens: 16000\n", "    maxOutputTokens: 16000\n    maxInputTokens: 1\n", "field maxInputTokens not found"},
 		{"an unknown key in a model", "contextWindow: 400000}", "contextWindow: 400000, vision: true}", "field vision not found"},
-		{"an unknown key in a key reference", "{env: HOSTDEFAULTS_TEST_ANTHROPIC}\n    models", "{env: HOSTDEFAULTS_TEST_ANTHROPIC, path: x}\n    models", `unknown key "path"`},
+		{"an unknown key in a key reference", "{env: OPERATORDEFAULTS_TEST_ANTHROPIC}\n    models", "{env: OPERATORDEFAULTS_TEST_ANTHROPIC, path: x}\n    models", `unknown key "path"`},
 		{"an unknown request param", "defaults: {reasoningEffort: low}", "defaults: {topP: 1}", "topP is not a request param"},
 		{"an unknown wire", "wire: anthropic", "wire: bedrock", `wire "bedrock" is not one of`},
 		{"an unknown cache ttl", "ttl: onehour", "ttl: 1h", `cache.ttl "1h"`},
@@ -149,8 +149,8 @@ func TestParseRefuses(t *testing.T) {
 		{"a negative budget", "centsPerDay: 200", "centsPerDay: -1", "at or above 0"},
 		{"an idempotency header", "name: X-Title, value: substrate", "name: Idempotency-Key, value: k", "replay a request"},
 		{"an idempotency header in any case", "name: X-Title, value: substrate", "name: x-idempotency-key, value: k", "replay a request"},
-		{"a function consumer without a price", `pricePerCall: {websearch: "0.1", scrapepage: "0.1"}`, `pricePerCall: {websearch: "0.1"}`, "scrapepage has no price"},
-		{"a price for a non-consumer", `scrapepage: "0.1"}`, `scrapepage: "0.1", crawl: "1"}`, "crawl is not one of its consumers"},
+		{"a function consumer without a price", `pricePerCall: {websearch: "0.1", webscrape: "0.1"}`, `pricePerCall: {websearch: "0.1"}`, "webscrape has no price"},
+		{"a price for a non-consumer", `webscrape: "0.1"}`, `webscrape: "0.1", crawl: "1"}`, "crawl is not one of its consumers"},
 		{"an oauth client without its id", "    clientId: 1234.apps.example.com\n", "", "clientId is required"},
 		{"a package that is not an identity", "  - providers.substrate.reamde.dev/google\n", "  - google\n", `"google" is not a package identity`},
 	}
@@ -177,12 +177,12 @@ func TestParseRefuses(t *testing.T) {
 
 func TestLoad(t *testing.T) {
 	if c, err := Load(""); c != nil || err != nil {
-		t.Fatalf("no path = %v, %v; want no host file", c, err)
+		t.Fatalf("no path = %v, %v; want no defaults file", c, err)
 	}
-	if _, err := Load("hosts.yaml"); err == nil || !strings.Contains(err.Error(), "not an absolute path") {
+	if _, err := Load("defaults.yaml"); err == nil || !strings.Contains(err.Error(), "not an absolute path") {
 		t.Fatalf("a relative path = %v", err)
 	}
-	p := filepath.Join(t.TempDir(), "host.yaml")
+	p := filepath.Join(t.TempDir(), "defaults.yaml")
 	if err := os.WriteFile(p, []byte(validFile(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +213,6 @@ func TestCheckPackages(t *testing.T) {
 	}
 	var none *Config
 	if err := none.CheckPackages(ships); err != nil {
-		t.Fatalf("no host file = %v", err)
+		t.Fatalf("no defaults file = %v", err)
 	}
 }

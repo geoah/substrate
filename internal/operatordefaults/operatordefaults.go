@@ -1,13 +1,15 @@
-// Package hostdefaults reads the host's defaults file (SUBSTRATE_HOST_DEFAULTS):
-// the services a host pays for on behalf of the repositories it serves, and
-// the daily budget that bounds them (docs/plans/host-defaults.md, decision
-// 0230). A deployment without the file has no host defaults, and nothing in
-// this package runs.
+// Package operatordefaults reads the operator's defaults file
+// (SUBSTRATE_OPERATOR_DEFAULTS). The operator is whoever runs the deployment;
+// an operator default is a key or an OAuth client the operator supplies, used
+// only where a repository holds none of its own, and the file's budget is the
+// allowance that bounds what the operator pays for one repository in one UTC
+// day (docs/plans/host-defaults.md, decision 0230). A deployment without the
+// file has no operator defaults, and nothing in this package runs.
 //
 // The file holds no key material itself. Every credential is a reference, `{file:
 // /path}` or `{env: NAME}`, resolved once at Load and held in this process
 // only: no record, sealed value, changelog line or export ever carries it.
-package hostdefaults
+package operatordefaults
 
 import (
 	"bytes"
@@ -30,7 +32,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// maxFile bounds the host file. A host listing every shipped provider with a
+// maxFile bounds the defaults file. One listing every shipped provider with a
 // dozen models each is a few kilobytes.
 const maxFile = 256 << 10
 
@@ -38,14 +40,14 @@ const maxFile = 256 << 10
 // kilobyte, so a file far past this is a wrong path.
 const maxSecret = 16 << 10
 
-// The cache TTL words a host entry may name, as the llm/provider kind spells
+// The cache TTL words an operator entry may name, as the llm/provider kind spells
 // them (an enum value is a lowercase word, so the wire's `1h` cannot be one).
 const (
 	CacheTTLFiveMinutes = "fiveminutes"
 	CacheTTLOneHour     = "onehour"
 )
 
-// Config is a host file that passed Load. Its maps are keyed by what each
+// Config is a defaults file that passed Load. Its maps are keyed by what each
 // entry stands in for: an llm/provider row id, or a published package.
 type Config struct {
 	// Install is the published packages every repository is given (phase 2;
@@ -60,13 +62,13 @@ type Config struct {
 	// functions receive the key (phase 3; read and validated, acted on by
 	// nothing yet).
 	FunctionSecrets map[string]*FunctionSecret
-	// Budget is the per-repository daily allowance every host-paid call
-	// reserves against.
+	// Budget is the allowance, per repository and UTC day, every
+	// operator-paid call reserves against.
 	Budget Budget
 }
 
-// LLM is one host transport: everything a call on an empty, host-listed
-// llm/provider row is made with. None of it comes from the row.
+// LLM is one operator transport: everything a call on an empty,
+// operator-listed llm/provider row is made with. None of it comes from the row.
 type LLM struct {
 	// ID is the llm/provider row id this entry serves.
 	ID      string
@@ -95,7 +97,7 @@ type LLM struct {
 	Embeddings *Embeddings
 }
 
-// Model is one model a host entry serves, with its prices in USD per million
+// Model is one model an operator entry serves, with its prices in USD per million
 // tokens as exact digits. The cache rates are optional, as on a provider row.
 type Model struct {
 	Model           string
@@ -140,24 +142,24 @@ type Header struct {
 	Value string
 }
 
-// Embeddings is the host's embeddings provider: the model, bought on its
+// Embeddings is the operator's embeddings provider: the model, bought on its
 // entry's transport, and its price in USD per million input tokens.
 type Embeddings struct {
 	Model string
 	Per1M string
 }
 
-// OAuthClient is a host OAuth client for one published provider. The id and
+// OAuthClient is an operator OAuth client for one published provider. The id and
 // the secret are one pair, never mixed with a repository's own.
 type OAuthClient struct {
 	ClientID     string
 	ClientSecret Secret
-	// Notice is the host's own words about the client, shown beside it (a
+	// Notice is the operator's own words about the client, shown beside it (a
 	// client in Google's Testing mode, say); empty for none.
 	Notice string
 }
 
-// FunctionSecret is a key the host hands to named functions of one published
+// FunctionSecret is a key the operator hands to named functions of one published
 // provider, priced per call in cents.
 type FunctionSecret struct {
 	APIKey    Secret
@@ -167,7 +169,7 @@ type FunctionSecret struct {
 	PricePerCall map[string]string
 }
 
-// Budget is the per-repository daily allowance in US cents.
+// Budget is the allowance, per repository and UTC day, in US cents.
 type Budget struct {
 	CentsPerDay int64
 }
@@ -176,7 +178,7 @@ type Budget struct {
 // value never prints: String, GoString and every encoding answer the
 // reference, so a Config handed to a log line carries no key.
 type Secret struct {
-	// File and Env are the reference as the host file wrote it; exactly one
+	// File and Env are the reference as the defaults file wrote it; exactly one
 	// is set.
 	File  string
 	Env   string
@@ -255,8 +257,8 @@ func (c *Config) CheckPackages(isProvider func(id string) bool) error {
 	return nil
 }
 
-// Load reads and validates the host file at path. An empty path is no host
-// file: Load returns nil and no error, and the server behaves exactly as it
+// Load reads and validates the defaults file at path. An empty path is no
+// defaults file: Load returns nil and no error, and the server behaves exactly as it
 // does without the feature. Every refusal names the problem and never a key,
 // because the caller refuses to boot on it and logs the text.
 func Load(path string) (*Config, error) {
@@ -281,7 +283,7 @@ func Load(path string) (*Config, error) {
 	return Parse(raw, filepath.Dir(path))
 }
 
-// Parse validates a host file's bytes and resolves its secrets. dir is where
+// Parse validates a defaults file's bytes and resolves its secrets. dir is where
 // a relative `{file: ...}` would resolve against; a key file must be named by
 // an absolute path, so dir is only quoted in a refusal.
 func Parse(raw []byte, dir string) (*Config, error) {
@@ -430,7 +432,7 @@ func (d *document) validate(dir string) (*Config, error) {
 		FunctionSecrets: map[string]*FunctionSecret{},
 	}
 	if d.Budget == nil || d.Budget.CentsPerDay == nil {
-		return nil, errors.New("budget.centsPerDay is required: every host-paid call reserves against it")
+		return nil, errors.New("budget.centsPerDay is required: every operator-paid call reserves against it")
 	}
 	if *d.Budget.CentsPerDay < 0 {
 		return nil, errors.New("budget.centsPerDay is a whole number of cents at or above 0")
@@ -461,7 +463,7 @@ func (d *document) validate(dir string) (*Config, error) {
 		c.LLM[id] = entry
 	}
 	if len(embedders) > 1 {
-		return nil, fmt.Errorf("llm: %s each name embeddings; a host serves embeddings from one entry", strings.Join(embedders, ", "))
+		return nil, fmt.Errorf("llm: %s each name embeddings; the file serves embeddings from one entry", strings.Join(embedders, ", "))
 	}
 
 	for _, p := range slices.Sorted(maps.Keys(d.OAuthClients)) {
@@ -575,7 +577,7 @@ func (d *llmDoc) validate(id, dir string) (*LLM, error) {
 		})
 	}
 	if d.MaxOutputTokens < 1 {
-		return nil, errors.New("maxOutputTokens is required: a positive whole number of tokens, the most one host-paid completion may write")
+		return nil, errors.New("maxOutputTokens is required: a positive whole number of tokens, the most one operator-paid completion may write")
 	}
 	e.MaxOutputTokens = d.MaxOutputTokens
 	if e.TitleModel != "" {
@@ -655,8 +657,8 @@ func checkPackage(p string) error {
 }
 
 // resolve reads one key reference. A missing file, an unset variable and an
-// empty value are each refused: a host that meant to pay for a service and
-// boots without its key would hand every repository a service that fails.
+// empty value are each refused: an operator that meant to pay for a slot and
+// boots without its key would hand every repository a slot that fails.
 func resolve(ref *secretDoc, dir string) (Secret, error) {
 	if ref == nil {
 		return Secret{}, errors.New("is required: {file: /path} or {env: NAME}")
@@ -664,7 +666,7 @@ func resolve(ref *secretDoc, dir string) (Secret, error) {
 	s := Secret{File: ref.File, Env: ref.Env}
 	if ref.File != "" {
 		if !filepath.IsAbs(ref.File) {
-			return Secret{}, fmt.Errorf("file %q is not an absolute path (the host file is in %s)", ref.File, dir)
+			return Secret{}, fmt.Errorf("file %q is not an absolute path (the defaults file is in %s)", ref.File, dir)
 		}
 		f, err := os.Open(ref.File)
 		if err != nil {

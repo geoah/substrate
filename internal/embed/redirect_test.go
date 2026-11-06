@@ -37,8 +37,8 @@ func TestEmbedRefusesRedirects(t *testing.T) {
 	}
 }
 
-// The usage the endpoint reports reaches the caller, so a host-paid request
-// settles to what it cost.
+// The usage the endpoint reports reaches the caller, so an operator-paid
+// request settles to what it cost.
 func TestEmbedUsageReportsPromptTokens(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

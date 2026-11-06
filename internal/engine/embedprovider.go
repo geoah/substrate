@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/embed"
-	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -40,8 +40,9 @@ type embedProvider struct {
 	id     string
 	model  string
 	client *embed.Client
-	// gate is set on the host's embeddings entry alone (hostspend.go): every
-	// request reserves against the host's budget at per1M, USD per million
+	// gate is set on the operator's embeddings entry alone
+	// (operatorspend.go): every request reserves against the allowance at
+	// per1M, USD per million
 	// tokens, and settles to what the endpoint reported.
 	gate  *dataset
 	per1M float64
@@ -51,7 +52,7 @@ type embedProvider struct {
 // drains through the resolved row.
 func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	if p.gate != nil {
-		return p.hostEmbed(ctx, texts)
+		return p.operatorEmbed(ctx, texts)
 	}
 	return p.client.Embed(ctx, texts)
 }
@@ -69,10 +70,11 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 	}
 	switch len(claims) {
 	case 0:
-		// No row claims the job: the host's embeddings entry is the
-		// repository's provider where the host file names one (decision 0230).
-		if entry := ds.svc.host.EmbeddingsEntry(); entry != nil {
-			return ds.openHostEmbedProvider(entry)
+		// No row claims the job: the operator's embeddings entry is the
+		// repository's provider where the defaults file names one (decision
+		// 0230).
+		if entry := ds.svc.operatorDefaults.EmbeddingsEntry(); entry != nil {
+			return ds.openOperatorEmbedProvider(entry)
 		}
 		return nil, nil
 	case 1:
@@ -98,11 +100,11 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 type embedClaim struct{ id, model string }
 
 // embedPair is the pair the repository's vectors are bought under now, read
-// through q: the one row claiming embedModel, or, where none does, the host's
-// embeddings entry stamped hostEmbedProviderID. nil is no pair: no claim and
-// no host entry, or two claims. Every reader of "which pair is current" asks
-// this rather than the rows, so a repository the host serves is never read
-// as having no provider.
+// through q: the one row claiming embedModel, or, where none does, the
+// operator's embeddings entry stamped operatorEmbedProviderID. nil is no
+// pair: no claim and no operator entry, or two claims. Every reader of "which
+// pair is current" asks this rather than the rows, so a repository the
+// operator serves is never read as having no provider.
 func (ds *dataset) embedPair(ctx context.Context, q dbx) (*embedClaim, error) {
 	claims, err := embedClaims(ctx, q)
 	if err != nil {
@@ -110,8 +112,8 @@ func (ds *dataset) embedPair(ctx context.Context, q dbx) (*embedClaim, error) {
 	}
 	switch len(claims) {
 	case 0:
-		if entry := ds.svc.host.EmbeddingsEntry(); entry != nil {
-			return &embedClaim{id: hostEmbedProviderID, model: entry.Embeddings.Model}, nil
+		if entry := ds.svc.operatorDefaults.EmbeddingsEntry(); entry != nil {
+			return &embedClaim{id: operatorEmbedProviderID, model: entry.Embeddings.Model}, nil
 		}
 		return nil, nil
 	case 1:
@@ -120,20 +122,20 @@ func (ds *dataset) embedPair(ctx context.Context, q dbx) (*embedClaim, error) {
 	return nil, nil
 }
 
-// openHostEmbedProvider builds the client for the host's embeddings entry,
-// on the entry's own transport and gated by the host's budget.
-func (ds *dataset) openHostEmbedProvider(entry *hostdefaults.LLM) (*embedProvider, error) {
+// openOperatorEmbedProvider builds the client for the operator's embeddings
+// entry, on the entry's own transport and gated by the allowance.
+func (ds *dataset) openOperatorEmbedProvider(entry *operatordefaults.LLM) (*embedProvider, error) {
 	client, err := embed.New(embed.Config{
 		BaseURL: entry.BaseURL,
 		APIKey:  entry.APIKey.Value(),
 		Model:   entry.Embeddings.Model,
-		Headers: hostHeaders(entry),
+		Headers: operatorHeaders(entry),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: the host's embeddings entry %q: %w", entry.ID, err)
+		return nil, fmt.Errorf("substrate/engine: the operator's embeddings entry %q: %w", entry.ID, err)
 	}
 	per1M, _ := priceFloat(entry.Embeddings.Per1M)
-	return &embedProvider{id: hostEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M}, nil
+	return &embedProvider{id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M}, nil
 }
 
 // embedClaims is every live row claiming the embeddings job, by id, read
@@ -168,11 +170,11 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 	if err != nil {
 		return nil, err
 	}
-	if pc.host != nil {
+	if pc.operator != nil {
 		// A claimed embedModel is the person's choice of model and price, so
-		// it never runs on a host key (decision 0230).
-		return nil, fmt.Errorf("%w: llm/provider row %q declares %s but no apiKey of its own: a row that claims embeddings pays for them with its own key, and the host's embeddings serve only a repository whose rows claim none",
-			substrate.ErrValidation, id, propEmbedModel)
+		// it never runs on an operator key (decision 0230).
+		return nil, fmt.Errorf("%w: llm/provider row %q declares %s but no apiKey of its own: a row that claims embeddings pays for them with its own key, and %s's embeddings serve only a repository whose rows claim none",
+			substrate.ErrValidation, id, propEmbedModel, ds.siteName())
 	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: id})
 	if err != nil {
@@ -295,7 +297,7 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // the closure admits and a re-embed runs. The live write skips the same
 // records for the same reason.
 func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
-	// No pair (no row and no host entry, or two claiming rows) and then no
+	// No pair (no row and no operator entry, or two claiming rows) and then no
 	// stored vector is current: whatever pair bought it, the folded records
 	// do not name it.
 	pair, err := ds.embedPair(ctx, q)

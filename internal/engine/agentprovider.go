@@ -37,7 +37,7 @@ func (ds *dataset) resolveAgentProvider(ctx context.Context, ag *vocabulary.Agen
 			return nil, "", fmt.Errorf("%w: provider row %q prices none of agent %s's models %v", substrate.ErrValidation, id, ag.Identity(), ag.Models)
 		}
 	}
-	if err := checkHostModel(provider, "agent "+ag.Identity(), model); err != nil {
+	if err := ds.checkOperatorModel(provider, "agent "+ag.Identity(), model); err != nil {
 		return nil, "", err
 	}
 	return provider, model, nil

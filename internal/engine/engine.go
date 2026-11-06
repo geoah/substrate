@@ -35,9 +35,9 @@ import (
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/changelogfile"
-	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/oauthflow"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -103,8 +103,10 @@ type options struct {
 	embedRequestBytes  int
 	blobs              blobbytes.Backend
 	log                *slog.Logger
-	// host is the host defaults file (WithHostDefaults); nil is none.
-	host *hostdefaults.Config
+	// operatorDefaults is the operator defaults file (WithOperatorDefaults);
+	// nil is none. operatorName is the site's name its refusals give.
+	operatorDefaults *operatordefaults.Config
+	operatorName     string
 	// searchSemanticHook is the semantic arm's test seam (export_test.go
 	// WithTestSemanticHook); nil in production.
 	searchSemanticHook func(ctx context.Context, tx *sql.Tx)
@@ -430,25 +432,31 @@ func WithUnitSeed(on bool) Option {
 	return func(o *options) { o.seedUnits, o.seedUnitsSet = on, true }
 }
 
-// WithHostDefaults gives the service the host's defaults file (decision 0230,
-// internal/hostdefaults): an empty, host-listed llm/provider row runs on the
-// host's transport, the host's embeddings entry serves a repository whose rows
-// claim none, and every such call is charged to the host's daily budget. nil,
-// or not given, is no host defaults, and the service behaves exactly as it
-// does without the feature.
-func WithHostDefaults(c *hostdefaults.Config) Option {
-	return func(o *options) { o.host = c }
+// WithOperatorDefaults gives the service the operator's defaults file
+// (decision 0230, internal/operatordefaults): an empty, operator-listed
+// llm/provider row runs on the operator's transport, the operator's embeddings
+// entry serves a repository whose rows claim none, and every such call is
+// charged to the repository's allowance for the UTC day. name is the site's
+// name (site.yaml), which the refusals and the operator defaults read give;
+// empty reads as "this server". nil, or not given, is no operator defaults,
+// and the service behaves exactly as it does without the feature.
+func WithOperatorDefaults(c *operatordefaults.Config, name string) Option {
+	return func(o *options) { o.operatorDefaults, o.operatorName = c, name }
 }
 
 type service struct {
 	outsideCode           string
 	unconfinedOutsideCode bool
-	// host is the host defaults file (WithHostDefaults); nil is none.
-	host *hostdefaults.Config
-	// hostNow is the host ledger's clock (hostspend.go); never nil, and a
-	// test sets it before the dataset's first host-paid call.
-	hostNow func() time.Time
-	dsn     string
+	dsn                   string
+	// operatorDefaults is the operator defaults file (WithOperatorDefaults);
+	// nil is none.
+	operatorDefaults *operatordefaults.Config
+	// operatorName is the site's name the operator's refusals give; empty
+	// reads as "this server" (operatorspend.go siteName).
+	operatorName string
+	// operatorNow is the allowance ledger's clock (operatorspend.go); never
+	// nil, and a test sets it before the dataset's first operator-paid call.
+	operatorNow func() time.Time
 	// admin is the DSN's own user: the DDL, the role setup, and the index
 	// materialization the bound roles are not allowed to run.
 	admin *sql.DB
@@ -867,8 +875,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		laneWorkers:        o.laneWorkers,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
-		host:               o.host,
-		hostNow:            time.Now,
+		operatorDefaults:   o.operatorDefaults,
+		operatorName:       o.operatorName,
+		operatorNow:        time.Now,
 		outsideCode:        o.outsideCode, unconfinedOutsideCode: o.unconfinedOutsideCode,
 		now:              o.now,
 		webhookNow:       o.webhookNow,

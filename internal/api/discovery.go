@@ -231,19 +231,20 @@ var features = []featureInfo{
 	{Name: "apps", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 }
 
-// hostServicesFeature is listed only where the server booted with a host
-// defaults file: `GET /host/services` is served everywhere, and the entry is
-// what tells a client the host pays for anything (decision 0230). Alpha while
-// the plan's later phases add OAuth clients and function secrets to it.
-var hostServicesFeature = featureInfo{Name: substrate.FeatureHostServices, Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}}
+// operatorDefaultsFeature is listed only where the server booted with an
+// operator defaults file: `GET /operator/defaults` is served everywhere, and
+// the entry is what tells a client the operator pays for anything (decision
+// 0230). Alpha while the plan's later phases add OAuth clients and function
+// secrets to it.
+var operatorDefaultsFeature = featureInfo{Name: substrate.FeatureOperatorDefaults, Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}}
 
 // features is the feature list this server announces: the literal, and the
-// host services read where a host file is loaded.
+// operator defaults read where a defaults file is loaded.
 func (h *handler) features() []featureInfo {
-	if !h.hostDefaults {
+	if !h.operatorDefaults {
 		return features
 	}
-	return append(slices.Clone(features), hostServicesFeature)
+	return append(slices.Clone(features), operatorDefaultsFeature)
 }
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
