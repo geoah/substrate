@@ -82,6 +82,25 @@ describe("templateYAML", () => {
     expect(yaml).toContain("# optional, string[]")
   })
 
+  it("offers metadata.id on a kind whose ids are named", () => {
+    const named: KindInfo = {
+      ...agentKind,
+      definition: { ...agentKind.definition, ids: { type: "named" } },
+    }
+    expect(templateYAML(SHIPPED_UNITS, named)).toMatch(/id: ""\s*# optional/)
+    const mintedInternal: KindInfo = {
+      ...agentKind,
+      definition: {
+        ...agentKind.definition,
+        purpose: "internal",
+        ids: { type: "minted" },
+      },
+    }
+    expect(
+      parse(templateYAML(SHIPPED_UNITS, mintedInternal))
+    ).not.toHaveProperty("metadata")
+  })
+
   it("offers metadata.id only on an internal kind", () => {
     const internal: KindInfo = {
       ...agentKind,

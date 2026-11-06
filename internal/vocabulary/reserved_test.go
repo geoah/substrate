@@ -284,6 +284,49 @@ func TestPurposeReserved(t *testing.T) {
 	})
 }
 
+// --- ids --------------------------------------------------------------------
+
+// A kind's `ids:` (decision record 0228) says who names a new record: the
+// engine refuses a person's chosen id on a minted kind. The loader holds the
+// closed key set and the two values, and leaves the authored document alone.
+func TestIDsReserved(t *testing.T) {
+	for _, want := range []string{vocabulary.IDsMinted, vocabulary.IDsNamed} {
+		t.Run(want+" is admitted and parsed", func(t *testing.T) {
+			ty := loadThing(t, "  ids:\n    type: "+want+"\n")
+			if ty.IDs != want || ty.IDType() != want {
+				t.Fatalf("IDs = %q, IDType = %q, want %q", ty.IDs, ty.IDType(), want)
+			}
+			if got, _ := ty.Definition["ids"].(map[string]any); got["type"] != want {
+				t.Fatalf("definition ids = %v, want type %q", ty.Definition["ids"], want)
+			}
+		})
+	}
+
+	t.Run("absent reads by purpose and is never written", func(t *testing.T) {
+		if got := loadThing(t, "").IDType(); got != vocabulary.IDsMinted {
+			t.Fatalf("a primary kind's IDType = %q, want %q", got, vocabulary.IDsMinted)
+		}
+		ty := loadThing(t, "  purpose: internal\n")
+		if got := ty.IDType(); got != vocabulary.IDsNamed {
+			t.Fatalf("an internal kind's IDType = %q, want %q", got, vocabulary.IDsNamed)
+		}
+		if _, written := ty.Definition["ids"]; written {
+			t.Fatalf("the default was written into the definition: %v", ty.Definition["ids"])
+		}
+		// A declared type wins over the purpose's default.
+		if got := loadThing(t, "  purpose: internal\n  ids:\n    type: minted\n").IDType(); got != vocabulary.IDsMinted {
+			t.Fatalf("an internal kind declaring minted reads %q", got)
+		}
+	})
+
+	t.Run("any other shape is an error", func(t *testing.T) {
+		loadThingErr(t, "  ids:\n    type: random\n", `data.ids.type: "random" is not an id type`)
+		loadThingErr(t, "  ids:\n    type: 3\n", `data.ids.type: must be "minted" or "named"`)
+		loadThingErr(t, "  ids:\n    generator: fn\n", `data.ids.generator: not a key of ids`)
+		loadThingErr(t, "  ids: named\n", `data.ids: must be a mapping`)
+	})
+}
+
 // --- a reference's properties block -----------------------------------------
 
 func TestReferencePropertiesBlock(t *testing.T) {

@@ -322,10 +322,11 @@ func (t *txn) checkID(typ, id string) error {
 // A kind some mapping points at is always server-assigned, because nothing
 // external names a subject. Otherwise a chosen id is the writer's to give
 // only when the writer derives it from data (substrate.NamesItsRecords: the
-// engine, a bundle, a function, decision 0162) or the kind is `internal`
-// (its ids are names the substrate resolves by: a unit's spelling, a
-// provider row, an input's `default`). A person, an app or an agent creates
-// every other record under a minted id, which it may mint itself so an
+// engine, a bundle, a function, decision 0162) or the kind's ids are
+// `named` (Kind.IDType: declared by `ids.type`, else every internal kind),
+// because its ids are names the substrate resolves by: a metric's path, a
+// unit's spelling, a provider row, an input's `default`. A person, an app or
+// an agent creates every other record under a minted id, which it may mint itself so an
 // offline outbox knows it before the server answers, or derive from an
 // upstream key so a re-sync names the same row; any other id is refused,
 // because a name chosen for what a record says stops matching once the
@@ -353,7 +354,7 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 	if _, declaration := vocabularyRecordKinds[ty.Identity]; declaration {
 		return nil
 	}
-	if substrate.NamesItsRecords(t.actor) || ty.Purpose == vocabulary.PurposeInternal || vocabulary.MintedID(id) {
+	if substrate.NamesItsRecords(t.actor) || ty.IDType() == vocabulary.IDsNamed || vocabulary.MintedID(id) {
 		return nil
 	}
 	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id as a UUIDv7 in 26 lowercase Crockford base32 characters",

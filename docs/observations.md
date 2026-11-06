@@ -266,8 +266,6 @@ device ([decision 0187](decisions/0187-linked-sources-are-one-device-read-from-t
 
 ```yaml
 kind: substrate.reamde.dev/observations/sourcelink
-metadata:
-  id: withings-body
 data:
   properties:
     name: Withings Body+
@@ -346,8 +344,6 @@ An hour of heart rate at irregular times, with one unavailable reading:
 
 ```yaml
 kind: substrate.reamde.dev/observations/trace
-metadata:
-  id: strap/ada/chest/heart_rate/2026-10-07T06
 data:
   properties:
     metric:
@@ -737,7 +733,7 @@ corrected value as an observation of that source:
 ```yaml
 kind: substrate.reamde.dev/observations/source
 metadata:
-  id: owner/scale
+  id: 01jcd8m0k3p7s2x9v4w6y1z5qd  # minted by the writer, so the observation can name it
 data:
   properties:
     name: My scale
@@ -746,12 +742,10 @@ data:
       substrate.reamde.dev/observations/metric/health/body_mass: 1
 ---
 kind: substrate.reamde.dev/observations/observation
-metadata:
-  id: owner/body_mass/2026-09-11T04:02:41Z
 data:
   properties:
     metric: substrate.reamde.dev/observations/metric/health/body_mass
-    source: substrate.reamde.dev/observations/source/owner/scale
+    source: substrate.reamde.dev/observations/source/01jcd8m0k3p7s2x9v4w6y1z5qd
     form: gauge
     hold: PT0S
     value:

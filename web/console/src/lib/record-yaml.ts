@@ -95,11 +95,16 @@ function specComment(units: UnitReader, spec: PropSpec): string {
 }
 
 /** Whether a NEW record of `kind` takes a minted id, and a create carrying
- * any other id is refused (`engine.checkCreateID`, decision 0228): every kind
- * but an `internal` one, whose id is a name the substrate resolves by, and a
- * declaration, which is named by its identity. */
+ * any other id is refused (`engine.checkCreateID`, decision 0228). The kind
+ * says so in `ids.type` (`minted` or `named`); absent, an `internal` kind's
+ * ids are named and every other kind's minted. A declaration is named by its
+ * identity. */
 export function serverAssignsID(kind: KindInfo): boolean {
-  return !isDeclarationKind(kind.identity) && kindPurpose(kind) !== "internal"
+  if (isDeclarationKind(kind.identity)) return false
+  const ids = kind.definition?.ids as { type?: unknown } | undefined
+  if (ids?.type === "named") return false
+  if (ids?.type === "minted") return true
+  return kindPurpose(kind) !== "internal"
 }
 
 /** The shape of a minted id (`vocabulary.MintedID`): a UUIDv7 as 26

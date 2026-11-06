@@ -35,4 +35,5 @@ data:
   package: observations
   # The sample samples.substrate.reamde.dev/observations at its version 6,
   # without its six example metrics (now the `environment` catalogue).
-  version: 1
+  # version 2: the metric kind's ids are named (decision record 0228).
+  version: 2

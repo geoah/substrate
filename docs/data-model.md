@@ -54,15 +54,18 @@ a UUID. Ids minted before that are 12 characters of lowercase base32 and keep
 working. Who may choose a new record's id
 ([0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)):
 
-- A person, an app or an agent creating a record omits the id and the
-  server mints one, or computes one itself in the same shape: a fresh UUIDv7
+- A kind says who names its records with `ids:` (`minted` or `named`;
+  absent, an `internal` kind is `named` and any other `minted`,
+  [vocabulary](vocabulary.md#the-reserved-keys)). A metric's ids are named:
+  it is found by `health/body_mass`.
+- A person, an app or an agent creating a record of a minted kind omits the
+  id and the server mints one, or computes one itself in the same shape: a fresh UUIDv7
   for an offline create, or one derived from an upstream key
   (`vocabulary.DerivedMintedID`) so a re-sync names the same row. Any other
   id is refused, because an id named after a record's title stops matching
   once the title changes.
-- A function, a bundle's install and the engine choose their ids, and so
-  does any writer of an `internal` kind, whose id is a name the substrate
-  resolves by. This is how a provider's sync function composes a stable id
+- A function, a bundle's install and the engine choose their ids on any
+  kind, and any writer chooses the id of a record of a named kind. This is how a provider's sync function composes a stable id
   out of the upstream service's own key. Such ids allow a wider character
   set (RFC 3986 unreserved plus `:`, `@` and `/`, up to 128 characters).
 - A kind some `recordmapping` points at is server-assigned for every writer

@@ -12,8 +12,9 @@ import (
 // chosen for what the record says stops matching once the record is
 // retitled (decision 0228). The create takes a minted id, which the writer
 // may mint or derive itself; updating a record by its id is not naming it;
-// a writer that derives ids from data keeps doing so; an internal kind's id
-// is a name. A seeded kind is held to it like an installed one.
+// a writer that derives ids from data keeps doing so; a kind whose ids are
+// named (declared, or internal) takes the writer's. A seeded kind is held to
+// it like an installed one unless it says so.
 func TestANewRecordTakesAMintedID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -62,6 +63,15 @@ func TestANewRecordTakesAMintedID(t *testing.T) {
 	// Addressing a record that exists is an update, whoever wrote it.
 	if got := mustPut(t, ds, owner, substrate.PutInput{Kind: task, ID: named.ID, Properties: props("Renamed")}); got.Properties["name"] != "Renamed" {
 		t.Fatalf("update by id wrote %v", got.Properties["name"])
+	}
+
+	// A kind that declares its ids named takes the writer's: a metric is
+	// found by its path, so the owner names one.
+	if got := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/observations/metric", ID: "ada/resting_hr",
+		Properties: map[string]any{"name": "Resting heart rate"},
+	}); got.ID != "ada/resting_hr" {
+		t.Fatalf("the named metric landed at %q", got.ID)
 	}
 
 	// An internal kind's id is a name the substrate resolves by.
