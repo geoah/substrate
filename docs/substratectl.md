@@ -31,17 +31,32 @@ and it can run anywhere.
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
 verify`, `repository snapshot`, `repository rebuild`, `repository
-rotate-generation`, `repository reembed` and `repository reindex`. Every one
+rotate-generation`, `repository reembed`, `repository reindex` and
+`repository blobs` (`status`, `migrate`, `prune`, which move blob bytes between
+the data root and a bucket, [blobs in a bucket](operations.md#blobs-in-a-bucket)). Every one
 of them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when
 that is unset) and refuses without it before touching anything. The ones
 that open the repository directory (`verify`, `rebuild`, `reembed`,
-`reindex`, `snapshot`, `rotate-generation` and `user reset`) also need
-`SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
+`reindex`, `snapshot`, `rotate-generation`, `blobs` and `user reset`) also need
+`SUBSTRATE_DATA_ROOT`, and the blob store variables the server runs with; `repository list` reads the database alone, and
 `repository inspect` reports a missing root instead of refusing. The one
 exception is `repository rewrap`, which opens a copied repository directory
 with the user's recovery key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs
 no database at all.
 [Running a substrate](operations.md) is where that hat lives.
+
+`repository blobs` moves blob bytes between the data root and a bucket, with
+the server stopped, and reads both from the server's own variables:
+
+```bash
+substratectl repository blobs migrate --all --to s3     # copy, hashed on both sides; re-runnable, deletes nothing
+substratectl repository blobs status  --all --to s3     # exits 0 once the bucket holds every blob
+substratectl repository blobs prune   --all --from fs   # delete each local copy once the bucket's hashes
+```
+
+`status` runs beside a server; `migrate` and `prune` take the repository's
+writer lock and refuse beside one. `prune` refuses the live store, keeps an
+object the other store lacks, and stops at a copy that does not hash.
 
 `substratectl version` belongs to neither hat: it prints the client version
 and the API version it speaks (`substratectl <version> (api v1)`), and needs

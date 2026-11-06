@@ -23,7 +23,6 @@ import (
 	"github.com/geoah/substrate/internal/api"
 	"github.com/geoah/substrate/internal/authority"
 	"github.com/geoah/substrate/internal/authorize"
-	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/domains"
@@ -169,9 +168,10 @@ func run() error {
 	// repository-chosen endpoint.
 
 	// Where blob bytes live: under the data root, in each repository's own
-	// directory, beside everything else that repository needs to come back.
-	// There is nothing to configure, because there is one backend.
-	blobs, err := blobbytes.NewFS(cfg.Data.Root)
+	// directory, beside everything else that repository needs to come back;
+	// or in a bucket (SUBSTRATE_BLOB_STORE=s3), proven reachable here before
+	// anything is served.
+	blobs, err := cfg.Blobs.Open(ctx, cfg.Data.Root)
 	if err != nil {
 		return err
 	}
@@ -188,6 +188,10 @@ func run() error {
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 		engine.WithTriggerLaneWorkers(cfg.TriggerLaneWorkers),
 		engine.WithHealthFailingAfter(cfg.HealthFailingAfter),
+	}
+	if cfg.Blobs.External() {
+		opts = append(opts, engine.WithBlobsOutsideDataRoot())
+		slog.Info("blob bytes are in a bucket, not under the data root: the data root alone is no longer a whole backup", "store", fmt.Sprint(blobs))
 	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds

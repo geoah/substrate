@@ -15,7 +15,6 @@ import (
 	// imported.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
@@ -72,7 +71,7 @@ func (a *app) dsn() (string, error) {
 // key the environment holds is used; its absence is not fatal here, since
 // nothing sealed is written.
 func (a *app) openEngineReadOnly(ctx context.Context) (engine.Operator, error) {
-	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), true)
+	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), true, false)
 }
 
 // openEngineExclusive opens the engine the way the server does, as the data
@@ -82,7 +81,15 @@ func (a *app) openEngineReadOnly(ctx context.Context) (engine.Operator, error) {
 // repository's lock (engine.ErrChangelogLocked). The credential key is
 // optional: a rebuild re-links sealed material and never opens it.
 func (a *app) openEngineExclusive(ctx context.Context) (engine.Operator, error) {
-	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false)
+	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false, false)
+}
+
+// openEngineMigrating is openEngineExclusive for `repository blobs migrate`
+// and `prune`: the one open that admits a repository directory holding blob
+// bytes while the live store is a bucket, because moving those bytes is what
+// the command is for.
+func (a *app) openEngineMigrating(ctx context.Context) (engine.Operator, error) {
+	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false, true)
 }
 
 // openEngineWrite opens the substrate engine for a command that WRITES sealed
@@ -98,11 +105,12 @@ func (a *app) openEngineWrite(ctx context.Context) (engine.Operator, error) {
 			"refusing to reset: set %s to the key the server runs with. The reset writes sealed material, and without the key it would land under a plain-marked wrap",
 			credentialKeyEnv)
 	}
-	return a.openEngineWithKey(ctx, credKey, false)
+	return a.openEngineWithKey(ctx, credKey, false, false)
 }
 
-// openEngineWithKey is the shared opener the three hats route through.
-func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bool) (engine.Operator, error) {
+// openEngineWithKey is the shared opener the hats route through. migrating
+// is openEngineMigrating's.
+func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly, migrating bool) (engine.Operator, error) {
 	// A present key must be key material of the right shape, or the engine
 	// refuses to open under it. Report that here, before the DSN, rather than
 	// wrapped in an open error. An absent key is the read hat's keyless case
@@ -123,10 +131,14 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 	if err != nil {
 		return nil, err
 	}
-	// The blob store the server runs with, off the same data root:
+	// The blob store the server runs with, from the same variables:
 	// `repository verify` reads every stored blob's bytes and `repository
 	// snapshot` copies them.
-	store, err := blobbytes.NewFS(data.Root)
+	blobs, err := config.LoadBlobs()
+	if err != nil {
+		return nil, err
+	}
+	store, err := blobs.Open(ctx, data.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +157,9 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 	}
 	if readOnly {
 		opts = append(opts, engine.WithDirectoryReadOnly())
+	}
+	if blobs.External() && !migrating {
+		opts = append(opts, engine.WithBlobsOutsideDataRoot())
 	}
 	svc, err := engine.OpenOperator(ctx, dsn, opts...)
 	if err != nil {
@@ -183,7 +198,7 @@ func lockHint(err error) error {
 	if err == nil || !(errors.Is(err, changelogfile.ErrLocked) || errors.Is(err, engine.ErrRepositoryHasAnotherWriter)) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap`, `repository blobs migrate`, `repository blobs prune` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table

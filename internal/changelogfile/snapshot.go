@@ -46,10 +46,10 @@ type Snapshot struct {
 	// SealedFiles is how many files under sealed/ the copy holds, every one
 	// of them opened under the repository's DEK when the snapshot was taken.
 	SealedFiles int
-	// BlobStore names the layout the copy's blob bytes are written for. There
-	// is one backend, `fs`, and under it the bytes are `blobs/<digest>` in
-	// the directory itself, so the field says how to read the copy rather
-	// than which of several stores took it.
+	// BlobStore names the layout the copy's blob bytes are written for:
+	// always `fs`, the bytes at `blobs/<digest>` in the directory itself,
+	// whichever store they were read out of. It says how to read the copy,
+	// not which store took it.
 	BlobStore string
 	// Blobs is every digest a `stored` blob manifest named at Head, sorted:
 	// the bytes the copy holds under blobs/. A blob the fold does not name is

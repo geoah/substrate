@@ -174,7 +174,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # -timeout 45m: Go's default of 10m has killed the engine suite on a slow CI
 # runner with no test failing. It was 30m before internal/providere2e joined.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -195,10 +195,10 @@ description = "The engine suite alone, or one shard of it: SHARD and SHARDS from
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."test:db:rest"]
-description = "Every database package but the engine and the provider suite: catalog, providertest, testenv"
+description = "Every container package but the engine and the provider suite: blobbytes (an S3 gateway), catalog, providertest, testenv"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/blobbytes/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."test:db:providers"]
 description = "The provider suite: seven of the eight closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
