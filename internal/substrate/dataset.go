@@ -304,6 +304,15 @@ type Dataset interface {
 	// CompleteAppAddon removes a waiting approval after the catalog installs
 	// its package. Repeating it or completing a revoked token is a no-op.
 	CompleteAppAddon(ctx context.Context, tokenID, packageID string) error
+
+	// --- operator defaults (decision 0235) ---
+	// OperatorDefaults answers each slot the repository spends a key through
+	// that the operator could fill (its llm/provider rows and its embeddings
+	// provider), each resolved by the same reads dispatch and the embed drain
+	// use, and today's allowance. On a deployment with no operator defaults
+	// file Operator is nil, every item's source is own or none, and no item
+	// says the operator offers it.
+	OperatorDefaults(ctx context.Context) (OperatorDefaults, error)
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

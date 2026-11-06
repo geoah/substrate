@@ -12,6 +12,7 @@ import (
 
 	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -39,11 +40,20 @@ type embedProvider struct {
 	id     string
 	model  string
 	client *embed.Client
+	// gate is set on the operator's embeddings entry alone
+	// (operatorspend.go): every request reserves against the allowance at
+	// per1M, USD per million
+	// tokens, and settles to what the endpoint reported.
+	gate  *dataset
+	per1M float64
 }
 
 // Embed and Dimension make embedProvider a substrate.Embedder, so the queue
 // drains through the resolved row.
 func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	if p.gate != nil {
+		return p.operatorEmbed(ctx, texts)
+	}
 	return p.client.Embed(ctx, texts)
 }
 
@@ -60,6 +70,12 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 	}
 	switch len(claims) {
 	case 0:
+		// No row claims the job: the operator's embeddings entry is the
+		// repository's provider where the defaults file names one (decision
+		// 0235).
+		if entry := ds.svc.operatorDefaults.EmbeddingsEntry(); entry != nil {
+			return ds.openOperatorEmbedProvider(entry)
+		}
 		return nil, nil
 	case 1:
 	default:
@@ -82,6 +98,45 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 // embedClaim is one live llm/provider row declaring embedModel: the pair a
 // vector it buys is stamped with (embedProvider.id, embedProvider.model).
 type embedClaim struct{ id, model string }
+
+// embedPair is the pair the repository's vectors are bought under now, read
+// through q: the one row claiming embedModel, or, where none does, the
+// operator's embeddings entry stamped operatorEmbedProviderID. nil is no
+// pair: no claim and no operator entry, or two claims. Every reader of "which
+// pair is current" asks this rather than the rows, so a repository the
+// operator serves is never read as having no provider.
+func (ds *dataset) embedPair(ctx context.Context, q dbx) (*embedClaim, error) {
+	claims, err := embedClaims(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	switch len(claims) {
+	case 0:
+		if entry := ds.svc.operatorDefaults.EmbeddingsEntry(); entry != nil {
+			return &embedClaim{id: operatorEmbedProviderID, model: entry.Embeddings.Model}, nil
+		}
+		return nil, nil
+	case 1:
+		return &claims[0], nil
+	}
+	return nil, nil
+}
+
+// openOperatorEmbedProvider builds the client for the operator's embeddings
+// entry, on the entry's own transport and gated by the allowance.
+func (ds *dataset) openOperatorEmbedProvider(entry *operatordefaults.LLM) (*embedProvider, error) {
+	client, err := embed.New(embed.Config{
+		BaseURL: entry.BaseURL,
+		APIKey:  entry.APIKey.Value(),
+		Model:   entry.Embeddings.Model,
+		Headers: operatorHeaders(entry),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: the operator's embeddings entry %q: %w", entry.ID, err)
+	}
+	per1M, _ := priceFloat(entry.Embeddings.Per1M)
+	return &embedProvider{id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M}, nil
+}
 
 // embedClaims is every live row claiming the embeddings job, by id, read
 // through q so the import can ask its own transaction.
@@ -114,6 +169,12 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 	pc, err := ds.resolveProvider(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if pc.operator != nil {
+		// A claimed embedModel is the person's choice of model and price, so
+		// it never runs on an operator key (decision 0235).
+		return nil, fmt.Errorf("%w: llm/provider row %q declares %s but no apiKey of its own: a row that claims embeddings pays for them with its own key, and %s's embeddings serve only a repository whose rows claim none",
+			substrate.ErrValidation, id, propEmbedModel, ds.siteName())
 	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: id})
 	if err != nil {
@@ -236,15 +297,12 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // the closure admits and a re-embed runs. The live write skips the same
 // records for the same reason.
 func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
-	// No row, or two claiming rows, is no pair, and then no stored vector is
-	// current: whatever pair bought it, the folded records do not name it.
-	claims, err := embedClaims(ctx, q)
+	// No pair (no row and no operator entry, or two claiming rows) and then no
+	// stored vector is current: whatever pair bought it, the folded records
+	// do not name it.
+	pair, err := ds.embedPair(ctx, q)
 	if err != nil {
 		return 0, err
-	}
-	var pair *embedClaim
-	if len(claims) == 1 {
-		pair = &claims[0]
 	}
 	total := 0
 	reg := ds.registry()

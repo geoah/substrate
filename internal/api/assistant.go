@@ -508,3 +508,11 @@ func (a *assistantDataset) GetBlob(ctx context.Context, digest string) (*substra
 func (a *assistantDataset) StatBlob(ctx context.Context, digest string) (*substrate.BlobInfo, error) {
 	return a.inner.StatBlob(ctx, digest)
 }
+
+// --- operator defaults ---
+
+// OperatorDefaults is a read of what the operator pays for and today's
+// allowance; it carries no key, so the assistant reads it as the owner does.
+func (a *assistantDataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefaults, error) {
+	return a.inner.OperatorDefaults(ctx)
+}

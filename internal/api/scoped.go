@@ -1202,3 +1202,9 @@ func (s *scopedDataset) RecordAppBuild(ctx context.Context, packages map[string]
 func (s *scopedDataset) CompleteAppAddon(context.Context, string, string) error {
 	return errScope("completing add-on approvals")
 }
+
+// OperatorDefaults is the owner's: which slots the operator pays for, and
+// today's allowance, say nothing about the kinds a grant reads.
+func (s *scopedDataset) OperatorDefaults(context.Context) (substrate.OperatorDefaults, error) {
+	return substrate.OperatorDefaults{}, errScope("the operator defaults read")
+}

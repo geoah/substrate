@@ -327,6 +327,9 @@ type fakeDataset struct {
 	// status reads; nil is the empty repository's empty list.
 	triggerStatuses []substrate.TriggerStatus
 	syncStatuses    []substrate.SyncStatus
+	// operatorDefaults is the canned answer of OperatorDefaults; nil is a
+	// deployment with no defaults file and no provider rows.
+	operatorDefaults *substrate.OperatorDefaults
 
 	// exportErr refuses Export before a point is pinned; exportFailMidway
 	// makes the stream fail after its first entry (export_test.go).
@@ -1587,3 +1590,12 @@ func sortedRecordIDs(m map[string]*substrate.Record) []string {
 var errBoom = errors.New("boom")
 
 func (d *fakeDataset) CompleteAppAddon(context.Context, string, string) error { return nil }
+
+func (d *fakeDataset) OperatorDefaults(context.Context) (substrate.OperatorDefaults, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.operatorDefaults == nil {
+		return substrate.OperatorDefaults{Items: []substrate.OperatorDefault{}}, nil
+	}
+	return *d.operatorDefaults, nil
+}

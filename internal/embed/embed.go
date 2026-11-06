@@ -139,18 +139,16 @@ func New(cfg Config) (*Client, error) {
 	}
 	clientCfg := openai.DefaultConfig(cfg.APIKey)
 	clientCfg.BaseURL = cfg.BaseURL
-	httpClient := &http.Client{Timeout: cfg.Timeout}
 	// The base URL is a repository-chosen address, so the embeddings dial is
 	// confined to public destinations (issue #241). This path drains on a
 	// background ticker, not only on user dispatch, so the gate is the only
 	// thing standing between a chosen URL and the deployment's own network.
-	gated := egress.Transport()
+	// The request carries the key, so it follows no redirect.
+	var transport http.RoundTripper = egress.Transport()
 	if len(cfg.Headers) > 0 {
-		httpClient.Transport = &headerTransport{base: gated, headers: cfg.Headers}
-	} else {
-		httpClient.Transport = gated
+		transport = &headerTransport{base: transport, headers: cfg.Headers}
 	}
-	clientCfg.HTTPClient = httpClient
+	clientCfg.HTTPClient = egress.CredentialClient(transport, cfg.Timeout)
 	return &Client{
 		client:    openai.NewClientWithConfig(clientCfg),
 		model:     cfg.Model,
@@ -159,11 +157,30 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
+// Usage is what one embeddings request consumed, as the endpoint reported it.
+// A zero PromptTokens means the endpoint reported none.
+type Usage struct {
+	PromptTokens int
+}
+
 // Embed returns one vector per input text, in order.
 func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	vecs, _, err := e.EmbedUsage(ctx, texts)
+	return vecs, err
+}
+
+// EmbedUsage is Embed, with the tokens the endpoint reported for the request:
+// what a caller paying per token settles to. An answer the client refuses
+// after the endpoint sent it (a short list, a bad index, the wrong width)
+// still returns the usage it reported beside the error, because the endpoint
+// did the work. A failure the endpoint cannot have acted on is marked
+// egress.ErrUnprocessed: the request never wrote its headers, or the endpoint
+// refused it with a redirect or a 4xx.
+func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, Usage, error) {
 	if len(texts) == 0 {
-		return nil, nil
+		return nil, Usage{}, nil
 	}
+	ctx, watch := egress.WatchSends(ctx)
 	resp, err := e.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
 		Model: openai.EmbeddingModel(e.model),
 		Input: texts,
@@ -173,15 +190,20 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		// original text, key and all, to anything that unwraps it. Only the
 		// sentinel is wrapped, and it carries no text of its own.
 		msg := providersecret.Scrub(e.apiKey, err.Error())
+		out := fmt.Errorf("embed: embedding request failed: %s", msg)
 		if rejected(err) {
-			return nil, fmt.Errorf("%w: %s", ErrRejected, msg)
+			out = fmt.Errorf("%w: %s", ErrRejected, msg)
 		}
-		return nil, fmt.Errorf("embed: embedding request failed: %s", msg)
+		if !watch.Sent() || egress.IsRedirect(err) || egress.RefusedStatus(status(err)) {
+			out = egress.Unprocessed(out)
+		}
+		return nil, Usage{}, out
 	}
+	usage := Usage{PromptTokens: resp.Usage.PromptTokens}
 	// The queue pairs each vector with its input BY POSITION, so a short or
 	// long answer is a failure, never something to zip against.
 	if len(resp.Data) != len(texts) {
-		return nil, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
+		return nil, usage, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
 	}
 	// The response's index field names each vector's input position —
 	// arrival order carries no meaning on this wire.
@@ -189,7 +211,7 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	seen := make([]bool, len(resp.Data))
 	for _, d := range resp.Data {
 		if d.Index < 0 || d.Index >= len(out) || seen[d.Index] {
-			return nil, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
+			return nil, usage, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
 		}
 		seen[d.Index] = true
 		// The declared width is what the storage column holds, and a gateway
@@ -197,29 +219,34 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		// the write-time check (decision record 0026). Refuse here rather than
 		// let Postgres refuse the insert with no model in the message.
 		if len(d.Embedding) != e.dimension {
-			return nil, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",
+			return nil, usage, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",
 				e.model, len(d.Embedding), e.dimension)
 		}
 		out[d.Index] = d.Embedding
 	}
-	return out, nil
+	return out, usage, nil
 }
 
 // rejected reports whether the endpoint refused the request for its input.
-// go-openai answers an error body it can parse as an *APIError and any other
-// as a *RequestError, and both carry the status.
 func rejected(err error) bool {
-	status := 0
+	s := status(err)
+	return s == http.StatusBadRequest || s == http.StatusRequestEntityTooLarge ||
+		s == http.StatusUnprocessableEntity
+}
+
+// status is the HTTP status of a failure answer, or 0. go-openai answers an
+// error body it can parse as an *APIError and any other as a *RequestError,
+// and both carry the status.
+func status(err error) int {
 	var apiErr *openai.APIError
 	var reqErr *openai.RequestError
 	switch {
 	case errors.As(err, &apiErr):
-		status = apiErr.HTTPStatusCode
+		return apiErr.HTTPStatusCode
 	case errors.As(err, &reqErr):
-		status = reqErr.HTTPStatusCode
+		return reqErr.HTTPStatusCode
 	}
-	return status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge ||
-		status == http.StatusUnprocessableEntity
+	return 0
 }
 
 // Dimension returns the model's output width.

@@ -8,6 +8,11 @@ import "time"
 // none of its own. It never enters a repository (decision 0235,
 // docs/plans/host-defaults.md).
 
+// FeatureOperatorDefaults is the discovery feature a server lists when it
+// booted with an operator defaults file: the operator pays for something, and
+// `GET /api/v1/operator/defaults` says what.
+const FeatureOperatorDefaults = "operatorDefaults"
+
 // The slots an operator default can fill, one per place the substrate spends a
 // key.
 const (

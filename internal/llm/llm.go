@@ -106,6 +106,14 @@ type Config struct {
 	// openai and azure wires, for a gateway (LiteLLM) that hands the marks to
 	// an Anthropic model. The row says so; nothing infers it from a model id.
 	CacheBreakpoints bool
+	// RetryOnlyUnbilled stops the anthropic wire's retries once an attempt
+	// may have been billed: one answered with a 5xx or a success, or one that
+	// failed after its headers went out. A refusal (a redirect or a 4xx such
+	// as a 429) and a dial that never wrote its headers still retry. A caller
+	// that reserves one attempt's cost per call sets it, so a retry never
+	// spends past what the call reserved. The openai and azure wires do not
+	// retry.
+	RetryOnlyUnbilled bool
 }
 
 // Message is one turn. An assistant turn may carry ToolCalls; a tool turn
@@ -166,6 +174,12 @@ type Usage struct {
 	// its own rate; the rest of PromptTokens is priced at the input rate.
 	CacheReadTokens  int
 	CacheWriteTokens int
+	// Partial is set when the reply reported some of its counts and left
+	// others out: an input count with no output count, say. The counts it
+	// did report are kept and the missing ones read as 0, so the owner's
+	// tally counts what is known while a caller that must not undercount (the
+	// allowance ledger) treats the usage as unreported.
+	Partial bool
 }
 
 // UncachedPromptTokens is the part of PromptTokens priced at the input rate.
@@ -309,7 +323,10 @@ type Request struct {
 	Cache *Cache
 }
 
-// Result is one settled completion. Usage is nil when the wire returned none.
+// Result is one settled completion. Usage is nil when the wire did not report
+// it whole (an openai-wire reply without prompt_tokens and completion_tokens,
+// an anthropic-wire one without input_tokens and a final output_tokens), so a
+// caller paying per call never prices a billed call at nothing.
 type Result struct {
 	Content   string
 	ToolCalls []ToolCall
@@ -341,6 +358,12 @@ type Delta struct {
 type Client interface {
 	// Complete runs one turn. onDelta nil is a one-shot request; non-nil
 	// streams deltas as they arrive and still returns the whole result.
+	//
+	// A failure may still return a Result carrying the Usage the endpoint
+	// reported before the call failed, and nothing else. A failure the
+	// endpoint cannot have acted on is marked egress.ErrUnprocessed: no
+	// request wrote its headers, or every attempt was refused with a
+	// redirect or a 4xx.
 	Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error)
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
@@ -230,13 +231,29 @@ var features = []featureInfo{
 	{Name: "apps", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 }
 
+// operatorDefaultsFeature is listed only where the server booted with an
+// operator defaults file: `GET /operator/defaults` is served everywhere, and
+// the entry is what tells a client the operator pays for anything (decision
+// 0235). Alpha while the plan's later phases add OAuth clients and function
+// secrets to it.
+var operatorDefaultsFeature = featureInfo{Name: substrate.FeatureOperatorDefaults, Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}}
+
+// features is the feature list this server announces: the literal, and the
+// operator defaults read where a defaults file is loaded.
+func (h *handler) features() []featureInfo {
+	if !h.operatorDefaults {
+		return features
+	}
+	return append(slices.Clone(features), operatorDefaultsFeature)
+}
+
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	doc := discoveryDoc{
 		Versions:  []apiVersionInfo{{Name: APIVersion, Status: "served"}},
 		Server:    serverInfo{Version: build.Version(), Build: build.Commit(), Instance: h.svc.InstanceID()},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  features,
+		Features:  h.features(),
 		Surfaces: surfacesInfo{
 			REST: surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
 			MCP:  surfaceInfo{Endpoint: mcpPath, Compatibility: compatibilityPreview},

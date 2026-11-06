@@ -99,3 +99,69 @@ func TestARootThreadRollsUpItsSubAgentsCacheCounts(t *testing.T) {
 		t.Fatalf("root costUSD = %v, want %v", got, want)
 	}
 }
+
+// A reply that reported its prompt count and left its completion count out
+// still costs its prompt: the thread records the count it has, prices it,
+// and the person's spend cap counts it. The reply's answer lands as usual.
+func TestAThreadCountsAReplyThatReportedPartOfItsUsage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	putPricedProvider(t, ds, fake, "namellm", map[string]any{"model": "name", "inputPer1M": "1", "outputPer1M": "5"})
+	fake.script("name", fakeTurn{content: "named", promptTokens: 100, noCompletionCount: true})
+	res, err := ds.CallAgent(ctx, namerAgent, "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	const want = 100 * 1.0 / 1e6
+	th := getThread(t, ds, res.Thread).Properties
+	if intProp(th, "promptTokens") != 100 || intProp(th, "completionTokens") != 0 {
+		t.Fatalf("thread tallies = %+v, want the 100 prompt tokens reported", th)
+	}
+	if got := anyFloat2(th["costUSD"]); math.Abs(got-want) > 1e-12 {
+		t.Fatalf("thread costUSD = %v, want %v", got, want)
+	}
+	ag, err := ds.registry().ResolveAgent(namerAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.spend.expire()
+	if spent, _, err := ds.spendOf(ctx, ag); err != nil || math.Abs(spent-want) > 1e-12 {
+		t.Fatalf("the spend cap reads %v (%v), want %v", spent, err, want)
+	}
+}
+
+// A reply the client refuses after the endpoint reported its usage (one with
+// no choices) fails the run and still costs that usage: the failed thread
+// records and prices it, and the person's spend cap counts it.
+func TestAFailedThreadCountsTheUsageReportedBesideItsFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	putPricedProvider(t, ds, fake, "namellm", map[string]any{"model": "name", "inputPer1M": "1", "outputPer1M": "5"})
+	fake.script("name", fakeTurn{noChoices: true})
+	if _, err := ds.CallAgent(ctx, namerAgent, "go"); err == nil {
+		t.Fatal("a reply with no choices succeeded")
+	}
+	threads := agentThreadsOf(t, ds, "namer")
+	if len(threads) != 1 {
+		t.Fatalf("namer threads: %d, want 1", len(threads))
+	}
+	// The fake reports 10 prompt and 5 completion tokens.
+	const want = (10*1.0 + 5*5.0) / 1e6
+	th := threads[0]
+	if intProp(th, "promptTokens") != 10 || intProp(th, "completionTokens") != 5 {
+		t.Fatalf("failed thread tallies = %+v, want the usage reported beside the failure", th)
+	}
+	if got := anyFloat2(th["costUSD"]); math.Abs(got-want) > 1e-12 {
+		t.Fatalf("failed thread costUSD = %v, want %v", got, want)
+	}
+	ag, err := ds.registry().ResolveAgent(namerAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.spend.expire()
+	if spent, _, err := ds.spendOf(ctx, ag); err != nil || math.Abs(spent-want) > 1e-12 {
+		t.Fatalf("the spend cap reads %v (%v), want %v", spent, err, want)
+	}
+}

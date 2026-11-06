@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
@@ -335,6 +336,10 @@ type providerConfig struct {
 	// cacheTTL is the row's cache.ttl as the wire spells it; empty leaves it
 	// to the run's mode (agentLoop.cache).
 	cacheTTL string
+	// operator is the operator entry serving the row (operatorprovider.go),
+	// nil for a row the person keyed. Every field above then came from it,
+	// and every call goes through the allowance gate (operatorspend.go).
+	operator *operatordefaults.LLM
 }
 
 // providerCacheTTLs maps the declared cache.ttl words onto the wire's TTLs:
@@ -426,13 +431,18 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		return nil, fmt.Errorf("%w: llm/provider row %q does not resolve — create it, or key one of the seeded rows (openai, anthropic, gemini)",
 			substrate.ErrValidation, id)
 	}
+	// apiKey is secret-typed: the stored value is a ref into the sealed
+	// store, resolved here, at the one read that pays with it. An empty one
+	// on a row the operator lists is the operator's transport, taken whole:
+	// nothing else on the row is read (decision 0235).
+	storedKey, _ := row.Props["apiKey"].(string)
+	if entry := ds.operatorEntryFor(id, storedKey); entry != nil {
+		return operatorProviderConfig(entry), nil
+	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
 	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)
-	// apiKey is secret-typed: the stored value is a ref into the sealed
-	// store, resolved here, at the one read that pays with it.
-	storedKey, _ := row.Props["apiKey"].(string)
 	pc.cfg.APIKey, err = ds.openSecretValue(ctx, storedKey)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: open llm/provider %q apiKey: %w", id, err)
@@ -486,8 +496,8 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
-		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
-			substrate.ErrValidation, id)
+		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and %s supplies no key for a row of this id",
+			substrate.ErrValidation, id, ds.siteName())
 	}
 	return pc, nil
 }
@@ -776,6 +786,11 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	if wrap != nil {
 		client = wrap(provider.wire, client)
 	}
+	if provider.operator != nil {
+		// Outermost, so every call the loop makes on this client (its turns,
+		// their retries, compaction and the thread title) reserves first.
+		client = newOperatorLLMClient(ds, provider, client)
+	}
 	if root {
 		in.tally = &agentTally{effects: map[string]int{}}
 	}
@@ -901,6 +916,13 @@ loop:
 		}
 		l.turns++
 		res, err := l.complete(lctx, messages)
+		if res != nil {
+			// A failed call may carry the usage the endpoint reported beside
+			// it (a reply with no choices, a stream cut off after its input
+			// count): the endpoint billed it, so the thread and the cap count
+			// it like a success's.
+			l.charge(res.Usage)
+		}
 		if err != nil {
 			if stopped, why := l.stopReason(ctx); stopped {
 				// A stop or a shutdown ended the call: what streamed so far
@@ -945,11 +967,10 @@ loop:
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
-		l.charge(usage)
 		if !l.measured {
 			l.measured = true
 			l.firstContext = l.estimateTokens(messages)
-			if usage != nil {
+			if usage != nil && (!usage.Partial || usage.PromptTokens > 0) {
 				l.firstContext = usage.PromptTokens
 			}
 		}
@@ -1306,7 +1327,8 @@ func (l *agentLoop) emitAllows(ident string) bool {
 }
 
 // charge adds one completion's usage to the thread's counters and the root
-// tally, priced at the provider row's rate for the model.
+// tally, priced at the provider row's rate for the model. A Partial usage
+// adds the counts it carries.
 func (l *agentLoop) charge(usage *llm.Usage) {
 	if usage == nil {
 		return
@@ -1865,10 +1887,11 @@ func (l *agentLoop) queryLimits(ctx context.Context) string {
 	words := "Search with one or two distinctive words (a name, a code, a number, a place), never a list of common words: " +
 		"common words match most of the repository, and the lexical ranking reads words, not meaning. "
 	semantic := ""
-	// The claim is what the ranked read resolves (search.go): no row
-	// declaring embedModel is a repository whose ranked reads are lexical.
-	if claims, err := embedClaims(ctx, l.ds.db); err == nil {
-		if len(claims) == 0 {
+	// The pair is what the ranked read resolves (search.go): no row
+	// declaring embedModel and no operator embeddings entry is a repository
+	// whose ranked reads are lexical.
+	if pair, err := l.ds.embedPair(ctx, l.ds.db); err == nil {
+		if pair == nil {
 			semantic = "This repository has no embeddings provider, so q matches words only: semantic and hybrid fall back to lexical. "
 		} else {
 			semantic = "This repository has an embeddings provider, so hybrid (the default) also ranks by meaning. "

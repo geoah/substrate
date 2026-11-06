@@ -166,6 +166,7 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_SITE_DIR`           | unset (no site)                        | An absolute path to a site directory: a `site.yaml` naming the brand the console's sign-in, register and landing pages show, and files served at `/site/`. An invalid `site.yaml` refuses the boot, naming the problem. See [a site for the deployment](#a-site-for-the-deployment). |
+| `SUBSTRATE_OPERATOR_DEFAULTS`  | unset (no operator defaults)           | An absolute path to the operator defaults file: the LLM providers and embeddings the operator pays for on behalf of every repository, and the daily allowance bounding them. It may not sit inside `SUBSTRATE_SITE_DIR`. An invalid file refuses the boot, naming the problem. See [operator defaults](#operator-defaults). |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
@@ -284,7 +285,8 @@ rest; the substrate does not.
 
 ## There is no LLM configuration
 
-The server takes no LLM endpoint, no key and no embedding model. Completions
+Without an [operator defaults](#operator-defaults) file the server takes no
+LLM endpoint, no key and no embedding model. Completions
 and embeddings alike are bought through a repository's own
 [`llm/provider`](agents.md#providers) records, which carry the wire, the
 endpoint, the key and (for embeddings) the model. The process holds no bearer,
@@ -318,6 +320,95 @@ Three consequences an operator meets:
 - A repository restored from its directory queues every embeddable property
   by itself, because the vectors were never in the directory
   ([backups](#backups)).
+
+## Operator defaults
+
+An operator who pays for the people it invites names one file in
+`SUBSTRATE_OPERATOR_DEFAULTS` ([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md),
+[the plan](plans/host-defaults.md)). An operator default is a key the file
+supplies, used only where a repository holds none of its own. Without the
+file the server behaves as the section above says. With it:
+
+- A live `llm/provider` row with an empty `apiKey` whose id the file lists
+  runs on the operator's entry whole: its wire, base URL, key, headers,
+  request defaults, cache, title model, models and prices. Nothing on the row
+  but its id reaches the request. A row with its own key is the person's, and
+  a deleted row stays deleted until the person creates it again without a
+  key.
+- Where no row declares `embedModel`, the file's one `embeddings` entry buys
+  the repository's vectors, stamped with the provider id `(operator)`, which
+  no row id can be.
+- Every operator-paid call first reserves its worst-case cost against the
+  allowance, `budget.centsPerDay`, per repository and per UTC calendar day,
+  and settles to its reported cost after. A call that reports no usage, or
+  only part of it, counts at that worst case, unless it reported nothing and
+  failed before the vendor could bill it: it never left, or the vendor
+  answered a redirect or a 4xx. The reservation covers one attempt, so an
+  operator-paid Anthropic call is not retried after a 5xx, a dropped answer
+  or a timeout; a 429 is still retried. At the limit a trigger is held, and a
+  chat, a call or a search's semantic arm is refused with `403 guard`, reason
+  `quota`, naming the site: "today's allowance from Example is used up; it
+  resets at 00:00 UTC; add your own key to keep going". The site's name comes
+  from `site.yaml` ([a site for the deployment](#a-site-for-the-deployment)),
+  and is "this server" without one.
+- `GET /api/v1/operator/defaults` answers each slot, its source, whether the
+  operator offers it, and today's allowance, and discovery lists the
+  `operatorDefaults` feature ([operator defaults](api.md#operator-defaults)).
+
+```yaml
+llm:
+  openai:                          # the llm/provider row id it serves
+    wire: openai
+    baseURL: https://api.openai.com/v1
+    apiKey: {file: /run/secrets/openai}
+    models:                        # the only models it serves, each priced in USD per 1M tokens
+      - {model: gpt-5, inputPer1M: "1.25", outputPer1M: "10", contextWindow: 400000}
+      - {model: gpt-5-mini, inputPer1M: "0.25", outputPer1M: "2"}
+    maxOutputTokens: 16000         # sent where a request names none, caps one that names more
+    titleModel: gpt-5-mini         # optional; one of models
+    defaults: {reasoningEffort: low}   # optional; request params under the agent's own
+    cache: {key: true}             # optional; ttl, key and breakpoints as on a row
+    headers: []                    # optional; [{name, value}]; Idempotency-Key and X-Idempotency-Key are refused
+    embeddings: {model: text-embedding-3-small, per1M: "0.02"}   # at most one entry
+  anthropic:
+    wire: anthropic
+    apiKey: {env: OPERATOR_ANTHROPIC_KEY}
+    models:
+      - {model: claude-sonnet-5-5, inputPer1M: "3", outputPer1M: "15"}
+    maxOutputTokens: 8000
+budget:
+  centsPerDay: 200                 # the allowance: per repository, everything operator-paid
+```
+
+Key material is never written in the file: every key is `{file: /path}`, an
+absolute path read once at boot, or `{env: NAME}`. The file also reads
+`install`, `oauthClients` (`clientId`, `clientSecret`, `notice`) and
+`functionSecrets` (`apiKey`, `consumers`, `pricePerCall` in cents), and
+validates them, but nothing acts on those three yet; each package they name
+must be one this binary ships as a provider.
+
+The boot refuses a file that is not absolute or sits inside
+`SUBSTRATE_SITE_DIR`, a key file that is missing or empty, an unset or empty
+variable, a key written inline, a base URL that is not `https`, a model with
+no `inputPer1M` or `outputPer1M`, an entry without `maxOutputTokens`, more than
+one `embeddings` entry, a missing `budget.centsPerDay`, and any key the format
+does not know. Rotating a key is a file change and a restart; removing an
+entry withdraws it from every repository at the next start.
+
+The ledger, `operator_spend_reservations`, is the operator's: no changelog
+entry writes it, so a rebuild, an import and a restore leave the day's
+allowance as it was, and no export carries it. A reservation still open an
+hour after it opened (a crash, a lost settle) is settled at its ceiling. The
+reserved ceiling prices the prompt at a token per three bytes plus a
+quarter, at the higher of the input and cache-write rates, and
+`maxOutputTokens` at the output rate, so the ledger overcounts rather than
+under; a vendor whose bill exceeds that estimate is the overshoot to watch
+on the vendor's own dashboard. The person's own spend cap
+([0149](decisions/0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md))
+is separate and unchanged.
+
+Every request carrying a key, the operator's or a row's, follows no
+redirect: a `3xx` answer fails the call.
 
 ## The blob store
 

@@ -940,7 +940,9 @@ the records route whatever the entry says. Every entry lists `rest` but
 example above is abridged; the full list, and it is the same for every
 deployment of a given build, is `triggers`, `functions`, `bundles`, `blobs`,
 `export`, `changefeed`, `search`, `aggregate`, `units`, `embeddings`,
-`agents`, `apps` and `mcp`. `grammar.collection`
+`agents`, `apps` and `mcp`, and a deployment that booted with an
+[operator defaults](operations.md#operator-defaults) file adds
+`operatorDefaults` ([operator defaults](#operator-defaults)). `grammar.collection`
 is the records route and `grammar.recordPath` the record path, so a client
 checks the two shapes it must agree with the substrate about before it
 addresses anything.
@@ -2119,6 +2121,32 @@ unknown one is `400 bad_request`; a value, a spelling no unit answers, or
 two units no route joins (`kg` to `J`) is `422 validation` naming why. Both
 routes read the repository's graph at one revision.
 
+## Operator defaults
+
+`GET /api/v1/operator/defaults` answers each slot the repository spends a
+key through that the operator, whoever runs the deployment, could fill
+([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)):
+one item per `llm/provider` row and one `embeddings` item. Each item has its
+`slot` (`llm` or `embeddings` today), its `source` (`operator`, `own` or
+`none`), `operatorOffers`, its `readiness` and, where it is not `ready`, a
+`message`. `operatorOffers` is true when the operator's file serves the slot
+to this repository, whatever the source, the readiness or the allowance:
+removing your own key would fall back to the operator's. A row whose agent
+has an open alert reads `failing` with the alert's error. The `embeddings`
+item's `target` is the row whose card shows the search line: the row that
+declares `embedModel`, else the row the operator's embeddings entry is
+nested under, absent when that row does not exist. Where the deployment
+loaded an [operator defaults](operations.md#operator-defaults) file,
+`operator` carries the site's name from `site.yaml` and today's `allowance`:
+`centsPerDay`, `usedCents` (open reservations count at their ceiling),
+`resetsAt` (the next 00:00 UTC) and `bySlot`. A scoped app token is refused
+with `403`; a full-access one reads it as the owner does. The shape is
+`OperatorDefaults` in `internal/substrate/operatordefaults.go`.
+
+An operator-paid call past the day's allowance answers `403 guard` with the
+reason `quota`, and its message names the site and when the allowance
+resets.
+
 ## Actors
 
 Every write is attributed to an **actor**: what wrote the record. The domain is
@@ -2347,10 +2375,11 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has one member today: `observed_rederiving` on
-`unavailable`, an aggregate read over an observed index the server is
-re-deriving ([readiness](#readiness)). A client that does not know a reason
-acts on the code.
+set is closed and has two members: `observed_rederiving` on `unavailable`, an
+aggregate read over an observed index the server is re-deriving
+([readiness](#readiness)), and `quota` on `guard`, an operator-paid call past
+the repository's allowance for the day ([operator defaults](#operator-defaults)).
+A client that does not know a reason acts on the code.
 
 Every response carries an `X-Request-Id` header: 16 characters the server
 mints for the request, never one the caller sent. The server's log line about

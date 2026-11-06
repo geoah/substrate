@@ -58,6 +58,15 @@ type fakeTurn struct {
 	// in usage.prompt_tokens_details the way LiteLLM writes them.
 	cacheReadTokens  int
 	cacheWriteTokens int
+	// noUsage leaves usage out of the reply, one-shot or streamed, as a
+	// gateway that reports none does.
+	noUsage bool
+	// noCompletionCount leaves completion_tokens and total_tokens out of the
+	// usage: a reply that reported part of its usage.
+	noCompletionCount bool
+	// noChoices answers a one-shot request with an empty choices list beside
+	// the usage: a reply the client refuses after the endpoint billed it.
+	noChoices bool
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
@@ -79,6 +88,7 @@ type fakeLLM struct {
 	scripts  map[string][]fakeTurn
 	requests map[string][]map[string]any
 	auths    []string // every Authorization header the server saw
+	headers  []http.Header
 	srv      *httptest.Server
 }
 
@@ -94,6 +104,13 @@ func (f *fakeLLM) authsSeen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.auths...)
+}
+
+// headersSeen is every request's headers, in arrival order.
+func (f *fakeLLM) headersSeen() []http.Header {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]http.Header(nil), f.headers...)
 }
 
 func (f *fakeLLM) script(model string, turns ...fakeTurn) {
@@ -121,6 +138,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	model, _ := req["model"].(string)
 	f.mu.Lock()
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
+	f.headers = append(f.headers, r.Header.Clone())
 	f.requests[model] = append(f.requests[model], req)
 	queue := f.scripts[model]
 	if len(queue) == 0 {
@@ -160,6 +178,10 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		finish = turn.finish
 	}
 	usage := map[string]any{"prompt_tokens": prompt, "completion_tokens": 5, "total_tokens": prompt + 5}
+	if turn.noCompletionCount {
+		delete(usage, "completion_tokens")
+		delete(usage, "total_tokens")
+	}
 	if turn.cacheReadTokens > 0 || turn.cacheWriteTokens > 0 {
 		usage["prompt_tokens_details"] = map[string]any{
 			"cached_tokens": turn.cacheReadTokens, "cache_creation_tokens": turn.cacheWriteTokens,
@@ -183,12 +205,19 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		if len(toolCalls) > 0 {
 			msg["tool_calls"] = toolCalls
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		reply := map[string]any{
 			"id": "cmpl", "object": "chat.completion",
 			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}},
 			"usage":   usage,
-		})
+		}
+		if turn.noUsage {
+			delete(reply, "usage")
+		}
+		if turn.noChoices {
+			reply["choices"] = []any{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(reply)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -245,7 +274,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
 		map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": finish},
 	}})
-	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{}, "usage": usage})
+	if !turn.noUsage {
+		chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{}, "usage": usage})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
@@ -1366,9 +1397,10 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 
 func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	t.Parallel()
-	// The P0 boundary, now held by construction: there is no host gateway and
-	// no host key, so every row names its own endpoint and its own key and
-	// nothing host-wide can travel to a repository-chosen endpoint.
+	// The P0 boundary, now held by construction: without an operator
+	// defaults file there is no server-wide gateway or key, so every row
+	// names its own endpoint and its own key and nothing server-wide can
+	// travel to a repository-chosen endpoint.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 

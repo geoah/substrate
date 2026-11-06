@@ -1151,20 +1151,41 @@ property marked `keyed: true` is one, which is how a kind's own `properties`
 block stays a map.
 These two stay lists because each row's key is a value with a name of its own.
 
-**Every row carries its own endpoint and its own key.** There is no host
-gateway and no host key: the server takes no LLM configuration at all, and
-the provider clients ignore the host's `ANTHROPIC_*` variables and profile
-files, so nothing process-wide can travel to a repository-chosen endpoint. An
-`openai` or `azure` row that names no `baseURL` refuses to resolve, and every
-wire requires the row's own `apiKey`. Only `anthropic` may leave `baseURL`
-empty, for its official endpoint.
+**A keyed row carries its own endpoint and its own key.** The provider
+clients ignore the host's `ANTHROPIC_*` variables and profile files, so
+nothing process-wide can travel to a repository-chosen endpoint. An `openai`
+or `azure` row that names no `baseURL` refuses to resolve, and every wire
+requires the row's own `apiKey`. Only `anthropic` may leave `baseURL` empty,
+for its official endpoint.
+
+**An empty key on a row the operator lists runs on the operator's
+transport** ([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)). The operator, whoever runs the
+deployment, may name a defaults file, `SUBSTRATE_OPERATOR_DEFAULTS`
+([operations](operations.md#operator-defaults)), whose `llm` entries are
+keyed by provider row id. A live row with an empty `apiKey` whose id the file
+lists is served by that entry whole: its wire, base URL, key, headers,
+defaults, cache, title model, models and prices. The row's own transport
+fields are ignored for it. An agent that names a model outside the entry's
+`models` is refused with the allowed list. The entry's `maxOutputTokens` is
+sent where the agent names no `maxTokens` and caps one that names more. Each
+such call is charged to the repository's allowance for the UTC day, apart
+from your own spend cap; at the limit a trigger is held and a chat or a call
+is refused, naming the site and when the allowance resets. Writing a key on
+the row moves it to your key, and clearing the key moves it back. A deleted
+row stays deleted: recreate it under the same id, without a key, to use the
+operator's again.
 
 **One row buys the embeddings.** A row that declares `embedModel` is the
 repository's embeddings provider, and only one row may declare it. Because only
 the `openai` wire has an embeddings endpoint, a row on any other wire that
 names an `embedModel` is refused at the write, as is a model whose vectors are
 not 1536 wide ([decision
-0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Every
+0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Where
+no row declares `embedModel` and the operator's defaults file names an
+`embeddings` entry, the operator's entry buys the vectors and stamps them
+with the provider id `(operator)`, which no row id can be; a row that
+declares `embedModel` wins, and must carry its own key. A chat key never
+moves the embeddings. Every
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
 rather than mixing two models' distances. `repository reembed` is how their

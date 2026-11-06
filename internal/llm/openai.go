@@ -45,8 +45,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 	}
 	// The base URL is a repository-chosen address, so the dial is confined to
 	// public destinations (issue #241); a row's extra headers ride over the
-	// gated client, never around it.
-	oc.HTTPClient = &http.Client{Transport: egress.Transport()}
+	// gated client, never around it. The request carries the key, so it
+	// follows no redirect: Go would drop Authorization on another host but
+	// keep a row's own headers, and an azure key rides in one.
+	oc.HTTPClient = egress.CredentialClient(egress.Transport(), 0)
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
@@ -62,8 +64,32 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // all, to anything downstream that unwraps it, and the leak this closes ends
 // in a stored record and a host log. A context overflow is classified on the
 // scrubbed text (providerError).
+//
+// A failure the endpoint cannot have acted on stays marked
+// egress.ErrUnprocessed through the rebuild: a refusal status (go-openai
+// answers one as an *APIError or a *RequestError carrying it), a redirect not
+// followed, or a mark an inner step already set.
 func (c *openaiClient) scrubbed(err error) error {
-	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	if errors.Is(err, egress.ErrUnprocessed) || egress.IsRedirect(err) || egress.RefusedStatus(openaiStatus(err)) {
+		return egress.Unprocessed(out)
+	}
+	return out
+}
+
+// openaiStatus is the HTTP status go-openai read off a failure response, or 0.
+// An error event inside a stream carries none: the stream's own status was a
+// success.
+func openaiStatus(err error) int {
+	var apiErr *openai.APIError
+	var reqErr *openai.RequestError
+	switch {
+	case errors.As(err, &apiErr):
+		return apiErr.HTTPStatusCode
+	case errors.As(err, &reqErr):
+		return reqErr.HTTPStatusCode
+	}
+	return 0
 }
 
 // headerDoer injects the provider row's extra headers on every request. The
@@ -271,7 +297,18 @@ func rawArray(blocks []json.RawMessage) json.RawMessage {
 	return raw
 }
 
+// Complete runs one completion. A failure before any request wrote its
+// headers is marked egress.ErrUnprocessed, as scrubbed marks a refusal.
 func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
+	ctx, watch := egress.WatchSends(ctx)
+	res, err := c.complete(ctx, req, onDelta)
+	if err != nil && !watch.Sent() {
+		err = egress.Unprocessed(err)
+	}
+	return res, err
+}
+
+func (c *openaiClient) complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	messages, echoed := openaiMessages(req)
 	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: messages}
 	patch := &bodyPatch{messages: echoed}
@@ -367,9 +404,12 @@ func (c *openaiClient) patchCache(patch *bodyPatch, req Request, messages, tools
 	}
 }
 
-// oneShot reads body, the reply the bodyDoer captured, for the cache counts
-// the SDK's Usage leaves out (cache_creation_tokens and the two top-level
-// fields; it parses cached_tokens, but the raw reply carries all four).
+// oneShot reads body, the reply the bodyDoer captured, for whether it
+// reported usage at all and for the cache counts the SDK's Usage leaves out
+// (cache_creation_tokens and the two top-level fields; it parses
+// cached_tokens, but the raw reply carries all four). A reply with no choices
+// still carries the usage it reported beside its error: the endpoint may
+// have billed it.
 func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest, body *[]byte) (*Result, error) {
 	resp, err := c.client.CreateChatCompletion(ctx, oreq)
 	if err != nil {
@@ -406,6 +446,14 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 		return nil
 	}
 	var usage *Usage
+	// A stream that fails after its usage chunk still carries that usage
+	// beside its error: the endpoint billed it.
+	fail := func(err error) (*Result, error) {
+		if usage != nil {
+			return &Result{Usage: usage}, err
+		}
+		return nil, err
+	}
 	// The finish reason rides one chunk near the end, and the usage chunk
 	// after it carries none, so the last one seen is the turn's.
 	var finish openai.FinishReason
@@ -416,24 +464,26 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			break
 		}
 		if err != nil {
-			return nil, c.scrubbed(err)
+			return fail(c.scrubbed(err))
 		}
 		var chunk openai.ChatCompletionStreamResponse
 		if err := json.Unmarshal(raw, &chunk); err != nil {
-			return nil, c.scrubbed(err)
+			return fail(c.scrubbed(err))
 		}
 		var tb thinkingBlocks
 		if json.Unmarshal(raw, &tb) == nil && len(tb.Choices) > 0 {
 			signed := signedBlocks(tb.Choices[0].Delta.ThinkingBlocks)
 			for _, b := range signed {
 				if err := grow(len(b)); err != nil {
-					return nil, err
+					return fail(err)
 				}
 			}
 			blocks = append(blocks, signed...)
 		}
 		if chunk.Usage != nil {
-			usage = openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens, raw)
+			if u := openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens, raw); u != nil {
+				usage = u
+			}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -443,15 +493,15 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 		}
 		delta := chunk.Choices[0].Delta
 		if err := grow(len(delta.ReasoningContent) + len(delta.Content)); err != nil {
-			return nil, err
+			return fail(err)
 		}
 		for _, tc := range delta.ToolCalls {
 			if err := grow(len(tc.ID) + len(tc.Function.Name) + len(tc.Function.Arguments)); err != nil {
-				return nil, err
+				return fail(err)
 			}
 		}
 		if err := acc.admit(delta.ToolCalls); err != nil {
-			return nil, err
+			return fail(err)
 		}
 		// reasoning_content is the thinking text LiteLLM and the other
 		// gateways stream ahead of the content; thinking_blocks beside it
@@ -473,6 +523,17 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}, nil
 }
 
+// openaiReportedUsage is which of its counts a reply reported: a `usage`
+// object's prompt_tokens and completion_tokens, each nil where it is absent.
+// The SDK reads an absent count as zero, which would price a billed reply at
+// nothing.
+type openaiReportedUsage struct {
+	Usage *struct {
+		PromptTokens     *json.RawMessage `json:"prompt_tokens"`
+		CompletionTokens *json.RawMessage `json:"completion_tokens"`
+	} `json:"usage"`
+}
+
 // openaiCacheUsage is a reply's cache counts, read from the raw reply. The
 // SDK parses cached_tokens but not cache_creation_tokens or the two
 // top-level fields, so all four are read here in one place. LiteLLM writes each cache count twice: inside prompt_tokens_details
@@ -492,17 +553,27 @@ type openaiCacheUsage struct {
 }
 
 // openaiUsage builds the neutral tally from the SDK's two counts and the raw
-// reply (one-shot body or the stream's usage chunk). This wire's
+// reply (one-shot body or the stream's usage chunk): nil when the reply
+// reported neither count (openaiReportedUsage), Partial when it reported only
+// one. This wire's
 // prompt_tokens already includes the cached and the written tokens on both
 // LiteLLM and OpenAI, so the cache counts are parts of it, never added to
 // it. The details form wins over the top-level form and the two are never
-// summed. A reply that does not parse leaves both cache counts at 0, so an
-// odd gateway prices its input at the full rate and never loses the answer.
+// summed. Cache counts that do not parse are both 0, so an odd gateway
+// prices its input at the full rate and never loses the answer.
 // A reply whose read plus write exceeds prompt_tokens cannot be counting them
 // inside it, so there the counts are added to prompt_tokens, as on the
 // anthropic wire.
 func openaiUsage(prompt, completion int, raw []byte) *Usage {
-	u := &Usage{PromptTokens: prompt, CompletionTokens: completion}
+	var reported openaiReportedUsage
+	if json.Unmarshal(raw, &reported) != nil || reported.Usage == nil ||
+		(reported.Usage.PromptTokens == nil && reported.Usage.CompletionTokens == nil) {
+		return nil
+	}
+	u := &Usage{
+		PromptTokens: prompt, CompletionTokens: completion,
+		Partial: reported.Usage.PromptTokens == nil || reported.Usage.CompletionTokens == nil,
+	}
 	var doc openaiCacheUsage
 	if json.Unmarshal(raw, &doc) != nil || doc.Usage == nil {
 		return u

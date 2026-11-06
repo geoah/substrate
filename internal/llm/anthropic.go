@@ -108,6 +108,8 @@ type anthropicClient struct {
 	// openai adapter holds one: on a 401 the endpoint quotes the bearer it
 	// refused, and scrubbed rebuilds any provider error without it.
 	apiKey string
+	// retryOnlyUnbilled is Config.RetryOnlyUnbilled.
+	retryOnlyUnbilled bool
 }
 
 func newAnthropic(cfg Config) *anthropicClient {
@@ -116,11 +118,14 @@ func newAnthropic(cfg Config) *anthropicClient {
 		// Everything the client sends comes from the provider row, never from
 		// the host's environment: a host token or header would ride along to
 		// a repository-chosen base URL. That base URL is also why the dial is
-		// confined to public destinations (issue #241).
-		doer:        &headerDoer{inner: &http.Client{Transport: egress.Transport()}, headers: cfg.Headers},
-		endpoint:    endpoint,
-		endpointErr: err,
-		apiKey:      cfg.APIKey,
+		// confined to public destinations (issue #241), and the key rides in
+		// x-api-key, which Go keeps on a redirect to another host, so no
+		// redirect is followed.
+		doer:              &headerDoer{inner: egress.CredentialClient(egress.Transport(), 0), headers: cfg.Headers},
+		endpoint:          endpoint,
+		endpointErr:       err,
+		apiKey:            cfg.APIKey,
+		retryOnlyUnbilled: cfg.RetryOnlyUnbilled,
 	}
 }
 
@@ -148,15 +153,32 @@ func anthropicEndpoint(base string) (string, error) {
 
 // scrubbed rebuilds a provider error with the row's bearer taken back out,
 // rebuilt rather than %w-wrapped so no unwrap can recover the key. A context
-// overflow is classified on the scrubbed text (providerError).
+// overflow is classified on the scrubbed text (providerError), and an
+// egress.ErrUnprocessed mark survives the rebuild.
 func (c *anthropicClient) scrubbed(err error) error {
-	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	if errors.Is(err, egress.ErrUnprocessed) {
+		return egress.Unprocessed(out)
+	}
+	return out
 }
 
+// Complete runs one completion. A failure before any request wrote its
+// headers is marked egress.ErrUnprocessed, as post marks a refusal, and a
+// failure after the endpoint reported any of its usage still carries that
+// usage, Partial where it is: the endpoint may have billed it.
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
+	ctx, watch := egress.WatchSends(ctx)
 	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
 	if err != nil {
-		return nil, c.scrubbed(err)
+		if !watch.Sent() {
+			err = egress.Unprocessed(err)
+		}
+		var res *Result
+		if usage := anthropicUsageOf(msg); usage != nil {
+			res = &Result{Usage: usage}
+		}
+		return res, c.scrubbed(err)
 	}
 	return anthropicResult(msg), nil
 }
@@ -487,27 +509,41 @@ func toolInput(arguments string) json.RawMessage {
 // status. A one-shot response's body is read inside its attempt, so a
 // connection dropped mid-body is retried like a failed dial, and comes back
 // as payload; a stream's body is the caller's to read and close.
+//
+// A failed call is marked egress.ErrUnprocessed when no attempt can have
+// been acted on (anthropicProcessed): one 5xx or one dropped answer among
+// the retries is enough to leave the mark off. Under retryOnlyUnbilled such
+// an attempt is the call's last, so a call answers for one billable attempt
+// at most: the one whose answer or error it returns.
 func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*http.Response, []byte, error) {
 	if c.endpointErr != nil {
 		return nil, nil, c.endpointErr
 	}
+	processed := false
+	failed := func(err error) error {
+		if processed {
+			return err
+		}
+		return egress.Unprocessed(err)
+	}
 	for retry := 0; ; retry++ {
 		last := retry == anthropicMaxRetries
-		res, payload, again, err := c.attempt(ctx, body, stream, last)
+		res, payload, again, billable, err := c.attempt(ctx, body, stream, last)
+		processed = processed || billable
 		// Once the caller's context is done there is nothing left to retry,
 		// and its error is the call's.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			if res != nil {
 				_ = res.Body.Close()
 			}
-			return nil, nil, ctxErr
+			return nil, nil, failed(ctxErr)
 		}
 		if last || !again {
 			switch {
 			case err != nil:
-				return nil, nil, err
+				return nil, nil, failed(err)
 			case res.StatusCode >= http.StatusBadRequest:
-				return nil, nil, c.statusError(res, payload)
+				return nil, nil, failed(c.statusError(res, payload))
 			}
 			return res, payload, nil
 		}
@@ -520,16 +556,31 @@ func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*
 		select {
 		case <-ctx.Done():
 			wait.Stop()
-			return nil, nil, ctx.Err()
+			return nil, nil, failed(ctx.Err())
 		case <-wait.C:
 		}
 	}
 }
 
+// anthropicProcessed reports whether one attempt may have been acted on: it
+// was answered with a status egress.RefusedStatus does not name, or it failed
+// with no answer after its headers went out. A refused redirect is an answer.
+func anthropicProcessed(res *http.Response, err error, watch *egress.SendWatch) bool {
+	switch {
+	case res != nil:
+		return !egress.RefusedStatus(res.StatusCode)
+	case egress.IsRedirect(err):
+		return false
+	}
+	return watch.Sent()
+}
+
 // attempt sends the request once and reports whether the policy retries what
-// came back. It reads the body only of a response that ends the call, and
-// only where post must: every refusal, and a one-shot answer.
-func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last bool) (*http.Response, []byte, bool, error) {
+// came back, and whether the endpoint may have billed it (anthropicProcessed).
+// It reads the body only of a response that ends the call, and only where
+// post must: every refusal, and a one-shot answer.
+func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last bool) (*http.Response, []byte, bool, bool, error) {
+	ctx, watch := egress.WatchSends(ctx)
 	actx := ctx
 	if !stream {
 		if deadline, ok := ctx.Deadline(); !ok || time.Now().Add(anthropicOneShotTimeout).Before(deadline) {
@@ -540,7 +591,7 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	}
 	req, err := http.NewRequestWithContext(actx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, false, err
 	}
 	// The SDK also sent its User-Agent and X-Stainless-* platform and
 	// retry-count headers. This client does not, so Go's default User-Agent
@@ -551,12 +602,14 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	req.Header.Set("Accept", "application/json")
 	res, err := c.doer.Do(req)
 	if err != nil {
-		return nil, nil, true, err
+		billable := anthropicProcessed(nil, err, watch)
+		return nil, nil, c.retries(true, billable), billable, err
 	}
-	again := anthropicShouldRetry(res)
+	billable := anthropicProcessed(res, nil, watch)
+	again := c.retries(anthropicShouldRetry(res), billable)
 	refused := res.StatusCode >= http.StatusBadRequest
 	if (!last && again) || (stream && !refused) {
-		return res, nil, again, nil
+		return res, nil, again, billable, nil
 	}
 	// A refusal is read the key's length past what its error quotes, so a key
 	// that straddles the cut reaches statusError whole.
@@ -570,15 +623,22 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	case err != nil && actx.Err() != nil && ctx.Err() == nil:
 		// Only this attempt's ten minutes ran out: a failed attempt like a
 		// failed dial, retried.
-		return nil, nil, true, actx.Err()
+		return nil, nil, c.retries(true, billable), billable, actx.Err()
 	case err != nil:
 		// A dropped body is a connection error whatever the status said, but
 		// an x-should-retry: false still stands.
-		return res, nil, res.Header.Get("X-Should-Retry") != "false", fmt.Errorf("error reading response body: %w", err)
+		again := c.retries(res.Header.Get("X-Should-Retry") != "false", billable)
+		return res, nil, again, billable, fmt.Errorf("error reading response body: %w", err)
 	case !refused && len(payload) > anthropicMaxMessage:
-		return res, nil, false, fmt.Errorf("anthropic: response body exceeds %d bytes", anthropicMaxMessage)
+		return res, nil, false, billable, fmt.Errorf("anthropic: response body exceeds %d bytes", anthropicMaxMessage)
 	}
-	return res, payload, again, nil
+	return res, payload, again, billable, nil
+}
+
+// retries is the policy's verdict again on an attempt that may have been
+// billed: under retryOnlyUnbilled such an attempt is not retried.
+func (c *anthropicClient) retries(again, billable bool) bool {
+	return again && !(billable && c.retryOnlyUnbilled)
 }
 
 // anthropicShouldRetry is the policy's verdict on a response.
@@ -675,11 +735,14 @@ type anthropicContent struct {
 	Input     json.RawMessage `json:"input"`
 }
 
+// anthropicUsage is a message's usage. The two counts every reply carries are
+// pointers, nil where the reply left them out, so a reply that reported no
+// usage is told from one that reported zero.
 type anthropicUsage struct {
-	InputTokens              anthropicCount `json:"input_tokens"`
-	OutputTokens             anthropicCount `json:"output_tokens"`
-	CacheReadInputTokens     anthropicCount `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens anthropicCount `json:"cache_creation_input_tokens"`
+	InputTokens              *anthropicCount `json:"input_tokens"`
+	OutputTokens             *anthropicCount `json:"output_tokens"`
+	CacheReadInputTokens     anthropicCount  `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens anthropicCount  `json:"cache_creation_input_tokens"`
 }
 
 // anthropicCount is a token count read as leniently as the SDK read one: a
@@ -733,10 +796,11 @@ type anthropicEvent struct {
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
-	// Usage on message_delta is cumulative. output_tokens is always its final
-	// word; the input counts overwrite only when sent and not null.
+	// Usage on message_delta is cumulative: its output_tokens is the
+	// message's final count, and every count overwrites only when sent and
+	// not null.
 	Usage struct {
-		OutputTokens             anthropicCount  `json:"output_tokens"`
+		OutputTokens             *anthropicCount `json:"output_tokens"`
 		InputTokens              *anthropicCount `json:"input_tokens"`
 		CacheReadInputTokens     *anthropicCount `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens *anthropicCount `json:"cache_creation_input_tokens"`
@@ -756,7 +820,9 @@ type anthropicStream struct {
 
 // readStream reads the event stream of res. Events are dispatched on their
 // SSE event name; ping and any name the adapter has no use for are skipped,
-// and an error event ends the call with that event's data as its error.
+// and an error event ends the call with that event's data as its error. A
+// failure returns what the stream folded so far beside its error, so a usage
+// the stream already reported in full is not lost.
 func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*anthropicMessage, error) {
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), anthropicMaxEvent)
@@ -768,11 +834,11 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*
 		if len(line) == 0 {
 			switch name {
 			case "error":
-				return nil, c.statusError(res, data)
+				return &s.msg, c.statusError(res, data)
 			case "message_start", "message_delta", "message_stop",
 				"content_block_start", "content_block_delta", "content_block_stop":
 				if err := s.fold(data, onDelta); err != nil {
-					return nil, err
+					return &s.msg, err
 				}
 			}
 			name, data = "", data[:0]
@@ -785,16 +851,16 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*
 			name = string(value)
 		case "data":
 			if len(data)+len(value) >= anthropicMaxEvent {
-				return nil, fmt.Errorf("anthropic: a stream event exceeds %d bytes", anthropicMaxEvent)
+				return &s.msg, fmt.Errorf("anthropic: a stream event exceeds %d bytes", anthropicMaxEvent)
 			}
 			data = append(append(data, value...), '\n')
 		}
 	}
 	if err := sc.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
-			return nil, fmt.Errorf("anthropic: a stream line exceeds %d bytes", anthropicMaxEvent)
+			return &s.msg, fmt.Errorf("anthropic: a stream line exceeds %d bytes", anthropicMaxEvent)
 		}
-		return nil, err
+		return &s.msg, err
 	}
 	for i := range s.msg.Content {
 		if s.msg.Content[i].Type == "thinking" {
@@ -817,15 +883,20 @@ func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 	switch ev.Type {
 	case "message_start":
 		s.msg, s.text, s.size = ev.Message, nil, 0
+		// The output count message_start carries is what was written so
+		// far, not the message's: only a message_delta reports that.
+		s.msg.Usage.OutputTokens = nil
 		for _, block := range s.msg.Content {
 			s.text = append(s.text, []byte(block.Text+block.Thinking))
 		}
 	case "message_delta":
 		s.msg.StopReason = ev.Delta.StopReason
 		u := &s.msg.Usage
-		u.OutputTokens = ev.Usage.OutputTokens
+		if ev.Usage.OutputTokens != nil {
+			u.OutputTokens = ev.Usage.OutputTokens
+		}
 		if ev.Usage.InputTokens != nil {
-			u.InputTokens = *ev.Usage.InputTokens
+			u.InputTokens = ev.Usage.InputTokens
 		}
 		if ev.Usage.CacheReadInputTokens != nil {
 			u.CacheReadInputTokens = *ev.Usage.CacheReadInputTokens
@@ -923,22 +994,36 @@ func settleInput(block *anthropicContent) {
 	}
 }
 
-func anthropicResult(msg *anthropicMessage) *Result {
+// anthropicUsageOf is a message's neutral tally, or nil when the message
+// reported neither an input_tokens nor a final output_tokens. A message that
+// reported one of the two returns a Partial tally of what it did report.
+func anthropicUsageOf(msg *anthropicMessage) *Usage {
+	if msg == nil || (msg.Usage.InputTokens == nil && msg.Usage.OutputTokens == nil) {
+		return nil
+	}
 	// This wire reports cache reads and writes beside input_tokens, never
 	// inside it, and the window holds all three. A negative count reads as
 	// none, as on the openai wire: the thread's tallies refuse a value below 0.
-	input := max(0, int(msg.Usage.InputTokens))
+	count := func(n *anthropicCount) int {
+		if n == nil {
+			return 0
+		}
+		return max(0, int(*n))
+	}
+	input := count(msg.Usage.InputTokens)
 	read := max(0, int(msg.Usage.CacheReadInputTokens))
 	write := max(0, int(msg.Usage.CacheCreationInputTokens))
-	res := &Result{
-		Usage: &Usage{
-			PromptTokens:     input + read + write,
-			CompletionTokens: int(msg.Usage.OutputTokens),
-			CacheReadTokens:  read,
-			CacheWriteTokens: write,
-		},
-		Stop: anthropicStop(msg.StopReason),
+	return &Usage{
+		PromptTokens:     input + read + write,
+		CompletionTokens: count(msg.Usage.OutputTokens),
+		CacheReadTokens:  read,
+		CacheWriteTokens: write,
+		Partial:          msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil,
 	}
+}
+
+func anthropicResult(msg *anthropicMessage) *Result {
+	res := &Result{Usage: anthropicUsageOf(msg), Stop: anthropicStop(msg.StopReason)}
 	var content, reasoning strings.Builder
 	var blocks []any
 	for _, block := range msg.Content {
