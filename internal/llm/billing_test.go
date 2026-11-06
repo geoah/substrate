@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -414,7 +415,8 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 // usage object arrived is retried, and the usage of the attempt that answered
 // adds to it, Partial when either report was; an attempt that reported nothing
 // adds nothing and leaves the sum whole. A dropped body whose report is
-// ambiguous reports nothing. A RetryOnlyUnbilled client (the operator's)
+// ambiguous reports nothing. A sum past math.MaxInt is held there and
+// Partial, never wrapped. A RetryOnlyUnbilled client (the operator's)
 // still makes the one billable attempt, and returns its usage beside the
 // failure, or none, so the ledger keeps its ceiling.
 func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
@@ -440,6 +442,9 @@ func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
 		first  = `{"input_tokens":4,"cache_read_input_tokens":1,"cache_creation_input_tokens":2,"output_tokens":2}`
 		second = `{"input_tokens":7,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":3}`
 	)
+	// huge is a usage two of which add up past math.MaxInt, input and output
+	// alike.
+	huge := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%[1]d}`, math.MaxInt/2+1)
 	firstOnly := &Usage{PromptTokens: 7, CompletionTokens: 2, CacheReadTokens: 1, CacheWriteTokens: 2}
 	secondOnly := &Usage{PromptTokens: 14, CompletionTokens: 3, CacheReadTokens: 3, CacheWriteTokens: 4}
 	cases := []struct {
@@ -490,6 +495,19 @@ func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
 			"an answer not served as JSON dropped after its usage, then an answer", false,
 			[]func(http.ResponseWriter){func(w http.ResponseWriter) { cutOff(w, "text/plain", body(first)) }, answerWith(second)},
 			false, secondOnly,
+		},
+		{
+			"two answers dropped after counts whose sum passes the largest int, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(huge), droppedAfter(huge), answerWith(second)},
+			false, &Usage{
+				PromptTokens: math.MaxInt, CompletionTokens: math.MaxInt, CacheReadTokens: 3, CacheWriteTokens: 4,
+				Partial: true, Attempts: 3,
+			},
+		},
+		{
+			"the operator's: an answer dropped after counts that are no integers", true,
+			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":{},"output_tokens":false}`), answerWith(second)},
+			true, nil,
 		},
 		{
 			"an answer dropped after its usage, then two 500s", false,
@@ -592,6 +610,51 @@ func TestA200ThatAsksForARetryIsRetriedUnread(t *testing.T) {
 	}
 }
 
+// A whole one-shot answer's counts are read as leniently as the SDK read
+// them, so an answer already paid for is never lost to its usage: the counts
+// a dropped body may not carry read as the number they can be read as, or 0.
+// A prompt count past math.MaxInt is held there and Partial.
+func TestAWholeAnswerReadsOddCountsLeniently(t *testing.T) {
+	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+	cases := []struct {
+		name, contentType, usage string
+		want                     *Usage
+	}{
+		{"counts that are an object and a boolean", "application/json", `{"input_tokens":{},"output_tokens":false}`, &Usage{}},
+		{"a count that is a string", "application/json", `{"input_tokens":"4","output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"a count that is an array", "application/json", `{"input_tokens":[4],"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count with a fraction", "application/json", `{"input_tokens":4.5,"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2}},
+		{"a negative count", "application/json", `{"input_tokens":-4,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count with an exponent past an int64", "application/json", `{"input_tokens":1e30,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{"a count one past an int64", "application/json", `{"input_tokens":9223372036854775808,"output_tokens":2}`, &Usage{CompletionTokens: 2}},
+		{
+			"a cache count that is an object", "application/json",
+			`{"input_tokens":4,"cache_read_input_tokens":{},"output_tokens":2}`, &Usage{PromptTokens: 4, CompletionTokens: 2},
+		},
+		{
+			"counts whose prompt sum passes the largest int", "application/json",
+			fmt.Sprintf(`{"input_tokens":%d,"cache_read_input_tokens":%[1]d,"output_tokens":2}`, math.MaxInt/2+1),
+			&Usage{PromptTokens: math.MaxInt, CompletionTokens: 2, CacheReadTokens: math.MaxInt/2 + 1, Partial: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				answer(w, tc.contentType, head+`,"usage":`+tc.usage+"}")
+			}))
+			t.Cleanup(srv.Close)
+			res, err := completeAt(t, WireAnthropic, srv.URL, false)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if res.Content != "ok" || !sameUsage(res.Usage, tc.want) {
+				t.Fatalf("content %q, usage %+v, want %q and %+v", res.Content, res.Usage, "ok", tc.want)
+			}
+		})
+	}
+}
+
 // sameUsage reports whether two usages hold the same counts, nil only beside
 // nil.
 func sameUsage(a, b *Usage) bool {
@@ -603,9 +666,11 @@ func sameUsage(a, b *Usage) bool {
 
 // A dropped one-shot body counts its usage only where every byte that arrived
 // agrees with the whole body's decoder: valid JSON so far, a top-level type
-// "message", and one usage object, whole, naming each count once. Anything
-// else reports nothing, so the operator's ledger keeps its ceiling and the
-// person's tally counts short, never over.
+// "message", and one usage object, whole, naming each count once. Each count
+// is a JSON integer of zero or more that an int holds, or null, and the
+// prompt count they add up to fits an int. Anything else reports nothing, so
+// the operator's ledger keeps its ceiling and the person's tally counts
+// short, never over.
 func TestADroppedBodyCountsOnlyAUsageItReportedOnce(t *testing.T) {
 	const (
 		head  = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
@@ -630,6 +695,18 @@ func TestADroppedBodyCountsOnlyAUsageItReportedOnce(t *testing.T) {
 			head + `,"usage":{"input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":1},"output_tokens":2,"service_tier":"standard"}`,
 			reported,
 		},
+		{
+			"null cache counts",
+			head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":null,"cache_creation_input_tokens":null,"output_tokens":2}`,
+			reported,
+		},
+		{"spaces around the counts", head + `,"usage":{ "input_tokens" : 4 , "output_tokens" : 2 }`, reported},
+		{"a null input count", head + `,"usage":{"input_tokens":null,"output_tokens":2}`, &Usage{CompletionTokens: 2, Partial: true}},
+		{
+			"the largest counts that add up within an int",
+			head + fmt.Sprintf(`,"usage":{"input_tokens":%d,"cache_read_input_tokens":1,"output_tokens":%d}`, math.MaxInt-1, math.MaxInt),
+			&Usage{PromptTokens: math.MaxInt, CompletionTokens: math.MaxInt, CacheReadTokens: 1},
+		},
 
 		{"the review's prefix: a second usage and no type", `{"usage":` + usage + `,"usage":` + later, nil},
 		{"a second usage", head + `,"usage":` + usage + `,"usage":` + later, nil},
@@ -647,6 +724,23 @@ func TestADroppedBodyCountsOnlyAUsageItReportedOnce(t *testing.T) {
 		{"an error's type", `{"type":"error","usage":` + usage, nil},
 		{"a type that is no string", `{"type":1,"usage":` + usage, nil},
 		{"a second type", head + `,"usage":` + usage + `,"type":"error"`, nil},
+		{"the review's prefix: counts that are an object and a boolean", `{"type":"message","usage":{"input_tokens":{},"output_tokens":false}`, nil},
+		{"a count that is an object", head + `,"usage":{"input_tokens":{},"output_tokens":2}`, nil},
+		{"a count that is a boolean", head + `,"usage":{"input_tokens":4,"output_tokens":true}`, nil},
+		{"a count that is a string", head + `,"usage":{"input_tokens":"4","output_tokens":2}`, nil},
+		{"a count that is an array", head + `,"usage":{"input_tokens":[4],"output_tokens":2}`, nil},
+		{"a count with a fraction", head + `,"usage":{"input_tokens":4.5,"output_tokens":2}`, nil},
+		{"a whole count written with a fraction", head + `,"usage":{"input_tokens":4.0,"output_tokens":2}`, nil},
+		{"a negative count", head + `,"usage":{"input_tokens":-4,"output_tokens":2}`, nil},
+		{"a count with an exponent past an int64", head + `,"usage":{"input_tokens":1e30,"output_tokens":2}`, nil},
+		{"a count one past an int64", head + `,"usage":{"input_tokens":9223372036854775808,"output_tokens":2}`, nil},
+		{"a cache count that is an object", head + `,"usage":{"input_tokens":4,"cache_read_input_tokens":{},"output_tokens":2}`, nil},
+		{"a negative cache count", head + `,"usage":{"input_tokens":4,"cache_creation_input_tokens":-1,"output_tokens":2}`, nil},
+		{
+			"counts whose prompt sum passes the largest int",
+			head + fmt.Sprintf(`,"usage":{"input_tokens":%d,"cache_read_input_tokens":1,"output_tokens":2}`, math.MaxInt),
+			nil,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

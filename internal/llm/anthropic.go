@@ -787,7 +787,8 @@ type anthropicUsage struct {
 // anthropicCount is a token count read as leniently as the SDK read one: a
 // number is truncated to an integer, a numeric string is read as its number,
 // and anything else is 0. A gateway's odd usage must not discard an answer
-// already paid for.
+// already paid for. A dropped body's counts are read strictly instead
+// (anthropicExactCount).
 type anthropicCount int64
 
 func (n *anthropicCount) UnmarshalJSON(b []byte) error {
@@ -798,13 +799,38 @@ func (n *anthropicCount) UnmarshalJSON(b []byte) error {
 	*n = 0
 	switch v := v.(type) {
 	case float64:
-		*n = anthropicCount(v)
+		*n = anthropicTruncated(v)
 	case string:
-		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
-			*n = anthropicCount(f)
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			*n = anthropicTruncated(f)
 		}
 	}
 	return nil
+}
+
+// anthropicTruncated is f truncated to an integer, or 0 where an int64 cannot
+// hold it: Go leaves that conversion's result to the platform.
+func anthropicTruncated(f float64) anthropicCount {
+	if math.IsNaN(f) || f < math.MinInt64 || f >= math.MaxInt64 {
+		return 0
+	}
+	return anthropicCount(f)
+}
+
+// anthropicExactCount reads one count of a dropped body's usage: a JSON
+// integer of zero or more that an int holds, or null, which reports no count
+// as it does in a whole body. Anything else is false, and the dropped body
+// then reports nothing (anthropicDroppedUsage).
+func anthropicExactCount(value json.RawMessage) (*anthropicCount, bool) {
+	if string(value) == "null" {
+		return nil, true
+	}
+	v, err := strconv.ParseInt(string(value), 10, strconv.IntSize)
+	if err != nil || v < 0 {
+		return nil, false
+	}
+	n := anthropicCount(v)
+	return &n, true
 }
 
 // anthropicJSON refuses a response whose content type is not JSON, the one
@@ -1046,8 +1072,20 @@ func settleInput(block *anthropicContent) {
 // reported neither an input_tokens nor a final output_tokens. A message that
 // reported one of the two returns a Partial tally of what it did report.
 func anthropicUsageOf(msg *anthropicMessage) *Usage {
-	if msg == nil || (msg.Usage.InputTokens == nil && msg.Usage.OutputTokens == nil) {
+	if msg == nil {
 		return nil
+	}
+	usage, _ := msg.Usage.tally()
+	return usage
+}
+
+// tally is u's neutral tally, as anthropicUsageOf describes it, and whether
+// its prompt count fit an int. One that did not is held at math.MaxInt and
+// Partial, so it never wraps below 0 and the allowance ledger keeps its
+// ceiling.
+func (u anthropicUsage) tally() (*Usage, bool) {
+	if u.InputTokens == nil && u.OutputTokens == nil {
+		return nil, true
 	}
 	// This wire reports cache reads and writes beside input_tokens, never
 	// inside it, and the window holds all three. A negative count reads as
@@ -1058,16 +1096,27 @@ func anthropicUsageOf(msg *anthropicMessage) *Usage {
 		}
 		return max(0, int(*n))
 	}
-	input := count(msg.Usage.InputTokens)
-	read := max(0, int(msg.Usage.CacheReadInputTokens))
-	write := max(0, int(msg.Usage.CacheCreationInputTokens))
+	read := max(0, int(u.CacheReadInputTokens))
+	write := max(0, int(u.CacheCreationInputTokens))
+	prompt, fits := addTokens(count(u.InputTokens), read)
+	prompt, fitsAll := addTokens(prompt, write)
+	fits = fits && fitsAll
 	return &Usage{
-		PromptTokens:     input + read + write,
-		CompletionTokens: count(msg.Usage.OutputTokens),
+		PromptTokens:     prompt,
+		CompletionTokens: count(u.OutputTokens),
 		CacheReadTokens:  read,
 		CacheWriteTokens: write,
-		Partial:          msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil,
+		Partial:          u.InputTokens == nil || u.OutputTokens == nil || !fits,
+	}, fits
+}
+
+// addTokens adds two counts of zero or more. A sum past math.MaxInt is held
+// there, with ok false.
+func addTokens(a, b int) (sum int, ok bool) {
+	if a > math.MaxInt-b {
+		return math.MaxInt, false
 	}
+	return a + b, true
 }
 
 // anthropicDroppedUsage is the usage a one-shot body that broke midway
@@ -1078,12 +1127,15 @@ func anthropicUsageOf(msg *anthropicMessage) *Usage {
 //
 // Every byte that arrived is read, and they must be valid JSON as far as they
 // go: a top-level object whose type is "message" and whose usage object
-// arrived whole. A count cut short reads as a smaller number. The top-level
-// type and usage, and each count inside usage, must appear once, matched as
-// encoding/json matches a field: the whole body's decoder keeps the last of a
-// repeated key, which may not have arrived. A Messages body names its type
-// before its usage, so a body whose usage arrived without its type is not
-// read either.
+// arrived whole. The top-level type and usage, and each count inside usage,
+// must appear once, matched as encoding/json matches a field: the whole
+// body's decoder keeps the last of a repeated key, which may not have
+// arrived. A Messages body names its type before its usage, so a body whose
+// usage arrived without its type is not read either. Each count must be a
+// JSON integer of zero or more that an int holds (anthropicExactCount), and
+// the prompt count they add up to must fit an int too: the lenient reading a
+// whole body gets would turn an object, a fraction or a negative into a
+// count and declare the report whole.
 func anthropicDroppedUsage(payload []byte) *Usage {
 	top := jsonOnce("type", "usage")
 	var typ string
@@ -1102,15 +1154,39 @@ func anthropicDroppedUsage(payload []byte) *Usage {
 	if !read || typ != "message" || usage == nil {
 		return nil
 	}
+	var u anthropicUsage
+	slots := reflect.ValueOf(&u).Elem()
 	counts := jsonOnce(anthropicCountKeys...)
-	if !jsonMembers(usage, func(key string, _ json.RawMessage) bool { return counts(key) }) {
+	if !jsonMembers(usage, func(key string, value json.RawMessage) bool {
+		if !counts(key) {
+			return false
+		}
+		for i, name := range anthropicCountKeys {
+			if !strings.EqualFold(key, name) {
+				continue
+			}
+			n, ok := anthropicExactCount(value)
+			if !ok {
+				return false
+			}
+			switch slot := slots.Field(i).Addr().Interface().(type) {
+			case **anthropicCount:
+				*slot = n
+			case *anthropicCount:
+				if n != nil {
+					*slot = *n
+				}
+			}
+		}
+		return true
+	}) {
 		return nil
 	}
-	var msg anthropicMessage
-	if json.Unmarshal(usage, &msg.Usage) != nil {
+	tally, fits := u.tally()
+	if !fits {
 		return nil
 	}
-	return anthropicUsageOf(&msg)
+	return tally
 }
 
 // anthropicCountKeys are the keys anthropicUsage reads.
@@ -1179,7 +1255,10 @@ func jsonOnce(names ...string) func(key string) bool {
 }
 
 // sumUsage is the usage of two attempts of one call: the counts added, and
-// Partial when either was. A nil side reported nothing and adds nothing.
+// Partial when either was. A nil side reported nothing and adds nothing. A
+// count whose sum would pass math.MaxInt is held there and the sum is
+// Partial, so it never wraps below 0 and the allowance ledger keeps its
+// ceiling.
 func sumUsage(a, b *Usage) *Usage {
 	switch {
 	case a == nil:
@@ -1187,12 +1266,16 @@ func sumUsage(a, b *Usage) *Usage {
 	case b == nil:
 		return a
 	}
+	prompt, okPrompt := addTokens(a.PromptTokens, b.PromptTokens)
+	completion, okCompletion := addTokens(a.CompletionTokens, b.CompletionTokens)
+	read, okRead := addTokens(a.CacheReadTokens, b.CacheReadTokens)
+	write, okWrite := addTokens(a.CacheWriteTokens, b.CacheWriteTokens)
 	return &Usage{
-		PromptTokens:     a.PromptTokens + b.PromptTokens,
-		CompletionTokens: a.CompletionTokens + b.CompletionTokens,
-		CacheReadTokens:  a.CacheReadTokens + b.CacheReadTokens,
-		CacheWriteTokens: a.CacheWriteTokens + b.CacheWriteTokens,
-		Partial:          a.Partial || b.Partial,
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		CacheReadTokens:  read,
+		CacheWriteTokens: write,
+		Partial:          a.Partial || b.Partial || !(okPrompt && okCompletion && okRead && okWrite),
 		Attempts:         max(1, a.Attempts) + max(1, b.Attempts),
 	}
 }
