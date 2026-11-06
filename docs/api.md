@@ -940,7 +940,9 @@ the records route whatever the entry says. Every entry lists `rest` but
 example above is abridged; the full list, and it is the same for every
 deployment of a given build, is `triggers`, `functions`, `bundles`, `blobs`,
 `export`, `changefeed`, `search`, `aggregate`, `units`, `embeddings`,
-`agents`, `apps` and `mcp`. `grammar.collection`
+`agents`, `apps` and `mcp`, and a deployment that booted with a
+[host defaults](operations.md#host-defaults) file adds `hostServices`
+([host services](#host-services)). `grammar.collection`
 is the records route and `grammar.recordPath` the record path, so a client
 checks the two shapes it must agree with the substrate about before it
 addresses anything.
@@ -2119,6 +2121,25 @@ unknown one is `400 bad_request`; a value, a spelling no unit answers, or
 two units no route joins (`kg` to `J`) is `422 validation` naming why. Both
 routes read the repository's graph at one revision.
 
+## Host services
+
+`GET /api/v1/host/services` answers the services a host could pay for on the
+repository's behalf ([decision
+0230](decisions/0230-an-empty-key-on-a-host-listed-provider-row-runs-on-the-hosts-transport-under-the-hosts-budget.md)):
+one item per `llm/provider` row and one `embeddings` item, each with its
+`source` (`host`, `own` or `none`), its `readiness` and, where it is not
+`ready`, a `message`. A row whose agent has an open alert reads `failing`
+with the alert's error. Where the deployment loaded a
+[host defaults](operations.md#host-defaults) file, `host` carries the host's
+name from the site directory and the day's `budget`: `centsPerDay`,
+`usedCents` (open reservations count at their ceiling), `resetsAt` (the next
+00:00 UTC) and `byService`. A scoped app token is refused with `403`; a
+full-access one reads it as the owner does. The shape is
+`HostServices` in `internal/substrate/hostservices.go`.
+
+A host-paid call past the day's allowance answers `403 guard` with the reason
+`quota`, and its message names the limit and when it resets.
+
 ## Actors
 
 Every write is attributed to an **actor**: what wrote the record. The domain is
@@ -2347,10 +2368,11 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has one member today: `observed_rederiving` on
-`unavailable`, an aggregate read over an observed index the server is
-re-deriving ([readiness](#readiness)). A client that does not know a reason
-acts on the code.
+set is closed and has two members: `observed_rederiving` on `unavailable`, an
+aggregate read over an observed index the server is re-deriving
+([readiness](#readiness)), and `quota` on `guard`, a host-paid call past the
+repository's host allowance for the day ([host services](#host-services)). A
+client that does not know a reason acts on the code.
 
 Every response carries an `X-Request-Id` header: 16 characters the server
 mints for the request, never one the caller sent. The server's log line about

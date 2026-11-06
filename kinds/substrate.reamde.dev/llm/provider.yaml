@@ -5,10 +5,13 @@
 # adding one of them is a record, never code. New code is only ever needed for
 # a new wire.
 #
-# EVERY row carries its own endpoint and its own key. There is no host gateway
-# and no host key to fall back to, so no host-wide bearer can reach a
-# repository-chosen endpoint by construction. Only the anthropic wire has an
-# endpoint of its own to leave baseURL empty against.
+# A row with a key carries its own endpoint and its own key, and nothing
+# host-wide falls back into it. The one exception is whole: a row with an
+# empty apiKey whose id the host's file (SUBSTRATE_HOST_DEFAULTS) lists runs on
+# the host's transport, and the row's wire, baseURL, headers, defaults, cache,
+# titleModel and pricing are ignored for it, so a host bearer still never
+# reaches a repository-chosen endpoint (decision 0230). Only the anthropic wire
+# has an endpoint of its own to leave baseURL empty against.
 #
 # An agent references a row by id (`provider: openai`) and names its model as
 # a plain string, so re-pointing every agent on `openai` is one patch here.
