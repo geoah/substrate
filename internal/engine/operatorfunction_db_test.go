@@ -943,6 +943,84 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	requireNoFailures(t, ds, trigger)
 }
 
+// The take-back of a start the allowance refused at its reservation
+// (syncUnstart) puts back only that start: a write to the `sync` record that
+// lands between the refused start and the take-back keeps its word. One is a
+// later delivery's start, which moves lastSyncStartedAt; the other is the
+// body's own `throttled`, which leaves it as the refused start wrote it. The
+// take-back with nothing between is the test above.
+func TestAnOperatorPaidSyncHeldAtItsReservationKeepsALaterWrite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openMeterDataset(t, 1)
+	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterAccount}}})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	tr, _, err := ds.triggerByID(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := substrate.Change{Kind: meterAccount, RecordID: fid("acct")}
+	envelope := map[string]any{"record": map[string]any{"id": fid("acct")}}
+	// start writes one delivery's `running`, as deliver does before the
+	// reservation.
+	start := func(at time.Time) *syncStamp {
+		t.Helper()
+		s := ds.syncStampFor(tr, ch, envelope, at)
+		if s == nil {
+			t.Fatal("a delivery of the account's own sync carries no stamp")
+		}
+		if err := ds.syncStart(ctx, s, 0); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		s.stamped = true
+		return s
+	}
+	syncOf := func() (any, *time.Time) {
+		t.Helper()
+		rec, err := ds.Get(ctx, meterAccount, fid("acct"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rec.Properties[propSyncState], syncTime(rec.Properties, propLastSyncStartedAt)
+	}
+	unstart := func(s *syncStamp) {
+		t.Helper()
+		if err := ds.syncUnstart(ctx, s, 0); err != nil {
+			t.Fatalf("take back the start: %v", err)
+		}
+	}
+	if state, _ := syncOf(); state != substrate.SyncStateOK {
+		t.Fatalf("the first run left syncState %v, want ok", state)
+	}
+
+	at := nowUTC()
+	refused := start(at)
+	later := start(at.Add(time.Second))
+	unstart(refused)
+	if state, started := syncOf(); state != substrate.SyncStateRunning || started == nil || !started.Equal(later.started) {
+		t.Fatalf("after a later start, the take-back left syncState %v started %v; want running from %v", state, started, later.started)
+	}
+
+	refused = start(at.Add(2 * time.Second))
+	if err := ds.inTx(ctx, refused.actor, false, func(tx *txn) error {
+		return tx.asSyncWriter(refused.actor, func() error {
+			_, err := tx.patch(refused.ref, substrate.PatchInput{Properties: map[string]any{propSyncState: substrate.SyncStateThrottled}})
+			return err
+		})
+	}); err != nil {
+		t.Fatalf("the body's throttled: %v", err)
+	}
+	unstart(refused)
+	if state, started := syncOf(); state != substrate.SyncStateThrottled || started == nil || !started.Equal(refused.started) {
+		t.Fatalf("after the body's throttled, the take-back left syncState %v started %v; want throttled from %v", state, started, refused.started)
+	}
+}
+
 // A webhook trigger of a function on the operator's key waits at the
 // allowance too: the admitted request stays pending, neither run nor parked,
 // through the hold, through a fire refused at its reservation after the hold
