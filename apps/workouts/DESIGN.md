@@ -1908,7 +1908,7 @@ A `NavigationStack` inside the `fullScreenCover`, a `ScrollView` with a `LazyVSt
 
 ```text
 +--------------------------------------------------+
-| (v)  Fully Body Collection #1  (≡) (…) [Finish]  |  <- glass toolbar
+| (v)  Fully Body Collection #1      (…) [Finish]  |  <- glass toolbar
 |--------------------------------------------------|
 | Duration         Volume           Working sets   |
 | 14:02            375 kg           3 of 40        |
@@ -1939,9 +1939,9 @@ A `NavigationStack` inside the `fullScreenCover`, a `ScrollView` with a `LazyVSt
 ```
 
 **Toolbar** (system glass): leading "Minimise" (`chevron.down`), which dismisses the cover and keeps the session; the
-title inline; trailing a jump menu (`list.bullet`, the exercises with "2 of 3 done", tapping scrolls to one), a `…` menu
-(Add exercise, Reorder exercises, Timer…, Pause clock or Resume clock, Session note, "Show as rows" or "Show as table",
-Discard session), a
+title inline; trailing one `…` menu (Go to exercise, a submenu of the exercises with "2 of 3 done" where a tap scrolls
+to one; Add exercise, Reorder exercises, Timer…, Pause clock or Resume clock, Session note, "Show as rows" or "Show as
+table", Discard session; the exercises were a button of their own until the owner's 2026-11-06 review), a
 `ToolbarSpacer(.fixed)`, then "Finish" in `.glassProminent` at `ToolbarItemPlacement.topBarPinnedTrailing` with
 `visibilityPriority(.high)`. A quiet banner row under the header says "Alerts are off for the app. Rest ends will not
 notify." with "Settings" when notifications are refused or shown nowhere (Settings also names a missing time-sensitive
@@ -2144,8 +2144,9 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 
 ```text
 +--------------------------------------------------+
-| (v)  Day 1 – Strength Foundation    (≡ …) [Finish]|  <- glass toolbar; the session's length and the
-|      12 min · ends about 11:42                    |     time it should end under the title
+| (v)                                  (…) [Finish]|  <- glass toolbar: its controls alone
+| Day 1 – Strength Foundation                      |  <- the large title, folding into the bar on scroll,
+| 12 min · ends about 11:42                        |     the session's length and when it should end under it
 | Leg Press (Machine)                         (…)  |
 | 6–10 reps with 2 left, rest 2:30                 |
 | (✓) Warm-ups 40 kg × 12, 70 kg × 6  as last time |  <- folded once every warm-up is done
@@ -2176,9 +2177,12 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 **Structure.** A `ScrollView` with a `LazyVStack` of blocks (16 pt side margins, 12 pt between blocks), the "Alerts
 are off" and "not saving" banners at the top as in §7.6, and "+ Add exercise" at the end. The island sits in a
 `safeAreaBar(edge: .bottom)` with `scrollEdgeEffectStyle(.soft, for: .bottom)`, so the list always scrolls clear of it
-and it never covers the set being edited. Rows has no header row: the toolbar's principal item shows the session's
-title over how long it has run, to the minute and in grey ("24 min"; "Paused, 24 min" in orange), so it reads as the
-session's length and not as a clock running for the set at hand; a tap pauses or resumes it.
+and it never covers the set being edited. Rows has no header row: the session's name is the navigation bar's large
+title, and its subtitle (`navigationSubtitle`) how long the session has run, to the minute, and when it should end
+("24 min · ends about 11:42"; "Paused, 24 min"), so it reads as the session's length and not as a clock running for
+the set at hand. Scrolled, the title folds into the bar, left of the `…`, whole and on one line where it fits, the
+subtitle under it (owner, 2026-11-06; it was a centred title squeezed between the bar's buttons). The `…` menu pauses
+and resumes the clock.
 
 **Blocks.** One card per `RowsBlock` (`secondarySystemGroupedBackground`, corner radius 24, opaque, no shadow):
 
