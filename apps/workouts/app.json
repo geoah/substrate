@@ -28,7 +28,7 @@
     },
     {
       "package": "substrate.reamde.dev/trainingcoach",
-      "atLeast": 5
+      "atLeast": 6
     }
   ],
   "scopes": [
