@@ -870,3 +870,27 @@ func runFilter(t *testing.T, prog []sockFilter, d seccompData) uint32 {
 	t.Fatal("the program ran off its end without a return")
 	return 0
 }
+
+// A main filter that cannot be installed is a best-effort degradation only for
+// a body whose promises do not rest on the socket filter stacked over it.
+func TestFilterRequiredWhereTheSocketFilterIsPromised(t *testing.T) {
+	confined := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
+	for _, tc := range []struct {
+		name string
+		p    Policy
+		want bool
+	}{
+		{"offline best-effort body", Policy{}, false},
+		{"enforce", Policy{Require: true}, true},
+		{"confined egress", Policy{EgressOnly: confined}, true},
+		{"network body", Policy{Network: true}, true},
+		{"outside code", Policy{Outside: true}, true},
+	} {
+		if got := filterRequired(tc.p); got != tc.want {
+			t.Errorf("%s: filterRequired = %v, want %v", tc.name, got, tc.want)
+		}
+		if tc.want && filterRequiredWhy(tc.p) == "" {
+			t.Errorf("%s: no reason given", tc.name)
+		}
+	}
+}

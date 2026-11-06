@@ -151,8 +151,8 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		// boot (seccompAvailable says so), so carrying on here is the
 		// best-effort contract rather than a silent gap, and refusing would
 		// take down every delivery on a platform the operator was told about.
-		// A confined egress is a promise this filter keeps, so it refuses.
-		if p.Require || len(p.EgressOnly) > 0 {
+		// A policy whose promise this filter keeps refuses (filterRequired).
+		if filterRequired(p) {
 			return fmt.Errorf("no syscall table for this architecture")
 		}
 		return nil
@@ -177,11 +177,8 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		// Under enforce that has to stop the body, and under a confined egress,
 		// whose promise is this filter's socket rule; otherwise it is the
 		// degradation the operator was warned about at boot.
-		if p.Require {
-			return fmt.Errorf("set filter: %w (SUBSTRATE_SANDBOX=enforce)", err)
-		}
-		if len(p.EgressOnly) > 0 {
-			return fmt.Errorf("set filter: %w (egress is confined)", err)
+		if filterRequired(p) {
+			return fmt.Errorf("set filter: %w (%s)", err, filterRequiredWhy(p))
 		}
 		return nil
 	}
@@ -198,6 +195,33 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		}
 	}
 	return nil
+}
+
+// filterRequired reports whether a policy may not run when the main filter
+// cannot be installed. Enforce mode says so outright. A confined egress, a
+// network grant and outside code each rest on the socket rules the internet
+// filter stacks over the main one, and that filter is installed only after the
+// main one: a body run without it would open SCTP, raw or TCP Fast Open
+// sockets the connect gate never sees, and set SO_LINGER, which is the
+// unfiltered network decision 0035 refuses in every mode but off. A body that
+// asks for none of them keeps the best-effort degradation the boot line
+// reported.
+func filterRequired(p Policy) bool {
+	return p.Require || len(p.EgressOnly) > 0 || p.Network || p.Outside
+}
+
+// filterRequiredWhy names the reason filterRequired gave, for the refusal.
+func filterRequiredWhy(p Policy) string {
+	switch {
+	case p.Require:
+		return "SUBSTRATE_SANDBOX=enforce"
+	case len(p.EgressOnly) > 0:
+		return "egress is confined"
+	case p.Outside:
+		return "outside code needs its socket filter"
+	default:
+		return "a network body needs its socket filter"
+	}
 }
 
 // buildInternetFilter is the socket filter a policy stacks over the main one
