@@ -1531,6 +1531,9 @@ const notOnTheWire: Record<string, string> = {
   // observations.ts
   AggregateRead:
     "the `filter` and `aggregate` query parameters of one read, each JSON on its own, never one body",
+  // owner-contact.ts
+  OwnerContact:
+    "two records the console reads one after the other and pairs, client-side",
   // repository.ts
   RepositoryInfo:
     "one property read off the repository record; not the operator's substrate.RepositoryInfo",

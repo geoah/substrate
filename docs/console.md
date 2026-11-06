@@ -13,6 +13,17 @@ which is why signing out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field where the substrate reads one.
 
+Once the repository exists, and after the recovery key where one is shown,
+registration asks "What should we call you?". **Continue** creates your own
+contact (a `substrate.reamde.dev/core/contact` record under a minted id, a
+known person whose `substrate` is your repository's name) and writes the core
+setting `substrate.reamde.dev/core/ownerContact` with that contact's id
+([decision 0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)).
+The step has no skip: the page goes where registration lands once the name
+is saved. A repository registered before this step sets the name under
+Settings, Account, **Your name** (`/settings/name`), which also renames it
+later.
+
 ## What it is for
 
 The console is built around four things, and Home opens on one card for each:
@@ -1526,7 +1537,10 @@ how many values are pending.
   and what they spent in the last 24 hours. It is your own cap and separate
   from the operator's allowance, which is on [Providers](#providers) over the
   AI models.
-- **Account**: the repository name you sign in with, and the two credential
+- **Account**: **Your name**, the contact the `ownerContact` setting names,
+  linked, or **Tell us your name** where it names none; both open
+  `/settings/name`, which renames that contact or creates one. Then the
+  repository name you sign in with, and the two credential
   changes: change your password, and replace your authenticator where the
   second factor is on. Both ask for your current password (and code) in the
   form, because

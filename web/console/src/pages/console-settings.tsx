@@ -1,7 +1,7 @@
 /** Settings (`/settings`): how the console looks (saved on the repository's
  * console preference record, so every browser signed in looks the same),
- * what every agent may spend in a day, the account and the proof of its
- * name, where you are signed in,
+ * what every agent may spend in a day, the owner's own contact, the account
+ * and the proof of its name, where you are signed in,
  * the apps you approved, the way to the AI assistants page, a download of
  * everything, and for developers the system kinds, the raw tokens and what
  * this server says about itself. */
@@ -19,6 +19,7 @@ import {
   SettingsSection,
   WidthPicker,
 } from "@/components/settings-page/setting-row"
+import { OwnerContactRow } from "@/components/settings-page/owner-contact-row"
 import { SpendCapRow } from "@/components/settings-page/spend-cap-row"
 import { VerifyDomainRow } from "@/components/settings-page/verify-domain-row"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -399,6 +400,7 @@ export function ConsoleSettingsPage() {
         <SpendCapRow />
       </SettingsSection>
       <SettingsSection title="Account">
+        <OwnerContactRow />
         <AccountRows />
         <VerifyDomainRow />
       </SettingsSection>

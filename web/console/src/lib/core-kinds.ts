@@ -83,6 +83,12 @@ export function isMachineryKind(kind: string): boolean {
  * engine reads over every agent's runs. Nothing seeds it. */
 export const REPOSITORY_SPEND_CAP_ID = `${LLM_PACKAGE}/spendCentsPerDay`
 
+/** The id of the core `setting` record whose `value` is the id of the
+ * owner's own contact, an ordinary CONTACT_KIND record (decision record
+ * 0231). Nothing seeds it: the console writes it once the owner gives their
+ * name. */
+export const OWNER_CONTACT_SETTING_ID = `${CORE_PACKAGE}/ownerContact`
+
 /** The kind every kind declaration is a record of. A grant entry is a
  * reference at one, so its path starts with this. */
 export const KIND_KIND = `${CORE_PACKAGE}/kind`

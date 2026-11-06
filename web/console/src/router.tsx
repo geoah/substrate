@@ -46,6 +46,7 @@ import { searchText } from "@/lib/search-params"
 import { loadSite } from "@/lib/site"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
+import { OwnerNamePage } from "@/pages/owner-name"
 import { AssistantsPage } from "@/pages/assistants"
 
 const rootRoute = createRootRoute()
@@ -250,6 +251,14 @@ export const assistantsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/settings/assistants",
   component: AssistantsPage,
+})
+
+// The owner's name, for a repository registered before registration asked
+// it. A static segment, like `assistants`, outranks the bundle redirect.
+export const ownerNameRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/settings/name",
+  component: OwnerNamePage,
 })
 
 // Services was a page of its own before Providers listed the AI models and
@@ -483,6 +492,7 @@ const routeTree = rootRoute.addChildren([
     connectionDetailRoute,
     settingsRoute,
     assistantsRoute,
+    ownerNameRoute,
     servicesRoute,
     bundleSettingsRoute,
     agentsRoute,
