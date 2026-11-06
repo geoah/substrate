@@ -41,7 +41,7 @@ const (
 const (
 	appleHealthAdapter        = "applehealth@5"
 	appleHealthAdapterTrigger = "applehealth-to-health"
-	whoopAdapter              = "whoop@25"
+	whoopAdapter              = "whoop@26"
 	whoopAdapterTrigger       = "whoop-to-health"
 )
 
@@ -168,7 +168,7 @@ func assertAdapterStamp(t *testing.T, rows map[string]*substrate.Record, stamp s
 
 // upgradeAdapter lands a new version of a provider's adapter the way an
 // upgrade does: the provider's closure applied again under its bundle's
-// actor, its ADAPTER constant raised from the stamp it ships (`whoop@25`) to
+// actor, its ADAPTER constant raised from the stamp it ships (`whoop@26`) to
 // the next version, and nothing upstream changed. It answers the new stamp.
 func upgradeAdapter(t *testing.T, ds substrate.Dataset, shipped string) string {
 	t.Helper()
