@@ -98,6 +98,6 @@ class TasksWideGalleryTest(private val name: String) {
     companion object {
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
-        fun fixtures(): List<Array<Any>> = listOf(arrayOf<Any>("tasks-detail"), arrayOf<Any>("tasks-today"))
+        fun fixtures(): List<Array<Any>> = listOf(arrayOf<Any>("tasks-detail"), arrayOf<Any>("tasks-needs-you"))
     }
 }
