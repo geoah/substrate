@@ -123,7 +123,7 @@ func publishingEnv(t *testing.T) (*setupEnv, *refreshes) {
 func TestADeclareScopeAndAnAgentDetailAreRefusedAtTheDoor(t *testing.T) {
 	e := newSetupEnv(t)
 	md := decodeJSON[authorizationServerMetadata](t, e.do(http.MethodGet, asMetadataPath, "", nil, ""))
-	if strings.Join(md.ScopesSupported, " ") != "read:* write:* agents:* decide:* call:* full" {
+	if strings.Join(md.ScopesSupported, " ") != "read:* write:* agents:* decide:* call:* full mcp" {
 		t.Fatalf("scopes_supported = %v", md.ScopesSupported)
 	}
 	agentDetail := `[{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/routine"],"writes":[],"spendCentsPerDay":100}]`

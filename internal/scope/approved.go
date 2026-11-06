@@ -27,10 +27,13 @@ type Approved struct {
 // is a token without scopes (decision 0204).
 func FullApproval() Approved { return Approved{full: true} }
 
-// ApprovalOf reads the checked scopes in their resolved spelling: `full`
-// alone, or a list CheckStored admits. An empty list covers nothing.
+// ApprovalOf reads the checked scopes in their resolved spelling: `full` or
+// `mcp` alone, or a list CheckStored admits. An empty list covers nothing.
+// `mcp` covers what `full` does: an approval of it sets nothing up, since a
+// request for it carries no details, and what it reaches at the MCP door is
+// everything but the auth material, which no package's reach names.
 func ApprovalOf(scopes []string) (Approved, error) {
-	if slices.Equal(scopes, []string{FullScope.String()}) {
+	if slices.Equal(scopes, []string{FullScope.String()}) || IsMCP(scopes) {
 		return FullApproval(), nil
 	}
 	if len(scopes) == 0 {

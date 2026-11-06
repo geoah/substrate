@@ -32,6 +32,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"embeddings": {surfaceREST},
 	"agents":     {surfaceREST},
 	"apps":       {surfaceREST},
+	"mcp":        {surfaceMCP},
 }
 
 func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
@@ -107,10 +108,10 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 }
 
 // The surface verdict is one object, not a stamp per feature: REST is the
-// one surface and the supported developer interface (decision 0053). It
-// names its endpoint, and the object is read off the wire as bytes too,
-// because a client reads JSON and a renamed key would still decode into the
-// Go struct. There is no second surface, so no other key.
+// supported developer interface (decision 0053), and MCP the assistants'
+// door, a preview (decision 0230). Each names its endpoint, and the object
+// is read off the wire as bytes too, because a client reads JSON and a
+// renamed key would still decode into the Go struct.
 func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
@@ -120,7 +121,10 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	if want := (surfaceInfo{Endpoint: "/api/v1", Compatibility: "supported"}); doc.Surfaces.REST != want {
 		t.Fatalf("surfaces.rest = %+v, want %+v", doc.Surfaces.REST, want)
 	}
-	wire := `"surfaces":{"rest":{"endpoint":"/api/v1","compatibility":"supported"}}`
+	if want := (surfaceInfo{Endpoint: "/mcp", Compatibility: "preview"}); doc.Surfaces.MCP != want {
+		t.Fatalf("surfaces.mcp = %+v, want %+v", doc.Surfaces.MCP, want)
+	}
+	wire := `"surfaces":{"rest":{"endpoint":"/api/v1","compatibility":"supported"},"mcp":{"endpoint":"/mcp","compatibility":"preview"}}`
 	if body := rec.Body.String(); !strings.Contains(body, wire) {
 		t.Fatalf("surfaces did not serialize as %s: %s", wire, body)
 	}
@@ -129,7 +133,7 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	// follow a feature to its door.
 	for _, f := range doc.Features {
 		for _, s := range f.Surfaces {
-			if s != surfaceREST {
+			if s != surfaceREST && s != surfaceMCP {
 				t.Fatalf("feature %q names surface %q, which the surfaces object does not carry", f.Name, s)
 			}
 		}
@@ -209,6 +213,7 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 		"embeddings":            substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
 		"apps":                  substrate.StabilityAlpha,
+		"mcp":                   substrate.StabilityAlpha,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("features = %+v, want %d entries", got, len(want))

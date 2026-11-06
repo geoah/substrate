@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -61,11 +62,14 @@ type totpRequest struct {
 	NewTOTPCode   string `json:"newTotpCode"`
 }
 
-// mintRequest is the mint body. Both fields may be absent; the label defaults
-// to "token".
+// mintRequest is the mint body. Every field may be absent; the label
+// defaults to "token". Scopes, when present, is `["mcp"]` alone: a token for
+// an assistant the owner pastes into it, which works at the MCP door alone
+// (decision 0230). Any other scoped token comes from the authorization flow.
 type mintRequest struct {
 	Label     string     `json:"label,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Scopes    []string   `json:"scopes,omitempty"`
 }
 
 // --- the shared gate ---
@@ -331,8 +335,13 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 	if req.Label == "" {
 		req.Label = "token"
 	}
+	if req.Scopes != nil && !scope.IsMCP(req.Scopes) {
+		writeError(w, http.StatusUnprocessableEntity, codeValidation,
+			`a minted token is full access, or scopes ["mcp"] for an assistant: an app's scopes come from the authorization flow`)
+		return
+	}
 	ctx := r.Context()
-	info, secret, err := DatasetFrom(ctx).MintToken(ctx, substrate.MintTokenInput{Label: req.Label, ExpiresAt: req.ExpiresAt})
+	info, secret, err := DatasetFrom(ctx).MintToken(ctx, substrate.MintTokenInput{Label: req.Label, ExpiresAt: req.ExpiresAt, Scopes: req.Scopes})
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return

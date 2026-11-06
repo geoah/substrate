@@ -88,7 +88,7 @@ required a `scope`. The rest of 0194 and 0204 stands.
   account delivers the token there; the approval page warns of both.
 - Bad, because a binary from before this change fails the owner's whole
   token list on the stored word, so `mcp` tokens are revoked before a
-  rollback. From this change on an unknown verb reads as retired.
+  rollback.
 - Bad, because there is no refresh token: when a token lapses the owner
   approves again, or picks "until you revoke it" and a leaked token lives
   until revoked.

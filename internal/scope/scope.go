@@ -34,6 +34,14 @@
 // which is full access (decision 0143), so Parse, CheckStored and NewGrant
 // refuse it and only ParseRequest reads it.
 //
+// `mcp` (decision 0230) is a scope with no pattern, asked for alone like
+// `full`: the owner hands an assistant everything the console does but the
+// auth material, at the MCP door alone. Unlike `full` it IS stored, as the
+// one-entry list `["mcp"]`, so a binary that does not know the word refuses
+// the token instead of reading it as full access. It holds no grant:
+// NewGrant refuses it, and the API's bearer check admits it at the MCP door
+// before any grant is read.
+//
 // `webhook:<trigger id>` (docs/plans/app-setup.md) names one webhook
 // trigger, never a glob: the app delivers to it with its own token and reads
 // its parked deliveries. An app never asks for it in `scope`; only a
@@ -79,6 +87,10 @@ const (
 	// Full is everything the owner's own token does. A request names it
 	// alone, as the bare word `full`.
 	Full Verb = "full"
+	// MCP is everything the owner's own token does but the auth material,
+	// at the MCP door alone (decision 0230). A request names it alone, as
+	// the bare word `mcp`, and the token stores it as `["mcp"]`.
+	MCP Verb = "mcp"
 )
 
 // retiredDeclare is the verb decision 0203 gave an app to keep a package of
@@ -89,6 +101,9 @@ const retiredDeclare = "declare"
 
 // FullScope is the one scope of the Full verb.
 var FullScope = Scope{Verb: Full}
+
+// MCPScope is the one scope of the MCP verb.
+var MCPScope = Scope{Verb: MCP}
 
 const (
 	// Home is the authority placeholder: `read:~/tasks/*` asks for the tasks
@@ -183,8 +198,8 @@ type Scope struct {
 
 // String is the scope's canonical spelling, the one the token stores.
 func (s Scope) String() string {
-	if s.Verb == Full {
-		return string(Full)
+	if s.Verb == Full || s.Verb == MCP {
+		return string(s.Verb)
 	}
 	return string(s.Verb) + ":" + s.Pattern
 }
@@ -192,6 +207,18 @@ func (s Scope) String() string {
 // RequestsFull reports whether a parsed request asks for full access, which
 // ParseRequest admits only alone.
 func RequestsFull(scopes []Scope) bool { return slices.Contains(scopes, FullScope) }
+
+// RequestsMCP reports whether a parsed request asks for an assistant's
+// access at the MCP door, which ParseRequest admits only alone.
+func RequestsMCP(scopes []Scope) bool { return slices.Contains(scopes, MCPScope) }
+
+// RequestsWhole reports whether a parsed request asks for a scope the owner
+// approves whole or not at all, through a human door: `full` or `mcp`.
+func RequestsWhole(scopes []Scope) bool { return RequestsFull(scopes) || RequestsMCP(scopes) }
+
+// IsMCP reports whether a token's stored scopes are an assistant's, which
+// work at the MCP door alone.
+func IsMCP(stored []string) bool { return len(stored) == 1 && stored[0] == string(MCP) }
 
 // OverAgents reports whether the pattern names agent ids rather than kinds.
 func (s Scope) OverAgents() bool { return s.Verb == Agents || s.Verb == Decide }
@@ -236,7 +263,7 @@ func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: t
 // for, as a refusal names them.
 const (
 	storedVerbs    = "read, write, agents, decide, call or webhook"
-	requestedVerbs = "read, write, agents, decide or call, or `full` alone"
+	requestedVerbs = "read, write, agents, decide or call, or `full` or `mcp` alone"
 	// retiredDeclareWords is what both doors say of the retired verb.
 	retiredDeclareWords = "`declare:` is retired (decision 0214): an app that needs a package of its own installed names it in a `package` authorization detail, published under its authority"
 )
@@ -432,10 +459,10 @@ func ParseRequest(param string) ([]Scope, error) {
 		if raw == "offline_access" {
 			continue
 		}
-		if raw == string(Full) {
+		if raw == string(Full) || raw == string(MCP) {
 			if !seen[raw] {
 				seen[raw] = true
-				out = append(out, FullScope)
+				out = append(out, Scope{Verb: Verb(raw)})
 			}
 			continue
 		}
@@ -468,6 +495,9 @@ func ParseRequest(param string) ([]Scope, error) {
 	if RequestsFull(out) && len(out) > 1 {
 		return nil, errors.New("`full` is asked for alone: it already holds every other scope, and the owner approves it whole or not at all")
 	}
+	if RequestsMCP(out) && len(out) > 1 {
+		return nil, errors.New("`mcp` is asked for alone: it already reaches what every other scope does at the MCP door, and the owner approves it whole or not at all")
+	}
 	if len(out) > maxScopes {
 		return nil, fmt.Errorf("the request names more than %d scopes", maxScopes)
 	}
@@ -482,7 +512,13 @@ func CheckStored(scopes []string) error {
 	if scopes != nil && len(scopes) == 0 {
 		return errors.New("a scoped token names at least one scope")
 	}
+	if IsMCP(scopes) {
+		return nil
+	}
 	for _, raw := range scopes {
+		if raw == string(MCP) {
+			return errors.New("`mcp` is stored alone: an assistant's token names no other scope")
+		}
 		s, err := Parse(raw)
 		if err != nil {
 			return err
@@ -508,6 +544,12 @@ type Grant struct {
 func NewGrant(stored []string) (Grant, error) {
 	if len(stored) == 0 {
 		return Grant{}, errors.New("a grant names at least one scope: a token without scopes has full access and no grant")
+	}
+	// An assistant's token reaches nothing through a grant: the bearer check
+	// admits it at the MCP door alone, before any grant is read, so a path
+	// that reads one for it fails closed.
+	if IsMCP(stored) {
+		return Grant{}, errors.New("an assistant's `mcp` token holds no grant: it works at the MCP door alone")
 	}
 	if err := CheckStored(stored); err != nil {
 		return Grant{}, err

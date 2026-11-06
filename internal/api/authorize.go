@@ -46,6 +46,16 @@ const (
 	defaultLifetimeDays = 30
 )
 
+// defaultLifetimeOf is the lifetime the page selects first: until revoked
+// for an assistant, which has no refresh token and whose client stops
+// sending a lapsed token rather than signing in again (decision 0230).
+func defaultLifetimeOf(scopes []scope.Scope) int {
+	if scope.RequestsMCP(scopes) {
+		return 0
+	}
+	return defaultLifetimeDays
+}
+
 // lifetimeDays are the lifetimes an owner may give an app's token, 0 for
 // until the owner revokes it. There is no refresh token, so a lifetime is
 // how long an app keeps access without the owner seeing the approval page
@@ -80,6 +90,12 @@ func (h *handler) issuerOf(r *http.Request) string {
 // server is one protected resource, identified by its issuer.
 func sameResource(resource, issuer string) bool {
 	return strings.TrimSuffix(resource, "/") == issuer
+}
+
+// mcpResourceOf reports whether a `resource` names this server's MCP door
+// (decision 0230), the protected resource an assistant's token is for.
+func mcpResourceOf(resource, issuer string) bool {
+	return strings.TrimSuffix(resource, "/") == issuer+mcpPath
 }
 
 // validation is a refusal the approval page shows the owner as it is.
@@ -133,7 +149,7 @@ type protectedResourceMetadata struct {
 // scopesSupported names the widest scope of each verb: every other scope is
 // a narrower pattern of one of them, which no list could enumerate. `full`
 // is listed so an app knows this server can approve it (decision 0204).
-var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "call:*", "full"}
+var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "call:*", "full", "mcp"}
 
 func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	iss := h.issuerOf(r)
@@ -211,9 +227,25 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, "code_challenge must be an S256 challenge: 43 base64url characters")
 		return
 	}
-	scopes, err := scope.ParseRequest(q.Get("scope"))
+	iss := h.issuerOf(r)
+	res := q.Get("resource")
+	if res != "" && !sameResource(res, iss) && !mcpResourceOf(res, iss) {
+		writeAuthorizePage(w, http.StatusBadRequest, "resource must name this server, "+iss+", or its MCP address, "+iss+mcpPath)
+		return
+	}
+	// An assistant signing in for the MCP door may name no scope (Cursor's
+	// cloud agents send none): the door takes one, so that is the request.
+	requested := q.Get("scope")
+	if requested == "" && mcpResourceOf(res, iss) {
+		requested = string(scope.MCP)
+	}
+	scopes, err := scope.ParseRequest(requested)
 	if err != nil {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if mcpResourceOf(res, iss) && !scope.RequestsMCP(scopes) {
+		writeAuthorizePage(w, http.StatusBadRequest, "this server's MCP address takes the `mcp` scope alone: ask for scope=mcp")
 		return
 	}
 	details, err := authorize.ParseDetails(q.Get("authorization_details"))
@@ -221,8 +253,8 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if scope.RequestsFull(scopes) && len(details) > 0 {
-		writeAuthorizePage(w, http.StatusBadRequest, "a request for full access sets nothing up: it names no authorization_details")
+	if scope.RequestsWhole(scopes) && len(details) > 0 {
+		writeAuthorizePage(w, http.StatusBadRequest, "a request for full access or an assistant's access sets nothing up: it names no authorization_details")
 		return
 	}
 	// RFC 7591's name for the build's own version: recorded on the token
@@ -231,11 +263,6 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	softwareVersion, err := authorize.ParseSoftwareVersion(q.Get("software_version"))
 	if err != nil {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	iss := h.issuerOf(r)
-	if res := q.Get("resource"); res != "" && !sameResource(res, iss) {
-		writeAuthorizePage(w, http.StatusBadRequest, "resource must name this server, "+iss)
 		return
 	}
 	state := q.Get("state")
@@ -531,7 +558,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 		},
 		Repository:          authority,
 		LifetimeDays:        lifetimeDays,
-		DefaultLifetimeDays: defaultLifetimeDays,
+		DefaultLifetimeDays: defaultLifetimeOf(req.Scopes),
 		ExpiresAt:           req.Expires,
 		Details:             req.Details,
 		Setup:               slices.Clone(rows),
@@ -568,14 +595,19 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 	}
 	seen := map[string]bool{}
 	for _, s := range req.Scopes {
-		if s == scope.FullScope {
+		if s == scope.FullScope || s == scope.MCPScope {
 			// What it reaches is everything, so the row lists nothing; a
-			// previous token without scopes held it already.
+			// previous token without scopes held full access already, and
+			// one storing `mcp` an assistant's.
+			held := view.Previous != nil && len(view.Previous.Scopes) == 0
+			if s == scope.MCPScope {
+				held = view.Previous != nil && scope.IsMCP(view.Previous.Scopes)
+			}
 			view.Scopes = append(view.Scopes, substrate.AuthorizationScope{
 				Scope: s.String(), Requested: s.String(), Verb: string(s.Verb),
 				Kinds: []substrate.AuthorizationKind{}, Agents: []*substrate.Record{},
 				Functions: []substrate.AuthorizationCallFunction{},
-				Allowed:   view.Previous != nil && len(view.Previous.Scopes) == 0,
+				Allowed:   held,
 			})
 			continue
 		}
@@ -732,8 +764,8 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		// plans nothing: what a request with details sets up, or finds in
 		// place, and full access are approved as the owner, through a human
 		// door.
-		if (len(req.Details) > 0 || scope.RequestsFull(req.Scopes)) && !substrate.HumanActors[actor] {
-			return authorize.Approval{}, notTheOwnersDoor{actor: actor, full: scope.RequestsFull(req.Scopes)}
+		if (len(req.Details) > 0 || scope.RequestsWhole(req.Scopes)) && !substrate.HumanActors[actor] {
+			return authorize.Approval{}, notTheOwnersDoor{actor: actor, full: scope.RequestsFull(req.Scopes), mcp: scope.RequestsMCP(req.Scopes)}
 		}
 		doc, err := shownApp(req)
 		if err != nil {
@@ -910,14 +942,17 @@ func withoutProgress(rows []substrate.AuthorizationSetup) []substrate.Authorizat
 // notTheOwnersDoor refuses an approval of a request with details from a door
 // that is not a human's.
 type notTheOwnersDoor struct {
-	actor substrate.Actor
-	full  bool
+	actor     substrate.Actor
+	full, mcp bool
 }
 
 func (e notTheOwnersDoor) Error() string {
 	what := "setting up"
-	if e.full {
+	switch {
+	case e.full:
 		what = "granting full access"
+	case e.mcp:
+		what = "granting an assistant's access"
 	}
 	return what + " is the owner's act, through the console, substratectl or the API, never as " + string(e.actor)
 }
@@ -1126,8 +1161,8 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	iss := h.issuerOf(r)
 	resource := form.Get("resource")
-	if resource != "" && !sameResource(resource, iss) {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource must name this server, "+iss)
+	if resource != "" && !sameResource(resource, iss) && !mcpResourceOf(resource, iss) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_target", "resource must name this server, "+iss+", or its MCP address")
 		return
 	}
 	c, first, err := h.authz.Redeem(code, func(c authorize.Code) error {

@@ -82,12 +82,13 @@ type grammarInfo struct {
 	Actors []string `json:"actors"`
 }
 
-// surfacesInfo names the request surface with its endpoint and its
-// compatibility. REST is the one surface and the supported developer
-// interface; the object stays keyed so a second surface, should one come,
-// lands as a new key beside it rather than a reshaped document.
+// surfacesInfo names each request surface with its endpoint and its
+// compatibility. REST is the supported developer interface; MCP is the
+// assistants' door (decision 0230), a preview while its protocol revision
+// and its tools settle.
 type surfacesInfo struct {
 	REST surfaceInfo `json:"rest"`
+	MCP  surfaceInfo `json:"mcp"`
 }
 
 type surfaceInfo struct {
@@ -101,7 +102,12 @@ type surfaceInfo struct {
 // The compatibility value a surface carries. It is NOT a stability value: a
 // feature's stability is stamped per feature and answers a different
 // question.
-const compatibilitySupported = "supported"
+const (
+	compatibilitySupported = "supported"
+	// compatibilityPreview is a surface whose shape may still move without
+	// a break being announced.
+	compatibilityPreview = "preview"
+)
 
 type endpointsInfo struct {
 	Register string `json:"register"`
@@ -157,7 +163,10 @@ type featureInfo struct {
 
 // The request surfaces a feature can be served on. A client reads them off
 // discovery instead of trying a route to see whether it exists.
-const surfaceREST = "rest"
+const (
+	surfaceREST = "rest"
+	surfaceMCP  = "mcp"
+)
 
 // features is what this deployment serves, written out. It is a literal
 // because substrate.Dataset is one interface with one implementation: there
@@ -211,6 +220,9 @@ var features = []featureInfo{
 	// that declares no row is told so by its first query, naming the property.
 	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
 	{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
+	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
+	// alpha while the protocol's stateless revision and the tool set settle.
+	{Name: "mcp", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceMCP}},
 	// App authorization (decision 0194): an app that registered nowhere gets
 	// a scoped token through /oauth/authorize and /oauth/token. Alpha while
 	// the scoped surface is the records route, the record path and the unit
@@ -227,6 +239,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Features:  features,
 		Surfaces: surfacesInfo{
 			REST: surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
+			MCP:  surfaceInfo{Endpoint: mcpPath, Compatibility: compatibilityPreview},
 		},
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<package>/<name>",

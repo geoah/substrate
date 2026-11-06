@@ -144,8 +144,7 @@ mints one when the body names `scopes: ["mcp"]`, for a client that takes a
 pasted token; its `label` is its name. A binary from before this change
 refuses the token at authentication, but also fails its whole token list
 on the word it cannot parse, so `mcp` tokens are revoked before a
-rollback; from this change on, a stored scope with a verb the binary does
-not know reads as retired, not as damage.
+rollback.
 
 **Where it works.** `/mcp` admits an `mcp` token alone; any other token is
 `403` with `Bearer error="insufficient_scope", scope="mcp"` and the
