@@ -467,12 +467,22 @@ extension WorkoutsApp {
         exercises: [Exercise], directory: URL?, codec: RecordCodec
     ) async throws -> Event {
         let snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
-        let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
+        let listedExercises = try await api.list([codec.kinds.exercise])
+        let held = Set(listedExercises.map(\.id))
         let queued = Set(await outbox.entries.compactMap(\.batch))
         let versions = await outbox.versions
-        let plan = HistoryExchange.plan(
+        var plan = HistoryExchange.plan(
             server: snapshot, local: local.map(\.records), queued: queued, versions: versions,
             tombstones: account.tombstones.all, hidden: hidden, codec: codec)
+        // A session logged signed out names the sample's exercises by the ids
+        // this build derives; a repository seeded under the slugs holds them
+        // there, so the session names those instead, here and on the server.
+        let bundled = (try? BundledCatalog().loadNow())?.exercises ?? [:]
+        let known = bundled.merging(Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })) { _, phone in phone }
+        let heldAt = OutboxPlan.heldElsewhere(plan.uploads, held: HeldRecords(listedExercises), known: known, codec: codec)
+        let uploads = plan.uploads.map { OutboxPlan.renamed($0, onto: heldAt) }
+        let renamedUploads = zip(plan.uploads, uploads).filter { $0 != $1 }.map(\.1)
+        plan.uploads = uploads
         var imports: [HistoryEntry] = []
         var merges: [HistoryEntry] = []
         var removals: [SessionID] = []
@@ -485,7 +495,7 @@ extension WorkoutsApp {
                 if (try? store.write(entry)) != nil { imports.append(entry) }
             }
             let locals = Dictionary(local.map { ($0.id, $0.local) }, uniquingKeysWith: { first, _ in first })
-            for records in plan.merges {
+            for records in plan.merges + renamedUploads {
                 guard let kept = locals[records.id] else { continue }
                 let entry = HistoryEntry(records: records, local: kept)
                 if (try? store.write(entry)) != nil { merges.append(entry) }
@@ -508,8 +518,6 @@ extension WorkoutsApp {
         // The exercises a session to upload names that the repository
         // lacks: the sample's, for a session logged signed out.
         let queuedExercises = Set(entries.map(\.recordID))
-        let bundled = (try? BundledCatalog().loadNow())?.exercises ?? [:]
-        let known = bundled.merging(Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })) { _, phone in phone }
         entries += OutboxPlan.exercisesFor(plan.uploads, server: held.union(queuedExercises), known: known, codec: codec)
         for records in plan.uploads.sorted(by: { $0.session.at < $1.session.at }) {
             entries += OutboxPlan.finished(records, codec: codec)

@@ -115,6 +115,42 @@ public enum OutboxPlan {
             .compactMap { known[$0].map { exerciseAdded($0, codec: codec) } }
     }
 
+    /// The exercises `uploads` name that the repository holds under another
+    /// id, each mapped onto the id it holds it under: a record carrying the
+    /// same sample or library code, or held at that code, the slug builds
+    /// before the derived ids seeded it under (`HeldRecords`). A session
+    /// logged signed out names the sample's derived ids, and writing those
+    /// into a repository seeded under the slugs would hold two of each.
+    public static func heldElsewhere(
+        _ uploads: [SessionRecords], held: HeldRecords, known: [ExerciseID: Exercise], codec: RecordCodec
+    ) -> [ExerciseID: ExerciseID] {
+        var named = Set<ExerciseID>()
+        for records in uploads {
+            named.formUnion(records.session.slots.map(\.exercise))
+            named.formUnion(records.sets.map(\.exercise))
+        }
+        var out: [ExerciseID: ExerciseID] = [:]
+        for id in named {
+            guard let exercise = known[id], let existing = held.matching(codec.encode(exercise)), existing.id != id.rawValue else { continue }
+            out[id] = ExerciseID(existing.id)
+        }
+        return out
+    }
+
+    /// The session with each slot and set naming the exercise `onto` maps
+    /// its own to.
+    public static func renamed(_ records: SessionRecords, onto: [ExerciseID: ExerciseID]) -> SessionRecords {
+        guard !onto.isEmpty else { return records }
+        var out = records
+        for index in out.session.slots.indices {
+            out.session.slots[index].exercise = onto[out.session.slots[index].exercise] ?? out.session.slots[index].exercise
+        }
+        for index in out.sets.indices {
+            out.sets[index].exercise = onto[out.sets[index].exercise] ?? out.sets[index].exercise
+        }
+        return out
+    }
+
     /// The sets in their order, each chain member after the set it continues.
     static func headsFirst(_ sets: [PerformedSet]) -> [PerformedSet] {
         let ids = Set(sets.map(\.id))

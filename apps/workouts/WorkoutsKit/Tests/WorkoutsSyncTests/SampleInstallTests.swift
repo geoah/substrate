@@ -48,6 +48,14 @@ struct SampleInstallTests {
 
         var puts: [String] { server.methodsAndPaths.filter { $0.hasPrefix("PUT ") } }
 
+        /// The records held of `kinds`, as a list answers them.
+        func records(_ kinds: [String]) -> [FlatRecord] {
+            lock.withLock { Array(held.values) }.filter { kinds.contains($0.kind) }.sorted { $0.id < $1.id }.map {
+                guard case let .object(properties) = $0.properties else { return FlatRecord(kind: $0.kind, id: $0.id, properties: [:]) }
+                return FlatRecord(kind: $0.kind, id: $0.id, properties: properties)
+            }
+        }
+
         private func put(_ kind: String, _ id: String, _ properties: JSONValue) {
             lock.withLock { held["\(kind)/\(id)"] = (kind, id, properties) }
         }
@@ -487,6 +495,43 @@ struct SampleInstallTests {
         let refused = Device().outbox
         try await refused.enqueue(OutboxPlan.finished(session, codec: codec))
         if case .refused = await refused.flush(WorkoutsSyncTests.api(bare.server)) {} else { Issue.record("the session went without its exercises") }
+    }
+
+    @Test("a session logged signed out uploads to a repository holding the sample under its slugs: no exercise written, the slugs named")
+    func signedOutSessionOntoSlugs() async throws {
+        let legacy = try legacySample()
+        let repository = Repository(legacy.exercises + [legacy.routine])
+        let slugs = Set(legacy.exercises.map(\.id))
+        let session = try sampleSession()
+        let directory = temporaryDirectory()
+        let store = HistoryStore(directory: directory)
+        try store.write(HistoryEntry(records: session))
+        let account = WorkoutsFolder(
+            ref: AccountRef(server: URL(string: "http://127.0.0.1:8092")!, repository: "ada"), directory: temporaryDirectory(), localExercises: nil)
+        let outbox = try #require(account.outbox)
+
+        let event = try await WorkoutsApp.exchange(
+            api(repository.server), account: account, outbox: outbox, local: store.loadAll().entries, hidden: [],
+            exercises: [], directory: directory, codec: codec)
+        let sent = await outbox.flush(api(repository.server))
+        let parked = await outbox.parked.map(\.lastError)
+        #expect(sent == .sent, "nothing refused: \(parked)")
+
+        #expect(!repository.puts.contains { $0.contains("/training/exercise/") }, "\(repository.puts)")
+        #expect(Set(repository.ids(codec.kinds.exercise)) == slugs)
+        let uploaded = try #require(codec.sessionRecords(from: repository.records([codec.kinds.session, codec.kinds.set])).first)
+        #expect(Set(uploaded.session.slots.map(\.exercise.rawValue)).isSubset(of: slugs))
+        #expect(Set(uploaded.sets.map(\.exercise.rawValue)).isSubset(of: slugs))
+
+        // The phone's copy names them too, so its history reads the
+        // exercises the catalogue holds.
+        let kept = try store.read(session.id)
+        #expect(Set(kept.records.sets.map(\.exercise.rawValue)).isSubset(of: slugs))
+        guard case let .exchanged(_, _, merges, _, _) = event else {
+            Issue.record("\(event)")
+            return
+        }
+        #expect(merges.map(\.id) == [session.id])
     }
 
     @Test("an exercise the repository holds, or one no catalogue knows, is not written")
