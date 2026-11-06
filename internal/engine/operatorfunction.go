@@ -1,6 +1,6 @@
 package engine
 
-// THE OPERATOR'S FUNCTION SECRETS (decision 0232, docs/plans/host-defaults.md
+// THE OPERATOR'S FUNCTION SECRETS (decision 0235, docs/plans/host-defaults.md
 // "Function secrets"). A key in the defaults file's `functionSecrets` is never
 // a record: at invocation the engine hands it to one call as
 // `config.settings.apiKey`, and only when all of these hold:

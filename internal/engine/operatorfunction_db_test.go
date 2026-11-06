@@ -1,6 +1,6 @@
 package engine
 
-// The operator's function secrets (decision 0232, operatorfunction.go): the
+// The operator's function secrets (decision 0235, operatorfunction.go): the
 // key in the defaults file's functionSecrets reaches the listed consumers of
 // the published package and nothing else, steps aside for the person's own
 // key, never reaches a copy, and every call it pays for reserves and settles

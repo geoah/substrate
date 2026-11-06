@@ -13,7 +13,7 @@ must first find and import it, then paste a Firecrawl key, and then name its
 functions in their agent. The operator defaults plan
 ([docs/plans/host-defaults.md](../plans/host-defaults.md), "Function
 secrets") lets the operator pay for that key, and decision
-[0232](0232-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)
+[0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)
 left the rule for function secrets to this phase. A sample cannot carry an
 operator key: an import rehomes it under the repository's authority as
 `installed`, so the person can rewrite the code the key would reach
@@ -71,7 +71,7 @@ held at the limit as an agent trigger is
 the dispatcher leaves the change or occurrence unclaimed, nothing parks, and
 the first pass after the reset delivers it. An operator-paid
 call gets the key alone in `config.settings`: no setting the person wrote
-rides beside it. That is 0232's rule that nothing the person writes reaches
+rides beside it. That is 0235's rule that nothing the person writes reaches
 an operator-paid request, and it keeps the key off loopback: the bodies send
 the key only to `https://api.firecrawl.dev` on 443, through an opener that
 refuses redirects, unless a `baseUrl` setting names loopback, and only the
