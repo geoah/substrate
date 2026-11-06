@@ -81,6 +81,7 @@ type seccompNotifAddfd struct {
 type pendingGate struct {
 	proxy   *hostProxy
 	address string
+	only    []netip.Prefix
 	parent  *os.File
 	child   *os.File
 }
@@ -265,7 +266,7 @@ func (c *Confiner) serve(cmd *exec.Cmd) (Gate, error) {
 		}
 		return nil, fmt.Errorf("sandbox: connect gate: %w", err)
 	}
-	gate, err := startConnectGate(lfd, c.resolvers, g.address)
+	gate, err := startConnectGate(lfd, c.resolvers, g.only, g.address)
 	if err != nil {
 		if g.proxy != nil {
 			_ = g.proxy.Close()
@@ -331,11 +332,14 @@ func recvOOB(fd int, buf, oob []byte) (int, error) {
 // connectGate supervises one body's connect notifications.
 type connectGate struct {
 	proxyAddress string
-	lfd          int
-	stop         int // eventfd, to wake the poll loop on Close
-	done         chan struct{}
-	resolvers    []netip.Addr
-	once         sync.Once
+	// only is the policy's EgressOnly: when set, the whole of what the body
+	// may reach.
+	only      []netip.Prefix
+	lfd       int
+	stop      int // eventfd, to wake the poll loop on Close
+	done      chan struct{}
+	resolvers []netip.Addr
+	once      sync.Once
 
 	// refusalMu guards the record of policy refusals. The gate serves every
 	// invocation of one body process, so each refusal carries a sequence
@@ -361,13 +365,13 @@ const (
 	maxWarned   = 64
 )
 
-func startConnectGate(lfd int, resolvers []netip.Addr, proxy ...string) (Gate, error) {
+func startConnectGate(lfd int, resolvers []netip.Addr, only []netip.Prefix, proxy ...string) (Gate, error) {
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
 		_ = unix.Close(lfd)
 		return nil, fmt.Errorf("sandbox: connect gate eventfd: %w", err)
 	}
-	g := &connectGate{lfd: lfd, stop: efd, done: make(chan struct{}), resolvers: resolvers}
+	g := &connectGate{lfd: lfd, stop: efd, done: make(chan struct{}), resolvers: resolvers, only: only}
 	if len(proxy) > 0 {
 		g.proxyAddress = proxy[0]
 	}
@@ -852,14 +856,20 @@ func toErrno(err error, fallback unix.Errno) unix.Errno {
 	return fallback
 }
 
-// allowDest is the destination policy: an operator-permitted range, then a
-// resolver on port 53 (so DNS through a loopback stub keeps working), then any
-// address the egress classifier does not mark as the deployment's own.
+// allowDest is the destination policy: an outside body's proxy alone; else a
+// confined egress's prefixes alone, never a resolver on port 53 even on
+// loopback, because a resolver forwards the name off the host; else an
+// operator-permitted range, then a resolver on port 53 (so DNS through a
+// loopback stub keeps working), then any address the egress classifier does
+// not mark as the deployment's own.
 func (g *connectGate) allowDest(addr netip.Addr, port uint16) bool {
 	if g.proxyAddress != "" {
 		return netip.AddrPortFrom(addr.Unmap(), port).String() == g.proxyAddress
 	}
 	a := addr.Unmap()
+	if len(g.only) > 0 {
+		return !(port == 53 && g.isResolver(a)) && egressConfinedTo(g.only, a)
+	}
 	for _, p := range egressAllow() {
 		if p.Contains(a) {
 			return true
@@ -893,7 +903,7 @@ func (g *connectGate) refuse(pid uint32, dest netip.AddrPort) {
 	dest = netip.AddrPortFrom(dest.Addr().Unmap(), dest.Port())
 	g.refusalMu.Lock()
 	g.refusalSeq++
-	g.refusals = append(g.refusals, seqRefusal{seq: g.refusalSeq, Refusal: Refusal{Addr: dest, ProxyOnly: g.proxyAddress != ""}})
+	g.refusals = append(g.refusals, seqRefusal{seq: g.refusalSeq, Refusal: Refusal{Addr: dest, ProxyOnly: g.proxyAddress != "", Confined: g.confined()}})
 	if len(g.refusals) > maxRefusals {
 		g.refusals = g.refusals[len(g.refusals)-maxRefusals:]
 	}
@@ -907,12 +917,13 @@ func (g *connectGate) refuse(pid uint32, dest netip.AddrPort) {
 	}
 	g.refusalMu.Unlock()
 	if warn {
-		warnRefusal(refusalWarning{pid: pid, dest: dest, proxyOnly: g.proxyAddress != ""})
+		warnRefusal(refusalWarning{pid: pid, dest: dest, proxyOnly: g.proxyAddress != "", confined: g.confined()})
 	}
 }
 
 type refusalWarning struct {
 	proxyOnly bool
+	confined  bool
 	pid       uint32
 	dest      netip.AddrPort
 }
@@ -935,6 +946,11 @@ func warnRefusal(w refusalWarning) {
 					slog.Warn("outside code attempted a direct connection", "destination", line.dest.String(), "policy", "use the declared-host proxy", "pid", line.pid)
 					continue
 				}
+				if line.confined {
+					slog.Warn("egress outside a confined body's prefixes blocked by the sandbox's connect gate",
+						"destination", line.dest.String(), "pid", line.pid)
+					continue
+				}
 				slog.Warn("egress blocked by the sandbox's connect gate",
 					"destination", line.dest.String(),
 					"allow", EgressAllowVar+"="+line.dest.Addr().String(),
@@ -947,6 +963,9 @@ func warnRefusal(w refusalWarning) {
 	default:
 	}
 }
+
+// confined reports whether this gate holds a body to a policy's EgressOnly.
+func (g *connectGate) confined() bool { return g.proxyAddress == "" && len(g.only) > 0 }
 
 func (g *connectGate) RefusalMark() uint64 {
 	g.refusalMu.Lock()

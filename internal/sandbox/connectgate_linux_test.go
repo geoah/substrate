@@ -46,6 +46,53 @@ func TestConnectGateAllowDest(t *testing.T) {
 	}
 }
 
+// A confined egress (Policy.EgressOnly) is the whole of what a body reaches:
+// inside its prefixes is allowed, the public internet and a private range are
+// not, and neither is a resolver on port 53, though its address sits inside,
+// because it forwards the name off the host. SUBSTRATE_SANDBOX_EGRESS_ALLOW,
+// read once per process, cannot widen it either: this binary's TestMain sets
+// nothing, so the allowlist case is the gate's own field.
+func TestConnectGateConfinedEgressAdmitsOnlyItsPrefixes(t *testing.T) {
+	g := &connectGate{
+		only:      []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},
+		resolvers: []netip.Addr{netip.MustParseAddr("127.0.0.53"), netip.MustParseAddr("10.0.0.2")},
+	}
+	if !g.confined() {
+		t.Fatal("a gate with EgressOnly does not report itself confined")
+	}
+	for _, c := range []struct {
+		addr  string
+		port  uint16
+		allow bool
+	}{
+		{"127.0.0.1", 8080, true},            // a loopback fixture
+		{"::1", 8080, true},                  // the same over IPv6
+		{"::ffff:127.0.0.1", 8080, true},     // mapped loopback is loopback
+		{"127.0.0.53", 53, false},            // the resolver, though inside the prefixes
+		{"127.0.0.53", 8080, true},           // the resolver's address on another port
+		{"10.0.0.2", 53, false},              // a resolver outside the prefixes
+		{"8.8.8.8", 53, false},               // a public resolver
+		{"1.1.1.1", 443, false},              // the public internet
+		{"10.0.0.5", 5432, false},            // RFC1918
+		{"::ffff:1.1.1.1", 443, false},       // a mapped public address
+		{"169.254.169.254", 80, false},       // cloud metadata
+		{"2606:4700:4700::1111", 443, false}, // public IPv6
+	} {
+		if got := g.allowDest(netip.MustParseAddr(c.addr), c.port); got != c.allow {
+			t.Errorf("allowDest(%s, %d) = %v, want %v", c.addr, c.port, got, c.allow)
+		}
+	}
+
+	// The refusal says the egress is confined, and names no variable: no
+	// allowlist lifts it.
+	g.refuse(42, netip.MustParseAddrPort("1.1.1.1:443"))
+	got := g.RefusedSince(0)
+	const want = "the sandbox's connect gate refused 1.1.1.1:443: this process confines a body's egress (sandbox.Policy.EgressOnly)"
+	if len(got) != 1 || got[0].String() != want || strings.Contains(got[0].String(), EgressAllowVar) {
+		t.Fatalf("RefusedSince = %v, want one refusal reading %q", got, want)
+	}
+}
+
 // A policy refusal names the sandbox's connect gate and the variable that
 // would admit the destination, in the record the runner reads and in one WARN
 // line per destination. A reader sees only the refusals after its own mark,

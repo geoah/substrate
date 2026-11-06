@@ -208,7 +208,9 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 		"PYTHONDONTWRITEBYTECODE=1",
 		"TMPDIR=" + tmpDir,
 	}, trustEnv(ctx)...)...)
-	p, err := r.startCmd(cmd, policyFor(spec, work, extraExec...))
+	policy := policyFor(spec, work, extraExec...)
+	policy.EgressOnly = r.bodyEgressOnly()
+	p, err := r.startCmd(cmd, policy)
 	if err != nil {
 		return nil, fmt.Errorf("runner: start python: %w", err)
 	}

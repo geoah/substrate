@@ -273,14 +273,28 @@ func newFirecrawlFake(t *testing.T) (*httptest.Server, *atomic.Int32) {
 }
 
 // installFirecrawlWithKey installs the provider and fills in the person's own
-// key, the base URL left as shipped.
+// key, the base URL left as shipped. Every case that runs a Firecrawl body
+// comes through here, so each one first proves the body cannot reach the real
+// API whatever it is handed (requireConfinedBodies).
 func installFirecrawlWithKey(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
+	requireConfinedBodies(t)
 	installShipped(t, ds, firecrawlPackage)
 	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, typeSecret, firecrawlKeyRecord, substrate.PatchInput{
 		Properties: map[string]any{"value": firecrawlTestKey},
 	}); err != nil {
 		t.Fatalf("fill in the firecrawl apiKey: %v", err)
+	}
+}
+
+// requireConfinedBodies fails the test unless every body it starts is held to
+// loopback (TestMain's runner.ConfineBodyEgress) on a host that enforces it:
+// a Firecrawl body whose origin check or settings a regression broke would
+// otherwise send its key to the real API.
+func requireConfinedBodies(t *testing.T) {
+	t.Helper()
+	if err := runner.Shared.BodyEgressConfined(); err != nil {
+		t.Fatalf("a Firecrawl body run by this test could reach the real API: %v", err)
 	}
 }
 

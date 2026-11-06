@@ -94,10 +94,13 @@ catalog.
 consumers only, the key alone, an own key winning, an empty one counting as
 none, no copy, the allowance's refusal, reserve and settle at the price, the
 read's `function/<package>` item) and the seeded assistant taking both tools
-beside an offering copy. `internal/providertest/firecrawl_test.go` holds the
-closure, the refused origins and redirects, and `webscrape` behaving as
-`scrapepage` did; `TestBodyHelpersFirecrawl` holds where the module sends a
-key that arrives with no `baseUrl`.
+beside an offering copy. The engine and provider test binaries confine every
+body to loopback, so a Firecrawl body these tests run cannot reach
+Firecrawl.
+`internal/providertest/firecrawl_test.go` holds the closure, the refused
+origins and redirects, and `webscrape` behaving as `scrapepage` did;
+`TestBodyHelpersFirecrawl` holds where the module sends a key that arrives
+with no `baseUrl`.
 
 ## More Information
 

@@ -324,6 +324,24 @@ A `-run` or `-skip` relaxes the exact count, because a filter can only shrink
 the set, but it does not lift the gate: with the variable set, a filter that
 leaves no confinement case to run is a failure rather than a quiet pass.
 
+## No body in a test reaches the internet
+
+The `TestMain` of `internal/engine` and of `internal/providertest` calls
+`runner.Shared.ConfineBodyEgress` with loopback, before any body starts. From
+then on the sandbox's connect gate lets a body reach loopback and nothing
+else, whatever its `permissions.network` and `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
+say, and it refuses the system resolver too, so a body cannot even look up a
+provider's name. A shipped provider's body that a regression points at its
+real API (a dropped origin check, a lost `baseUrl`, an operator key that was
+supposed to be refused) fails with `the sandbox's connect gate refused …:
+this process confines a body's egress` instead of sending anything. A host
+whose sandbox cannot filter a body's connects (`SUBSTRATE_SANDBOX=off`, macOS,
+no seccomp, no connect gate) refuses to start the body, so these suites fail
+there rather than run unconfined. The provider tests that hand a body a key
+also call `runner.Shared.BodyEgressConfined` first, and the Python helper
+suites (`TestBodyHelpers*`) run their interpreter with no internet socket at
+all. A dependency resolve through `uv` is not a body and keeps its own policy.
+
 ## Coverage
 
 ```bash

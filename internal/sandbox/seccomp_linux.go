@@ -179,10 +179,14 @@ func applySeccomp(p Policy, parent substrateProc) error {
 	if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) {
 		// The boot probe cannot see this coming: an outer policy may allow
 		// SECCOMP_GET_ACTION_AVAIL and still refuse SECCOMP_SET_MODE_FILTER.
-		// Under enforce that has to stop the body; otherwise it is the
+		// Under enforce that has to stop the body, and under a confined egress,
+		// whose promise is this filter's socket rule; otherwise it is the
 		// degradation the operator was warned about at boot.
 		if p.Require {
 			return fmt.Errorf("set filter: %w (SUBSTRATE_SANDBOX=enforce)", err)
+		}
+		if len(p.EgressOnly) > 0 {
+			return fmt.Errorf("set filter: %w (egress is confined)", err)
 		}
 		return nil
 	}

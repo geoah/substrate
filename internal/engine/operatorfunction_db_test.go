@@ -4,9 +4,11 @@ package engine
 // key in the defaults file's functionSecrets reaches the listed consumers of
 // the published package and nothing else, steps aside for the person's own
 // key, never reaches a copy, and every call it pays for reserves and settles
-// at its price. These tests resolve the invocation config directly, so no
-// body dials Firecrawl; internal/providertest holds what the bodies do with
-// it.
+// at its price. Most of these tests resolve the invocation config directly;
+// the ones that run a body run it held to loopback (requireConfinedBodies),
+// so even a Firecrawl body a regression hands the operator's key cannot
+// reach Firecrawl. internal/providertest holds what the bodies do with the
+// key.
 
 import (
 	"bytes"
@@ -25,6 +27,7 @@ import (
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/operatordefaults"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -54,10 +57,23 @@ func firecrawlOperatorConfig(allowance int64, price string, consumers ...string)
 	}
 }
 
+// requireConfinedBodies fails the test unless every body it starts is held to
+// loopback (TestMain's runner.ConfineBodyEgress) on a host that enforces it:
+// a Firecrawl body handed the operator's key with no baseUrl dials the real
+// API, so a regression in the injection, the allowance or the body's own
+// checks must meet a refused connect, not Firecrawl.
+func requireConfinedBodies(t *testing.T) {
+	t.Helper()
+	if err := runner.Shared.BodyEgressConfined(); err != nil {
+		t.Fatalf("a body run by this test could reach the internet: %v", err)
+	}
+}
+
 // openFirecrawlDataset opens a repository under cfg with the shipped Firecrawl
 // provider installed through the catalog's install door, as an owner does.
 func openFirecrawlDataset(t *testing.T, cfg *operatordefaults.Config, opts ...Option) *dataset {
 	t.Helper()
+	requireConfinedBodies(t)
 	ds := openInternalDataset(t, append([]Option{WithOperatorDefaults(cfg, "Example")}, opts...)...)
 	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
 	ds.svc.operatorNow = clock.Now
@@ -391,10 +407,12 @@ func TestOperatorFunctionKeyRefusedAtTheAllowance(t *testing.T) {
 	ctx := context.Background()
 	ds := openFirecrawlDataset(t, firecrawlOperatorConfig(1, "0.6", "websearch", "webscrape"))
 
-	// The body refuses the url before it builds a request, so nothing dials
-	// Firecrawl; the call ran, so it settles at the price.
+	// The body refuses the url before it builds a request; the call ran, so
+	// it settles at the price. A body that lost the check would post to
+	// Firecrawl's own origin with the operator's key, and the confined egress
+	// refuses that connect, so the error below would not be this one.
 	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlProvider+"/webscrape", map[string]any{"url": "http://not-https.example.com"})
-	if err == nil || !strings.Contains(err.Error(), "https") {
+	if err == nil || !strings.Contains(err.Error(), "url must be an absolute https:// URL") {
 		t.Fatalf("webscrape of an http url = %v, want the body's refusal", err)
 	}
 	if l := operatorLedger(t, ds); len(l) != 1 || l[0].ceiling != 0.6 || l[0].settled != 0.6 {
@@ -483,3 +501,4 @@ func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
 		}
 	}
 }
+

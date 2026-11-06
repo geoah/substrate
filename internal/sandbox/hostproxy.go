@@ -44,7 +44,10 @@ func declaredHost(host string, patterns []string) bool {
 	return false
 }
 
-func newHostProxy(hosts []string) (*hostProxy, error) {
+// newHostProxy starts the proxy for one outside body declaring hosts. only is
+// the policy's EgressOnly: when set, the proxy dials no address outside it,
+// whatever the host checks and the allowlist say.
+func newHostProxy(hosts []string, only ...netip.Prefix) (*hostProxy, error) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -54,6 +57,12 @@ func newHostProxy(hosts []string) (*hostProxy, error) {
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil {
 			return err
+		}
+		if len(only) > 0 {
+			if !egressConfinedTo(only, ap.Addr().Unmap()) {
+				return fmt.Errorf("outside code cannot reach %s: egress is confined", address)
+			}
+			return nil
 		}
 		for _, p := range allow {
 			if p.Contains(ap.Addr().Unmap()) {
@@ -151,4 +160,16 @@ func (p *hostProxy) Close() error {
 	p.mu.Unlock()
 	p.transport.CloseIdleConnections()
 	return p.server.Close()
+}
+
+// egressConfinedTo reports whether addr lies in one of a confined egress's
+// prefixes.
+func egressConfinedTo(only []netip.Prefix, addr netip.Addr) bool {
+	addr = addr.Unmap().WithZone("")
+	for _, p := range only {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }

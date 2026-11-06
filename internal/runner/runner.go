@@ -44,8 +44,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -229,6 +231,9 @@ type Runner struct {
 	// the roundtrip: the window a sweep or a Reconcile can kill in. A test
 	// seam for forcing that interleaving; nil in every production runner.
 	afterLookup func(p *proc)
+	// bodyEgress is ConfineBodyEgress's prefixes, every body policy's
+	// EgressOnly; guarded by mu. Nil in every production runner.
+	bodyEgress []netip.Prefix
 }
 
 // Shared is the process-wide runner every dataset dispatches through.
@@ -254,6 +259,51 @@ func New() *Runner {
 // is where an operator learns whether the deployment's kernel actually offers
 // what the mode claims.
 func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
+
+// ConfineBodyEgress holds every body this runner starts from now on to
+// prefixes: its connects reach those addresses and nothing else, whatever
+// `permissions.network` and SUBSTRATE_SANDBOX_EGRESS_ALLOW say, and a host
+// that cannot filter a body's connects refuses to start it. It is a test
+// binary's call, made before its first body starts, so a regression that
+// points a body at a real API fails at connect(2) instead of reaching it.
+// The live processes are closed, so none started before the call serves
+// again. A dependency resolve is not a body and keeps its own policy.
+func (r *Runner) ConfineBodyEgress(prefixes ...netip.Prefix) {
+	r.mu.Lock()
+	r.bodyEgress = slices.Clone(prefixes)
+	stop := make([]*proc, 0, len(r.pys))
+	for key, p := range r.pys {
+		delete(r.pys, key)
+		stop = append(stop, p)
+	}
+	r.mu.Unlock()
+	for _, p := range stop {
+		p.mu.Lock()
+		p.kill()
+		p.mu.Unlock()
+	}
+}
+
+// BodyEgressConfined answers why a network body this runner starts is not
+// held to ConfineBodyEgress's prefixes, or nil when it is: none were set, or
+// the host cannot enforce them. A test that relies on the confinement fails
+// on the answer rather than reaching a real API.
+func (r *Runner) BodyEgressConfined() error {
+	r.mu.Lock()
+	set := len(r.bodyEgress) > 0
+	r.mu.Unlock()
+	if !set {
+		return errors.New("runner: ConfineBodyEgress was not called, so a network body reaches the public internet")
+	}
+	return r.sandbox.EgressConfinable(true)
+}
+
+// bodyEgressOnly is the EgressOnly every body policy carries.
+func (r *Runner) bodyEgressOnly() []netip.Prefix {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.bodyEgress
+}
 
 // Warm prepares a body ahead of its first delivery — the registration-time
 // half of "bodies prepare at registration". Build and registration errors

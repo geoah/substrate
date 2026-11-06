@@ -2,9 +2,11 @@ package providertest
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"testing"
 
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/testdb"
 )
 
@@ -17,7 +19,15 @@ import (
 // the escape each gate documents is taken here rather than widened there. Set
 // before m.Run, so the runner reads the sandbox one when it starts the first
 // body.
+//
+// Every body the suite starts is also confined to loopback
+// (runner.ConfineBodyEgress): a provider body reaches its fake and nothing
+// else, even when a regression drops the base URL the test pointed at the
+// fake and the body falls back to the provider's real origin. A host that
+// cannot filter a body's connects refuses to start the body, so such a case
+// fails there instead of reaching the provider.
 func TestMain(m *testing.M) {
+	runner.Shared.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128"))
 	if os.Getenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW") == "" {
 		_ = os.Setenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}

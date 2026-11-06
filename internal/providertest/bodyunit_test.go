@@ -2,6 +2,7 @@ package providertest
 
 import (
 	"bytes"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/sandbox"
 	"github.com/geoah/substrate/internal/sandboxtest"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -130,6 +133,18 @@ func bodyPython(t *testing.T, dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// realPython is the interpreter python runs as, sys.executable rather than
+// what PATH found: a version manager's shim re-execs it and writes its own
+// state, which the confined helper run is not granted.
+func realPython(t *testing.T, python string) string {
+	t.Helper()
+	out, err := exec.Command(python, "-I", "-c", "import sys; print(sys.executable)").Output()
+	if err != nil {
+		t.Fatalf("%s: ask for sys.executable: %v", python, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // scriptBlockRe is the pattern PEP 723 gives for a metadata block, as
 // internal/runner/pep723.go reads it.
 var scriptBlockRe = regexp.MustCompile(`(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$`)
@@ -184,14 +199,36 @@ func writeBodies(t *testing.T, bundle, dir string, want func(name string) bool) 
 	return written
 }
 
+// runBodyCases runs one helper suite, rel, over the bodies written into dir.
+// The interpreter runs with no internet socket at all: the sandbox's syscall
+// filter refuses AF_INET and AF_INET6, so a case that a regression sends past
+// its stubbed opener fails at socket(2) instead of reaching the provider. A
+// host that cannot apply the filter fails the test rather than run the cases
+// with the network open.
 func runBodyCases(t *testing.T, python, rel, dir string) {
 	t.Helper()
 	script, err := filepath.Abs(rel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "-I", script)
-	cmd.Env = append(os.Environ(), "SUBSTRATE_BODIES_DIR="+dir)
+	cmd := exec.Command(realPython(t, python), "-I", script)
+	tmp := t.TempDir()
+	cmd.Env = append(os.Environ(), "SUBSTRATE_BODIES_DIR="+dir, "TMPDIR="+tmp)
+	confiner := runner.Shared.Sandbox()
+	if err := confiner.EgressConfinable(false); err != nil {
+		t.Fatalf("the helper cases would run with internet sockets open: %v", err)
+	}
+	// Read and execute anywhere, write only the bodies' directory and the
+	// scratch: the filesystem is not what this confinement is for. No
+	// Network grant, so no internet socket; EgressOnly makes the child
+	// refuse to run where the syscall filter does not install.
+	if err := confiner.Wrap(cmd, sandbox.Policy{
+		ReadExec:   []string{"/"},
+		ReadWrite:  []string{dir, tmp, "/dev/null"},
+		EgressOnly: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
+	}); err != nil {
+		t.Fatalf("confine the helper cases: %v", err)
+	}
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
