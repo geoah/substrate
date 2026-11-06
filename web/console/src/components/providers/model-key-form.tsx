@@ -1,14 +1,16 @@
 /** A key for one AI model row, typed in place on its Providers card: the
- * row's `apiKey`, written through the record page's own secret write
- * (`useRecordPatch`, one property under `ifVersion`), so it is sealed the same
- * way and never read back. The words say what the key changes: switching
- * from the operator's key, replacing your own, or adding the first. */
+ * row's `apiKey`, written as one property under `ifVersion`. The write is the
+ * secret one
+ * (`useSecretPatch`): the typed key is cleared from the form as it is sent,
+ * and nothing of it stays in the mutation cache, whether the write succeeds
+ * or fails. The words say what the key changes: switching from the
+ * operator's key, replacing your own, or adding the first. */
 
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import {
-  useRecordPatch,
+  useSecretPatch,
   writeError,
 } from "@/components/property-sheet/use-record-patch"
 import { Button } from "@/components/ui/button"
@@ -23,11 +25,11 @@ export type KeyFormMode = "switch" | "replace" | "add"
 function consequence(mode: KeyFormMode, name: string, words: OperatorWords) {
   switch (mode) {
     case "switch":
-      return `From now on your agents call ${name} with your key, billed to your account, and those calls no longer count toward ${words.possessive} allowance. The key is sealed on this card’s record and never shown again.`
+      return `Your agents will call ${name} with this key, billed to your ${name} account, and those calls stop counting toward ${words.possessive} allowance. The key is stored sealed and never shown again.`
     case "replace":
-      return "The new key replaces the one sealed on this card’s record. It is never shown again."
+      return `The new key replaces the one stored for ${name}. It is never shown again.`
     case "add":
-      return `Your agents call ${name} with this key, billed to your account. It is sealed on this card’s record and never shown again.`
+      return `Your agents will call ${name} with this key, billed to your ${name} account. It is stored sealed and never shown again.`
   }
 }
 
@@ -47,7 +49,7 @@ export function ModelKeyForm({
   onDone: () => void
 }) {
   const [key, setKey] = useState("")
-  const patch = useRecordPatch(row)
+  const write = useSecretPatch(row, "apiKey", row.version)
   const client = useQueryClient()
   const id = `model-key-${row.id}`
   return (
@@ -57,16 +59,16 @@ export function ModelKeyForm({
         e.preventDefault()
         const value = key.trim()
         if (!value) return
-        patch.mutate(
-          { apiKey: value },
-          {
-            onSuccess: () => {
-              void client.invalidateQueries({
-                queryKey: operatorDefaultsQueryOptions.queryKey,
-              })
-              onDone()
-            },
-          }
+        setKey("")
+        write.save(value).then(
+          () => {
+            void client.invalidateQueries({
+              queryKey: operatorDefaultsQueryOptions.queryKey,
+            })
+            onDone()
+          },
+          // The refusal shows below the field, which is empty again.
+          () => {}
         )
       }}
     >
@@ -86,25 +88,21 @@ export function ModelKeyForm({
       <p className="mt-2 text-[12px] text-faint">
         {consequence(mode, name, words)}
       </p>
-      {patch.error && (
+      {write.error && (
         <p role="alert" className="mt-2 text-[12.5px] text-destructive">
-          {writeError(patch.error)}
+          {writeError(write.error)}
         </p>
       )}
       <div className="mt-2.5 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          type="submit"
-          disabled={!key.trim() || patch.isPending}
-        >
-          {patch.isPending && <Spinner className="size-3" />}
+        <Button size="sm" type="submit" disabled={!key.trim() || write.pending}>
+          {write.pending && <Spinner className="size-3" />}
           Save key
         </Button>
         <Button
           variant="ghost"
           size="sm"
           type="button"
-          disabled={patch.isPending}
+          disabled={write.pending}
           onClick={onDone}
         >
           Cancel
