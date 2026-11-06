@@ -39,6 +39,7 @@ const columns = {
   idOf: (p: string) => (p === "updatedAt" ? p : `prop:${p}`),
   all: [
     "title",
+    "id",
     "prop:name",
     "prop:contactType",
     "prop:prominence",

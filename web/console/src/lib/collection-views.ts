@@ -169,9 +169,12 @@ export interface ColumnNames {
   all: readonly string[]
 }
 
+/** The columns a view's list never hides: they belong to no property. */
+const UNHIDDEN = new Set(["title", "id"])
+
 /** One shipped view record as the strip's SavedView. `columns` names the
  * columns the view shows, in order, so every other column the collection
- * draws but the title is hidden. */
+ * draws but the title and the technical id is hidden. */
 export function collectionViewOf(
   record: SubstrateRecord,
   collection: string,
@@ -199,7 +202,7 @@ export function collectionViewOf(
     const ids = shown.map(columns.idOf).filter((id) => columns.all.includes(id))
     view.columns = ids
     view.hidden = columns.all.filter(
-      (id) => id !== "title" && !ids.includes(id)
+      (id) => !UNHIDDEN.has(id) && !ids.includes(id)
     )
   }
   const group = text(p.group)

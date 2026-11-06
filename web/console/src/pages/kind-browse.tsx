@@ -1037,7 +1037,7 @@ export function KindBrowsePage() {
           role="alert"
           className={cn("mt-2 text-[12.5px] text-destructive", GUTTER_MX)}
         >
-          The view could not be saved:{" "}
+          The view did not change:{" "}
           {writeShipped.error instanceof Error
             ? writeShipped.error.message
             : String(writeShipped.error)}
