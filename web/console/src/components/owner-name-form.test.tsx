@@ -129,7 +129,7 @@ describe("OwnerNameForm", () => {
     })
   })
 
-  it("skips without writing anything", () => {
+  it("cancels without writing anything", () => {
     const server = fakeOwnerServer()
     fetchMock.mockImplementation(server.impl)
     render(
@@ -140,10 +140,17 @@ describe("OwnerNameForm", () => {
       />
     )
     type("Ada")
-    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     expect(onSecondary).toHaveBeenCalledTimes(1)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it("offers no second action where the caller gives none", () => {
+    render(<OwnerNameForm repository="ada.example.org" onSaved={onSaved} />)
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Continue",
+    ])
   })
 
   it("shows a failed setting write, and a retry reuses the contact it created", async () => {
@@ -160,13 +167,12 @@ describe("OwnerNameForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     const alert = await screen.findByRole("alert")
     expect(alert.textContent).toBe(
-      "Saving your name failed: the server is busy. Try again, or skip for now."
+      "Saving your name failed: the server is busy. Try again."
     )
     expect(onSaved).not.toHaveBeenCalled()
-    // Both ways out stay open.
+    // Both actions stay open.
     expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Skip for now" })
-        .disabled
+      screen.getByRole<HTMLButtonElement>("button", { name: "Cancel" }).disabled
     ).toBe(false)
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))

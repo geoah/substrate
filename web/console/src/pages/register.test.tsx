@@ -6,7 +6,15 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest"
 
 import {
   OWNER_SETTING_PATH,
@@ -128,9 +136,28 @@ async function enroll() {
   await screen.findByText("SEED")
 }
 
-/** The name step comes before landing; skipping it writes nothing. */
-async function skipName() {
-  fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }))
+/** The name step comes before landing and has no skip, so a test about where
+ * registration lands types a name and continues. The contact and setting
+ * writes go to a fake owner server; every other request keeps the answer the
+ * test gave. */
+async function giveName(fetchMock: Mock<typeof fetch>) {
+  const own = fetchMock.getMockImplementation()
+  const owner = fakeOwnerServer()
+  fetchMock.mockImplementation((input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url
+    if (url.startsWith("/api/v1/")) return owner.impl(input, init)
+    if (own) return own(input, init)
+    return Promise.reject(new Error(`unexpected request ${url}`))
+  })
+  fireEvent.change(await screen.findByLabelText("Your name"), {
+    target: { value: "Ada" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 }
 
 describe("RegisterPage", () => {
@@ -266,7 +293,7 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    await skipName()
+    await giveName(fetchMock)
 
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -307,7 +334,7 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    await skipName()
+    await giveName(fetchMock)
 
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -379,7 +406,7 @@ describe("RegisterPage", () => {
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     expect(getRepository()).toBe("geoah.localhost")
     expect(getTokenId()).toBe("tok-1")
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -411,7 +438,7 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         to: "/authorize/AbC123",
@@ -435,7 +462,7 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -473,7 +500,7 @@ describe("RegisterPage", () => {
     await screen.findByRole("heading", { name: "What should we call you?" })
     expect(screen.queryByLabelText("Recovery key")).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -490,13 +517,18 @@ describe("RegisterPage", () => {
     expect(getToken()).toBe("substrate_tok_minted")
     expect(navigate).not.toHaveBeenCalled()
 
-    // Skipping writes nothing: the one call is the registration.
-    await skipName()
+    // There is no way past the step but saving a name.
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Continue",
+    ])
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       "/register",
+      "/api/v1/records",
+      OWNER_SETTING_PATH,
     ])
   })
 
@@ -663,7 +695,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<RegisterPage />)
     registerInOneStep()
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
     )
@@ -675,7 +707,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<RegisterPage />)
     registerInOneStep()
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -686,7 +718,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<RegisterPage />)
     registerInOneStep()
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         to: "/authorize/AbC123",
@@ -702,7 +734,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     )
     render(<RegisterPage />)
     registerInOneStep("ada.example.org")
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         to: "/settings",
@@ -752,7 +784,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     )
   })
 
-  it("shows a failed write, and Skip for now still lands", async () => {
+  it("shows a failed write, and lands once a retry saves", async () => {
     const server = fakeOwnerServer({
       failSettingWrites: 1,
       other: (path) =>
@@ -769,10 +801,19 @@ describe("RegisterPage where the operator supplies keys", () => {
       /^Saving your name failed: the server is busy\./
     )
     expect(navigate).not.toHaveBeenCalled()
-    await skipName()
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
     )
+    // The retry reuses the contact the first attempt created, under the name
+    // the field holds now, and creates no second one.
+    expect(server.writes().map((c) => `${c.method} ${c.path}`)).toEqual([
+      "POST /register",
+      "POST /api/v1/records",
+      `PUT ${OWNER_SETTING_PATH}`,
+      "PATCH /api/v1/substrate.reamde.dev/core/contact/c-minted-1",
+      `PUT ${OWNER_SETTING_PATH}`,
+    ])
   })
 
   it("lands on Providers after the recovery key is saved", async () => {
@@ -784,7 +825,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Saved, continue" })
     )
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
     )
@@ -885,7 +926,7 @@ describe("RegisterPage and the door's own answer", () => {
     // The one-step form is up once discovery said there is no second factor.
     await screen.findByRole("button", { name: "Create your Substrate" })
     registerInOneStep()
-    await skipName()
+    await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
     )

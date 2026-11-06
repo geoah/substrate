@@ -208,8 +208,8 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * form commits, and the seed is minted server-side and enrolled nowhere.
  *
  * Once the repository exists, and after the recovery key where one arrived,
- * the page asks the owner's name and saves it as their own contact; skipping
- * writes nothing. Either way `land()` then decides where the owner goes. */
+ * the page asks the owner's name and saves it as their own contact, with no
+ * way past it but saving. `land()` then decides where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
   const { inviteRequired, totpRequired } = useAuthPolicy()
@@ -444,11 +444,7 @@ export function RegisterPage() {
         title="What should we call you?"
         description="Your name is saved as your own contact, so your agents and apps know which contact is you."
       >
-        <OwnerNameForm
-          repository={registered}
-          onSaved={() => land()}
-          onSecondary={() => void land()}
-        />
+        <OwnerNameForm repository={registered} onSaved={() => land()} />
       </DoorLayout>
     )
   }

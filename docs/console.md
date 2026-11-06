@@ -19,10 +19,10 @@ contact (a `substrate.reamde.dev/core/contact` record under a minted id, a
 known person whose `substrate` is your repository's name) and writes the core
 setting `substrate.reamde.dev/core/ownerContact` with that contact's id
 ([decision 0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)).
-**Skip for now** writes nothing. Either way the page then goes where
-registration lands. A repository registered before this step, or one that
-skipped it, sets the name later under Settings, Account, **Your name**
-(`/settings/name`).
+The step has no skip: the page goes where registration lands once the name
+is saved. A repository registered before this step sets the name under
+Settings, Account, **Your name** (`/settings/name`), which also renames it
+later.
 
 ## What it is for
 

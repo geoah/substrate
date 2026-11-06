@@ -39,7 +39,7 @@ export function OwnerNameForm({
   current,
   layout = "door",
   submitLabel = "Continue",
-  secondaryLabel = "Skip for now",
+  secondaryLabel = "Cancel",
   onSaved,
   onSecondary,
 }: {
@@ -54,8 +54,9 @@ export function OwnerNameForm({
   submitLabel?: string
   secondaryLabel?: string
   onSaved: (contactId: string) => unknown
-  /** Skip at registration, Cancel on the page: it writes nothing. */
-  onSecondary: () => void
+  /** Cancel on the settings page: it writes nothing. Registration passes
+   * none, because the name step there has no way past it but saving. */
+  onSecondary?: () => void
 }) {
   const door = layout === "door"
   const [name, setName] = useState(() => contactName(current))
@@ -87,7 +88,7 @@ export function OwnerNameForm({
       }
     } catch (err) {
       setError(
-        `Saving your name failed: ${err instanceof ApiError ? err.message : "something went wrong"}. Try again${door ? ", or skip for now" : ""}.`
+        `Saving your name failed: ${err instanceof ApiError ? err.message : "something went wrong"}. Try again.`
       )
       setBusy(false)
       return
@@ -144,16 +145,18 @@ export function OwnerNameForm({
             {busy && <Spinner />}
             {submitLabel}
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size={buttonSize}
-            className={cn(door && "h-10")}
-            disabled={busy}
-            onClick={onSecondary}
-          >
-            {secondaryLabel}
-          </Button>
+          {onSecondary && (
+            <Button
+              type="button"
+              variant="ghost"
+              size={buttonSize}
+              className={cn(door && "h-10")}
+              disabled={busy}
+              onClick={onSecondary}
+            >
+              {secondaryLabel}
+            </Button>
+          )}
         </Field>
       </FieldGroup>
     </form>
