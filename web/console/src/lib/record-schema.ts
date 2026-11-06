@@ -867,10 +867,6 @@ function checkItem(
   return undefined
 }
 
-/** Check one value against its declaration, the way the substrate will. The
- * message is the reason alone (`expected a number`), so a caller can prefix it
- * with wherever the value sits. `undefined` means the value is admissible;
- * `null` is a delete marker and always is. */
 /** Check ONE key of a keyed map, the way the substrate checks it
  * (`vocabulary.Property.CheckKey`): an empty key is refused, a declared
  * `keyPattern` is held to, and absent one ANY non-empty string is a key,
@@ -889,6 +885,10 @@ export function checkKey(spec: PropSpec, key: string): string | undefined {
   return undefined
 }
 
+/** Check one value against its declaration, the way the substrate will. The
+ * message is the reason alone (`expected a number`), so a caller can prefix it
+ * with wherever the value sits. `undefined` means the value is admissible;
+ * `null` is a delete marker and always is. */
 export function checkValue(
   units: UnitReader,
   spec: PropSpec,
@@ -896,7 +896,7 @@ export function checkValue(
 ): string | undefined {
   if (value === null || value === undefined) return undefined
   if (spec.keyed) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || Array.isArray(value)) {
       return `expected a map of ${spec.kind}`
     }
     const item = elementSpec(spec)
