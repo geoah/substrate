@@ -175,7 +175,7 @@ struct RowsOpenSetTests {
         // Reps left, a third value under load and reps: the plan's RPE 8 is 2
         // left, hollow, and a tap on it rates it as it is.
         let effort = try #require(editor.effort)
-        #expect(effort.shown == 8 && effort.value == "2" && effort.unit == "reps left")
+        #expect(effort.shown == 8 && effort.value == "2" && effort.unit == "left")
         #expect(!effort.isRated && !effort.isCollapsed && effort.rate == .enteringRPE(8) && effort.reset == nil)
         #expect(
             effort.minus
@@ -355,12 +355,15 @@ struct RowsOpenSetTests {
         #expect(load.chips.map(\.text) == ["100", "105", "110", "115", "120", "125"])
         #expect(load.chips.filter(\.isCurrent).map(\.text) == ["105"])
         #expect(load.chips[4].patch == SetValuesPatch(load: .set(.kg(120))))
-        #expect(load.patch("120") == SetValuesPatch(load: .set(.kg(120))) && load.confirmTitle("120") == "Set 120 kg")
+        #expect(load.patch("120") == SetValuesPatch(load: .set(.kg(120))))
         #expect(load.patch("102,5") == SetValuesPatch(load: .set(.kg(d("102.5")))))
-        #expect(load.patch("") == nil && load.patch("1.2.3") == nil && load.confirmTitle("x") == "Set")
+        #expect(load.patch("") == nil && load.patch("1.2.3") == nil)
+        // Cancel puts back what the row held: its typed load, or none for the suggestion.
+        #expect(load.restoring(SetValues(load: .kg(110))) == SetValuesPatch(load: .set(.kg(110))))
+        #expect(load.restoring(SetValues()) == SetValuesPatch(load: .cleared))
         let reps = try #require(editor.field(.reps)?.keypad)
         #expect(reps.chips.isEmpty && reps.chipsTitle == nil && !reps.allowsDecimal)
-        #expect(reps.patch("8") == SetValuesPatch(reps: .set(8)) && reps.patch("8.5") == nil && reps.confirmTitle("8") == "Set 8 reps")
+        #expect(reps.patch("8") == SetValuesPatch(reps: .set(8)) && reps.patch("8.5") == nil)
         // A time is typed as digits, the last two the seconds.
         #expect(RowsKeypad.value("107", field: .duration) == 67 && RowsKeypad.value("45", field: .duration) == 45)
         #expect(RowsKeypad.value("190", field: .duration) == nil && RowsKeypad.value("0", field: .duration) == nil)

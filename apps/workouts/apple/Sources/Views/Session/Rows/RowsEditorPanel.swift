@@ -2,8 +2,8 @@ import SwiftUI
 import WorkoutsCore
 
 /// The set open in place (DESIGN.md §7.6a): a tinted panel with a header
-/// line (the set and why today's numbers), each value with last time beside
-/// it and its steppers under the thumb, the RPE stops, a timed set's clock
+/// line (the set and why today's numbers), each value with last time under
+/// it and its steppers under the thumb, reps left built the same, a timed set's clock
 /// and track, and a Log button that names exactly what it saves.
 /// A done set being fixed uses the same panel, neutral, with Save and
 /// Cancel; Delete set is in its `…`, as on every set (owner, 2026-11-02).
@@ -26,9 +26,6 @@ struct RowsEditorPanel: View {
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// The widest value and its unit, so `last` lines up across the fields.
-    @State private var valueWidths: [ValueField: CGFloat] = [:]
-    @ScaledMetric(relativeTo: .title) private var minValueWidth: CGFloat = 84
     @ScaledMetric(relativeTo: .body) private var indent: CGFloat = 32
 
     private var tint: Color { RowsStyle.tint(editor.tint) }
@@ -63,11 +60,9 @@ struct RowsEditorPanel: View {
                 RowsFieldRow(
                     field: field,
                     tint: tint,
-                    valueWidth: max(minValueWidth, valueWidths.values.max() ?? 0),
                     typing: screen.typing.flatMap { $0.row == editor.row && $0.field == field.field ? $0.text : nil },
-                    onKeypad: { screen.openKeypad(field, in: editor) },
-                    onPatch: { screen.apply($0, row: editor.row, mode: editor.mode, session: session) },
-                    onMeasure: { valueWidths[field.field] = $0 }
+                    onKeypad: { screen.openKeypad(field, in: editor, session: session) },
+                    onPatch: { screen.apply($0, row: editor.row, mode: editor.mode, session: session) }
                 )
                 .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
             }
@@ -82,7 +77,6 @@ struct RowsEditorPanel: View {
                 RowsEffortRow(
                     effort: effort,
                     tint: tint,
-                    valueWidth: max(minValueWidth, valueWidths.values.max() ?? 0),
                     onPatch: { screen.step($0, in: editor, session: session) }
                 )
                 .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
@@ -402,68 +396,45 @@ private struct RowsLogVisibility: ViewModifier {
 
 // MARK: - A value field
 
-/// One value: the big number (a tap opens the keypad), its unit, last time
-/// at a fixed position, the reset chip, and the `−step +step` stepper. At
-/// the accessibility text sizes the stepper goes under the number.
-struct RowsFieldRow: View {
-    let field: RowsField
-    let tint: Color
-    let valueWidth: CGFloat
-    /// The keypad's text while it types into this field.
-    let typing: String?
-    let onKeypad: () -> Void
-    let onPatch: (SetValuesPatch) -> Void
-    let onMeasure: (CGFloat) -> Void
+/// One value row of the open set, the same for load, reps and reps left:
+/// the value on the left (its number, unit and last time under them), and
+/// on the right, under the thumb, its round buttons (the reset, why the set
+/// ended) and then the `−step +step` stepper. Where one row cannot hold them
+/// (larger text) the buttons go under the stepper; at the accessibility
+/// sizes the buttons and the stepper go under the value.
+struct RowsValueRow<Value: View, Buttons: View>: View {
+    let stepper: RowsStepper
+    @ViewBuilder let value: () -> Value
+    @ViewBuilder let buttons: () -> Buttons
 
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .title) private var valueSize: CGFloat = 26
 
     var body: some View {
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 6) {
-                value
+                value()
                 HStack(spacing: 8) {
-                    last
-                    resetChip
+                    buttons()
+                    stepper
                 }
-                RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)
             }
             .padding(.vertical, 6)
         } else {
-            // `last` and the reset chip side by side, or the chip under
-            // `last` when the row is too narrow: neither is ever cut.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
-                    // `last` on the number's baseline, not centred on its row.
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        value
-                            .frame(minWidth: valueWidth, alignment: .leading)
-                        last
-                    }
-                    resetChip
-                    Spacer(minLength: 4)
-                    RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)
+                    value()
+                    Spacer(minLength: 0)
+                    buttons()
+                    stepper
                 }
-                HStack(spacing: 8) {
-                    value
-                        .frame(minWidth: valueWidth, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 2) {
-                        last
-                        resetChip
-                    }
-                    Spacer(minLength: 4)
-                    RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)
-                }
-                // Larger text: the number beside its stepper, last time under them.
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 8) {
-                        value
+                        value()
                         Spacer(minLength: 4)
-                        RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)
+                        stepper
                     }
                     HStack(spacing: 8) {
-                        last
-                        resetChip
+                        buttons()
                     }
                 }
                 .padding(.vertical, 4)
@@ -471,24 +442,44 @@ struct RowsFieldRow: View {
             .frame(minHeight: 48)
         }
     }
+}
+
+/// A load, reps, a time or a distance: the big number (a tap opens the
+/// keypad), its unit and last time under them, the reset and the stepper.
+struct RowsFieldRow: View {
+    let field: RowsField
+    let tint: Color
+    /// The keypad's text while it types into this field.
+    let typing: String?
+    let onKeypad: () -> Void
+    let onPatch: (SetValuesPatch) -> Void
+
+    @ScaledMetric(relativeTo: .title) private var valueSize: CGFloat = 26
+
+    var body: some View {
+        RowsValueRow(stepper: RowsStepper(minus: field.minus, plus: field.plus, tint: tint, onPatch: onPatch)) {
+            value
+        } buttons: {
+            RowsResetButton(reset: field.reset, tint: tint, onPatch: onPatch)
+        }
+    }
 
     private var value: some View {
         Button(action: onKeypad) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                number
-                if let unit = field.unit, showsUnit {
-                    Text(unit)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    number
+                    if let unit = field.unit, showsUnit {
+                        Text(unit)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
                 }
+                RowsLastText(text: field.last)
             }
-            .onGeometryChange(for: CGFloat.self) {
-                $0.size.width
-            } action: {
-                onMeasure($0)
-            }
-            // The number is about 31 pt tall; the target is 44 (the row is 48).
+            // The number is about 31 pt tall; with last time the target passes 44.
             .frame(minHeight: 44)
             .contentShape(.rect)
         }
@@ -497,6 +488,8 @@ struct RowsFieldRow: View {
         .accessibilityValue(typing.map { $0.isEmpty ? field.accessibilityValue : "typing \($0)" } ?? field.accessibilityValue)
         .accessibilityHint("Opens a keypad")
     }
+
+    private var allowsDecimal: Bool { field.keypad.allowsDecimal }
 
     /// A hint such as `≈15` reads with its unit, and so does an empty field
     /// that must be filled (`– reps` on a drop to failure): it says what it wants.
@@ -508,31 +501,39 @@ struct RowsFieldRow: View {
     private var number: some View {
         let font = Font.system(size: valueSize, weight: .semibold).monospacedDigit()
         if let typing {
-            HStack(spacing: 2) {
-                Text(typing.isEmpty ? field.value ?? "" : typing)
-                    .font(font)
-                    .foregroundStyle(typing.isEmpty ? Color.secondary : Color.primary)
-                Capsule()
-                    .fill(tint)
-                    .frame(width: 2, height: valueSize * 0.85)
+            // Room for `13.75` (a load) or `100` (reps) from the first key,
+            // so the box does not grow under the finger.
+            ReservedWidth(template: allowsDecimal ? "00.00" : "000", alignment: .leading) {
+                HStack(spacing: 2) {
+                    Text(typing.isEmpty ? field.value ?? "" : typing)
+                        .foregroundStyle(typing.isEmpty ? Color.secondary : Color.primary)
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: 2, height: valueSize * 0.85)
+                }
             }
-            .padding(.horizontal, 5)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RowsStyle.card, in: .rect(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(tint, lineWidth: 2))
-            .padding(.leading, -5)
+            .padding(.leading, -7)
         } else if let value = field.value {
             Text(value)
                 .font(font)
                 .foregroundStyle(field.isChanged ? tint : Color.primary)
                 .underline(pattern: .dot, color: (field.isChanged ? tint : Color.primary).opacity(0.25))
                 .lineLimit(1)
+                .fixedSize()
         } else {
             Text(field.placeholder ?? "\u{2013}")
                 .font(.title3.italic())
                 .foregroundStyle(GhostValueStyle.color)
                 .underline(pattern: .dot, color: Color.primary.opacity(0.25))
                 .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, field.isMissing ? 5 : 0)
                 .padding(.vertical, field.isMissing ? 2 : 0)
                 .overlay {
@@ -542,42 +543,61 @@ struct RowsFieldRow: View {
                 }
         }
     }
+}
 
-    @ViewBuilder
-    private var last: some View {
-        if let last = field.last {
-            Text(last)
-                .font(.subheadline.monospacedDigit())
+/// `last 105`, under a value's number.
+struct RowsLastText: View {
+    let text: String?
+
+    var body: some View {
+        if let text {
+            Text(text)
+                .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .fixedSize()
         }
     }
+}
 
-    @ViewBuilder
-    private var resetChip: some View {
-        if let reset = field.reset {
-            Button {
-                onPatch(reset.patch)
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.caption2.weight(.bold))
-                    Text(reset.text)
-                        .monospacedDigit()
-                }
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(tint.opacity(0.13), in: .capsule)
-                .fixedSize()
-                // A bigger target than the chip, without growing the row.
-                .contentShape(.rect.inset(by: -10))
-            }
-            .buttonStyle(.plain)
-            .lineLimit(1)
-            .accessibilityLabel(reset.accessibilityLabel)
+/// A round button as tall as the stepper, beside it: the reset, why the set ended.
+struct RowsRoundButtonLabel: View {
+    let systemImage: String
+    let color: Color
+    /// Chosen: the colour fills the circle.
+    var isFilled = false
+
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 44
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(isFilled ? Color.white : color)
+            .frame(width: size, height: size)
+            .background(isFilled ? color : color.opacity(0.13), in: .circle)
+            .contentShape(.circle)
+    }
+}
+
+/// `↺`, back to the suggestion, the plan's value or what was logged. Its
+/// place is kept while there is nothing to go back to, so the row does not
+/// shift under the thumb when a step makes one.
+struct RowsResetButton: View {
+    let reset: RowsReset?
+    let tint: Color
+    let onPatch: (SetValuesPatch) -> Void
+
+    var body: some View {
+        Button {
+            if let reset { onPatch(reset.patch) }
+        } label: {
+            RowsRoundButtonLabel(systemImage: "arrow.uturn.backward", color: tint)
         }
+        .buttonStyle(.plain)
+        .opacity(reset == nil ? 0 : 1)
+        .disabled(reset == nil)
+        .accessibilityLabel(reset?.accessibilityLabel ?? "")
+        .accessibilityHidden(reset == nil)
     }
 }
 
@@ -625,146 +645,83 @@ struct RowsStepper: View {
 
 // MARK: - Reps left
 
-/// Reps left, a third value under load and reps: the number in a capsule,
-/// hollow while it is the plan's value or a copy and filled once it is the
-/// lifter's (a tap on the hollow one rates it as it is), `reps left`, last
-/// time and the reset chip, and `−1 | +1` under the thumb. Under it, why the
-/// set ended, a menu. Where one row cannot hold them (larger text) last time
-/// and the chip go under the number; the steppers never give way.
+/// Reps left, a third value row like load and reps: the number (drawn in
+/// the accent colour once it is the lifter's rating; a tap on the plan's
+/// value rates it as it is), its unit and last time under them, then the
+/// reset, why the set ended as a `?` button, and `−1 | +1`.
 struct RowsEffortRow: View {
     let effort: RowsEffort
     let tint: Color
-    let valueWidth: CGFloat
     let onPatch: (SetValuesPatch) -> Void
 
-    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title) private var valueSize: CGFloat = 26
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 6) {
-                    value
-                    HStack(spacing: 8) {
-                        last
-                        resetChip
-                    }
-                    RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
-                }
-                .padding(.vertical, 6)
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            value
-                                .frame(minWidth: valueWidth, alignment: .leading)
-                            last
-                        }
-                        resetChip
-                        Spacer(minLength: 4)
-                        RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            value
-                            Spacer(minLength: 4)
-                            RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)
-                        }
-                        HStack(spacing: 8) {
-                            last
-                            resetChip
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(minHeight: 48)
-            }
+        RowsValueRow(stepper: RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)) {
+            value
+        } buttons: {
+            RowsResetButton(reset: effort.reset, tint: tint, onPatch: onPatch)
             if let stop = effort.stop {
-                RowsStopMenuChip(menu: stop, tint: tint, onPatch: onPatch)
+                RowsStopMenuButton(menu: stop, tint: tint, onPatch: onPatch)
             }
         }
     }
 
-    /// The number in its capsule and `reps left` after it.
     private var value: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Button {
-                if let rate = effort.rate { onPatch(rate) }
-            } label: {
-                Text(effort.value ?? "\u{2013}")
-                    .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(effort.value == nil ? Color.secondary : effort.isRated ? Color.white : tint)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .background {
-                        if effort.isRated {
-                            Capsule().fill(tint)
-                        } else if effort.value != nil {
-                            Capsule().strokeBorder(tint, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                        }
-                    }
-                    .contentShape(.capsule)
-            }
-            .buttonStyle(.plain)
-            .contextMenu {
-                if let clear = effort.clear {
-                    Button(clear.title, systemImage: "xmark.circle", role: .destructive) { onPatch(clear.patch) }
+        Button {
+            if let rate = effort.rate { onPatch(rate) }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    number
+                    Text(effort.unit)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
+                RowsLastText(text: effort.last)
             }
-            .accessibilityAction(named: effort.clear?.title ?? "") {
-                if let clear = effort.clear { onPatch(clear.patch) }
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if let clear = effort.clear {
+                Button(clear.title, systemImage: "xmark.circle", role: .destructive) { onPatch(clear.patch) }
             }
-            .accessibilityLabel(effort.accessibilityLabel)
-            .accessibilityValue(effort.accessibilityValue)
-            .accessibilityHint(effort.rate == nil ? "" : "Rates it as shown")
-            Text(effort.unit)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        }
+        .accessibilityAction(named: effort.clear?.title ?? "") {
+            if let clear = effort.clear { onPatch(clear.patch) }
+        }
+        .accessibilityLabel(effort.accessibilityLabel)
+        .accessibilityValue(effort.accessibilityValue)
+        .accessibilityHint(effort.rate == nil ? "" : "Rates it as shown")
+    }
+
+    @ViewBuilder
+    private var number: some View {
+        if let value = effort.value {
+            Text(value)
+                .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
+                .foregroundStyle(effort.isRated ? tint : Color.primary)
+                .underline(pattern: .dot, color: (effort.isRated ? tint : Color.primary).opacity(0.25))
                 .lineLimit(1)
                 .fixedSize()
-                .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder
-    private var last: some View {
-        if let last = effort.last {
-            Text(last)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    @ViewBuilder
-    private var resetChip: some View {
-        if let reset = effort.reset {
-            Button {
-                onPatch(reset.patch)
-            } label: {
-                Label(reset.text, systemImage: "arrow.counterclockwise")
-                    .labelStyle(.titleAndIcon)
-                    .font(.footnote.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 28)
-                    .background(tint.opacity(0.13), in: .capsule)
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(reset.accessibilityLabel)
+        } else {
+            Text(verbatim: "\u{2013}")
+                .font(.title3.italic())
+                .foregroundStyle(GhostValueStyle.color)
+                .underline(pattern: .dot, color: Color.primary.opacity(0.25))
+                .fixedSize()
         }
     }
 }
 
-/// Why the set ended: `Why stop?` with a chevron, or the reason chosen
-/// (pain in orange); a tap lists the four reasons and, with one chosen,
-/// `Clear reason`.
-struct RowsStopMenuChip: View {
+/// Why the set ended, a round button: `?` with none chosen, else the
+/// reason's symbol on its colour (pain in orange). A tap lists the four
+/// reasons and, with one chosen, `Clear reason`.
+struct RowsStopMenuButton: View {
     let menu: RowsStopMenu
     let tint: Color
     let onPatch: (SetValuesPatch) -> Void
@@ -778,7 +735,7 @@ struct RowsStopMenuChip: View {
                     if option.isSelected {
                         Label(option.title, systemImage: "checkmark")
                     } else {
-                        Text(option.title)
+                        Label(option.title, systemImage: Self.symbol(option.reason))
                     }
                 }
             }
@@ -787,33 +744,25 @@ struct RowsStopMenuChip: View {
                 Button("Clear reason") { onPatch(clear) }
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(menu.title)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, 10)
-            .frame(minHeight: 30)
-            .background(color.opacity(menu.selected == nil ? 0.08 : 0.15), in: .capsule)
-            .frame(minHeight: 44)
-            .contentShape(.rect)
+            RowsRoundButtonLabel(
+                systemImage: menu.selected.map(Self.symbol) ?? "questionmark", color: color, isFilled: menu.selected != nil)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(menu.accessibilityLabel)
         .accessibilityValue(menu.accessibilityValue)
     }
 
-    private var color: Color {
-        switch menu.selected {
-        case .pain?: RowsStyle.orange
-        case nil: .secondary
-        default: tint
+    static func symbol(_ reason: StopReason) -> String {
+        switch reason {
+        case .fatigue: "battery.25percent"
+        case .technique: "figure.strengthtraining.traditional"
+        case .pain: "bandage"
+        case .other: "ellipsis"
         }
+    }
+
+    private var color: Color {
+        menu.selected == .pain ? RowsStyle.orange : tint
     }
 }
 

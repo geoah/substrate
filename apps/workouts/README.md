@@ -426,6 +426,18 @@ larger text puts each value on a line of its own, steppers kept.
 | --- | --- | --- | --- |
 | ![RPE label](docs/screenshots/session-after-rpe-label.jpg) | ![AX docked](docs/screenshots/session-after-accessibility-size.jpg) | ![AX timed](docs/screenshots/session-after-accessibility-timed.jpg) | ![AX Stop](docs/screenshots/session-after-accessibility-stop.jpg) |
 
+The open set's values after the owner's feedback from the gym (2026-11-06,
+iPhone 17e simulator, the narrowest phone): load, reps and reps left built the
+same, each with its last time under the number and, beside its steps, the
+reset and (on reps left) why the set ended as round buttons; the keypad sets
+the field as each key is typed, so Log never takes the old value, with Done
+and Cancel; and every other set on one line, with no round headers. They are
+`docs/screenshots/rows-input-*.jpg`.
+
+| The open set | Typing 12.75 | Why the set ended | A superset |
+| --- | --- | --- | --- |
+| ![Open set](docs/screenshots/rows-input-01-set-open.jpg) | ![Keypad](docs/screenshots/rows-input-02-keypad.jpg) | ![Why stop](docs/screenshots/rows-input-03-why-stop.jpg) | ![Superset](docs/screenshots/rows-input-04-superset.jpg) |
+
 A routine's page and its progress after the owner's review of them
 (2026-11-03, iPhone 18 Pro simulator, signed in to a throwaway substrate,
 with the previews' two sessions of the sample as History: a Debug build

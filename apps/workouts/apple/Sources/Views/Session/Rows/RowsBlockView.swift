@@ -90,14 +90,14 @@ struct RowsBlockView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
             }
-            ForEach(Array(block.items.enumerated()), id: \.element.id) { index, item in
-                if index > 0, isLine(item), isLine(block.items[index - 1]) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0, isLine(item), isLine(items[index - 1]) {
                     separator
                 }
                 itemView(item)
             }
             ForEach(Array(block.addSets.enumerated()), id: \.offset) { _, button in
-                if block.items.last.map(isLine) ?? false {
+                if items.last.map(isLine) ?? false {
                     separator
                 }
                 addSetRow(button)
@@ -105,6 +105,14 @@ struct RowsBlockView: View {
         }
         .padding(.bottom, 4)
         .background(RowsStyle.card, in: .rect(cornerRadius: RowsStyle.cardRadius))
+    }
+
+    /// The block's items without its round headers: each line's label
+    /// already says the round, and the headers cost a line a round (owner, 2026-11-06).
+    private var items: [RowsItem] {
+        block.items.filter {
+            if case .round = $0 { false } else { true }
+        }
     }
 
     private var separator: some View {
@@ -245,8 +253,8 @@ struct RowsBlockView: View {
                     setView(set)
                 }
             }
-        case let .round(header):
-            RowsRoundHeaderView(header: header)
+        case .round:
+            EmptyView()
         case let .chainHeader(header):
             RowsChainHeaderView(header: header)
         case let .miniSets(line):

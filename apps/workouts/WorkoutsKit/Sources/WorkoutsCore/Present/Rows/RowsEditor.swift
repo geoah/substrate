@@ -235,10 +235,11 @@ public struct RowsKeypad: Codable, Equatable, Sendable {
         return FieldAccess.setting(field, to: value, unit: unit)
     }
 
-    /// The confirm button: `Set 120 kg`, `Set 8 reps`, `Set 1:07`; `Set` while the text is no value.
-    public func confirmTitle(_ typed: String) -> String {
-        guard let value = RowsKeypad.value(typed, field: field) else { return "Set" }
-        return "Set \(RowsText.fieldText(field, value, unit: unit, withUnit: true))"
+    /// The field back as `values` hold it, set or cleared: what Cancel sends
+    /// after the typed text was applied, and what a text that is no value
+    /// (all deleted, `1.2.`) stands for while typing.
+    public func restoring(_ values: SetValues) -> SetValuesPatch {
+        FieldAccess.restoring(field, from: values)
     }
 
     /// The typed text as the field's number: a load or distance in its unit,
@@ -296,7 +297,8 @@ public struct RowsEffort: Codable, Equatable, Sendable {
     public var value: String?
     /// The RPE the number stands for, rated or not.
     public var shown: Decimal?
-    /// `reps left`; `left` on a timed or distance set, where reps mean nothing.
+    /// `left`, after the number as `kg` and `reps` are; `effort` on a timed or
+    /// distance set, where the value is the scale's word.
     public var unit: String
     /// `shown` is the owner's rating (a step, a tap, or an imported value):
     /// drawn solid. Otherwise hollow, as the plan's pre-fill or a copy.
@@ -876,7 +878,8 @@ extension RowsEditorSource {
         var effort = RowsEffort(
             value: shown.map(said),
             shown: shown,
-            unit: words ? "effort" : "reps left",
+            // `left`, as the Log button says it: the row fits its two buttons beside the steps.
+            unit: words ? "effort" : "left",
             isRated: isRated,
             last: last.map { "last \(words ? said($0).lowercased() : said($0))" },
             back: back,

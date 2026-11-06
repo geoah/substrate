@@ -6,9 +6,10 @@ import WorkoutsCore
 /// in a group, its exercise beside it. Done lines sit on a light green wash
 /// with their values struck through and grey, ending with the change against
 /// last time and the verdict mark, so a logged set never looks like the one
-/// to do (owner, 2026-11-02); pending lines are muted and end with last time.
-/// When the line does not fit, its end moves under it, lined up with the
-/// text after the label. VoiceOver reads the presenter's sentence. A done
+/// to do (owner, 2026-11-02); pending lines are muted, and on a routine's
+/// plan end with last time. In a session a line never wraps at the standard
+/// sizes; on a plan, and at the accessibility sizes, its end moves under it,
+/// lined up with the text after the label. VoiceOver reads the presenter's sentence. A done
 /// line's check unticks it, and its `…` holds the set's menu (Untick set,
 /// Delete set and the rest), as the open set's does.
 struct RowsSetLine<MenuItems: View>: View {
@@ -128,7 +129,54 @@ struct RowsSetLine<MenuItems: View>: View {
         }
     }
 
+    @ViewBuilder
     private var content: some View {
+        if isPlan || typeSize.isAccessibilitySize {
+            wrapping
+        } else {
+            singleLine
+        }
+    }
+
+    /// A session's line is one line of text at the standard sizes, so the
+    /// list reads at a glance (owner, 2026-11-06): the changes give way to
+    /// their mark, then the exercise's name is cut short.
+    private var singleLine: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                leading
+                    .fixedSize()
+                Spacer(minLength: 6)
+                trailing
+                    .fixedSize()
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                leading
+                    .fixedSize()
+                Spacer(minLength: 6)
+                verdict
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    title(lines: 1)
+                    values
+                        .fixedSize()
+                        .layoutPriority(1)
+                    effortAndTags
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
+                Spacer(minLength: 6)
+                verdict
+            }
+        }
+        .padding(.trailing, MenuItems.self == EmptyView.self ? 16 : 0)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+        .contentShape(.rect)
+    }
+
+    private var wrapping: some View {
         ViewThatFits(in: .horizontal) {
             // One line at its ideal width, or the end on a line of its own:
             // a word is never cut to fit.
@@ -194,7 +242,9 @@ struct RowsSetLine<MenuItems: View>: View {
     /// The space between the label and the text after it.
     private static var afterLabel: CGFloat { 7 }
 
-    private var title: some View {
+    private var title: some View { title(lines: 2) }
+
+    private func title(lines: Int) -> some View {
         HStack(alignment: .center, spacing: Self.afterLabel) {
             RowsSetLabel(text: item.setLabel, isWarmup: item.role == .warmup, emphasis: labelEmphasis)
                 .alignmentGuide(.afterSetLabel) { $0[.trailing] + Self.afterLabel }
@@ -202,7 +252,7 @@ struct RowsSetLine<MenuItems: View>: View {
                 Text(caption)
                     .font(item.isChained ? .subheadline.weight(.semibold) : .body)
                     .foregroundStyle(captionColor)
-                    .lineLimit(2)
+                    .lineLimit(lines)
             }
         }
     }
@@ -253,11 +303,21 @@ struct RowsSetLine<MenuItems: View>: View {
         }
     }
 
+    /// A done line's mark alone, where its changes do not fit.
+    @ViewBuilder
+    private var verdict: some View {
+        if isDone, let verdict = item.verdict {
+            RowsVerdictMark(verdict: verdict)
+        }
+    }
+
+    /// A done line's changes; on a routine's plan, last time. A session's
+    /// pending line has none: the open set says last time where it counts.
     @ViewBuilder
     private var trailing: some View {
         if isDone {
             RowsChangesView(changes: item.changes, verdict: item.verdict)
-        } else if let last = item.last {
+        } else if isPlan, let last = item.last {
             // Last time is a reference, not a target: a step quieter than the RPE beside it.
             Text(last)
                 .font(.subheadline.monospacedDigit())
