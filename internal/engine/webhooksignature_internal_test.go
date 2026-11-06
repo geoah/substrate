@@ -125,6 +125,23 @@ func TestWebhookSignatureDeclarationIsAdmittedAtParse(t *testing.T) {
 	}
 }
 
+// A secret that names no record is refused without being quoted back: it is
+// most often the signing secret itself, and a stored row's parse error is
+// logged.
+func TestWebhookSignatureRefusalCarriesNoSecret(t *testing.T) {
+	t.Parallel()
+	const secret = "whsec_SENTINEL_4c3b2a"
+	m := whoopSignatureDecl()
+	m["secret"] = secret
+	_, err := parseWebhookSignature(m)
+	if err == nil {
+		t.Fatal("a literal secret was admitted")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("the refusal carries the secret: %v", err)
+	}
+}
+
 // signatureHeaderName refuses an empty name like any other off the header
 // alphabet: its callers handle an absent header before they ask, so an empty
 // one reaching it is a mistake to refuse, never a header to accept.
