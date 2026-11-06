@@ -269,8 +269,7 @@ function AssistantReach({ technical }: { technical: boolean }) {
         </ul>
       </Fact>
       <Warning title="Its code can reach your secrets">
-        {ASSISTANT_CODE_SENTENCE}, even though the assistant never sees a
-        secret’s value itself.
+        {ASSISTANT_CODE_SENTENCE}.
       </Warning>
     </>
   )

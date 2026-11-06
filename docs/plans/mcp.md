@@ -105,11 +105,19 @@ authenticates, and answers that interface in process.
   `notifications/*` it ignores. Resources, prompts and elicitation are not
   offered.
 - A tool result is one text block of compact JSON, with no
-  `structuredContent`. A result past 32 KiB is not cut: the tool answers an
-  error saying how large it was and to ask again with a smaller `first`,
-  since the list tools page with `first` and `after`. A REST refusal is a
+  `structuredContent`. A result past 32 KiB is never cut mid-JSON: its long
+  string values are cut first, each named under `cut`; a mutation's answer
+  that still does not fit is a receipt of what it wrote (ids, kinds,
+  versions), never an error, since the write took effect; a read that still
+  does not fit answers how to page. Every read that can grow pages: the
+  lists with `first` and `after`, history with its cursor and generation,
+  the unit table by unit, a file in chunks from `offset`, a long property
+  value through `query`'s `property` and `offset`. A REST refusal is a
   result with `isError: true` carrying the error object, so the model reads
   `problemDetails` and corrects itself.
+- A message is a request (a string or integer `id` and a `method`), a
+  notification (a `method` and no `id`) or a response; anything else is
+  `400`. The body is read under the vocabulary apply's deadline.
 - Every tool carries `readOnlyHint`, `destructiveHint`, `idempotentHint`
   and `openWorldHint: false` explicitly, since a missing `destructiveHint`
   reads as `true`.

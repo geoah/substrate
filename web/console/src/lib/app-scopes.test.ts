@@ -94,7 +94,7 @@ describe("scopeWords", () => {
 
   it("says what an assistant can and cannot do, and what its code reaches", () => {
     expect(ASSISTANT_CAN).toEqual([
-      "See everything you can, token and credential records included, though never a secret’s value",
+      "See everything you can, token and credential records included; a secret’s value reads back hidden",
       "Change anything you can, including collections, agents, triggers and packages",
       "Run your tools, agents and syncs",
     ])
@@ -105,7 +105,9 @@ describe("scopeWords", () => {
       "Connect a provider account",
       "Uninstall or purge a package",
     ])
-    expect(ASSISTANT_CODE_SENTENCE).toMatch(/can reach your secrets/)
+    expect(ASSISTANT_CODE_SENTENCE).toMatch(
+      /secrets included, and hand them back/
+    )
     expect(ASSISTANT_HISTORY_SENTENCE).toMatch(/under its own name, not yours/)
   })
 

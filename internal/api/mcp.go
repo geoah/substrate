@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,10 +23,13 @@ const (
 	// mcpConsolePage is where a browser opening the door is sent: the
 	// console's page that says how to connect an assistant.
 	mcpConsolePage = "/settings/assistants"
-	// maxMCPBody admits the largest request a tool forwards, a vocabulary
-	// apply, plus its JSON-RPC envelope.
-	maxMCPBody = maxVocabularyApplyBody + 64<<10
 )
+
+// mcpBody admits the largest request a tool forwards, a vocabulary apply,
+// plus its JSON-RPC envelope, under the apply's deadline: the server has no
+// read timeout, so a client that stalls mid-body would otherwise hold its
+// connection and goroutine.
+var mcpBody = bodyLimit{bytes: maxVocabularyApplyBody + 64<<10, deadline: vocabularyBody.deadline}
 
 // mcpRoutes are the method and route patterns the door's tools request, as
 // the router matched them: an assistant's token reaches these and nothing
@@ -155,14 +157,8 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 			r.Method+" is not served at "+mcpPath+": it holds no session and opens no stream")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxMCPBody))
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, codeBadRequest, "the message is larger than this server accepts")
-			return
-		}
-		writeError(w, http.StatusBadRequest, codeBadRequest, "the message could not be read")
+	body, ok := readBody(w, r, mcpBody)
+	if !ok {
 		return
 	}
 	api := &doorAPI{h: h, outer: r}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +70,13 @@ const (
 	chatWait = 50 * time.Second
 	callWait = 4 * time.Minute
 )
+
+// chunkBytes is how much of a file one read answers: base64 grows it by a
+// third, which still fits MaxResult.
+const chunkBytes = 20 << 10
+
+// chunkChars is how much of a long text value one read answers.
+const chunkChars = 8 << 10
 
 // Tools is the door's tool set, in the order a client lists it.
 func Tools() []Tool {
@@ -205,7 +213,7 @@ func kindsTool() Tool {
 				return nil, err
 			}
 			if in.First == 0 {
-				in.First = 200
+				in.First = 60
 			}
 			q := url.Values{"first": {strconv.Itoa(in.First)}}
 			if in.After != "" {
@@ -289,7 +297,8 @@ func queryTool() Tool {
 	return Tool{
 		Name:  "query",
 		Title: "Read records",
-		Description: "Read records. kind and id read one record. Otherwise it lists a page: kinds (or kind) narrow it, filter is the " +
+		Description: "Read records. kind and id read one record; property with them reads one of its values, a long text in " +
+			"chunks from offset, with next where more follows. Otherwise it lists a page: kinds (or kind) narrow it, filter is the " +
 			"records filter ({\"properties\": {\"status\": {\"in\": [\"todo\"]}}, \"labels\": …, \"referencing\": …; conditions eq, in, prefix, " +
 			"match, gt, gte, lt, lte, contains, exists}), orderBy a list of {\"property\", \"desc\"}, expand names reference properties whose " +
 			"targets come back under included. q makes it a ranked search (mode lexical, semantic or hybrid). A filter bounding `at` on both " +
@@ -298,6 +307,8 @@ func queryTool() Tool {
 		Input: object(map[string]any{
 			"kind":       kindArg,
 			"id":         str("a record id from an earlier result; with kind, reads that record"),
+			"property":   str("with kind and id: read this one property's value"),
+			"offset":     integer("with property: the character to start a long text at, from the previous chunk's next"),
 			"kinds":      stringList("kinds to list or search, each a full reference"),
 			"filter":     anyObject("the records filter"),
 			"orderBy":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}, "description": "the order, a list of {property, desc}"},
@@ -314,6 +325,8 @@ func queryTool() Tool {
 			var in struct {
 				Kind       string         `json:"kind"`
 				ID         string         `json:"id"`
+				Property   string         `json:"property"`
+				Offset     int            `json:"offset"`
 				Kinds      []string       `json:"kinds"`
 				Filter     map[string]any `json:"filter"`
 				OrderBy    []any          `json:"orderBy"`
@@ -335,7 +348,14 @@ func queryTool() Tool {
 				if err := checkKind("kind", in.Kind); err != nil {
 					return nil, err
 				}
-				return send(ctx, api, Request{Method: http.MethodGet, Path: recordPath(in.Kind, in.ID)})
+				raw, err := send(ctx, api, Request{Method: http.MethodGet, Path: recordPath(in.Kind, in.ID)})
+				if err != nil || in.Property == "" {
+					return raw, err
+				}
+				return propertyChunk(raw, in.Property, in.Offset)
+			}
+			if in.Property != "" {
+				return nil, refuse("property reads one record's value: name the record by kind and id")
 			}
 			kinds := in.Kinds
 			if in.Kind != "" {
@@ -400,6 +420,40 @@ func queryTool() Tool {
 	}
 }
 
+// propertyChunk is one property of a record: its value whole, or for a
+// text longer than one chunk, chunkChars characters of it from offset.
+func propertyChunk(raw json.RawMessage, property string, offset int) (map[string]any, error) {
+	var rec struct {
+		ID         string                     `json:"id"`
+		Kind       string                     `json:"kind"`
+		Version    json.Number                `json:"version"`
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return nil, err
+	}
+	value, ok := rec.Properties[property]
+	if !ok {
+		return nil, refuse("the record holds no value for %q", property)
+	}
+	out := map[string]any{"id": rec.ID, "kind": rec.Kind, "version": rec.Version, "property": property}
+	var text string
+	if json.Unmarshal(value, &text) != nil {
+		out["value"] = value
+		return out, nil
+	}
+	runes := []rune(text)
+	if offset < 0 || offset > len(runes) {
+		return nil, refuse("offset %d is outside the value's %d characters", offset, len(runes))
+	}
+	end := min(offset+chunkChars, len(runes))
+	out["length"], out["offset"], out["value"] = len(runes), offset, string(runes[offset:end])
+	if end < len(runes) {
+		out["next"] = end
+	}
+	return out, nil
+}
+
 // --- history ---
 
 func historyTool() Tool {
@@ -408,26 +462,28 @@ func historyTool() Tool {
 		Title: "Read the changes",
 		Description: "Read the changelog newest first: what changed, when, and which actor changed it. kind and id narrow it to " +
 			"one record, kinds to some kinds, actors to some actors; values adds each record's values before and after. Page with " +
-			"first and before (the lowest seq read).",
+			"first: pass the page's cursor back as before and its generation as generation.",
 		Input: object(map[string]any{
-			"kind":   kindArg,
-			"id":     str("a record id; with kind, that record's changes"),
-			"kinds":  stringList("kinds to narrow to"),
-			"actors": stringList("actors to narrow to, such as console or app:local"),
-			"values": boolean("include the values before and after each change"),
-			"first":  firstArg,
-			"before": integer("read changes below this seq"),
+			"kind":       kindArg,
+			"id":         str("a record id; with kind, that record's changes"),
+			"kinds":      stringList("kinds to narrow to"),
+			"actors":     stringList("actors to narrow to, such as console or app:local"),
+			"values":     boolean("include the values before and after each change"),
+			"first":      firstArg,
+			"before":     integer("the previous page's cursor: read the changes below it"),
+			"generation": str("the previous page's generation, which before needs"),
 		}),
 		Hints: readOnly,
 		Run: func(ctx context.Context, api API, args json.RawMessage) (any, error) {
 			var in struct {
-				Kind   string   `json:"kind"`
-				ID     string   `json:"id"`
-				Kinds  []string `json:"kinds"`
-				Actors []string `json:"actors"`
-				Values bool     `json:"values"`
-				First  int      `json:"first"`
-				Before int64    `json:"before"`
+				Kind       string   `json:"kind"`
+				ID         string   `json:"id"`
+				Kinds      []string `json:"kinds"`
+				Actors     []string `json:"actors"`
+				Values     bool     `json:"values"`
+				First      int      `json:"first"`
+				Before     int64    `json:"before"`
+				Generation string   `json:"generation"`
 			}
 			if err := decode(args, &in); err != nil {
 				return nil, err
@@ -461,7 +517,11 @@ func historyTool() Tool {
 				q.Set("values", "1")
 			}
 			if in.Before > 0 {
+				if in.Generation == "" {
+					return nil, refuse("before names a change of one history: pass the generation its page answered beside it")
+				}
 				q.Set("before", strconv.FormatInt(in.Before, 10))
+				q.Set("generation", in.Generation)
 			}
 			return send(ctx, api, Request{Method: http.MethodGet, Path: "/changes", Query: q})
 		},
@@ -933,11 +993,13 @@ func filesTool() Tool {
 		Name:  "files",
 		Title: "Read or store a file",
 		Description: "Files are blobs, addressed by their sha256 digest: a record names one in a blobref property. read answers a " +
-			"blob's media type and its content, as text when it is text and base64 otherwise. store keeps content and answers its " +
-			"digest, to write into a blobref property; send base64 with encoding base64.",
+			"blob's media type, its size and a chunk of its content from offset, as text when it is text and base64 otherwise, with " +
+			"next where more follows. store keeps content and answers its digest, to write into a blobref property; send base64 " +
+			"with encoding base64.",
 		Input: object(map[string]any{
 			"action":    enum("what to do", "read", "store"),
 			"digest":    str("read: the blob's digest"),
+			"offset":    integer("read: the byte to start at, from the previous chunk's next"),
 			"content":   str("store: the content"),
 			"encoding":  enum("store: how content is written", "text", "base64"),
 			"name":      str("store: a display name, such as a filename"),
@@ -948,6 +1010,7 @@ func filesTool() Tool {
 			var in struct {
 				Action    string `json:"action"`
 				Digest    string `json:"digest"`
+				Offset    int    `json:"offset"`
 				Content   string `json:"content"`
 				Encoding  string `json:"encoding"`
 				Name      string `json:"name"`
@@ -966,13 +1029,7 @@ func filesTool() Tool {
 					return nil, refuse("the substrate answered %d: %s", res.Status, compact(res.Body))
 				}
 				media := res.Header.Get("Content-Type")
-				out := map[string]any{"digest": in.Digest, "mediaType": media, "size": len(res.Body)}
-				if utf8.Valid(res.Body) && textual(media) {
-					out["text"] = string(res.Body)
-				} else {
-					out["base64"] = base64.StdEncoding.EncodeToString(res.Body)
-				}
-				return out, nil
+				return fileChunk(in.Digest, media, res.Body, in.Offset)
 			case "store":
 				data := []byte(in.Content)
 				if in.Encoding == "base64" {
@@ -996,6 +1053,31 @@ func filesTool() Tool {
 	}
 }
 
+// fileChunk is chunkBytes of a blob from offset, so a file of any size
+// reads in results that fit. A text chunk ends on a character's boundary.
+func fileChunk(digest, media string, data []byte, offset int) (map[string]any, error) {
+	if offset < 0 || offset > len(data) {
+		return nil, refuse("offset %d is outside the file's %d bytes", offset, len(data))
+	}
+	text := textual(media) && utf8.Valid(data)
+	end := min(offset+chunkBytes, len(data))
+	if text {
+		for end < len(data) && end > offset && !utf8.RuneStart(data[end]) {
+			end--
+		}
+	}
+	out := map[string]any{"digest": digest, "mediaType": media, "size": len(data), "offset": offset}
+	if text {
+		out["text"] = string(data[offset:end])
+	} else {
+		out["base64"] = base64.StdEncoding.EncodeToString(data[offset:end])
+	}
+	if end < len(data) {
+		out["next"] = end
+	}
+	return out, nil
+}
+
 func textual(media string) bool {
 	media = strings.ToLower(media)
 	return strings.HasPrefix(media, "text/") || strings.Contains(media, "json") ||
@@ -1008,10 +1090,14 @@ func unitsTool() Tool {
 	return Tool{
 		Name:  "units",
 		Title: "Units and conversions",
-		Description: "list reads the repository's unit table; convert converts a value between two units through it. delta " +
-			"converts a difference rather than a reading (a 5 °C rise, not 5 °C).",
+		Description: "list reads a page of the repository's unit table, units by id with the conversions that touch them; q " +
+			"narrows it to units whose id, name, symbol or alias holds q, and first and after page it. convert converts a value " +
+			"between two units. delta converts a difference rather than a reading (a 5 °C rise, not 5 °C).",
 		Input: object(map[string]any{
 			"action": enum("what to do", "list", "convert"),
+			"q":      str("list: the text a unit's id, name, symbol or alias holds"),
+			"first":  integer("list: how many units to answer, at most 200"),
+			"after":  str("list: the cursor the previous page answered"),
 			"value":  str("convert: the value, as a number"),
 			"from":   str("convert: the unit it is in"),
 			"to":     str("convert: the unit to convert to"),
@@ -1021,6 +1107,9 @@ func unitsTool() Tool {
 		Run: func(ctx context.Context, api API, args json.RawMessage) (any, error) {
 			var in struct {
 				Action string `json:"action"`
+				Q      string `json:"q"`
+				First  int    `json:"first"`
+				After  string `json:"after"`
 				Value  string `json:"value"`
 				From   string `json:"from"`
 				To     string `json:"to"`
@@ -1031,7 +1120,11 @@ func unitsTool() Tool {
 			}
 			switch in.Action {
 			case "list":
-				return send(ctx, api, Request{Method: http.MethodGet, Path: "/units"})
+				raw, err := send(ctx, api, Request{Method: http.MethodGet, Path: "/units"})
+				if err != nil {
+					return nil, err
+				}
+				return unitsPage(raw, in.Q, in.First, in.After)
 			case "convert":
 				q := url.Values{"value": {in.Value}, "from": {in.From}, "to": {in.To}}
 				if in.Delta {
@@ -1042,6 +1135,74 @@ func unitsTool() Tool {
 			return nil, refuse("action is list or convert")
 		},
 	}
+}
+
+// unitsPage is a page of the unit table, which is larger than one result
+// carries: the units in id order after the cursor, holding q where it is
+// set, and the conversions from or to them.
+func unitsPage(raw json.RawMessage, q string, first int, after string) (map[string]any, error) {
+	var table struct {
+		Units       []map[string]any `json:"units"`
+		Conversions []map[string]any `json:"conversions"`
+		Revision    json.Number      `json:"revision"`
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if err := d.Decode(&table); err != nil {
+		return nil, err
+	}
+	if first <= 0 {
+		first = 80
+	}
+	first = min(first, 200)
+	idOf := func(u map[string]any) string { id, _ := u["id"].(string); return id }
+	slices.SortFunc(table.Units, func(a, b map[string]any) int { return strings.Compare(idOf(a), idOf(b)) })
+	q = strings.ToLower(q)
+	holds := func(u map[string]any) bool {
+		if q == "" {
+			return true
+		}
+		words := []any{u["id"], u["name"], u["symbol"]}
+		if aliases, ok := u["aliases"].([]any); ok {
+			words = append(words, aliases...)
+		}
+		return slices.ContainsFunc(words, func(w any) bool {
+			s, _ := w.(string)
+			return strings.Contains(strings.ToLower(s), q)
+		})
+	}
+	var page []map[string]any
+	cursor := ""
+	for _, u := range table.Units {
+		if (after != "" && idOf(u) <= after) || !holds(u) {
+			continue
+		}
+		if len(page) == first {
+			cursor = idOf(page[len(page)-1])
+			break
+		}
+		page = append(page, u)
+	}
+	ids := map[string]bool{}
+	for _, u := range page {
+		ids[idOf(u)] = true
+	}
+	conversions := []map[string]any{}
+	for _, c := range table.Conversions {
+		from, _ := c["from"].(string)
+		to, _ := c["to"].(string)
+		if ids[from] || ids[to] {
+			conversions = append(conversions, c)
+		}
+	}
+	if page == nil {
+		page = []map[string]any{}
+	}
+	out := map[string]any{"revision": table.Revision, "units": page, "conversions": conversions}
+	if cursor != "" {
+		out["cursor"] = cursor
+	}
+	return out, nil
 }
 
 // --- merge ---

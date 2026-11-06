@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -120,11 +121,165 @@ func TestARefusalIsTheToolsErrorWithTheAPIsWords(t *testing.T) {
 	}
 }
 
-func TestAnAnswerPastTheLimitIsRefusedWithTheWayToPage(t *testing.T) {
-	big := `{"records":[{"properties":{"x":"` + strings.Repeat("a", MaxResult) + `"}}]}`
-	text, isErr := call(t, &fakeAPI{answers: []Response{{Status: 200, Body: []byte(big)}}}, "query", `{"kind":"ada.example.com/tasks/task"}`)
+// An answer past the limit is never cut mid-JSON. A read whose size is one
+// long value answers with that value cut and named; a mutation's answer that
+// still does not fit is a receipt, never an error, since the write took
+// effect; a read of many small values is the caller's to page.
+func TestAnAnswerPastTheLimitIsShortenedReceiptedOrPaged(t *testing.T) {
+	long := `{"records":[{"id":"t1","properties":{"body":"` + strings.Repeat("a", MaxResult) + `"}}]}`
+	text, isErr := call(t, &fakeAPI{answers: []Response{{Status: 200, Body: []byte(long)}}}, "query", `{"kind":"ada.example.com/tasks/task"}`)
+	var short struct {
+		Cut    []string       `json:"cut"`
+		Answer map[string]any `json:"answer"`
+	}
+	if isErr || json.Unmarshal([]byte(text), &short) != nil || len(short.Cut) != 1 || short.Cut[0] != "records[0].properties.body" || len(text) > MaxResult {
+		t.Fatalf("a read past the limit = %v %.300s", isErr, text)
+	}
+
+	var many strings.Builder
+	many.WriteString(`{"id":"r1","kind":"ada.example.com/tasks/task","version":3,"properties":{`)
+	for i := range 3000 {
+		if i > 0 {
+			many.WriteString(",")
+		}
+		fmt.Fprintf(&many, `"p%d":"short value %d"`, i, i)
+	}
+	many.WriteString("}}")
+	text, isErr = call(t, &fakeAPI{answers: []Response{{Status: 201, Body: []byte(many.String())}}}, "write",
+		`{"op":"put","kind":"ada.example.com/tasks/task","properties":{"name":"x"}}`)
+	if isErr || !strings.Contains(text, `"id":"r1"`) || !strings.Contains(text, `"version":3`) || !strings.Contains(text, "took effect") {
+		t.Fatalf("a write whose answer is past the limit = %v %.300s", isErr, text)
+	}
+
+	text, isErr = call(t, &fakeAPI{answers: []Response{{Status: 200, Body: []byte(many.String())}}}, "query", `{"kind":"ada.example.com/tasks/task","id":"r1"}`)
 	if !isErr || !strings.Contains(text, "smaller `first`") {
-		t.Fatalf("a large answer = %q", text)
+		t.Fatalf("a read of many small values past the limit = %v %.300s", isErr, text)
+	}
+}
+
+// MCP admits a request id that is a string or an integer, and a message is
+// a request, a notification or a response, nothing else.
+func TestAMalformedEnvelopeIsRefused(t *testing.T) {
+	s := NewServer("substrate", "test")
+	for _, msg := range []string{
+		`{"jsonrpc":"2.0","id":1}`,
+		`{"jsonrpc":"2.0","id":null,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":{},"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":1.5,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":1,"method":7}`,
+		`{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":1,"message":"x"}}`,
+		`{"jsonrpc":"2.0","method":""}`,
+	} {
+		api := &fakeAPI{}
+		if status, m := handle(t, s, api, msg, ""); status != http.StatusBadRequest || errorCode(m) != codeInvalidRequest || len(api.got) != 0 {
+			t.Errorf("%s = %d %v, want 400 invalid request", msg, status, m)
+		}
+	}
+	for _, msg := range []string{`{"jsonrpc":"2.0","id":"a","method":"ping"}`, `{"jsonrpc":"2.0","id":7,"method":"ping"}`} {
+		if status, m := handle(t, s, &fakeAPI{}, msg, ""); status != http.StatusOK || m["error"] != nil {
+			t.Errorf("%s = %d %v", msg, status, m)
+		}
+	}
+}
+
+func TestHistoryPagesWithTheGenerationItsCursorNeeds(t *testing.T) {
+	if text, isErr := call(t, &fakeAPI{}, "history", `{"before":40}`); !isErr || !strings.Contains(text, "generation") {
+		t.Fatalf("before alone = %q", text)
+	}
+	api := &fakeAPI{}
+	if text, isErr := call(t, api, "history", `{"before":40,"generation":"g1","first":5}`); isErr {
+		t.Fatal(text)
+	}
+	if q := api.got[0].Query; q.Get("before") != "40" || q.Get("generation") != "g1" || q.Get("first") != "5" {
+		t.Fatalf("history query = %v", q)
+	}
+}
+
+// The unit table is larger than one result (the shipped one is about 33 KiB
+// compact), so the tool pages it, each page with the conversions touching it.
+func TestUnitsPagesTheTable(t *testing.T) {
+	var units, conversions []string
+	for i := range 400 {
+		units = append(units, fmt.Sprintf(`{"id":"u%03d","name":"unit number %d with a long enough name","symbol":"s%d","aliases":["alias-%d"],"root":"r","factor":"1"}`, i, i, i, i))
+		if i > 0 {
+			conversions = append(conversions, fmt.Sprintf(`{"id":"c%d","from":"u%03d","to":"u%03d","factor":"2"}`, i, i-1, i))
+		}
+	}
+	table := `{"revision":7,"units":[` + strings.Join(units, ",") + `],"conversions":[` + strings.Join(conversions, ",") + `],"unseeded":[]}`
+	if len(table) <= MaxResult {
+		t.Fatalf("the test table is %d bytes, not past the limit", len(table))
+	}
+	read := func(args string) map[string]any {
+		t.Helper()
+		text, isErr := call(t, &fakeAPI{answers: []Response{{Status: 200, Body: []byte(table)}}}, "units", args)
+		if isErr || len(text) > MaxResult {
+			t.Fatalf("units %s = %v %.200s", args, isErr, text)
+		}
+		var out map[string]any
+		_ = json.Unmarshal([]byte(text), &out)
+		return out
+	}
+	seen := 0
+	after := ""
+	for range 10 {
+		page := read(`{"action":"list","after":"` + after + `"}`)
+		seen += len(page["units"].([]any))
+		cursor, _ := page["cursor"].(string)
+		if cursor == "" {
+			break
+		}
+		after = cursor
+	}
+	if seen != 400 {
+		t.Fatalf("paging read %d units, want 400", seen)
+	}
+	page := read(`{"action":"list","q":"ALIAS-12"}`)
+	got := page["units"].([]any)
+	if len(got) != 11 || len(page["conversions"].([]any)) == 0 {
+		t.Fatalf("q page = %d units", len(got))
+	}
+}
+
+func TestAFileReadsInChunksToItsEnd(t *testing.T) {
+	data := strings.Repeat("é", 30<<10) // two bytes a rune, so a chunk ends on a boundary
+	var got strings.Builder
+	offset := 0
+	for range 10 {
+		api := &fakeAPI{answers: []Response{{Status: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: []byte(data)}}}
+		text, isErr := call(t, api, "files", fmt.Sprintf(`{"action":"read","digest":"d","offset":%d}`, offset))
+		var chunk struct {
+			Text string `json:"text"`
+			Next *int   `json:"next"`
+		}
+		if isErr || json.Unmarshal([]byte(text), &chunk) != nil || len(text) > MaxResult {
+			t.Fatalf("chunk at %d = %.200s", offset, text)
+		}
+		got.WriteString(chunk.Text)
+		if chunk.Next == nil {
+			break
+		}
+		offset = *chunk.Next
+	}
+	if got.String() != data {
+		t.Fatalf("the chunks joined are %d bytes, want the file's %d", got.Len(), len(data))
+	}
+}
+
+func TestAPropertyReadsAlone(t *testing.T) {
+	rec := `{"id":"n1","kind":"ada.example.com/notes/note","version":2,"properties":{"title":"Hi","body":"` + strings.Repeat("x", 9000) + `"}}`
+	api := &fakeAPI{answers: []Response{{Status: 200, Body: []byte(rec)}, {Status: 200, Body: []byte(rec)}}}
+	text, _ := call(t, api, "query", `{"kind":"ada.example.com/notes/note","id":"n1","property":"body"}`)
+	var chunk struct {
+		Length int    `json:"length"`
+		Value  string `json:"value"`
+		Next   int    `json:"next"`
+	}
+	if json.Unmarshal([]byte(text), &chunk) != nil || chunk.Length != 9000 || chunk.Next != chunkChars || len(chunk.Value) != chunkChars {
+		t.Fatalf("the first chunk = %.200s", text)
+	}
+	text, _ = call(t, api, "query", `{"kind":"ada.example.com/notes/note","id":"n1","property":"body","offset":8192}`)
+	if !strings.Contains(text, `"offset":8192`) || strings.Contains(text, `"next"`) {
+		t.Fatalf("the last chunk = %.200s", text)
 	}
 }
 

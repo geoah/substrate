@@ -327,7 +327,7 @@ describe("AssistantsPage", () => {
       ASSISTANT_CAN.length
     )
     expect(can.textContent).toContain(
-      "See everything you can, token and credential records included, though never a secret’s value."
+      "See everything you can, token and credential records included; a secret’s value reads back hidden."
     )
     const cannot = within(reach).getByRole("list", { name: "It can’t" })
     expect(within(cannot).getAllByRole("listitem")).toHaveLength(
@@ -338,7 +338,7 @@ describe("AssistantsPage", () => {
     )
     expect(cannot.textContent).toContain("Uninstall or purge a package.")
     expect(reach.textContent).toContain(
-      "Code it writes runs as your code does, and can reach your secrets."
+      "Code it writes runs as your code does, so it can read what your code can, secrets included, and hand them back to it."
     )
     expect(reach.textContent).toContain(
       "Its changes show in History under its own name, not yours."

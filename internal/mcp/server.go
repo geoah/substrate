@@ -18,7 +18,9 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Versions are the protocol revisions this door answers, newest first. An
@@ -110,17 +112,34 @@ func (s *Server) Handle(ctx context.Context, api API, body []byte, versionHeader
 	if len(trimmed) > 0 && trimmed[0] == '[' {
 		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, "a batch is not accepted: send one JSON-RPC message per request")
 	}
-	var m message
-	if err := json.Unmarshal(trimmed, &m); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &fields); err != nil || fields == nil {
 		return answerError(http.StatusBadRequest, nil, codeParse, "the body is not one JSON-RPC message")
 	}
-	if m.JSONRPC != "2.0" {
-		return answerError(http.StatusBadRequest, m.ID, codeInvalidRequest, `jsonrpc must be "2.0"`)
+	var m message
+	if err := json.Unmarshal(trimmed, &m); err != nil {
+		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, "the message's jsonrpc, id or method has the wrong type")
 	}
-	// A response to a request this server never sends, or a notification:
-	// nothing to answer.
-	if m.Method == "" || len(m.ID) == 0 || string(m.ID) == "null" {
+	if m.JSONRPC != "2.0" {
+		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, `jsonrpc must be "2.0"`)
+	}
+	_, hasMethod := fields["method"]
+	_, hasID := fields["id"]
+	_, hasResult := fields["result"]
+	_, hasError := fields["error"]
+	switch {
+	case hasMethod && m.Method == "":
+		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, "method must name a method")
+	case hasMethod && !hasID:
+		// A notification: nothing to answer.
 		return http.StatusAccepted, nil
+	case hasMethod && !validID(m.ID):
+		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, "a request's id is a string or an integer, never null")
+	case !hasMethod && hasID && hasResult != hasError && validID(m.ID):
+		// A response to a request this server never sends: nothing to answer.
+		return http.StatusAccepted, nil
+	case !hasMethod:
+		return answerError(http.StatusBadRequest, nil, codeInvalidRequest, "the message is neither a request, a notification nor a response")
 	}
 	// Before the header rule: a client trying the stateless revision sends
 	// its version in the header, and must read method-not-found to fall
@@ -155,6 +174,25 @@ func (s *Server) Handle(ctx context.Context, api API, body []byte, versionHeader
 	default:
 		return answerError(http.StatusOK, m.ID, codeMethodNotFound, "method "+m.Method+" is not served")
 	}
+}
+
+// validID reports whether a JSON-RPC id is one MCP admits: a string or an
+// integer, never null.
+func validID(id json.RawMessage) bool {
+	id = bytes.TrimSpace(id)
+	if len(id) == 0 {
+		return false
+	}
+	if id[0] == '"' {
+		var s string
+		return json.Unmarshal(id, &s) == nil
+	}
+	var n json.Number
+	if json.Unmarshal(id, &n) != nil {
+		return false
+	}
+	_, err := n.Int64()
+	return err == nil
 }
 
 func (s *Server) initialize(params json.RawMessage) map[string]any {
@@ -208,11 +246,115 @@ func (s *Server) call(ctx context.Context, api API, t Tool, args json.RawMessage
 	if err != nil {
 		return toolResult("the answer could not be encoded: "+err.Error(), true)
 	}
-	if len(text) > MaxResult {
-		return toolResult(fmt.Sprintf("the answer is %d KiB, past the %d KiB one result carries: ask again with a smaller `first` and page with `after`, or read one record at a time",
-			len(text)>>10, MaxResult>>10), true)
+	if len(text) <= MaxResult {
+		return toolResult(text, false)
 	}
-	return toolResult(text, false)
+	if fitted, ok := fit(text, t.Hints.ReadOnly); ok {
+		return toolResult(fitted, false)
+	}
+	return toolResult(fmt.Sprintf("the answer is %d KiB, past the %d KiB one result carries: ask again with a smaller `first` and page with `after`, or read one record at a time",
+		len(text)>>10, MaxResult>>10), true)
+}
+
+// fit makes an answer past MaxResult fit. Long string values are cut first,
+// each named, since a record's body or a file's text is what usually makes an
+// answer large and it has its own way to be read in full. A mutation's answer
+// that still does not fit becomes a receipt: what it wrote, by id, kind and
+// version, so a write that took effect never reads as one that failed, and a
+// retry never creates twice. A read that still does not fit is the caller's
+// to page.
+func fit(text string, readOnly bool) (string, bool) {
+	d := json.NewDecoder(strings.NewReader(text))
+	d.UseNumber()
+	var v any
+	if d.Decode(&v) != nil {
+		return "", false
+	}
+	size := (len(text) + 1023) >> 10
+	for _, limit := range []int{1000, 200} {
+		var cut []string
+		short := shorten(v, limit, "", &cut)
+		if len(cut) == 0 {
+			continue
+		}
+		b, err := json.Marshal(map[string]any{
+			"note": fmt.Sprintf("the answer was %d KiB, past the %d KiB one result carries, so each value longer than %d characters is cut, listed under cut: "+
+				"read a record's property in full with query's `property`, a file with files' `offset`", size, MaxResult>>10, limit),
+			"cut":    cut,
+			"answer": short,
+		})
+		if err == nil && len(b) <= MaxResult {
+			return string(b), true
+		}
+	}
+	if readOnly {
+		return "", false
+	}
+	return receipt(v, size), true
+}
+
+// shorten cuts each string value longer than limit characters, naming its
+// JSON path in cut.
+func shorten(v any, limit int, path string, cut *[]string) any {
+	switch x := v.(type) {
+	case string:
+		if utf8.RuneCountInString(x) <= limit {
+			return x
+		}
+		*cut = append(*cut, strings.TrimPrefix(path, "."))
+		return string([]rune(x)[:limit]) + "…"
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = shorten(e, limit, path+"."+k, cut)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = shorten(e, limit, fmt.Sprintf("%s[%d]", path, i), cut)
+		}
+		return out
+	}
+	return v
+}
+
+// receipt is a mutation's answer cut to what it wrote: the record's or each
+// record's id, kind and version, so the assistant can read them back.
+func receipt(v any, size int) string {
+	out := map[string]any{"done": true, "note": fmt.Sprintf(
+		"it took effect; the answer is %d KiB, past what one result carries, so this is what it wrote: read it back with query", size)}
+	pick := func(m map[string]any) map[string]any {
+		r := map[string]any{}
+		for _, k := range []string{"id", "kind", "version", "thread", "status"} {
+			if x, ok := m[k]; ok {
+				if s, isString := x.(string); !isString || utf8.RuneCountInString(s) <= 200 {
+					r[k] = x
+				}
+			}
+		}
+		return r
+	}
+	if m, ok := v.(map[string]any); ok {
+		for k, x := range pick(m) {
+			out[k] = x
+		}
+		if recs, ok := m["records"].([]any); ok {
+			list := make([]map[string]any, 0, len(recs))
+			for _, rec := range recs {
+				if rm, ok := rec.(map[string]any); ok && len(list) < 150 {
+					list = append(list, pick(rm))
+				}
+			}
+			out["records"], out["count"] = list, len(recs)
+		}
+	}
+	b, _ := json.Marshal(out)
+	if len(b) > MaxResult {
+		delete(out, "records")
+		b, _ = json.Marshal(out)
+	}
+	return string(b)
 }
 
 func encode(v any) (string, error) {

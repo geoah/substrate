@@ -493,3 +493,36 @@ func TestTheOwnerMintsAnAssistantsTokenForAPastedHeader(t *testing.T) {
 	rec = env.do(t, http.MethodPost, "/tokens", owner, map[string]any{"label": "x", "scopes": []string{"read:*"}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 }
+
+// The history tool pages through the real route: each page's cursor and
+// generation, passed back, read the next page and nothing twice.
+func TestTheHistoryToolReadsTwoPagesThroughTheRoute(t *testing.T) {
+	env := newTestEnv(t)
+	tok := assistantToken(env.svc)
+	ds := env.svc.datasets[fakeRepository]
+	seedRun(ds, 5, substrate.ActorAPI, runTask, substrate.OpPut, map[string]any{"created": true}, "")
+	type page struct {
+		Changes []struct {
+			Seq int64 `json:"seq"`
+		} `json:"changes"`
+		Cursor     int64  `json:"cursor"`
+		Generation string `json:"generation"`
+	}
+	read := func(args map[string]any) page {
+		t.Helper()
+		text, isErr := callTool(t, env.h, tok, "history", args)
+		var p page
+		if isErr || json.Unmarshal([]byte(text), &p) != nil {
+			t.Fatalf("history %v = %s", args, text)
+		}
+		return p
+	}
+	first := read(map[string]any{"first": 3})
+	if len(first.Changes) != 3 || first.Cursor == 0 || first.Generation == "" {
+		t.Fatalf("first page = %+v", first)
+	}
+	second := read(map[string]any{"first": 3, "before": first.Cursor, "generation": first.Generation})
+	if len(second.Changes) != 2 || second.Changes[0].Seq >= first.Changes[2].Seq {
+		t.Fatalf("second page = %+v after %+v", second, first)
+	}
+}

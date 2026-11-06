@@ -863,7 +863,7 @@ describe("AuthorizePage", () => {
       expect(screen.getByText("Its code can reach your secrets")).toBeTruthy()
       expect(
         screen.getByText(
-          /Code it writes runs as your code does, and can reach your secrets/
+          /Code it writes runs as your code does, so it can read what your code can, secrets included, and hand them back to it/
         )
       ).toBeTruthy()
 

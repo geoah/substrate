@@ -76,8 +76,8 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | --- | --- |
 | `kinds` | the kinds the repository holds, each with its purpose and first sentence |
 | `describe_kind` | one kind's declaration |
-| `query` | one record, a page, a search, a window or an aggregate |
-| `history` | the changes to a record, a kind or by an actor |
+| `query` | one record or one of its values, a page, a search, a window or an aggregate |
+| `history` | the changes to a record, a kind or by an actor, paged by cursor and generation |
 | `write` | put, patch or delete one record |
 | `decide` | accept or reject a change request |
 | `apply` | declare or change vocabulary; `plan` previews |
@@ -85,13 +85,16 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | `call` | run a function |
 | `chat` | talk to an agent, or stop its turn |
 | `triggers` | status, sync status, wake, run, replay, parked deliveries |
-| `files` | read or store a blob |
-| `units` | the unit table and conversions |
+| `files` | read a blob in chunks, or store one |
+| `units` | the unit table a page at a time, and conversions |
 | `merge` | merge or split two records |
 
 Each tool is a REST request made in process with the assistant's own token,
 so every rule of [using a substrate from an agent](for-agents.md) holds,
-and a refusal reaches the model as the API's error object.
+and a refusal reaches the model as the API's error object. One result
+carries at most 32 KiB: a larger answer's long values are cut and named, a
+write's answer becomes a receipt of what it wrote, and each read that can
+grow pages.
 
 ## The protocol
 

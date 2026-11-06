@@ -48,7 +48,7 @@ export const ASSISTANT_ACCESS_SENTENCE =
 /** What an assistant can do, one line each. The approval page and Settings'
  * AI assistants page both read these, so the two say the same. */
 export const ASSISTANT_CAN = [
-  "See everything you can, token and credential records included, though never a secret’s value",
+  "See everything you can, token and credential records included; a secret’s value reads back hidden",
   "Change anything you can, including collections, agents, triggers and packages",
   "Run your tools, agents and syncs",
 ] as const
@@ -65,7 +65,7 @@ export const ASSISTANT_CANNOT = [
 /** The owner kept an assistant's reach over guarding the code it declares
  * (decision 0230), so every page that lets one in says this. */
 export const ASSISTANT_CODE_SENTENCE =
-  "Code it writes runs as your code does, and can reach your secrets"
+  "Code it writes runs as your code does, so it can read what your code can, secrets included, and hand them back to it"
 
 /** An assistant writes as its app's actor (decision 0209), never as you. */
 export const ASSISTANT_HISTORY_SENTENCE =
