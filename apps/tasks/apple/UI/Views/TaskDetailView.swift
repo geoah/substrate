@@ -14,7 +14,7 @@ struct TaskDetailView: View {
     var body: some View {
         Form {
             Section {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Button {
                         shell.send(detail.status == .open ? .complete(detail.id) : .reopen(detail.id))
                     } label: {
@@ -22,7 +22,7 @@ struct TaskDetailView: View {
                             .font(.system(size: markSize))
                             .foregroundStyle(detail.status == .done ? Color.brandAccent : Color.secondary)
                             .contentTransition(.symbolEffect(.replace))
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.borderless)

@@ -13,13 +13,13 @@ struct TaskRowView: View {
     var selected = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
+        HStack(alignment: .top, spacing: 6) {
             Button(action: toggle) {
                 Image(systemName: row.status == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.status))
                     .font(.system(size: markSize))
                     .foregroundStyle(row.status == .done ? Color.accentColor : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -37,7 +37,7 @@ struct TaskRowView: View {
                     .accessibilityAction(named: Text(row.toggle), toggle)
             }
         }
-        .padding(.leading, 6)
+        .padding(.leading, 0)
         .padding(.trailing, 14)
         .padding(.vertical, 8)
         .background {
