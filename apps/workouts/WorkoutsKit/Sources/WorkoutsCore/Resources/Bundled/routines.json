@@ -3,7 +3,7 @@
   "records": [
     {
       "kind": "substrate.reamde.dev/training/routine",
-      "id": "sample-every-feature",
+      "id": "5emy4gf6gwgczrnssfmtpaycan",
       "properties": {
         "name": "Sample: every feature",
         "folder": "Sample",
@@ -30,7 +30,7 @@
         "slots": [
           {
             "key": "row",
-            "exercise": "substrate.reamde.dev/training/exercise/rowing-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/02m576dkdsgnv9g1jrmsgwps0g",
             "group": "w",
             "transition": "PT15S",
             "cue": "Easy pace, long strokes",
@@ -58,7 +58,7 @@
           },
           {
             "key": "bird-dog",
-            "exercise": "substrate.reamde.dev/training/exercise/bird-dog",
+            "exercise": "substrate.reamde.dev/training/exercise/5ep3ffsg44hpkrxks6dvh0k3sq",
             "group": "w",
             "notes": "A warm-up counted in reps only, one side then the other: 8 reps a side, after each row.",
             "sets": [
@@ -78,7 +78,7 @@
           },
           {
             "key": "leg-press",
-            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/7ksgsw7j8nhr8tmav887tdg0h3",
             "setRest": "PT2M30S",
             "warmupRest": "PT1M",
             "cue": "Feet flat, knees track your toes",
@@ -117,7 +117,7 @@
           },
           {
             "key": "chest-press",
-            "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/1pnkj5k9wthd2r8wh652m7zh42",
             "setRest": "PT2M",
             "cue": "Three seconds down, no bounce at the chest",
             "notes": "Each arm has its own plates, so the load is per side. Straight sets of 8 to 12 with 2 to 3 reps left, lowered over three seconds (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops, each 5 kg a side lighter, of 6 reps each.",
@@ -169,7 +169,7 @@
           },
           {
             "key": "pull-up",
-            "exercise": "substrate.reamde.dev/training/exercise/assisted-pull-up-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/0x7wx83t5ng0wa74x6b36hzrg3",
             "group": "a",
             "transition": "PT0S",
             "notes": "A1 of a superset: go straight to A2 with no rest, and rest 1 min 30 s after the round. Assisted: the machine takes 90 lb off, and more assistance is easier.",
@@ -200,7 +200,7 @@
           },
           {
             "key": "push-up",
-            "exercise": "substrate.reamde.dev/training/exercise/push-up",
+            "exercise": "substrate.reamde.dev/training/exercise/36rjhtnjhch9f8k3vpnthg3tp7",
             "group": "a",
             "notes": "A2, your body weight: stop round 1 with two to three reps left, and do round 2 for as many reps as possible (AMRAP).",
             "sets": [
@@ -218,7 +218,7 @@
           },
           {
             "key": "lateral-raise",
-            "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/42tmzpz58vg4jbby928cg35eft",
             "setRest": "PT1M30S",
             "notes": "Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them, until one comes in under 4 (this set's own rule; the exercise's is to stop when one loses a rep). Set 2 is a myo-rep match: set 1's total reps, in as few mini-sets as it takes.",
             "sets": [
@@ -251,7 +251,7 @@
           },
           {
             "key": "split-squat",
-            "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/5jb7qjxvfng28v7nxan756hxef",
             "setRest": "PT2M",
             "sideOrder": "weakerfirst",
             "sideSwitch": "PT15S",
@@ -284,7 +284,7 @@
           },
           {
             "key": "dip",
-            "exercise": "substrate.reamde.dev/training/exercise/dip-weighted",
+            "exercise": "substrate.reamde.dev/training/exercise/76k7jc2kkrhfbsm43y3adekzpw",
             "setRest": "PT2M",
             "notes": "Your body weight plus 10 kg on a belt: the load is what you add. Set 2 is rest-pause to a total: 20 reps in as many as three bouts, 20 s apart.",
             "sets": [
@@ -314,7 +314,7 @@
           },
           {
             "key": "pushdown",
-            "exercise": "substrate.reamde.dev/training/exercise/triceps-pushdown",
+            "exercise": "substrate.reamde.dev/training/exercise/4086zqp0f0gk9by38smtzyhnxa",
             "setRest": "PT1M30S",
             "notes": "A cluster set (4 reps, 15 s, three more clusters, two reps left), then a last set to failure.",
             "sets": [
@@ -344,7 +344,7 @@
           },
           {
             "key": "plank",
-            "exercise": "substrate.reamde.dev/training/exercise/plank",
+            "exercise": "substrate.reamde.dev/training/exercise/0bw7neb5mhhy0968g10y1jfyvh",
             "group": "b",
             "transition": "PT15S",
             "notes": "B1 of a circuit of two rounds, a timed hold. Round 1 is a countdown: hold for 45 s to 1 min. Round 2 runs a stopwatch: hold as long as you can. 15 s to the carry, 1 min after each round.",
@@ -363,7 +363,7 @@
           },
           {
             "key": "carry",
-            "exercise": "substrate.reamde.dev/training/exercise/farmers-carry-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/42t52kycqdgb9tqvbsat0fvgep",
             "group": "b",
             "notes": "B2: a load and a distance, 40 m with a dumbbell in each hand. The load is per dumbbell.",
             "sets": [
@@ -395,7 +395,7 @@
           },
           {
             "key": "weighted-plank",
-            "exercise": "substrate.reamde.dev/training/exercise/plank-weighted",
+            "exercise": "substrate.reamde.dev/training/exercise/0a265pvhvngpcbb346szy5b506",
             "notes": "A load and a time: one hold of 30 to 45 s with a 10 kg plate on your back.",
             "sets": [
               {

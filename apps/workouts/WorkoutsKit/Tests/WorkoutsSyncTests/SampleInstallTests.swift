@@ -224,7 +224,7 @@ struct SampleInstallTests {
     @Test("a refused sample write never stops the sync: the catalogue is read, the outbox still flushes, and the next sync tries again")
     func failedWriteDoesNotBlock() async throws {
         let repository = Repository()
-        repository.refusing(["push-up"])
+        repository.refusing([SampleRoutine.exerciseID("push-up").rawValue])
         let api = api(repository.server)
         let phone = Device()
         let outbox = phone.outbox
@@ -359,6 +359,81 @@ struct SampleInstallTests {
         #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).entries.map(\.recordID) == ["push-day"])
     }
 
+    // MARK: A sample an earlier build wrote
+
+    /// The sample as builds before the derived ids wrote it: each exercise at
+    /// its slug, with no sample code, and the routine at its old id naming
+    /// them.
+    func legacySample() throws -> (exercises: [FlatRecord], routine: FlatRecord) {
+        let catalog = try bundled()
+        var slugs: [ExerciseID: ExerciseID] = [:]
+        var exercises: [FlatRecord] = []
+        for exercise in catalog.exercises.values.sorted(by: { $0.id < $1.id }) {
+            let slug = try #require(exercise.codes.first { $0.system == SampleRoutine.system }?.code)
+            var old = exercise
+            old.id = ExerciseID(slug)
+            old.codes.removeAll { $0.system == SampleRoutine.system }
+            slugs[exercise.id] = old.id
+            exercises.append(codec.encode(old))
+        }
+        var routine = try #require(catalog.routines[SampleRoutine.id])
+        routine.id = SampleRoutine.legacyID
+        for index in routine.slots.indices { routine.slots[index].exercise = slugs[routine.slots[index].exercise] ?? routine.slots[index].exercise }
+        return (exercises, codec.encode(routine))
+    }
+
+    @Test("a repository holding the sample's exercises under the slugs an earlier build wrote is not given the sample again")
+    func legacyExercises() async throws {
+        let repository = Repository(try legacySample().exercises)
+        let api = api(repository.server)
+        let phone = Device()
+        #expect(try await !phone.sample.firstRun(api, remote: phone.remote, bundled: try bundled()))
+        #expect(phone.sample.state == .installed)
+        #expect(repository.puts.isEmpty, "the sample was written once already: \(repository.puts)")
+    }
+
+    @Test("the sample under its old id is the sample: not offered back, and added back once, naming the exercises where they are")
+    func legacyRoutine() async throws {
+        let legacy = try legacySample()
+        var catalog = Catalog()
+        catalog.routines[SampleRoutine.legacyID] = try codec.decodeRoutine(legacy.routine)
+        #expect(!SampleInstall.offersSample(state: .installed, catalog: catalog), "the old sample is there")
+
+        // Still held: adding it back writes nothing.
+        let repository = Repository(legacy.exercises + [legacy.routine])
+        let phone = Device()
+        try await phone.sample.addBack(api(repository.server), remote: phone.remote, outbox: phone.outbox, bundled: try bundled())
+        #expect(repository.puts.isEmpty, "\(repository.puts)")
+
+        // Deleted: the sample comes back under its new id, naming the
+        // exercises at the slugs the repository holds them under.
+        repository.purge(codec.kinds.routine, SampleRoutine.legacyID.rawValue)
+        try await phone.sample.addBack(api(repository.server), remote: phone.remote, outbox: phone.outbox, bundled: try bundled())
+        #expect(repository.puts == ["PUT /api/v1/substrate.reamde.dev/training/routine/\(sampleRoutine)"])
+        let written = try #require(try await phone.remote.refresh(api(repository.server)).routines[SampleRoutine.id])
+        #expect(Set(written.slots.map(\.exercise.rawValue)).isSubset(of: Set(legacy.exercises.map(\.id))))
+    }
+
+    @Test("an exercise the library seeded under the same slug is the sample's: not written twice, and the routine names it")
+    func libraryHoldsTheExercise() async throws {
+        let catalog = try bundled()
+        let pushUp = try #require(catalog.exercises[SampleRoutine.exerciseID("push-up")])
+        let seeded = FlatRecord(
+            kind: codec.kinds.exercise, id: DerivedMintedID.make("workouts-library", "exercise", "push-up"),
+            properties: [
+                "name": .string("Push Up"), "measurement": .string("bodyweightreps"),
+                "codes": .array([.object(["system": .string(ExerciseLibrary.system), "code": .string("push-up"), "version": .string("1")])]),
+            ])
+        let repository = Repository([seeded])
+        let phone = Device()
+        let written = try await phone.remote.copySample(api(repository.server), from: catalog)
+        #expect(written == 13, "twelve exercises and the routine")
+        #expect(!repository.holds(codec.kinds.exercise, pushUp.id.rawValue))
+        let routine = try #require(try await phone.remote.refresh(api(repository.server)).routines[SampleRoutine.id])
+        #expect(routine.slots.contains { $0.exercise.rawValue == seeded.id })
+        #expect(!routine.slots.contains { $0.exercise == pushUp.id })
+    }
+
     // MARK: Sessions logged signed out
 
     /// The recorded session, its exercises moved onto the sample's: a session
@@ -368,15 +443,15 @@ struct SampleInstallTests {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var session = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
-        let onto: [ExerciseID: ExerciseID] = [
-            "romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell",
-            "seated-row-machine": "triceps-pushdown",
-        ]
+        // The recording names the sample's exercises by the slugs the server
+        // held them under then; the sample names them by derived ids now.
+        let onto: [ExerciseID: String] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell", "seated-row-machine": "triceps-pushdown"]
+        func sample(_ id: ExerciseID) -> ExerciseID { SampleRoutine.exerciseID(onto[id] ?? id.rawValue) }
         for index in session.session.slots.indices {
-            session.session.slots[index].exercise = onto[session.session.slots[index].exercise] ?? session.session.slots[index].exercise
+            session.session.slots[index].exercise = sample(session.session.slots[index].exercise)
         }
         for index in session.sets.indices {
-            session.sets[index].exercise = onto[session.sets[index].exercise] ?? session.sets[index].exercise
+            session.sets[index].exercise = sample(session.sets[index].exercise)
         }
         return session
     }
@@ -418,10 +493,11 @@ struct SampleInstallTests {
     func exercisesForSkips() throws {
         let session = try sampleSession()
         let all = Set(session.sets.map(\.exercise.rawValue))
+        let legPress = SampleRoutine.exerciseID("leg-press-machine").rawValue
         let entries = OutboxPlan.exercisesFor(
-            [session], server: ["leg-press-machine"], known: try bundled().exercises.filter { $0.key != "push-up" },
+            [session], server: [legPress], known: try bundled().exercises.filter { $0.key != SampleRoutine.exerciseID("push-up") },
             codec: codec)
-        #expect(Set(entries.map(\.recordID)) == all.subtracting(["leg-press-machine"]))
+        #expect(Set(entries.map(\.recordID)) == all.subtracting([legPress]))
         #expect(entries.allSatisfy { $0.method == .put && $0.kind == codec.kinds.exercise })
     }
 

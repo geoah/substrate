@@ -287,11 +287,11 @@ saved until the owner has seen what it holds and taps Import.
 
 | Hevy holds | The import writes |
 | --- | --- |
-| a workout | one finished session at `hevy-<workout id>` (the API) or `hevy-<yyyyMMdd>-<HHmm>` from its start on the wall (the CSV); the API's instants kept as they are; a workout imported by the other path, at the same time, is skipped as imported; an empty workout too |
+| a workout | one finished session under an id derived from `hevy-<workout id>` (the API) or `hevy-<yyyyMMdd>-<HHmm>` from its start on the wall (the CSV), so an import run again finds it, as it finds a session an earlier build wrote at that key itself; its `adapter` says which path it came by (`substrate-workouts-hevy-api@…`); the API's instants kept as they are; a workout imported by the other path, at the same time, is skipped as imported; an empty workout too |
 | its exercises and sets | slots and set records: every value Hevy keeps (load, reps, distance, time, RPE, warm-up, failure, drop chains, supersets, notes); an exercise with no sets keeps its slot and notes; a stair machine's floors or steps go in the set's notes |
 | an exercise | the catalogue's exercise with that Hevy id, else the one of that name that names no other Hevy id, else the library's (movement, muscles and conventions included), else one made from the account's own template, its Hevy id in `codes`; two templates are two exercises |
-| a routine | a workout routine at `hevy-<routine id>` (folder, order, supersets, sets, rep ranges, rests, a rest of none, drops); one the repository holds is left as it is; each session names the routine it was started from |
-| body measurements | one `substrate.reamde.dev/training/bodymeasurement` per entry, at `hevy-<entry id>`: body mass, lean mass, body fat and the fourteen circumferences; a session takes the latest body mass on or before its day |
+| a routine | a workout routine under an id derived from `hevy-<routine id>` (folder, order, supersets, sets, rep ranges, rests, a rest of none, drops); one the repository holds, at that id or at `hevy-<routine id>` itself, is left as it is; each session names the routine it was started from |
+| body measurements | one `substrate.reamde.dev/training/bodymeasurement` per entry, under an id derived from `hevy-<entry id>`, or at that key where an earlier build wrote it: body mass, lean mass, body fat and the fourteen circumferences; a session takes the latest body mass on or before its day |
 | a pair of dumbbells or kettlebells logged together | halved onto one implement, when the owner says so on the preview |
 
 A session deleted from History, here or on another device, is never

@@ -111,7 +111,29 @@ public struct RecordReference: Hashable, Sendable, Codable, Identifiable {
 /// What a record is called before it is read: a slug id names it, a minted
 /// one says only what kind of thing it is.
 public func fallbackName(_ reference: RecordReference) -> String {
-    let id = reference.recordID
-    let minted = id.count == 12 && id.allSatisfy { ("a" ... "z").contains($0) || ("2" ... "7").contains($0) }
-    return minted ? kindDisplayName(reference.kind) : id
+    isMintedID(reference.recordID) ? kindDisplayName(reference.kind) : reference.recordID
+}
+
+/// Whether `id` has a shape a server mints or takes from an app as minted,
+/// so it names nothing: 26 lowercase Crockford base32 characters, the first
+/// 0 to 7; a UUID's canonical lowercase text; or the 12 lowercase base32
+/// characters servers minted before either.
+func isMintedID(_ id: String) -> Bool {
+    let chars = Array(id.utf8)
+    func all(_ range: Range<Int>, _ allowed: (UInt8) -> Bool) -> Bool { chars[range].allSatisfy(allowed) }
+    let lowerHex: (UInt8) -> Bool = { (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0) }
+    switch chars.count {
+    case 12:
+        // RFC 4648 base32, lowercase: a to z and 2 to 7.
+        return all(0 ..< 12) { (0x61 ... 0x7A).contains($0) || (0x32 ... 0x37).contains($0) }
+    case 26:
+        // Crockford base32, lowercase: no i, l, o or u.
+        let crockford = Set("0123456789abcdefghjkmnpqrstvwxyz".utf8)
+        return (0x30 ... 0x37).contains(chars[0]) && all(1 ..< 26) { crockford.contains($0) }
+    case 36:
+        let dashes: Set = [8, 13, 18, 23]
+        return chars.indices.allSatisfy { dashes.contains($0) ? chars[$0] == 0x2D : lowerHex(chars[$0]) }
+    default:
+        return false
+    }
 }

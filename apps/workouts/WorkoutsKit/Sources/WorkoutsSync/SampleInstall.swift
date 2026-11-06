@@ -67,7 +67,8 @@ public final class SampleInstall: @unchecked Sendable {
     }
 
     /// Whether to offer the sample again: it was written once and the
-    /// repository no longer holds it, so the owner deleted it.
+    /// repository no longer holds it, under its id or the one builds before
+    /// the derived ids wrote it under, so the owner deleted it.
     public func offersSample(_ catalog: Catalog) -> Bool {
         Self.offersSample(state: state, catalog: catalog)
     }
@@ -76,15 +77,16 @@ public final class SampleInstall: @unchecked Sendable {
     /// sample was written once and is gone, never on a first run still to
     /// come or a repository that had routines of its own.
     public static func offersSample(state: State?, catalog: Catalog) -> Bool {
-        state == .installed && catalog.routines[SampleRoutine.id] == nil
+        state == .installed && SampleRoutine.ids.allSatisfy { catalog.routines[$0] == nil }
     }
 
     /// The first sync on a repository, in this order:
     ///
     /// 1. it holds a routine: no sample, and `skipped` kept;
-    /// 2. it holds any of the sample's exercises: the sample was written
-    ///    before, by this device before a reinstall or by another one, so
-    ///    nothing is written and `installed` kept;
+    /// 2. it holds any of the sample's exercises (`HeldRecords`: by id, or
+    ///    by the slug an earlier build wrote it under): the sample was
+    ///    written before, by this device before a reinstall or by another
+    ///    one, so nothing is written and `installed` kept;
     /// 3. else `installing` is kept, the sample's exercises and then its
     ///    routine are written, and `installed` kept.
     ///
@@ -104,8 +106,12 @@ public final class SampleInstall: @unchecked Sendable {
                 try record(.skipped, at: now)
                 return false
             }
-            let held = Set(try await api.list([remote.codec.kinds.exercise]).map(\.id))
-            guard held.isDisjoint(with: sample.slots.map(\.exercise.rawValue)) else {
+            let held = HeldRecords(try await api.list([remote.codec.kinds.exercise]))
+            let named = sample.slots.map { slot in
+                bundled.exercises[slot.exercise].map(remote.codec.encode)
+                    ?? FlatRecord(kind: remote.codec.kinds.exercise, id: slot.exercise.rawValue, properties: [:])
+            }
+            guard named.allSatisfy({ held.matching($0) == nil }) else {
                 try record(.installed, at: now)
                 return false
             }
@@ -121,10 +127,16 @@ public final class SampleInstall: @unchecked Sendable {
     /// The sample written back after the owner deleted it ("Add the sample
     /// routine"): a delete of it still waiting is taken back, one already on
     /// the wire is let land first, and the routine is written whether or not
-    /// the server still lists it, so the purge never wins.
+    /// the server still lists it, so the purge never wins. A sample under the
+    /// id builds before the derived ids wrote it under whose delete was taken
+    /// back is the sample again, and no second one is written.
     public func addBack(_ api: WorkoutsAPI, remote: RemoteCatalog, outbox: Outbox?, bundled: Catalog) async throws {
-        try await outbox?.withdrawDelete(routine: SampleRoutine.id, codec: remote.codec)
-        await outbox?.settle(routine: SampleRoutine.id, codec: remote.codec)
+        for id in SampleRoutine.ids {
+            try await outbox?.withdrawDelete(routine: id, codec: remote.codec)
+        }
+        for id in SampleRoutine.ids {
+            await outbox?.settle(routine: id, codec: remote.codec)
+        }
         try await remote.copySample(api, from: bundled, rewritingRoutine: true)
         try record(.installed)
     }

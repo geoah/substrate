@@ -2,8 +2,8 @@ import SwiftUI
 import WorkoutsCore
 
 /// "New exercise…" (DESIGN.md §7.6): name, what it records, equipment, sides
-/// and rest class. It lives on this iPhone ("On this iPhone"); its id is the
-/// name's slug, `-2`, `-3` when taken.
+/// and rest class. It lives on this iPhone ("On this iPhone"); its id is
+/// minted (`ExerciseID.minted`), never the name.
 struct NewExerciseSheet: View {
     let initialName: String
     let created: (Exercise) -> Void
@@ -66,9 +66,8 @@ struct NewExerciseSheet: View {
     }
 
     private func save() {
-        let id = ExerciseID.slug(for: trimmed, taken: Set(app.exercises.keys))
         let exercise = Exercise(
-            id: id, name: trimmed, measurement: measurement, equipment: equipment, laterality: laterality,
+            id: .minted(), name: trimmed, measurement: measurement, equipment: equipment, laterality: laterality,
             restClass: restClass, isLocal: true)
         Task {
             do {

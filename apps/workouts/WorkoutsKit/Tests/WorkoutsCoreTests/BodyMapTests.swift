@@ -17,10 +17,8 @@ struct BodyMapTests {
     @Test("a library exercise shades its movement's regions by share; warm-ups and drops add nothing")
     func library() throws {
         let exercises = try Library.catalog.get().exercises
-        let sets = [
-            set("chest-press-machine"), set("chest-press-machine"), set("chest-press-machine", role: .warmup),
-            set("chest-press-machine", continues: "head"),
-        ]
+        let press = Library.exercise("chest-press-machine").rawValue
+        let sets = [set(press), set(press), set(press, role: .warmup), set(press, continues: "head")]
         let regions = BodyMap.sets(sets, exercises: exercises)
         #expect(regions[.chest] == 2)
         #expect(regions[.frontDelts] == 1 && regions[.triceps] == 1)

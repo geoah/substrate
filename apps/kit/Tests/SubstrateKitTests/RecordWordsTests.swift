@@ -63,6 +63,17 @@ import FoundationNetworking
     @Test func aRecordIsNamedBeforeItIsRead() {
         #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "kitchen-tableware")) == "kitchen-tableware")
         #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "abcdefgh2345")) == "Category")
+        // A server's minted id, and a UUID an app minted.
+        #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "3c9ts84axnhyrvws6ntpphzves")) == "Category")
+        #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "0190f3a2-7c1d-7e4b-9a61-2c7d5e8f4b10")) == "Category")
+        // Not those shapes: a slug of 26 characters, a u in a Crockford
+        // place, a first character past 7, a UUID in capitals.
+        #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "kitchen-tableware-for-four")) == "kitchen-tableware-for-four")
+        #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "3c9ts84axnhyrvws6ntpphzveu")) == "3c9ts84axnhyrvws6ntpphzveu")
+        #expect(fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "8c9ts84axnhyrvws6ntpphzves")) == "8c9ts84axnhyrvws6ntpphzves")
+        #expect(
+            fallbackName(RecordReference(kind: "a.example.com/commerce/category", id: "0190F3A2-7C1D-7E4B-9A61-2C7D5E8F4B10"))
+                == "0190F3A2-7C1D-7E4B-9A61-2C7D5E8F4B10")
     }
 }
 

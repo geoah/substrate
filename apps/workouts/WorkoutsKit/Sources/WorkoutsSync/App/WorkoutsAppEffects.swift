@@ -366,8 +366,17 @@ extension WorkoutsApp {
                 let named = Set(routines.flatMap { $0.slots.map(\.exercise) })
                 var entries = exercises.filter { named.contains($0.id) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
                 entries += routines.map { OutboxPlan.routineCreated($0, codec: codec) }
-                entries += measurements.map { OutboxEntry(method: .put, kind: $0.kind, recordID: $0.id, properties: $0.properties) }
                 do {
+                    // A measurement an import wrote before the ids were
+                    // derived is written again where it is, never beside it.
+                    var legacy: [String: String] = [:]
+                    if !measurements.isEmpty {
+                        guard let api = await api() else { return yield(.outcome(receipt, problem: "the app is not signed in to your substrate.")) }
+                        legacy = HevyImport.legacyIDs("bodymeasurement", held: try await api.list([codec.kinds.bodyMeasurement]).map(\.id))
+                    }
+                    entries += measurements.map {
+                        OutboxEntry(method: .put, kind: $0.kind, recordID: legacy[$0.id] ?? $0.id, properties: $0.properties)
+                    }
                     try await outbox.enqueue(entries)
                 } catch {
                     return yield(.outcome(receipt, problem: error.localizedDescription))
@@ -482,10 +491,11 @@ extension WorkoutsApp {
                 if (try? store.write(entry)) != nil { merges.append(entry) }
             }
             let phone = SessionTombstones(directory: directory)
+            let imported = Set(local.filter { HevyImport.importPath($0.records.session) != nil }.map(\.id))
             for id in plan.removals {
                 // An imported one is also kept from the next import of the
                 // same account or file, as a delete on this phone is.
-                if id.rawValue.hasPrefix("hevy-") { try? phone.add(id) }
+                if imported.contains(id) { try? phone.add(id) }
                 if (try? store.delete(id)) != nil { removals.append(id) }
             }
         }

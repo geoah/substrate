@@ -3,7 +3,7 @@
   "records": [
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "rowing-machine",
+      "id": "02m576dkdsgnv9g1jrmsgwps0g",
       "properties": {
         "name": "Rowing (Machine)",
         "aliases": [
@@ -23,6 +23,10 @@
         "restClass": "highrep",
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "rowing-machine"
+          },
+          {
             "system": "healthconnect",
             "code": "EXERCISE_SEGMENT_TYPE_ROWING_MACHINE"
           }
@@ -31,7 +35,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "bird-dog",
+      "id": "5ep3ffsg44hpkrxks6dvh0k3sq",
       "properties": {
         "name": "Bird Dog",
         "measurement": "repsonly",
@@ -46,12 +50,18 @@
         ],
         "restClass": "highrep",
         "defaultRepsMin": 8,
-        "defaultRepsMax": 12
+        "defaultRepsMax": 12,
+        "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "bird-dog"
+          }
+        ]
       }
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "leg-press-machine",
+      "id": "7ksgsw7j8nhr8tmav887tdg0h3",
       "properties": {
         "name": "Leg Press (Machine)",
         "measurement": "weightreps",
@@ -72,6 +82,10 @@
         },
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "leg-press-machine"
+          },
+          {
             "system": "free-exercise-db",
             "code": "Leg_Press",
             "display": "Leg Press"
@@ -85,7 +99,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "iso-lateral-chest-press-machine",
+      "id": "1pnkj5k9wthd2r8wh652m7zh42",
       "properties": {
         "name": "Iso-Lateral Chest Press (Machine)",
         "measurement": "weightreps",
@@ -104,12 +118,18 @@
         "loadStep": {
           "value": "2.5",
           "unit": "kg"
-        }
+        },
+        "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "iso-lateral-chest-press-machine"
+          }
+        ]
       }
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "assisted-pull-up-machine",
+      "id": "0x7wx83t5ng0wa74x6b36hzrg3",
       "properties": {
         "name": "Assisted Pull Up (Machine)",
         "measurement": "bodyweightassistedreps",
@@ -130,12 +150,18 @@
         "loadMax": {
           "value": "150",
           "unit": "lb"
-        }
+        },
+        "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "assisted-pull-up-machine"
+          }
+        ]
       }
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "push-up",
+      "id": "36rjhtnjhch9f8k3vpnthg3tp7",
       "properties": {
         "name": "Push Up",
         "aliases": [
@@ -156,6 +182,10 @@
         "bodyShare": "0.65",
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "push-up"
+          },
+          {
             "system": "free-exercise-db",
             "code": "Pushups",
             "display": "Pushups"
@@ -165,7 +195,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "lateral-raise-dumbbell",
+      "id": "42tmzpz58vg4jbby928cg35eft",
       "properties": {
         "name": "Lateral Raise (Dumbbell)",
         "measurement": "weightreps",
@@ -184,6 +214,10 @@
         "myoStopRule": "repdrop",
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "lateral-raise-dumbbell"
+          },
+          {
             "system": "free-exercise-db",
             "code": "Side_Lateral_Raise",
             "display": "Side Lateral Raise"
@@ -197,7 +231,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "bulgarian-split-squat-dumbbell",
+      "id": "5jb7qjxvfng28v7nxan756hxef",
       "properties": {
         "name": "Bulgarian Split Squat (Dumbbell)",
         "aliases": [
@@ -223,6 +257,10 @@
         },
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "bulgarian-split-squat-dumbbell"
+          },
+          {
             "system": "free-exercise-db",
             "code": "Split_Squat_with_Dumbbells",
             "display": "Split Squat with Dumbbells"
@@ -232,7 +270,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "dip-weighted",
+      "id": "76k7jc2kkrhfbsm43y3adekzpw",
       "properties": {
         "name": "Chest Dip (Weighted)",
         "aliases": [
@@ -252,12 +290,18 @@
         "loadStep": {
           "value": "2.5",
           "unit": "kg"
-        }
+        },
+        "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "dip-weighted"
+          }
+        ]
       }
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "triceps-pushdown",
+      "id": "4086zqp0f0gk9by38smtzyhnxa",
       "properties": {
         "name": "Triceps Pushdown",
         "measurement": "weightreps",
@@ -274,6 +318,10 @@
         },
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "triceps-pushdown"
+          },
+          {
             "system": "free-exercise-db",
             "code": "Triceps_Pushdown",
             "display": "Triceps Pushdown"
@@ -283,7 +331,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "plank",
+      "id": "0bw7neb5mhhy0968g10y1jfyvh",
       "properties": {
         "name": "Plank",
         "measurement": "duration",
@@ -294,6 +342,10 @@
         ],
         "restClass": "timed",
         "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "plank"
+          },
           {
             "system": "free-exercise-db",
             "code": "Plank",
@@ -308,7 +360,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "farmers-carry-dumbbell",
+      "id": "42t52kycqdgb9tqvbsat0fvgep",
       "properties": {
         "name": "Farmer's Carry (Dumbbell)",
         "aliases": [
@@ -333,6 +385,10 @@
         },
         "codes": [
           {
+            "system": "substrate-workouts-sample",
+            "code": "farmers-carry-dumbbell"
+          },
+          {
             "system": "fit",
             "code": "carry/farmers_walk"
           }
@@ -341,7 +397,7 @@
     },
     {
       "kind": "substrate.reamde.dev/training/exercise",
-      "id": "plank-weighted",
+      "id": "0a265pvhvngpcbb346szy5b506",
       "properties": {
         "name": "Plank (Weighted)",
         "measurement": "weightduration",
@@ -355,7 +411,13 @@
         "loadStep": {
           "value": "5",
           "unit": "kg"
-        }
+        },
+        "codes": [
+          {
+            "system": "substrate-workouts-sample",
+            "code": "plank-weighted"
+          }
+        ]
       }
     }
   ]

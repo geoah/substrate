@@ -46,16 +46,104 @@ struct HevyMigrationTests {
 
     let press = "7EB3F7C3"  // Chest Press (Machine) in Hevy
 
+    /// The id an import derives for a record of `kind` from Hevy's key.
+    func hevy(_ kind: String, _ key: String) -> String { HevyImport.derivedID(kind, key) }
+
     @Test("two workouts in one minute are two sessions, and an import in any order finds what it wrote")
     func workoutIdentity() throws {
         let a = workout("A-1", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
         let b = workout("B-2", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 55, reps: 8)])])
         let both = try plan(HevyAPI.Export(workouts: [a, b]))
-        #expect(both.sessions.map(\.session.id.rawValue).sorted() == ["hevy-a-1", "hevy-b-2"])
+        #expect(Set(both.sessions.map(\.session.id.rawValue)) == [hevy("session", "hevy-a-1"), hevy("session", "hevy-b-2")])
         let first = try plan(HevyAPI.Export(workouts: [a]))
         let again = try plan(HevyAPI.Export(workouts: [b, a]), history: first.sessions)
-        #expect(again.sessions.map(\.session.id.rawValue) == ["hevy-b-2"])
+        #expect(again.sessions.map(\.session.id.rawValue) == [hevy("session", "hevy-b-2")])
         #expect(again.skipped.map(\.reason) == [.imported])
+    }
+
+    @Test("an import run again lands on the same ids, and finds every session, routine and measurement it wrote")
+    func reimport() throws {
+        let routine = HevyAPI.Routine(id: "R1", title: "Push", folderId: nil, notes: nil, exercises: [exercise(0, "Chest Press (Machine)", press, [set(0)])])
+        let w = workout("A-1", routine: "R1", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10), set(1, kg: 55, reps: 8)])])
+        let mass = HevyAPI.BodyMeasurement(
+            id: 7, date: "2026-10-01", weightKg: 71, leanMassKg: nil, fatPercent: nil, neckCm: nil, shoulderCm: nil, chestCm: nil,
+            leftBicepCm: nil, rightBicepCm: nil, leftForearmCm: nil, rightForearmCm: nil, abdomen: nil, waist: nil, hips: nil,
+            leftThigh: nil, rightThigh: nil, leftCalf: nil, rightCalf: nil)
+        let export = HevyAPI.Export(workouts: [w], routines: [routine], measurements: [mass])
+        let first = try plan(export)
+        let twice = try plan(export)
+        #expect(twice.sessions.map(\.session.id) == first.sessions.map(\.session.id))
+        #expect(twice.sessions.flatMap(\.sets).map(\.id) == first.sessions.flatMap(\.sets).map(\.id))
+        #expect(twice.routines.map(\.id) == first.routines.map(\.id))
+        #expect(twice.measurements.map(\.id) == first.measurements.map(\.id))
+        let shape = /^[0-7][0-9a-hjkmnp-tv-z]{25}$/
+        let ids =
+            first.sessions.map(\.session.id.rawValue) + first.sessions.flatMap(\.sets).map(\.id.rawValue)
+            + first.routines.map(\.id.rawValue) + first.measurements.map(\.id)
+        #expect(ids.allSatisfy { $0.wholeMatch(of: shape) != nil }, "\(ids)")
+
+        // Imported once: nothing new, the session skipped and the routine held.
+        var routines: [RoutineID: Routine] = [:]
+        for routine in first.routines { routines[routine.id] = routine }
+        let again = try plan(export, routines: routines, history: first.sessions)
+        #expect(again.sessions.isEmpty && again.skipped.map(\.reason) == [.imported])
+        #expect(again.routines.isEmpty && again.routinesHeld == ["Push"])
+        // A measurement is written again where it is: the same id.
+        #expect(again.measurements.map(\.id) == first.measurements.map(\.id))
+    }
+
+    @Test("what an import wrote before the ids were derived is still its own: the session, a deleted one, a measurement")
+    func legacyRows() throws {
+        let a = workout("A-1", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
+        var old = try #require(try plan(HevyAPI.Export(workouts: [a])).sessions.first)
+        old.session.id = "hevy-a-1"
+        old.session.adapter = "substrate-workouts@0.9.0"
+        let held = try plan(HevyAPI.Export(workouts: [a]), history: [old])
+        #expect(held.sessions.isEmpty && held.skipped.map(\.reason) == [.imported])
+        let deleted = HevyImport.plan(
+            HevyAPI.Export(workouts: [a]), exercises: [:], routines: [:], history: [], deleted: ["hevy-a-1"], timeZone: london,
+            adapter: "x@1", library: try Library.catalog.get().exercises)
+        #expect(deleted.sessions.isEmpty && deleted.skipped.map(\.reason) == [.deleted])
+
+        // A measurement held under its old id is written there again.
+        let legacy = HevyImport.legacyIDs("bodymeasurement", held: ["hevy-7", "0190f3a2-7c1d-7e4b-9a61-2c7d5e8f4b10"])
+        #expect(legacy == [hevy("bodymeasurement", "hevy-7"): "hevy-7"])
+    }
+
+    @Test("two API workouts at one time are two, whichever ids the first was written under; a CSV workout at that time is the same")
+    func apiOverlap() throws {
+        let a = workout("A-1", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
+        let b = workout("B-2", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 55, reps: 8)])])
+        let first = try #require(try plan(HevyAPI.Export(workouts: [a])).sessions.first)
+        #expect(try plan(HevyAPI.Export(workouts: [b]), history: [first]).sessions.count == 1)
+        var old = first
+        old.session.id = "hevy-a-1"
+        old.session.adapter = "substrate-workouts@0.9.0"
+        #expect(try plan(HevyAPI.Export(workouts: [b]), history: [old]).sessions.count == 1)
+
+        // The CSV's workout at the same minute is the API's, imported already.
+        let file = try HevyCSV.read(
+            """
+            title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
+            "Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","","Chest Press (Machine)",,"",0,"normal",50,10,,,
+            """)
+        let csv = HevyImport.plan(file, exercises: [:], history: [first], deleted: [], timeZone: london, adapter: "x@1")
+        #expect(csv.sessions.isEmpty && csv.skipped.map(\.reason) == [.imported])
+    }
+
+    @Test("how a session came from Hevy: its adapter, or the id an import wrote before the ids were derived")
+    func importPath() {
+        func session(_ id: SessionID, _ adapter: String?) -> TrainingSession {
+            TrainingSession(id: id, at: Date(timeIntervalSince1970: 0), status: .finished, adapter: adapter)
+        }
+        #expect(HevyImport.importAdapter("substrate-workouts@1.2.0", .api) == "substrate-workouts-hevy-api@1.2.0")
+        #expect(HevyImport.importAdapter("bare", .csv) == "bare-hevy-csv")
+        #expect(HevyImport.importPath(session("3c9ts84axnhyrvws6ntpphzves", "substrate-workouts-hevy-api@1.2.0")) == .api)
+        #expect(HevyImport.importPath(session("3c9ts84axnhyrvws6ntpphzves", "substrate-workouts-hevy-csv@1.2.0")) == .csv)
+        #expect(HevyImport.importPath(session("hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10", "substrate-workouts@0.9.0")) == .api)
+        #expect(HevyImport.importPath(session("hevy-20261030-1343", "substrate-workouts@0.9.0")) == .csv)
+        #expect(HevyImport.importPath(session("hevy-20261030-1343-2", nil)) == .csv)
+        #expect(HevyImport.importPath(session("0190f3a2-7c1d-7e4b-9a61-2c7d5e8f4b10", "substrate-workouts@1.2.0")) == nil)
     }
 
     @Test("the API's instant is kept through the autumn hour that repeats")
@@ -75,8 +163,8 @@ struct HevyMigrationTests {
         let w = workout("W", routine: "R2", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
         let owners: [RoutineID: Routine] = ["push": Routine(id: "push", name: "Push")]
         let first = try plan(HevyAPI.Export(workouts: [w], routines: [one, two]), routines: owners)
-        #expect(first.routines.map(\.id.rawValue) == ["hevy-r1", "hevy-r2"])
-        #expect(first.sessions.first?.session.routine == "hevy-r2")
+        #expect(first.routines.map(\.id.rawValue) == [hevy("routine", "hevy-r1"), hevy("routine", "hevy-r2")])
+        #expect(first.sessions.first?.session.routine?.rawValue == hevy("routine", "hevy-r2"))
         var held = owners
         for routine in first.routines { held[routine.id] = routine }
         let again = try plan(HevyAPI.Export(workouts: [w], routines: [one, two]), routines: held)
@@ -93,7 +181,7 @@ struct HevyMigrationTests {
             secondaryMuscleGroups: [], equipment: "dumbbell", isCustom: true)
         let w = workout("W", [exercise(0, "Press", "c-1", [set(0, reps: 12)]), exercise(1, "Press", "c-2", [set(0, kg: 50, reps: 8)])])
         let result = try plan(HevyAPI.Export(workouts: [w], templates: ["c-1": reps, "c-2": loaded]))
-        #expect(Set(result.exercises.map(\.id.rawValue)) == ["press", "press-2"])
+        #expect(Set(result.exercises.map(\.id.rawValue)) == [hevy("exercise", "template-c-1"), hevy("exercise", "template-c-2")])
         let loadedID = try #require(result.exercises.first { $0.codes.contains(Coding(system: "hevy", code: "c-2")) }?.id)
         #expect(result.sessions.first?.sets.first { $0.exercise == loadedID }?.load == Mass(value: 50, unit: .kg))
     }
@@ -138,9 +226,9 @@ struct HevyMigrationTests {
             ])
         let result = try plan(HevyAPI.Export(workouts: [empty, some]))
         #expect(result.sessions.count == 2)
-        let blank = try #require(result.sessions.first { $0.session.id == "hevy-e" })
+        let blank = try #require(result.sessions.first { $0.session.id.rawValue == hevy("session", "hevy-e") })
         #expect(blank.session.slots.isEmpty && blank.sets.isEmpty)
-        let full = try #require(result.sessions.first { $0.session.id == "hevy-s" })
+        let full = try #require(result.sessions.first { $0.session.id.rawValue == hevy("session", "hevy-s") })
         #expect(full.session.slots.first?.notes == "seat 4" && full.sets.allSatisfy { $0.exercise != full.session.slots[0].exercise })
         #expect(full.sets.first?.notes == "42 floors (from Hevy)")
     }
@@ -171,7 +259,8 @@ struct HevyMigrationTests {
         ]
         let w = workout("M", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
         let result = try plan(HevyAPI.Export(workouts: [w], measurements: entries))
-        #expect(result.measurements.map(\.id) == ["hevy-7", "hevy-8"])
+        #expect(result.measurements.map(\.id) == [hevy("bodymeasurement", "hevy-7"), hevy("bodymeasurement", "hevy-8")])
+        #expect(result.measurements.allSatisfy { $0.properties["adapter"] == .string("x-hevy-api@1") })
         let first = try #require(result.measurements.first).properties
         #expect(first["bodyMass"] == .object(["value": .string("71.029"), "unit": .string("kg")]))
         #expect(first["bodyFat"] == .string("13.8") && first["waist"] == .object(["value": .string("85.1"), "unit": .string("cm")]))
@@ -181,7 +270,7 @@ struct HevyMigrationTests {
     @Test("a CSV title finds the library exercise the owner renamed, at its id, instead of making a second")
     func renamedLibraryExercise() throws {
         let library = try Library.catalog.get().exercises
-        var renamed = try #require(library["lat-pulldown-cable"])
+        var renamed = try #require(library[Library.exercise("lat-pulldown-cable")])
         renamed.name = "Pulldown, the blue cable"
         let file = try HevyCSV.read(
             """
@@ -192,19 +281,19 @@ struct HevyMigrationTests {
             file, exercises: [renamed.id: renamed], history: [], deleted: [], timeZone: london, adapter: "x@1",
             library: library)
         #expect(result.exercises.isEmpty)
-        #expect(result.sessions.first?.sets.first?.exercise == "lat-pulldown-cable")
+        #expect(result.sessions.first?.sets.first?.exercise == Library.exercise("lat-pulldown-cable"))
     }
 
     @Test("an exercise counts from its movement's shares unless its own group lists say otherwise")
     func ownListsWin() throws {
         var catalog = try Library.catalog.get()
-        var press = try #require(catalog.exercises["chest-press-machine"])
+        var press = try #require(catalog.exercises[Library.exercise("chest-press-machine")])
         #expect(!press.inheritedMuscles.isEmpty)
         press.primaryMuscles = [.triceps]
         press.secondaryMuscles = []
         catalog.exercises[press.id] = press
         catalog.resolveMovements()
-        let mine = try #require(catalog.exercises["chest-press-machine"])
+        let mine = try #require(catalog.exercises[Library.exercise("chest-press-machine")])
         #expect(mine.inheritedMuscles.isEmpty && mine.groupShares == [.triceps: 1])
     }
 }

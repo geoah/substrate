@@ -1196,7 +1196,7 @@ nothing takes, and holds the layering the rest of this page relies on
 | Package | Why |
 | --- | --- |
 | `Sparkle` | the macOS updater every Mac app compiles in (`xcode/Shared/Updater.swift`): it reads the release's `appcast.xml` and checks its signature |
-| `swift-crypto` | SHA-256 where CryptoKit is not, on Linux and Android, and taken on those platforms alone: SubstrateAuth's for PKCE, and ChatKit's for the hashed names its cache folder and files have always had |
+| `swift-crypto` | SHA-256 where CryptoKit is not, on Linux and Android, and taken on those platforms alone: SubstrateAuth's for PKCE, ChatKit's for the hashed names its cache folder and files have always had, and WorkoutsKit's for the record ids it derives from a key (the library's, the sample's and a Hevy import's) |
 | `swift-syntax` | the bridge's generator (`kit/Tools/BridgeGen`) reads the `Bridged` declarations with it; a tool's dependency only, never linked into an app |
 | `com.squareup.okhttp3` | OkHttp, the transport on Android (`kit-device`): redirects off on every path, a line stream's included, and cancellation that reaches the socket |
 | `com.google.crypto.tink` | Tink, the secure store's AEAD on Android: a keyset wrapped by an Android Keystore key, so what is on disk is ciphertext |

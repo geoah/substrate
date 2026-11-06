@@ -22,9 +22,10 @@ data:
   # 2: published under substrate.reamde.dev, the agent in the closure, its
   # provider an input and its models a list. 3: the prompt names training 5.
   # 4: training 6, its cues, warm-up circuits, reps left and stop reasons.
-  # 5: the prompt names training 7.
+  # 5: the prompt names training 7. 6: a new routine or exercise is written
+  # with no id, which the write mints.
   # A changed prompt or agent ships as the next version.
-  version: 5
+  version: 6
 ---
 # `requiresAtLeast` training 2: the coach pins and writes
 # `substrate.reamde.dev/training/memory`, which training declares from

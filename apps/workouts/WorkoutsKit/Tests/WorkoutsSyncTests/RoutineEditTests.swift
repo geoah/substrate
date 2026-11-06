@@ -366,9 +366,11 @@ struct RoutineEditTests {
     @Test("a duplicate is created only where nothing is: ifVersion 0, and a refusal is parked, not merged")
     func createOnly() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/routine/day-1-copy", 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine)
+        server.answer(
+            "PUT", "/api/v1/substrate.reamde.dev/training/routine/\(copy.routine.id.rawValue)", 409,
+            #"{"error":{"code":"conflict","message":"version conflict"}}"#)
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
-        let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine, taken: ["day-1"])
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         guard case .refused = await outbox.flush(api(server)) else {
             Issue.record("not refused")
@@ -399,7 +401,7 @@ struct RoutineEditTests {
     @Test("a duplicate is a PUT of the whole routine; an edit before it is sent goes into its body")
     func duplicate() async throws {
         let (_, routine) = try read(try #require(Self.serverRecords().first).json)
-        let copy = RoutineEditor.duplicate(routine, taken: [routine.id])
+        let copy = RoutineEditor.duplicate(routine)
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         try await outbox.edit(routine: copy.routine.id, patch: ["name": .string("Mine"), "notes": .null], baseVersion: nil, codec: codec)

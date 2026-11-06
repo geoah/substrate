@@ -271,7 +271,7 @@ struct LocalExercisesTests {
         let store = LocalExercises(directory: directory.url, writingOptions: .atomic)
         #expect(try store.load().exercises.isEmpty)
         var exercise = Exercise(
-            id: ExerciseID.slug(for: "Hack Squat (Machine)"), name: "Hack Squat (Machine)", measurement: .weightreps, equipment: .plateloaded,
+            id: "hack-squat-machine", name: "Hack Squat (Machine)", measurement: .weightreps, equipment: .plateloaded,
             restClass: .heavycompound)
         try store.add(exercise)
         try store.add(Exercise(id: "sled-push", name: "Sled Push", measurement: .shortdistanceweight, equipment: .other))
@@ -344,10 +344,11 @@ struct BundledCatalogTests {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let local = LocalExercises(directory: directory.url, writingOptions: .atomic)
-        try local.add(Exercise(id: "leg-press-machine", name: "My Leg Press", measurement: .weightreps))
+        let legPress = SampleRoutine.exerciseID("leg-press-machine")
+        try local.add(Exercise(id: legPress, name: "My Leg Press", measurement: .weightreps))
         let catalog = try BundledCatalog(localExercises: local).loadNow()
-        #expect(catalog.exercises["leg-press-machine"]?.name == "Leg Press (Machine)")
-        #expect(catalog.unreadable.map(\.id) == ["leg-press-machine"])
+        #expect(catalog.exercises[legPress]?.name == "Leg Press (Machine)")
+        #expect(catalog.unreadable.map(\.id) == [legPress.rawValue])
     }
 
     @Test("without a local store, adding is refused")

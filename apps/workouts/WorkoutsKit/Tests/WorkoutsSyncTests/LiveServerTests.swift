@@ -68,6 +68,21 @@ struct LiveServerTests {
         #expect(approved.contains(.string(WorkoutsManifest.writeScope)))
         var approval: JSONObject = ["scopes": .array(approved), "lifetimeDays": .number(7)]
         if let hash = fields["planHash"] { approval["planHash"] = hash }
+        // The coach's agents need a provider; the first one offered does.
+        if case let .array(setup)? = fields["setup"] {
+            let choices = setup.flatMap { row -> [JSONValue] in
+                guard case let .object(row) = row, case let .object(package)? = row["package"],
+                    case let .array(inputs)? = package["providerInputs"]
+                else { return [] }
+                return inputs.compactMap { input in
+                    guard case let .object(input) = input, case let .array(options)? = input["options"],
+                        case let .object(first)? = options.first, let provider = first["id"]
+                    else { return nil }
+                    return .object(["package": input["package"] ?? .null, "input": input["input"] ?? .null, "provider": provider])
+                }
+            }
+            if !choices.isEmpty { approval["providerChoices"] = .array(choices) }
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         var answer = try await owner.send(
@@ -189,7 +204,7 @@ struct LiveServerTests {
         #expect(kept.properties["notes"] == .string(coachNotes))
 
         // Duplicated: a new routine, whole.
-        let copy = RoutineEditor.duplicate(try codec.decodeRoutine(kept), taken: [SampleRoutine.id])
+        let copy = RoutineEditor.duplicate(try codec.decodeRoutine(kept))
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         #expect(await outbox.flush(api) == .sent)
         let duplicated = try #require(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue))
@@ -207,29 +222,33 @@ struct LiveServerTests {
         #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
         try await outbox.discard(refusedCreate.id)
         print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
-        for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
-            try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.exercise, id), query: [("purge", "true")])
+        let split = SampleRoutine.exerciseID("bulgarian-split-squat-dumbbell")
+        let pushdown = SampleRoutine.exerciseID("triceps-pushdown")
+        for id in [split, pushdown] {
+            try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.exercise, id.rawValue), query: [("purge", "true")])
         }
         func recorded(_ name: String) throws -> [FlatRecord] {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var signedOut = try #require(codec.sessionRecords(from: recorded("list-sessions") + recorded("list-sets")).first)
-        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell", "seated-row-machine": "triceps-pushdown"]
+        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": split, "seated-row-machine": pushdown]
+        // The rest the recording names by the slugs the sample had then.
+        func sampled(_ id: ExerciseID) -> ExerciseID { onto[id] ?? SampleRoutine.exerciseID(id.rawValue) }
         signedOut.session.id = SessionID(UUIDv7.make(at: signedOut.session.at))
         for index in signedOut.session.slots.indices {
-            signedOut.session.slots[index].exercise = onto[signedOut.session.slots[index].exercise] ?? signedOut.session.slots[index].exercise
+            signedOut.session.slots[index].exercise = sampled(signedOut.session.slots[index].exercise)
         }
         var renamed: [SetID: SetID] = [:]
         for set in signedOut.sets { renamed[set.id] = SetID(UUIDv7.make(at: set.at)) }
         for index in signedOut.sets.indices {
-            signedOut.sets[index].exercise = onto[signedOut.sets[index].exercise] ?? signedOut.sets[index].exercise
+            signedOut.sets[index].exercise = sampled(signedOut.sets[index].exercise)
             signedOut.sets[index].session = signedOut.session.id
             signedOut.sets[index].id = renamed[signedOut.sets[index].id]!
             signedOut.sets[index].continues = signedOut.sets[index].continues.map { renamed[$0] ?? $0 }
         }
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         let missingFirst = OutboxPlan.exercisesFor([signedOut], server: held, known: bundled.exercises, codec: codec)
-        #expect(Set(missingFirst.map(\.recordID)) == ["bulgarian-split-squat-dumbbell", "triceps-pushdown"])
+        #expect(Set(missingFirst.map(\.recordID)) == [split.rawValue, pushdown.rawValue])
         try await outbox.enqueue(missingFirst + OutboxPlan.finished(signedOut, codec: codec))
         let signedOutSent = await outbox.flush(api)
         let signedOutParked = await outbox.parked.map(\.lastError)
@@ -239,7 +258,9 @@ struct LiveServerTests {
         // The recorded session's exercises the sample does not carry, as the
         // phone adds them.
         let missing = [("romanian-deadlift-dumbbell", "Romanian Deadlift (Dumbbell)"), ("seated-row-machine", "Seated Row (Machine)")]
-        try await outbox.enqueue(missing.map { OutboxPlan.exerciseAdded(Exercise(id: ExerciseID($0.0), name: $0.1, measurement: .weightreps), codec: codec) })
+        let added = Dictionary(uniqueKeysWithValues: missing.map { (ExerciseID($0.0), ExerciseID.minted()) })
+        try await outbox.enqueue(
+            missing.map { OutboxPlan.exerciseAdded(Exercise(id: added[ExerciseID($0.0)]!, name: $0.1, measurement: .weightreps), codec: codec) })
         #expect(await outbox.flush(api) == .sent)
 
         // A finished session and its 20 sets, four of them drops, through
@@ -247,7 +268,14 @@ struct LiveServerTests {
         func records(_ name: String) throws -> [FlatRecord] {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
-        let finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
+        var finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
+        func onServer(_ id: ExerciseID) -> ExerciseID { added[id] ?? SampleRoutine.exerciseID(id.rawValue) }
+        for index in finished.session.slots.indices {
+            finished.session.slots[index].exercise = onServer(finished.session.slots[index].exercise)
+        }
+        for index in finished.sets.indices {
+            finished.sets[index].exercise = onServer(finished.sets[index].exercise)
+        }
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
 

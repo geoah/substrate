@@ -12,9 +12,10 @@ short form with options; its answer arrives in a later turn).
 - Search before referencing an exercise: the app seeds a library of
   movements and equipment versions; create a missing one first
   (`movement`, `measurement`, `equipment`, muscles, `restClass`, gym
-  `loadStep`). Query the exact id first; never `put` over an existing one.
-- Write a routine with op `put` and a short slug id, after searching for an
-  existing one. Edit with op `patch` and the `ifVersion` your read returned.
+  `loadStep`) with op `put` and no id; the write mints one. Never `put`
+  over an existing one.
+- Write a new routine with op `put` and no id, after searching for one.
+  Edit with op `patch` and the `ifVersion` your read returned.
 - Encode the whole plan. Exercises done together (a superset, a block at
   one equipment area) are one `groups` entry: `groupKind`, `rounds`,
   `roundRest` (that block's rest), adjacent member slots naming its `key`,

@@ -1,6 +1,6 @@
 {
- "version": 3,
- "sha256": "3a49ed774088e186c66cd3521bbbcbb3e34aa8b87e48ec3fc1048783eab38e64",
+ "version": 4,
+ "sha256": "946066e41fb70ff08921a5e922fb7759a27da9e88e579b9391498520f6e76d97",
  "since": {
   "substrate.reamde.dev/training/exercise/21s-bicep-curl": 2,
   "substrate.reamde.dev/training/exercise/3-4-sit-up": 2,

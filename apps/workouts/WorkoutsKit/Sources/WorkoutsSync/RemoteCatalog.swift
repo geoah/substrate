@@ -167,25 +167,46 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     }
 
     /// Writes the sample routine this build carries, and the exercises it
-    /// names, into the repository (`SampleInstall`). An id the repository
-    /// holds already is left as it is: an exercise the owner or the agent
-    /// changed keeps its changes. `rewritingRoutine` writes the routine even
-    /// when the server lists it: the sample added back while its purge is
-    /// landing. Answers how many records it wrote.
+    /// names, into the repository (`SampleInstall`). A record the repository
+    /// holds already is left as it is, found by its id or by its slug
+    /// (`HeldRecords`), the id builds before the derived ids wrote it under
+    /// and the library code of the library's exercise of that slug: an
+    /// exercise the owner or the agent changed keeps its changes. The
+    /// routine held under either of its ids is the sample. `rewritingRoutine`
+    /// writes the routine even when the server lists it under its own id:
+    /// the sample added back while its purge is landing. Answers how many
+    /// records it wrote.
     @discardableResult
     public func copySample(_ api: WorkoutsAPI, from bundled: Catalog, rewritingRoutine: Bool = false) async throws -> Int {
         guard let sample = bundled.routines[SampleRoutine.id] else { return 0 }
-        var present = Set(try await api.list([codec.kinds.exercise, codec.kinds.routine]).map { "\($0.kind)/\($0.id)" })
-        if rewritingRoutine { present.remove("\(codec.kinds.routine)/\(SampleRoutine.id.rawValue)") }
+        let listed = try await api.list([codec.kinds.exercise, codec.kinds.routine])
+        let held = HeldRecords(listed.filter { $0.kind == codec.kinds.exercise })
+        let routines = Set(listed.filter { $0.kind == codec.kinds.routine }.map(\.id))
         let named = Set(sample.slots.map(\.exercise))
         // Exercises first: a routine slot's exercise must exist.
         let exercises = bundled.exercises.values.filter { named.contains($0.id) && !$0.isLocal }.sorted { $0.id.rawValue < $1.id.rawValue }
-        var written = 0
-        for record in exercises.map(codec.encode) + [codec.encode(sample)] where !present.contains("\(record.kind)/\(record.id)") {
-            try await api.write("PUT", record.kind, record.id, properties: record.properties)
-            written += 1
+        var records: [FlatRecord] = []
+        // An exercise held under another id, which the routine names instead.
+        var heldAt: [ExerciseID: ExerciseID] = [:]
+        for record in exercises.map(codec.encode) {
+            if let existing = held.matching(record) {
+                heldAt[ExerciseID(record.id)] = ExerciseID(existing.id)
+            } else {
+                records.append(record)
+            }
         }
-        return written
+        let routineHeld = routines.contains(SampleRoutine.legacyID.rawValue) || !rewritingRoutine && routines.contains(SampleRoutine.id.rawValue)
+        if !routineHeld {
+            var routine = sample
+            for index in routine.slots.indices {
+                routine.slots[index].exercise = heldAt[routine.slots[index].exercise] ?? routine.slots[index].exercise
+            }
+            records.append(codec.encode(routine))
+        }
+        for record in records {
+            try await api.write("PUT", record.kind, record.id, properties: record.properties)
+        }
+        return records.count
     }
 
     private func write(_ records: [FlatRecord]) throws {

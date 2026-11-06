@@ -2120,8 +2120,9 @@ sets?" when sets are done).
 field whose tokens match in any order against names and aliases, case and diacritics ignored, with built-in synonyms (db
 dumbbell, bb barbell, kb kettlebell, rdl Romanian deadlift, ohp overhead press); "Recent" (done in the last 30 days),
 then A to Z. Rows show the name and the equipment label. "New exercise…" at the bottom opens a form: name, measurement
-(the nine labels from the kind), equipment, laterality (default both sides), rest class. Its id is the name's slug
-(lowercase, every run of non-alphanumerics a `-`, trimmed; `-2`, `-3` if taken); it is marked "On this iPhone".
+(the nine labels from the kind), equipment, laterality (default both sides), rest class. Its id is minted, a UUIDv7
+(`ExerciseID.minted`), never the name, which a server refuses as a new record's id from an app; it is marked "On this
+iPhone".
 
 **Reorder**: a `.large` sheet with a `List` in edit mode and `onMove`, names only; group members show indented under a
 "Superset A" row and move as a block unless dragged within it. Done sends `reorderExercises`.
