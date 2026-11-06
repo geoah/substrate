@@ -453,19 +453,20 @@ struct RowsNextPartView: View {
             screen.apply(patch, row: next.row, mode: .log, session: session)
         }
         let stop = effort.stop.map { menu in
-            RowsStopMenuChip(menu: menu, tint: tint) { patch in
+            RowsStopMenuButton(menu: menu, tint: tint) { patch in
                 screen.apply(patch, row: next.row, mode: .log, session: session)
                 withAnimation(.smooth(duration: 0.2)) { screen.islandRPE = nil }
             }
         }
+        // As in the panel: why the set ended just left of the steps.
         return ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 label
-                steps
                 Spacer(minLength: 0)
                 stop
+                steps
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 4) {
                 HStack(spacing: 8) {
                     label
                     Spacer(minLength: 0)
@@ -499,7 +500,7 @@ struct RowsNextPartView: View {
         return HStack(spacing: 0) {
             if steppers { step(field.minus, fallback: "\u{2212}") }
             Button {
-                screen.openKeypad(field, row: next.row, mode: .log, fromIsland: true)
+                screen.openKeypad(field, row: next.row, mode: .log, fromIsland: true, session: session)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(typing.flatMap { $0.isEmpty ? nil : $0 } ?? field.value ?? field.placeholder ?? "\u{2013}")
@@ -603,12 +604,14 @@ struct RowsRestRing: View {
 
 /// The keypad for a big jump (DESIGN.md §7.6a), floating on glass where the
 /// island was: the nearby steps of the exercise's grid as chips that set
-/// the value at once, digits, and a confirm button that names the value.
+/// the value at once, digits that set it as they are typed, Cancel, which
+/// puts it back, and Done, which only closes the pad.
 struct RowsKeypadPanel: View {
     let typing: RowsScreenModel.Typing
     let tint: Color
     let onKey: (String) -> Void
     let onPatch: (SetValuesPatch) -> Void
+    let onDone: () -> Void
     let onCancel: () -> Void
 
     @ScaledMetric(relativeTo: .title2) private var keyHeight: CGFloat = 46
@@ -654,15 +657,12 @@ struct RowsKeypadPanel: View {
             HStack(spacing: 8) {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(RowsTintedButtonStyle(tint: tint))
-                let patch = keypad.patch(typing.text)
-                Button {
-                    if let patch { onPatch(patch) }
-                } label: {
-                    Text(keypad.confirmTitle(typing.text))
+                    .accessibilityHint("Puts the value back")
+                Button(action: onDone) {
+                    Text("Done")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(RowsFilledButtonStyle(fill: tint))
-                .disabled(patch == nil)
             }
         }
         .padding(12)

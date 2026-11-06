@@ -209,7 +209,8 @@ open row; apply it to the draft when fixing (below).
     - `title`, and `chips` with their `chipsTitle` ("5 kg steps, tap one to set it"). A chip applies at once and
       closes the pad.
     - `allowsDecimal` gives the `.` key.
-    - `patch(typed)` is nil while the text is no value. `confirmTitle(typed)` reads "Set 120 kg".
+    - Every key applies `patch(typed)`, which is nil while the text is no value; then, and on Cancel, apply
+      `restoring(values)` with the row's values from before the pad opened. Done only closes the pad.
   - `accessibilityLabel` and `accessibilityValue` ("9, changed from 10").
 - `rpe`, a `RowsRPEStrip`: five whole `cells`, 6 to 10, and `half`, the `½` that adds or takes off the half point.
   - Each cell has `value`, `text`, `isHalf`, `style` and `patch`. The cell holding the value stands for it, half point

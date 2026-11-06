@@ -121,7 +121,9 @@ enum PreviewData {
             guard let open = layout.openRow, let editor = layout.item(open)?.editor, let load = editor.field(.load) else {
                 return RowsScreenModel()
             }
-            return RowsScreenModel(typing: .init(row: open, mode: .log, keypad: load.keypad, text: "120"))
+            let restore = load.keypad.restoring(state.rows[open]?.entered ?? SetValues())
+            return RowsScreenModel(
+                typing: .init(row: open, mode: .log, keypad: load.keypad, restore: restore, text: "120"))
         default:
             return RowsScreenModel()
         }

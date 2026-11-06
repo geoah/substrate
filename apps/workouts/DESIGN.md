@@ -2153,13 +2153,15 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 | +----------------------------------------------+ |
 | | (●) Set 2  ✦ reason for today's numbers  (…) | |  <- the open set, tinted
 | |     💡 Feet flat, knees track your toes      | |  <- the slot's cue
-| |     110 kg   last 105            ( −5 | +5 ) | |
-| |     8 reps   last 10             ( −1 | +1 ) | |
-| |     (2) reps left   last 2       ( −1 | +1 ) | |  <- reps left; the plan's 2, hollow
-| |     [Why stop? ⌄]                            | |  <- why the set ended, a menu
+| |     110 kg                  (↺)  ( −5 | +5 ) | |  <- the reset, once the value changed
+| |     last 105                                 | |
+| |     8 reps                       ( −1 | +1 ) | |
+| |     last 10                                  | |
+| |     2 left             (↺)  (?)  ( −1 | +1 ) | |  <- reps left, and why the set ended, a menu
+| |     last 2                                   | |
 | | [       ✓ Log 110 kg × 8 · 2 left       ]    | |
 | +----------------------------------------------+ |
-| ( ) Set 3  110 kg × 8              last 105 × 10 |  <- pending: muted, last time; a tap opens it
+| ( ) Set 3  110 kg × 8                            |  <- pending: muted, one line; a tap opens it
 |  +  Add set                                      |
 |--------------------------------------------------|
 | (◔) 1:56  of 2:30           [−15] [+15] [Skip]   |  <- the island (glass): the rest, while one runs,
@@ -2204,15 +2206,19 @@ session's length and not as a clock running for the set at hand; a tap pauses or
 - A done line sits on a light green wash (8 %, 16 % with Increase Contrast) with its values grey and struck through, so
   a logged set never reads as the one to do; a tap still opens its fix.
 - At the end: on a done line the changes, joined by commas, gains green and everything else grey, then the verdict mark
-  (a 20 pt disc: `arrow.up.right` green for better, `equal` or `arrow.down.right` grey); on a pending line `last`.
-- When it does not fit on one line, the end moves to a second line; at the largest sizes the title, the values and the
-  end each take a line. Nothing is cut to fit.
+  (a 20 pt disc: `arrow.up.right` green for better, `equal` or `arrow.down.right` grey). A pending line ends with
+  nothing in a session (the open set shows last time) and with `last` on a routine's plan.
+- In a session a line is one line of text at the standard sizes (owner, 2026-11-06): where it does not fit, the
+  changes give way to the verdict mark alone, then the exercise's name is cut short. On a routine's plan, and at the
+  accessibility sizes, the end moves to a second line instead, and at the largest sizes the title, the values and the
+  end each take a line.
 - A tap: a done line opens its fix in place; any pending line that is not a locked link opens as the editor
   (`touchRow`), in any order; the open set drawn as a line goes back to it. VoiceOver reads `sentence` as one element, with a hint for the tap.
 - The set just logged is washed green from the left for five seconds.
 
 **Other lines.** The warm-up fold ("Warm-ups 40 kg × 12, 70 kg × 6", "as last time"; a tap unfolds the warm-ups as set
-lines, each fixable). A group's "Round 1 of 2" (13 pt semibold, dimmed when done). A group shows no rest or hand-off
+lines, each fixable). A group's rounds have no header in a session, only on a routine's plan ("Round 1 of 2"): each
+line's label already says the round (owner, 2026-11-06). A group shows no rest or hand-off
 lines between its sets: the rest shows in the island, as for a plain exercise. A chain's header ("Set 2 as myo-reps, 0:15 between mini-sets") and its
 done mini-sets as chips on one line ("Mini-sets 4 4", "first time"); a tap on a chip fixes that mini-set; the stop text
 in orange once the chain has ended.
@@ -2230,33 +2236,35 @@ line when fixing). In order:
   changing the header's height.
 - The slot's cue, when the routine gives one (`RowsEditor.cue`): a lightbulb and one line in 13 pt secondary,
   indented to the values. The slot's notes stay above the block, folded past five lines.
-- Each value on a 48 pt row, indented to the title: the number at 26 pt semibold with monospaced digits and a faint
-  dotted underline (a tap opens the keypad; the target is 44 pt tall), its unit (15 pt secondary), `last` (15 pt secondary) at the same x on
-  every row (the widest number and unit sets it, at least 84 pt), the reset chip ("↺ 8", or "↺ was 8" when fixing), and
-  the stepper on the right: one tinted capsule, 44 pt tall, two 56 pt halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05")
-  that repeat while held. A changed number is drawn in the accent colour. A value with nothing to log shows a hint
+- Each value on a row of at least 48 pt, indented to the title, the same for load, reps and reps left (owner,
+  2026-11-06): the number at 26 pt semibold with monospaced digits and a faint dotted underline (a tap opens the
+  keypad; the target is at least 44 pt tall), its unit (15 pt secondary) and `last` (13 pt secondary) under them; on
+  the right, under the thumb, the row's round buttons and then the stepper: one tinted capsule, 44 pt tall, two 56 pt
+  halves ("−5 | +5", "−1 | +1", "−0:05 | +0:05") that repeat while held. The first round button, a 44 pt tinted
+  circle with `arrow.uturn.backward`, is the reset (back to the suggestion, or to what was logged when fixing; VoiceOver
+  reads "Back to 8"); its place is kept while there is nothing to go back to, so a step never shifts the row. A changed number is drawn in the accent colour. A value with nothing to log shows a hint
   ("≈15") or a dash in grey italics, outlined in orange when it is required. A field holds a number, never words: a
   drop or a mini-set the plan takes to failure says so once, in the header's note ("to failure", "at 25 kg, to
   failure"), and VoiceOver reads it with the empty field ("to failure, empty"). The failure choice itself is the set
   kind in the `…` (Failure), and a set logged as one carries a small red "to failure" tag on its line; neither
-  changed, nor does what is written (owner, 2026-11-02). When the row is narrow the
-  chip goes under `last`; at larger sizes `last` goes under the number; at the accessibility sizes the stepper goes
-  under them.
-- Reps left (`RowsEffort`, owner, 2026-11-05), a third value built like the others: the number in a 44 pt capsule,
-  "reps left", `last` and the reset chip, and "−1 | +1" under the thumb (on a timed or distance set, the scale's word,
+  changed, nor does what is written (owner, 2026-11-02). When the row is narrow (larger text) the round buttons go
+  under the stepper; at the accessibility sizes the buttons and the stepper go under the value.
+- Reps left (`RowsEffort`, owner, 2026-11-05), a third value built like the others: the number, "left" (as the Log
+  button says it), `last` under them, the reset and why the set ended as round buttons, and "−1 | +1" under the thumb (on a timed or distance set, the scale's word,
   "Hard", "effort", and Easier and Harder; §4.14). A long press on the number offers "Clear reps left". 0 to 4,
   where 4 reads "4+" (RPE 6, "could do 4 or more"); a value with a half point from an import or an older entry reads
   "1–2", and a step from it lands on the whole count beside it. The plan's value (and a pre-filled or copied one) is
-  drawn hollow, a dashed outline; a rating is filled solid. A step rates it as `entered`, and so does a tap on the
-  hollow number, as it is; the chip goes back to the plan's value unrated ("↺ 2", `restoringRPEPrefill`), clears a
+  drawn in the primary colour; a rating in the accent colour, as a changed load is. A step rates it as `entered`, and
+  so does a tap on the unrated number, as it is; the reset goes back to the plan's value unrated ("↺ 2", `restoringRPEPrefill`), clears a
   rating where the plan names none ("↺ clear"), or goes back to what was logged when fixing ("↺ was 2"). Empty, the
   steps start from last time's rating, else 2. The value is still `rpe` on the RIR-based scale, RPE = 10 − reps
   left, so nothing that reads it changes (§4.14). Folded behind "Reps left" when there is nothing to show (a warm-up,
   a timed set, or a set with no planned effort and none last time).
-- Why the set ended (`RowsStopMenu`), under reps left on a working set: a chip, "Why stop?" with a chevron, that
-  lists "Muscular fatigue", "Form broke down", "Pain or discomfort" and "Other reason" (`set.stopReason`: `fatigue`,
-  `technique`, `pain`, `other`) and, once one is chosen, "Clear reason". The chip then shows the reason's word
-  ("Fatigue", "Form", "Pain" in orange, "Other"). A done line carries the word as a tag, as History does after the
+- Why the set ended (`RowsStopMenu`), on reps left's row of a working set, just left of its stepper (owner,
+  2026-11-06): a round button the size of the reset, "?" with none chosen, that lists "Muscular fatigue", "Form broke
+  down", "Pain or discomfort" and "Other reason" (`set.stopReason`: `fatigue`, `technique`, `pain`, `other`) and, once
+  one is chosen, "Clear reason". The button then fills with the reason's symbol (`battery.25percent`,
+  `figure.strengthtraining.traditional`, `bandage` in orange, `ellipsis`). A done line carries the word as a tag, as History does after the
   values.
 - A timed set: ready, the duration row with its stepper and, under it, the track with the goal's tick labelled above and
   last time's below. Running, the duration row gives way to the clock (28 pt, counting up, its width reserved so it
@@ -2302,15 +2310,18 @@ set, a cluster's next part for the one before, and a myo chain makes its next mi
 Those lines are drawn dashed and a tap does nothing. While a timed set runs it keeps the editor: other sets open once
 it is stopped or cancelled.
 
-**Supersets** read top to bottom in the order they are done: Round 1 of 2, A1, A2, Round 2, A1, A2. The rests between
+**Supersets** read top to bottom in the order they are done: A1, A2, then round 2's A1, A2. The rests between
 them show only in the island. **Drops** show as "+ drop" on their set until it is
 done, then hang off it with no rest and open at once (orange). **Myo-reps**: the activation, then one mini-set at a time,
 with the done ones as chips.
 
 **The keypad.** A tap on a number (in the editor or in the island's next set) opens a keypad that floats where the island was, on glass (corner radius 34): the
 nearby steps of the exercise's grid as six chips, 44 pt tall (a tap sets the value and closes the pad), digits, "." for loads and
-distances, delete, Cancel, and "Set 120 kg". The field shows what is typed in a box with a caret; a time is typed as
-digits ("107" is 1:07). On a fix it changes the draft.
+distances, delete, Cancel and Done. Each key sets the field at once, so the Log button names the typed value and a
+Log, or a tap on another field, never takes the old one (owner, 2026-11-06); Done only closes the pad, and Cancel puts
+the field back as it was when the pad opened. The field shows what is typed in a box with a caret, wide enough for
+"13.75" (a load or distance) or "100" from the first key; a time is typed as digits ("107" is 1:07). On a fix it
+changes the draft.
 
 **The island** (`rowsLayout.island`) replaces the Table's rest bar: one rounded glass shape (corner radius 28), 12 pt
 from the screen's edges, stacking up to three parts with hairlines between them, each drawn only when it applies
@@ -2392,7 +2403,6 @@ Undo.
 - The verdict mark follows the presenter's estimated one-rep max, so heavier for fewer reps can read as below.
 - Effort is reps left with − and +, not RPE stops (owner, 2026-11-05): one number like the load and the reps, with
   why the set ended beside it.
-- The keypad's Log label changes when the typed value is set, not while typing.
 - Rows has no Duration, Volume and Working sets header; the session's length is under the title and the totals are in
   Finish.
 

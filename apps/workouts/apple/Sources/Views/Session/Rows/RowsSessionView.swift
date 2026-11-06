@@ -129,9 +129,10 @@ struct RowsSessionView: View {
                 RowsKeypadPanel(
                     typing: typing,
                     tint: tint(for: typing),
-                    onKey: { screen.type($0) },
+                    onKey: { screen.type($0, session: session) },
                     onPatch: { screen.enter($0, session: session) },
-                    onCancel: { screen.typing = nil }
+                    onDone: { screen.typing = nil },
+                    onCancel: { screen.cancelTyping(session: session) }
                 )
                 .padding(.horizontal, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -21,10 +21,14 @@ final class RowsScreenModel {
     }
 
     /// The keypad, open on one field of the open editor or of the fix.
+    /// Each key applies what is typed, so a Log or another field never
+    /// takes the old value (owner, 2026-11-06); Cancel puts it back.
     struct Typing: Equatable {
         var row: RowID
         var mode: RowsEditor.Mode
         var keypad: RowsKeypad
+        /// The field as it was when the pad opened: Cancel, and a text that is no value.
+        var restore: SetValuesPatch
         /// What was typed; empty shows the field's value until the first key.
         var text = ""
         /// Opened from the island's docked set: the list stays where the owner scrolled it.
@@ -122,6 +126,11 @@ final class RowsScreenModel {
     /// row an edit at once, on a fix a change to the draft.
     func apply(_ patch: SetValuesPatch, row: RowID, mode: RowsEditor.Mode, session: SessionModel) {
         Haptics.shared.play(.step)
+        change(patch, row: row, mode: mode, session: session)
+    }
+
+    /// The patch, without the tick a step plays: a keypad's key is felt as a key.
+    private func change(_ patch: SetValuesPatch, row: RowID, mode: RowsEditor.Mode, session: SessionModel) {
         switch mode {
         case .log:
             session.run(.edit(row, patch))
@@ -144,12 +153,20 @@ final class RowsScreenModel {
 
     // MARK: - The keypad
 
-    func openKeypad(_ field: RowsField, in editor: RowsEditor) {
-        openKeypad(field, row: editor.row, mode: editor.mode)
+    func openKeypad(_ field: RowsField, in editor: RowsEditor, session: SessionModel) {
+        openKeypad(field, row: editor.row, mode: editor.mode, session: session)
     }
 
-    func openKeypad(_ field: RowsField, row: RowID, mode: RowsEditor.Mode, fromIsland: Bool = false) {
-        typing = Typing(row: row, mode: mode, keypad: field.keypad, fromIsland: fromIsland)
+    func openKeypad(
+        _ field: RowsField, row: RowID, mode: RowsEditor.Mode, fromIsland: Bool = false, session: SessionModel
+    ) {
+        let values =
+            switch mode {
+            case .log: session.state?.rows[row]?.entered ?? SetValues()
+            case .fix: fixing.flatMap { $0.row == row ? $0.draft : nil } ?? SetValues()
+            }
+        typing = Typing(
+            row: row, mode: mode, keypad: field.keypad, restore: field.keypad.restoring(values), fromIsland: fromIsland)
     }
 
     // MARK: - Docking
@@ -236,11 +253,15 @@ final class RowsScreenModel {
         }
     }
 
-    func type(_ key: String) {
+    /// A key: the text, and the field set to it at once; all deleted, back
+    /// to how it was. A text on its way to a value (`12.`) leaves the field
+    /// at the last one.
+    func type(_ key: String, session: SessionModel) {
         guard var typing else { return }
         switch key {
         case "delete":
-            if !typing.text.isEmpty { typing.text.removeLast() }
+            guard !typing.text.isEmpty else { return }
+            typing.text.removeLast()
         case ".":
             guard typing.keypad.allowsDecimal, !typing.text.contains(".") else { return }
             typing.text = typing.text.isEmpty ? "0." : typing.text + "."
@@ -249,13 +270,23 @@ final class RowsScreenModel {
             typing.text += key
         }
         self.typing = typing
+        guard let patch = typing.keypad.patch(typing.text) ?? (typing.text.isEmpty ? typing.restore : nil) else { return }
+        change(patch, row: typing.row, mode: typing.mode, session: session)
     }
 
-    /// A chip or the confirm button: the patch, and the keypad closes.
+    /// A chip: the patch, and the keypad closes.
     func enter(_ patch: SetValuesPatch, session: SessionModel) {
         guard let typing else { return }
         apply(patch, row: typing.row, mode: typing.mode, session: session)
         self.typing = nil
+    }
+
+    /// Cancel: the field as it was before the first key.
+    func cancelTyping(session: SessionModel) {
+        guard let typing else { return }
+        self.typing = nil
+        guard !typing.text.isEmpty else { return }
+        change(typing.restore, row: typing.row, mode: typing.mode, session: session)
     }
 
     // MARK: - Actions
