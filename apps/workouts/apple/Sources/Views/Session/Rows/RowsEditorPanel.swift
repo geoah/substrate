@@ -406,8 +406,8 @@ private struct RowsLogVisibility: ViewModifier {
 
 /// One value row of the open set, the same for load, reps and reps left:
 /// the value on the left (its number, unit and last time under them), and
-/// on the right, under the thumb, its round buttons (the reset, why the set
-/// ended) and then the `−step +step` stepper. Where one row cannot hold them
+/// on the right, under the thumb, its round buttons (why the set ended,
+/// then the reset, always next to the steps) and then the `−step +step` stepper. Where one row cannot hold them
 /// (larger text) the buttons go under the stepper; at the accessibility
 /// sizes the buttons and the stepper go under the value.
 struct RowsValueRow<Value: View, Buttons: View>: View {
@@ -636,8 +636,8 @@ struct RowsStepper: View {
 
 /// Reps left, a third value row like load and reps: the number (drawn in
 /// the accent colour once it is the lifter's rating; a tap on the plan's
-/// value rates it as it is), its unit and last time under them, then the
-/// reset, why the set ended as a `?` button, and `−1 | +1`.
+/// value rates it as it is), its unit and last time under them, then why
+/// the set ended as a `?` button, the reset, and `−1 | +1`.
 struct RowsEffortRow: View {
     let effort: RowsEffort
     let tint: Color
@@ -649,10 +649,12 @@ struct RowsEffortRow: View {
         RowsValueRow(stepper: RowsStepper(minus: effort.minus, plus: effort.plus, tint: tint, onPatch: onPatch)) {
             value
         } buttons: {
-            RowsResetButton(reset: effort.reset, tint: tint, onPatch: onPatch)
+            // The reset next to the steps on every row, where it always is;
+            // why the set ended before it.
             if let stop = effort.stop {
                 RowsStopMenuButton(menu: stop, tint: tint, onPatch: onPatch)
             }
+            RowsResetButton(reset: effort.reset, tint: tint, onPatch: onPatch)
         }
     }
 
