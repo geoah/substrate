@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react"
+import { createContext, useContext, useMemo } from "react"
 import {
   DEFAULT_SETTINGS,
   type ConsoleAction,
@@ -81,4 +81,20 @@ export function useLayoutWidths(): {
 export function useDensity(): [Density, (density: Density) => void] {
   const { preferences, set } = useConsolePreferences()
   return [preferences.density, (density) => set("density", density)]
+}
+
+/** The Providers page's welcome: whether it was dismissed, and the write
+ * that dismisses it. */
+export function useWelcome(): {
+  busy: boolean
+  dismissed: boolean
+  dismiss: () => void
+} {
+  const { preferences, busy, change } = useConsolePreferences()
+  // `change` is stable, so the write is too.
+  const dismiss = useMemo(
+    () => () => change({ type: "welcome", dismissed: true }),
+    [change]
+  )
+  return { busy, dismissed: preferences.welcomeDismissed === true, dismiss }
 }

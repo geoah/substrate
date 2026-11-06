@@ -4,7 +4,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 4
+  version: 5
   description: Repository-owned console preferences, for navigation and display,
     shared across sessions.
   purpose: internal
@@ -66,6 +66,10 @@ data:
       type: bool
       description: Whether timeline charts draw a line on across buckets with
         no value, the gap dashed.
+    welcomeDismissed:
+      type: bool
+      description: Whether the welcome at the top of the Providers page was
+        dismissed.
     views:
       type: object
       repeated: true

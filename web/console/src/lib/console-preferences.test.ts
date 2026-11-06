@@ -317,3 +317,65 @@ describe("saved views", () => {
     expect(preferencesOf(null, { views: [open] }).views).toEqual([open])
   })
 })
+
+describe("the Providers welcome", () => {
+  const store = new Map<string, string>()
+  beforeEach(() => {
+    store.clear()
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    })
+  })
+
+  it("is dismissed by its action", () => {
+    expect(preferencesOf().welcomeDismissed).toBeUndefined()
+    const prefs = applyConsoleAction(preferencesOf(), {
+      type: "welcome",
+      dismissed: true,
+    })
+    expect(prefs.welcomeDismissed).toBe(true)
+  })
+
+  it("knows the stored kind declares it from version 5", () => {
+    expect(declaredSettings([preferenceKind("welcomeDismissed")])).toEqual(
+      new Set(["welcomeDismissed"])
+    )
+  })
+
+  it("is written to the record once the stored kind declares it", async () => {
+    wire
+      .mockResolvedValueOnce({ version: 4, properties: { favorites: ["a"] } })
+      .mockResolvedValueOnce({ version: 5 })
+    await saveConsoleAction(
+      { type: "welcome", dismissed: true },
+      declaredSettings([preferenceKind("welcomeDismissed")])
+    )
+    expect(wire).toHaveBeenLastCalledWith("PUT", expect.any(String), {
+      properties: { collapsed: [], favorites: ["a"], welcomeDismissed: true },
+      ifVersion: 4,
+    })
+  })
+
+  it("stays in this browser where the stored kind predates it", async () => {
+    const declared = declaredSettings([preferenceKind("technicalDetails")])
+    expect(
+      await saveConsoleAction({ type: "welcome", dismissed: true }, declared)
+    ).toBeNull()
+    expect(wire).not.toHaveBeenCalled()
+    expect(preferencesOf(null, readLocalSettings()).welcomeDismissed).toBe(true)
+  })
+
+  it("reads the record's over this browser's", () => {
+    const record = {
+      id: "navigation",
+      kind: "substrate.reamde.dev/core/consolepreference",
+      version: 5,
+      properties: { welcomeDismissed: false },
+    } as never
+    expect(
+      preferencesOf(record, { welcomeDismissed: true }).welcomeDismissed
+    ).toBe(false)
+  })
+})

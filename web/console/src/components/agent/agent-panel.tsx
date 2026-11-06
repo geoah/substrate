@@ -10,7 +10,7 @@ import { BotIcon, GaugeIcon, PencilIcon, WrenchIcon } from "lucide-react"
 import { AgentManifest } from "@/components/agent/agent-manifest"
 import { AllowRules } from "@/components/agent/always-allow"
 import { GrantsEditor } from "@/components/agent/grants-editor"
-import { AddKeyButton } from "@/components/agent/model-key-dialog"
+import { AddKeyButton, RunsOnLine } from "@/components/agent/model-key-link"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
@@ -63,11 +63,14 @@ function policyWords(policy: SubstrateRecord): string {
 export function AgentPanel({
   agent,
   hasKey,
+  providerLabel,
   policies,
 }: {
   agent: SubstrateRecord
-  /** Whether its provider row carries a key; undefined while unknown. */
+  /** Whether its provider row's key resolves; undefined while unknown. */
   hasKey?: boolean
+  /** The provider row's name as its Providers card shows it. */
+  providerLabel?: string
   /** The write policies that speak for this agent. */
   policies: SubstrateRecord[]
 }) {
@@ -91,18 +94,24 @@ export function AgentPanel({
           <div className="min-w-0">
             <div className="font-semibold">{agentName(agent.id)}</div>
             <div className="text-[12.5px] text-muted-foreground">
-              {[model, provider && providerName(provider)]
-                .filter(Boolean)
-                .join(" · ")}
+              <RunsOnLine
+                providerId={provider}
+                name={providerLabel}
+                model={model || undefined}
+              />
             </div>
           </div>
         </div>
         {hasKey === false && provider && (
           <div className="flex flex-col items-start gap-1.5">
             <p className="text-[12.5px] text-warning">
-              No API key for {providerName(provider)} yet.
+              No API key for {providerLabel ?? providerName(provider)} yet.
             </p>
-            <AddKeyButton providerId={provider} size="xs" />
+            <AddKeyButton
+              providerId={provider}
+              name={providerLabel}
+              size="xs"
+            />
           </div>
         )}
         {description && (

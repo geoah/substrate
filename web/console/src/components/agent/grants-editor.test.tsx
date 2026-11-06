@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-/** The grants editor and the model-key dialog write what they say: a grant
- * edit is one PATCH of the agent's whole `permissions`, the rest carried
- * through; an edit that would leave a held tool without its grant is held
- * back with the reason; an edit that takes a collection away asks first;
- * the key is one PATCH of the provider row's `apiKey` under its version.
- * The chat panel carries the same editor under the same labels. */
+/** The grants editor writes what it says: a grant edit is one PATCH of the
+ * agent's whole `permissions`, the rest carried through; an edit that would
+ * leave a held tool without its grant is held back with the reason; an edit
+ * that takes a collection away asks first. The chat panel carries the same
+ * editor under the same labels. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -42,7 +41,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { AgentPanel } from "./agent-panel"
 import { GrantsEditor } from "./grants-editor"
-import { ModelKeyDialog } from "./model-key-dialog"
 
 const KIND = "substrate.reamde.dev/core/kind/"
 const TASK = "samples.substrate.reamde.dev/tasks/task"
@@ -399,20 +397,5 @@ describe("GrantsEditor and ModelKeyDialog", () => {
     wrap(<GrantsEditor agent={agent} />, true)
     await openPicker("Can see")
     expect((await option(/^Tokens/)).textContent).toContain(TOKEN)
-  })
-
-  it("writes the key to the provider row, sealed, under its version", async () => {
-    wrap(<ModelKeyDialog providerId="openai" open onOpenChange={() => {}} />)
-    expect(await screen.findByText("Add your OpenAI key")).toBeTruthy()
-    const input = await screen.findByLabelText("OpenAI API key")
-    fireEvent.change(input, { target: { value: " sk-test " } })
-    fireEvent.click(screen.getByRole("button", { name: "Save the key" }))
-    await waitFor(() => expect(patches()).toHaveLength(1))
-    const [url, init] = patches()[0]
-    expect(String(url)).toBe(PROVIDER_PATH)
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      properties: { apiKey: "sk-test" },
-      ifVersion: 5,
-    })
   })
 })

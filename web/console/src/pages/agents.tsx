@@ -28,6 +28,7 @@ import { ThreadList } from "@/components/agent/thread-list"
 import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import { useModelKeys } from "@/hooks/use-model-keys"
 import {
   agentProviderId,
   agentPurpose,
@@ -40,14 +41,13 @@ import {
 import {
   agentsQueryOptions,
   conversationsQueryOptions,
-  llmProvidersQueryOptions,
   openingMessagesQueryOptions,
   policiesForAgent,
-  providerHasKey,
   writePoliciesQueryOptions,
 } from "@/lib/api/agents"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
+import { modelName } from "@/lib/operator-defaults"
 
 /** A media query as state, for the two column breakpoints. */
 function useMedia(query: string): boolean {
@@ -98,7 +98,7 @@ export function AgentsPage() {
 
   const agents = useQuery(agentsQueryOptions())
   const conversations = useQuery(conversationsQueryOptions())
-  const providers = useQuery(llmProvidersQueryOptions())
+  const keys = useModelKeys()
   const policies = useQuery(writePoliciesQueryOptions())
 
   const allAgents = useMemo(() => agents.data?.records ?? [], [agents.data])
@@ -152,8 +152,8 @@ export function AgentsPage() {
   const agent = allAgents.find((a) => a.id === agentId)
 
   const providerId = agent ? agentProviderId(agent) : undefined
-  const providerRow = providers.data?.records.find((p) => p.id === providerId)
-  const hasKey = providerRow ? providerHasKey(providerRow) : undefined
+  const providerRow = keys.rows?.find((p) => p.id === providerId)
+  const hasKey = keys.resolves(providerId)
   const agentPolicies =
     agent && policies.data
       ? policiesForAgent(agent.id, policies.data.records)
@@ -223,7 +223,12 @@ export function AgentsPage() {
     />
   )
   const panel = agent ? (
-    <AgentPanel agent={agent} hasKey={hasKey} policies={agentPolicies} />
+    <AgentPanel
+      agent={agent}
+      hasKey={hasKey}
+      providerLabel={providerRow ? modelName(providerRow) : undefined}
+      policies={agentPolicies}
+    />
   ) : (
     <p className="p-4 text-[13px] text-muted-foreground">
       {agents.isPending ? "Loading the agent…" : "No agent is selected."}
@@ -278,7 +283,7 @@ export function AgentsPage() {
             !threadId &&
             Boolean(search.prompt) &&
             Boolean(agent) &&
-            !providers.isPending
+            !keys.pending
           }
           onAutoSent={() =>
             void setSearch({ send: null }, { history: "replace" })

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-26
 decision-makers: George Antoniadis
-amended-by: 0148, 0211
+amended-by: 0148, 0211, 0233
 ---
 
 # 0130. The console serves four things, and its navigation follows them

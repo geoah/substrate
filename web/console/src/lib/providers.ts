@@ -861,3 +861,45 @@ export function andList(items: string[]): string {
   if (items.length <= 1) return items.join("")
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
 }
+
+// ── the page's groups ───────────────────────────────────────────────────────
+
+/** Which group a catalog provider sits in on the Providers page. */
+export type ProviderGroup = "accounts" | "tools"
+
+export interface GroupFacts {
+  installed: boolean
+  /** The registry lists a kind of the package carrying the accountconfig
+   * trait (only knowable once it is installed). */
+  accountKind: boolean
+  /** The package's function records offering themselves to agents
+   * (decision 0198), once it is installed. */
+  offeredFunctions: number
+  /** What the catalog's closure declares, before it is installed. */
+  closureKinds: number
+  closureFunctions: number
+}
+
+/** **Tools for your agents** holds a provider whose package declares no
+ * account kind and offers functions to agents; every other provider is an
+ * account you connect. Before the package is installed the catalog does not
+ * say which kinds carry the accountconfig trait or which functions are
+ * offered, so its closure stands in: no kinds at all, and some functions. */
+export function providerGroup(f: GroupFacts): ProviderGroup {
+  if (f.installed)
+    return !f.accountKind && f.offeredFunctions > 0 ? "tools" : "accounts"
+  return f.closureKinds === 0 && f.closureFunctions > 0 ? "tools" : "accounts"
+}
+
+/** How many of a package's function records offer themselves to agents.
+ * A function record's id is its reference, `<package>/<name>`. */
+export function offeredFunctionCount(
+  functions: readonly SubstrateRecord[],
+  pkg: string
+): number {
+  return functions.filter((f) => {
+    if (!f.id.startsWith(`${pkg}/`)) return false
+    const offer = f.properties.offer as { agents?: unknown } | undefined
+    return offer?.agents === true
+  }).length
+}

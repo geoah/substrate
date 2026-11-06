@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-/** The Providers list: one card per shipped provider, each saying in one
- * pill where it stands or offering to add it. Adding takes the whole
+/** The Providers list's accounts: one card per shipped provider, each saying
+ * in one pill where it stands or offering to add it. The AI models and the
+ * operator's keys are providers-models.test.tsx's. Adding takes the whole
  * requirement chain, leaves first, through each package's own door, stops at
  * the first refusal and names it, and asks before replacing a package the
  * reader edited. Technical mode adds the other packages this repository
@@ -372,7 +373,7 @@ describe("ProvidersPage", () => {
   it("says what the page is for", async () => {
     renderPage(<ProvidersPage />)
     expect(
-      await screen.findByText(/Services that bring your data in/)
+      await screen.findByText(/the accounts that bring your data in/)
     ).toBeTruthy()
   })
 

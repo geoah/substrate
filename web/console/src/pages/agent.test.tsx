@@ -527,3 +527,123 @@ describe("AgentPage", () => {
     expect(screen.queryByText(/at least/)).toBeNull()
   })
 })
+
+/** Whether the agent can run is whether its AI model's key resolves: its row
+ * with no key of its own still runs where the operator serves it, and where
+ * nothing does, the note links to the model's card on Providers. The
+ * operator's read is asked whatever server.json lists; while it fails,
+ * nothing says a key is missing. */
+describe("AgentPage and its model's key", () => {
+  const SERVED = {
+    operator: { name: "Crane" },
+    items: [
+      {
+        id: "llm/openai",
+        slot: "llm",
+        label: "OpenAI",
+        source: "operator",
+        operatorOffers: true,
+        readiness: "ready",
+      },
+    ],
+  }
+  const NONE = {
+    items: [
+      {
+        id: "llm/openai",
+        slot: "llm",
+        label: "OpenAI",
+        source: "none",
+        operatorOffers: false,
+        readiness: "not-set-up",
+      },
+    ],
+  }
+  let answer: unknown = SERVED
+
+  beforeEach(() => {
+    params.id = AGENT_ID
+    THREADS = []
+    MORE = undefined
+    answer = SERVED
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url)
+        if (path === AGENT_PATH) return jsonResponse(200, AGENT)
+        if (path === "/.well-known/substrate/server.json")
+          return jsonResponse(200, { features: [] })
+        if (path === "/api/v1/operator/defaults") {
+          if (answer === "network") throw new TypeError("Failed to fetch")
+          if (typeof answer === "number")
+            return jsonResponse(answer, {
+              error: { code: "internal", message: "the read failed" },
+            })
+          return jsonResponse(200, answer)
+        }
+        const kinds = listed(path)
+        if (kinds.includes(PROVIDER))
+          return jsonResponse(200, {
+            records: [rec(PROVIDER, "openai", { wire: "openai" })],
+          })
+        if (kinds.includes(KIND))
+          return jsonResponse(200, { kinds: [AGENT_KIND] })
+        return jsonResponse(200, { records: [] })
+      })
+    )
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  const asked = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([u]) => String(u) === "/api/v1/operator/defaults")
+      .length
+
+  it("links a keyless model to its card on Providers", async () => {
+    answer = NONE
+    mount()
+    const note = await screen.findByText(/can’t run yet/)
+    const link = within(note.closest<HTMLElement>("[role=note]")!).getByText(
+      "Add your OpenAI key",
+      { selector: "a" }
+    )
+    expect(link.getAttribute("data-to")).toBe("/providers")
+    expect(JSON.parse(link.getAttribute("data-search")!)).toEqual({
+      model: "openai",
+    })
+  })
+
+  it("reads the row's own key where the server is older than the operator read", async () => {
+    answer = 404
+    mount()
+    expect(await screen.findByText(/can’t run yet/)).toBeTruthy()
+  })
+
+  it("says nothing is missing where the operator serves the model's key, though server.json lists no operatorDefaults", async () => {
+    mount()
+    await screen.findByRole("heading", { name: "What it runs on" })
+    await waitFor(() => expect(asked()).toBe(1))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByText(/can’t run yet/)).toBeNull()
+  })
+
+  it.each([
+    ["answers 500", 500],
+    ["cannot be reached", "network"],
+  ])(
+    "says nothing is missing while the operator read %s",
+    async (_, failure) => {
+      answer = failure
+      mount()
+      await screen.findByRole("heading", { name: "What it runs on" })
+      await waitFor(() => expect(asked()).toBe(1))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(screen.queryByText(/can’t run yet/)).toBeNull()
+    }
+  )
+})

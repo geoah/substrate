@@ -20,7 +20,7 @@ import { AgentMark } from "@/components/agent/agent-mark"
 import { AgentRef } from "@/components/agent/agent-ref"
 import { AllowRules } from "@/components/agent/always-allow"
 import { GrantsEditor } from "@/components/agent/grants-editor"
-import { AddKeyButton } from "@/components/agent/model-key-dialog"
+import { AddKeyButton } from "@/components/agent/model-key-link"
 import { RunsOn } from "@/components/agent/runs-on"
 import { EmptyValue } from "@/components/identity/empty-value"
 import { Facts } from "@/components/identity/facts"
@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useModelKeys } from "@/hooks/use-model-keys"
 import {
   agentName,
   agentOfferedTools,
@@ -86,9 +87,7 @@ import {
 import {
   AGENT_RUNS_WINDOW,
   agentRunsQueryOptions,
-  llmProvidersQueryOptions,
   policiesForAgent,
-  providerHasKey,
   writePoliciesQueryOptions,
 } from "@/lib/api/agents"
 import {
@@ -101,6 +100,7 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { AGENT_KIND } from "@/lib/core-kinds"
+import { modelName } from "@/lib/operator-defaults"
 import { propertyLabel } from "@/lib/grid-values"
 import { propSpecsByName, type PropSpec } from "@/lib/record-schema"
 import { agoWords, toolName } from "@/lib/tools"
@@ -126,7 +126,7 @@ export function AgentPage() {
   )
   const runs = useQuery(agentRunsQueryOptions(id))
   const policies = useQuery(writePoliciesQueryOptions())
-  const providers = useQuery(llmProvidersQueryOptions())
+  const keys = useModelKeys()
   const registry = useQuery(kindsQueryOptions)
   const functions = useQuery({
     ...functionsQueryOptions,
@@ -163,8 +163,9 @@ export function AgentPage() {
   const model =
     typeof record.properties.model === "string" ? record.properties.model : ""
   const provider = agentProviderId(record)
-  const providerRow = providers.data?.records.find((p) => p.id === provider)
-  const keyless = providerRow ? !providerHasKey(providerRow) : false
+  const providerRow = keys.rows?.find((p) => p.id === provider)
+  const providerLabel = providerRow ? modelName(providerRow) : undefined
+  const keyless = keys.resolves(provider) === false
   const description =
     typeof record.properties.description === "string"
       ? record.properties.description
@@ -251,10 +252,11 @@ export function AgentPage() {
           <span className="min-w-0 flex-1">
             <span className="font-medium">{name} can’t run yet.</span>{" "}
             <span className="text-muted-foreground">
-              It runs on {providerName(provider)}, which has no API key.
+              It runs on {providerLabel ?? providerName(provider)}, which has no
+              API key.
             </span>
           </span>
-          <AddKeyButton providerId={provider} />
+          <AddKeyButton providerId={provider} name={providerLabel} />
         </div>
       )}
 

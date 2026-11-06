@@ -33,7 +33,12 @@ import {
   register,
   registerEnroll,
 } from "@/lib/api/auth"
-import { useAuthPolicy } from "@/lib/api/discovery"
+import {
+  fetchDoorFeature,
+  useAuthPolicy,
+  useDoorFeature,
+} from "@/lib/api/discovery"
+import { OPERATOR_DEFAULTS_FEATURE } from "@/lib/api/operator"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
@@ -206,6 +211,9 @@ export function RegisterPage() {
   const site = useSite()
   const host = substrateHostname().replace(/\.$/, "").toLowerCase()
   const navigate = useNavigate()
+  // A deployment whose operator supplies keys greets a new repository on
+  // Providers, with a welcome that says what works now.
+  const operatorDefaults = useDoorFeature(OPERATOR_DEFAULTS_FEATURE)
   // Where registering returns to, as signing in does: only a path on this
   // console is followed.
   const returnTo = safeReturnPath(registerRoute.useSearch().redirect)
@@ -255,12 +263,17 @@ export function RegisterPage() {
   }
 
   // A return path wins over Verify domain: an app's approval page that sent
-  // the reader here is waiting for them, and Settings keeps.
-  function land() {
+  // the reader here is waiting for them, and Settings keeps. Both win over
+  // Providers, whose welcome waits until it is dismissed. Where discovery
+  // has not answered yet, it is asked once more before landing.
+  async function land() {
     if (returnTo) return navigate({ to: returnTo, replace: true })
     if (ownDomain) {
       return navigate({ to: "/settings", hash: "verify-domain", replace: true })
     }
+    const offered =
+      operatorDefaults ?? (await fetchDoorFeature(OPERATOR_DEFAULTS_FEATURE))
+    if (offered) return navigate({ to: "/providers", replace: true })
     return navigate({ to: "/", replace: true })
   }
 

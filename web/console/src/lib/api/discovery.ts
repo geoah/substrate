@@ -2,8 +2,9 @@
  * serves, answered without a token and without opening a repository — which
  * is what lets the DOOR read it. The login and register pages ask it two
  * things: does this substrate read an invite code, and does it verify a
- * second factor at all? The Settings page shows the version, the REST
- * endpoint and the features it lists.
+ * second factor at all? Registration also reads one feature, `operatorDefaults`,
+ * to decide where a new repository lands. The Settings page shows the
+ * version, the REST endpoint and the features it lists.
  *
  * A local substrate with no `SUBSTRATE_INVITE_CODE` reads none, and one booted
  * with `SUBSTRATE_INSECURE_DISABLE_TOTP` verifies no code, so a console that
@@ -62,6 +63,14 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
   totpRequired: true,
 }
 
+/** Whether the document lists a feature by name. */
+export function hasFeature(
+  doc: Pick<DiscoveryDoc, "features"> | null | undefined,
+  name: string
+): boolean {
+  return Boolean(doc?.features?.some((f) => f.name === name))
+}
+
 /** The IN-FLIGHT request, and only that: doors mounting together share one
  * call, and a door mounting later asks again.
  *
@@ -70,21 +79,35 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
  * the previous answer would then send no code to a door that wants one — an
  * account nobody can sign into until they think to reload. One unauthenticated,
  * repository-free GET per mount is the cheaper side of that trade. */
-let pending: Promise<AuthPolicy> | null = null
+let pending: Promise<DiscoveryDoc | null> | null = null
 
-export function fetchAuthPolicy(): Promise<AuthPolicy> {
+/** The door's read of the document: null where discovery did not answer. */
+function fetchDoorDoc(): Promise<DiscoveryDoc | null> {
   pending ??= fetchDiscoveryDoc()
-    .then((doc) => ({
-      inviteRequired: doc?.registration?.inviteRequired !== false,
-      totpRequired: doc?.registration?.totpRequired !== false,
-    }))
-    // Unreachable discovery must not leave the door unrenderable: assume the
-    // strict shape, which is the only safe reading of an answer nobody gave.
-    .catch(() => STRICT_AUTH_POLICY)
+    .catch(() => null)
     .finally(() => {
       pending = null
     })
   return pending
+}
+
+export function fetchAuthPolicy(): Promise<AuthPolicy> {
+  // Unreachable discovery must not leave the door unrenderable: assume the
+  // strict shape, which is the only safe reading of an answer nobody gave.
+  return fetchDoorDoc().then((doc) =>
+    doc
+      ? {
+          inviteRequired: doc.registration?.inviteRequired !== false,
+          totpRequired: doc.registration?.totpRequired !== false,
+        }
+      : STRICT_AUTH_POLICY
+  )
+}
+
+/** Whether the door's discovery lists a feature: false where discovery did
+ * not answer, which is what a server without the feature says too. */
+export function fetchDoorFeature(name: string): Promise<boolean> {
+  return fetchDoorDoc().then((doc) => hasFeature(doc, name))
 }
 
 /** Drop the in-flight request, so the next caller starts a fresh one. Tests
@@ -107,4 +130,20 @@ export function useAuthPolicy(): AuthPolicy {
     }
   }, [])
   return policy
+}
+
+/** One feature as a hook, for a door: undefined until discovery answers, so
+ * a caller that must act on it can still ask `fetchDoorFeature` itself. */
+export function useDoorFeature(name: string): boolean | undefined {
+  const [listed, setListed] = useState<boolean | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    void fetchDoorFeature(name).then((next) => {
+      if (live) setListed(next)
+    })
+    return () => {
+      live = false
+    }
+  }, [name])
+  return listed
 }

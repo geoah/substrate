@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-/** The old Registry, Connections and bundle Settings addresses land on the
- * Providers pages that replaced them. */
+/** The old Registry, Connections, Services and bundle Settings addresses land
+ * on the Providers pages that replaced them. */
 
 import { describe, expect, it } from "vitest"
 
@@ -10,6 +10,7 @@ import {
   connectionDetailRoute,
   connectionsRoute,
   registryRoute,
+  servicesRoute,
 } from "@/router"
 
 /** What a route's beforeLoad redirects to. */
@@ -33,6 +34,10 @@ describe("the retired provider addresses", () => {
   it("sends the registry and connections lists to Providers", () => {
     expect(target(registryRoute)).toMatchObject({ to: "/providers" })
     expect(target(connectionsRoute)).toMatchObject({ to: "/providers" })
+  })
+
+  it("sends a Services bookmark to Providers, which lists what it did", () => {
+    expect(target(servicesRoute)).toMatchObject({ to: "/providers" })
   })
 
   it("carries an OAuth return to the connected account's provider page", () => {

@@ -7,7 +7,7 @@
  * Inside a `SheetDraftContext` the record is not stored yet: the same write
  * lands in the draft and nothing reaches the server. */
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useSheetDraft } from "./draft"
@@ -57,6 +57,22 @@ export function recordPatchKey(record: SubstrateRecord) {
   return ["record-patch", record.kind, record.id] as const
 }
 
+/** Every read that can show the record, not only its page: a collection
+ * holds its rows fresh for a while, and a list keyed on the kind (the Agents
+ * page's providers) would otherwise go on showing the old values. */
+function afterWrite(
+  client: ReturnType<typeof useQueryClient>,
+  record: SubstrateRecord,
+  saved: SubstrateRecord | undefined
+) {
+  if (typeof saved?.version === "number") {
+    noteWrite(record.kind, record.id, saved.version)
+  }
+  return client.invalidateQueries({
+    predicate: (q) => recordWriteReaches(q.queryKey, record.kind, record.id),
+  })
+}
+
 /** `base`: the version the edit began from (see useEditBase); without one, a
  * write asserts the version on the page now, which is right only for a
  * one-gesture write that shows no draft (a checkbox). */
@@ -76,18 +92,62 @@ export function useRecordPatch(record: SubstrateRecord, base?: number) {
         ifVersion: base ?? record.version,
       })
     },
-    // Every read that can show the record, not only its page: a collection
-    // holds its rows fresh for a while, and a list keyed on the kind (the
-    // Agents page's providers) would otherwise go on showing the old values.
     onSuccess: (saved) => {
       if (draft) return
-      if (typeof saved?.version === "number") {
-        noteWrite(record.kind, record.id, saved.version)
-      }
-      return client.invalidateQueries({
-        predicate: (q) =>
-          recordWriteReaches(q.queryKey, record.kind, record.id),
-      })
+      return afterWrite(client, record, saved)
     },
   })
+}
+
+/** One secret property (an API key) written in place, under `ifVersion:
+ * base` like useRecordPatch, but the value never enters the mutation cache:
+ * TanStack keeps a mutation's variables for its gc time after the form that
+ * sent them closed, so a key passed to `mutate` would sit there in plain
+ * text. The value rides a ref the request reads once and clears, the
+ * mutation takes no variables, and the settled mutation is removed from the
+ * cache whether the write succeeded or failed. It writes straight to the
+ * server: a secret is never drafted. */
+export function useSecretPatch(
+  record: SubstrateRecord,
+  property: string,
+  base: number
+) {
+  const client = useQueryClient()
+  const secret = useRef<string | null>(null)
+  const { authority, pkg, name } = splitKind(record.kind)
+  // Under the record's patch key, so a surface that holds its next edit
+  // until a write lands sees this one; one level deeper, so removing it
+  // never touches another editor's write.
+  const mutationKey = [...recordPatchKey(record), "secret", property] as const
+  const mutation = useMutation({
+    mutationKey,
+    mutationFn: async () => {
+      const value = secret.current
+      secret.current = null
+      if (value === null) throw new Error("There is no value to save.")
+      return patchRecord(authority, pkg, name, record.id, {
+        properties: { [property]: value },
+        ifVersion: base,
+      })
+    },
+    onSuccess: (saved) => afterWrite(client, record, saved),
+  })
+  async function save(value: string): Promise<SubstrateRecord> {
+    secret.current = value
+    try {
+      return await mutation.mutateAsync()
+    } finally {
+      secret.current = null
+      const cache = client.getMutationCache()
+      for (const m of cache.findAll({ mutationKey, exact: true })) {
+        if (m.state.status !== "pending") cache.remove(m)
+      }
+    }
+  }
+  return {
+    save,
+    pending: mutation.isPending,
+    error: mutation.error,
+    reset: mutation.reset,
+  }
 }
