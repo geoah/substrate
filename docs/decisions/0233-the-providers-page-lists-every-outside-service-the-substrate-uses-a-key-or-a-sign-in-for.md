@@ -10,7 +10,7 @@ decision-makers: George Antoniadis
 
 A deployment's operator can now supply keys and OAuth clients a repository
 uses where it holds none of its own ([the plan](../plans/host-defaults.md),
-and decision 0232 in PR 1213). The console had nowhere that showed,
+and decision 0235 in PR 1213). The console had nowhere that showed,
 in one place, every service the substrate uses a key or a sign-in for and
 whose key each one runs on: Providers held only the catalog providers that bring data in
 ([0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md)),
