@@ -33,7 +33,7 @@ two disagreeing.`,
 			defer func() { _ = svc.Close() }()
 			report, err := svc.RotateHistoryGeneration(cmd.Context(), args[0])
 			if err != nil {
-				return err
+				return lockHint(err)
 			}
 			fmt.Fprintf(a.out, "repository %s: history generation %s -> %s; every saved change cursor now re-lists once\n",
 				report.Repository, report.Previous, report.Generation)

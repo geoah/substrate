@@ -646,15 +646,25 @@ type service struct {
 	// datasets is keyed by REPOSITORY ID, the authority: the repository's one
 	// name, on disk, in the database and on the wire (decision 0052).
 	datasets map[string]*dataset
-	// opening is the per-repository singleflight: an id maps to the channel
-	// the in-flight open closes when it is done, either way. It exists because
-	// the open ladder is not safe to run twice at once on one repository.
+	// opening is the per-repository singleflight (claimOpen): an id maps to
+	// the channel the holder closes when it is done, either way. It exists
+	// because the open ladder is not safe to run twice at once on one
+	// repository, and because a creation writes the new repository's
+	// directory with a writer of its own, which an open must not meet.
 	opening map[string]chan struct{}
 
 	// testFailAfterSeed, when set (tests only), forces createSeededRepository to
 	// fail AFTER the seed transaction commits and BEFORE the control-plane row —
 	// the exact crash window the erase-and-sweep guarantees cover.
 	testFailAfterSeed func() error
+	// testCatchUpPrepared, when set (tests only), runs in a table-to-file
+	// catch-up between the writer's Prepare and its Commit (appendFromTable):
+	// the moment the active segment ends in a transaction without its final
+	// newline, which a changelogfile.Open reads as an incomplete tail.
+	testCatchUpPrepared func(repository string)
+	// testOpenWaits, when set (tests only), runs when claimOpen finds the
+	// repository's slot held and is about to wait for it.
+	testOpenWaits func(repository string)
 	// testImportFault and testImportBatch are the options' import seams
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
@@ -1247,41 +1257,68 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 // plus a request are enough to make that happen — so the SECOND caller waits
 // for the first's answer instead of racing it.
 func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
+	cached, release, err := s.claimOpen(ctx, repo.ID)
+	if cached != nil || err != nil {
+		return cached, err
+	}
+	// The row is read again under the slot: this open may have waited on a
+	// creation that failed and erased the repository it had begun, and that
+	// answer is not found, not the storage error the stale row would draw.
+	fresh, err := s.repositoryByID(ctx, repo.ID)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	ds, err := s.openNew(ctx, fresh)
+	release()
+	// The operator's install list, once per open of the repository in this
+	// process, after the open is published: an install is an ordinary write
+	// through the dataset, and other requests may use the repository while
+	// it runs.
+	if err == nil {
+		s.runOperatorInstalls(ctx, ds)
+	}
+	return ds, err
+}
+
+// claimOpen is open's singleflight: it waits out whoever holds repository
+// id's slot, then returns the cached dataset, or, when none is cached, takes
+// the slot and returns its release. A creation takes the same slot
+// (createSeededRepository), so an open that finds the new control-plane row
+// waits for the directory write behind it instead of meeting that write's
+// changelog writer lock. The check of the cache and the claim are one
+// critical section: an open that missed the cache and claimed after another
+// open published would open a second writer over the first one's directory.
+func (s *service) claimOpen(ctx context.Context, id string) (*dataset, func(), error) {
 	for {
 		s.mu.Lock()
-		if ds, ok := s.datasets[repo.ID]; ok {
+		if ds, ok := s.datasets[id]; ok {
 			s.mu.Unlock()
-			return ds, nil
+			return ds, nil, nil
 		}
-		if inflight, ok := s.opening[repo.ID]; ok {
+		if inflight, ok := s.opening[id]; ok {
 			s.mu.Unlock()
+			if s.testOpenWaits != nil {
+				s.testOpenWaits(id)
+			}
 			// Wait for whoever got there first, then look again: their dataset
 			// is cached, or their failure is ours to retry.
 			select {
 			case <-inflight:
 				continue
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, nil, ctx.Err()
 			}
 		}
 		inflight := make(chan struct{})
-		s.opening[repo.ID] = inflight
+		s.opening[id] = inflight
 		s.mu.Unlock()
-
-		ds, err := s.openNew(ctx, repo)
-
-		s.mu.Lock()
-		delete(s.opening, repo.ID)
-		s.mu.Unlock()
-		close(inflight)
-		// The operator's install list, once per open of the repository in
-		// this process, after the open is published: an install is an
-		// ordinary write through the dataset, and other requests may use
-		// the repository while it runs.
-		if err == nil {
-			s.runOperatorInstalls(ctx, ds)
-		}
-		return ds, err
+		return nil, func() {
+			s.mu.Lock()
+			delete(s.opening, id)
+			s.mu.Unlock()
+			close(inflight)
+		}, nil
 	}
 }
 
@@ -1514,6 +1551,23 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
 	}
+	// OPEN'S SLOT BEFORE THE ROW, held until the directory is written or the
+	// failure erased (claimOpen). The row publishes the repository inside
+	// this process as well: a background loop lists it and opens the
+	// repository while reconcileRow below still appends the seed under a
+	// writer of its own. Without the slot that open fails on the writer's
+	// flock, or opens first, and then this creation's reconcile fails on
+	// the open's flock and erases a repository the open already serves.
+	// The slot is taken before the lease, so a failure hands the lease back
+	// before a waiting open runs.
+	cached, releaseOpen, err := s.claimOpen(ctx, authority)
+	if err != nil {
+		return zero, err
+	}
+	if cached != nil {
+		return zero, errAuthorityTaken(authority)
+	}
+	defer releaseOpen()
 	// THE WRITER LEASE BEFORE THE SEED, and so before the control-plane row.
 	// That row is the creation's commit point and the directory is written
 	// after it, so a lease taken only at the directory step leaves a window

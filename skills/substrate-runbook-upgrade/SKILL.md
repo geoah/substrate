@@ -378,7 +378,7 @@ refusal by editing tables or files:
 | `migration(s) this database applied are not the ones this binary carries` | the database was migrated by a different build of the same migration | restore the backup; there is no repair |
 | `the repository recorded migrations this binary does not carry` | a newer binary already ran repository migrations on it | deploy that release or a later one |
 | `the changelog speaks a newer dialect than this binary can replay`, or `the store speaks a newer schema dialect than this binary` | the binary is older than the repository | deploy a newer binary |
-| `another process is this repository's writer`, or `another process holds the changelog writer lock` | a second server process opened the same repositories | stop every other process, then start one |
+| `another process is this repository's writer`, or `holds the changelog writer lock` | a second server process opened the same repositories | stop every other process, then start one |
 | `is not the key the DEK wrap of repository` | this host's `SUBSTRATE_CREDENTIAL_KEY` is not the key the repository was sealed under | set the original key |
 | the API answers `503 unavailable` with `Retry-After` for one repository | that repository's open was refused; the server log names it and why | fix what the log names, then restart |
 | `REFUSED to upgrade a repository's shipped vocabulary`, with the guard lines under `refused` | the seeded packages stay at their stored version; the lines name the kind, the property and the records to rewrite | rewrite those records, then restart the server |
