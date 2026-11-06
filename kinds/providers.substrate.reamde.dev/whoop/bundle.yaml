@@ -172,7 +172,12 @@ data:
   # with WHOOP's own metrics (`whoop/recovery`, `whoop/strain`,
   # `whoop/sleep_performance`) and record views, writing the first-party
   # observations and health kinds (decision record 0192). ADDITIVE.
-  version: 25
+  #
+  # 26: the account declares `oauthClient`, the client its grant was
+  # issued to, which the OAuth facility writes at connect and checks before
+  # a refresh. The adapter's stamp follows the package to `whoop@26`; what
+  # it writes is unchanged. ADDITIVE.
+  version: 26
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -803,6 +808,30 @@ data:
       displayName: Sign-in error at
       description: when the OAuth facility first recorded the current sign-in
         error
+    # The client the OAuth facility exchanged this account's grant through. A
+    # grant is bound to its client, so a refresh through another one is not
+    # sent and the account asks for a reconnect instead (docs/bundles.md, The
+    # OAuth facility). It holds the id and whose client it was, never the
+    # secret.
+    oauthClient:
+      type: object
+      writer: oauth
+      displayName: Sign-in client
+      description: the OAuth client this account's grant was issued to, written
+        by the OAuth facility at connect; empty on an account connected before
+        it was recorded, which counts as your own client
+      fields:
+        clientId:
+          type: string
+          description: the client id the grant was issued to
+        source:
+          type: enum
+          description: whose client it is, the server operator's or your own
+          values:
+            - value: operator
+              label: The server's
+            - value: own
+              label: Your own
     email:
       type: email
       writer: oauth
@@ -3702,7 +3731,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `whoop-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "whoop@25"
+    ADAPTER = "whoop@26"
 
     OBSERVATION = "substrate.reamde.dev/observations/observation"
     SOURCE = "substrate.reamde.dev/observations/source"

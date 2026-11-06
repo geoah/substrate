@@ -2126,16 +2126,29 @@ routes read the repository's graph at one revision.
 `GET /api/v1/operator/defaults` answers each slot the repository spends a
 key through that the operator, whoever runs the deployment, could fill
 ([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)):
-one item per `llm/provider` row and one `embeddings` item. Each item has its
-`slot` (`llm` or `embeddings` today), its `source` (`operator`, `own` or
-`none`), `operatorOffers`, its `readiness` and, where it is not `ready`, a
-`message`. `operatorOffers` is true when the operator's file serves the slot
+one item per `llm/provider` row, one `embeddings` item, and one
+`oauth/<package>` item per provider the operator's file lists under
+`oauthClients`. Each item has its `slot` (`llm`, `embeddings` or `oauth`),
+its `source` (`operator`, `own` or `none`), `operatorOffers`, its `readiness`
+and, where it is not `ready`, a `message`. `operatorOffers` is true when the operator's file serves the slot
 to this repository, whatever the source, the readiness or the allowance:
 removing your own key would fall back to the operator's. A row whose agent
 has an open alert reads `failing` with the alert's error. The `embeddings`
 item's `target` is the row whose card shows the search line: the row that
 declares `embedModel`, else the row the operator's embeddings entry is
-nested under, absent when that row does not exist. Where the deployment
+nested under, absent when that row does not exist. An `oauth` item's
+`target` is the package and its `notice` is the operator's own words about
+the client; its source is `operator` where the provider's client input
+resolves to no record, `own` where a record of the person's resolves, its
+`operatorOffers` is false where the operator's client cannot serve the
+installed package (a copy the repository owns, or an installed version whose
+account kinds do not record the client), and its
+readiness is `needs-connect` until an account holds a grant,
+`reconnect-needed` when an account's grant came from another client than the
+one resolving now or its last refresh failed, `not-set-up` while the package
+is not installed, and `install-failed`, with the error, when the operator's
+install of it failed ([the operator's OAuth
+client](bundles.md#the-operators-oauth-client)). Where the deployment
 loaded an [operator defaults](operations.md#operator-defaults) file,
 `operator` carries the site's name from `site.yaml` and today's `allowance`:
 `centsPerDay`, `usedCents` (open reservations count at their ceiling),

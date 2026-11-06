@@ -73,7 +73,9 @@ engine resolves one record per input, in order: the bound record (a reference
 the bind verb writes on the bundle's own row); else the record whose id is
 `default`; else the sole live record of the kind; else nothing. An unresolved
 input is a first-class state the bundle's status reports per input; the engine
-never tie-breaks. An input with `inject: functions` crosses
+never tie-breaks. The one input that may resolve to no record and still work
+is a published provider's OAuth client, where the operator supplies one
+([the operator's OAuth client](#the-operators-oauth-client)). An input with `inject: functions` crosses
 into the bundle's function invocations under its name; one without is read by
 a host facility alone (the OAuth client). A bundle that needs nothing
 declares no inputs, and nothing anywhere implies configuration. The second
@@ -482,6 +484,68 @@ Deleting a connected account revokes best-effort against the declared
 `revocationEndpoint`, deletes the stored credential, and only then releases the
 record. A function never sees any of it — its injected config carries a
 resolved `token`, never the client secret or the reference.
+
+### The operator's OAuth client
+
+An operator's defaults file may list a published provider under
+`oauthClients` with a client id and secret
+([operator defaults](operations.md#operator-defaults)). That client is used
+only when the provider's OAuth client input resolves to no record at all: no
+binding, no `default` record and no live record of the client kind. A record
+of the person's always wins, and inputs that resolve wrong keep their setup
+item and refuse the flow as before: two records with none bound
+(`ambiguous`), a binding to a deleted record (`dangling`), or a record missing
+its id or secret (`oauth-client`). The id and the secret come from the same
+client, never one from each. Only a package the repository holds as
+`published` qualifies, so a copy the repository owns signs in through its own
+records.
+
+The operator's client takes the same paths a record's does: the consent, the
+code exchange, the refresh, the revoke and a webhook's `oauthClientSecret`
+signing key. Its secret stays in the server process: no record, sealed value,
+changelog entry, export or function receives it. A function of a provider
+signed in this way reads no client record in `config.inputs`, so it calls the
+provider's own API, never an `apiBase` a record could name. An invocation
+resolves the client input once, and both the record in `config.inputs` and
+the client its accounts' grants are checked against come from that one
+resolution. The bundle status
+lists no setup item for a client input the operator covers, and `GET
+/api/v1/operator/defaults` answers one `oauth/<package>` item per listed
+provider ([operator defaults](api.md#operator-defaults)).
+
+Each account records the client its grant was issued to, in `oauthClient`, a
+`writer: oauth` object of `clientId` and `source` (`operator` or `own`) that
+the callback writes; Google, GitHub and WHOOP declare it. A grant works only
+with the client that issued it, so the refresh loop and an invocation compare
+the record with the client resolving now. On a mismatch the account is not
+refreshed, an invocation gets no token for it, and the account reads
+`tokenStatus: erroring` with `tokenError` "the OAuth client changed since this
+account connected; reconnect the account"; a reconnect records the new client.
+An account connected before the record existed counts as connected through the
+person's own client. The operator's client serves a provider only where every
+account kind of the package declares `oauthClient`, so an install of an older
+version keeps asking for a client record until it is upgraded.
+
+The comparison reads the stored token and the account's `oauthClient` in one
+statement, and it runs on every read whose token an invocation receives or
+whose refresh token is sent, including the reads after a refresh that waited
+behind another or was refused while a reconnect landed. A reconnect through
+another client between a check and the token's read therefore cannot hand its
+token to an invocation built for the old client. The `erroring` stamp resolves
+the client again inside its own transaction, which no write of a client record
+or an input binding can interleave with, so an owner who removes or restores
+their client record before the stamp commits is judged by the client resolving
+then. The stamp is written only while the credential is still the one that was
+compared, so a reconnect that lands first keeps its `connected`, as a
+refusal's stamp does
+([0180](decisions/0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md)).
+Once the client that issued the grant resolves again, the next refresh that
+succeeds clears the stamp; a token without expiry is never refreshed, so the
+next invocation that receives it clears the stamp instead.
+If the operator removes a provider from `oauthClients`, an account connected
+through its client has no client to refresh through: nothing is sent to the
+provider, and at its next refresh or invocation the account reads `erroring`
+with the same reason.
 
 ## Settings
 

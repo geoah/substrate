@@ -351,11 +351,36 @@ file the server behaves as the section above says. With it:
   resets at 00:00 UTC; add your own key to keep going". The site's name comes
   from `site.yaml` ([a site for the deployment](#a-site-for-the-deployment)),
   and is "this server" without one.
+- A published provider listed under `oauthClients` signs in through the
+  operator's OAuth client wherever its client input resolves to no record of
+  the person's
+  ([the operator's OAuth client](bundles.md#the-operators-oauth-client)).
+  Each account records which client its grant came from; after the client
+  changes, the account asks for a reconnect instead of refreshing. Removing a
+  provider from `oauthClients` is such a change for the accounts connected
+  through your client: they ask for a reconnect at their next refresh.
+- Each package under `install` is installed through the catalog at
+  registration, and at a repository's first open under a file that lists a
+  package the repository has never held. A package whose bundle record its
+  changelog ever held, including one the owner since uninstalled, is not
+  installed again, and that survives a rebuild and an export restored
+  elsewhere, because the changelog travels with it. A failed install is
+  logged, tried again at the next open (in practice, the next restart), and
+  shown as `install-failed` with the error on the package's `oauth` item.
 - `GET /api/v1/operator/defaults` answers each slot, its source, whether the
   operator offers it, and today's allowance, and discovery lists the
   `operatorDefaults` feature ([operator defaults](api.md#operator-defaults)).
 
 ```yaml
+install:                           # published providers every repository gets once
+  - providers.substrate.reamde.dev/google
+oauthClients:
+  providers.substrate.reamde.dev/google:
+    clientId: 1234.apps.googleusercontent.com
+    clientSecret: {file: /run/secrets/google-client-secret}
+    notice: >-                     # optional; shown beside the provider's sign-in
+      Example's Google sign-in is in testing. Ask Example to add your Google
+      address before you connect, and expect to reconnect once a week.
 llm:
   openai:                          # the llm/provider row id it serves
     wire: openai
@@ -382,10 +407,22 @@ budget:
 
 Key material is never written in the file: every key is `{file: /path}`, an
 absolute path read once at boot, or `{env: NAME}`. The file also reads
-`install`, `oauthClients` (`clientId`, `clientSecret`, `notice`) and
-`functionSecrets` (`apiKey`, `consumers`, `pricePerCall` in cents), and
-validates them, but nothing acts on those three yet; each package they name
-must be one this binary ships as a provider.
+`functionSecrets` (`apiKey`, `consumers`, `pricePerCall` in cents) and
+validates it, but nothing acts on it yet. Each package `install`,
+`oauthClients` and `functionSecrets` name must be one this binary ships as a
+provider.
+
+An OAuth client the operator registers lists the server's one callback,
+`SUBSTRATE_OAUTH_CALLBACK_URL` (`https://<your-substrate-host>/api/v1/oauth/callback`),
+as its redirect URI. A Google client in Testing mode lets only the test users listed
+on its consent screen connect, at most 100, so the operator adds each
+person's Google address by hand, and the `notice` says so. Google expires a
+Testing client's refresh tokens after 7 days: the refresh then fails with
+`invalid_grant`, and the account asks for a reconnect. Moving to a production
+client is a client id change, so every account connected through the old
+client reconnects once. Google's verification of a production client
+(sensitive scopes, and a security assessment for `gmail.readonly`) is the
+operator's own work.
 
 The boot refuses a file that is not absolute or sits inside
 `SUBSTRATE_SITE_DIR`, a key file that is missing or empty, an unset or empty

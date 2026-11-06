@@ -54,6 +54,28 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	// access token — the invocation scrubber holds them to the runner
 	// boundary. Only `inject: functions` inputs cross; a facility-read input
 	// (the OAuth client) never does.
+	//
+	// The OAuth client input is resolved ONCE, before anything is injected:
+	// the record a body reads (its `apiBase` among the rest) and the client
+	// each account's grant is checked against come from that one resolution.
+	// Resolved twice, a client record deleted between the two reads would
+	// inject the record's `apiBase` while the second read fell back to the
+	// operator's client, and an operator-connected account's token would
+	// reach that base. Beside the operator's client no client record is
+	// injected at all, so a body of such an account calls the provider's own
+	// API.
+	oauthEnabled := b.OAuth2 != nil
+	var clientInput resolvedInput
+	var client oauthClient
+	var clientErr error
+	if oauthEnabled {
+		var err error
+		if clientInput, err = ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput); err != nil {
+			return nil, nil, err
+		}
+		client, clientErr = ds.oauthClientFrom(ctx, ds.db, b, clientInput)
+	}
+
 	var secrets []string
 	inputs := map[string]any{}
 	for _, name := range b.InputOrder {
@@ -61,9 +83,17 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		if in.Inject != vocabulary.BundleInputInjectFunctions {
 			continue
 		}
-		ri, err := ds.resolveBundleInput(ctx, b, name)
-		if err != nil {
-			return nil, nil, err
+		var ri resolvedInput
+		if oauthEnabled && name == b.OAuth2.ClientInput {
+			if clientErr == nil && client.Operator {
+				continue
+			}
+			ri = clientInput
+		} else {
+			var err error
+			if ri, err = ds.resolveBundleInput(ctx, b, name); err != nil {
+				return nil, nil, err
+			}
 		}
 		if ri.Row == nil {
 			// An unresolved input injects nothing; the body sees the key
@@ -94,23 +124,13 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		cfg["settings"] = settings
 	}
 	secrets = append(secrets, ssecrets...)
+	ds.oauthPoint(oauthPointConfigInputs)
 
-	oauthEnabled := b.OAuth2 != nil
-
-	// The refresh endpoints (client creds + token endpoint from the manifest,
-	// no scopes) are resolved once for the whole bundle. A configuration that
-	// cannot yield client credentials simply injects no tokens — each account
-	// carries a tokenError the body can surface.
-	var refreshEP oauthEndpoints
-	haveClient := false
-	if oauthEnabled {
-		clientID, clientSecret, cerr := ds.oauthClientOf(ctx, b)
-		if cerr == nil {
-			refreshEP = oauthEndpointsFor(b.OAuth2, clientID, clientSecret, nil)
-			haveClient = true
-		}
-	}
-
+	// Each account's token comes from the client resolved above, and only
+	// when its grant was issued to that client (accountAccessToken): a grant
+	// through the operator's client never meets a base the person's own
+	// record names. A configuration that cannot yield a client injects no
+	// tokens; each account carries a tokenError the body can surface.
 	var accounts []any
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
@@ -126,17 +146,17 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 			secrets = append(secrets, esecrets...)
 			if oauthEnabled {
 				ref := propString(row, propTokenRef)
+				account := eref{Kind: t.Identity, ID: row.ID}
 				switch {
 				case ref == "":
-				case !haveClient:
-					entry["tokenError"] = "the bundle configuration is missing its client credentials"
+				case clientErr != nil:
+					entry["tokenError"] = ds.noClientTokenError(ctx, ref, account, clientErr)
 				default:
 					// The ref is bound to THIS account: a credential row
 					// names the account it was issued for, and a tokenRef
 					// pointing anywhere else is refused rather than resolved
 					// (see accountAccessToken).
-					token, err := ds.accountAccessToken(ctx, ref, refreshEP,
-						eref{Kind: t.Identity, ID: row.ID})
+					token, err := ds.accountAccessToken(ctx, ref, account, b.OAuth2, client)
 					if err != nil {
 						// A dead grant must not park every delivery of the
 						// bundle: the body sees the error beside the account
@@ -236,7 +256,13 @@ func isOAuthFacilitySecret(ty *vocabulary.Kind, name string) bool {
 
 // liveRowsOf reads every live record row of one type, ordered by id.
 func (ds *dataset) liveRowsOf(ctx context.Context, typeIdent string) ([]*erow, error) {
-	rs, err := ds.db.QueryContext(ctx, `
+	return ds.liveRowsOn(ctx, ds.db, typeIdent)
+}
+
+// liveRowsOn is liveRowsOf read through q, the pool or the caller's
+// transaction (loadRowOn).
+func (ds *dataset) liveRowsOn(ctx context.Context, q dbx, typeIdent string) ([]*erow, error) {
+	rs, err := q.QueryContext(ctx, `
 		SELECT `+recordCols+` FROM records
 		WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeIdent)
 	if err != nil {

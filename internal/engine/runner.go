@@ -49,7 +49,14 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 // loadRowDB reads one record row by its full (type, id) identity, outside
 // any transaction.
 func (ds *dataset) loadRowDB(ctx context.Context, ref eref) (*erow, error) {
-	row, err := scanRecord(ds.db.QueryRowContext(ctx,
+	return ds.loadRowOn(ctx, ds.db, ref)
+}
+
+// loadRowOn is loadRowDB read through q: the pool, or a transaction the
+// caller holds, which must read through it rather than take a second
+// connection from the shared pool.
+func (ds *dataset) loadRowOn(ctx context.Context, q dbx, ref eref) (*erow, error) {
+	row, err := scanRecord(q.QueryRowContext(ctx,
 		`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2`, ref.Kind, ref.ID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

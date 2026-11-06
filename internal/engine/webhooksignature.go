@@ -856,14 +856,16 @@ func (ds *dataset) webhookSigningKey(ctx context.Context, tr *trigger) (string, 
 		if !ok || b.OAuth2 == nil {
 			return "", signingKeyNoOAuth2
 		}
-		_, secret, err := ds.oauthClientOf(ctx, b)
+		// The operator's client signs where it is the one resolving
+		// (operatoroauth.go): its secret stays inside the host here too.
+		client, err := ds.oauthClientOf(ctx, b)
 		switch {
 		case errors.Is(err, substrate.ErrGuard), errors.Is(err, substrate.ErrNotFound), errors.Is(err, errSecretUnreadable):
 			return "", signingKeyNoOAuthClient
 		case err != nil:
 			return "", err
 		}
-		return secret, nil
+		return client.Secret, nil
 	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: kindSecret, ID: sig.SecretRecord})
 	if err != nil {

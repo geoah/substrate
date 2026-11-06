@@ -146,6 +146,43 @@ func run() error {
 		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
 	}
 
+	// The catalog before the engine: the operator's install list runs
+	// through it at registration and at a repository's open, and a file
+	// naming a package the binary does not ship is a refusal at boot.
+	//
+	// BOTH SHIPPED TREES: the provider packages under kinds/ and the sample
+	// packages under samples/. A catalog built from one of them serves half
+	// the shipped set and 404s every install of the other.
+	authorityDocs, err := cfg.AuthorityDocs()
+	if err != nil {
+		return err
+	}
+	if err := authority.CheckLocalDocuments(authorityDocs); err != nil {
+		return fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS: %w", err)
+	}
+	for authority, path := range authorityDocs {
+		// Loud, and at boot: this file, not the authority's DNS, decides
+		// which apps read as its.
+		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: the server trusts this file in place of DNS for this authority",
+			"authority", authority, "path", path)
+	}
+	resolver := domains.NewResolver(cfg.DNSResolver)
+	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs, Resolver: resolver})
+	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		return err
+	}
+	for _, warn := range cat.Warnings() {
+		slog.Warn("catalog: dropped a shipped bundle directory", "detail", warn)
+	}
+	if err := operatorDefaults.CheckPackages(func(id string) bool {
+		b, ok := cat.ByID(id)
+		return ok && b.Tier == substrate.TierProvider
+	}); err != nil {
+		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
+	}
+	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
+
 	ctx, cancelCause := context.WithCancelCause(context.Background())
 	cancel := func() { cancelCause(nil) }
 	defer cancel()
@@ -226,6 +263,9 @@ func run() error {
 			name = siteDir.Info().Name
 		}
 		opts = append(opts, engine.WithOperatorDefaults(operatorDefaults, name))
+		opts = append(opts, engine.WithOperatorInstaller(func(ctx context.Context, ds substrate.Dataset, pkg string) error {
+			return cat.SeedInstall(ctx, ds, pkg)
+		}))
 	}
 	if cfg.InsecureAllowForeignPackages {
 		slog.Warn("SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES is set: a token may declare packages under any authority; local development only")
@@ -280,38 +320,6 @@ func run() error {
 	// boot starts draining without a restart.
 	start("embed queue", embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc) })
 
-	// BOTH SHIPPED TREES: the provider packages under kinds/ and the sample
-	// packages under samples/. A catalog built from one of them serves half
-	// the shipped set and 404s every install of the other.
-	authorityDocs, err := cfg.AuthorityDocs()
-	if err != nil {
-		return err
-	}
-	if err := authority.CheckLocalDocuments(authorityDocs); err != nil {
-		return fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS: %w", err)
-	}
-	for authority, path := range authorityDocs {
-		// Loud, and at boot: this file, not the authority's DNS, decides
-		// which apps read as its.
-		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: the server trusts this file in place of DNS for this authority",
-			"authority", authority, "path", path)
-	}
-	resolver := domains.NewResolver(cfg.DNSResolver)
-	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs, Resolver: resolver})
-	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		return err
-	}
-	for _, warn := range cat.Warnings() {
-		slog.Warn("catalog: dropped a shipped bundle directory", "detail", warn)
-	}
-	if err := operatorDefaults.CheckPackages(func(id string) bool {
-		b, ok := cat.ByID(id)
-		return ok && b.Tier == substrate.TierProvider
-	}); err != nil {
-		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
-	}
-	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
 	loops.Add(1)
 	go func() {
 		defer loops.Done()
