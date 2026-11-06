@@ -479,9 +479,12 @@ first label.
   validated and stored, read by clients to decide what they list, by search
   to rank machinery lower, and by the engine to leave `internal` kinds out
   of an agent's kinds list unless its grant names them; every kind of
-  `core`, `llm` and `console` is `internal` but `llm/memory`, while it and the
+  `core`, `llm` and `console` is `internal` but `llm/memory` and
+  `core/contact` (`vocabulary.SeededOwnerData`, which the merge guard and the
+  console read too), while they and the
   seeded `observations` kinds are the owner's data and keep their own
   ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
+  [0231](docs/decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md),
   [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
   [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:

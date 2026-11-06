@@ -5,7 +5,7 @@
  * declared names sort alphabetically — stable and honest. */
 
 import { splitKind } from "@/lib/api/http"
-import { isMachinery } from "@/lib/core-kinds"
+import { isMachineryKind } from "@/lib/core-kinds"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 import { withFormWords } from "@/lib/observed-form"
 
@@ -33,17 +33,14 @@ const PURPOSES: readonly KindPurpose[] = ["primary", "supporting", "internal"]
  * purpose the catalog says the shipped declaration carries: it stands in for
  * a kind not held here, and for one held from a copy taken before it declared
  * any. A kind of the substrate's machinery (core, llm, console) is internal
- * whatever it declares; the substrate's other packages, observations and the
- * well-known catalogues, hold the owner's data and keep their own. */
+ * whatever it declares, except the few that hold the owner's data
+ * (SEEDED_OWNER_DATA_KINDS); the substrate's other packages, observations and
+ * the well-known catalogues, hold the owner's data and keep their own. */
 export function kindPurpose(
   k: KindInfo | string,
   shipped?: string
 ): KindPurpose {
-  const { authority, pkg } =
-    typeof k === "string"
-      ? splitKind(k)
-      : { authority: k.authority, pkg: k.package }
-  if (isMachinery(authority, pkg)) return "internal"
+  if (isMachineryKind(typeof k === "string" ? k : k.identity)) return "internal"
   const declared = typeof k === "string" ? undefined : k.definition?.purpose
   return asPurpose(declared) ?? asPurpose(shipped) ?? "primary"
 }

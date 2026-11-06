@@ -1,0 +1,183 @@
+# One contact: a person, a business, a group or a bot the owner deals with
+# (decision record 0231, docs/plans/contacts.md). It is the owner's data in a
+# package of machinery, so it declares `purpose: primary` and is listed in
+# vocabulary.SeededOwnerData, which the merge guard and the console both read.
+#
+# Every account a party has on a service is that provider's own mirror (a
+# Google contact, a Slack member, a GitHub user), pointing here through the
+# subject reference a recordmapping fills (records 0049, 0096). So the names,
+# addresses and numbers below are what the mirrors converge on and what the
+# owner wrote, never a provider's raw shape.
+#
+# The names are flat because a mapping writes top-level properties only:
+# `map` keys and `match[].to` name one property each, so an object-typed name
+# could not be filled from Apple or Google. `name` is written whole: a
+# displayTemplate alternative picks, it never joins parts.
+#
+# `contactType` and not `type`: `type` is the dead word for a kind
+# (docs/terms.md), and Apple's own field carries this name. Absent means not
+# yet known, which is what a contact minted from a bare mail address is.
+#
+# `prominence` is how visible a contact is and nothing else: Mneme's
+# `notaperson` state became `contactType: bot` or `group`. Every move is
+# allowed both ways, because the owner may be wrong in any direction. A
+# mapping cannot move a state (internal/vocabulary/mapping.go refuses one), so
+# promotion to `known` is a function's or the owner's.
+#
+# `dates` is a keyed map so a day without a year (Apple's birthday shape)
+# stays without one. A write replaces the whole map and a keyed map is
+# outside the filter grammar, so it holds days the owner records, not a
+# value a function rewrites on a schedule.
+#
+# The owner's own contact is an ordinary one, named by the core setting
+# `substrate.reamde.dev/core/ownerContact` (decision record 0231).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/contact
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Someone or something you deal with: a person, a business, a group or a
+    bot. One record each; every account it has on a service, such as a Google
+    contact, a Slack member or a GitHub user, is that provider's record pointing
+    here.
+  purpose: primary
+  names:
+    singular: contact
+  label:
+    singular: Contact
+    plural: Contacts
+  displayTemplate: "{name|nickname|organizationName|emails[]|phones[]|substrate}"
+  properties:
+    contactType:
+      type: enum
+      displayName: Type
+      description: what the contact is; absent means not yet known
+      values:
+        - person
+        - organization
+        - group
+        - bot
+    prominence:
+      type: state
+      displayName: Prominence
+      description: utility until an address book or the owner promotes it
+        to known; hidden is the owner forgetting it
+      states:
+        - utility
+        - known
+        - hidden
+      initial: utility
+      transitions:
+        - from: utility
+          to: known
+        - from: known
+          to: utility
+        - from: utility
+          to: hidden
+        - from: known
+          to: hidden
+        - from: hidden
+          to: utility
+        - from: hidden
+          to: known
+    name:
+      type: string
+      displayName: Name
+      description: the full name to show, as the source or the owner wrote
+        it
+    givenName:
+      type: string
+      displayName: Given name
+      description: the first name
+    familyName:
+      type: string
+      displayName: Family name
+      description: the last name
+    nickname:
+      type: string
+      displayName: Nickname
+      description: what the owner calls them
+    organizationName:
+      type: string
+      displayName: Organization
+      description: the company as the card says it; memberOf is the organization's
+        own record
+    jobTitle:
+      type: string
+      displayName: Job title
+      description: the job title as the card says it
+    memberOf:
+      type: reference
+      kind: substrate.reamde.dev/core/contact
+      repeated: true
+      mustExist: true
+      displayName: Member of
+      description: the organizations and groups this contact belongs to
+      properties:
+        role:
+          type: string
+          displayName: Role
+          description: the role held there, such as a title or lead
+        since:
+          type: date
+          displayName: Since
+          description: the day the membership started
+    emails:
+      type: email
+      repeated: true
+      displayName: Emails
+      description: every address seen for this contact
+    phones:
+      type: string
+      repeated: true
+      displayName: Phones
+      description: numbers as providers send them, not E.164-only
+    urls:
+      type: url
+      repeated: true
+      displayName: Links
+      description: web pages about this contact, such as a homepage or a profile
+    substrate:
+      type: string
+      pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+      displayName: Substrate
+      description: the contact's own substrate repository name, such as ada.example.org;
+        it says where to find them, not that they own it
+    pronouns:
+      type: string
+      displayName: Pronouns
+      description: free text; empty means unknown, so use they/them
+    dates:
+      type: object
+      keyed: true
+      keyPattern: camel
+      displayName: Dates
+      description: named days, such as birthday or anniversary; the year may
+        be absent
+      fields:
+        year:
+          type: int
+          min: 1
+          displayName: Year
+          description: the year; absent for a day saved without one
+        month:
+          type: int
+          required: true
+          min: 1
+          max: 12
+          displayName: Month
+          description: the month, 1 to 12
+        day:
+          type: int
+          required: true
+          min: 1
+          max: 31
+          displayName: Day
+          description: the day of the month, 1 to 31
+    details:
+      type: markdown
+      embed: true
+      displayName: Details
+      description: what is worth remembering about this contact, as prose

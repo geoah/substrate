@@ -2,8 +2,10 @@
  * the owner's records ("Training", "Health", "Tasks": the repository's own
  * packages, every other authority's that is neither a provider's nor the
  * substrate's machinery, and the substrate's observations and well-known
- * catalogues), one "From <Provider>" group per provider package, and the
- * substrate's own machinery (core, llm, console) last. The package is the
+ * catalogues), one group per owner-data kind inside the machinery packages
+ * ("Contacts", named by its plural, since its package is core), one "From
+ * <Provider>" group per provider package, and the substrate's own machinery
+ * (core, llm, console) last. The package is the
  * group because it is the unit one publisher versions and ships together,
  * while one authority publishes unrelated packages (the substrate publishes
  * both health and labs, a repository holds every sample it imported). The
@@ -17,7 +19,7 @@ import {
   type ProviderInfo,
 } from "@/lib/actor-identity"
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
-import { isMachinery } from "@/lib/core-kinds"
+import { isMachineryKind, isSeededOwnerData } from "@/lib/core-kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural, lowerFirst, packageDisplayName } from "@/lib/kind-names"
@@ -126,9 +128,13 @@ export function collectionGroups(
       const entry = providers.get(provider.key) ?? { info: provider, kinds: [] }
       providers.set(provider.key, entry)
       entry.kinds.push(k)
-    } else if (isMachinery(k.authority, k.package)) system.push(k)
+    } else if (isMachineryKind(k.identity)) system.push(k)
     else {
-      const id = `${k.authority}/${k.package}`
+      // An owner-data kind of a machinery package is a group of its own: its
+      // package is the substrate's, and "Core" names nothing a person keeps.
+      const id = isSeededOwnerData(k.identity)
+        ? k.identity
+        : `${k.authority}/${k.package}`
       packages.set(id, [...(packages.get(id) ?? []), k])
     }
   }
@@ -137,7 +143,9 @@ export function collectionGroups(
       id,
       list,
       authority: list[0].authority,
-      word: packageDisplayName(list[0].package),
+      word: isSeededOwnerData(id)
+        ? displayPlural(list[0])
+        : packageDisplayName(list[0].package),
     }))
     .sort(
       (a, b) =>
@@ -175,12 +183,13 @@ export function collectionGroups(
 }
 
 /** Where a kind sits, in words: its package ("Training"), "From Google",
- * "Substrate". */
+ * "Substrate", or an owner-data kind's own group ("Contacts"). */
 export function collectionSource(kind: string): string {
   const provider = providerOfKind(kind)
   if (provider) return `From ${provider.name}`
-  const { authority, pkg } = splitKind(kind)
-  return isMachinery(authority, pkg) ? "Substrate" : packageDisplayName(pkg)
+  if (isSeededOwnerData(kind)) return displayPlural(kind)
+  const { pkg } = splitKind(kind)
+  return isMachineryKind(kind) ? "Substrate" : packageDisplayName(pkg)
 }
 
 /** An authority as its page and crumb name it: "From providers",

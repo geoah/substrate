@@ -43,6 +43,7 @@ describe("originOfKind", () => {
       originOfKind("providers.substrate.reamde.dev/google/contact").kind
     ).toBe("provider")
     expect(originOfKind("substrate.reamde.dev/core/kind").kind).toBe("core")
+    expect(originOfKind("substrate.reamde.dev/core/contact").kind).toBe("yours")
     expect(originOfKind("ada.localhost/tasks/task").kind).toBe("yours")
   })
 })
