@@ -103,6 +103,9 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	first := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: conversation, ID: fid("C123"), Properties: noopProps(),
 	})
+	if !first.Created {
+		t.Fatal("the first put does not say it created the record")
+	}
 
 	// A trigger watching the mirror. Nothing here runs the dispatcher: a
 	// delivery is a changelog row read afterwards, so the changelog assertion
@@ -143,6 +146,11 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	} {
 		t.Run(round.name, func(t *testing.T) {
 			got := round.write()
+			// The version is still 1 here, so only Created tells this write
+			// from the create (the HTTP status reads it).
+			if got.Created {
+				t.Error("an identical write says it created the record")
+			}
 			if got.Version != first.Version {
 				t.Errorf("version %d → %d", first.Version, got.Version)
 			}
@@ -175,8 +183,8 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	changed := mustPatch(t, ds, slack, conversation, fid("C123"), substrate.PatchInput{
 		Properties: map[string]any{"memberCount": 43},
 	})
-	if changed.Version != first.Version+1 {
-		t.Fatalf("a changed property left the version at %d", changed.Version)
+	if changed.Version != first.Version+1 || changed.Created {
+		t.Fatalf("a changed property left the version at %d, created %v", changed.Version, changed.Created)
 	}
 	if rows := changesSince(t, ds, head); len(rows) != 1 {
 		t.Fatalf("a changed property wrote %d changelog rows", len(rows))

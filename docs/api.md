@@ -2214,9 +2214,10 @@ An agent's `write` tool decodes its `input` through the same strict path.
   `{"properties": {"status": "done"}}` drives the state machine and stamps any
   declared clock.
 
-Status codes follow the write: a create is `201`, an update or replace is
-`200`, consistently across `POST /api/v1/records` and `PUT` at the record
-path.
+Status codes follow the write: a create is `201`, an update, a replace or a
+write that changes nothing is `200`, consistently across `POST
+/api/v1/records` and `PUT` at the record path. Count creates by the status,
+never by `version`: a record no write has changed stays at `1`.
 
 ## Blobs
 

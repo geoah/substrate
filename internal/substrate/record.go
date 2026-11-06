@@ -57,6 +57,11 @@ type Record struct {
 	// The CLI and the console project it under the envelope's `status`.
 	Computed bool `json:"computed,omitempty"`
 
+	// Created is set on the record a write answers when that write created
+	// it. Never on the wire: the HTTP status says it, and a version cannot,
+	// because a write that changes nothing leaves a fresh row at 1.
+	Created bool `json:"-"`
+
 	// PropertyMeta is per-property provenance: the manager
 	// the ledger names, when it changed, and the live offers whose value
 	// differs from the stored one. Populated on SINGLE-RECORD reads only —

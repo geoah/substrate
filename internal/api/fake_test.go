@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -680,19 +681,29 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	if id == "" {
 		id = fmt.Sprintf("ent%d", len(d.records)+1)
 	}
-	// Faithful upsert versioning: a create lands at version 1, a
-	// re-put of an existing id bumps past it, so the HTTP layer's create=201 /
+	// Faithful upsert versioning: a create lands at version 1 and says it was
+	// created, a re-put of an existing id bumps past it, and a re-put that
+	// changes nothing moves nothing, so the HTTP layer's create=201 /
 	// update=200 decision is exercisable here.
+	props := d.normalizeReferences(in.Kind, in.Properties)
+	if props == nil {
+		props = map[string]any{}
+	}
 	version := int64(1)
-	if existing, ok := d.records[id]; ok {
+	existing, ok := d.records[id]
+	if ok {
+		if reflect.DeepEqual(existing.Properties, props) && len(in.Labels) == 0 {
+			unchanged := *existing
+			unchanged.Created = false
+			d.lastPutRecord = &unchanged
+			return &unchanged, nil
+		}
 		version = existing.Version + 1
 	}
 	e := &substrate.Record{
-		ID: id, Kind: in.Kind, Properties: d.normalizeReferences(in.Kind, in.Properties), Labels: in.Labels,
+		ID: id, Kind: in.Kind, Properties: props, Labels: in.Labels,
 		Version: version, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC(),
-	}
-	if e.Properties == nil {
-		e.Properties = map[string]any{}
+		Created: !ok,
 	}
 	// Everything authored is a property: title arrives in the map like the
 	// rest.

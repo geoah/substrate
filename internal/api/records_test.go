@@ -726,6 +726,21 @@ func TestRecordsPostAndPutReportCreateAndUpdate(t *testing.T) {
 	wantStatus(t, rec, http.StatusCreated)
 }
 
+// A PUT that changes nothing is not a create, even on a record no write has
+// moved past version 1: a client counting its creates by status counts one.
+func TestRecordsPutThatChangesNothingIsNotACreate(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	body := map[string]any{"properties": map[string]any{"name": "Grace"}}
+
+	wantStatus(t, env.do(t, http.MethodPut, peoplePath+"/fresh", tok, body), http.StatusCreated)
+	rec := env.do(t, http.MethodPut, peoplePath+"/fresh", tok, body)
+	wantStatus(t, rec, http.StatusOK)
+	if e := decodeJSON[substrate.Record](t, rec); e.Version != 1 {
+		t.Fatalf("the unchanged re-put moved the record to version %d", e.Version)
+	}
+}
+
 // There is no collection path: a three-segment path under the version prefix
 // names nothing, in every method, and answers the router's JSON 404.
 func TestRecordsHasNoCollectionPath(t *testing.T) {

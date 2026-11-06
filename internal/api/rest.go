@@ -80,11 +80,10 @@ func pathParam(r *http.Request, name string) string {
 	return raw
 }
 
-// putStatus is 201 for a create, 200 for an update or replace. A fresh row
-// lands at version 1 and every later write bumps it past 1, so POST and PUT
-// report which they did consistently.
+// putStatus is 201 for a create, 200 for an update, a replace or a write that
+// changed nothing.
 func putStatus(e *substrate.Record) int {
-	if e != nil && e.Version == 1 {
+	if e != nil && e.Created {
 		return http.StatusCreated
 	}
 	return http.StatusOK
