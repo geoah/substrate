@@ -356,7 +356,9 @@ file the server behaves as the section above says. With it:
   the person's
   ([the operator's OAuth client](bundles.md#the-operators-oauth-client)).
   Each account records which client its grant came from; after the client
-  changes, the account asks for a reconnect instead of refreshing.
+  changes, the account asks for a reconnect instead of refreshing. Removing a
+  provider from `oauthClients` is such a change for the accounts connected
+  through your client: they ask for a reconnect at their next refresh.
 - Each package under `install` is installed through the catalog at
   registration, and at a repository's first open under a file that lists a
   package the repository has never held. A package whose bundle record its

@@ -2139,7 +2139,10 @@ declares `embedModel`, else the row the operator's embeddings entry is
 nested under, absent when that row does not exist. An `oauth` item's
 `target` is the package and its `notice` is the operator's own words about
 the client; its source is `operator` where the provider's client input
-resolves to no record, `own` where a record of the person's resolves, and its
+resolves to no record, `own` where a record of the person's resolves, its
+`operatorOffers` is false where the operator's client cannot serve the
+installed package (a copy the repository owns, or an installed version whose
+account kinds do not record the client), and its
 readiness is `needs-connect` until an account holds a grant,
 `reconnect-needed` when an account's grant came from another client than the
 one resolving now or its last refresh failed, `not-set-up` while the package

@@ -505,7 +505,10 @@ code exchange, the refresh, the revoke and a webhook's `oauthClientSecret`
 signing key. Its secret stays in the server process: no record, sealed value,
 changelog entry, export or function receives it. A function of a provider
 signed in this way reads no client record in `config.inputs`, so it calls the
-provider's own API, never an `apiBase` a record could name. The bundle status
+provider's own API, never an `apiBase` a record could name. An invocation
+resolves the client input once, and both the record in `config.inputs` and
+the client its accounts' grants are checked against come from that one
+resolution. The bundle status
 lists no setup item for a client input the operator covers, and `GET
 /api/v1/operator/defaults` answers one `oauth/<package>` item per listed
 provider ([operator defaults](api.md#operator-defaults)).
@@ -522,6 +525,21 @@ An account connected before the record existed counts as connected through the
 person's own client. The operator's client serves a provider only where every
 account kind of the package declares `oauthClient`, so an install of an older
 version keeps asking for a client record until it is upgraded.
+
+The comparison reads the stored token and the account's `oauthClient` in one
+statement, and it runs on every read whose token an invocation receives or
+whose refresh token is sent, including the reads after a refresh that waited
+behind another or was refused while a reconnect landed. A reconnect through
+another client between a check and the token's read therefore cannot hand its
+token to an invocation built for the old client. The `erroring` stamp resolves
+the client again and is written only while the credential is still the one
+that was compared, so a reconnect that lands first keeps its `connected`, as
+a refusal's stamp does
+([0180](decisions/0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md)).
+If the operator removes a provider from `oauthClients`, an account connected
+through its client has no client to refresh through: nothing is sent to the
+provider, and at its next refresh or invocation the account reads `erroring`
+with the same reason.
 
 ## Settings
 
