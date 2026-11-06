@@ -91,6 +91,7 @@ import {
   operatorServesAny,
   operatorServesTools,
   packageWhoseKey,
+  searchFailure,
   searchLine,
   sentenceCase,
   toolWords,
@@ -319,6 +320,7 @@ function ModelsGroup({
             modelKey={keys.keyOf(row)}
             words={words}
             search={searchLine(items, row.id, words)}
+            searchFailed={searchFailure(items, row.id)}
             technical={technical}
             focused={focused === row.id}
           />
