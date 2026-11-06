@@ -12,7 +12,8 @@ package engine
 //   - the repository holds no `apiKey` secret of its own for the package (one
 //     with an empty value is none), because the person's key always wins;
 //   - the allowance admits the call at the entry's `pricePerCall`, reserved
-//     before the body runs and settled at that price after it.
+//     before the body runs, settled at that price once the body may have
+//     started and at nothing when the runner never started it.
 //
 // An operator-paid call gets the key ALONE in `config.settings`: none of the
 // person's settings ride beside it. That is the LLM rule of the same record
@@ -53,9 +54,10 @@ type operatorCharge struct {
 	cents float64
 }
 
-// settle closes the call's reservation: at its price when the body ran,
-// whatever it answered, since nothing tells the engine whether a request
-// left; at nothing when it never ran. Nil-safe, so a caller settles whatever
+// settle closes the call's reservation: at its price when the body may have
+// started, whatever it answered, since nothing tells the engine whether a
+// request left; at nothing when it never ran, which the runner says with
+// runner.ErrNotStarted. Nil-safe, so a caller settles whatever
 // resolveFunctionConfig handed it.
 func (c *operatorCharge) settle(ctx context.Context, ds *dataset, ran bool) {
 	if c == nil {

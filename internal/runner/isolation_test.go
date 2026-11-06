@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -1104,5 +1105,8 @@ func TestAConfinedRunnerRefusesABodyItCannotHold(t *testing.T) {
 	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
 	if err == nil || !strings.Contains(err.Error(), "egress is confined") {
 		t.Fatalf("a body the runner cannot confine answered %+v, %v", res, err)
+	}
+	if !errors.Is(err, ErrNotStarted) {
+		t.Fatalf("a body refused before it started is not marked so: %v", err)
 	}
 }

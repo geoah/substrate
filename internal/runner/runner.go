@@ -378,7 +378,7 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 // applies.
 func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
 	if spec.Refusal != nil {
-		return nil, spec.Refusal
+		return nil, notStarted(spec.Refusal)
 	}
 	if spec.ReadCalls > 0 || spec.ReadRows > 0 {
 		in.Budgets = &Budgets{Calls: spec.ReadCalls, Rows: spec.ReadRows}
@@ -407,9 +407,33 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	_, retired := r.retired[spec.Key()]
 	r.mu.Unlock()
 	if retired {
-		return nil, fmt.Errorf("%w: %s", ErrRetired, spec.Function)
+		return nil, notStarted(fmt.Errorf("%w: %s", ErrRetired, spec.Function))
 	}
 	return r.invokeOnce(ctx, spec, in, backend)
+}
+
+// ErrNotStarted marks an invocation that failed before its invoke frame
+// reached the body: the spec's refusal, a process that could not be
+// provisioned, confined, started or registered within its bound, an
+// installation retired under it, or a child gone before the frame was
+// written. The body was never handed its input or config. A timeout, a
+// child that died mid-request and every failure after the frame left are
+// not this: the body may have used what it was given.
+var ErrNotStarted = errors.New("runner: the body was not started")
+
+// notStartedError is an error marked ErrNotStarted, its text unchanged.
+type notStartedError struct{ err error }
+
+func (e *notStartedError) Error() string        { return e.err.Error() }
+func (e *notStartedError) Unwrap() error        { return e.err }
+func (e *notStartedError) Is(target error) bool { return target == ErrNotStarted }
+
+// notStarted marks err ErrNotStarted.
+func notStarted(err error) error {
+	if err == nil || errors.Is(err, ErrNotStarted) {
+		return err
+	}
+	return &notStartedError{err: err}
 }
 
 // invokeOnce is one attempt: the process start it needs (a reaped, crashed or
@@ -429,7 +453,7 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	p, err := r.proc(sctx, spec)
 	scancel()
 	if err != nil {
-		return nil, err
+		return nil, notStarted(err)
 	}
 	if r.afterLookup != nil {
 		r.afterLookup(p)
@@ -445,6 +469,11 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	// state.log, whichever way the exchange ended.
 	if state.tripped != nil {
 		return nil, state.tripped
+	}
+	if errors.Is(err, errChildGone) {
+		// The frame went nowhere: Invoke retries once, and a second loss
+		// reaches the caller as a body that never started.
+		return nil, notStarted(err)
 	}
 	if err != nil {
 		return nil, err

@@ -350,7 +350,8 @@ file the server behaves as the section above says. With it:
 - Every operator-paid call first reserves its worst-case cost against the
   allowance, `budget.centsPerDay`, per repository and per UTC calendar day,
   and settles to its reported cost after; a function call reserves its
-  `pricePerCall` and settles at it once its body ran. A call that reports no
+  `pricePerCall` and settles at it once its body may have started, or at
+  nothing when the runner never started it. A call that reports no
   usage, or only part of it, counts at that worst case, unless it reported
   nothing and failed before the vendor could bill it: it never left, or the
   vendor answered a redirect or a 4xx. The reservation covers one attempt, so an

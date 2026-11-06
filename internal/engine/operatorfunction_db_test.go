@@ -4,11 +4,11 @@ package engine
 // key in the defaults file's functionSecrets reaches the listed consumers of
 // the published package and nothing else, steps aside for the person's own
 // key, never reaches a copy, and every call it pays for reserves and settles
-// at its price. Most of these tests resolve the invocation config directly;
-// the ones that run a body run it held to loopback (requireConfinedBodies),
-// so even a Firecrawl body a regression hands the operator's key cannot
-// reach Firecrawl. internal/providertest holds what the bodies do with the
-// key.
+// at its price, or at nothing when its body never started. Most of these
+// tests resolve the invocation config directly; the ones that run a body run
+// it held to loopback (requireConfinedBodies), so even a Firecrawl body a
+// regression hands the operator's key cannot reach Firecrawl.
+// internal/providertest holds what the bodies do with the key.
 
 import (
 	"bytes"
@@ -502,3 +502,139 @@ func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
 	}
 }
 
+// --- the allowance and the runner, on a metered bundle that dials nothing ---
+
+const (
+	meterPackage = "meter.example.com/meter"
+	meterReading = meterPackage + "/reading"
+	meterPing    = meterPackage + "/ping"
+	// operatorMeterKey is the operator's key for the meter bundle in these
+	// fixtures; it is never a real key.
+	operatorMeterKey = "meter-operator-key-fixture"
+)
+
+// openMeterDataset opens a repository whose operator pays for the published
+// meter bundle's two functions, `stamp` at 0.6 cents a call and `fussy` at
+// 0.5, under an allowance of allowance cents a day, on a clock the test
+// moves. Neither body opens a socket. `stamp` writes one reading per call,
+// named for the record or the occurrence it was delivered. `fussy` refuses
+// every registration of its body after the first, so a call after its process
+// is retired fails before the body starts.
+func openMeterDataset(t *testing.T, allowance int64) (*dataset, *testClock) {
+	t.Helper()
+	requireConfinedBodies(t)
+	ctx := context.Background()
+	cfg := &operatordefaults.Config{
+		FunctionSecrets: map[string]*operatordefaults.FunctionSecret{
+			meterPackage: {
+				APIKey: operatordefaults.NewSecret(operatorMeterKey), Consumers: []string{"stamp", "fussy"},
+				PricePerCall: map[string]string{"stamp": "0.6", "fussy": "0.5"},
+			},
+		},
+		Budget: operatordefaults.Budget{CentsPerDay: allowance},
+	}
+	ds := openInternalDataset(t, WithOperatorDefaults(cfg, "Example"))
+	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
+	ds.svc.operatorNow = clock.Now
+	named := map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}
+	docs := []map[string]any{
+		vocabulary.PackageManifest(meterPackage, 1),
+		vocabulary.BundleManifest(meterPackage, map[string]any{
+			"description": "a metered bundle",
+			"installs":    []any{meterPackage + "/stamp", meterPackage + "/fussy", meterReading, meterPing},
+		}),
+		vocabulary.KindManifest(meterPackage, map[string]any{"singular": "reading"}, named),
+		vocabulary.KindManifest(meterPackage, map[string]any{"singular": "ping"}, named),
+		vocabulary.FunctionManifest(meterPackage, "stamp", map[string]any{
+			"description": "writes one reading per delivery", "runtime": vocabulary.RuntimePython,
+			"permissions": map[string]any{"writes": []any{meterReading}},
+			"source": `
+def main(input, host):
+    env = input.get("envelope") or {}
+    if env.get("fire"):
+        rid = "fire-" + env["fire"]["id"]
+    else:
+        rid = "rec-" + env["record"]["id"]
+    return {"effects": [{"action": "put", "kind": "` + meterReading + `", "id": rid,
+                         "properties": {"name": rid}}]}
+`,
+		}),
+		vocabulary.FunctionManifest(meterPackage, "fussy", map[string]any{
+			"description": "registers once", "runtime": vocabulary.RuntimePython,
+			"source": `
+import os
+# The work dir outlives this test binary, so the mark names the binary.
+_MARK = os.path.join(os.environ["TMPDIR"], "registered-under-%d" % os.getppid())
+if os.path.exists(_MARK):
+    raise RuntimeError("fussy registers once")
+open(_MARK, "w").close()
+
+def main(input, host):
+    return {"output": {"ran": True}}
+`,
+		}),
+	}
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(meterPackage)), docs, nil,
+		substrate.BundleInstall{Published: true}); err != nil {
+		t.Fatalf("install the meter bundle: %v", err)
+	}
+	return ds, clock
+}
+
+// A call whose body never started settles at nothing, at the root and as a
+// host call: here the runner fails to register the body again after its
+// process was retired. A body that started settles at the price, whatever it
+// answered.
+func TestAnOperatorPaidCallTheRunnerNeverStartedSettlesAtNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openMeterDataset(t, 100)
+	const relay = "relay.example.com/relay"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(relay, 0),
+		vocabulary.BundleManifest(relay, map[string]any{"description": "calls fussy", "installs": []any{relay + "/relay"}}),
+		vocabulary.FunctionManifest(relay, "relay", map[string]any{
+			"description": "calls fussy and reports how it went", "runtime": vocabulary.RuntimePython,
+			"permissions": map[string]any{"call": []any{meterPackage + "/fussy"}},
+			"source": `
+def main(input, host):
+    try:
+        host.call("` + meterPackage + `/fussy", {})
+    except Exception as e:
+        return {"output": {"nested": str(e)}}
+    return {"output": {"nested": "ran"}}
+`,
+		}),
+	}); err != nil {
+		t.Fatalf("install the relay: %v", err)
+	}
+	settled := func() []float64 {
+		t.Helper()
+		var out []float64
+		for _, r := range operatorLedger(t, ds) {
+			out = append(out, r.settled)
+		}
+		return out
+	}
+
+	// The body registered at install and runs: the price.
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, meterPackage+"/fussy", nil); err != nil {
+		t.Fatalf("the first call: %v", err)
+	}
+	// Every process of the repository is retired; fussy cannot register again.
+	runner.Shared.Reconcile(ctx, ds.Repository().ID, nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, meterPackage+"/fussy", nil)
+	if err == nil || !strings.Contains(err.Error(), "fussy registers once") {
+		t.Fatalf("a call after the retirement = %v, want the failed registration", err)
+	}
+	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relay+"/relay", nil)
+	if err != nil {
+		t.Fatalf("the relay: %v", err)
+	}
+	if nested, _ := out.(map[string]any)["nested"].(string); !strings.Contains(nested, "fussy registers once") {
+		t.Fatalf("the relay's host call answered %q, want the failed registration", nested)
+	}
+	if got, want := settled(), []float64{0.5, 0, 0}; !slices.Equal(got, want) {
+		t.Fatalf("settled = %v, want %v: the price for the call that ran, nothing for the two that never started", got, want)
+	}
+}

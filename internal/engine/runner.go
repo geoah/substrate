@@ -186,7 +186,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// failures — outputs, and so tool transcripts and API responses) may
 	// carry them verbatim.
 	// An operator-paid call (operatorfunction.go) settles once: at its price
-	// when the body ran, at nothing when it never did.
+	// when the body may have started, at nothing when it never did.
 	var charge *operatorCharge
 	ran := false
 	defer func() { charge.settle(ctx, ds, ran) }()
@@ -212,8 +212,12 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
+		// Started until the runner says otherwise: a panic in between settles
+		// at the price, never at nothing.
 		ran = true
-		return runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package), in, backend)
+		res, err := runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package), in, backend)
+		ran = !errors.Is(err, runner.ErrNotStarted)
+		return res, err
 	}()
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
@@ -522,6 +526,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		CallDepth:      len(b.inv.stack) - 1,
 		IdempotencyKey: key,
 	}, callee)
+	ran = !errors.Is(err, runner.ErrNotStarted)
 	if err != nil {
 		b.inv.effects = b.inv.effects[:mark]
 		err = b.inv.scrub.err(fmt.Errorf("call %s: %w", target.Identity(), err))
