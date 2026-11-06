@@ -65,13 +65,13 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Fourteen cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly fifteen must reach that guard: a
+// Fifteen cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly sixteen must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and a sixteenth case cannot be added, or one of the fifteen
+// behind, and a seventeenth case cannot be added, or one of the sixteen
 // removed, without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 15))
+	os.Exit(sandboxtest.Run(m, 16))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -1082,6 +1082,127 @@ def main(input, host):
 	first, _, _ := strings.Cut(err.Error(), "\n")
 	if !strings.Contains(first, "refused "+outside+": this process confines a body's egress") || strings.Contains(first, "SUBSTRATE_SANDBOX_EGRESS_ALLOW") {
 		t.Fatalf("the failed call does not name the confinement:\n%s", first)
+	}
+}
+
+// A confined body has no path to a peer but connect(2), which the gate holds
+// to the prefixes: a datagram socket, a raw or SCTP socket and a TCP Fast
+// Open send are refused with EACCES, and neither loopback listener outside
+// the prefix hears from it. A runner that never called ConfineBodyEgress, as
+// in production, still gives a network body a datagram socket, since the
+// resolver needs one, and the datagram arrives: decision 0035's documented
+// UDP residual, unchanged. Nothing here sends off the host.
+func TestAConfinedBodySendsNoDatagram(t *testing.T) {
+	confined := New()
+	requireSeccomp(t, confined)
+	requireConnectGate(t, confined)
+	confined.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.1/32"))
+
+	datagrams, err := net.ListenPacket("udp4", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = datagrams.Close() })
+	streams, err := net.Listen("tcp4", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = streams.Close() })
+	accepted := make(chan struct{}, 8)
+	go func() {
+		for {
+			c, err := streams.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			_ = c.Close()
+		}
+	}()
+	// heard answers the datagram the listener read within the window, or "".
+	heard := func(window time.Duration) string {
+		t.Helper()
+		_ = datagrams.SetReadDeadline(time.Now().Add(window))
+		buf := make([]byte, 64)
+		n, _, err := datagrams.ReadFrom(buf)
+		if err != nil {
+			return ""
+		}
+		return string(buf[:n])
+	}
+
+	const probe = `
+import socket
+def attempt(fn):
+    try:
+        fn()
+        return "ok"
+    except OSError as e:
+        return "err:%s" % e.errno
+def addr(a):
+    h, p = a.rsplit(":", 1)
+    return (h, int(p))
+def main(input, host):
+    a = input["args"]
+    def udp():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.sendto(b"leaked", addr(a["udp"]))
+        finally:
+            s.close()
+    out = {"udp": attempt(udp)}
+    if a.get("only_udp"):
+        return {"output": out}
+    def raw():
+        socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP).close()
+    def sctp():
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_SCTP).close()
+    def fastopen():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.sendto(b"leaked", socket.MSG_FASTOPEN, addr(a["tcp"]))
+        finally:
+            s.close()
+    out.update(raw=attempt(raw), sctp=attempt(sctp), fastopen=attempt(fastopen))
+    return {"output": out}
+`
+	spec := Spec{
+		Repository: "t1", Function: "datagram.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"udp": datagrams.LocalAddr().String(), "tcp": streams.Addr().String()}
+	res, err := confined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	for _, path := range []string{"udp", "raw", "sctp", "fastopen"} {
+		if out[path] != "err:13" {
+			t.Errorf("a confined body's %s = %v, want refused with EACCES (all: %v)", path, out[path], out)
+		}
+	}
+	if got := heard(500 * time.Millisecond); got != "" {
+		t.Errorf("a datagram from a confined body reached a listener outside its prefixes: %q", got)
+	}
+	select {
+	case <-accepted:
+		t.Error("a confined body's fast open send reached a listener outside its prefixes")
+	default:
+	}
+
+	unconfined := New()
+	in.Args = map[string]any{"udp": datagrams.LocalAddr().String(), "only_udp": true}
+	res, err = unconfined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke unconfined: %v", err)
+	}
+	out, _ = res.Output.(map[string]any)
+	if out["udp"] != "ok" {
+		t.Fatalf("an unconfined network body could not send a datagram: %v", out)
+	}
+	if got := heard(5 * time.Second); got != "leaked" {
+		t.Fatalf("an unconfined body's datagram did not arrive: %q", got)
 	}
 }
 

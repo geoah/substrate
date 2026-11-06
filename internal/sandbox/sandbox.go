@@ -142,8 +142,12 @@ type Policy struct {
 	// EgressOnly, when set, is the whole address space the child may reach:
 	// the connect gate refuses every other destination, public addresses and
 	// SUBSTRATE_SANDBOX_EGRESS_ALLOW prefixes included, and a resolver on port
-	// 53 even inside it, since a resolver forwards the name off the host. An
-	// outside body's proxy dials nothing outside it. It is a test binary's
+	// 53 even inside it, since a resolver forwards the name off the host. The
+	// gate sees connect(2) alone, so the syscall filter gives the child no
+	// internet socket but a TCP stream and refuses TCP Fast Open's send: no
+	// datagram, raw, SCTP or MPTCP socket reaches an address without passing
+	// the gate (buildConfinedFilter). An outside body's proxy dials nothing
+	// outside it. It is a test binary's
 	// setting (runner.ConfineBodyEgress): a body a regression points at a real
 	// API is refused at connect(2), whatever its code does. Wrap refuses a
 	// policy carrying it on a host that cannot enforce it.
