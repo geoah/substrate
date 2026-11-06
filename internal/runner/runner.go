@@ -771,10 +771,29 @@ func (r *Runner) startCmd(cmd *exec.Cmd, policy sandbox.Policy) (*proc, error) {
 	gate, err := r.sandbox.Serve(cmd)
 	if err != nil {
 		p.kill()
-		return nil, fmt.Errorf("runner: connect gate: %w", err)
+		return nil, gateFailure(p, err, gateDiagnosticWait)
 	}
 	p.setGate(gate)
 	return p, nil
+}
+
+// gateDiagnosticWait bounds how long a failed gate waits for the child's
+// stderr. The child is already killed, so its pipe closes at once; the bound
+// only keeps a stuck reap from holding the caller.
+const gateDiagnosticWait = 2 * time.Second
+
+// gateFailure is startCmd's error when the connect gate could not be served.
+// The usual cause is the sandbox stub refusing to start the body (a syscall
+// filter the host would not install, say) after writing why to stderr and
+// exiting before it sent the listener, so Serve only sees the listener never
+// arrive. The stderr copy completes with the reap, which the reader goroutine
+// runs; waiting for it, within a bound, puts the stub's reason in the error.
+func gateFailure(p *proc, err error, wait time.Duration) error {
+	select {
+	case <-p.waited:
+	case <-time.After(wait):
+	}
+	return fmt.Errorf("runner: connect gate: %w%s", err, p.stderrTail())
 }
 
 // runGatedCmd runs a Wrapped command to completion with its connect gate
