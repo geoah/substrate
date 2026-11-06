@@ -29,6 +29,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -39,20 +41,24 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "hasNotes": false,
               "id": "milk",
+              "pending": false,
               "spoken": "Oat milk",
               "status": "open",
               "title": "Oat milk",
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today",
                 "tone": "soon"
               },
               "hasNotes": false,
               "id": "bread",
+              "pending": false,
               "spoken": "Sourdough bread, due Today",
               "status": "open",
               "title": "Sourdough bread",
@@ -110,10 +116,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -207,14 +213,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -281,8 +287,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -413,6 +419,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -423,20 +431,24 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "hasNotes": false,
               "id": "milk",
+              "pending": false,
               "spoken": "Oat milk",
               "status": "open",
               "title": "Oat milk",
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today",
                 "tone": "soon"
               },
               "hasNotes": false,
               "id": "bread",
+              "pending": false,
               "spoken": "Sourdough bread, due Today",
               "status": "open",
               "title": "Sourdough bread",
@@ -494,10 +506,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -591,14 +603,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -665,8 +677,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -780,6 +792,58 @@
       "editors": {},
       "list": {
         "actions": [],
+        "bands": [
+          {
+            "band": "needsYou",
+            "count": 2,
+            "title": "Needs you"
+          },
+          {
+            "band": "upcoming",
+            "count": 3,
+            "title": "Coming up"
+          },
+          {
+            "band": "later",
+            "count": 2,
+            "title": "Later"
+          }
+        ],
+        "chips": [
+          {
+            "id": "all",
+            "selected": true,
+            "title": "All"
+          },
+          {
+            "id": "inbox",
+            "selected": false,
+            "selection": {
+              "inbox": {}
+            },
+            "title": "No List"
+          },
+          {
+            "id": "groceries",
+            "selected": false,
+            "selection": {
+              "list": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Groceries"
+          },
+          {
+            "id": "home",
+            "selected": false,
+            "selection": {
+              "list": {
+                "_0": "home"
+              }
+            },
+            "title": "Home"
+          }
+        ],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -790,23 +854,100 @@
           "revision": 29894940,
           "rows": [
             {
+              "band": "needsYou",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
               "due": {
-                "text": "Overdue: Yesterday",
+                "text": "1 day late",
                 "tone": "overdue"
               },
               "hasNotes": false,
               "id": "rent",
               "listName": "Home",
+              "pending": false,
               "priority": {
                 "priority": "urgent",
                 "text": "Urgent"
               },
-              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent, in Home",
+              "reschedule": {
+                "options": [
+                  {
+                    "action": "today",
+                    "title": "Today"
+                  },
+                  {
+                    "action": "tomorrow",
+                    "title": "Tomorrow"
+                  },
+                  {
+                    "action": "nextWeek",
+                    "title": "Tue, Nov 10"
+                  },
+                  {
+                    "action": "pickDay",
+                    "title": "Pick a Day…"
+                  }
+                ],
+                "title": "Move"
+              },
+              "spoken": "Pay rent, 1 day late, priority Urgent, in Home",
               "status": "open",
               "title": "Pay rent",
               "toggle": "Mark as Done"
             },
             {
+              "band": "needsYou",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "hasNotes": false,
+              "id": "insurance",
+              "listName": "Home",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "reschedule": {
+                "options": [
+                  {
+                    "action": "today",
+                    "title": "Today"
+                  },
+                  {
+                    "action": "tomorrow",
+                    "title": "Tomorrow"
+                  },
+                  {
+                    "action": "nextWeek",
+                    "title": "Tue, Nov 10"
+                  },
+                  {
+                    "action": "pickDay",
+                    "title": "Pick a Day…"
+                  }
+                ],
+                "title": "Pick a Day"
+              },
+              "spoken": "Renew the car insurance, priority High, in Home",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "upcoming",
+              "decisions": [],
               "due": {
                 "text": "Today",
                 "tone": "soon"
@@ -814,12 +955,15 @@
               "hasNotes": false,
               "id": "bread",
               "listName": "Groceries",
+              "pending": false,
               "spoken": "Sourdough bread, due Today, in Groceries",
               "status": "open",
               "title": "Sourdough bread",
               "toggle": "Mark as Done"
             },
             {
+              "band": "upcoming",
+              "decisions": [],
               "due": {
                 "text": "Today, 3:00 PM",
                 "tone": "soon"
@@ -828,6 +972,7 @@
               "id": "plumber",
               "listName": "Home",
               "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -835,6 +980,58 @@
               "spoken": "Call the plumber, due Today, 3:00 PM, priority High, in Home, has notes",
               "status": "open",
               "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "upcoming",
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "listName": "Home",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low, in Home",
+              "status": "open",
+              "title": "Water the plants",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "later",
+              "decisions": [],
+              "due": {
+                "text": "Fri, Nov 20",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "passport",
+              "listName": "No List",
+              "pending": false,
+              "priority": {
+                "priority": "medium",
+                "text": "Medium"
+              },
+              "spoken": "Renew passport, due Fri, Nov 20, priority Medium, in No List",
+              "status": "open",
+              "title": "Renew passport",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "later",
+              "decisions": [],
+              "hasNotes": false,
+              "id": "milk",
+              "listName": "Groceries",
+              "pending": false,
+              "spoken": "Oat milk, in Groceries",
+              "status": "open",
+              "title": "Oat milk",
               "toggle": "Mark as Done"
             }
           ]
@@ -875,24 +1072,23 @@
           "swipeDelete": "Delete"
         },
         "selection": {
-          "today": {}
+          "needsYou": {}
         },
         "showsClosed": false,
         "summary": {
           "detail": "Tuesday, November 3",
-          "headline": "3 to do",
-          "overdue": "1 overdue"
+          "headline": "2 need you"
         },
-        "title": "Today",
+        "title": "Needs you",
         "toggleClosed": "Show Completed"
       },
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -905,7 +1101,7 @@
             "title": "Settings"
           }
         ],
-        "selected": "today"
+        "selected": "needs"
       },
       "nextChange": "2026-11-03T15:00:00Z",
       "notices": [],
@@ -986,14 +1182,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -1060,8 +1256,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -1075,7 +1271,7 @@
         "listsTitle": "My Lists",
         "newList": "New List",
         "selected": {
-          "today": {}
+          "needsYou": {}
         },
         "title": "Lists"
       },
@@ -1157,7 +1353,7 @@
         "title": "Storage"
       }
     },
-    "name": "tasks-today",
+    "name": "tasks-needs-you",
     "screen": "list"
   },
   {
@@ -1173,6 +1369,977 @@
       "editors": {},
       "list": {
         "actions": [],
+        "bands": [
+          {
+            "band": "needsYou",
+            "count": 2,
+            "title": "Needs you"
+          },
+          {
+            "band": "upcoming",
+            "count": 3,
+            "title": "Coming up"
+          },
+          {
+            "band": "later",
+            "count": 2,
+            "title": "Later"
+          }
+        ],
+        "chips": [
+          {
+            "id": "all",
+            "selected": true,
+            "title": "All"
+          },
+          {
+            "id": "inbox",
+            "selected": false,
+            "selection": {
+              "inbox": {}
+            },
+            "title": "No List"
+          },
+          {
+            "id": "groceries",
+            "selected": false,
+            "selection": {
+              "list": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Groceries"
+          },
+          {
+            "id": "home",
+            "selected": false,
+            "selection": {
+              "list": {
+                "_0": "home"
+              }
+            },
+            "title": "Home"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "Done",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "band": "needsYou",
+              "decisions": [],
+              "due": {
+                "text": "1 day late",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "listName": "Home",
+              "pending": true,
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, marked done, tap to undo, 1 day late, priority Urgent, in Home",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Undo"
+            },
+            {
+              "band": "needsYou",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "hasNotes": false,
+              "id": "insurance",
+              "listName": "Home",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "reschedule": {
+                "options": [
+                  {
+                    "action": "today",
+                    "title": "Today"
+                  },
+                  {
+                    "action": "tomorrow",
+                    "title": "Tomorrow"
+                  },
+                  {
+                    "action": "nextWeek",
+                    "title": "Tue, Nov 10"
+                  },
+                  {
+                    "action": "pickDay",
+                    "title": "Pick a Day…"
+                  }
+                ],
+                "title": "Pick a Day"
+              },
+              "spoken": "Renew the car insurance, priority High, in Home",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "upcoming",
+              "decisions": [],
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "listName": "Groceries",
+              "pending": false,
+              "spoken": "Sourdough bread, due Today, in Groceries",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "upcoming",
+              "decisions": [],
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "listName": "Home",
+              "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High, in Home, has notes",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "upcoming",
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "listName": "Home",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low, in Home",
+              "status": "open",
+              "title": "Water the plants",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "later",
+              "decisions": [],
+              "due": {
+                "text": "Fri, Nov 20",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "passport",
+              "listName": "No List",
+              "pending": false,
+              "priority": {
+                "priority": "medium",
+                "text": "Medium"
+              },
+              "spoken": "Renew passport, due Fri, Nov 20, priority Medium, in No List",
+              "status": "open",
+              "title": "Renew passport",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "later",
+              "decisions": [],
+              "hasNotes": false,
+              "id": "milk",
+              "listName": "Groceries",
+              "pending": false,
+              "spoken": "Oat milk, in Groceries",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "openTitle": "To Do",
+        "quickAdd": "Add a task for today",
+        "reorders": false,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "needsYou": {}
+        },
+        "showsClosed": false,
+        "summary": {
+          "detail": "Tuesday, November 3",
+          "headline": "2 need you"
+        },
+        "title": "Needs you",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "needs"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [],
+      "settings": [
+        {
+          "footer": "Turned on, you are asked once whether Substrate Tasks may send notifications.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
+            "selection": {
+              "needsYou": {}
+            },
+            "symbol": "needs",
+            "title": "Needs you"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 4,
+              "openWords": "4 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "needsYou": {}
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-needs-you-undo",
+    "screen": "list"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [],
+        "bands": [
+          {
+            "band": "upcoming",
+            "count": 1,
+            "title": "Coming up"
+          },
+          {
+            "band": "later",
+            "count": 1,
+            "title": "Later"
+          }
+        ],
+        "chips": [
+          {
+            "id": "all",
+            "selected": false,
+            "title": "All"
+          },
+          {
+            "id": "inbox",
+            "selected": false,
+            "selection": {
+              "inbox": {}
+            },
+            "title": "No List"
+          },
+          {
+            "id": "groceries",
+            "selected": true,
+            "selection": {
+              "list": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Groceries"
+          },
+          {
+            "id": "home",
+            "selected": false,
+            "selection": {
+              "list": {
+                "_0": "home"
+              }
+            },
+            "title": "Home"
+          }
+        ],
+        "clear": "Nothing needs you right now.",
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "Done",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "band": "upcoming",
+              "decisions": [],
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "listName": "Groceries",
+              "pending": false,
+              "spoken": "Sourdough bread, due Today, in Groceries",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "later",
+              "decisions": [],
+              "hasNotes": false,
+              "id": "milk",
+              "listName": "Groceries",
+              "pending": false,
+              "spoken": "Oat milk, in Groceries",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "openTitle": "To Do",
+        "quickAdd": "Add a task for today to Groceries",
+        "reorders": false,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "needsYou": {}
+        },
+        "showsClosed": false,
+        "summary": {
+          "detail": "Tuesday, November 3",
+          "headline": "Nothing needs you"
+        },
+        "title": "Needs you",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "needs"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [],
+      "settings": [
+        {
+          "footer": "Turned on, you are asked once whether Substrate Tasks may send notifications.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
+            "selection": {
+              "needsYou": {}
+            },
+            "symbol": "needs",
+            "title": "Needs you"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 4,
+              "openWords": "4 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "needsYou": {}
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-needs-you-narrowed",
+    "screen": "list"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -1235,9 +2402,9 @@
       "menu": {
         "sections": [
           {
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -1331,14 +2498,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
+            "id": "needs",
             "open": 0,
             "openWords": "0 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -1556,6 +2723,7 @@
           }
         ],
         "id": "plumber",
+        "pending": false,
         "status": "open",
         "title": "Call the plumber"
       },
@@ -1579,6 +2747,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -1589,12 +2759,14 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "due": {
                 "text": "Overdue: Yesterday",
                 "tone": "overdue"
               },
               "hasNotes": false,
               "id": "rent",
+              "pending": false,
               "priority": {
                 "priority": "urgent",
                 "text": "Urgent"
@@ -1605,6 +2777,7 @@
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today, 3:00 PM",
                 "tone": "soon"
@@ -1612,6 +2785,7 @@
               "hasNotes": true,
               "id": "plumber",
               "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -1619,6 +2793,38 @@
               "spoken": "Call the plumber, due Today, 3:00 PM, priority High, has notes",
               "status": "open",
               "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "hasNotes": false,
+              "id": "insurance",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Renew the car insurance, priority High",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low",
+              "status": "open",
+              "title": "Water the plants",
               "toggle": "Mark as Done"
             }
           ]
@@ -1665,7 +2871,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "headline": "2 to do",
+          "headline": "4 to do",
           "overdue": "1 overdue"
         },
         "title": "Home",
@@ -1674,10 +2880,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -1771,14 +2977,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -1845,8 +3051,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -2058,6 +3264,7 @@
           }
         ],
         "id": "plumber",
+        "pending": false,
         "status": "open",
         "title": "Call the plumber"
       },
@@ -2167,6 +3374,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -2177,12 +3386,14 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "due": {
                 "text": "Overdue: Yesterday",
                 "tone": "overdue"
               },
               "hasNotes": false,
               "id": "rent",
+              "pending": false,
               "priority": {
                 "priority": "urgent",
                 "text": "Urgent"
@@ -2193,6 +3404,7 @@
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today, 3:00 PM",
                 "tone": "soon"
@@ -2200,6 +3412,7 @@
               "hasNotes": true,
               "id": "plumber",
               "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -2207,6 +3420,38 @@
               "spoken": "Call the plumber, due Today, 3:00 PM, priority High, has notes",
               "status": "open",
               "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "hasNotes": false,
+              "id": "insurance",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Renew the car insurance, priority High",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low",
+              "status": "open",
+              "title": "Water the plants",
               "toggle": "Mark as Done"
             }
           ]
@@ -2253,7 +3498,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "headline": "2 to do",
+          "headline": "4 to do",
           "overdue": "1 overdue"
         },
         "title": "Home",
@@ -2262,10 +3507,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -2359,14 +3604,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -2433,8 +3678,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -2647,6 +3892,7 @@
           }
         ],
         "id": "plumber",
+        "pending": false,
         "status": "open",
         "title": "Call the plumber"
       },
@@ -2762,6 +4008,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -2772,12 +4020,14 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "due": {
                 "text": "Overdue: Yesterday",
                 "tone": "overdue"
               },
               "hasNotes": false,
               "id": "rent",
+              "pending": false,
               "priority": {
                 "priority": "urgent",
                 "text": "Urgent"
@@ -2788,6 +4038,7 @@
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today, 3:00 PM",
                 "tone": "soon"
@@ -2795,6 +4046,7 @@
               "hasNotes": true,
               "id": "plumber",
               "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -2802,6 +4054,38 @@
               "spoken": "Call the plumber, due Today, 3:00 PM, priority High, has notes",
               "status": "open",
               "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "hasNotes": false,
+              "id": "insurance",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Renew the car insurance, priority High",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low",
+              "status": "open",
+              "title": "Water the plants",
               "toggle": "Mark as Done"
             }
           ]
@@ -2848,7 +4132,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "headline": "2 to do",
+          "headline": "4 to do",
           "overdue": "1 overdue"
         },
         "title": "Home",
@@ -2857,10 +4141,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -2954,14 +4238,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -3028,8 +4312,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -3245,6 +4529,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -3255,20 +4541,24 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "hasNotes": false,
               "id": "milk",
+              "pending": false,
               "spoken": "Oat milk",
               "status": "open",
               "title": "Oat milk",
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today",
                 "tone": "soon"
               },
               "hasNotes": false,
               "id": "bread",
+              "pending": false,
               "spoken": "Sourdough bread, due Today",
               "status": "open",
               "title": "Sourdough bread",
@@ -3326,10 +4616,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -3423,14 +4713,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -3497,8 +4787,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -3612,8 +4902,8 @@
       },
       "confirmation": {
         "cancel": "Cancel",
-        "confirm": "Delete List and 2 Tasks",
-        "message": "Its 2 tasks are deleted with it.",
+        "confirm": "Delete List and 4 Tasks",
+        "message": "Its 4 tasks are deleted with it.",
         "question": {
           "deleteList": {
             "id": "home"
@@ -3641,6 +4931,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -3651,12 +4943,14 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "due": {
                 "text": "Overdue: Yesterday",
                 "tone": "overdue"
               },
               "hasNotes": false,
               "id": "rent",
+              "pending": false,
               "priority": {
                 "priority": "urgent",
                 "text": "Urgent"
@@ -3667,6 +4961,7 @@
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today, 3:00 PM",
                 "tone": "soon"
@@ -3674,6 +4969,7 @@
               "hasNotes": true,
               "id": "plumber",
               "notes": "About the kitchen tap. Ask for Thursday morning.",
+              "pending": false,
               "priority": {
                 "priority": "high",
                 "text": "High"
@@ -3681,6 +4977,38 @@
               "spoken": "Call the plumber, due Today, 3:00 PM, priority High, has notes",
               "status": "open",
               "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "hasNotes": false,
+              "id": "insurance",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Renew the car insurance, priority High",
+              "status": "open",
+              "title": "Renew the car insurance",
+              "toggle": "Mark as Done"
+            },
+            {
+              "decisions": [],
+              "due": {
+                "text": "Thu, Nov 5",
+                "tone": "quiet"
+              },
+              "hasNotes": false,
+              "id": "plants",
+              "pending": false,
+              "priority": {
+                "priority": "low",
+                "text": "Low"
+              },
+              "spoken": "Water the plants, due Thu, Nov 5, priority Low",
+              "status": "open",
+              "title": "Water the plants",
               "toggle": "Mark as Done"
             }
           ]
@@ -3727,7 +5055,7 @@
         },
         "showsClosed": false,
         "summary": {
-          "headline": "2 to do",
+          "headline": "4 to do",
           "overdue": "1 overdue"
         },
         "title": "Home",
@@ -3736,10 +5064,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -3833,14 +5161,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -3907,8 +5235,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"
@@ -4039,6 +5367,8 @@
             "title": "Delete List…"
           }
         ],
+        "bands": [],
+        "chips": [],
         "closed": {
           "revision": 29894940,
           "rows": []
@@ -4049,20 +5379,24 @@
           "revision": 29894940,
           "rows": [
             {
+              "decisions": [],
               "hasNotes": false,
               "id": "milk",
+              "pending": false,
               "spoken": "Oat milk",
               "status": "open",
               "title": "Oat milk",
               "toggle": "Mark as Done"
             },
             {
+              "decisions": [],
               "due": {
                 "text": "Today",
                 "tone": "soon"
               },
               "hasNotes": false,
               "id": "bread",
+              "pending": false,
               "spoken": "Sourdough bread, due Today",
               "status": "open",
               "title": "Sourdough bread",
@@ -4120,10 +5454,10 @@
       "menu": {
         "sections": [
           {
-            "badge": 3,
-            "id": "today",
-            "symbol": "today",
-            "title": "Today"
+            "badge": 2,
+            "id": "needs",
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "id": "lists",
@@ -4217,14 +5551,14 @@
         "fixed": [
           {
             "actions": [],
-            "id": "today",
-            "open": 3,
-            "openWords": "3 open tasks",
+            "id": "needs",
+            "open": 2,
+            "openWords": "2 open tasks",
             "selection": {
-              "today": {}
+              "needsYou": {}
             },
-            "symbol": "today",
-            "title": "Today"
+            "symbol": "needs",
+            "title": "Needs you"
           },
           {
             "actions": [],
@@ -4291,8 +5625,8 @@
                 }
               ],
               "id": "home",
-              "open": 2,
-              "openWords": "2 open tasks",
+              "open": 4,
+              "openWords": "4 open tasks",
               "selection": {
                 "list": {
                   "_0": "home"

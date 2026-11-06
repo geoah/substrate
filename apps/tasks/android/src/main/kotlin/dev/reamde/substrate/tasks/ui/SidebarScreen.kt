@@ -43,8 +43,8 @@ import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
- * The lists: what is due and the tasks in no list, then the lists in the owner's order, each with how many of its tasks are open, a long press offering its
- * rename and delete. On a phone Today is a section of its own in the App menu, so it is left out here.
+ * The lists: what needs the owner and the tasks in no list, then the lists in the owner's order, each with how many of its tasks are open, a long press
+ * offering its rename and delete. On a phone Needs you is a section of its own in the App menu, so it is left out here.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +54,11 @@ internal fun SidebarScreen(
     banner: AccessBanner?,
     actions: TasksActions,
     name: (ListNaming) -> Unit,
-    showsToday: Boolean,
+    showsNeedsYou: Boolean,
     selected: ListSelection? = null,
 ) {
     val show = { row: SidebarRow ->
-        if (showsToday) actions.send(TasksApp.Command.Select(if (row.selection == ListSelection.Today) MENU_TODAY else "lists"))
+        if (showsNeedsYou) actions.send(TasksApp.Command.Select(if (row.selection == ListSelection.NeedsYou) MENU_NEEDS else "lists"))
         actions.send(TasksApp.Command.Show(row.selection))
     }
     Scaffold(
@@ -74,7 +74,7 @@ internal fun SidebarScreen(
         PullToRefreshBox(isRefreshing = false, onRefresh = { actions.send(TasksApp.Command.Refresh) }, modifier = Modifier.padding(padding)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { Notices(banner, app.notices, actions) }
-                items(sidebar.fixed.filter { showsToday || it.selection != ListSelection.Today }, key = { it.id }) { row ->
+                items(sidebar.fixed.filter { showsNeedsYou || it.selection != ListSelection.NeedsYou }, key = { it.id }) { row ->
                     SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {})
                 }
                 item {

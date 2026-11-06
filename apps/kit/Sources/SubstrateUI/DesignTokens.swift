@@ -110,6 +110,7 @@ public enum DesignTokens {
         "inbox": Glyph("tray", "Inbox"),
         "list": Glyph("list.bullet", "AutoMirrored.List"),
         "lists": Glyph("checklist", "Checklist"),
+        "needs": Glyph("target", "Adjust"),
         "chat": Glyph("bubble.left.and.bubble.right", "Forum"),
         "search": Glyph("magnifyingglass", "Search"),
         "records": Glyph("square.stack", "ViewAgenda"),

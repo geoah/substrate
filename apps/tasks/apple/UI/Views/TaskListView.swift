@@ -6,6 +6,8 @@ import SwiftUI
 import TasksCore
 
 /// Lists retain native selection, swipe actions and manual reordering.
+/// Needs you draws its chips above the rows, its bands under their
+/// headings, and the Later band faded under a fold.
 struct TaskListView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -24,6 +26,7 @@ struct TaskListView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 Notices(link: link, app: app).padding(.horizontal)
             }
+            .animation(.snappy(duration: 0.3), value: list.open.rows.map(\.id))
             .refreshable { shell.send(.refresh) }
             .safeAreaInset(edge: .bottom) {
                 if !addsFromTabBar, list.empty == nil || !list.closed.rows.isEmpty {
@@ -68,7 +71,30 @@ struct TaskListView: View {
             .padding(.vertical, 24)
             .plainRow(top: 32, bottom: 24)
         }
-        if !list.open.rows.isEmpty {
+        if !list.chips.isEmpty {
+            ChipsBar(chips: list.chips)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
+        }
+        if !list.bands.isEmpty {
+            if let clear = list.clear {
+                Label(clear, systemImage: "checkmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .plainRow(top: 8, bottom: 6)
+            }
+            ForEach(list.bands, id: \.band) { band in
+                Section {
+                    if band.band == .upcoming {
+                        heading(band.title, count: band.count, note: nil)
+                    } else if band.band == .later {
+                        fold(band.title)
+                    }
+                    ForEach(list.open.rows.filter { $0.band == band.band }) { row in rowView(row) }
+                }
+            }
+        } else if !list.open.rows.isEmpty {
             Section {
                 if list.showsClosed, !list.closed.rows.isEmpty {
                     heading(list.openTitle, count: nil, note: list.orderNote)
@@ -107,6 +133,20 @@ struct TaskListView: View {
         .plainRow(top: 12, bottom: 2)
     }
 
+    /// The Later band's fold: its name between two dashed lines.
+    private func fold(_ title: String) -> some View {
+        HStack(spacing: 10) {
+            Line()
+            Text(title.uppercased())
+                .font(.caption.weight(.semibold))
+                .tracking(0.6)
+                .foregroundStyle(.tertiary)
+            Line()
+        }
+        .plainRow(top: 18, bottom: 8)
+        .accessibilityElement(children: .combine)
+    }
+
     /// A card that opens its task, beside its round mark; the open task's
     /// card is outlined.
     @ViewBuilder
@@ -120,7 +160,7 @@ struct TaskListView: View {
         }
         .plainRow(top: 2, bottom: 2)
         .swipeActions(edge: .leading) {
-            Button(row.toggle) { shell.send(row.status == .open ? .complete(row.id) : .reopen(row.id)) }
+            Button(row.toggle) { shell.send(row.status == .open && !row.pending ? .complete(row.id) : .reopen(row.id)) }
                 .tint(.green)
         }
         // Deleting is never a full swipe: it takes the revealed button.
@@ -130,7 +170,11 @@ struct TaskListView: View {
                 Button(list.rowMenu.abandon) { shell.send(.abandon(row.id)) }
             }
         }
-        .contextMenu { TaskMenu(task: row.id, status: row.status, priority: row.priority?.priority ?? .none, sidebar: app.sidebar, words: list.rowMenu) }
+        .contextMenu {
+            TaskMenu(
+                task: row.id, status: row.status, pending: row.pending, priority: row.priority?.priority ?? .none, sidebar: app.sidebar,
+                words: list.rowMenu)
+        }
     }
 
     /// Dragging, only where the order is the owner's.
@@ -154,8 +198,8 @@ struct TaskListView: View {
         return nil
     }
 
-    /// Today is what is due, in due order and open: nothing to sort or show.
-    private var offersViewOptions: Bool { list.selection != .today }
+    /// Needs you is every open task in its bands: nothing to sort or show.
+    private var offersViewOptions: Bool { list.selection != .needsYou }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
@@ -204,12 +248,15 @@ struct TaskMenu: View {
     @Environment(TasksShell.self) private var shell
     let task: String
     let status: TaskStatus
+    var pending = false
     let priority: TaskPriority
     let sidebar: SidebarPresentation
     let words: TaskMenuWords
 
     var body: some View {
-        if status == .open {
+        if pending {
+            Button("Undo", systemImage: "arrow.uturn.backward") { shell.send(.reopen(task)) }
+        } else if status == .open {
             Button(words.complete, systemImage: "checkmark.circle") { shell.send(.complete(task)) }
             Button(words.abandon, systemImage: "xmark.circle") { shell.send(.abandon(task)) }
         } else {
@@ -226,7 +273,7 @@ struct TaskMenu: View {
             }
         }
         Menu(words.move) {
-            ForEach(sidebar.fixed.filter { $0.selection != .today } + sidebar.lists.rows) { row in
+            ForEach(sidebar.fixed.filter { $0.selection != .needsYou } + sidebar.lists.rows) { row in
                 Button(row.title) { shell.send(.move(task, toList: row.selection.listID)) }
             }
         }
@@ -245,6 +292,54 @@ struct NewTaskButton: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
+    }
+}
+
+/// Needs you's chips: All, then each list, one chosen, in a row that
+/// scrolls where they do not fit.
+private struct ChipsBar: View {
+    @Environment(TasksShell.self) private var shell
+    let chips: [FilterChip]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(chips) { chip in
+                    Button {
+                        shell.send(.filter(chip.selection))
+                    } label: {
+                        Text(chip.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(chip.selected ? TasksSymbols.card : Color.primary)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                            .background(chip.selected ? Color.primary : Color.primary.opacity(0.07), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(chip.selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+        }
+        .animation(.snappy(duration: 0.2), value: chips.map(\.selected))
+    }
+}
+
+/// A fold's dashed rule.
+private struct Line: View {
+    var body: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(height: 1)
+            .overlay {
+                Path { path in
+                    path.move(to: .zero)
+                    path.addLine(to: CGPoint(x: 4000, y: 0))
+                }
+                .stroke(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+            }
+            .clipped()
     }
 }
 

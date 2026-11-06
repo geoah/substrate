@@ -29,13 +29,14 @@ public struct TasksModel: Equatable, Sendable {
 
     public var arrangedLists: [TaskList] { Array(lists.values).arranged }
 
-    /// The tasks a selection shows, open and closed alike.
-    public func tasks(in selection: ListSelection, today: CivilDay) -> [TaskItem] {
+    /// The tasks a selection shows, open and closed alike; Needs you's are
+    /// every open task, whatever its list.
+    public func tasks(in selection: ListSelection) -> [TaskItem] {
         tasks.values.filter { task in
             switch selection {
             case .inbox: task.list == nil
             case let .list(id): task.list == id
-            case .today: task.isOpen && task.due.map { $0.day <= today } == true
+            case .needsYou: task.isOpen
             }
         }
     }

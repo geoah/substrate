@@ -45,7 +45,7 @@ struct TapTests {
         let (_, harness) = try rig()
         await harness.send(.reminderTapped("t3"))
         // Drawn again at launch: the tab already open, no task open.
-        await harness.send(.select(section: TasksMenu.today))
+        await harness.send(.select(section: TasksMenu.needsYou))
         await harness.send(.open(task: nil))
         await harness.deliver(.records(.loaded([taskRecord("t3", "Pay rent")], cursor: nil, queue: [])))
         #expect(await harness.state.openTask == "t3")
@@ -65,8 +65,8 @@ struct TapTests {
     @Test func navigationIsThePresentations() async throws {
         let (_, harness) = try rig()
         await harness.deliver(.records(.loaded([listRecord("home", "Home"), taskRecord("a", "A", list: "home")], cursor: nil, queue: [])))
-        // A phone opens on Today; Lists shows the lists until one is chosen.
-        #expect(await harness.presentation.list?.selection == .today)
+        // A phone opens on Needs you; Lists shows the lists until one is chosen.
+        #expect(await harness.presentation.list?.selection == .needsYou)
         await harness.send(.select(section: TasksMenu.lists))
         #expect(await harness.presentation.list == nil)
         await harness.send(.show(.list("home")))

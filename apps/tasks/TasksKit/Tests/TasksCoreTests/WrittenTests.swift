@@ -20,6 +20,8 @@ struct WrittenTests {
         await harness.deliver(.settingsRead(SettingsValues(), usage: []))
         await harness.send(.show(.inbox))
         await harness.send(.complete("a"))
+        // The window over: the write the completion waited with.
+        await harness.deliver(.records(.wrote(try #require(await harness.state.completing["a"]))))
         let write = try #require(
             harness.effects.compactMap { effect -> OutboxEntry? in
                 if case let .records(.enqueue(write)) = effect { return write.entries.first }
@@ -49,6 +51,8 @@ struct WrittenTests {
         try await harness.until { await $0.state.linked.phase == .following }
         await harness.send(.show(.inbox))
         await harness.send(.complete("t1"))
+        await harness.settle()
+        await harness.advance(by: TasksApp.undoWindow)
         #expect(titles(await harness.presentation).isEmpty)
         try await harness.until { await $0.state.linked.unconfirmed.isEmpty }
         guard case .refused = await rig.outbox.flush(rig.client) else { throw Unexpected() }

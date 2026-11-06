@@ -37,7 +37,7 @@ internal object TasksFixtures {
         val none = TasksActions.None
         return when (fixture.screen) {
             TasksGalleryFixture.Screen.sidebar -> {
-                { SidebarScreen(app.sidebar, app, null, none, {}, showsToday = true, selected = app.sidebar.selected) }
+                { SidebarScreen(app.sidebar, app, null, none, {}, showsNeedsYou = true, selected = app.sidebar.selected) }
             }
             TasksGalleryFixture.Screen.list ->
                 app.list?.let { list ->

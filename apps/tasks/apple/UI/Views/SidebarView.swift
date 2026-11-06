@@ -5,10 +5,10 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// The lists column: what is due and the tasks in no list, then the lists
-/// in the owner's order with their open counts, dragged to reorder. With
-/// the App menu (iPad, Mac) it ends in Settings; on a phone, Today and
-/// Settings are tabs of their own.
+/// The lists column: what needs the owner and the tasks in no list, then
+/// the lists in the owner's order with their open counts, dragged to
+/// reorder. With the App menu (iPad, Mac) it ends in Settings; on a phone,
+/// Needs you and Settings are tabs of their own.
 struct SidebarView: View {
     @Environment(TasksShell.self) private var shell
     let sidebar: SidebarPresentation
@@ -26,7 +26,7 @@ struct SidebarView: View {
     var body: some View {
         List(selection: menu == nil ? nil : selection) {
             Section {
-                ForEach(sidebar.fixed.filter { menu != nil || $0.selection != .today }) { row in
+                ForEach(sidebar.fixed.filter { menu != nil || $0.selection != .needsYou }) { row in
                     rowView(row)
                 }
             }
@@ -81,7 +81,7 @@ struct SidebarView: View {
                 switch item {
                 case .settings?: shell.send(.select(section: TasksMenu.settings))
                 case let .list(selection)?:
-                    shell.send(.select(section: selection == .today ? TasksMenu.today : TasksMenu.lists))
+                    shell.send(.select(section: selection == .needsYou ? TasksMenu.needsYou : TasksMenu.lists))
                     select(selection)
                 case nil: break
                 }

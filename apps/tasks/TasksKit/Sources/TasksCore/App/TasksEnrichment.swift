@@ -25,27 +25,55 @@ public extension TasksApp {
             return [.shown(selection)]
         case let .open(task):
             return [.opened(task)]
+        case let .filter(filter):
+            guard filter != state.filter, filter.flatMap(\.listID).map({ model.lists[$0] != nil }) ?? true else { return [] }
+            return [.filtered(filter)]
         case let .quickAdd(name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return [] }
-            let selection = state.selection ?? .inbox
+            // On Needs you a task goes into the list it is narrowed to and is
+            // due today, so it lands where the owner is looking.
+            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
             let list = selection.listID
             let task = TaskItem(
                 id: writes.newID(), name: name, list: list, position: Position.between(model.lastPosition(inList: list), nil),
-                due: selection == .today ? .day(today) : nil)
+                due: state.selection == .needsYou ? .day(today) : nil)
             return [wrote(writes.create(task))]
         case .newTask:
-            let selection = state.selection ?? .inbox
-            return [.editorOpened(ChildKey(writes.newID()), .new(list: selection.listID, day: selection == .today ? today : nil))]
+            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
+            return [.editorOpened(ChildKey(writes.newID()), .new(list: selection.listID, day: state.selection == .needsYou ? today : nil))]
         case let .edit(id):
             guard model.tasks[id] != nil else { return [] }
             return [.editorOpened(ChildKey(writes.newID()), .task(id))]
         case let .complete(id):
-            return status(id, .done, model, writes)
+            guard state.completing[id] == nil, let event = status(id, .done, model, writes).first, case let .records(.wrote(write)) = event else {
+                return []
+            }
+            return [.completing(id, write)]
         case let .reopen(id):
+            guard state.completing[id] == nil else { return [.uncompleted(id)] }
             return status(id, .open, model, writes)
         case let .abandon(id):
-            return status(id, .abandoned, model, writes)
+            return undone(id, state) + status(id, .abandoned, model, writes)
+        case let .reschedule(id, how):
+            guard let task = model.tasks[id] else { return [] }
+            guard how != .pickDay else { return [.editorOpened(ChildKey(writes.newID()), .task(id))] }
+            let day =
+                switch how {
+                case .today: today
+                case .tomorrow: today.adding(days: 1, in: calendar)
+                case .nextWeek, .pickDay: today.adding(days: 7, in: calendar)
+                }
+            var next = task
+            // A timed task keeps its time of day on the new day.
+            if let instant = task.due?.instant {
+                let clock = calendar.dateComponents([.hour, .minute], from: instant)
+                next.due = .time(day.start(in: calendar, hour: clock.hour ?? 0).addingTimeInterval(Double(clock.minute ?? 0) * 60), day: day)
+            } else {
+                next.due = .day(day)
+            }
+            guard next.due != task.due else { return [] }
+            return [wrote(writes.change(task, to: next))]
         case let .setPriority(id, priority):
             guard let task = model.tasks[id], task.priority != priority else { return [] }
             var next = task
@@ -58,8 +86,8 @@ public extension TasksApp {
             next.position = Position.between(model.lastPosition(inList: list), nil)
             return [wrote(writes.change(task, to: next))]
         case let .reorderTask(id, index):
-            guard let selection = state.selection, selection != .today, TasksSettings.order(state.settings) == .manual else { return [] }
-            let open = TaskOrder.manual.sorted(model.tasks(in: selection, today: today).filter(\.isOpen), in: calendar)
+            guard let selection = state.selection, selection != .needsYou, TasksSettings.order(state.settings) == .manual else { return [] }
+            let open = TaskOrder.manual.sorted(model.tasks(in: selection).filter(\.isOpen), in: calendar)
             let moves = Position.moves(id, to: index, in: open.map(\.id), positions: open.reduce(into: [:]) { $0[$1.id] = $1.position })
             let changes = moves.sorted { $0.key < $1.key }.compactMap { id, position -> LocalWrite? in
                 guard let task = model.tasks[id], task.position != position else { return nil }
@@ -80,7 +108,7 @@ public extension TasksApp {
             return changes.isEmpty ? [] : [wrote(LocalWrite(entries: changes.flatMap(\.entries)))]
         case let .deleteTask(id):
             guard let task = model.tasks[id] else { return [] }
-            var events: [Event] = [wrote(writes.delete(TasksKinds.task, id, version: task.version))]
+            var events: [Event] = undone(id, state) + [wrote(writes.delete(TasksKinds.task, id, version: task.version))]
             if state.openTask == id { events.append(.opened(nil)) }
             return events
         case let .createList(name):
@@ -103,6 +131,7 @@ public extension TasksApp {
             guard case let .deleteList(id)? = state.confirmation, let list = model.lists[id] else { return [.answered] }
             var events: [Event] = [.answered, wrote(writes.delete(TasksKinds.list, id, version: list.version))]
             if state.selection == .list(id) { events.append(.shown(state.section == TasksMenu.lists ? nil : .inbox)) }
+            if state.filter == .list(id) { events.append(.filtered(nil)) }
             return events
         case .dismissConfirmation:
             return [.answered]
@@ -122,6 +151,12 @@ public extension TasksApp {
         case .dismissProblem:
             return [.problemDismissed]
         }
+    }
+
+    /// A completion still in its window is taken back before anything else
+    /// happens to the task.
+    private func undone(_ id: String, _ state: TasksState) -> [Event] {
+        state.completing[id] == nil ? [] : [.uncompleted(id)]
     }
 
     /// A move of state, where the package allows it.

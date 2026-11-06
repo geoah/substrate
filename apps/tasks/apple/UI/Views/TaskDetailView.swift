@@ -2,7 +2,8 @@ import SubstrateScreens
 import SwiftUI
 import TasksCore
 
-/// The open task: its round mark beside its name, then each fact once under
+/// The open task: its name beside its round mark (filled while a completion
+/// waits its undo window), then each fact once under
 /// the label the editor uses, the list and the priority as the pickers that
 /// change them where they stand, the notes and the link as text of their
 /// own, then what can be done to it, Delete apart. Edit is in the toolbar.
@@ -14,26 +15,28 @@ struct TaskDetailView: View {
     var body: some View {
         Form {
             Section {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(detail.title)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(detail.status == .open && !detail.pending ? Color.primary : Color.secondary)
+                        .strikethrough(detail.status == .abandoned || detail.pending)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
-                        shell.send(detail.status == .open ? .complete(detail.id) : .reopen(detail.id))
+                        shell.send(detail.status == .open && !detail.pending ? .complete(detail.id) : .reopen(detail.id))
                     } label: {
-                        Image(systemName: TasksSymbols.mark(detail.status))
+                        Image(systemName: detail.pending ? "checkmark.circle.fill" : TasksSymbols.mark(detail.status))
                             .font(.system(size: markSize))
-                            .foregroundStyle(detail.status == .done ? Color.brandAccent : Color.secondary)
+                            .foregroundStyle(detail.status == .done || detail.pending ? Color.brandAccent : Color.secondary)
                             .contentTransition(.symbolEffect(.replace))
-                            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                            .frame(minWidth: 44, minHeight: 44)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(detail.status == .open ? "Mark as Done" : "Reopen")
-                    Text(detail.title)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(detail.status == .open ? Color.primary : Color.secondary)
-                        .strikethrough(detail.status == .abandoned)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    .accessibilityLabel(detail.pending ? "Undo" : detail.status == .open ? "Mark as Done" : "Reopen")
                 }
+                .animation(.snappy(duration: 0.25), value: detail.pending)
             }
             Section {
                 ForEach(facts) { field in

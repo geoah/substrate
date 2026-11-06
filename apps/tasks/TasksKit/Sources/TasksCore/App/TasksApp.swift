@@ -18,12 +18,18 @@ public struct TasksApp: LinkedRecordsApp {
         /// A list shown, or none: on a phone, back to the lists.
         case show(ListSelection?)
         case open(task: String?)
+        /// Needs you narrowed to one list or the inbox; nil widens it.
+        case filter(ListSelection?)
         case quickAdd(String)
         case newTask
         case edit(String)
+        /// Marks the task done after `TasksApp.undoWindow`; `reopen` within
+        /// it takes the mark back before anything is written.
         case complete(String)
         case reopen(String)
         case abandon(String)
+        /// A task's due day moved to a named day, or the editor to pick one.
+        case reschedule(String, Reschedule)
         case setPriority(String, TaskPriority)
         case move(String, toList: String?)
         /// A task dragged to `index` among the open rows drawn.
@@ -53,7 +59,12 @@ public struct TasksApp: LinkedRecordsApp {
         case settingsRead(SettingsValues, usage: [AreaUsage])
         case sectionSelected(String)
         case shown(ListSelection?)
+        case filtered(ListSelection?)
         case opened(String?)
+        /// A task marked done: the write its undo window ends in.
+        case completing(String, LocalWrite)
+        /// The mark taken back within the window.
+        case uncompleted(String)
         case editorOpened(ChildKey, EditorSeed)
         /// An editor's save: its write's entries, on their way to the outbox.
         case editorSaving(ChildKey, Set<UUID>)
@@ -81,6 +92,10 @@ public struct TasksApp: LinkedRecordsApp {
         case saveSettings(SettingsValues)
         case schedule([NotificationRequest])
         case readUsage
+        /// Waits out a task's undo window, then writes its completion.
+        case settle(String, LocalWrite)
+        /// Stops the wait: the mark was taken back.
+        case unsettle(String)
 
         public var recordsEffect: LinkedRecords.Effect? {
             if case let .records(effect) = self { effect } else { nil }
@@ -92,6 +107,9 @@ public struct TasksApp: LinkedRecordsApp {
     public typealias Child = TaskEditor
 
     public static let appName = "Substrate Tasks"
+    /// How long a task marked done stays on its row, filled, before the
+    /// write goes: long enough to see the mark and take it back.
+    public static let undoWindow: TimeInterval = 3
     /// Where the app's settings are kept in the repository's folder.
     public static let settingsFile = SettingsFile<SettingsValues>()
 

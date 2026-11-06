@@ -53,7 +53,7 @@ public struct TaskEditor: Controller, Equatable {
     /// The task as it stands, read again with each change to it; nil for a
     /// new one.
     public let original: TaskItem?
-    /// The list a new task goes in, and the day it is due on (Today's).
+    /// The list a new task goes in, and the day it is due on (Needs you's).
     public let seedList: String?
     public let seedDay: CivilDay?
     /// Every list, in the owner's order, as `(id, name)`.

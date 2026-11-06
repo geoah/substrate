@@ -66,7 +66,7 @@ import Testing
         }
         // The Mac's and the iPad's layout: the sidebar, a list and the open
         // task side by side, in a Mac window with its toolbar.
-        for fixture in TasksFixtures.all where fixture.name == "tasks-detail" || fixture.name == "tasks-today" {
+        for fixture in TasksFixtures.all where fixture.name == "tasks-detail" || fixture.name == "tasks-needs-you" {
             try await OffscreenDrawing.png(SplitRoot(link: link, app: fixture.app).environment(shell), size: OffscreenDrawing.mac, frame: .window)
                 .write(to: directory.appendingPathComponent("\(fixture.name)-wide.png"))
         }
