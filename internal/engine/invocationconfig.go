@@ -32,17 +32,22 @@ const (
 
 // resolveFunctionConfig builds one invocation's `config` map, plus the list
 // of INJECTED SECRET VALUES (secret-typed properties resolved into the map,
-// live access tokens, the bundle's own secrets) the invocation scrubber holds
-// every outbound surface to. Nil config for a function outside any bundle.
-func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Function) (map[string]any, []string, error) {
+// live access tokens, the bundle's own secrets, the operator's key) the
+// invocation scrubber holds every outbound surface to. Nil config for a
+// function outside any bundle.
+//
+// The charge is non-nil when the call runs on the operator's key
+// (operatorfunction.go): its price is reserved, and the caller settles it once
+// the body returns, or at nothing if the body never runs.
+func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Function) (map[string]any, []string, *operatorCharge, error) {
 	b, ok := ds.registry().BundleOf(fn.Package)
 	if !ok {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	cfg := map[string]any{"bundle": b.Package}
 	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
-		return cfg, nil, nil
+		return cfg, nil, nil, nil
 	}
 
 	// The OAUTH-FACILITY secrets are never injected: the
@@ -71,7 +76,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	if oauthEnabled {
 		var err error
 		if clientInput, err = ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		client, clientErr = ds.oauthClientFrom(ctx, ds.db, b, clientInput)
 	}
@@ -92,7 +97,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		} else {
 			var err error
 			if ri, err = ds.resolveBundleInput(ctx, b, name); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 		if ri.Row == nil {
@@ -118,7 +123,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	// key missing rather than an empty map.
 	settings, ssecrets, err := ds.bundleSettings(ctx, b)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if len(settings) > 0 {
 		cfg["settings"] = settings
@@ -139,7 +144,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		}
 		rows, err := ds.liveRowsOf(ctx, t.Identity)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, row := range rows {
 			entry, esecrets := ds.injectedRecordConfig(ctx, t, row)
@@ -174,7 +179,18 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		}
 	}
 	cfg["accounts"] = accounts
-	return cfg, secrets, nil
+
+	// Last, so nothing after the reservation can fail and leave it open: the
+	// operator's key, when this call runs on it, replaces the settings whole.
+	opSettings, charge, err := ds.operatorFunctionConfig(ctx, b, fn)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if charge != nil {
+		cfg["settings"] = opSettings
+		secrets = append(secrets, opSettings[operatorFunctionSecretName].(string))
+	}
+	return cfg, secrets, charge, nil
 }
 
 // propString reads a string property off a row, empty when absent or

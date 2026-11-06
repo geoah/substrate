@@ -1,0 +1,485 @@
+package engine
+
+// The operator's function secrets (decision 0232, operatorfunction.go): the
+// key in the defaults file's functionSecrets reaches the listed consumers of
+// the published package and nothing else, steps aside for the person's own
+// key, never reaches a copy, and every call it pays for reserves and settles
+// at its price. These tests resolve the invocation config directly, so no
+// body dials Firecrawl; internal/providertest holds what the bodies do with
+// it.
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/operatordefaults"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
+)
+
+const (
+	firecrawlProvider = "providers.substrate.reamde.dev/firecrawl"
+	// operatorFirecrawlKey is the operator's key in these fixtures; it is
+	// never a real key.
+	operatorFirecrawlKey = "fc-operator-key-fixture"
+	ownFirecrawlKey      = "fc-own-key-fixture"
+)
+
+// firecrawlOperatorConfig is a defaults file that pays for consumers of the
+// Firecrawl provider at price cents a call, under an allowance of cents.
+func firecrawlOperatorConfig(allowance int64, price string, consumers ...string) *operatordefaults.Config {
+	prices := map[string]string{}
+	for _, c := range consumers {
+		prices[c] = price
+	}
+	return &operatordefaults.Config{
+		FunctionSecrets: map[string]*operatordefaults.FunctionSecret{
+			firecrawlProvider: {APIKey: operatordefaults.NewSecret(operatorFirecrawlKey), Consumers: consumers, PricePerCall: prices},
+		},
+		Budget: operatordefaults.Budget{CentsPerDay: allowance},
+	}
+}
+
+// openFirecrawlDataset opens a repository under cfg with the shipped Firecrawl
+// provider installed through the catalog's install door, as an owner does.
+func openFirecrawlDataset(t *testing.T, cfg *operatordefaults.Config, opts ...Option) *dataset {
+	t.Helper()
+	ds := openInternalDataset(t, append([]Option{WithOperatorDefaults(cfg, "Example")}, opts...)...)
+	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
+	ds.svc.operatorNow = clock.Now
+	installShippedProvider(t, ds, firecrawlProvider)
+	return ds
+}
+
+func installShippedProvider(t *testing.T, ds *dataset, id string) {
+	t.Helper()
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	if err != nil {
+		t.Fatalf("load the catalog: %v", err)
+	}
+	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		t.Fatalf("install %s: %v", id, err)
+	}
+}
+
+// functionConfig resolves the invocation config a call of fn would get.
+func functionConfig(t *testing.T, ds *dataset, fn string) (map[string]any, []string, *operatorCharge, error) {
+	t.Helper()
+	f, err := ds.registry().ResolveFunction(fn)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", fn, err)
+	}
+	return ds.resolveFunctionConfig(context.Background(), f)
+}
+
+// settingsOf is the `config.settings` a body would read.
+func settingsOf(cfg map[string]any) map[string]any {
+	s, _ := cfg["settings"].(map[string]any)
+	return s
+}
+
+// installFirecrawlCopy lands what an earlier import of the Firecrawl sample
+// left behind: the closure under the repository's own authority, its package
+// `installed`, its page tool still `scrapepage`, and its two settings empty
+// and pinned. offered marks both functions offered under the names a copy
+// derives, as an owner who edited their copy would.
+func installFirecrawlCopy(t *testing.T, ds *dataset, offered bool) string {
+	t.Helper()
+	ctx := context.Background()
+	home := ds.Repository().Authority
+	declarations, data := shippedDocuments(t, firecrawlProvider)
+	rehome := func(v any) any { return rehomeValue(v, "providers.substrate.reamde.dev", home) }
+	var docs []map[string]any
+	for _, d := range declarations {
+		d, _ = rehome(d).(map[string]any)
+		body, _ := d["data"].(map[string]any)
+		if body != nil {
+			if _, isFn := body["offer"]; isFn {
+				delete(body, "offer")
+				if offered {
+					body["offer"] = map[string]any{"agents": true}
+				}
+			}
+		}
+		docs = append(docs, d)
+	}
+	rename := func(v any) any { return rehomeValue(v, home+"/firecrawl/webscrape", home+"/firecrawl/scrapepage") }
+	for i := range docs {
+		docs[i], _ = rename(docs[i]).(map[string]any)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("install the copy: %v", err)
+	}
+	for _, d := range data {
+		d, _ = rehome(d).(map[string]any)
+		meta, _ := d["metadata"].(map[string]any)
+		body, _ := d["data"].(map[string]any)
+		props, _ := body["properties"].(map[string]any)
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: d["kind"].(string), ID: meta["id"].(string), Properties: props}); err != nil {
+			t.Fatalf("put the copy's %v: %v", meta["id"], err)
+		}
+	}
+	return home + "/firecrawl"
+}
+
+// shippedDocuments reads one shipped provider directory's documents, split
+// as the catalog splits them: the declarations the batch apply takes, and the
+// data records put beside them.
+func shippedDocuments(t *testing.T, pkg string) (declarations, data []map[string]any) {
+	t.Helper()
+	fsys := kinds.Bundles()
+	entries, err := fs.ReadDir(fsys, pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		raw, err := fs.ReadFile(fsys, pkg+"/"+e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		for {
+			var m map[string]any
+			if err := dec.Decode(&m); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatalf("%s/%s: %v", pkg, e.Name(), err)
+			}
+			kind, _ := m["kind"].(string)
+			if vocabulary.KindPackage(kind) == vocabulary.PackageCore && vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
+				declarations = append(declarations, m)
+			} else {
+				data = append(data, m)
+			}
+		}
+	}
+	return declarations, data
+}
+
+// rehomeValue replaces old with replacement in every string of v.
+func rehomeValue(v any, old, replacement string) any {
+	switch x := v.(type) {
+	case string:
+		return strings.ReplaceAll(x, old, replacement)
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = rehomeValue(e, old, replacement)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = rehomeValue(e, old, replacement)
+		}
+		return out
+	}
+	return v
+}
+
+// assertKeyNeverStored walks every place a repository keeps anything, the
+// records, the changelog and the data root a recovery export is a tar of,
+// for key.
+func assertKeyNeverStored(t *testing.T, ds *dataset, key string) {
+	t.Helper()
+	for _, q := range []string{
+		`SELECT count(*) FROM records WHERE props::text LIKE '%' || $1 || '%' OR title LIKE '%' || $1 || '%'`,
+		`SELECT count(*) FROM changelog WHERE payload::text LIKE '%' || $1 || '%'`,
+	} {
+		var n int
+		if err := ds.db.QueryRow(q, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("%d rows hold the operator's key: %s", n, q)
+		}
+	}
+	if err := filepath.WalkDir(ds.svc.dataRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(raw, []byte(key)) {
+			t.Fatalf("%s holds the operator's key", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The operator's key reaches the consumers the file names of the published
+// package, alone in config.settings and armed in the scrubber, with the
+// call's price reserved; a function the file does not name, another
+// package's function and every store get nothing.
+func TestOperatorFunctionKeyReachesOnlyTheListedConsumers(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openFirecrawlDataset(t, firecrawlOperatorConfig(1000, "0.25", "websearch"))
+	// The person wrote a base URL; it never rides an operator-paid call.
+	mustPatchInternal(t, ds, kindSetting, firecrawlProvider+"/baseUrl", map[string]any{"value": "http://127.0.0.1:9"})
+
+	cfg, secrets, charge, err := functionConfig(t, ds, firecrawlProvider+"/websearch")
+	if err != nil {
+		t.Fatalf("websearch config: %v", err)
+	}
+	if got := settingsOf(cfg); len(got) != 1 || got[operatorFunctionSecretName] != operatorFirecrawlKey {
+		t.Fatalf("websearch settings = %v, want the operator's key alone", got)
+	}
+	if !slices.Contains(secrets, operatorFirecrawlKey) {
+		t.Fatal("the operator's key is not armed in the invocation scrubber")
+	}
+	if charge == nil || charge.cents != 0.25 {
+		t.Fatalf("charge = %+v, want one reserved at 0.25 cents", charge)
+	}
+	if l := operatorLedger(t, ds); len(l) != 1 || l[0].slot != substrate.SlotFunction || l[0].ceiling != 0.25 || l[0].settled != -1 {
+		t.Fatalf("ledger = %+v, want one open function reservation at 0.25", l)
+	}
+	charge.settle(ctx, ds, true)
+	if l := operatorLedger(t, ds); len(l) != 1 || l[0].settled != 0.25 {
+		t.Fatalf("ledger after the call = %+v, want it settled at the price", l)
+	}
+
+	// webscrape is the same package's, and the file does not name it.
+	cfg, _, charge, err = functionConfig(t, ds, firecrawlProvider+"/webscrape")
+	if err != nil {
+		t.Fatalf("webscrape config: %v", err)
+	}
+	if got := settingsOf(cfg); got[operatorFunctionSecretName] != nil || got["baseUrl"] != "http://127.0.0.1:9" || charge != nil {
+		t.Fatalf("webscrape settings = %v, charge = %+v, want the person's settings and no key", got, charge)
+	}
+
+	// Another package's function with an empty apiKey of its own.
+	const other = "other.test.dev/keyed"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(other, 0),
+		vocabulary.BundleManifest(other, map[string]any{"description": "a keyed bundle", "installs": []any{other + "/websearch"}}),
+		vocabulary.FunctionManifest(other, "websearch", map[string]any{
+			"description": "searches", "runtime": vocabulary.RuntimePython,
+			"source": "def main(input, host):\n    return {\"output\": {}}\n",
+		}),
+	}); err != nil {
+		t.Fatalf("install the other bundle: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kindSecret, ID: other + "/apiKey", Properties: map[string]any{"required": true}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, charge, err = functionConfig(t, ds, other+"/websearch")
+	if err != nil {
+		t.Fatalf("other config: %v", err)
+	}
+	if got := settingsOf(cfg); got[operatorFunctionSecretName] != nil || charge != nil {
+		t.Fatalf("another package's settings = %v, charge = %+v, want no key", got, charge)
+	}
+	if n := len(operatorLedger(t, ds)); n != 1 {
+		t.Fatalf("ledger rows = %d, want the one websearch call", n)
+	}
+
+	// The secret record stays the person's and empty, and the key is in no
+	// store.
+	rec, err := ds.Get(ctx, kindSecret, firecrawlProvider+"/apiKey")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, held := rec.Properties[propSettingValue]; held && v != "" {
+		t.Fatalf("the shipped secret reads %v", v)
+	}
+	assertKeyNeverStored(t, ds, operatorFirecrawlKey)
+}
+
+// The person's own key wins, and an empty one is none: the operator's key
+// returns. While the operator covers the key, the bundle asks for none.
+func TestOperatorFunctionKeyStepsAsideForTheOwnKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openFirecrawlDataset(t, firecrawlOperatorConfig(1000, "0.1", "websearch", "webscrape"))
+
+	st, err := ds.BundleStatus(ctx, firecrawlProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Setup) != 0 {
+		t.Fatalf("setup = %+v, want nothing asked while the operator covers the key", st.Setup)
+	}
+
+	mustPatchInternal(t, ds, kindSecret, firecrawlProvider+"/apiKey", map[string]any{"value": ownFirecrawlKey})
+	for _, fn := range []string{"websearch", "webscrape"} {
+		cfg, _, charge, err := functionConfig(t, ds, firecrawlProvider+"/"+fn)
+		if err != nil {
+			t.Fatalf("%s config: %v", fn, err)
+		}
+		if got := settingsOf(cfg); got[operatorFunctionSecretName] != ownFirecrawlKey || got["baseUrl"] != "https://api.firecrawl.dev" || charge != nil {
+			t.Fatalf("%s on the own key: settings = %v, charge = %+v", fn, got, charge)
+		}
+	}
+	if n := len(operatorLedger(t, ds)); n != 0 {
+		t.Fatalf("a call on the person's key wrote %d ledger rows", n)
+	}
+
+	mustPatchInternal(t, ds, kindSecret, firecrawlProvider+"/apiKey", map[string]any{"value": ""})
+	cfg, _, charge, err := functionConfig(t, ds, firecrawlProvider+"/websearch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := settingsOf(cfg); got[operatorFunctionSecretName] != operatorFirecrawlKey || charge == nil {
+		t.Fatalf("an emptied own key: settings = %v, charge = %+v, want the operator's", got, charge)
+	}
+	charge.settle(ctx, ds, false)
+	if l := operatorLedger(t, ds); len(l) != 1 || l[0].settled != 0 {
+		t.Fatalf("ledger = %+v, want a call that never ran settled at nothing", l)
+	}
+}
+
+// A copy of the retired sample, under the repository's own authority, never
+// receives the operator's key, even from a file that names it: its package is
+// installed, not published, so the repository could edit what the key
+// reaches.
+func TestOperatorFunctionKeyNeverReachesACopy(t *testing.T) {
+	t.Parallel()
+	ds := openFirecrawlDataset(t, firecrawlOperatorConfig(1000, "0.1", "websearch", "scrapepage"))
+	copyPkg := installFirecrawlCopy(t, ds, false)
+	// A file the boot would refuse (it names no shipped provider) still
+	// reaches no copy.
+	ds.svc.operatorDefaults.FunctionSecrets[copyPkg] = ds.svc.operatorDefaults.FunctionSecrets[firecrawlProvider]
+
+	for _, fn := range []string{"websearch", "scrapepage"} {
+		cfg, _, charge, err := functionConfig(t, ds, copyPkg+"/"+fn)
+		if err != nil {
+			t.Fatalf("copy %s config: %v", fn, err)
+		}
+		if got := settingsOf(cfg); got[operatorFunctionSecretName] != nil || charge != nil {
+			t.Fatalf("copy %s: settings = %v, charge = %+v, want no key", fn, got, charge)
+		}
+	}
+	if n := len(operatorLedger(t, ds)); n != 0 {
+		t.Fatalf("a copy's call wrote %d ledger rows", n)
+	}
+	got, err := ds.OperatorDefaults(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it := operatorItem(t, got, "function/"+copyPkg); it.Source != substrate.SourceNone || it.Readiness != substrate.ReadinessNotSetUp {
+		t.Fatalf("the copy's item = %+v, want no key resolving", it)
+	}
+}
+
+// At the allowance a call is refused before its body runs, with the
+// allowance's words, never handed an empty key; a call that ran settles at
+// its price whatever its body answered.
+func TestOperatorFunctionKeyRefusedAtTheAllowance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openFirecrawlDataset(t, firecrawlOperatorConfig(1, "0.6", "websearch", "webscrape"))
+
+	// The body refuses the url before it builds a request, so nothing dials
+	// Firecrawl; the call ran, so it settles at the price.
+	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlProvider+"/webscrape", map[string]any{"url": "http://not-https.example.com"})
+	if err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("webscrape of an http url = %v, want the body's refusal", err)
+	}
+	if l := operatorLedger(t, ds); len(l) != 1 || l[0].ceiling != 0.6 || l[0].settled != 0.6 {
+		t.Fatalf("ledger = %+v, want one call settled at 0.6", l)
+	}
+
+	_, _, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlProvider+"/websearch", map[string]any{"query": "anything"})
+	if !errors.Is(err, substrate.ErrAllowance) || !strings.Contains(err.Error(), "today's allowance from Example") ||
+		!strings.Contains(err.Error(), "add your own key") {
+		t.Fatalf("websearch past the allowance = %v, want the allowance refusal", err)
+	}
+	if n := len(operatorLedger(t, ds)); n != 1 {
+		t.Fatalf("ledger rows = %d, want the refused call to reserve nothing", n)
+	}
+	got, err := ds.OperatorDefaults(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := got.Operator.Allowance; a.UsedCents != 1 || len(a.BySlot) != 1 || a.BySlot[0].Slot != substrate.SlotFunction {
+		t.Fatalf("allowance = %+v, want the function slot's cent", a)
+	}
+	if it := operatorItem(t, got, "function/"+firecrawlProvider); it.Source != substrate.SourceOperator || !it.OperatorOffers ||
+		it.Readiness != substrate.ReadinessReady || it.Target != firecrawlProvider || it.Slot != substrate.SlotFunction || it.Label != "Firecrawl" {
+		t.Fatalf("firecrawl item at the limit = %+v", it)
+	}
+}
+
+// The read lists one function item per package the file names: the
+// operator's while the repository holds no key, the person's once it does,
+// and none while the provider is not installed.
+func TestOperatorDefaultsReportsFunctionSecrets(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t, WithOperatorDefaults(firecrawlOperatorConfig(100, "0.1", "websearch"), "Example"))
+	read := func() substrate.OperatorDefault {
+		t.Helper()
+		got, err := ds.OperatorDefaults(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return operatorItem(t, got, "function/"+firecrawlProvider)
+	}
+	if it := read(); it.Source != substrate.SourceNone || !it.OperatorOffers || it.Readiness != substrate.ReadinessNotSetUp ||
+		!strings.Contains(it.Message, "is not installed") {
+		t.Fatalf("before the install = %+v", it)
+	}
+	installShippedProvider(t, ds, firecrawlProvider)
+	if it := read(); it.Source != substrate.SourceOperator || it.Readiness != substrate.ReadinessReady || it.Message != "" {
+		t.Fatalf("installed = %+v", it)
+	}
+	mustPatchInternal(t, ds, kindSecret, firecrawlProvider+"/apiKey", map[string]any{"value": ownFirecrawlKey})
+	if it := read(); it.Source != substrate.SourceOwn || !it.OperatorOffers || it.Readiness != substrate.ReadinessReady {
+		t.Fatalf("on the own key = %+v", it)
+	}
+}
+
+// The seeded assistant takes both Firecrawl tools by its `toolsFrom`, under
+// the names the provider declares, and a copy offering the names a copy
+// derives sits beside them instead of shadowing them.
+func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t, WithLLMSampleSeed(true))
+	fake := provisionAgents(t, ds)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "openai",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-openai"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	installShippedProvider(t, ds, firecrawlProvider)
+	installFirecrawlCopy(t, ds, true)
+
+	fake.script("gpt-5", fakeTurn{content: "hello"})
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, testdb.Repository(t)+"/llm/substrate", substrate.ChatInput{Message: "hi"}, nil); err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	reqs := fake.requestsOf("gpt-5")
+	if len(reqs) != 1 {
+		t.Fatalf("completions: %d, want 1", len(reqs))
+	}
+	names := toolNamesSent(t, reqs[0])
+	for _, name := range []string{"web_search", "web_scrape", "firecrawl_websearch", "firecrawl_scrapepage"} {
+		if !slices.Contains(names, name) {
+			t.Fatalf("tools = %v, want %s among them", names, name)
+		}
+	}
+}
