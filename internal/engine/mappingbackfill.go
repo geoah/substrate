@@ -37,6 +37,36 @@ func backfilledMappings(live, cand *vocabulary.Registry, docs []vocabulary.Docum
 	return out
 }
 
+// linkShippedMappings is the backfill for the boot upgrade (decision record
+// 0232). A seeded mapping the upgrade adds is live at once where its provider
+// is already installed, and the upgrade is no apply, so without this every
+// mirror synced before it would wait for its provider to write the row again.
+// It runs the apply's own steps (vocabularywrite.go) against the candidate the
+// reload after the commit publishes: compile every where, link each mapping's
+// unlinked sources, then recompute the targets whose mapping set moved. A
+// mapping still waiting for its provider is not in cand.Mappings(), and the
+// install that brings the provider runs these steps itself.
+func (t *txn) linkShippedMappings(live, cand *vocabulary.Registry) error {
+	if cand == nil {
+		return nil
+	}
+	ms := backfilledMappings(live, cand, nil)
+	if len(ms) == 0 {
+		return nil
+	}
+	prev := t.writeReg
+	t.writeReg = cand
+	defer func() { t.writeReg = prev }()
+	if err := t.checkMappingWhere(cand); err != nil {
+		return err
+	}
+	t.ds.logApply("linking the sources of shipped mappings", "mappings", len(ms))
+	if err := t.linkUnpointedSources(ms); err != nil {
+		return err
+	}
+	return t.recomputeMappingTargets(live, cand)
+}
+
 // linkUnpointedSources runs the backfill for each mapping, against the
 // transaction's declarations (the apply's candidate). Each link is the engine's
 // own write of the source's slot (writeSubject), so it lands in the changelog,

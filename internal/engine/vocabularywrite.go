@@ -2578,6 +2578,17 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 			return err
 		}
 	}
+	// A shipped mapping that waits although its source is installed fills
+	// nothing from that provider until the provider is upgraded or the
+	// mapping holding its slot goes (decision record 0232). One waiting for
+	// an absent provider is the ordinary case and says nothing.
+	for _, h := range ds.reg.HeldMappings() {
+		if _, installed := ds.reg.ByIdentity(h.Mapping.From); !installed {
+			continue
+		}
+		ds.svc.log.Warn("substrate: a shipped mapping waits although its source kind is installed",
+			"repository", logSafeID(ds.info.ID), "mapping", h.Mapping.Identity(), "reason", logSafeText(h.Reason))
+	}
 	return nil
 }
 
