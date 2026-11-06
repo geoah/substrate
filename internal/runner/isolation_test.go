@@ -65,13 +65,13 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Fifteen cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly sixteen must reach that guard: a
+// Sixteen cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly seventeen must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and a seventeenth case cannot be added, or one of the sixteen
+// behind, and an eighteenth case cannot be added, or one of the seventeen
 // removed, without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 16))
+	os.Exit(sandboxtest.Run(m, 17))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -1203,6 +1203,112 @@ def main(input, host):
 	}
 	if got := heard(5 * time.Second); got != "leaked" {
 		t.Fatalf("an unconfined body's datagram did not arrive: %q", got)
+	}
+}
+
+// A confined body opens no Unix socket, so a resolver or proxy daemon on a
+// pathname socket cannot carry its traffic past the gate, while socketpair(2)
+// still gives it a connected pair. A runner that never called
+// ConfineBodyEgress, as in production, still reaches the socket. The
+// listener is a pathname socket in this test's own directory.
+func TestAConfinedBodyOpensNoUnixSocket(t *testing.T) {
+	confined := New()
+	requireSeccomp(t, confined)
+	requireConnectGate(t, confined)
+	confined.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.1/32"))
+
+	// os.MkdirTemp rather than t.TempDir: a socket path must fit sun_path's
+	// 108 bytes, and t.TempDir embeds the test's name.
+	dir, err := os.MkdirTemp("", "uds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "relay.sock")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	received := make(chan string, 8)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			buf := make([]byte, 64)
+			n, _ := c.Read(buf)
+			received <- string(buf[:n])
+			_ = c.Close()
+		}
+	}()
+
+	const probe = `
+import socket
+def attempt(fn):
+    try:
+        return fn()
+    except OSError as e:
+        return "err:%s" % e.errno
+def main(input, host):
+    path = input["args"]["path"]
+    def unix():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(5)
+            s.connect(path)
+            s.sendall(b"leaked")
+        finally:
+            s.close()
+        return "ok"
+    def pair():
+        a, b = socket.socketpair()
+        try:
+            a.sendall(b"x")
+            return "ok" if b.recv(1) == b"x" else "short"
+        finally:
+            a.close()
+            b.close()
+    return {"output": {"unix": attempt(unix), "pair": attempt(pair)}}
+`
+	spec := Spec{
+		Repository: "t1", Function: "unixsocket.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"path": path}
+	res, err := confined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["unix"] != "err:13" || out["pair"] != "ok" {
+		t.Fatalf("a confined body answered %v, want its Unix socket refused with EACCES and its socketpair working", out)
+	}
+	select {
+	case got := <-received:
+		t.Fatalf("a confined body reached a pathname Unix socket: %q", got)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	unconfined := New()
+	res, err = unconfined.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke unconfined: %v", err)
+	}
+	out, _ = res.Output.(map[string]any)
+	if out["unix"] != "ok" {
+		t.Fatalf("an unconfined body could not reach a pathname Unix socket: %v", out)
+	}
+	select {
+	case got := <-received:
+		if got != "leaked" {
+			t.Fatalf("the unconfined body's write arrived as %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the unconfined body's write did not arrive")
 	}
 }
 

@@ -146,11 +146,12 @@ type Policy struct {
 	// gate sees connect(2) alone, so the syscall filter gives the child no
 	// internet socket but a TCP stream and refuses TCP Fast Open's send: no
 	// datagram, raw, SCTP or MPTCP socket reaches an address without passing
-	// the gate (buildConfinedFilter). An outside body's proxy dials nothing
-	// outside it and asks no name server. It is a test binary's
-	// setting (runner.ConfineBodyEgress): a body a regression points at a real
-	// API is refused at connect(2), whatever its code does. Wrap refuses a
-	// policy carrying it on a host that cannot enforce it.
+	// the gate. It opens no Unix socket either, so a daemon on a pathname
+	// socket cannot relay its traffic (buildConfinedFilter). An outside
+	// body's proxy dials nothing outside it and asks no name server. It is a
+	// test binary's setting (runner.ConfineBodyEgress): a body a regression
+	// points at a real API is refused at connect(2), whatever its code does.
+	// Wrap refuses a policy carrying it on a host that cannot enforce it.
 	EgressOnly []netip.Prefix `json:"egressOnly,omitempty"`
 	// NoFile, FileSize bound the cheap things rlimits actually bound well.
 	// RLIMIT_AS and RLIMIT_NPROC are deliberately absent: AS counts virtual

@@ -644,10 +644,11 @@ func TestFilterVerdicts(t *testing.T) {
 }
 
 // The confined egress filter's verdicts (buildConfinedFilter): an internet
-// socket is a TCP stream or nothing, and no send call may carry MSG_FASTOPEN,
-// so connect(2), which the gate holds to the prefixes, is a confined child's
-// only way to a peer. Everything else is the main filter's to decide, so it
-// is allowed here. The live half is TestAConfinedBodySendsNoDatagram in
+// socket is a TCP stream or nothing, no Unix socket opens but a socketpair,
+// and no send call may carry MSG_FASTOPEN, so connect(2), which the gate holds
+// to the prefixes, is a confined child's only way to a peer. Everything else
+// is the main filter's to decide, so it is allowed here. The live halves are
+// TestAConfinedBodySendsNoDatagram and TestAConfinedBodyOpensNoUnixSocket in
 // internal/runner.
 func TestConfinedFilterVerdicts(t *testing.T) {
 	var (
@@ -683,7 +684,9 @@ func TestConfinedFilterVerdicts(t *testing.T) {
 		{name: "an SCTP stream", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_SCTP}, want: eacces},
 		{name: "an MPTCP stream", nr: sysSocket, args: [4]uint64{unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_MPTCP}, want: eacces},
 		{name: "a sequenced packet socket", nr: sysSocket, args: [4]uint64{unix.AF_INET, unix.SOCK_SEQPACKET, 0}, want: eacces},
-		{name: "a unix datagram socket", nr: sysSocket, args: [4]uint64{unix.AF_UNIX, unix.SOCK_DGRAM, 0}, want: allow},
+		{name: "a unix stream socket", nr: sysSocket, args: [4]uint64{unix.AF_UNIX, unix.SOCK_STREAM | unix.SOCK_CLOEXEC, 0}, want: eacces},
+		{name: "a unix datagram socket", nr: sysSocket, args: [4]uint64{unix.AF_UNIX, unix.SOCK_DGRAM, 0}, want: eacces},
+		{name: "a unix socketpair", nr: unix.SYS_SOCKETPAIR, args: [4]uint64{unix.AF_UNIX, unix.SOCK_STREAM, 0}, want: allow},
 		{name: "a netlink socket", nr: sysSocket, args: [4]uint64{unix.AF_NETLINK, unix.SOCK_RAW, 0}, want: allow},
 		{name: "sendto", nr: sysSendto, args: [4]uint64{3, 0, 16, unix.MSG_NOSIGNAL}, want: allow},
 		{name: "sendto with fast open", nr: sysSendto, args: [4]uint64{3, 0, 16, fastOpen}, want: eacces},
