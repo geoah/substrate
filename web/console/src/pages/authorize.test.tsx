@@ -24,6 +24,8 @@ vi.mock("@/router", () => ({
   },
 }))
 
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
+
 import { AuthorizePage } from "./authorize"
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -297,11 +299,12 @@ function renderPage({ technical = false } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <AuthorizePage />
     </QueryClientProvider>
   )
+  return { ...view, client }
 }
 
 const MODES = [
@@ -969,6 +972,72 @@ describe("AuthorizePage", () => {
       screen.getByRole<HTMLButtonElement>("button", { name: "Approve" })
         .disabled
     ).toBe(false)
+  })
+
+  it("leaves nothing of a typed secret setting in the mutation cache after a refusal, a denial or an approval", async () => {
+    const KEY = `${APPLEHEALTH}/apiKey`
+    const keyed = {
+      ...SYNC,
+      setup: [
+        {
+          ...INSTALL,
+          package: {
+            ...INSTALL.package,
+            settings: [{ id: KEY, secret: true, required: true }],
+          },
+        },
+        CREATE,
+        ENABLE,
+      ],
+    }
+    answers.GET = () => jsonResponse(200, keyed)
+    answers.POST = () =>
+      jsonResponse(400, {
+        error: { code: "bad_request", message: "the key was refused" },
+      })
+    const first = renderPage()
+    const keyBox = async () =>
+      (await waitFor(() => {
+        const box = document.querySelector<HTMLInputElement>(
+          "input[type=password]"
+        )
+        expect(box).not.toBeNull()
+        return box
+      }))!
+    const approve = await screen.findByRole("button", {
+      name: "Approve and set up",
+    })
+    fireEvent.change(await keyBox(), {
+      target: { value: "hs-refused-secret" },
+    })
+    fireEvent.click(approve)
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "the key was refused"
+    )
+    expect(body("POST").settings).toEqual([
+      { id: KEY, secret: true, value: "hs-refused-secret" },
+    ])
+    expectNoTrace(first.client, "hs-refused-secret")
+
+    fireEvent.change(await keyBox(), { target: { value: "hs-denied-secret" } })
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(DENIED))
+    expectNoTrace(first.client, "hs-denied-secret")
+    first.unmount()
+
+    answers.POST = () => jsonResponse(200, { redirect: APPROVED })
+    const second = renderPage()
+    fireEvent.change(await keyBox(), {
+      target: { value: "hs-approved-secret" },
+    })
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Approve and set up" })
+    )
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    expect(body("POST", 1).settings).toEqual([
+      { id: KEY, secret: true, value: "hs-approved-secret" },
+    ])
+    expectNoTrace(second.client, "hs-approved-secret")
   })
 
   it("does not follow an answer that is not a web address", async () => {

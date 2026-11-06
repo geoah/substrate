@@ -7,13 +7,14 @@
  * Inside a `SheetDraftContext` the record is not stored yet: the same write
  * lands in the draft and nothing reaches the server. */
 
-import { useRef, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useSheetDraft } from "./draft"
 import { splitKind } from "@/lib/api/http"
 import { patchRecord, recordWriteReaches } from "@/lib/api/records"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 
 /** What a refused write says, in words that tell the reader what to do. */
 export function writeError(error: unknown): string {
@@ -100,49 +101,36 @@ export function useRecordPatch(record: SubstrateRecord, base?: number) {
 }
 
 /** One secret property (an API key) written in place, under `ifVersion:
- * base` like useRecordPatch, but the value never enters the mutation cache:
- * TanStack keeps a mutation's variables for its gc time after the form that
- * sent them closed, so a key passed to `mutate` would sit there in plain
- * text. The value rides a ref the request reads once and clears, the
- * mutation takes no variables, and the settled mutation is removed from the
- * cache whether the write succeeded or failed. It writes straight to the
- * server: a secret is never drafted. */
+ * base` like useRecordPatch, but the value never enters the mutation cache
+ * (useSecretMutation): a key passed to `mutate` would sit there in plain
+ * text for the mutation's gc time after the form that sent it closed.
+ * Inside a `SheetDraftContext` the value lands in the draft directly, with
+ * no mutation at all. */
 export function useSecretPatch(
   record: SubstrateRecord,
   property: string,
   base: number
 ) {
   const client = useQueryClient()
-  const secret = useRef<string | null>(null)
+  const draft = useSheetDraft()
   const { authority, pkg, name } = splitKind(record.kind)
   // Under the record's patch key, so a surface that holds its next edit
-  // until a write lands sees this one; one level deeper, so removing it
-  // never touches another editor's write.
-  const mutationKey = [...recordPatchKey(record), "secret", property] as const
-  const mutation = useMutation({
-    mutationKey,
-    mutationFn: async () => {
-      const value = secret.current
-      secret.current = null
-      if (value === null) throw new Error("There is no value to save.")
-      return patchRecord(authority, pkg, name, record.id, {
+  // until a write lands sees this one.
+  const mutation = useSecretMutation({
+    mutationKey: [...recordPatchKey(record), "secret", property],
+    mutationFn: (value: string) =>
+      patchRecord(authority, pkg, name, record.id, {
         properties: { [property]: value },
         ifVersion: base,
-      })
-    },
+      }),
     onSuccess: (saved) => afterWrite(client, record, saved),
   })
   async function save(value: string): Promise<SubstrateRecord> {
-    secret.current = value
-    try {
-      return await mutation.mutateAsync()
-    } finally {
-      secret.current = null
-      const cache = client.getMutationCache()
-      for (const m of cache.findAll({ mutationKey, exact: true })) {
-        if (m.state.status !== "pending") cache.remove(m)
-      }
+    if (draft) {
+      draft.write({ [property]: value })
+      return record
     }
+    return mutation.mutateAsync(value)
   }
   return {
     save,

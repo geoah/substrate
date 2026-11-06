@@ -23,7 +23,12 @@ import { fromLocalInput, toLocalInput } from "./dates"
 import { ListEditor } from "./list-editor"
 import { editStyle, liftWrite, propertyWrite, type Lift } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
-import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
+import {
+  useEditBase,
+  useRecordPatch,
+  useSecretPatch,
+  writeError,
+} from "./use-record-patch"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
@@ -88,9 +93,12 @@ export function InlineEditor(props: InlineEditorProps) {
   return <PanelEditor {...props} />
 }
 
-/** Saves one write and reports how it went. */
+/** Saves one write and reports how it went. A secret row's value goes
+ * through useSecretPatch, so nothing of it stays in the mutation cache. */
 function useSave({ row, record, onDone, onError, lift }: InlineEditorProps) {
-  const patch = useRecordPatch(record, useEditBase(record))
+  const base = useEditBase(record)
+  const patch = useRecordPatch(record, base)
+  const secret = useSecretPatch(record, row.field.name, base)
   async function save(next: FormValue) {
     const write = liftWrite(
       propertyWrite(row.field, row.value, next),
@@ -106,15 +114,20 @@ function useSave({ row, record, onDone, onError, lift }: InlineEditorProps) {
       onDone()
       return
     }
+    const sealed = write.properties[row.field.name]
     try {
-      await patch.mutateAsync(write.properties)
+      if (row.field.control === "secret" && typeof sealed === "string") {
+        await secret.save(sealed)
+      } else {
+        await patch.mutateAsync(write.properties)
+      }
       onError(undefined)
       onDone()
     } catch (error) {
       onError(writeError(error))
     }
   }
-  return { save, pending: patch.isPending }
+  return { save, pending: patch.isPending || secret.pending }
 }
 
 function isMarkdownRow({ row }: InlineEditorProps): boolean {

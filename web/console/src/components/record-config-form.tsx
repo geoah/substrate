@@ -7,7 +7,7 @@
  * any kind at all. */
 
 import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { ChevronRightIcon } from "lucide-react"
 
@@ -44,6 +44,7 @@ import {
   type FormValues,
 } from "@/lib/record-form"
 import { splitKind } from "@/lib/definition"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import { useUnits } from "@/hooks/use-units"
 
 /** The named fields first, in the order named; the rest keep theirs. */
@@ -132,9 +133,12 @@ export function RecordConfigForm({
 
   const { authority, pkg, name } = splitKind(type.identity)
 
-  const mutation = useMutation({
-    mutationFn: () => {
-      const properties = toProperties(fields, values, mode)
+  // A config or account record holds secrets (an OAuth client secret, a
+  // pasted token), so the write goes through useSecretMutation and nothing
+  // of the typed values stays in the mutation cache.
+  const mutation = useSecretMutation({
+    mutationKey: ["record-config", type.identity],
+    mutationFn: (properties: Record<string, unknown>) => {
       return record
         ? patchRecord(authority, pkg, type.name, record.id, { properties })
         : createRecord(authority, pkg, type.name, { properties })
@@ -179,7 +183,7 @@ export function RecordConfigForm({
       )
       return
     }
-    mutation.mutate()
+    mutation.mutate(toProperties(fields, values, mode))
   }
 
   function renderField(field: FormField) {

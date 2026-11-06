@@ -57,6 +57,7 @@ import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
 import { RecordEditorForm } from "./record-editor"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
+import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
 
 const taskKind: KindInfo = {
   identity: "samples.substrate.reamde.dev/tasks/task",
@@ -107,7 +108,7 @@ function renderEditor(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const view = render(
     <ConsolePreferencesContext.Provider
       value={{
         preferences: {
@@ -138,6 +139,7 @@ function renderEditor(
       </QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
+  return { ...view, client }
 }
 
 /** The YAML lens is CodeMirror, so a test drives it the way any other client
@@ -350,5 +352,107 @@ describe("the record editor (edit)", () => {
         name: "Save changes",
       }).disabled
     ).toBe(true)
+  })
+})
+
+describe("a secret typed into the editor", () => {
+  const credentialKind: KindInfo = {
+    ...taskKind,
+    identity: "samples.substrate.reamde.dev/vault/credential",
+    name: "credential",
+    package: "vault",
+    definition: {
+      properties: {
+        title: { type: "string", required: true },
+        token: { type: "secret", required: true },
+      },
+    },
+  }
+  const stored: SubstrateRecord = {
+    id: "c1",
+    kind: credentialKind.identity,
+    properties: { title: "Mail", token: "[redacted]" },
+    labels: {},
+    version: 2,
+    createdAt: "x",
+    updatedAt: "x",
+  }
+  const keyBox = () =>
+    document.querySelector<HTMLInputElement>("input[type=password]")
+
+  it("leaves nothing of it in the mutation cache after the sheet takes it, a refused create, a create or Esc", async () => {
+    const { client } = renderEditor({ kind: credentialKind })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "Mail" },
+    })
+    const typeToken = (secret: string, key: string) => {
+      fireEvent.click(screen.getByRole("button", { name: /^Token .*edit$/ }))
+      fireEvent.change(keyBox()!, { target: { value: secret } })
+      fireEvent.keyDown(keyBox()!, { key })
+    }
+
+    typeToken("sk-sheet-cancelled", "Escape")
+    expect(keyBox()).toBeNull()
+    expectNoTrace(client, "sk-sheet-cancelled")
+
+    typeToken("sk-sheet-secret", "Enter")
+    await waitFor(() => expect(keyBox()).toBeNull())
+    expectNoTrace(client, "sk-sheet-secret")
+
+    createRecord.mockRejectedValueOnce(
+      new ApiError("validation", "token is not accepted", 422)
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }))
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "token is not accepted"
+      )
+    )
+    expect(createRecord.mock.calls[0][3].properties.token).toBe(
+      "sk-sheet-secret"
+    )
+    expectNoTrace(client, "sk-sheet-secret")
+
+    createRecord.mockResolvedValueOnce({ ...stored, id: "c9" })
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }))
+    await waitFor(() => expect(createRecord).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Create credential",
+        }).disabled
+      ).toBe(false)
+    )
+    expectNoTrace(client, "sk-sheet-secret")
+  })
+
+  it("leaves nothing of it in the mutation cache after an edit's save or refusal", async () => {
+    const { client } = renderEditor({
+      mode: "edit",
+      kind: credentialKind,
+      record: stored,
+      seed: "kind: samples.substrate.reamde.dev/vault/credential\nmetadata:\n  id: c1\ndata:\n  properties:\n    title: Mail\n",
+    })
+    const yaml = await yamlLens()
+    yaml.replace(`${yaml.text()}    token: sk-yaml-secret\n`)
+    const save = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Save changes",
+    })
+    await waitFor(() => expect(save.disabled).toBe(false))
+
+    putRecord.mockRejectedValueOnce(
+      new ApiError("conflict", "version mismatch", 409)
+    )
+    fireEvent.click(save)
+    await waitFor(() => expect(putRecord).toHaveBeenCalledTimes(1))
+    expect(putRecord.mock.calls[0][4].properties.token).toBe("sk-yaml-secret")
+    await waitFor(() => expect(save.disabled).toBe(false))
+    expectNoTrace(client, "sk-yaml-secret")
+
+    putRecord.mockResolvedValueOnce(stored)
+    fireEvent.click(save)
+    await waitFor(() => expect(putRecord).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(save.disabled).toBe(false))
+    expectNoTrace(client, "sk-yaml-secret")
   })
 })

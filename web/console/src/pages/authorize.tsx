@@ -23,7 +23,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   keepPreviousData,
-  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
@@ -63,6 +62,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import {
   approveAuthorization,
   denyAuthorization,
@@ -499,7 +499,14 @@ function Approval({
     if (nextOk && next) window.location.assign(next)
   }, [nextOk, next])
 
-  const answer = useMutation({
+  // The answer the owner gave last, for the spinner and the refusal: the
+  // mutation holds no variables.
+  const [verdict, setVerdict] = useState<Verdict>("approve")
+  // An approval carries the values of the settings and secrets the package
+  // needs, so it goes through useSecretMutation and nothing of them stays
+  // in the mutation cache.
+  const answer = useSecretMutation({
+    mutationKey: ["authorize", id],
     mutationFn: async (input: {
       verdict: Verdict
       approval?: AuthorizationApproval
@@ -543,7 +550,7 @@ function Approval({
   // After an answer the page is on its way out, and while a set up runs the
   // request is not the owner's to answer again: nothing may be sent twice.
   const settled = answer.isPending || leaving || gone || settingUp || approved
-  const pendingVerdict = answer.isPending ? answer.variables.verdict : undefined
+  const pendingVerdict = answer.isPending ? verdict : undefined
   const failure = request.state === "pending" ? request.failure : undefined
   const steps = settingUp ? progressWords(request.setup) : undefined
   const approveLabel = failure
@@ -564,8 +571,13 @@ function Approval({
       )
   }
 
+  function send(input: Parameters<typeof answer.mutate>[0]) {
+    setVerdict(input.verdict)
+    answer.mutate(input)
+  }
+
   function approve() {
-    answer.mutate({
+    send({
       verdict: "approve",
       approval: {
         scopes: chosen,
@@ -868,9 +880,7 @@ function Approval({
             verdict="read"
           />
         ) : (
-          answer.isError && (
-            <Refusal error={answer.error} verdict={answer.variables.verdict} />
-          )
+          answer.isError && <Refusal error={answer.error} verdict={verdict} />
         )}
         {approved && !nextOk && !gone && (
           <Problem title="This request was approved, but the console can’t take you back to the app.">
@@ -911,7 +921,7 @@ function Approval({
             <Button
               variant="outline"
               disabled={settled}
-              onClick={() => answer.mutate({ verdict: "deny" })}
+              onClick={() => send({ verdict: "deny" })}
             >
               {pendingVerdict === "deny" && <Spinner />}
               Deny
