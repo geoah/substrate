@@ -108,6 +108,8 @@ type anthropicClient struct {
 	// openai adapter holds one: on a 401 the endpoint quotes the bearer it
 	// refused, and scrubbed rebuilds any provider error without it.
 	apiKey string
+	// retryOnlyUnbilled is Config.RetryOnlyUnbilled.
+	retryOnlyUnbilled bool
 }
 
 func newAnthropic(cfg Config) *anthropicClient {
@@ -119,10 +121,11 @@ func newAnthropic(cfg Config) *anthropicClient {
 		// confined to public destinations (issue #241), and the key rides in
 		// x-api-key, which Go keeps on a redirect to another host, so no
 		// redirect is followed.
-		doer:        &headerDoer{inner: egress.CredentialClient(egress.Transport(), 0), headers: cfg.Headers},
-		endpoint:    endpoint,
-		endpointErr: err,
-		apiKey:      cfg.APIKey,
+		doer:              &headerDoer{inner: egress.CredentialClient(egress.Transport(), 0), headers: cfg.Headers},
+		endpoint:          endpoint,
+		endpointErr:       err,
+		apiKey:            cfg.APIKey,
+		retryOnlyUnbilled: cfg.RetryOnlyUnbilled,
 	}
 }
 
@@ -509,7 +512,9 @@ func toolInput(arguments string) json.RawMessage {
 //
 // A failed call is marked egress.ErrUnprocessed when no attempt can have
 // been acted on (anthropicProcessed): one 5xx or one dropped answer among
-// the retries is enough to leave the mark off.
+// the retries is enough to leave the mark off. Under retryOnlyUnbilled such
+// an attempt is the call's last, so a call answers for one billable attempt
+// at most: the one whose answer or error it returns.
 func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*http.Response, []byte, error) {
 	if c.endpointErr != nil {
 		return nil, nil, c.endpointErr
@@ -523,9 +528,8 @@ func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*
 	}
 	for retry := 0; ; retry++ {
 		last := retry == anthropicMaxRetries
-		wctx, watch := egress.WatchSends(ctx)
-		res, payload, again, err := c.attempt(wctx, body, stream, last)
-		processed = processed || anthropicProcessed(res, err, watch)
+		res, payload, again, billable, err := c.attempt(ctx, body, stream, last)
+		processed = processed || billable
 		// Once the caller's context is done there is nothing left to retry,
 		// and its error is the call's.
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -572,9 +576,11 @@ func anthropicProcessed(res *http.Response, err error, watch *egress.SendWatch) 
 }
 
 // attempt sends the request once and reports whether the policy retries what
-// came back. It reads the body only of a response that ends the call, and
-// only where post must: every refusal, and a one-shot answer.
-func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last bool) (*http.Response, []byte, bool, error) {
+// came back, and whether the endpoint may have billed it (anthropicProcessed).
+// It reads the body only of a response that ends the call, and only where
+// post must: every refusal, and a one-shot answer.
+func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last bool) (*http.Response, []byte, bool, bool, error) {
+	ctx, watch := egress.WatchSends(ctx)
 	actx := ctx
 	if !stream {
 		if deadline, ok := ctx.Deadline(); !ok || time.Now().Add(anthropicOneShotTimeout).Before(deadline) {
@@ -585,7 +591,7 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	}
 	req, err := http.NewRequestWithContext(actx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, false, err
 	}
 	// The SDK also sent its User-Agent and X-Stainless-* platform and
 	// retry-count headers. This client does not, so Go's default User-Agent
@@ -596,12 +602,14 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	req.Header.Set("Accept", "application/json")
 	res, err := c.doer.Do(req)
 	if err != nil {
-		return nil, nil, true, err
+		billable := anthropicProcessed(nil, err, watch)
+		return nil, nil, c.retries(true, billable), billable, err
 	}
-	again := anthropicShouldRetry(res)
+	billable := anthropicProcessed(res, nil, watch)
+	again := c.retries(anthropicShouldRetry(res), billable)
 	refused := res.StatusCode >= http.StatusBadRequest
 	if (!last && again) || (stream && !refused) {
-		return res, nil, again, nil
+		return res, nil, again, billable, nil
 	}
 	// A refusal is read the key's length past what its error quotes, so a key
 	// that straddles the cut reaches statusError whole.
@@ -615,15 +623,22 @@ func (c *anthropicClient) attempt(ctx context.Context, body []byte, stream, last
 	case err != nil && actx.Err() != nil && ctx.Err() == nil:
 		// Only this attempt's ten minutes ran out: a failed attempt like a
 		// failed dial, retried.
-		return nil, nil, true, actx.Err()
+		return nil, nil, c.retries(true, billable), billable, actx.Err()
 	case err != nil:
 		// A dropped body is a connection error whatever the status said, but
 		// an x-should-retry: false still stands.
-		return res, nil, res.Header.Get("X-Should-Retry") != "false", fmt.Errorf("error reading response body: %w", err)
+		again := c.retries(res.Header.Get("X-Should-Retry") != "false", billable)
+		return res, nil, again, billable, fmt.Errorf("error reading response body: %w", err)
 	case !refused && len(payload) > anthropicMaxMessage:
-		return res, nil, false, fmt.Errorf("anthropic: response body exceeds %d bytes", anthropicMaxMessage)
+		return res, nil, false, billable, fmt.Errorf("anthropic: response body exceeds %d bytes", anthropicMaxMessage)
 	}
-	return res, payload, again, nil
+	return res, payload, again, billable, nil
+}
+
+// retries is the policy's verdict again on an attempt that may have been
+// billed: under retryOnlyUnbilled such an attempt is not retried.
+func (c *anthropicClient) retries(again, billable bool) bool {
+	return again && !(billable && c.retryOnlyUnbilled)
 }
 
 // anthropicShouldRetry is the policy's verdict on a response.

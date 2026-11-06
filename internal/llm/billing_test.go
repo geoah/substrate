@@ -16,7 +16,9 @@ import (
 // A caller paying per call (the host's ledger, internal/engine/hostspend.go)
 // releases a reservation only on what these tests hold: a failure is marked
 // egress.ErrUnprocessed only when the endpoint cannot have acted on the
-// request, and a Result carries Usage only when the reply reported it whole.
+// request, a Result carries Usage only when the reply reported it whole, and
+// a RetryOnlyUnbilled client makes no attempt after one that may have been
+// billed.
 
 // openaiOneShot is a whole one-shot reply; usage, when set, is its usage.
 func openaiOneShot(usage string) string {
@@ -292,5 +294,78 @@ func TestAFailureAfterTheUsageKeepsIt(t *testing.T) {
 				t.Fatalf("usage beside the error = %+v, want reported %v", res, tc.reported)
 			}
 		})
+	}
+}
+
+// A client with RetryOnlyUnbilled (the host's) makes no attempt after one
+// that may have been billed, so a call never spends past the one attempt its
+// caller reserved for: an answer dropped mid-body, a 5xx and a connection
+// dropped after the request went out each end the call, and the failure is
+// not marked unprocessed. A refusal (a 429) is still retried. Without the
+// flag every one of them is retried and the second attempt answers.
+func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
+	const anthropicAnswer = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":2}}`
+	dropAfterRequest := func(w http.ResponseWriter) {
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}
+	cases := []struct {
+		name     string
+		stream   bool
+		first    func(w http.ResponseWriter)
+		billable bool
+	}{
+		{"an answer dropped mid-body", false, func(w http.ResponseWriter) { cutOff(w, "application/json", `{"id":"msg_1",`) }, true},
+		{"a 500", false, func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) }, true},
+		{"a 529 before a stream", true, func(w http.ResponseWriter) { refuse(w, 529) }, true},
+		{"a connection dropped after the request", false, dropAfterRequest, true},
+		{"a 429", false, func(w http.ResponseWriter) { refuse(w, http.StatusTooManyRequests) }, false},
+		{"a 429 before a stream", true, func(w http.ResponseWriter) { refuse(w, http.StatusTooManyRequests) }, false},
+	}
+	for _, tc := range cases {
+		for _, only := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s retryOnlyUnbilled=%v", tc.name, only), func(t *testing.T) {
+				t.Parallel()
+				var attempts atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					switch {
+					case attempts.Add(1) == 1:
+						tc.first(w)
+					case tc.stream:
+						answer(w, "text/event-stream", anthropicEventStream(anthropicStreamOK...))
+					default:
+						answer(w, "application/json", anthropicAnswer)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				client, err := New(WireAnthropic, Config{BaseURL: srv.URL, APIKey: "sk-billing-fixture", RetryOnlyUnbilled: only})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var onDelta func(Delta)
+				if tc.stream {
+					onDelta = func(Delta) {}
+				}
+				res, err := client.Complete(context.Background(), Request{
+					Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+				}, onDelta)
+				if only && tc.billable {
+					if err == nil || errors.Is(err, egress.ErrUnprocessed) {
+						t.Fatalf("err = %v, want a failure the endpoint may have billed", err)
+					}
+					if n := attempts.Load(); n != 1 {
+						t.Fatalf("%d attempts, want the billable one alone", n)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("complete: %v", err)
+				}
+				if n := attempts.Load(); n != 2 || res.Content != "ok" || res.Usage == nil {
+					t.Fatalf("content %q, usage %+v after %d attempts, want the second attempt's answer", res.Content, res.Usage, n)
+				}
+			})
+		}
 	}
 }

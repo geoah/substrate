@@ -10,7 +10,9 @@ package engine
 // usage keeps its ceiling unless it failed in a way the endpoint cannot have
 // billed (egress.ErrUnprocessed), and a reservation still open an hour after
 // it opened (a crash, a lost settle) is settled at its ceiling, so the ledger
-// only ever overcounts.
+// only ever overcounts. The ceiling covers one billable attempt, so a
+// host-paid client never retries an attempt that may have been billed
+// (llm.Config.RetryOnlyUnbilled).
 //
 // The gate sits beneath every caller because it wraps the clients
 // themselves: hostLLMClient is the llm.Client every agent loop on a

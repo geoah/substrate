@@ -207,6 +207,88 @@ func TestHostGateSettlesAFailedCallByWhatTheEndpointCanHaveBilled(t *testing.T) 
 	}
 }
 
+// A host-paid call reserves one attempt's ceiling, so its client makes no
+// attempt after one that may have been billed. An anthropic answer dropped
+// mid-body, which the endpoint may have finished and billed, ends the call
+// with its ceiling settled, and the retry that would have answered never
+// leaves. A refusal (a 429) is still retried, and that call settles to the
+// usage the answering attempt reported.
+func TestHostCallMakesNoAttemptAfterOneThatMayHaveBeenBilled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t, WithHostDefaults(&hostdefaults.Config{Budget: hostdefaults.Budget{CentsPerDay: 1000}}))
+	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
+	ds.svc.hostNow = clock.Now
+
+	const answer = `{"id":"msg_1","type":"message","role":"assistant","model":"chat","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}`
+	// 3 input tokens at 1 USD and 2 output tokens at 5 USD per million, in
+	// cents.
+	const usageCents = (3*1.0 + 2*5.0) / 1e6 * 100
+	cases := []struct {
+		name     string
+		first    func(w http.ResponseWriter)
+		attempts int32
+		failed   bool
+	}{
+		{"an answer dropped mid-body", func(w http.ResponseWriter) {
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			_, _ = fmt.Fprint(buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRetry-After-Ms: 0\r\nContent-Length: 1000\r\n\r\n{\"id\":")
+			_ = buf.Flush()
+			_ = conn.Close()
+		}, 1, true},
+		{"a 429", func(w http.ResponseWriter) {
+			w.Header().Set("Retry-After-Ms", "0")
+			http.Error(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, http.StatusTooManyRequests)
+		}, 2, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if attempts.Add(1) == 1 {
+					tc.first(w)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, answer)
+			}))
+			t.Cleanup(srv.Close)
+			pc := hostProviderConfig(&hostdefaults.LLM{
+				ID: "claudellm", Wire: llm.WireAnthropic, BaseURL: srv.URL, APIKey: hostdefaults.NewSecret(hostTestKey),
+				Models:          []hostdefaults.Model{{Model: "chat", InputPer1M: "1", OutputPer1M: "5"}},
+				MaxOutputTokens: 64,
+			})
+			inner, err := llm.New(pc.wire, pc.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := len(hostLedger(t, ds))
+			_, err = newHostLLMClient(ds, pc, inner).Complete(ctx, llm.Request{
+				Model: "chat", Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}},
+			}, nil)
+			if failed := err != nil; failed != tc.failed {
+				t.Fatalf("err = %v, want failed %v", err, tc.failed)
+			}
+			if n := attempts.Load(); n != tc.attempts {
+				t.Fatalf("the endpoint saw %d attempts, want %d", n, tc.attempts)
+			}
+			if n := len(hostLedger(t, ds)); n != before+1 {
+				t.Fatalf("the call wrote %d reservations, want 1", n-before)
+			}
+			row := lastReservation(t, ds)
+			if tc.failed && row.settled != row.ceiling {
+				t.Fatalf("settled %v, want the ceiling %v the dropped attempt may have cost", row.settled, row.ceiling)
+			}
+			if !tc.failed && (!centsNear(row.settled, usageCents) || row.settled >= row.ceiling) {
+				t.Fatalf("settled %v of a %v ceiling, want the answering attempt's %v", row.settled, row.ceiling, usageCents)
+			}
+		})
+	}
+}
+
 // waitLedger polls until the ledger holds n rows, every one settled: a title
 // is written by a background task after the turn returns.
 func waitLedger(t *testing.T, ds *dataset, n int) []struct {

@@ -40,7 +40,8 @@ func (ds *dataset) hostEntryFor(id, storedKey string) *hostdefaults.LLM {
 }
 
 // hostProviderConfig is the providerConfig a host-backed row resolves to:
-// the entry's transport, never the row's.
+// the entry's transport, never the row's. Its client retries no attempt that
+// may have been billed, because each call reserves one attempt's ceiling.
 func hostProviderConfig(e *hostdefaults.LLM) *providerConfig {
 	pc := &providerConfig{
 		id:         e.ID,
@@ -49,7 +50,7 @@ func hostProviderConfig(e *hostdefaults.LLM) *providerConfig {
 		defaults:   e.Defaults,
 		titleModel: e.TitleModel,
 		pricing:    map[string]modelPrice{},
-		cfg:        llm.Config{BaseURL: e.BaseURL, APIKey: e.APIKey.Value()},
+		cfg:        llm.Config{BaseURL: e.BaseURL, APIKey: e.APIKey.Value(), RetryOnlyUnbilled: true},
 	}
 	pc.cfg.Headers = hostHeaders(e)
 	if e.Cache != nil {

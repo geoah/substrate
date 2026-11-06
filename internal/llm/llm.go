@@ -106,6 +106,14 @@ type Config struct {
 	// openai and azure wires, for a gateway (LiteLLM) that hands the marks to
 	// an Anthropic model. The row says so; nothing infers it from a model id.
 	CacheBreakpoints bool
+	// RetryOnlyUnbilled stops the anthropic wire's retries once an attempt
+	// may have been billed: one answered with a 5xx or a success, or one that
+	// failed after its headers went out. A refusal (a redirect or a 4xx such
+	// as a 429) and a dial that never wrote its headers still retry. A caller
+	// that reserves one attempt's cost per call sets it, so a retry never
+	// spends past what the call reserved. The openai and azure wires do not
+	// retry.
+	RetryOnlyUnbilled bool
 }
 
 // Message is one turn. An assistant turn may carry ToolCalls; a tool turn

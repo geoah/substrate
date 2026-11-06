@@ -340,9 +340,11 @@ section above says. With it:
   `budget.centsPerDay`, per repository and per UTC calendar day, and settles
   to its reported cost after. A call that reports no usage counts at that
   worst case, unless it failed before the vendor could bill it: it never
-  left, or the vendor answered a redirect or a 4xx. At the limit a trigger
-  is held, and a chat, a call or a search's semantic arm is refused with
-  `403 guard`, reason `quota`, naming the limit and when it resets.
+  left, or the vendor answered a redirect or a 4xx. The reservation covers
+  one attempt, so a host-paid Anthropic call is not retried after a 5xx, a
+  dropped answer or a timeout; a 429 is still retried. At the limit a
+  trigger is held, and a chat, a call or a search's semantic arm is refused
+  with `403 guard`, reason `quota`, naming the limit and when it resets.
 - `GET /api/v1/host/services` answers each service, its source and the
   day's budget, and discovery lists the `hostServices` feature.
 
