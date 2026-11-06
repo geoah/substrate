@@ -126,8 +126,9 @@ func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 	password := env.svc.passwords[fakeRepository]
 
 	for path, body := range map[string]map[string]any{
-		"/password":    {"repository": fakeRepository, "newPassword": "a-brand-new-passphrase"},
-		"/totp/enroll": {"repository": fakeRepository},
+		"/password":          {"repository": fakeRepository, "newPassword": "a-brand-new-passphrase"},
+		"/totp/enroll":       {"repository": fakeRepository},
+		"/repository/delete": {"repository": fakeRepository},
 		"/totp": {
 			"repository": fakeRepository, "newTotpSecret": "JBSWY3DPEHPK3PXP",
 			"newTotpCode": "123456",
@@ -155,6 +156,36 @@ func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 		"newPassword": "another-passphrase-again",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
+}
+
+// Deleting the repository takes both factors, erases it, and frees the name
+// for the next registration.
+func TestDeleteRepositoryTakesBothFactorsAndFreesTheName(t *testing.T) {
+	env := newTestEnv(t)
+	password := env.svc.passwords[fakeRepository]
+
+	rec := env.do(t, http.MethodPost, "/repository/delete", "", map[string]any{
+		"repository": fakeRepository, "password": "wrong", "totpCode": fakeCode(fakeRepository),
+	})
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
+	if _, ok := env.svc.datasets[fakeRepository]; !ok {
+		t.Fatal("a refused delete erased the repository")
+	}
+
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/repository/delete", "", map[string]any{
+		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
+	})
+	wantStatus(t, rec, http.StatusNoContent)
+	if _, ok := env.svc.datasets[fakeRepository]; ok {
+		t.Fatal("the repository survived its delete")
+	}
+
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
+		"inviteCode": testInviteCode, "repository": fakeRepository,
+	})
+	wantStatus(t, rec, http.StatusOK)
 }
 
 func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {

@@ -632,6 +632,42 @@ func (s *service) ChangePassword(ctx context.Context, in substrate.LoginInput, n
 	})
 }
 
+// DeleteRepository verifies both current factors and erases the repository
+// whole: its rows, its control-plane row and its directory, blobs and spool
+// included. Nothing is kept, so the name is free for the next registration.
+//
+// It holds the authority's registration lock and its open slot across the
+// erase, so no registration of the name and no open of the repository can
+// start on rows that are being deleted. Requests already running on the
+// dataset fail on its closed pool rather than write into a scope that is
+// going away.
+func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput) error {
+	if s.readOnly {
+		return ErrDirectoryReadOnly
+	}
+	repo, _, err := s.verifyFactors(ctx, in)
+	if err != nil {
+		return err
+	}
+	cp, unlock, err := s.lockRegistration(ctx, repo.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	releaseOpen, err := s.claimErase(ctx, repo.ID)
+	if err != nil {
+		return err
+	}
+	defer releaseOpen()
+	if err := s.eraseRepositoryOn(ctx, cp, repo.ID); err != nil {
+		return err
+	}
+	s.lease.release(repo.ID)
+	s.unitGraphs.forget(repo.ID)
+	s.log.Info("substrate: repository deleted by its owner", "repository", repo.ID)
+	return nil
+}
+
 // BeginTOTPReenrollment verifies the current factors and issues a candidate
 // seed, writing nothing: an abandoned re-enrollment cannot lock a user out of
 // their own account.

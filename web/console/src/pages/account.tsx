@@ -1,5 +1,5 @@
-/** The account, as Settings shows it: the repository name, and the two
- * credential changes, both under the password-factor rule.
+/** The account, as Settings shows it: the repository name, the two
+ * credential changes and the delete, all under the password-factor rule.
  *
  * These endpoints do not accept a bearer token at all: the current password
  * AND code travel in the body, and a request that brings only the browser's
@@ -12,6 +12,8 @@
  * job. */
 
 import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
 import { CopyIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
@@ -32,13 +34,14 @@ import { toast } from "@/components/ui/toast"
 import {
   CODE_DIGITS,
   changePassword,
+  deleteRepository,
   normalizeCode,
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useAuthPolicy } from "@/lib/api/discovery"
-import { getRepository } from "@/lib/api/session"
+import { clearSession, getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 8
@@ -159,6 +162,155 @@ export function AccountRows() {
         />
       )}
     </>
+  )
+}
+
+/** The danger zone's one row: deleting the repository for good. */
+export function DeleteRepositoryRow() {
+  const repository = getRepository() ?? ""
+  const { totpRequired } = useAuthPolicy()
+  const [open, setOpen] = useState(false)
+  return (
+    <SettingRow
+      title="Delete your Substrate"
+      description="Erases every record, token and file in it, and signs out everything signed in to it. The name is freed, so anyone can register it again. This can’t be undone."
+      control={
+        <Button
+          variant={open ? "outline" : "destructive"}
+          size="sm"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Cancel" : "Delete…"}
+        </Button>
+      }
+    >
+      {open && (
+        <DeleteRepositoryForm
+          repository={repository}
+          totpRequired={totpRequired}
+        />
+      )}
+    </SettingRow>
+  )
+}
+
+function DeleteRepositoryForm({
+  repository,
+  totpRequired,
+}: {
+  repository: string
+  totpRequired: boolean
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [typed, setTyped] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setBusy] = useState(false)
+
+  const confirmed = repository !== "" && typed.trim() === repository
+  const canSubmit =
+    confirmed &&
+    password.length > 0 &&
+    (!totpRequired || normalizeCode(code) !== null)
+
+  async function submit() {
+    const normalized = totpRequired ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
+    setError(null)
+    setBusy(true)
+    try {
+      await deleteRepository(repository, password, normalized)
+    } catch (err) {
+      setError(describe(err))
+      setCode("")
+      setBusy(false)
+      return
+    }
+    // Every token went with the repository, so this browser's session is
+    // already dead; nothing is revoked, only forgotten.
+    clearSession()
+    queryClient.clear()
+    toast.add({ type: "success", title: `Deleted ${repository}.` })
+    void navigate({ to: "/register", replace: true })
+  }
+
+  return (
+    <form
+      aria-label="Delete your Substrate"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field data-invalid={(typed.length > 0 && !confirmed) || undefined}>
+          <FieldLabel htmlFor="delete-name">Confirm the name</FieldLabel>
+          <Input
+            id="delete-name"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={repository}
+            className="font-mono"
+            aria-invalid={typed.length > 0 && !confirmed}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+          <FieldDescription>
+            Type{" "}
+            <span className="font-mono [overflow-wrap:anywhere] text-foreground">
+              {repository}
+            </span>{" "}
+            exactly.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="delete-password">Current password</FieldLabel>
+          <Input
+            id="delete-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {totpRequired && (
+          <Field>
+            <FieldLabel htmlFor="delete-code">Current code</FieldLabel>
+            <Input
+              id="delete-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <Button
+            type="submit"
+            variant="destructive"
+            disabled={!canSubmit || isBusy}
+          >
+            {isBusy && <Spinner />}
+            Delete forever
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
   )
 }
 

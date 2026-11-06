@@ -254,6 +254,22 @@ func (s *fakeService) ReenrollTOTP(_ context.Context, in substrate.LoginInput, n
 	return nil
 }
 
+func (s *fakeService) DeleteRepository(_ context.Context, in substrate.LoginInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.verify(in); err != nil {
+		return err
+	}
+	delete(s.datasets, in.Repository)
+	delete(s.passwords, in.Repository)
+	for secret, tok := range s.tokens {
+		if tok.repository == in.Repository {
+			delete(s.tokens, secret)
+		}
+	}
+	return nil
+}
+
 func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
 	if s.authErr != nil {
 		return nil, substrate.TokenInfo{}, s.authErr

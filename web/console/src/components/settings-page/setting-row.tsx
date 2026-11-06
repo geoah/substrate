@@ -13,16 +13,24 @@ export function SettingsSection({
   hint,
   children,
   id,
+  danger = false,
 }: {
   title: string
   hint?: string
   children: ReactNode
   id?: string
+  /** Rows whose actions cannot be undone, boxed in the destructive color. */
+  danger?: boolean
 }) {
   return (
     <section id={id} aria-label={title} className="mt-8 first:mt-6">
       <SectionHead title={title} hint={hint} className="mt-0" />
-      <div className="overflow-hidden rounded-[10px] border border-border">
+      <div
+        className={cn(
+          "overflow-hidden rounded-[10px] border",
+          danger ? "border-destructive/40" : "border-border"
+        )}
+      >
         {children}
       </div>
     </section>

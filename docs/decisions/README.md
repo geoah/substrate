@@ -391,3 +391,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0233](0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md) | The Providers page lists every outside service the substrate uses a key or a sign-in for | accepted |
 | [0234](0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md) | Firecrawl is a provider whose tools are offered to agents and may run on the operator's key | proposed |
 | [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
+| [0236](0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md) | An owner may delete their repository, and the name is freed | accepted |

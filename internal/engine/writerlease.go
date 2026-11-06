@@ -247,9 +247,9 @@ func (l *writerLease) dropConn(cause error, msg string) {
 }
 
 // release gives one repository's lease back. It is for A CREATION THAT FAILED
-// and nothing else: a repository that exists is written by this process until
-// it exits, so there is no other moment at which a lease should be handed back
-// while the process runs.
+// and a repository its owner deleted, and nothing else: a repository that
+// exists is written by this process until it exits, so there is no other
+// moment at which a lease should be handed back while the process runs.
 func (l *writerLease) release(repository string) {
 	if l == nil {
 		return

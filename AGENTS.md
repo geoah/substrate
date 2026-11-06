@@ -129,8 +129,11 @@ the second of them at boot
 `SUBSTRATE_DEV_PORT` the server — the HTTP port is still `8080` for everyone,
 and the start refuses rather than bind over another tree's server.
 
-`dev:wipe` matters more than it looks: registration is one-shot per user and
-there is no unregister, so any change to the door is tested by throwing the
+`dev:wipe` matters more than it looks: registration is one-shot per user, and
+the only way back is deleting the repository (Settings, Danger zone, or
+`POST /repository/delete` with both factors,
+[0236](docs/decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)),
+so a change to the door is most simply tested by throwing the
 database away — `dev:wipe` here, `docker compose down -v` on the compose path.
 It drops THIS TREE'S database and leaves the container and every other tree's
 database alone; `dev:wipe:all` is the one that reclaims the volume.

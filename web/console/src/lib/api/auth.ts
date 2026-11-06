@@ -157,6 +157,22 @@ export async function totpChange(
   )
 }
 
+/** Delete the repository for good: every record, token and file, and the
+ * name is free to register again. Both current factors travel in the body,
+ * like the credential changes, so a leaked token cannot do it. */
+export async function deleteRepository(
+  repository: string,
+  password: string,
+  totpCode: string
+): Promise<void> {
+  await request<void>(
+    "POST",
+    "/repository/delete",
+    { repository, password, totpCode },
+    { anonymous: true }
+  )
+}
+
 // ── tokens (which ARE sessions) ─────────────────────────────────────────────
 
 /** The tokens page's list: metadata only, never the hash. */

@@ -252,6 +252,32 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
 }
 
+// postDeleteRepository erases the repository whole and frees its name. Like
+// the credential changes it takes both current factors in the body, so a
+// leaked bearer token cannot delete the repository it reaches.
+func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	repository := repositoryOf(r, req.Repository)
+	ok := h.authGate(w, r, repository, costRequest)
+	if !ok {
+		return
+	}
+	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+		return
+	}
+	err := h.svc.DeleteRepository(r.Context(), substrate.LoginInput{
+		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
+	})
+	if err != nil {
+		writeAuthFailure(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // postTOTPBegin verifies the current factors and issues a candidate seed,
 // writing nothing — an abandoned re-enrollment cannot lock anyone out.
 func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {

@@ -115,7 +115,6 @@ export function VerifyDomainRow() {
                     name={proof.name}
                     type="TXT"
                     value={proof.record}
-                    copyable
                   />
                   {relative && (
                     <span className="text-faint">

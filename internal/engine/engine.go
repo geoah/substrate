@@ -1326,6 +1326,27 @@ func (s *service) claimOpen(ctx context.Context, id string) (*dataset, func(), e
 	}
 }
 
+// claimErase is claimOpen for an erase: it closes and drops a cached dataset
+// and takes the slot, so no open can start while the repository's rows go.
+// It loops because an open may publish between the drop and the claim.
+func (s *service) claimErase(ctx context.Context, id string) (func(), error) {
+	for {
+		cached, release, err := s.claimOpen(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if cached == nil {
+			return release, nil
+		}
+		s.mu.Lock()
+		if s.datasets[id] == cached {
+			delete(s.datasets, id)
+		}
+		s.mu.Unlock()
+		cached.close()
+	}
+}
+
 // openNew opens a repository's scoped pool and runs the open-time ladder. It
 // is called under open's per-repository singleflight, never directly.
 func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error) {
