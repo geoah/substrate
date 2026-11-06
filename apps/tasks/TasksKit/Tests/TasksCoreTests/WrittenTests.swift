@@ -51,8 +51,7 @@ struct WrittenTests {
         try await harness.until { await $0.state.linked.phase == .following }
         await harness.send(.show(.inbox))
         await harness.send(.complete("t1"))
-        await harness.settle()
-        await harness.advance(by: TasksApp.undoWindow)
+        try await window(harness)
         #expect(titles(await harness.presentation).isEmpty)
         try await harness.until { await $0.state.linked.unconfirmed.isEmpty }
         guard case .refused = await rig.outbox.flush(rig.client) else { throw Unexpected() }

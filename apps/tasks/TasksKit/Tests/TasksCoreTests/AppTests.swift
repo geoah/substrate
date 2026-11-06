@@ -136,8 +136,7 @@ struct LiveAppTests {
         #expect(rig.notifications.pending[Reminders.id("t3")]?.fireAt == Date(timeIntervalSince1970: 1_793_696_400 + 86400))
 
         await harness.send(.complete("t2"))
-        await harness.settle()
-        await harness.advance(by: TasksApp.undoWindow)
+        try await window(harness)
         try await harness.until { _ in rig.notifications.pending.keys.sorted() == [Reminders.id("t3")] }
         #expect(rig.notifications.calls.contains(.cancel(Reminders.id("t2"))))
 
@@ -183,24 +182,22 @@ struct LiveAppTests {
         #expect(bread.pending == true)
         #expect(bread.toggle == "Undo")
         #expect(bread.status == .open)
-        await harness.settle()
-        await harness.advance(by: TasksApp.undoWindow - 1)
         #expect(await rig.outbox.entries.isEmpty)
 
-        // Taken back within the window: the write never comes.
+        // Taken back within the window: the wait is cancelled, and the
+        // write never comes, however far the clock then moves.
         await harness.send(.reopen("t2"))
         bread = try #require(await harness.presentation.list?.open["t2"])
         #expect(bread.pending == false)
         #expect(bread.toggle == "Mark as Done")
-        await harness.settle()
         await harness.advance(by: TasksApp.undoWindow + 1)
+        await harness.settle()
         #expect(await rig.outbox.entries.isEmpty)
+        #expect(await harness.state.completing.isEmpty)
 
         // Left alone past the window: the write goes, and the row leaves.
         await harness.send(.complete("t2"))
-        await harness.settle()
-        await harness.advance(by: TasksApp.undoWindow)
-        try await harness.until { await !$0.state.linked.unconfirmed.isEmpty }
+        try await window(harness)
         try await harness.until { _ in await !rig.outbox.entries.isEmpty }
         let written = await rig.outbox.entries
         #expect(written.count == 1)
