@@ -487,6 +487,30 @@ describe("the groups", () => {
   })
 })
 
+describe("an AI model card's title", () => {
+  it("names a well-known row by its vendor, and a person's own row by its label as written", async () => {
+    rows = [
+      ...rows,
+      row("azure", { label: "azure", apiKey: "••••" }),
+      row("openrouter", { label: "openrouter", apiKey: "••••" }),
+      row("gateway", { label: "my gateway", apiKey: "••••" }),
+    ]
+    renderPage()
+    await modelCard("OpenRouter")
+    const titles = within(group("AI models"))
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => h.textContent)
+    expect(titles).toEqual([
+      "OpenAI",
+      "Anthropic",
+      "Gemini",
+      "Azure OpenAI",
+      "my gateway",
+      "OpenRouter",
+    ])
+  })
+})
+
 describe("an AI model card", () => {
   it("says On, Set up or Needs attention, and never Paused", async () => {
     answer = {
@@ -601,6 +625,26 @@ describe("an AI model card", () => {
       within(gemini).getByRole("button", { name: "Replace key" })
     ).toBeTruthy()
     expect(within(gemini).queryByRole("button", { name: /again/ })).toBeNull()
+  })
+
+  it("says a card with no key needs one, in plain words and never the server's", async () => {
+    const message = "no apiKey: add your own key to the row to use it"
+    answer = {
+      operator: { name: "Crane" },
+      items: [
+        OPENAI,
+        { ...ANTHROPIC_NONE, message },
+        { ...GEMINI_OWN, source: "none", readiness: "not-set-up", message },
+      ],
+    }
+    rows = [row("openai"), row("anthropic"), row("gemini")]
+    renderPage()
+    const gemini = await modelCard("Gemini")
+    expect(within(gemini).getByText("Set up")).toBeTruthy()
+    const status = within(gemini).getByText("Needs a key")
+    expect(status.className).not.toMatch(/destructive/)
+    expect(within(gemini).getByRole("button", { name: "Add key" })).toBeTruthy()
+    expect(within(group("AI models")).queryByText(message)).toBeNull()
   })
 
   it("adds a first key where none resolves", async () => {
@@ -1167,6 +1211,30 @@ describe("the welcome", () => {
     expect(
       within(welcome).getByText("Replace any of Crane’s keys under AI models.")
     ).toBeTruthy()
+  })
+
+  it("names the accounts waiting on the reader by their brand, as the server labels them by package word", async () => {
+    answer = {
+      operator: { name: "Crane" },
+      items: [
+        OPENAI,
+        ANTHROPIC_NONE,
+        GEMINI_OWN,
+        item({
+          id: `oauth/${PROV}/google`,
+          slot: "oauth",
+          label: "google",
+          target: `${PROV}/google`,
+          readiness: "needs-connect",
+        }),
+      ],
+    }
+    renderPage({ initial: {} })
+    const welcome = (await screen.findByText("Welcome to Crane")).closest(
+      "section"
+    )!
+    expect(within(welcome).getByText("Connect Google")).toBeTruthy()
+    expect(within(welcome).queryByText(/google/)).toBeNull()
   })
 
   it("is not shown once dismissed", async () => {

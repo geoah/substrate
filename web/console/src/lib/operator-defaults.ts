@@ -8,8 +8,8 @@
  * deployment set none: never a deployment's or a person's name written
  * here. */
 
-import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
-import { providerName } from "@/lib/agent-chat"
+import { PROVIDERS_AUTHORITY, providerInfo } from "@/lib/actor-identity"
+import { providerLabelName, providerName } from "@/lib/agent-chat"
 import { capWords } from "@/lib/agent-runs"
 import { providerHasKey } from "@/lib/api/agents"
 import type {
@@ -80,14 +80,15 @@ export function providerRowOf(target: string | undefined): string | undefined {
 
 // ── AI model cards ──────────────────────────────────────────────────────────
 
-/** An AI model row's name: its label, with the seeded rows' lowercase labels
- * read as the vendor's name ("openai" is OpenAI), else its id. */
+/** An AI model row's name: the vendor's spelling where its label or, with no
+ * label, its id is a well-known one ("openai" is OpenAI), else its label as
+ * written ("My gateway"), else its id capitalised. */
 export function modelName(
   row: Pick<SubstrateRecord, "id" | "properties">
 ): string {
   const label = row.properties.label
   if (typeof label === "string" && label.trim())
-    return providerName(label.trim())
+    return providerLabelName(label.trim())
   return providerName(row.id)
 }
 
@@ -104,16 +105,25 @@ export interface ModelKey {
   /** The operator serves this row, so deleting your own key falls back to
    * theirs. */
   operatorOffers: boolean
-  /** Why it needs attention or is not set up, in the server's words. */
+  /** What a card with no key lacks, in plain words: "Needs a key". */
+  status?: string
+  /** Why its calls fail, or why a key of its own does not resolve, in the
+   * server's words. Never set beside `status`: the server's sentence for a
+   * row with no key names the row's `apiKey` property, which the card never
+   * shows. */
   message?: string
   /** The models the operator's key allows, where it serves the row. */
   models?: string[]
 }
 
+/** The status a card that is not set up and holds no key of its own says. */
+const NEEDS_A_KEY = "Needs a key"
+
 /** Where one AI model row's key comes from and whether it works: the
  * operator read's item where there is one, else the row's own `apiKey` (a
- * server older than the read). A key that resolves is On, none is Set up,
- * and a key whose calls fail (`failing`) Needs attention. */
+ * server older than the read). A key that resolves is On, none is Set up
+ * and says it needs a key, and a key whose calls fail (`failing`) Needs
+ * attention. */
 export function modelKey(
   row: SubstrateRecord,
   item: OperatorDefault | undefined
@@ -124,6 +134,7 @@ export function modelKey(
       state: own ? "on" : "setup",
       source: own ? "own" : "none",
       operatorOffers: false,
+      status: own ? undefined : NEEDS_A_KEY,
     }
   }
   const state: ModelState =
@@ -132,11 +143,16 @@ export function modelKey(
       : item.source === "none" || item.readiness === "not-set-up"
         ? "setup"
         : "on"
+  // A row whose own key is stored but does not resolve lacks something
+  // other than a key (its wire, its endpoint), and only the server's words
+  // say which.
+  const keyless = state === "setup" && item.source !== "own"
   return {
     state,
     source: item.source,
     operatorOffers: item.operatorOffers,
-    message: item.readiness === "ready" ? undefined : item.message,
+    status: keyless ? NEEDS_A_KEY : undefined,
+    message: item.readiness === "ready" || keyless ? undefined : item.message,
     models: item.source === "operator" ? item.models : undefined,
   }
 }
@@ -313,6 +329,17 @@ const TOOL_WORDS: Record<string, string> = {
   [`${PROVIDERS_AUTHORITY}/firecrawl`]: "web search",
 }
 
+/** The provider an OAuth client or a tool key belongs to, by its brand name
+ * ("Google", "WHOOP"). The item's `label` is the bare package word
+ * ("google"), so it is shown only where the item names no package. */
+export function itemProviderName(
+  item: Pick<OperatorDefault, "id" | "slot" | "target" | "label">
+): string {
+  const pkg = itemPackage(item)
+  const word = pkg?.slice(pkg.lastIndexOf("/") + 1)
+  return word ? providerInfo(word).name : item.label
+}
+
 /** "web search" for the Firecrawl provider; undefined for a package with no
  * words here. */
 export function toolWords(pkg: string | undefined): string | undefined {
@@ -358,7 +385,7 @@ export function welcomeFacts(items: readonly OperatorDefault[]): {
         i.source === "operator" &&
         (i.readiness === "needs-connect" || i.readiness === "reconnect-needed")
     )
-    .map((i) => i.label)
+    .map(itemProviderName)
   return { works, connect }
 }
 

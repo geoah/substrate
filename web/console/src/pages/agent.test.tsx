@@ -560,12 +560,14 @@ describe("AgentPage and its model's key", () => {
     ],
   }
   let answer: unknown = SERVED
+  let providerRow: Record<string, unknown> = {}
 
   beforeEach(() => {
     params.id = AGENT_ID
     THREADS = []
     MORE = undefined
     answer = SERVED
+    providerRow = { wire: "openai" }
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -584,7 +586,7 @@ describe("AgentPage and its model's key", () => {
         const kinds = listed(path)
         if (kinds.includes(PROVIDER))
           return jsonResponse(200, {
-            records: [rec(PROVIDER, "openai", { wire: "openai" })],
+            records: [rec(PROVIDER, "openai", providerRow)],
           })
         if (kinds.includes(KIND))
           return jsonResponse(200, { kinds: [AGENT_KIND] })
@@ -616,6 +618,12 @@ describe("AgentPage and its model's key", () => {
     expect(JSON.parse(link.getAttribute("data-search")!)).toEqual({
       model: "openai",
     })
+  })
+
+  it("names the model in its header by the row's label, as its Providers card does", async () => {
+    providerRow = { wire: "openai", label: "Work proxy" }
+    mount()
+    expect(await screen.findByText("gpt-5 · Work proxy")).toBeTruthy()
   })
 
   it("reads the row's own key where the server is older than the operator read", async () => {

@@ -24,6 +24,7 @@ import {
   openingMessages,
   propertyLabel,
   proposedHeading,
+  providerLabelName,
   providerName,
   requestThreadId,
   resolveTool,
@@ -104,6 +105,28 @@ describe("names", () => {
   it("names a provider row the way its vendor spells itself", () => {
     expect(providerName("openai")).toBe("OpenAI")
     expect(providerName("mistral")).toBe("Mistral")
+  })
+
+  it("spells every well-known provider row the way its vendor does", () => {
+    expect(
+      ["openai", "anthropic", "gemini", "azure", "openrouter", "ollama"].map(
+        providerName
+      )
+    ).toEqual([
+      "OpenAI",
+      "Anthropic",
+      "Gemini",
+      "Azure OpenAI",
+      "OpenRouter",
+      "Ollama",
+    ])
+  })
+
+  it("reads a well-known label as the vendor's name, and any other as written", () => {
+    expect(providerLabelName("openrouter")).toBe("OpenRouter")
+    expect(providerLabelName("Azure")).toBe("Azure OpenAI")
+    expect(providerLabelName("My gateway")).toBe("My gateway")
+    expect(providerLabelName("my gateway")).toBe("my gateway")
   })
 
   it("reads the agent a thread ran off its reference, served or authored", () => {

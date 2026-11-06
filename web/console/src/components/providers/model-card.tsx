@@ -30,7 +30,6 @@ import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { providerInfo } from "@/lib/actor-identity"
-import { providerName } from "@/lib/agent-chat"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { operatorDefaultsQueryOptions } from "@/lib/api/operator"
 import { patchRecord, putRecord, recordWriteReaches } from "@/lib/api/records"
@@ -220,8 +219,18 @@ export function ModelCard({
         Chat models for your agents.
       </p>
       {whose && <p className="text-[12.5px]">{whose}</p>}
+      {key.status && (
+        <p className="text-[12.5px] text-muted-foreground">{key.status}</p>
+      )}
       {key.message && (
-        <p className="text-[12.5px] text-destructive">{key.message}</p>
+        <p
+          className={cn(
+            "text-[12.5px]",
+            key.state === "attention" ? "text-destructive" : "text-warning"
+          )}
+        >
+          {key.message}
+        </p>
       )}
       {search && <p className="text-[12.5px]">{search}</p>}
       {editing ? (
@@ -280,11 +289,10 @@ export function AddModelCard({
       }),
     onSuccess: () => invalidates(client, id),
   })
-  const label = typeof seed?.label === "string" ? seed.label : id
   return (
     <CardShell rowId={id}>
       <div className="flex items-center gap-2.5">
-        <Title rowId={id} name={providerName(label)} />
+        <Title rowId={id} name={modelName({ id, properties: seed ?? {} })} />
         <Button
           size="sm"
           className="h-6"

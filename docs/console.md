@@ -987,7 +987,10 @@ key or a sign-in for, in three groups
   functions are offered, so a package with no kinds and some functions
   stands in. The group is shown only when it has a card.
 - **AI models**: one card per [`llm/provider`](agents.md#providers) row,
-  the three seeded and any you made, titled by the row's label.
+  the three seeded and any you made. A row whose label (or, with no label,
+  id) is a well-known one is titled by the vendor's name (OpenAI, Anthropic,
+  Gemini, Azure OpenAI, OpenRouter, Ollama), so a seeded row labelled
+  `openai` reads OpenAI; any other row by its label as written.
 
 Every card says what it gives you, whether it works, and, only where someone
 else could supply a key or a sign-in, whose it is: "Using _Site_'s key",
@@ -1005,7 +1008,10 @@ and **Needs attention** when its calls fail, with the server's reason; never
 are read it says **Checking**, and **Couldn't check** where that read failed
 (with **Try again** over the cards), never **Set up**: a row with no key of
 its own may still run on the operator's; the sidebar shows no count then,
-and Home's card says **Couldn't check**. The read is asked whatever
+and Home's card says **Couldn't check**. A **Set up** card whose row holds
+no key says "Needs a key" beside **Add key**, never the server's sentence
+about the row; one whose own key is stored but whose row does not resolve
+(no `wire`, no `baseURL`) shows the server's reason. The read is asked whatever
 `server.json` lists; only a server older than it (`404`, `405`, `501`) falls
 back to each row's own `apiKey`. Its key form opens in place and
 writes the row's sealed `apiKey`: **Use your own key** over the operator's,
@@ -1038,7 +1044,8 @@ the `operatorDefaults` feature), registering lands here instead of Home,
 unless registration began from an app's approval page or chose your own
 domain, which keep their return addresses. The page then opens with a
 welcome that says what works now on the operator's keys, which accounts wait
-on you, and that any key can be your own; **Done** dismisses it for every
+on you (each by its brand name, "Connect Google"), and that any key can be
+your own; **Done** dismisses it for every
 browser, through the [preference record](#layout-preferences).
 
 On an account's card, a pill says where the provider stands (**On**, **Set

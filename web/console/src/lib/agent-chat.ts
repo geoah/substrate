@@ -624,11 +624,16 @@ export function examplePrompts(agent: SubstrateRecord | undefined): string[] {
 
 // ── providers ──────────────────────────────────────────────────────────────
 
+/** The well-known llm/provider ids and labels, as each vendor spells its
+ * name. The seeded rows are labelled by their lowercase id (`openai`), so a
+ * label is looked up here before it is shown. */
 const PROVIDER_NAMES: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   gemini: "Gemini",
-  azure: "Azure",
+  azure: "Azure OpenAI",
+  openrouter: "OpenRouter",
+  ollama: "Ollama",
 }
 
 /** The llm provider row an agent completes against, by id. */
@@ -638,9 +643,16 @@ export function agentProviderId(agent: SubstrateRecord): string | undefined {
   return held.slice(held.lastIndexOf("/") + 1)
 }
 
-/** A provider row's name as a person reads it. */
+/** A provider row's name from its id alone, where the row is not at hand:
+ * the vendor's spelling for a well-known id, else the id capitalised. */
 export function providerName(id: string): string {
   return PROVIDER_NAMES[id.toLowerCase()] ?? capitalise(id)
+}
+
+/** A provider row's label as a person reads it: the vendor's spelling for a
+ * well-known label, else the label exactly as its owner wrote it. */
+export function providerLabelName(label: string): string {
+  return PROVIDER_NAMES[label.toLowerCase()] ?? label
 }
 
 // ── one call, resolved ─────────────────────────────────────────────────────
