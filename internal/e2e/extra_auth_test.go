@@ -289,7 +289,7 @@ func xaCaseIsolation(c *C) {
 		c.requiref(e.Error.Code == "not_found" && strings.Contains(e.Error.Message, "unknown kind "+kindOf(kindPath)),
 			"the second user's list of %s was refused with %q %q, want `not_found` naming the kind", kindOf(kindPath), e.Error.Code, e.Error.Message)
 	}
-	status, raw = c.doAs(xaSecond.token, http.MethodGet, personCollection+"/nour", nil, nil)
+	status, raw = c.doAs(xaSecond.token, http.MethodGet, personCollection+"/"+eid("nour"), nil, nil)
 	c.requiref(status == http.StatusNotFound,
 		"the second user's GET of the first user's person `nour` answered %d, want 404: %s", status, raw)
 	c.stepf("through the second user's token a list of tasks or people is 404 `unknown kind`, and so is the first user's `nour`")
@@ -319,7 +319,7 @@ func xaCaseIsolation(c *C) {
 	// And the first user's repository is exactly where it was.
 	status, raw = c.do(http.MethodGet, listOf(tasksCollection), nil, nil)
 	c.requiref(status == http.StatusOK, "the first user's task list answered %d, want 200: %s", status, raw)
-	nour := c.getRec(personCollection, "nour")
+	nour := c.getRec(personCollection, eid("nour"))
 	c.requiref(nour.prop("name") == "Nour Haddad", "the first user's `nour` reads back %q", nour.prop("name"))
 	c.stepf("the first user's token still answers: the task list is 200 and `nour` reads back unchanged")
 }

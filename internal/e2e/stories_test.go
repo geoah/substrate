@@ -8,9 +8,9 @@ import (
 )
 
 // The story cases (STORIES.md) share one fictional ecosystem: acme, its
-// people, projects and calendar. Ids are chosen, not server-assigned, so
-// every later story (and every scripted agent turn) can name records
-// exactly.
+// people, projects and calendar. Every id is eid of a readable name, not
+// server-assigned, so every later story (and every scripted agent turn) can
+// name records exactly.
 const (
 	orgCollection     = "/api/v1/samples.substrate.reamde.dev/people/organization"
 	personCollection  = "/api/v1/samples.substrate.reamde.dev/people/person"
@@ -153,18 +153,18 @@ func caseStory01(c *C) {
 	// membership. `memberOf` is a repeated reference whose declaration carries
 	// link data, so each value is the org path under `ref` with the role beside
 	// it.
-	c.putRec(orgCollection, "acme", map[string]any{"name": "Acme", "domain": "acme.example"})
-	c.putRec(orgCollection, "northwind", map[string]any{"name": "Northwind", "domain": "northwind.example"})
+	c.putRec(orgCollection, eid("acme"), map[string]any{"name": "Acme", "domain": "acme.example"})
+	c.putRec(orgCollection, eid("northwind"), map[string]any{"name": "Northwind", "domain": "northwind.example"})
 	person := func(id, name, email, pronouns, org, role string) {
 		props := map[string]any{
 			"name":     name,
 			"emails":   []string{email},
-			"memberOf": []any{linkTo(recPath(orgKind, org), map[string]any{"role": role})},
+			"memberOf": []any{linkTo(recPath(orgKind, eid(org)), map[string]any{"role": role})},
 		}
 		if pronouns != "" {
 			props["pronouns"] = pronouns
 		}
-		c.putRec(personCollection, id, props)
+		c.putRec(personCollection, eid(id), props)
 	}
 	person("me", "Jo Doe", "jo@acme.example", "they/them", "acme", "founder")
 	person("sam", "Sam Rivera", "sam@acme.example", "she/her", "acme", "product lead")
@@ -179,32 +179,32 @@ func caseStory01(c *C) {
 	team := func(id, name string, extra map[string]any, members ...string) {
 		refs := make([]any, 0, len(members))
 		for _, m := range members {
-			refs = append(refs, recPath(personKind, m))
+			refs = append(refs, recPath(personKind, eid(m)))
 		}
 		props := map[string]any{"name": name, "members": refs}
 		for k, v := range extra {
 			props[k] = v
 		}
-		c.putRec(teamCollection, id, props)
+		c.putRec(teamCollection, eid(id), props)
 	}
-	team("product", "Product", map[string]any{"leads": []any{recPath(personKind, "sam")}}, "me", "sam", "ada")
-	team("engineering", "Engineering", map[string]any{"leads": []any{recPath(personKind, "rae")}}, "rae", "nour", "kai")
-	team("platform", "Platform", map[string]any{"parent": recPath(teamKind, "engineering")}, "kai")
+	team("product", "Product", map[string]any{"leads": []any{recPath(personKind, eid("sam"))}}, "me", "sam", "ada")
+	team("engineering", "Engineering", map[string]any{"leads": []any{recPath(personKind, eid("rae"))}}, "rae", "nour", "kai")
+	team("platform", "Platform", map[string]any{"parent": recPath(teamKind, eid("engineering"))}, "kai")
 
 	// Projects and their tasks.
-	c.putRec(projectCollection, "onboarding-revamp",
+	c.putRec(projectCollection, eid("onboarding-revamp"),
 		map[string]any{"name": "Onboarding revamp", "summary": "Make the first day feel like the demo."})
-	c.putRec(projectCollection, "billing-migration",
+	c.putRec(projectCollection, eid("billing-migration"),
 		map[string]any{"name": "Billing migration", "summary": "Move billing off the legacy ledger."})
 	task := func(id, name, project, assignee string, due time.Duration) {
-		props := map[string]any{"name": name, "project": recPath(projectKind, project)}
+		props := map[string]any{"name": name, "project": recPath(projectKind, eid(project))}
 		if due != 0 {
 			props["dueAt"] = time.Now().Add(due).UTC().Format(time.RFC3339)
 		}
 		if assignee != "" {
-			props["assignee"] = recPath(personKind, assignee)
+			props["assignee"] = recPath(personKind, eid(assignee))
 		}
-		c.putRec(tasksCollection, id, props)
+		c.putRec(tasksCollection, eid(id), props)
 	}
 	task("task-funnel-metrics", "Define the onboarding funnel metrics", "onboarding-revamp", "ada", 72*time.Hour)
 	task("task-invite-flow", "Redesign the invite flow", "onboarding-revamp", "sam", 96*time.Hour)
@@ -216,36 +216,36 @@ func caseStory01(c *C) {
 	// The calendar, and the billing sync event, hand-authored with its
 	// attendees. (The kickoff event arrives in STORY-02, the way an importer
 	// would deliver it.)
-	c.putRec(calendarCollection, "work", map[string]any{"name": "Work", "timezone": "Europe/London"})
-	c.putRec(eventCollection, "ev-billing-sync", map[string]any{
+	c.putRec(calendarCollection, eid("work"), map[string]any{"name": "Work", "timezone": "Europe/London"})
+	c.putRec(eventCollection, eid("ev-billing-sync"), map[string]any{
 		"summary":   "Billing migration sync",
 		"at":        r.kickoffAt().Add(30 * time.Minute).Format(time.RFC3339),
 		"endsAt":    r.kickoffAt().Add(60 * time.Minute).Format(time.RFC3339),
-		"calendar":  recPath(calendarKind, "work"),
-		"organizer": recPath(personKind, "rae"),
-		"attendees": []any{recPath(personKind, "rae"), recPath(personKind, "kai")},
+		"calendar":  recPath(calendarKind, eid("work")),
+		"organizer": recPath(personKind, eid("rae")),
+		"attendees": []any{recPath(personKind, eid("rae")), recPath(personKind, eid("kai"))},
 	})
 	c.stepf("seeded the ecosystem: 2 organizations, 7 people, 3 teams, 2 projects, 6 tasks, 1 calendar, 1 event")
 
 	// Forward references read back exactly, and canonical: `project` and
 	// `assignee` were authored as full paths, and the pinned `parent` is the
 	// path too.
-	rec := c.getRec(tasksCollection, "task-usage-export")
-	c.requiref(sameSet(refPaths(rec, "assignee"), recPath(personKind, "nour")),
+	rec := c.getRec(tasksCollection, eid("task-usage-export"))
+	c.requiref(sameSet(refPaths(rec, "assignee"), recPath(personKind, eid("nour"))),
 		"task-usage-export assignee: %v", refPaths(rec, "assignee"))
-	c.requiref(sameSet(refPaths(rec, "project"), recPath(projectKind, "billing-migration")),
+	c.requiref(sameSet(refPaths(rec, "project"), recPath(projectKind, eid("billing-migration"))),
 		"task-usage-export project: %v", refPaths(rec, "project"))
-	platform := c.getRec(teamCollection, "platform")
-	c.requiref(sameSet(refPaths(platform, "parent"), recPath(teamKind, "engineering")),
+	platform := c.getRec(teamCollection, eid("platform"))
+	c.requiref(sameSet(refPaths(platform, "parent"), recPath(teamKind, eid("engineering"))),
 		"platform parent: %v", refPaths(platform, "parent"))
 	c.stepf("forward references read back as canonical paths (task -> assignee/project, team -> parent)")
 
 	// The link data rides with the pointer: Nour's membership carries the role
 	// under the same value as the org it points at.
-	nour := c.getRec(personCollection, "nour")
-	c.requiref(sameSet(refPaths(nour, "memberOf"), recPath(orgKind, "acme")),
+	nour := c.getRec(personCollection, eid("nour"))
+	c.requiref(sameSet(refPaths(nour, "memberOf"), recPath(orgKind, eid("acme"))),
 		"nour memberOf: %v", refPaths(nour, "memberOf"))
-	c.requiref(linkProp(nour, "memberOf", recPath(orgKind, "acme"), "role") == "engineer",
+	c.requiref(linkProp(nour, "memberOf", recPath(orgKind, eid("acme")), "role") == "engineer",
 		"nour's membership role: %v", nour.Properties["memberOf"])
 	c.stepf("`memberOf` carries its link data: the org under `ref`, the role `engineer` beside it")
 
@@ -253,7 +253,7 @@ func caseStory01(c *C) {
 	// them and the team that holds them, without Nour's record storing
 	// either; the page's matches say from which property each one points.
 	var pointing recordsPage
-	status, raw = c.do(http.MethodGet, referencingList(personKind, "nour", ""), nil, &pointing)
+	status, raw = c.do(http.MethodGet, referencingList(personKind, eid("nour"), ""), nil, &pointing)
 	c.requiref(status == http.StatusOK, "the reverse read of nour answered %d: %s", status, raw)
 	found := map[string]bool{}
 	for _, rec := range pointing.Records {
@@ -261,7 +261,7 @@ func caseStory01(c *C) {
 			found[site.Property+" from "+rec.ID] = true
 		}
 	}
-	c.requiref(found["assignee from task-usage-export"] && found["members from engineering"],
+	c.requiref(found["assignee from "+eid("task-usage-export")] && found["members from "+eid("engineering")],
 		"the records pointing at nour miss the task or the team: %v", found)
 	c.stepf("the reverse read of `nour` names both ends: `assignee` from the task, `members` from the team (%d records)", len(pointing.Records))
 
@@ -285,14 +285,14 @@ func caseStory01(c *C) {
 	// pinned reference filters by the bare id too, the way a write accepts it.
 	filter := map[string]any{
 		"kinds":      []string{taskKind},
-		"properties": map[string]any{"status": map[string]any{"eq": "open"}, "assignee": map[string]any{"eq": "nour"}},
+		"properties": map[string]any{"status": map[string]any{"eq": "open"}, "assignee": map[string]any{"eq": eid("nour")}},
 	}
 	var page struct {
 		Records []record `json:"records"`
 	}
 	status, raw = c.do(http.MethodGet, listWhere(filter, "orderBy=dueAt"), nil, &page)
 	c.requiref(status == http.StatusOK, "the filtered list answered %d: %s", status, raw)
-	c.requiref(len(page.Records) == 1 && page.Records[0].ID == "task-usage-export",
+	c.requiref(len(page.Records) == 1 && page.Records[0].ID == eid("task-usage-export"),
 		"open tasks assigned to nour: want exactly task-usage-export, got %d records", len(page.Records))
 	c.stepf("the filter grammar answers the one open task assigned to `nour`")
 
@@ -302,7 +302,7 @@ func caseStory01(c *C) {
 	// refused naming it.
 	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
 		"kind":       taskKind,
-		"properties": map[string]any{"name": "A task aimed at a team", "assignee": recPath(teamKind, "engineering")},
+		"properties": map[string]any{"name": "A task aimed at a team", "assignee": recPath(teamKind, eid("engineering"))},
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity,
 		"an assignee naming a team answered %d, want 422: %s", status, raw)
@@ -340,7 +340,7 @@ func caseStory01(c *C) {
 		"kind": personKind,
 		"properties": map[string]any{
 			"name":     "A chatty member",
-			"memberOf": []any{linkTo(recPath(orgKind, "acme"), map[string]any{"mood": "hopeful"})},
+			"memberOf": []any{linkTo(recPath(orgKind, eid("acme")), map[string]any{"mood": "hopeful"})},
 		},
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "mood"),
@@ -352,7 +352,7 @@ func caseStory01(c *C) {
 	status, raw = c.do(http.MethodPost, recordsRoute, map[string]any{
 		"kind":       taskKind,
 		"properties": map[string]any{"name": "A task with edges"},
-		"edges":      map[string]any{"assignee": []any{map[string]any{"id": "sam"}}},
+		"edges":      map[string]any{"assignee": []any{map[string]any{"id": eid("sam")}}},
 	}, nil)
 	c.requiref(status == http.StatusBadRequest, "a body still writing `edges` answered %d, want 400: %s", status, raw)
 	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, `unknown field "edges"`),

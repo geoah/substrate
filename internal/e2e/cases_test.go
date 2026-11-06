@@ -409,7 +409,7 @@ func caseChangelog(c *C) {
 	c.stepf("forward read: %d rows, consecutive from seq 1, every row hashed, REC-01's %d task writes present; head is seq %d", len(rows), taskWrites, head)
 
 	// A live watch from head delivers the next write as it lands.
-	probeID := "e2e-watch-probe"
+	probeID := eid("e2e-watch-probe")
 	row := c.watchForWrite(head, probeID, func() {
 		status, raw := c.do(http.MethodPut, tasksCollection+"/"+url.PathEscape(probeID),
 			map[string]any{"properties": map[string]any{"name": "The watch probe"}}, nil)

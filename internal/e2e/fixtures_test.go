@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"net/http"
+	"strings"
 )
 
 // The story-local package: the import kind an "importer" writes, the match
@@ -31,11 +32,17 @@ const (
 	actorArbiter    = "agent:" + storyAuthority + ":" + storyPackage + ":changeRequestReviewer"
 )
 
-// resolveAttendeesSource mirrors what a calendar importer's linker does:
+// resolveAttendeesTemplate mirrors what a calendar importer's linker does:
 // resolve every attendee email against the people the repository knows, mint
 // a person for a stranger (named from the email's local part, org matched by
 // domain), and never mint one for an automated room or group address.
-const resolveAttendeesSource = `
+// resolveAttendeesSource fills in the work calendar's id.
+const resolveAttendeesTemplate = `
+# The calendar every imported event lands in. The story created it under a
+# minted id, which the suite writes in here.
+WORK_CALENDAR = "samples.substrate.reamde.dev/calendar/calendar/@WORK_CALENDAR_ID@"
+
+
 def automated(email):
     domain = email.split("@", 1)[-1]
     return domain.endswith("resource.calendar.example") or domain.endswith("group.calendar.example")
@@ -46,7 +53,9 @@ def main(input, host):
     rec = envelope.get("record") or {}
     props = rec.get("properties") or {}
     imp_id = rec.get("id") or ""
-    event_id = "ev-" + imp_id.removeprefix("imp-")
+    # A function names its records (decision 0228): the event's id is
+    # composed from the import's, so a re-delivery names the same event.
+    event_id = "ev-" + imp_id
 
     # The two lists together stay under the function's default 500-row read
     # budget; the fixture world is dozens of records, not hundreds.
@@ -89,7 +98,7 @@ def main(input, host):
         "summary": props.get("summary") or "",
         "at": props.get("at"),
         "endsAt": props.get("endsAt"),
-        "calendar": "samples.substrate.reamde.dev/calendar/calendar/work",
+        "calendar": WORK_CALENDAR,
         "attendees": ["samples.substrate.reamde.dev/people/person/" + p for p in attendees],
     }
     organizer = (props.get("organizerEmail") or "").strip().lower()
@@ -98,6 +107,16 @@ def main(input, host):
     host.effects.put("samples.substrate.reamde.dev/calendar/calendarevent", event_id, properties=event)
     return {"output": {"event": event_id, "attendees": len(attendees)}}
 `
+
+// resolveAttendeesSource is the resolver's body, naming the work calendar
+// STORY-01 created.
+func resolveAttendeesSource() string {
+	return strings.ReplaceAll(resolveAttendeesTemplate, "@WORK_CALENDAR_ID@", eid("work"))
+}
+
+// importedEventID is the id the resolver files an import's event under: "ev-"
+// and the import's own id, composed by the function as above.
+func importedEventID(importName string) string { return "ev-" + eid(importName) }
 
 // scoreCandidatesSource is the deterministic half of transcript matching:
 // every event within 90 minutes, scored on start-time proximity (0.6) and
@@ -209,7 +228,7 @@ func storyDocuments(providerID string) []map[string]any {
 					"samples.substrate.reamde.dev/people/person",
 				},
 			},
-			"source": resolveAttendeesSource,
+			"source": resolveAttendeesSource(),
 		}),
 		doc("substrate.reamde.dev/core/function", storyPkg+"/scorecandidates", map[string]any{
 			"authority":   storyAuthority,

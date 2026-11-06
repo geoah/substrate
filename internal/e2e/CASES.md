@@ -73,6 +73,19 @@ still names the same behavior. `registerCase` takes an order too, and each
 group file owns one block of that space (`extra_test.go` lists the blocks),
 so files never renumber each other.
 
+A record a case creates as the owner, or scripts an agent to create, takes
+the id `eid(<name>)` (`harness_test.go`), which is
+`vocabulary.DerivedMintedID("e2e", name)`: a person, an app or an agent
+creates a record of a kind whose ids are minted under a minted id alone
+([decision 0228](../../docs/decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
+The code keeps the readable name, and the report shows the derived id. A
+kind whose ids are named (a trigger, an `llm/provider` row, a setting, a
+provider's config) keeps readable ids, and so does a record a function or a
+bundle writes, because it composes its own. REC-06 tests the rule itself: a
+PUT that would create under a readable id is refused naming the minted
+shape, a PUT under either minted spelling creates, and a PUT at an existing
+id updates it.
+
 [STORIES.md](STORIES.md) is the other half of the list: the story-level cases,
 whole scenarios that compose many endpoint-level cases into one coherent
 repository.

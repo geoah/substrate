@@ -260,9 +260,12 @@ func xhCaseOAuthConnect(c *C) {
 	c.r.t.Cleanup(p.srv.Close)
 	status, raw := c.do(http.MethodPost, "/api/v1/vocabulary/apply", map[string]any{"documents": xhOAuthDocs(p.srv.URL)}, nil)
 	c.requiref(status == http.StatusOK, "applying the %s bundle answered %d: %s", xhOAuthPkg, status, raw)
-	c.putRec("/api/v1/"+xhConfigKind, "default", map[string]any{"clientId": xhClientID, "clientSecret": xhClientSecret})
-	c.putRec("/api/v1/"+xhAccountKind, "owner", map[string]any{"address": "owner@example.com", "enabledMail": true})
-	xhOAuth.provider, xhOAuth.account = p, xhAccountKind+"/owner"
+	// Both kinds are this case's own and declare no `ids`, so their records
+	// take minted ids; the bundle's `client` input resolves to the sole config
+	// record.
+	c.putRec("/api/v1/"+xhConfigKind, eid("mail-client"), map[string]any{"clientId": xhClientID, "clientSecret": xhClientSecret})
+	c.putRec("/api/v1/"+xhAccountKind, eid("owner"), map[string]any{"address": "owner@example.com", "enabledMail": true})
+	xhOAuth.provider, xhOAuth.account = p, xhAccountKind+"/"+eid("owner")
 	c.stepf("installed `%s` with its OAuth endpoints on a fake provider at %s, a client config and one account", xhOAuthPkg, p.srv.URL)
 
 	consent := xhStart(c)
@@ -382,7 +385,7 @@ func xhCaseOAuthRefresh(c *C) {
 		"the refresh sent grant %q with refresh token %q, want the stored one", form.Get("grant_type"), form.Get("refresh_token"))
 	c.stepf("the server's own sweep sent the provider a `refresh_token` grant with the stored refresh token and the client's credentials")
 
-	account := c.getRec("/api/v1/"+xhAccountKind, "owner")
+	account := c.getRec("/api/v1/"+xhAccountKind, eid("owner"))
 	c.requiref(account.prop("tokenStatus") == "connected", "after the refresh the account reads %q, want connected", account.prop("tokenStatus"))
 	c.stepf("the account still reads `connected` after the refresh")
 }
@@ -412,7 +415,7 @@ func xhCaseEmbedding(c *C) {
 	})
 	c.stepf("declared `%s` with an `embed: true` text property, and named the run's stub as the embeddings provider (`%s`)", xhMemoKind, xhEmbedModel)
 
-	c.putRec("/api/v1/"+xhMemoKind, "lighthouse", map[string]any{"name": "Lighthouse", "text": xhMemoText})
+	c.putRec("/api/v1/"+xhMemoKind, eid("lighthouse"), map[string]any{"name": "Lighthouse", "text": xhMemoText})
 	search := "/api/v1/records?" + url.Values{
 		"q": {"lighthouse"}, "mode": {"semantic"},
 		"filter": {`{"kinds":["` + xhMemoKind + `"]}`},
@@ -444,8 +447,8 @@ func xhCaseEmbedding(c *C) {
 	}
 	c.stepf("the drain bought the memo's text from the stub once it answered")
 
-	path := xhMemoKind + "/lighthouse"
-	c.requiref(len(page.Records) == 1 && page.Records[0].ID == "lighthouse", "the semantic read ranks %d records, want the memo alone", len(page.Records))
+	path := xhMemoKind + "/" + eid("lighthouse")
+	c.requiref(len(page.Records) == 1 && page.Records[0].ID == eid("lighthouse"), "the semantic read ranks %d records, want the memo alone", len(page.Records))
 	score := page.Scores[path].Semantic
 	c.requiref(score != nil && *score > 0.999, "the memo's semantic score is %v, want the stub vectors' similarity of 1", score)
 	c.stepf("the semantic read ranks `%s` with semantic score %.3f: the stored vector is the stub's", path, *score)

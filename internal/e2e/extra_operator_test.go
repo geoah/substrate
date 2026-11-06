@@ -196,7 +196,7 @@ func xoCaseRestart(c *C) {
 
 	// The writer resumed where it stopped: the next write is head+1, and it
 	// is the only row after the old head.
-	probe := "xo-after-restart"
+	probe := eid("xo-after-restart")
 	c.putRec(tasksCollection, probe, map[string]any{"name": "Written after the restart"})
 	rows := c.readChangesForward(before.head)
 	c.requiref(len(rows) == 1 && rows[0].Seq == before.head+1 && rows[0].RecordID == probe,

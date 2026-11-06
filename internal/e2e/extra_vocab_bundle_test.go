@@ -244,7 +244,7 @@ func xvCaseAdditiveUpgrade(c *C) {
 		"the fresh widget kind did not store version 1")
 	c.stepf("applied a new authority `%s` at version 1: one kind `widget`, properties `name` and `size` (small, large)", xvAuthority)
 
-	small := c.putRec(xvWidgetCollection, "xv-widget-small",
+	small := c.putRec(xvWidgetCollection, eid("xv-widget-small"),
 		map[string]any{"name": "The small widget", "size": "small"})
 	c.requiref(small.prop("size") == "small" && small.Version == 1,
 		"the first widget landed wrong: size %q, version %d", small.prop("size"), small.Version)
@@ -275,14 +275,14 @@ func xvCaseAdditiveUpgrade(c *C) {
 	c.stepf("applied version 2, adding the optional property `color` and the enum value `medium`: the authority and the kind declaration both moved to version 2")
 
 	// The old record is untouched by the upgrade: same values, same version.
-	reread := c.getRec(xvWidgetCollection, "xv-widget-small")
+	reread := c.getRec(xvWidgetCollection, eid("xv-widget-small"))
 	c.requiref(reread.prop("name") == "The small widget" && reread.prop("size") == "small",
 		"the pre-upgrade widget reads back changed: %v", reread.Properties)
 	c.requiref(reread.Version == small.Version,
 		"the upgrade moved the pre-upgrade record's version from %d to %d", small.Version, reread.Version)
 	c.stepf("the widget written under version 1 reads back unchanged at record version %d: an additive upgrade rewrites no rows", reread.Version)
 
-	medium := c.putRec(xvWidgetCollection, "xv-widget-medium",
+	medium := c.putRec(xvWidgetCollection, eid("xv-widget-medium"),
 		map[string]any{"name": "The medium widget", "size": "medium", "color": "teal"})
 	c.requiref(medium.prop("size") == "medium" && medium.prop("color") == "teal",
 		"the post-upgrade widget landed wrong: %v", medium.Properties)
@@ -410,8 +410,8 @@ func xvCaseListFollowsApply(c *C) {
 		c.requiref(rec.Kind == xvWidgetKind, "the list answered a %s record", rec.Kind)
 		byID[rec.ID] = rec
 	}
-	_, small := byID["xv-widget-small"]
-	medium, ok := byID["xv-widget-medium"]
+	_, small := byID[eid("xv-widget-small")]
+	medium, ok := byID[eid("xv-widget-medium")]
 	c.requiref(small && ok, "the list does not see VOC-02's widgets: %s", raw)
 	c.requiref(medium.prop("color") == "teal",
 		"the medium widget's `color` did not come back through the list: %v", medium.Properties)
@@ -481,7 +481,7 @@ func xvCaseBundleLifecycle(c *C) {
 	c.requiref(!st.Quarantined, "the freshly installed bundle is quarantined: %s", st.QuarantineReason)
 	c.stepf("installed the throwaway bundle `%s`: %d kinds, %d functions, enabled and not quarantined", xvNotesBundle, st.Kinds, st.Functions)
 
-	note := c.putRec(xvNoteCollection, "xv-note-one", map[string]any{
+	note := c.putRec(xvNoteCollection, eid("xv-note-one"), map[string]any{
 		"text": "The lifecycle case wrote this note.", "noteTitle": "Lifecycle", "words": 6, "characters": 35,
 	})
 	c.requiref(note.prop("noteTitle") == "Lifecycle", "the note landed wrong: %v", note.Properties)
@@ -509,7 +509,7 @@ func xvCaseBundleLifecycle(c *C) {
 	ref := c.xvRefused(raw)
 	c.requiref(ref.Code == "guard" && strings.Contains(ref.Message, "disabled") && strings.Contains(ref.Message, xvStatsFunction),
 		"the refusal does not name the disabled bundle and the function: %s", ref.Message)
-	quiet := c.putRec(xvNoteCollection, "xv-note-two", map[string]any{"text": "Written while disabled."})
+	quiet := c.putRec(xvNoteCollection, eid("xv-note-two"), map[string]any{"text": "Written while disabled."})
 	var listed struct {
 		Records []record `json:"records"`
 	}
@@ -554,7 +554,7 @@ func xvCaseBundleLifecycle(c *C) {
 	c.requiref(status == http.StatusOK && len(listed.Records) == 0,
 		"the notes still list %d records after the purge", len(listed.Records))
 	var tombstone record
-	status, _ = c.do(http.MethodGet, xvNoteCollection+"/xv-note-one", nil, &tombstone)
+	status, _ = c.do(http.MethodGet, xvNoteCollection+"/"+eid("xv-note-one"), nil, &tombstone)
 	c.requiref(status == http.StatusOK && tombstone.DeletedAt != "",
 		"a purged record should still GET as a tombstone; answered %d with deletedAt %q", status, tombstone.DeletedAt)
 	c.stepf("disabled, then purged: `{\"purged\":%d}`, the notes list nothing, and `%s` still GETs as a tombstone. "+
