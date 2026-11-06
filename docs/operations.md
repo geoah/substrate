@@ -362,7 +362,7 @@ llm:
     titleModel: gpt-5-mini         # optional; one of models
     defaults: {reasoningEffort: low}   # optional; request params under the agent's own
     cache: {key: true}             # optional; ttl, key and breakpoints as on a row
-    headers: []                    # optional; [{name, value}]
+    headers: []                    # optional; [{name, value}]; Idempotency-Key and X-Idempotency-Key are refused
     embeddings: {model: text-embedding-3-small, per1M: "0.02"}   # at most one entry
   anthropic:
     wire: anthropic

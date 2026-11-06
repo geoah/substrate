@@ -147,6 +147,8 @@ func TestParseRefuses(t *testing.T) {
 		{"an unknown cache ttl", "ttl: onehour", "ttl: 1h", `cache.ttl "1h"`},
 		{"no budget", "budget:\n  centsPerDay: 200\n", "", "budget.centsPerDay is required"},
 		{"a negative budget", "centsPerDay: 200", "centsPerDay: -1", "at or above 0"},
+		{"an idempotency header", "name: X-Title, value: substrate", "name: Idempotency-Key, value: k", "replay a request"},
+		{"an idempotency header in any case", "name: X-Title, value: substrate", "name: x-idempotency-key, value: k", "replay a request"},
 		{"a function consumer without a price", `pricePerCall: {websearch: "0.1", scrapepage: "0.1"}`, `pricePerCall: {websearch: "0.1"}`, "scrapepage has no price"},
 		{"a price for a non-consumer", `scrapepage: "0.1"}`, `scrapepage: "0.1", crawl: "1"}`, "crawl is not one of its consumers"},
 		{"an oauth client without its id", "    clientId: 1234.apps.example.com\n", "", "clientId is required"},

@@ -606,6 +606,14 @@ func (d *llmDoc) validate(id, dir string) (*LLM, error) {
 		if strings.ContainsAny(h.Value, "\r\n\x00") {
 			return nil, fmt.Errorf("headers[%d]: the value of %s holds a line break", i, h.Name)
 		}
+		// Go's transport replays a request carrying either header after a
+		// lost response on a reused connection, inside one Do: a second
+		// billable attempt the reservation never admitted, and that
+		// RetryOnlyUnbilled cannot see.
+		switch http.CanonicalHeaderKey(h.Name) {
+		case "Idempotency-Key", "X-Idempotency-Key":
+			return nil, fmt.Errorf("headers[%d]: %s makes the HTTP transport replay a request it may already have been billed for", i, h.Name)
+		}
 		for _, prior := range e.Headers {
 			if http.CanonicalHeaderKey(prior.Name) == http.CanonicalHeaderKey(h.Name) {
 				return nil, fmt.Errorf("headers[%d]: %s is listed twice", i, h.Name)
