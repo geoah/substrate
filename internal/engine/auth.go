@@ -440,7 +440,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		label = "login"
 	}
 	out.Repository = in.Repository
-	_, err = s.createSeededRepository(ctx, in.Repository, func(t *txn) error {
+	repo, err := s.createSeededRepository(ctx, in.Repository, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
 			repository: in.Repository, passwordHash: hash,
@@ -458,6 +458,9 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err != nil {
 		return zero, err
 	}
+	// The operator's install list runs inside the registration, so a person
+	// signs in to the providers the operator gives them already there.
+	s.openForOperatorInstalls(ctx, repo)
 	return out, nil
 }
 

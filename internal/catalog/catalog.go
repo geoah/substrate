@@ -517,6 +517,34 @@ func (c *Catalog) installReviewed(ctx context.Context, actor substrate.Actor, id
 	if err != nil {
 		return nil, nil, err
 	}
+	return c.installResolved(ctx, b, ds, confirm, expect, closure)
+}
+
+// SeedInstall installs a provider the way Install does, for the operator's
+// install list (the defaults file's `install:`). Like SeedImport it does not
+// require a human actor: it runs at registration and at a repository's open,
+// with no request behind it, and the changelog is attributed to the bundle as
+// any install's is. It refuses anything but a provider, because the list
+// gives a repository published packages and nothing it would own.
+func (c *Catalog) SeedInstall(ctx context.Context, ds substrate.Dataset, id string) error {
+	b, ok := c.byID[id]
+	if !ok {
+		return fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	if b.Tier != substrate.TierProvider {
+		return fmt.Errorf("%w: %s is not a provider", substrate.ErrValidation, b.ID)
+	}
+	resolved, err := c.ResolveFor(ctx, id, 0, ds)
+	if err != nil {
+		return err
+	}
+	_, _, err = c.installResolved(ctx, resolved, ds, nil, nil, nil)
+	return err
+}
+
+// installResolved is the install every door shares once its gate passed and
+// the candidate resolved.
+func (c *Catalog) installResolved(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *PublishedCandidate, closure InstallExpectations) (*Bundle, []substrate.SuggestedMapping, error) {
 	if expect != nil && (b.origin == nil || expect.Version != b.Version || expect.Digest != b.origin.SHA256) {
 		return nil, nil, fmt.Errorf("%w: the publisher listed another version since you reviewed this one; review it again", substrate.ErrConflict)
 	}

@@ -107,6 +107,9 @@ type options struct {
 	// nil is none. operatorName is the site's name its refusals give.
 	operatorDefaults *operatordefaults.Config
 	operatorName     string
+	// operatorInstaller is the catalog install the operator's `install:`
+	// list runs through (WithOperatorInstaller); nil installs nothing.
+	operatorInstaller OperatorInstaller
 	// searchSemanticHook is the semantic arm's test seam (export_test.go
 	// WithTestSemanticHook); nil in production.
 	searchSemanticHook func(ctx context.Context, tx *sql.Tx)
@@ -454,6 +457,12 @@ type service struct {
 	// operatorName is the site's name the operator's refusals give; empty
 	// reads as "this server" (operatorspend.go siteName).
 	operatorName string
+	// operatorInstaller runs the operator's `install:` list
+	// (operatorinstall.go); nil installs nothing.
+	operatorInstaller OperatorInstaller
+	// operatorInstalls holds the last failed operator install per repository
+	// and package, for the operator defaults read.
+	operatorInstalls operatorInstallFailures
 	// operatorNow is the allowance ledger's clock (operatorspend.go); never
 	// nil, and a test sets it before the dataset's first operator-paid call.
 	operatorNow func() time.Time
@@ -877,6 +886,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		totpDisabled:       o.insecureDisableTOTP,
 		operatorDefaults:   o.operatorDefaults,
 		operatorName:       o.operatorName,
+		operatorInstaller:  o.operatorInstaller,
 		operatorNow:        time.Now,
 		outsideCode:        o.outsideCode, unconfinedOutsideCode: o.unconfinedOutsideCode,
 		now:              o.now,
@@ -1260,6 +1270,13 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 		delete(s.opening, repo.ID)
 		s.mu.Unlock()
 		close(inflight)
+		// The operator's install list, once per open of the repository in
+		// this process, after the open is published: an install is an
+		// ordinary write through the dataset, and other requests may use
+		// the repository while it runs.
+		if err == nil {
+			s.runOperatorInstalls(ctx, ds)
+		}
 		return ds, err
 	}
 }
@@ -1426,6 +1443,7 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 	if err != nil {
 		return substrate.RepositoryInfo{}, err
 	}
+	s.openForOperatorInstalls(ctx, repo)
 	return repo.info(), nil
 }
 
