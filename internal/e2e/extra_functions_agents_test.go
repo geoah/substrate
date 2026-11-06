@@ -516,7 +516,7 @@ func xfCounterResponder(req llmReq) llmTurn {
 		text := ""
 		for _, m := range req.Messages {
 			if m.Role == "user" {
-				text = m.Content
+				text = m.Content.text()
 			}
 		}
 		return llmTurn{calls: []llmCall{{"wordcount", map[string]any{"text": text}}}}
