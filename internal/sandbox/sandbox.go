@@ -147,7 +147,7 @@ type Policy struct {
 	// internet socket but a TCP stream and refuses TCP Fast Open's send: no
 	// datagram, raw, SCTP or MPTCP socket reaches an address without passing
 	// the gate (buildConfinedFilter). An outside body's proxy dials nothing
-	// outside it. It is a test binary's
+	// outside it and asks no name server. It is a test binary's
 	// setting (runner.ConfineBodyEgress): a body a regression points at a real
 	// API is refused at connect(2), whatever its code does. Wrap refuses a
 	// policy carrying it on a host that cannot enforce it.

@@ -1,12 +1,16 @@
 package sandbox
 
 import (
+	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -129,5 +133,52 @@ func TestOutsideProxyDialsOnlyInsideAConfinedEgress(t *testing.T) {
 		if tc.status == http.StatusForbidden && !strings.Contains(string(body), "egress is confined") {
 			t.Errorf("confined to %s: the refusal %q does not say the egress is confined", tc.only, body)
 		}
+	}
+}
+
+// A confined proxy asks no name server for a declared name the hosts file
+// does not map: the request fails with the confinement's refusal, and the
+// system resolver, stood in for here by one that counts and refuses, is never
+// asked, over plain HTTP or through CONNECT. The stand-in also keeps a run
+// against a proxy that would ask it from sending a query anywhere.
+func TestAConfinedProxyAsksNoNameServer(t *testing.T) {
+	var asked atomic.Int32
+	system := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+		asked.Add(1)
+		return nil, errors.New("the system resolver was asked")
+	}}
+	t.Cleanup(func() { net.DefaultResolver = system })
+
+	const unmapped = "unmapped.invalid."
+	p, err := newHostProxy([]string{unmapped}, netip.MustParsePrefix("127.0.0.0/8"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	proxyURL, err := url.Parse("http://" + p.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxyURL)
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport}
+
+	response, err := client.Get("http://" + unmapped + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden || !strings.Contains(string(body), errConfinedLookup.Error()) {
+		t.Errorf("a declared, unmapped name over HTTP = %d %q, want 403 naming the confined lookup", response.StatusCode, body)
+	}
+	if response, err := client.Get("https://" + unmapped + "/"); err == nil {
+		response.Body.Close()
+		t.Errorf("a declared, unmapped name through CONNECT = %d, want the tunnel refused", response.StatusCode)
+	}
+	if n := asked.Load(); n != 0 {
+		t.Fatalf("the system resolver was asked %d times for a confined proxy's name", n)
 	}
 }
