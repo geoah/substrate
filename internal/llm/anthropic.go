@@ -694,10 +694,15 @@ func anthropicRetryAfter(header http.Header) (time.Duration, bool) {
 // method, URL, status, request ids, then the body the endpoint sent, cut to
 // anthropicMaxErrorBody bytes without splitting a key scrubbed must remove.
 // The status code must stay in the text, because providerError tells a rate
-// limit from a context overflow by its 429. A 401 or a 403 is marked
-// providersecret.KeyRefusedError; the text is not scrubbed yet, and scrubbed
-// keeps only the mark.
+// limit from a context overflow by its 429. An answer that refuses the key
+// (providersecret.RefusesKey, read from the whole body before the cut) is
+// marked providersecret.KeyRefusedError; the text is not scrubbed yet, and
+// scrubbed keeps only the mark.
 func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
+	refused := 0
+	if errType, errCode := providersecret.ErrorFields(body); providersecret.RefusesKey(res.StatusCode, errType, errCode) {
+		refused = res.StatusCode
+	}
 	body = providersecret.Truncate(c.apiKey, body, anthropicMaxErrorBody)
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "%s %q: %d %s", http.MethodPost, c.endpoint, res.StatusCode, http.StatusText(res.StatusCode))
@@ -711,7 +716,7 @@ func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 		msg.WriteByte(' ')
 		msg.Write(body)
 	}
-	return providersecret.MarkKeyRefused(res.StatusCode, errors.New(msg.String()))
+	return providersecret.MarkKeyRefused(refused, errors.New(msg.String()))
 }
 
 // anthropicMessage is the Messages response, one-shot or folded from a

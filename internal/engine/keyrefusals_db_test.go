@@ -23,9 +23,9 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// refusedKeyBody is a vendor's 401 body. It quotes no key: the scrub has
-// its own tests (agentkeyleak_db_test.go).
-const refusedKeyBody = `{"error":{"message":"Incorrect API key provided.","type":"invalid_request_error"}}`
+// refusedKeyBody is OpenAI's body for a key it refuses. It quotes no key: the
+// scrub has its own tests (agentkeyleak_db_test.go).
+const refusedKeyBody = `{"error":{"message":"Incorrect API key provided.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}`
 
 // readinessOf reads one item's readiness and message off ds's operator
 // defaults read.

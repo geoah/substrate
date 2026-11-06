@@ -175,8 +175,8 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // still returns the usage it reported beside the error, because the endpoint
 // did the work. A failure the endpoint cannot have acted on is marked
 // egress.ErrUnprocessed: the request never wrote its headers, or the endpoint
-// refused it with a redirect or a 4xx. A 401 or a 403 is marked
-// providersecret.KeyRefusedError, the endpoint refusing the key.
+// refused it with a redirect or a 4xx. An answer that refuses the key
+// (providersecret.RefusesKey) is marked providersecret.KeyRefusedError.
 func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, Usage, error) {
 	if len(texts) == 0 {
 		return nil, Usage{}, nil
@@ -195,7 +195,7 @@ func (e *Client) EmbedUsage(ctx context.Context, texts []string) ([][]float32, U
 		if rejected(err) {
 			out = fmt.Errorf("%w: %s", ErrRejected, msg)
 		}
-		out = providersecret.MarkKeyRefused(status(err), out)
+		out = providersecret.MarkKeyRefused(keyRefusal(err), out)
 		if !watch.Sent() || egress.IsRedirect(err) || egress.RefusedStatus(status(err)) {
 			out = egress.Unprocessed(out)
 		}
@@ -247,6 +247,27 @@ func status(err error) int {
 		return apiErr.HTTPStatusCode
 	case errors.As(err, &reqErr):
 		return reqErr.HTTPStatusCode
+	}
+	return 0
+}
+
+// keyRefusal is the status of an answer that refused the key
+// (providersecret.RefusesKey), or 0, read from go-openai's two failure
+// answers as status reads it.
+func keyRefusal(err error) int {
+	var apiErr *openai.APIError
+	var reqErr *openai.RequestError
+	status, errType, errCode := 0, "", ""
+	switch {
+	case errors.As(err, &apiErr):
+		status, errType = apiErr.HTTPStatusCode, apiErr.Type
+		errCode, _ = apiErr.Code.(string)
+	case errors.As(err, &reqErr):
+		status = reqErr.HTTPStatusCode
+		errType, errCode = providersecret.ErrorFields(reqErr.Body)
+	}
+	if providersecret.RefusesKey(status, errType, errCode) {
+		return status
 	}
 	return 0
 }
