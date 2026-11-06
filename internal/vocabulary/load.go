@@ -2677,6 +2677,7 @@ func (r *Registry) Finalize() error {
 	for _, g := range authorities {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
+	r.holdSeededMappings()
 	problems = append(problems, r.observedMetricPins()...)
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.mappingSubjectProblems()...)
@@ -2696,6 +2697,7 @@ func (r *Registry) Install(g *Package) error {
 		return err
 	}
 	problems := r.resolvePackage(g)
+	r.holdSeededMappings()
 	problems = append(problems, r.observedMetricPins()...)
 	// The registry-wide invariants re-run whole: a re-registration may add a
 	// mapping whose violation lives on an already-loaded kind. Checked HERE
@@ -2709,6 +2711,7 @@ func (r *Registry) Install(g *Package) error {
 	problems = append(problems, r.mappingSubjectProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Identity)
+		r.holdSeededMappings()
 		r.mappingSubjectProblems()
 		return validationError(problems)
 	}
@@ -2724,6 +2727,8 @@ func (r *Registry) Install(g *Package) error {
 // the registry does not hold is a no-op.
 func (r *Registry) Remove(identity string) {
 	r.remove(identity)
+	// A seeded mapping reading the removed package waits from here on.
+	r.holdSeededMappings()
 	// A removed package takes its mappings with it, and a mapping's subject
 	// slot is the mapping's: the reconcile is what takes the property back off
 	// a source kind in a package that stays (mappingsubject.go). Problems are
@@ -2752,6 +2757,7 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	for _, g := range packages {
 		problems = append(problems, r.resolvePackage(g)...)
 	}
+	r.holdSeededMappings()
 	problems = append(problems, r.observedMetricPins()...)
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.crossPackageMappingProblems(packages)...)
@@ -2760,6 +2766,7 @@ func (r *Registry) InstallAll(packages []*Package) error {
 		for _, g := range packages {
 			r.remove(g.Identity)
 		}
+		r.holdSeededMappings()
 		// The undo runs the reconcile again, so a slot this attempt put on a
 		// kind of a package that STAYS is taken back off it: the removal above
 		// drops the mapping, and the reconcile is what drops the property.
@@ -3028,7 +3035,12 @@ func (r *Registry) resolvePackage(g *Package) []string {
 	// Mappings, once the authority's reference pins are resolved identities: the
 	// registry-wide invariants (bipartite, one mapping per source, no reference
 	// onto a source type) run after every authority has, in Finalize and Install.
+	// A seeded package's mappings are not resolved here: holdSeededMappings
+	// resolves each one and holds what does not fit (seededmapping.go).
 	for _, mn := range g.MappingOrder {
+		if mappingsWait(g.Identity) {
+			break
+		}
 		problems = append(problems, r.resolveMapping(g.Mappings[mn])...)
 	}
 	for _, fn := range g.FunctionOrder {
