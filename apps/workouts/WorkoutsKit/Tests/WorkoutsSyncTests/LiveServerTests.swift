@@ -68,6 +68,21 @@ struct LiveServerTests {
         #expect(approved.contains(.string(WorkoutsManifest.writeScope)))
         var approval: JSONObject = ["scopes": .array(approved), "lifetimeDays": .number(7)]
         if let hash = fields["planHash"] { approval["planHash"] = hash }
+        // The coach's agents need a provider; the first one offered does.
+        if case let .array(setup)? = fields["setup"] {
+            let choices = setup.flatMap { row -> [JSONValue] in
+                guard case let .object(row) = row, case let .object(package)? = row["package"],
+                    case let .array(inputs)? = package["providerInputs"]
+                else { return [] }
+                return inputs.compactMap { input in
+                    guard case let .object(input) = input, case let .array(options)? = input["options"],
+                        case let .object(first)? = options.first, let provider = first["id"]
+                    else { return nil }
+                    return .object(["package": input["package"] ?? .null, "input": input["input"] ?? .null, "provider": provider])
+                }
+            }
+            if !choices.isEmpty { approval["providerChoices"] = .array(choices) }
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         var answer = try await owner.send(
