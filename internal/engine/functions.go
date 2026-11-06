@@ -890,7 +890,13 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		res, err := ds.deliver(ctx, tr, ch, from, depth, resume, settle)
 		if heldAtAllowance(err, threads) {
 			// Nothing ran and nothing parks: the walk holds the cursor on
-			// this change (processRecordTrigger).
+			// this change (processRecordTrigger), and a `sync` record this
+			// delivery marked `running` reads as it did before. That write
+			// lands even when the dispatcher is stopping, since no pass
+			// before the reset reaches the record again.
+			if uerr := ds.syncUnstart(context.WithoutCancel(ctx), settle.sync, ch.Seq); uerr != nil {
+				return 0, from, uerr
+			}
 			return 0, from, err
 		}
 		cause := err

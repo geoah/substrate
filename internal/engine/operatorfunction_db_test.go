@@ -539,6 +539,9 @@ const (
 	meterPackage = "meter.example.com/meter"
 	meterReading = meterPackage + "/reading"
 	meterPing    = meterPackage + "/ping"
+	// meterAccount binds the core `sync` trait, so a delivery of `stamp`,
+	// the kind's own package's function, stamps the record's sync state.
+	meterAccount = meterPackage + "/account"
 	// operatorMeterKey is the operator's key for the meter bundle in these
 	// fixtures; it is never a real key.
 	operatorMeterKey = "meter-operator-key-fixture"
@@ -547,7 +550,7 @@ const (
 // openMeterDataset opens a repository whose operator pays for the published
 // meter bundle's two functions, `stamp` at 0.6 cents a call and `fussy` at
 // 0.5, under an allowance of allowance cents a day, on a clock the test
-// moves. Neither body opens a socket. `stamp` writes one reading per call,
+// moves, beside a `sync`-trait account kind. Neither body opens a socket. `stamp` writes one reading per call,
 // named for the record or the occurrence it was delivered. `fussy` refuses
 // every registration of its body after the first, so a call after its process
 // is retired fails before the body starts.
@@ -572,10 +575,11 @@ func openMeterDataset(t *testing.T, allowance int64) (*dataset, *testClock) {
 		vocabulary.PackageManifest(meterPackage, 1),
 		vocabulary.BundleManifest(meterPackage, map[string]any{
 			"description": "a metered bundle",
-			"installs":    []any{meterPackage + "/stamp", meterPackage + "/fussy", meterReading, meterPing},
+			"installs":    []any{meterPackage + "/stamp", meterPackage + "/fussy", meterReading, meterPing, meterAccount},
 		}),
 		vocabulary.KindManifest(meterPackage, map[string]any{"singular": "reading"}, named),
 		vocabulary.KindManifest(meterPackage, map[string]any{"singular": "ping"}, named),
+		vocabulary.KindManifest(meterPackage, map[string]any{"singular": "account"}, meterSyncKind()),
 		vocabulary.FunctionManifest(meterPackage, "stamp", map[string]any{
 			"description": "writes one reading per delivery", "runtime": vocabulary.RuntimePython,
 			"permissions": map[string]any{"writes": []any{meterReading}},
@@ -610,6 +614,28 @@ def main(input, host):
 		t.Fatalf("install the meter bundle: %v", err)
 	}
 	return ds, clock
+}
+
+// meterSyncKind declares the account kind's properties the way a provider's
+// account kind binds the `sync` trait: the owner's two hands `writer: owner`,
+// the rest `writer: connector`.
+func meterSyncKind() map[string]any {
+	props := map[string]any{"name": map[string]any{"type": "string"}}
+	for name, typ := range map[string]string{
+		"syncState": "string", "syncMessage": "string", "lastSyncedAt": "datetime",
+		"lastSyncStartedAt": "datetime", "lastSyncDurationMs": "int", "syncRequestedAck": "datetime",
+		"syncProgress": "json", "syncError": "string", "syncErrorAt": "datetime", "syncStreams": "json",
+	} {
+		props[name] = map[string]any{"type": typ, "writer": "connector", "fts": false}
+	}
+	for name, typ := range map[string]string{"syncRequestedAt": "datetime", "syncPaused": "bool"} {
+		props[name] = map[string]any{"type": typ, "writer": "owner", "fts": false}
+	}
+	return map[string]any{
+		"traits":          []any{vocabulary.TraitSyncCore},
+		"displayTemplate": "{name}",
+		"properties":      props,
+	}
 }
 
 // spendFunctionCents settles one function reservation of cents, today, as a
@@ -826,6 +852,92 @@ func TestAnOperatorPaidScheduleTriggerWaitsForTheReset(t *testing.T) {
 	if got := firedAt(); !got.Equal(startsAt) {
 		t.Fatalf("after the reset the fire state is %s, want the held occurrence %s", got, startsAt)
 	}
+}
+
+// A delivery to a `sync` record that the allowance refuses at its
+// reservation, after the walk let it through, leaves the record as it was:
+// the `running` its start wrote is taken back, because every pass until the
+// reset stops at the hold and never reaches the record. A pass while the
+// allowance stays spent leaves it so, and the first pass after the reset runs
+// the sync.
+func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, clock := openMeterDataset(t, 1)
+	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterAccount}}})
+	process := func() {
+		t.Helper()
+		if _, err := ds.ProcessTriggers(ctx); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+	}
+	syncOf := func() (any, any) {
+		t.Helper()
+		rec, err := ds.Get(ctx, meterAccount, "acct")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rec.Properties["syncState"], rec.Properties["lastSyncStartedAt"]
+	}
+	asItWas := func(when string, firstStart any) {
+		t.Helper()
+		if state, started := syncOf(); state != substrate.SyncStateOK || started != firstStart {
+			t.Fatalf("%s: syncState %v started %v, want ok from the first run's start %v", when, state, started, firstStart)
+		}
+	}
+
+	// The first run fits, and spends 0.6 of the 1 cent.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: "acct", Properties: map[string]any{"name": "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	process()
+	state, firstStart := syncOf()
+	if state != substrate.SyncStateOK || firstStart == nil {
+		t.Fatalf("the first run left syncState %v started %v, want ok with its start", state, firstStart)
+	}
+
+	// The owner's edit is owed a run that does not fit: the walk holds it.
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, meterAccount, "acct", substrate.PatchInput{Properties: map[string]any{"name": "second"}}); err != nil {
+		t.Fatal(err)
+	}
+	process()
+	asItWas("held by the walk", firstStart)
+
+	// The race: the walk let the delivery through, its start wrote
+	// `running`, then the reservation was refused.
+	tr, _, err := ds.triggerByID(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := ds.ensureCursor(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, _, err := ds.changesPast(ctx, tr, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := matchChanges(tr, tr.selfActors(ds.registry()), changes)
+	if len(matched) != 1 || matched[0].RecordID != "acct" {
+		t.Fatalf("the change owed is %+v, want the account's edit", matched)
+	}
+	_, next, err := ds.deliverWithRetry(ctx, tr, matched[0], cursor)
+	if !errors.Is(err, errUnstartedAtAllowance) || next != cursor {
+		t.Fatalf("a delivery refused at its reservation = next %d (cursor %d), %v; want the cursor kept and the allowance's refusal", next, cursor, err)
+	}
+	asItWas("refused at the reservation", firstStart)
+	requireNoFailures(t, ds, trigger)
+
+	process()
+	asItWas("a pass while the allowance is spent", firstStart)
+	requireNoFailures(t, ds, trigger)
+
+	clock.Set(time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC))
+	process()
+	if state, started := syncOf(); state != substrate.SyncStateOK || started == nil || started == firstStart {
+		t.Fatalf("after the reset syncState %v started %v, want ok from a new run (the first started %v)", state, started, firstStart)
+	}
+	requireNoFailures(t, ds, trigger)
 }
 
 // A hand's wake or retry of a held function trigger is told so, with the
