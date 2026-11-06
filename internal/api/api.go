@@ -691,13 +691,19 @@ func spaHandler(dir string, shell func([]byte) []byte) http.HandlerFunc {
 		// Confinement is checked BEFORE the stat, not left to ServeFile: an
 		// answer that differs for a file outside the directory is an existence
 		// oracle over the whole filesystem even when no byte of it is served.
-		// filepath.IsLocal is the guard the scanner also credits: the cleaned
-		// relative path may not escape, be absolute, or be empty.
-		if rel != "/" && !filepath.IsLocal(strings.TrimPrefix(rel, "/")) {
+		// filepath.IsLocal is the guard the scanner also credits, and only on
+		// the very value that reaches the join and with no other branch around
+		// it: the cleaned relative path may not escape, be absolute, or be empty.
+		if rel == "/" {
+			serveIndex(w, r)
+			return
+		}
+		name := strings.TrimPrefix(rel, "/")
+		if !filepath.IsLocal(name) {
 			http.NotFound(w, r)
 			return
 		}
-		file := filepath.Join(root, filepath.FromSlash(rel))
+		file := filepath.Join(root, filepath.FromSlash(name))
 		if file != root && !strings.HasPrefix(file, root+string(filepath.Separator)) {
 			http.NotFound(w, r)
 			return
