@@ -119,6 +119,7 @@ describe("templateYAML", () => {
     expect(idErrors("floor-first")).toHaveLength(1)
     // An id the writer minted in the substrate's shape is accepted.
     expect(idErrors("01h2xcejqtf2nbrexx3vqjhp41")).toHaveLength(0)
+    expect(idErrors("0188bac7-4afa-78aa-bc3b-bd1eef28d881")).toHaveLength(0)
     // An edit addresses the record that exists; the id is the route's.
     expect(
       idErrors("floor-first", {

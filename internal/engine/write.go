@@ -357,7 +357,7 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 	if substrate.NamesItsRecords(t.actor) || ty.IDType() == vocabulary.IDsNamed || vocabulary.MintedID(id) {
 		return nil
 	}
-	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id as a UUIDv7 in 26 lowercase Crockford base32 characters",
+	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id yourself: a UUIDv7 as 26 lowercase Crockford base32 characters, or as canonical lowercase UUID text",
 		substrate.ErrValidation, id, ty.Identity)
 }
 

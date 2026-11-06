@@ -59,7 +59,8 @@ working. Who may choose a new record's id
   [vocabulary](vocabulary.md#the-reserved-keys)). A metric's ids are named:
   it is found by `health/body_mass`.
 - A person, an app or an agent creating a record of a minted kind omits the
-  id and the server mints one, or computes one itself in the same shape: a fresh UUIDv7
+  id and the server mints one, or computes one itself in the same shape (or
+  as a UUID's canonical lowercase text, the apps' spelling): a fresh UUIDv7
   for an offline create, or one derived from an upstream key
   (`vocabulary.DerivedMintedID`) so a re-sync names the same row. Any other
   id is refused, because an id named after a record's title stops matching

@@ -46,7 +46,8 @@ word. A document with ` + "`metadata.id`" + `
 is PUT at that id, which updates the record there; without one it is POSTed
 to the records route, which assigns one. A new record of a kind that is not
 ` + "`internal`" + ` takes the id the substrate assigns: a PUT that would create
-it under any id but a minted one (26 lowercase Crockford base32 characters)
+it under any id but a minted one (26 lowercase Crockford base32 characters,
+or a lowercase UUID)
 is refused. The
 ` + "`status`" + ` block written by ` + "`substratectl get -o yaml`" + ` is ignored, so
 get output is directly apply-able.

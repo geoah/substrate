@@ -48,16 +48,22 @@ Chosen: the fourth.
   `ids: {type: named}`. Absent, an `internal` kind reads as `named` and
   every other kind as `minted`. The key is a mapping so a later key (a
   function that generates the ids) joins `type` without a new shape. The
-  seeded `observations/metric` declares `named`.
+  seeded `observations/metric` declares `named`, and so does every mirror
+  kind of the Apple provider, whose ids are the Sync app's hashes of Apple's
+  identifiers (`apple-<32 hex>`): never a title, so they cannot go stale, and
+  every row a device already pushed keeps its id.
 - **A person, an app or an agent creates a record of a minted kind under a
   minted id.** Omitting the id lets the server mint one. An id the writer
   computes in the same shape is accepted: a fresh UUIDv7, so an offline
   outbox knows a record's id before the server answers, or one derived from
   an upstream key (`vocabulary.DerivedMintedID`, a UUIDv8 of the key's
-  sha256), so a mirror that re-syncs names the same row. Any other id is
-  refused with `422 validation`. The check is on the shape (26 Crockford
-  characters, the first `0` to `7`), not the UUID version: only an id the
-  server mints is guaranteed to be a UUIDv7.
+  sha256), so a mirror that re-syncs names the same row. Two spellings
+  pass: the server's 26 Crockford characters, and a UUID's canonical
+  lowercase text, which the apps already mint (a Workouts session id is
+  also its HealthKit workout's sync identifier, and builds that have not
+  updated keep sending them). Any other id is refused with
+  `422 validation`. The check is on the shape, not the UUID version: only
+  an id the server mints is guaranteed to be a UUIDv7.
 - **Code that derives ids from data names records of any kind:** the engine
   and the host's other hands, a bundle's install, and a function's effects.
   A bundle closure's data documents keep the ids the package ships whoever
@@ -101,15 +107,13 @@ ids are names, as it is for its purpose
   package that ships it, the observations package among them. It is the
   cost [0020](0020-dialect-keys-are-reserved-not-tolerated.md) names for
   every new key, and the rollback path is the newer binary.
-- Bad, because every app that creates records under its own ids must change
-  before it meets this binary: the Workouts app mints its routine, exercise
-  and setup ids, and the Apple sync app derives its mirror ids
-  (`DerivedMintedID` over the store and Apple's identifier) instead of
-  composing readable ones. Rows it already wrote keep their ids, and a PUT
-  at one of them is an update, so the app must keep addressing a row it
-  already pushed by the id it pushed it under. The readable composed ids of
-  [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)
-  now hold for functions alone; an app's mirror row takes a derived one.
+- Bad, because an app that slugs titles into ids must change before it meets
+  this binary: the Workouts app mints its new routines and exercises,
+  derives its library and sample ids, and derives its Hevy imports' ids.
+  Rows it already wrote keep their ids, and a PUT at one of them is an
+  update.
+- Bad, because a client id has two accepted spellings, so a reader that
+  recognises a minted id checks both.
 - Bad, because an id minted before this record (12 characters of `a-z2-7`)
   does not have the minted shape: a person cannot create a record under one
   elsewhere, such as a copy into another repository by `get -o yaml` and

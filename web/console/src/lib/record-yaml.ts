@@ -108,8 +108,10 @@ export function serverAssignsID(kind: KindInfo): boolean {
 }
 
 /** The shape of a minted id (`vocabulary.MintedID`): a UUIDv7 as 26
- * lowercase Crockford base32 characters. */
-const MINTED_ID = /^[0-7][0-9a-hjkmnp-tv-z]{25}$/
+ * lowercase Crockford base32 characters, or a UUID's canonical lowercase
+ * text, the spelling the apps mint. */
+const MINTED_ID =
+  /^(?:[0-7][0-9a-hjkmnp-tv-z]{25}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
 
 /** The apply-able envelope a NEW record of `kind` starts from, as a yaml
  * Document with comments. `kind` is fixed to the kind reference;
@@ -368,7 +370,7 @@ export function validateApplyDoc(
   ) {
     problems.push({
       severity: "error",
-      message: `\`metadata.id\` is not a minted id. Remove the line and the substrate assigns one, or write a minted id: 26 lowercase Crockford base32 characters, the first 0 to 7.`,
+      message: `\`metadata.id\` is not a minted id. Remove the line and the substrate assigns one, or write a minted id: 26 lowercase Crockford base32 characters (the first 0 to 7), or a lowercase UUID.`,
       path: "metadata.id",
       line: lineOfKey(text, "id"),
     })

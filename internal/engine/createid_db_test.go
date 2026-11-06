@@ -47,10 +47,13 @@ func TestANewRecordTakesAMintedID(t *testing.T) {
 		t.Fatalf("minted %q", minted.ID)
 	}
 
-	// An id in the minted shape, minted by the writer (an offline outbox).
-	const own = "01h2xcejqtf2nbrexx3vqjhp41"
-	if got := mustPut(t, ds, app, substrate.PutInput{Kind: task, ID: own, Properties: props("Offline")}); got.ID != own {
-		t.Fatalf("created %q, want %q", got.ID, own)
+	// An id in the minted shape, minted by the writer (an offline outbox),
+	// in either spelling: the server's Crockford form or a UUID's canonical
+	// text, which the apps mint.
+	for _, own := range []string{"01h2xcejqtf2nbrexx3vqjhp41", "0188bac7-4afa-78aa-bc3b-bd1eef28d881"} {
+		if got := mustPut(t, ds, app, substrate.PutInput{Kind: task, ID: own, Properties: props("Offline")}); got.ID != own {
+			t.Fatalf("created %q, want %q", got.ID, own)
+		}
 	}
 
 	// Writers that derive ids from data keep naming their records.

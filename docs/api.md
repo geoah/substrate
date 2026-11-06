@@ -243,12 +243,14 @@ follows, and `Idempotency-Key` binds to it
 
 A `PUT` that would CREATE a record of a kind whose ids are minted (its
 `ids.type`, [vocabulary](vocabulary.md#the-reserved-keys)), sent by a person,
-an app or an agent, is `422` unless its id has the minted shape: 26 lowercase Crockford base32
-characters, the first `0` to `7`. The server mints a UUIDv7 for a `POST`; a
+an app or an agent, is `422` unless its id has the minted shape: 26 lowercase
+Crockford base32 characters with the first `0` to `7`, or a UUID's canonical
+lowercase text (`0188bac7-4afa-78aa-bc3b-bd1eef28d881`). The server mints a UUIDv7 for a `POST`; a
 client may mint one itself for an offline create, or derive one from an
 upstream key so a re-sync names the same row. A `PUT` at a record that exists
 is an update and takes any id. Functions and bundles keep their composed ids,
-and a named kind (a metric, every `internal` kind) takes the writer's
+and a named kind (a metric, an Apple mirror row, every `internal` kind) takes
+the writer's
 ([0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
 
 ## The flat record

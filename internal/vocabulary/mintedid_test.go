@@ -30,6 +30,11 @@ func TestMintedIDShape(t *testing.T) {
 		"01H2XCEJQTF2NBREXX3VQJHP41": false,
 		"01h2xcejqtf2nbrexx3vqjhp4":  false,
 		"floor-first-full-body":      false,
+		// A UUID's canonical text, lowercase, is the apps' spelling.
+		"0188bac7-4afa-78aa-bc3b-bd1eef28d881": true,
+		"0188BAC7-4AFA-78AA-BC3B-BD1EEF28D881": false,
+		"0188bac74afa78aabc3bbd1eef28d881":     false,
+		"0188bac7-4afa-78aa-bc3b-bd1eef28d88":  false,
 	} {
 		if got := MintedID(id); got != want {
 			t.Errorf("MintedID(%q) = %v, want %v", id, got, want)

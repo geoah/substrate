@@ -118,6 +118,12 @@ const MintedIDLen = 26
 // character carries three bits, so it is 0 to 7.
 var reMinted = regexp.MustCompile(`^[0-7][0-9a-hjkmnp-tv-z]{25}$`)
 
+// reUUID is a UUID's canonical text, lowercase and hyphenated: the other
+// spelling a client may create a record under, because it is what the apps
+// mint and what a HealthKit workout already carries as its sync identifier.
+// The server mints the Crockford form alone.
+var reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
 // crockford is the lowercase Crockford base32 alphabet a minted id is written
 // in: no i, l, o or u, so an id read aloud or copied by hand has one spelling.
 const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
@@ -160,10 +166,12 @@ func DerivedMintedID(parts ...string) string {
 }
 
 // MintedID reports whether s has the shape of a minted record id: the id a
-// person, an app or an agent may give a new record of a kind the repository
-// installed (decision 0228). The shape is checked, not the UUID version, so
-// a writer minting offline needs only the encoding.
-func MintedID(s string) bool { return reMinted.MatchString(s) }
+// person, an app or an agent may give a new record of a minted kind
+// (decision 0228). Two spellings pass: the 26 Crockford characters the
+// server mints, and a UUID's canonical lowercase text, which the apps mint.
+// The shape is checked, not the UUID version, so a writer minting offline
+// needs only the encoding. Both are opaque: neither can spell a title.
+func MintedID(s string) bool { return reMinted.MatchString(s) || reUUID.MatchString(s) }
 
 // ValidID reports whether s is a legal record id (see reID).
 func ValidID(s string) bool {
