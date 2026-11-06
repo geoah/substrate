@@ -22,8 +22,11 @@ import (
 
 // hostEmbedProviderID is the provider id the host's embeddings entry stamps
 // its vectors with. It names no row: the semantic query and the reconcile
-// compare it as they compare a row id.
-const hostEmbedProviderID = "host"
+// compare it as they compare a row id. Its parentheses are outside the record
+// id alphabet (vocabulary.ValidID), so no llm/provider row can carry it, and
+// moving between the host's entry and a row always changes the pair, whatever
+// the row is called and whichever model it names.
+const hostEmbedProviderID = "(host)"
 
 // hostEntryFor is the host entry serving the provider row id, given the row's
 // stored apiKey value, or nil when the row is the person's: a key of its own,

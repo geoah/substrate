@@ -2,8 +2,9 @@ package engine
 
 // The host's ledger against real HTTP answers (decision 0230): what a failed
 // host-paid call settles to, the title and compaction calls on a host-backed
-// row, reservations racing for the last of the allowance, and one
-// repository's ledger against another's.
+// row, reservations racing for the last of the allowance, one repository's
+// ledger against another's, and the embeddings stamp against a row that
+// shares its name.
 
 import (
 	"context"
@@ -18,9 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // lastReservation is the newest ledger row.
@@ -373,5 +376,82 @@ func TestHostLedgerIsPerRepository(t *testing.T) {
 	}
 	if rows := hostLedger(t, other); len(rows) != 1 {
 		t.Fatalf("the other repository reads %d ledger rows, want its own one", len(rows))
+	}
+}
+
+// The host's embeddings stamp is no row id, so a row named `host` claiming the
+// same model is another pair: moving from the host's entry to that row, or
+// back, leaves the old vectors stale and buys them again.
+func TestHostEmbeddingsStampNeverMatchesARowNamedHost(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	if vocabulary.ValidID(hostEmbedProviderID) {
+		t.Fatalf("the host's stamp %q is a valid record id", hostEmbedProviderID)
+	}
+	hostEmb, rowEmb := newHostEmbedFake(t), newHostEmbedFake(t)
+	ds := openInternalDataset(t, WithHostDefaults(hostChatConfig("https://llm.example.com/v1", hostEmb.srv.URL, 1000)))
+	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
+	ds.svc.hostNow = clock.Now
+	if err := enginetest.InstallShelf(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+	book, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Atlas", "description": "saxophone almanac chapter"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := func() string {
+		t.Helper()
+		var provider, model string
+		if err := ds.db.QueryRow(`SELECT provider, model FROM embeddings WHERE record_id = $1`, book.ID).Scan(&provider, &model); err != nil {
+			t.Fatal(err)
+		}
+		if model != "text-embedding-3-small" {
+			t.Fatalf("vector model %q", model)
+		}
+		return provider
+	}
+	drain := func() {
+		t.Helper()
+		if n, err := ds.ProcessEmbedQueue(ctx, 20); err != nil || n != 1 {
+			t.Fatalf("drain = %d, %v; want 1", n, err)
+		}
+	}
+	reconcile := func() int {
+		t.Helper()
+		n, err := ds.reconcileEmbeddings(ctx, ds.db, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	drain()
+	if p := stamp(); p != hostEmbedProviderID {
+		t.Fatalf("the host's vector is stamped %q", p)
+	}
+
+	// The person's own row named `host` takes the job on the same model.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "host", Properties: map[string]any{
+		"wire": "openai", "baseURL": rowEmb.srv.URL, "apiKey": "row-embed-key-fixture", "embedModel": "text-embedding-3-small",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if n := reconcile(); n != 1 {
+		t.Fatalf("after the row took the job the reconcile queued %d, want the host's vector", n)
+	}
+	drain()
+	if p := stamp(); p != "host" || len(rowEmb.authsSeen()) != 1 {
+		t.Fatalf("the vector is stamped %q after %d requests to the row's endpoint; want the row's own", p, len(rowEmb.authsSeen()))
+	}
+
+	// Back to the host's entry: the row's vectors are not the host's.
+	mustPatchInternal(t, ds, typeProvider, "host", map[string]any{"embedModel": nil})
+	if n := reconcile(); n != 1 {
+		t.Fatalf("after the row let go the reconcile queued %d, want the row's vector", n)
+	}
+	drain()
+	if p := stamp(); p != hostEmbedProviderID || len(hostEmb.authsSeen()) != 2 {
+		t.Fatalf("the vector is stamped %q after %d requests to the host's endpoint; want the host's again", p, len(hostEmb.authsSeen()))
 	}
 }

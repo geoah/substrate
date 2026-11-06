@@ -1182,7 +1182,8 @@ names an `embedModel` is refused at the write, as is a model whose vectors are
 not 1536 wide ([decision
 0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Where no row declares `embedModel`
 and the host file names an `embeddings` entry, the host's entry buys the
-vectors and stamps them with the provider id `host`; a row that declares
+vectors and stamps them with the provider id `(host)`, which no row id can
+be; a row that declares
 `embedModel` wins, and must carry its own key. Every
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones

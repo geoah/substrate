@@ -334,7 +334,8 @@ section above says. With it:
   defaults, cache, title model, models and prices. Nothing on the row but its
   id reaches the request. A row with its own key is the person's.
 - Where no row declares `embedModel`, the file's one `embeddings` entry buys
-  the repository's vectors, stamped with the provider id `host`.
+  the repository's vectors, stamped with the provider id `(host)`, which no
+  row id can be.
 - Every host-paid call first reserves its worst-case cost against
   `budget.centsPerDay`, per repository and per UTC calendar day, and settles
   to its reported cost after. A call that reports no usage counts at that

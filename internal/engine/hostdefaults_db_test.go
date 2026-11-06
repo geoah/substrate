@@ -443,7 +443,7 @@ func TestHostHoldsARunAtTheLimit(t *testing.T) {
 }
 
 // The host's embeddings entry serves a repository whose rows claim none: the
-// drain buys vectors on the host's key, stamped `host`, the semantic arm
+// drain buys vectors on the host's key, stamped `(host)`, the semantic arm
 // reads them, the import's reconcile keeps them as current, and at the limit
 // a hybrid search answers by its words while a semantic one is refused. A row
 // that claims embedModel without a key of its own is refused.

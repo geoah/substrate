@@ -36,8 +36,9 @@ Nothing on the row except its id and its empty key is read for such a call, so
 a person can reach a host-paid request only with a prompt and a model from the
 host's list. A row with its own key behaves as before. When no row claims
 `embedModel`, the host's one `embeddings` entry is the repository's embeddings
-provider and stamps its vectors with the provider id `host`; a row that claims
-`embedModel` must carry its own key.
+provider and stamps its vectors with the provider id `(host)`, which the record
+id alphabet refuses, so no row's vectors can carry the same pair; a row that
+claims `embedModel` must carry its own key.
 
 Writing the key into the rows lost because it puts the host's credential in
 the repository: the sealed store, the changelog and the recovery export would
