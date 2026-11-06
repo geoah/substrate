@@ -352,13 +352,22 @@ func xcCaseWeekdayStandup(c *C) {
 
 	// Past the rows anybody wrote, the timeline keeps going: week 4 over both
 	// kinds is five COMPUTED occurrences of the series, one per weekday at
-	// 09:30, each carrying the series' rule-less properties and its slot at
-	// the id `<series id>_<slot>`. The override pair rides a computed
-	// occurrence only when the series' kind binds `override` (docs/api.md,
-	// the window read): a calendar's override is a `calendarevent`, another
-	// kind, so a `calendareventseries` occurrence carries the slot alone. The
-	// series row itself is never on the page.
-	week4 := xcTimeline(c, monday.AddDate(0, 0, 21), monday.AddDate(0, 0, 26))
+	// the anchor's wall clock in the series' zone, each carrying the series'
+	// rule-less properties and its slot at the id `<series id>_<slot>`. The
+	// override pair rides a computed occurrence only when the series' kind
+	// binds `override` (docs/api.md, the window read): a calendar's override
+	// is a `calendarevent`, another kind, so a `calendareventseries`
+	// occurrence carries the slot alone. The series row itself is never on
+	// the page. A DST change in London between the anchor and week 4 moves
+	// the slots' UTC instants by an hour, so the week is read as whole London
+	// days and each slot is computed at the anchor's London time.
+	london, err := time.LoadLocation("Europe/London")
+	c.requiref(err == nil, "loading Europe/London: %v", err)
+	anchor := monday.In(london)
+	londonDay := func(days, hour, minute int) time.Time {
+		return time.Date(anchor.Year(), anchor.Month(), anchor.Day()+days, hour, minute, 0, 0, london)
+	}
+	week4 := xcTimeline(c, londonDay(21, 0, 0), londonDay(26, 0, 0))
 	var computed []record
 	for _, rec := range week4 {
 		c.requiref(rec.ID != standup, "the series row itself sits on the timeline: %v", rec)
@@ -368,7 +377,7 @@ func xcCaseWeekdayStandup(c *C) {
 	}
 	c.requiref(len(computed) == 5, "week 4 computes %d standups, want 5: %v", len(computed), week4)
 	for i, rec := range computed {
-		wantAt := monday.AddDate(0, 0, 21+i)
+		wantAt := londonDay(21+i, anchor.Hour(), anchor.Minute()).UTC()
 		c.requiref(rec.prop("at") == wantAt.Format(time.RFC3339),
 			"computed standup %d sits at %q, want %s", i, rec.prop("at"), wantAt.Format(time.RFC3339))
 		c.requiref(rec.ID == standup+"_"+wantAt.UTC().Format("20060102T150405Z"),
@@ -682,6 +691,15 @@ func xoCaseDoseWeek(c *C) {
 
 	base := xcMonday(c.r).Truncate(24 * time.Hour) // the block's Monday, 00:00Z
 	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
+	athens, err := time.LoadLocation("Europe/Athens")
+	c.requiref(err == nil, "loading Europe/Athens: %v", err)
+	// doseOn is the slot the rule names i days after the anchor: the anchor's
+	// wall clock in the schedule's zone recurs, so a DST change in Athens
+	// moves the slot's UTC instant by an hour.
+	doseOn := func(i int) time.Time {
+		local := dose.In(athens)
+		return time.Date(local.Year(), local.Month(), local.Day()+i, local.Hour(), local.Minute(), 0, 0, athens).UTC()
+	}
 	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
 
 	schedule := eid("levothyroxine-daily")
@@ -708,7 +726,7 @@ func xoCaseDoseWeek(c *C) {
 	ats := xoDoses(week, schedule)
 	c.requiref(len(ats) == 7, "a daily rule names 7 instants in a week, got %v", ats)
 	for i, at := range ats {
-		want := dose.AddDate(0, 0, i).Format(time.RFC3339)
+		want := doseOn(i).Format(time.RFC3339)
 		c.requiref(at == want, "dose %d computed at %s, want %s", i, at, want)
 	}
 	for _, rec := range week {
@@ -718,7 +736,7 @@ func xoCaseDoseWeek(c *C) {
 
 	// A taken dose is an occurrencelog: a temporal row of its own in the same
 	// window, beside the slot it marks, which it never hides.
-	tue := dose.AddDate(0, 0, 1)
+	tue := doseOn(1)
 	doseTue := eid("x-occ-dose-tue")
 	c.putRec(xoLogCollection, doseTue, map[string]any{
 		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
@@ -744,7 +762,7 @@ func xoCaseDoseWeek(c *C) {
 	// Google override lands.
 	exdates, rdates := []string{}, []string{}
 	for i := range 7 {
-		exdates = append(exdates, dose.AddDate(0, 0, 7+i).Format(time.RFC3339))
+		exdates = append(exdates, doseOn(7+i).Format(time.RFC3339))
 		rdates = append(rdates, base.AddDate(0, 0, 7+i).Add(13*time.Hour).Format(time.RFC3339))
 	}
 	status, raw = c.do(http.MethodPatch, xoScheduleCollection+"/"+schedule,
@@ -758,7 +776,7 @@ func xoCaseDoseWeek(c *C) {
 		c.requiref(at == want, "travel dose %d computed at %s, want %s (the moved slot)", i, at, want)
 	}
 	home := xoDoses(xoWindow(c, week3, week4, xoScheduleKind), schedule)
-	c.requiref(len(home) == 7 && home[0] == dose.AddDate(0, 0, 14).Format(time.RFC3339),
+	c.requiref(len(home) == 7 && home[0] == doseOn(14).Format(time.RFC3339),
 		"the week after the trip must dose at home time again, got %v", home)
 	c.stepf("the travel week reads 7 moved doses and week three is home time again — the rule itself never changed")
 }
