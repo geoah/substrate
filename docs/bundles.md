@@ -600,7 +600,9 @@ person wrote never reaches a call the operator pays for. The call reserves the
 file's `pricePerCall` against the day's allowance first, and is refused with
 reason `quota` when it does not fit; a trigger of that function waits at the
 limit instead, unclaimed, and the first dispatcher pass after the reset
-delivers it. The key never becomes a record, and the
+delivers it. A paged drain the limit stops after its first page parks
+instead, keeping its checkpoint, and a retry after the reset resumes it. The
+key never becomes a record, and the
 empty secret is no setup item while the operator covers it. A key the person
 writes wins, and clearing it returns the calls to the operator's
 ([0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).

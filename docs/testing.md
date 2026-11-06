@@ -331,7 +331,11 @@ The `TestMain` of `internal/engine` and of `internal/providertest` calls
 then on the sandbox's connect gate lets a body reach loopback and nothing
 else, whatever its `permissions.network` and `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
 say, and it refuses the system resolver too, so a body cannot even look up a
-provider's name. A shipped provider's body that a regression points at its
+provider's name. The gate checks `connect(2)`, so a confined body also gets
+no internet socket but a TCP stream and no TCP Fast Open send: a datagram,
+raw, SCTP or MPTCP socket would reach an address without connecting. An
+outside body's proxy resolves a name from the hosts file alone. A shipped
+provider's body that a regression points at its
 real API (a dropped origin check, a lost `baseUrl`, an operator key that was
 supposed to be refused) fails with `the sandbox's connect gate refused …:
 this process confines a body's egress` instead of sending anything. A host

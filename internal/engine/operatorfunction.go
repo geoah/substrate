@@ -20,7 +20,11 @@ package engine
 // it claims the delivery, and a call the allowance refuses after that, its
 // room taken by a call racing it, ends the delivery unclaimed
 // (errUnstartedAtAllowance). Either way the cursor or the fire state stays,
-// and the next pass after the reset delivers the same change or occurrence.
+// and the next pass after the reset delivers the same change or occurrence;
+// a `sync` record the delivery's start marked `running` goes back to its
+// prior state (sync.go syncUnstart). A paged drain refused at a later page
+// is the exception: its pages committed, so it parks with its checkpoint
+// (errPagedParked), and a hand's retry resumes it.
 //
 // An operator-paid call gets the key ALONE in `config.settings`: none of the
 // person's settings ride beside it. That is the LLM rule of the same record

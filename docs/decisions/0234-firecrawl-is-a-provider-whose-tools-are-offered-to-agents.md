@@ -68,8 +68,15 @@ nothing when the runner never started it; at the limit it is refused with
 reason `quota`, never run on an empty key. A trigger of such a function is
 held at the limit as an agent trigger is
 ([0149](0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md)):
-the dispatcher leaves the change or occurrence unclaimed, nothing parks, and
-the first pass after the reset delivers it. An operator-paid
+the dispatcher leaves the change, occurrence or webhook request unclaimed,
+nothing parks, and the first pass after the reset delivers it. A `sync`
+record whose delivery the allowance refuses after its start wrote `running`
+goes back to the state it had. One case parks: a paged drain whose later
+page the allowance refuses has already committed pages, so it parks as a
+drain that fails after committed progress does, its checkpoint kept, and a
+retry by hand after the reset resumes it at that page; a `sync` record it
+was running reads `erroring`. Holding it unclaimed instead would leave the
+change both partly applied and owed. An operator-paid
 call gets the key alone in `config.settings`: no setting the person wrote
 rides beside it. That is 0235's rule that nothing the person writes reaches
 an operator-paid request, and it keeps the key off loopback: the bodies send
@@ -99,18 +106,24 @@ catalog.
   beside the operator's key needs this rule revisited.
 - Bad, because a call settles at its price even when the body refused before
   sending anything, so the allowance overcounts those calls.
+- Bad, because a paged drain that meets the limit after its first page parks,
+  and only a retry by hand resumes it after the reset.
 
 ### Confirmation
 
 `internal/engine/operatorfunction_db_test.go` holds the injection (listed
 consumers only, the key alone, an own key winning, an empty one counting as
 none, no copy, the allowance's refusal, reserve and settle at the price or at
-nothing for a body the runner never started, a record and a schedule trigger
-held until the reset, the read's `function/<package>` item) and the seeded
+nothing for a body the runner never started, a record, a schedule and a
+webhook trigger held until the reset, a `sync` record left as it was by a
+call refused at its reservation, the read's `function/<package>` item) and
+the seeded
 assistant taking both tools beside an offering copy;
 `internal/engine/offeredtools_test.go` holds a copy given the provider's
 tool name. The engine and provider test binaries confine every body to
-loopback, so a Firecrawl body these tests run cannot reach Firecrawl.
+loopback, so a Firecrawl body these tests run cannot reach Firecrawl: it gets
+no datagram socket, and its connects and its proxy's lookups stay on the
+host.
 `internal/providertest/firecrawl_test.go` holds the closure, the refused
 origins and redirects, and `webscrape` behaving as `scrapepage` did;
 `TestBodyHelpersFirecrawl` holds where the module sends a key that arrives
