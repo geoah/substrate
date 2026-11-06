@@ -3,13 +3,7 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// A task as a card: the round mark that completes or reopens it, its name
-/// in the serif the lists are headed in, the opening of its notes, and its
-/// facts as small tinted chips that wrap: how urgent it is, when it is due,
-/// the list it is in. Red is lateness and the most urgent; a done task is
-/// struck through and faded. The mark and the rest are two controls: `open`,
-/// where a card is a button (a phone, an iPad's middle column), opens the
-/// task; `selected` outlines the open one.
+/// Completion and opening remain separate controls, each with a full touch target.
 struct TaskRowView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -19,11 +13,11 @@ struct TaskRowView: View {
     var selected = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .top, spacing: 4) {
             Button(action: toggle) {
                 Image(systemName: row.status == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.status))
                     .font(.system(size: markSize))
-                    .foregroundStyle(row.status == .done ? Color.green : Color.secondary)
+                    .foregroundStyle(row.status == .done ? Color.accentColor : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.rect)
@@ -45,17 +39,16 @@ struct TaskRowView: View {
         }
         .padding(.leading, 6)
         .padding(.trailing, 14)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(TasksSymbols.card.opacity(isOpen ? 1 : 0.6))
-                .shadow(color: .black.opacity(isOpen ? 0.03 : 0), radius: 6, y: 2)
         }
         .overlay {
             // The open task, beside its detail: a wash of the accent and a
             // fine line, never an alarm.
             if selected {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.brandAccent.opacity(0.06))
                     .strokeBorder(Color.brandAccent.opacity(0.45), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -64,9 +57,9 @@ struct TaskRowView: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(row.title)
-                .font(.system(.title3, design: .serif).weight(.semibold))
+                .font(.body.weight(.medium))
                 .foregroundStyle(isOpen ? Color.primary : Color.secondary)
                 .strikethrough(!isOpen)
                 .fixedSize(horizontal: false, vertical: true)
@@ -75,7 +68,7 @@ struct TaskRowView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .strikethrough(!isOpen)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
             if isOpen, hasChips {
                 Group {
@@ -88,7 +81,8 @@ struct TaskRowView: View {
                 .padding(.top, 2)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(.rect)
     }
 
@@ -98,11 +92,11 @@ struct TaskRowView: View {
 
     @ViewBuilder
     private var chips: some View {
-        if let priority = row.priority {
-            Chip(text: priority.text, symbol: "flag.fill", color: TasksSymbols.color(priority.priority), emphasis: true)
-        }
         if let due = row.due {
             Chip(text: due.text, symbol: "clock", color: dueColor(due.tone), emphasis: due.tone == .overdue)
+        }
+        if let priority = row.priority {
+            Chip(text: priority.text, symbol: "flag", color: TasksSymbols.color(priority.priority), emphasis: false)
         }
         if let list = row.listName {
             Chip(text: list, symbol: "list.bullet", color: .secondary, emphasis: false)
@@ -122,8 +116,7 @@ struct TaskRowView: View {
     }
 }
 
-/// One fact on a card: a small symbol and its words, on a tint of its
-/// colour.
+/// Reserve a filled badge for overdue dates so neutral facts stay quiet.
 private struct Chip: View {
     let text: String
     let symbol: String
@@ -135,9 +128,9 @@ private struct Chip: View {
             .labelStyle(TightLabelStyle(spacing: 4))
             .font(.caption.weight(emphasis ? .semibold : .medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.07), in: .capsule)
+            .padding(.horizontal, emphasis ? 6 : 0)
+            .padding(.vertical, 2)
+            .background(color.opacity(emphasis ? 0.08 : 0), in: .capsule)
     }
 }
 

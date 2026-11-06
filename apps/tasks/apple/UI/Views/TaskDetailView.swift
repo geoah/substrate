@@ -28,7 +28,7 @@ struct TaskDetailView: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel(detail.status == .open ? "Mark as Done" : "Reopen")
                     Text(detail.title)
-                        .font(.system(.title2, design: .serif).weight(.semibold))
+                        .font(.title2.weight(.semibold))
                         .foregroundStyle(detail.status == .open ? Color.primary : Color.secondary)
                         .strikethrough(detail.status == .abandoned)
                         .fixedSize(horizontal: false, vertical: true)

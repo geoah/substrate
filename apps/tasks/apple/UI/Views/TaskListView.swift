@@ -5,11 +5,7 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// One list's tasks as cards on a washed screen: what the list holds at a
-/// glance, then To Do, in the order the presentation gives and dragged to
-/// reorder where it allows, then Done when shown. Adding is the round +:
-/// the tab bar's on a phone (`addsFromTabBar`), this column's own beside a
-/// detail. The list's options are one tap away. Every change is a command.
+/// Lists retain native selection, swipe actions and manual reordering.
 struct TaskListView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -24,16 +20,13 @@ struct TaskListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background { TasksSymbols.screen }
-            .overlay {
-                if let empty = list.empty, list.closed.rows.isEmpty {
-                    ContentUnavailableView(empty.title, systemImage: "checkmark.circle", description: Text(empty.message))
-                        .padding(.top, 120)
-                }
-            }
             .navigationTitle(list.title)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Notices(link: link, app: app).padding(.horizontal)
+            }
             .refreshable { shell.send(.refresh) }
             .safeAreaInset(edge: .bottom) {
-                if !addsFromTabBar {
+                if !addsFromTabBar, list.empty == nil || !list.closed.rows.isEmpty {
                     NewTaskButton(title: list.newTask)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 20)
@@ -59,14 +52,30 @@ struct TaskListView: View {
 
     @ViewBuilder
     private var rows: some View {
-        // Today's day at a glance; a list's own count is its heading's.
-        if list.selection == .today {
+        // Empty states carry their own heading and action.
+        if list.empty == nil {
             SummaryCard(summary: list.summary)
                 .plainRow(top: 4, bottom: 6)
         }
+        if let empty = list.empty, list.closed.rows.isEmpty {
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(empty.title).font(.title2.weight(.semibold))
+                Text(empty.message)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                NewTaskButton(title: list.newTask)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .plainRow(top: 32, bottom: 24)
+        }
         if !list.open.rows.isEmpty {
             Section {
-                heading(list.openTitle, count: list.open.rows.count, note: list.orderNote)
+                heading(list.openTitle, count: nil, note: list.orderNote)
                 ForEach(list.open.rows) { row in rowView(row) }
                     .onMove(perform: reorder)
             }
@@ -81,17 +90,18 @@ struct TaskListView: View {
 
     /// A section's name, its count in a pill beside it, and what orders it.
     private func heading(_ title: String, count: Int?, note: String?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title).font(.title3.weight(.semibold))
-            if let count {
-                Text(count, format: .number)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: .capsule)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title).font(.subheadline.weight(.semibold))
+                if let count {
+                    Text(count, format: .number)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.06), in: .capsule)
+                }
             }
-            Spacer()
             if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
         }
         .plainRow(top: 12, bottom: 2)
@@ -108,7 +118,7 @@ struct TaskListView: View {
                 TaskRowView(row: row, selected: app.detail?.id == row.id).tag(row.id)
             }
         }
-        .plainRow(top: 5, bottom: 5)
+        .plainRow(top: 2, bottom: 2)
         .swipeActions(edge: .leading) {
             Button(row.toggle) { shell.send(row.status == .open ? .complete(row.id) : .reopen(row.id)) }
                 .tint(.green)
@@ -225,50 +235,39 @@ struct TaskMenu: View {
     }
 }
 
-/// What a list holds at a glance: how many are left in the lists' serif,
-/// the day in Today, and what is late.
+/// Keep the date, workload and overdue count readable without a second card hierarchy.
 private struct SummaryCard: View {
     let summary: ListSummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(summary.headline)
-                .font(.system(.title, design: .serif).weight(.semibold))
+        VStack(alignment: .leading, spacing: 8) {
             if let detail = summary.detail {
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }
+            Text(summary.headline)
+                .font(.title2.weight(.semibold))
             if let overdue = summary.overdue {
-                Label(overdue, systemImage: "exclamationmark.circle.fill")
-                    .labelStyle(TightLabelStyle(spacing: 5))
-                    .font(.subheadline.weight(.semibold))
+                Label(overdue, systemImage: "exclamationmark.circle")
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.red)
             }
         }
-        .padding(18)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(TasksSymbols.card)
-                .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
-        }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Adding a task beside a detail (an iPad): a round glass +, kin to the
-/// phone's prominent tab. It opens the editor, seeded with the list shown
-/// (and today, in Today).
 struct NewTaskButton: View {
     @Environment(TasksShell.self) private var shell
     let title: String
 
     var body: some View {
         Button(title, systemImage: "plus") { shell.send(.newTask) }
-            .labelStyle(.iconOnly)
-            .font(.title2.weight(.medium))
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .controlSize(.extraLarge)
+            .font(.body.weight(.semibold))
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
     }
 }
 

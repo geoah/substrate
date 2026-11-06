@@ -40,14 +40,8 @@ enum TasksSymbols {
         }
     }
 
-    /// The screen behind the cards: the grouped background, washed with the
-    /// accent at the top.
     static var screen: some View {
-        LinearGradient(
-            stops: [.init(color: Color.brandAccent.opacity(0.06), location: 0), .init(color: grouped, location: 0.45)],
-            startPoint: .top, endPoint: .bottom
-        )
-        .ignoresSafeArea()
+        grouped.ignoresSafeArea()
     }
 
     static var grouped: Color {
