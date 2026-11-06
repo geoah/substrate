@@ -470,7 +470,7 @@ function formOf(c, n) {
   if (FORMS.size > 32) FORMS.clear();
   const E = eightOf(c.shapeC), b = c.balance, gk = 2.5, gt = Math.tanh(gk);
   const A = () => new Float32Array(n + 1);
-  F = { n, x: A(), y: A(), nx: A(), ny: A(), sn: A(), cs: A(), rh: A(), sx: A(), hs: A(), c1: 0, c2: n / 2, bandMax: E.bandMax };
+  F = { n, x: A(), y: A(), nx: A(), ny: A(), sn: A(), cs: A(), sx: A(), hs: A(), c1: 0, c2: n / 2, bandMax: E.bandMax };
   let minX = 1e9, maxX = -1e9;
   for (let j = 0; j <= n; j++) {
     const s = TAU * j / n, fi = (j / n) * E.M, i0 = Math.min(E.M - 1, fi | 0), fr = fi - i0;
@@ -488,12 +488,9 @@ function formOf(c, n) {
   }
   // Centre the figure and scale its full width back to 2.
   const x0 = (maxX + minX) / 2, half = (maxX - minX) / 2;
-  let maxR = 1e-6;
   for (let j = 0; j <= n; j++) {
     F.x[j] = (F.x[j] - x0) / half; F.y[j] /= half; F.hs[j] /= half;
-    const r = Math.hypot(F.x[j], F.y[j]); F.rh[j] = r; if (r > maxR) maxR = r;
   }
-  for (let j = 0; j <= n; j++) F.rh[j] /= maxR;
   FORMS.set(key, F);
   return F;
 }
@@ -1073,7 +1070,7 @@ function renderLight(B, c, field, o) {
       at(s, A, Bq, pv);
       let x = pv[0], y = pv[1], z = pv[2];
       const dzp = pv[4];
-      const j0 = pv[3], rh = F.rh[j0], sx = F.sx[j0], h = V.h[j0];
+      const j0 = pv[3], sx = F.sx[j0], h = V.h[j0];
       let mx = 0, my = 0, mz = 0;
       let alpha = pA * (0.45 + 0.55 * U[u + 9]) * (ci < fullC ? 1 : fracC);
       let size = rB * sf * (1 + c.sizeVar * 7 * Math.pow(U[u + 3], 6));
@@ -1255,7 +1252,7 @@ function layout(W, H, c, wm) {
   const S = c.zoom * Math.min(W * 0.34, H * (wm ? 0.5 : 0.6));
   return { S, ox: W / 2, oy: wm ? H * 0.43 : H * 0.5, wmSize: Math.min(W * 0.052, H * 0.085), wmY: H * 0.88 };
 }
-const staticField = new Field(false);
+const staticField = new Field();
 function drawStill(ctx, W, H, c, opts = {}) {
   const B = buffersFor(W, H), L = layout(W, H, c, opts.wordmark);
   staticField.ensure(c);
