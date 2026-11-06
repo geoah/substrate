@@ -1,13 +1,12 @@
 # Plan: host defaults and the Services page
 
-Status: proposal, 2026-11-06. Reviewed in two rounds by Astra (gpt-6-astra),
-approved for owner review with the round-2 changes applied. Not reviewed by
-the owner yet.
+Status: accepted by the owner 2026-11-06, after two review rounds by Astra
+(gpt-6-astra) and one by Fable. Implementation follows the phases below.
 
 ## The problem
 
-A person who registers on a hosted substrate (crane.garden is the first)
-cannot use most of it until they set up paid services themselves:
+A person who registers on a substrate someone else runs for them cannot use
+most of it until they set up paid services themselves:
 
 - Every agent refuses at dispatch until the person pastes an OpenAI key into
   the seeded `openai` row (`kinds/substrate.reamde.dev/llm/provider.yaml`).
@@ -19,7 +18,7 @@ cannot use most of it until they set up paid services themselves:
   and the person must first know to import the sample.
 
 The host (the operator running the deployment) holds accounts for all of
-these and will pay for a friends-and-family group. It has no way to offer
+these and may be willing to pay for the people it invites. It has no way to offer
 them: the codebase removed the host-wide LLM key on purpose ("no host-wide
 bearer can reach a repository-chosen endpoint by construction"). Nothing in
 the console tells a new person what to set up, in what order, or what is
@@ -195,9 +194,8 @@ was. On a host-connected account the functions ignore the config's
 
 ### Google: testing now, production later
 
-Owner decision, 2026-11-06: Crane starts with a Google client in **Testing**
-mode and moves to a production client, in a new GCP project, once the rest
-of this plan has landed. What Testing mode means for people, and what the
+A host may start with a Google client in **Testing** mode and move to a
+production client later. What Testing mode means for people, and what the
 plan does about it:
 
 - Only addresses listed as test users on the client (at most 100) can
@@ -480,7 +478,7 @@ at real keys.
 
 Checks: engine tests for the pair rule, the mismatch, the no-revive install
 rule across export and restore, and a real connect of a listed test user
-against the Testing client on Crane.
+against a Testing client.
 
 ### Phase 3: Firecrawl as a provider
 
@@ -506,10 +504,11 @@ account reconnects once.
 
 ## Owner decisions, 2026-11-06
 
-- Google stays in Testing mode for now; a production client in a new GCP
-  project follows the rest of this plan.
+- The plan must work with a Google client in Testing mode; a production
+  client is the host's own work after the plan lands, and needs nothing
+  more than the client swap described above.
 - One per-repository daily budget is enough; no host-wide monthly stop.
-- No per-repository withdrawal: abuse is not a concern for this group, and
-  removing an entry from the file withdraws it for everyone.
+- No per-repository withdrawal: removing an entry from the file withdraws
+  it for everyone.
 - Speech (ElevenLabs) and transcription (Soniox) are out of scope for now.
   A later provider would follow phase 3's rule for function secrets.
