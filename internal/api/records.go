@@ -353,5 +353,8 @@ func (h *handler) postRecords(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, putStatus(ent), ent)
+	// The server mints the id, so every POST is a create, a replay under its
+	// Idempotency-Key included: the replayed record no longer says it was
+	// created, and its status must not change.
+	writeJSON(w, http.StatusCreated, ent)
 }

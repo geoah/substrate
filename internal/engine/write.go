@@ -1492,7 +1492,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if t.bulk != nil {
 		return nil, nil
 	}
-	return t.record(row, sp.ty)
+	out, err := t.record(row, sp.ty)
+	if err != nil {
+		return nil, err
+	}
+	out.Created = created
+	return out, nil
 }
 
 // machineNotifies reports whether any of a machine's transitions carries the
