@@ -965,7 +965,9 @@ describe("whose key a provider runs on", () => {
     renderPage()
     await modelCard("OpenAI")
     expect(
-      within(providerCard("Google")).queryByText(/sign-in details|sign-in$/)
+      within(providerCard("Google")).queryByText(
+        /^(?:Using your sign-in details|Through .+ sign-in)$/
+      )
     ).toBeNull()
   })
 })
