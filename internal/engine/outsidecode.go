@@ -47,7 +47,13 @@ func (s *service) admitOutsideBodies() error {
 }
 
 func (ds *dataset) outsidePackage(ctx context.Context, pkg string) (bool, error) {
-	row, err := ds.loadRowDB(ctx, eref{Kind: kindPackage, ID: pkg})
+	return ds.outsidePackageOn(ctx, ds.db, pkg)
+}
+
+// outsidePackageOn is outsidePackage read through q, the pool or the
+// caller's transaction (loadRowOn).
+func (ds *dataset) outsidePackageOn(ctx context.Context, q dbx, pkg string) (bool, error) {
+	row, err := ds.loadRowOn(ctx, q, eref{Kind: kindPackage, ID: pkg})
 	if err != nil {
 		return false, err
 	}
@@ -59,7 +65,13 @@ func (ds *dataset) outsidePackage(ctx context.Context, pkg string) (bool, error)
 }
 
 func (ds *dataset) admitOutsidePackage(ctx context.Context, pkg string) error {
-	outside, err := ds.outsidePackage(ctx, pkg)
+	return ds.admitOutsidePackageOn(ctx, ds.db, pkg)
+}
+
+// admitOutsidePackageOn is admitOutsidePackage read through q, the pool or
+// the caller's transaction (loadRowOn).
+func (ds *dataset) admitOutsidePackageOn(ctx context.Context, q dbx, pkg string) error {
+	outside, err := ds.outsidePackageOn(ctx, q, pkg)
 	if err != nil {
 		return err
 	}

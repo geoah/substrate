@@ -532,9 +532,12 @@ whose refresh token is sent, including the reads after a refresh that waited
 behind another or was refused while a reconnect landed. A reconnect through
 another client between a check and the token's read therefore cannot hand its
 token to an invocation built for the old client. The `erroring` stamp resolves
-the client again and is written only while the credential is still the one
-that was compared, so a reconnect that lands first keeps its `connected`, as
-a refusal's stamp does
+the client again inside its own transaction, which no write of a client record
+or an input binding can interleave with, so an owner who removes or restores
+their client record before the stamp commits is judged by the client resolving
+then. The stamp is written only while the credential is still the one that was
+compared, so a reconnect that lands first keeps its `connected`, as a
+refusal's stamp does
 ([0180](decisions/0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md)).
 If the operator removes a provider from `oauthClients`, an account connected
 through its client has no client to refresh through: nothing is sent to the

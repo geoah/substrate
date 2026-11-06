@@ -555,13 +555,19 @@ var errSecretUnreadable = errors.New("substrate/engine: stored secret unreadable
 // openSecretValue resolves one stored secret value to its material: a secret
 // ref reads its sealed row, and any other value passes through unchanged.
 func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
+	return ds.openSecretValueOn(ctx, ds.db, stored)
+}
+
+// openSecretValueOn is openSecretValue read through q, the pool or the
+// caller's transaction (loadRowOn).
+func (ds *dataset) openSecretValueOn(ctx context.Context, q dbx, stored string) (string, error) {
 	switch {
 	case stored == "":
 		return "", nil
 	case strings.HasPrefix(stored, secretRefPrefix):
 		var payload []byte
 		var owner eref
-		err := ds.db.QueryRowContext(ctx,
+		err := q.QueryRowContext(ctx,
 			`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, stored).
 			Scan(&payload, &owner.Kind, &owner.ID)
 		if errors.Is(err, sql.ErrNoRows) {

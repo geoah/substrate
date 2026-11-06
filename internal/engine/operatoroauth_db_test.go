@@ -925,6 +925,46 @@ func TestOperatorOAuthClientStampSparesAReconnect(t *testing.T) {
 	opAccountConnectedThroughOperator(t, ds, account)
 }
 
+// A client-change stamp is decided on the client resolving when it commits,
+// not the one its caller resolved. Here the refresh pass resolves the
+// person's own client while the account records the operator's; the owner
+// then removes their record before the stamp runs, without reconnecting.
+// The operator's client resolves again and the grant was issued to it, so
+// the account keeps its `connected`.
+func TestOperatorOAuthClientStampRereadsTheClient(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, f, account := openOpMail(t)
+	f.set(func(f *opTokenFake) { f.expiresIn = 120 })
+	opConnect(t, ds, account)
+	opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+
+	var once sync.Once
+	reached := false
+	ds.svc.testOAuthPoint = func(p string) {
+		if p != oauthPointClientStamp {
+			return
+		}
+		once.Do(func() {
+			reached = true
+			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+				t.Errorf("delete the own client: %v", err)
+			}
+		})
+	}
+	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
+		t.Fatalf("refresh pass = %d, %v; want nothing refreshed", n, err)
+	}
+	ds.svc.testOAuthPoint = nil
+	if !reached {
+		t.Fatal("the refresh pass never reached the client-change stamp")
+	}
+	if _, refreshes := f.seen(); len(refreshes) != 0 {
+		t.Fatalf("the provider saw refreshes %+v", refreshes)
+	}
+	opAccountConnectedThroughOperator(t, ds, account)
+}
+
 // `operatorOffers` says whether the operator's client would serve the
 // package once the person's own record is gone, so it is false where the
 // operator's client is refused: an install that cannot record the client,

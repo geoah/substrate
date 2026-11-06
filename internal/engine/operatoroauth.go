@@ -101,23 +101,29 @@ func (c oauthClient) provenance() map[string]any {
 // the setup item says which. The sealed clientSecret of an own record is
 // opened here, the one read that needs its plaintext.
 func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (oauthClient, error) {
+	return ds.oauthClientOn(ctx, ds.db, b)
+}
+
+// oauthClientOn is oauthClientOf read through q, the pool or the caller's
+// transaction (loadRowOn).
+func (ds *dataset) oauthClientOn(ctx context.Context, q dbx, b *vocabulary.Bundle) (oauthClient, error) {
 	if b.OAuth2 == nil {
 		return oauthClient{}, fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
 	}
-	ri, err := ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput)
+	ri, err := ds.resolveBundleInputOn(ctx, q, b, b.OAuth2.ClientInput)
 	if err != nil {
 		return oauthClient{}, err
 	}
-	return ds.oauthClientFrom(ctx, b, ri)
+	return ds.oauthClientFrom(ctx, q, b, ri)
 }
 
-// oauthClientFrom is oauthClientOf over ri, a resolution of b's client input
+// oauthClientFrom is oauthClientOn over ri, a resolution of b's client input
 // the caller already holds. An invocation injects the record it resolved and
 // checks grants against the client from the same resolution: two
 // resolutions would let a client record deleted between them pair the
 // record's apiBase with the operator's client.
-func (ds *dataset) oauthClientFrom(ctx context.Context, b *vocabulary.Bundle, ri resolvedInput) (oauthClient, error) {
-	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
+func (ds *dataset) oauthClientFrom(ctx context.Context, q dbx, b *vocabulary.Bundle, ri resolvedInput) (oauthClient, error) {
+	if err := ds.admitOutsidePackageOn(ctx, q, b.Package); err != nil {
 		return oauthClient{}, err
 	}
 	if b.OAuth2 == nil {
@@ -132,7 +138,7 @@ func (ds *dataset) oauthClientFrom(ctx context.Context, b *vocabulary.Bundle, ri
 			substrate.ErrGuard, b.Package, b.OAuth2.ClientInput, ri.Detail)}
 	}
 	c := oauthClient{ID: propString(ri.Row, "clientId")}
-	if c.Secret, err = ds.openSecretValue(ctx, propString(ri.Row, propClientSecret)); err != nil {
+	if c.Secret, err = ds.openSecretValueOn(ctx, q, propString(ri.Row, propClientSecret)); err != nil {
 		return oauthClient{}, err
 	}
 	if c.ID == "" || c.Secret == "" {
@@ -281,40 +287,30 @@ func (ds *dataset) noClientTokenError(ctx context.Context, ref string, account e
 
 // noteOAuthClientChanged stamps account `erroring` with
 // reasonOAuthClientChanged when its grant at credential generation gen came
-// from another client than the one resolving now. The caller's client may
-// predate a change that already settled the mismatch, so the client is
-// resolved again here; a grant through the operator's client while no
-// client resolves at all counts as changed. Under the account's lock the
+// from another client than the one resolving now. A grant through the
+// operator's client while no client resolves at all counts as changed.
+//
+// The client is resolved inside the stamp's transaction and read through
+// it. inTx holds the repository's changelog lock from before that read to
+// the commit, and every write of a client record or of a bundle's bindings
+// takes the same lock first, so the stamp is decided on the client that
+// resolves when it commits. A caller's client, resolved earlier, may predate
+// a change that already settled the mismatch. Under the account's lock the
 // credential must still be generation gen, as for a refusal's stamp (0180):
 // a reconnect that stored a new grant meanwhile keeps its `connected`, and
-// so does a refresh that stored one through the client resolving then. A
-// read outside the transaction first skips the lock where the row already
-// says so, because the refresh loop meets a changed account on every pass.
+// so does a refresh that stored one. A read outside the transaction first
+// skips the lock where the row already says so, because the refresh loop
+// meets a changed account on every pass.
 func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen time.Time) {
 	row, err := ds.loadRowDB(ctx, account)
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
 	}
 	ty, err := ds.resolveType(row.Kind)
-	if err != nil || len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
+	if err != nil {
 		return
 	}
-	b, ok := ds.registry().BundleOf(ty.Package)
-	if !ok || b.OAuth2 == nil {
-		return
-	}
-	now, err := ds.oauthClientOf(ctx, b)
-	none := isNoClient(err)
-	if err != nil && !none {
-		return
-	}
-	changed := func(ty *vocabulary.Kind, row *erow) bool {
-		if none {
-			return grantThroughOperator(row.Props[propOAuthClient])
-		}
-		return oauthClientChanged(ty, row, now)
-	}
-	if !changed(ty, row) {
+	if len(tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)) == 0 {
 		return
 	}
 	ds.oauthPoint(oauthPointClientStamp)
@@ -346,7 +342,16 @@ func (ds *dataset) noteOAuthClientChanged(ctx context.Context, account eref, gen
 		if err != nil {
 			return err
 		}
-		if !changed(ty, row) {
+		b, ok := t.declarations().BundleOf(ty.Package)
+		if !ok || b.OAuth2 == nil {
+			return nil
+		}
+		now, err := ds.oauthClientOn(t.ctx, t.tx, b)
+		none := isNoClient(err)
+		if err != nil && !none {
+			return err
+		}
+		if none && !grantThroughOperator(row.Props[propOAuthClient]) || !none && !oauthClientChanged(ty, row, now) {
 			return nil
 		}
 		props := tokenStampProps(ty, row, tokenStatusErroring, reasonOAuthClientChanged)

@@ -65,6 +65,12 @@ func (ds *dataset) resolveBundleInputs(ctx context.Context, b *vocabulary.Bundle
 
 // resolveBundleInput resolves one input by the fixed order above.
 func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle, name string) (resolvedInput, error) {
+	return ds.resolveBundleInputOn(ctx, ds.db, b, name)
+}
+
+// resolveBundleInputOn is resolveBundleInput read through q, the pool or the
+// caller's transaction (loadRowOn).
+func (ds *dataset) resolveBundleInputOn(ctx context.Context, q dbx, b *vocabulary.Bundle, name string) (resolvedInput, error) {
 	in, ok := b.Inputs[name]
 	if !ok {
 		return resolvedInput{}, fmt.Errorf("%w: bundle %s declares no input %q", substrate.ErrNotFound, b.Package, name)
@@ -72,7 +78,7 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	ri := resolvedInput{Name: name, Input: in}
 
 	// 1. The bound record, read off the bundle row's own `bindings`.
-	bundleRow, err := ds.loadRowDB(ctx, eref{Kind: kindBundle, ID: b.Identity()})
+	bundleRow, err := ds.loadRowOn(ctx, q, eref{Kind: kindBundle, ID: b.Identity()})
 	if err != nil {
 		return ri, err
 	}
@@ -83,11 +89,11 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 		// that record lives now. Resolving before the liveness check is what
 		// keeps merging two account records from breaking every bundle bound to
 		// the loser.
-		dst, err := ds.canonicalOf(ctx, ds.db, written)
+		dst, err := ds.canonicalOf(ctx, q, written)
 		if err != nil {
 			return ri, err
 		}
-		row, err := ds.loadRowDB(ctx, dst)
+		row, err := ds.loadRowOn(ctx, q, dst)
 		if err != nil {
 			return ri, err
 		}
@@ -109,7 +115,7 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	}
 
 	// 2. The well-known id.
-	row, err := ds.loadRowDB(ctx, eref{Kind: in.Kind, ID: inputDefaultID})
+	row, err := ds.loadRowOn(ctx, q, eref{Kind: in.Kind, ID: inputDefaultID})
 	if err != nil {
 		return ri, err
 	}
@@ -119,7 +125,7 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	}
 
 	// 3. The sole live record.
-	rows, err := ds.liveRowsOf(ctx, in.Kind)
+	rows, err := ds.liveRowsOn(ctx, q, in.Kind)
 	if err != nil {
 		return ri, err
 	}

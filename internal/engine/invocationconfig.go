@@ -73,7 +73,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 		if clientInput, err = ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput); err != nil {
 			return nil, nil, err
 		}
-		client, clientErr = ds.oauthClientFrom(ctx, b, clientInput)
+		client, clientErr = ds.oauthClientFrom(ctx, ds.db, b, clientInput)
 	}
 
 	var secrets []string
@@ -256,7 +256,13 @@ func isOAuthFacilitySecret(ty *vocabulary.Kind, name string) bool {
 
 // liveRowsOf reads every live record row of one type, ordered by id.
 func (ds *dataset) liveRowsOf(ctx context.Context, typeIdent string) ([]*erow, error) {
-	rs, err := ds.db.QueryContext(ctx, `
+	return ds.liveRowsOn(ctx, ds.db, typeIdent)
+}
+
+// liveRowsOn is liveRowsOf read through q, the pool or the caller's
+// transaction (loadRowOn).
+func (ds *dataset) liveRowsOn(ctx context.Context, q dbx, typeIdent string) ([]*erow, error) {
+	rs, err := q.QueryContext(ctx, `
 		SELECT `+recordCols+` FROM records
 		WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeIdent)
 	if err != nil {
