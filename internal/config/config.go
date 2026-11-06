@@ -47,6 +47,13 @@ type Config struct {
 	// (internal/site). Unset is no site and no change to anything; set, it
 	// must be an absolute path, and an invalid site.yaml refuses the boot.
 	SiteDir string `envconfig:"SUBSTRATE_SITE_DIR" default:""`
+	// HostDefaults is the host's defaults file (internal/hostdefaults,
+	// decision 0230): the LLM transports and embeddings a host pays for on
+	// behalf of every repository, and the daily budget bounding them. Unset
+	// is no host defaults and no change to anything; set, it must be an
+	// absolute path outside SiteDir, which is served, and an invalid file
+	// refuses the boot.
+	HostDefaults string `envconfig:"SUBSTRATE_HOST_DEFAULTS" default:""`
 
 	// DatabaseURL is the one Postgres holding every repository, in one
 	// shared schema.
