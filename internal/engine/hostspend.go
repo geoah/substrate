@@ -7,12 +7,12 @@ package engine
 // reservations for the UTC calendar day under an advisory lock, and is
 // refused when the sum would pass the host file's budget.centsPerDay. The call
 // then SETTLES to its reported cost, failed or not. A call that reported no
-// usage keeps its ceiling unless it failed in a way the endpoint cannot have
-// billed (egress.ErrUnprocessed), and a reservation still open an hour after
-// it opened (a crash, a lost settle) is settled at its ceiling, so the ledger
-// only ever overcounts. The ceiling covers one billable attempt, so a
-// host-paid client never retries an attempt that may have been billed
-// (llm.Config.RetryOnlyUnbilled).
+// usage, or only part of it, keeps its ceiling unless it reported nothing and
+// failed in a way the endpoint cannot have billed (egress.ErrUnprocessed),
+// and a reservation still open an hour after it opened (a crash, a lost
+// settle) is settled at its ceiling, so the ledger only ever overcounts. The
+// ceiling covers one billable attempt, so a host-paid client never retries
+// an attempt that may have been billed (llm.Config.RetryOnlyUnbilled).
 //
 // The gate sits beneath every caller because it wraps the clients
 // themselves: hostLLMClient is the llm.Client every agent loop on a
@@ -167,22 +167,24 @@ func (ds *dataset) settleHost(ctx context.Context, r *hostReservation, cents flo
 	}
 }
 
-// settleCall settles r after the call it reserved for: to cost when the
-// endpoint reported the call's usage, whether or not the call then failed (a
-// reply with no choices, a vector of the wrong width); to nothing when the
-// call failed in a way the endpoint cannot have billed (egress.ErrUnprocessed:
-// no request left, or every one was refused with a redirect or a 4xx); and at
-// its ceiling otherwise. A dropped answer, a timeout, a 5xx, a reply that does
-// not decode and a success with no usage all keep the ceiling: the endpoint
-// may have done the work.
-func (ds *dataset) settleCall(ctx context.Context, r *hostReservation, callErr error, cents float64, reported bool) {
+// settleCall settles r after the call it reserved for. cents is what the
+// usage the endpoint reported costs, and whole says it reported all of it.
+// The call settles to cents when whole, whether or not it then failed (a
+// reply with no choices, a vector of the wrong width); to nothing when it
+// reported nothing and failed in a way the endpoint cannot have billed
+// (egress.ErrUnprocessed: no request left, or every one was refused with a
+// redirect or a 4xx); and otherwise at its ceiling, or at cents where a
+// partial report already passes the ceiling. A dropped answer, a timeout, a
+// 5xx, a reply that does not decode and a success with no usage or part of
+// it all keep the ceiling: the endpoint may have done the work.
+func (ds *dataset) settleCall(ctx context.Context, r *hostReservation, callErr error, cents float64, whole bool) {
 	switch {
-	case reported:
+	case whole:
 		ds.settleHost(ctx, r, cents)
-	case callErr != nil && errors.Is(callErr, egress.ErrUnprocessed):
+	case cents == 0 && errors.Is(callErr, egress.ErrUnprocessed):
 		ds.settleHost(ctx, r, 0)
 	default:
-		ds.settleHost(ctx, r, r.ceiling)
+		ds.settleHost(ctx, r, max(cents, r.ceiling))
 	}
 }
 
@@ -250,11 +252,11 @@ func (c *hostLLMClient) Complete(ctx context.Context, req llm.Request, onDelta f
 		return nil, err
 	}
 	res, err := c.inner.Complete(ctx, req, onDelta)
-	cents, reported := 0.0, false
+	cents, whole := 0.0, false
 	if res != nil && res.Usage != nil {
-		cents, reported = price.cost(res.Usage)*100, true
+		cents, whole = price.cost(res.Usage)*100, !res.Usage.Partial
 	}
-	c.ds.settleCall(ctx, r, err, cents, reported)
+	c.ds.settleCall(ctx, r, err, cents, whole)
 	return res, err
 }
 

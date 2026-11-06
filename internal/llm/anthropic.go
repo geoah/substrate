@@ -165,8 +165,8 @@ func (c *anthropicClient) scrubbed(err error) error {
 
 // Complete runs one completion. A failure before any request wrote its
 // headers is marked egress.ErrUnprocessed, as post marks a refusal, and a
-// failure after the endpoint reported its whole usage still carries that
-// usage: the endpoint may have billed it.
+// failure after the endpoint reported any of its usage still carries that
+// usage, Partial where it is: the endpoint may have billed it.
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
 	ctx, watch := egress.WatchSends(ctx)
 	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
@@ -994,23 +994,31 @@ func settleInput(block *anthropicContent) {
 	}
 }
 
-// anthropicUsageOf is a message's neutral tally, or nil when the message did
-// not report it whole: an input_tokens and a final output_tokens.
+// anthropicUsageOf is a message's neutral tally, or nil when the message
+// reported neither an input_tokens nor a final output_tokens. A message that
+// reported one of the two returns a Partial tally of what it did report.
 func anthropicUsageOf(msg *anthropicMessage) *Usage {
-	if msg == nil || msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil {
+	if msg == nil || (msg.Usage.InputTokens == nil && msg.Usage.OutputTokens == nil) {
 		return nil
 	}
 	// This wire reports cache reads and writes beside input_tokens, never
 	// inside it, and the window holds all three. A negative count reads as
 	// none, as on the openai wire: the thread's tallies refuse a value below 0.
-	input := max(0, int(*msg.Usage.InputTokens))
+	count := func(n *anthropicCount) int {
+		if n == nil {
+			return 0
+		}
+		return max(0, int(*n))
+	}
+	input := count(msg.Usage.InputTokens)
 	read := max(0, int(msg.Usage.CacheReadInputTokens))
 	write := max(0, int(msg.Usage.CacheCreationInputTokens))
 	return &Usage{
 		PromptTokens:     input + read + write,
-		CompletionTokens: int(*msg.Usage.OutputTokens),
+		CompletionTokens: count(msg.Usage.OutputTokens),
 		CacheReadTokens:  read,
 		CacheWriteTokens: write,
+		Partial:          msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil,
 	}
 }
 

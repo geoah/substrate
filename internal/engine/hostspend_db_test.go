@@ -45,9 +45,9 @@ func centsNear(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 // A host-paid call settles to the usage the endpoint reported, even when the
 // call then fails; to nothing when the endpoint cannot have acted on it (a
 // refusal, nothing listening); and at its ceiling when it may have done the
-// work and reported nothing (a 5xx, an answer cut off midway, an answer that
-// does not decode, a success without usage). The same holds for the host's
-// embeddings.
+// work and reported nothing or part of its usage (a 5xx, an answer cut off
+// midway, an answer that does not decode, a success without usage or with
+// its prompt count alone). The same holds for the host's embeddings.
 func TestHostGateSettlesAFailedCallByWhatTheEndpointCanHaveBilled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -107,6 +107,9 @@ func TestHostGateSettlesAFailedCallByWhatTheEndpointCanHaveBilled(t *testing.T) 
 		}, toCeiling},
 		{"an answer without usage", false, func(w http.ResponseWriter, _ *http.Request) {
 			reply(w, `{"id":"c",`+choice+`}`)
+		}, toCeiling},
+		{"an answer with its prompt count alone", false, func(w http.ResponseWriter, _ *http.Request) {
+			reply(w, `{"id":"c",`+choice+`,"usage":{"prompt_tokens":3}}`)
 		}, toCeiling},
 		{"an answer with no choices and its usage", false, func(w http.ResponseWriter, _ *http.Request) {
 			reply(w, `{"id":"c","choices":[],"usage":`+usage+`}`)

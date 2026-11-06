@@ -523,9 +523,10 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	}, nil
 }
 
-// openaiReportedUsage is whether a reply reported its usage: a `usage` object
-// carrying both prompt_tokens and completion_tokens. The SDK reads an absent
-// object as zeros, which would price a billed reply at nothing.
+// openaiReportedUsage is which of its counts a reply reported: a `usage`
+// object's prompt_tokens and completion_tokens, each nil where it is absent.
+// The SDK reads an absent count as zero, which would price a billed reply at
+// nothing.
 type openaiReportedUsage struct {
 	Usage *struct {
 		PromptTokens     *json.RawMessage `json:"prompt_tokens"`
@@ -552,8 +553,9 @@ type openaiCacheUsage struct {
 }
 
 // openaiUsage builds the neutral tally from the SDK's two counts and the raw
-// reply (one-shot body or the stream's usage chunk), or nil when the reply
-// reported no usage (openaiReportedUsage). This wire's
+// reply (one-shot body or the stream's usage chunk): nil when the reply
+// reported neither count (openaiReportedUsage), Partial when it reported only
+// one. This wire's
 // prompt_tokens already includes the cached and the written tokens on both
 // LiteLLM and OpenAI, so the cache counts are parts of it, never added to
 // it. The details form wins over the top-level form and the two are never
@@ -565,10 +567,13 @@ type openaiCacheUsage struct {
 func openaiUsage(prompt, completion int, raw []byte) *Usage {
 	var reported openaiReportedUsage
 	if json.Unmarshal(raw, &reported) != nil || reported.Usage == nil ||
-		reported.Usage.PromptTokens == nil || reported.Usage.CompletionTokens == nil {
+		(reported.Usage.PromptTokens == nil && reported.Usage.CompletionTokens == nil) {
 		return nil
 	}
-	u := &Usage{PromptTokens: prompt, CompletionTokens: completion}
+	u := &Usage{
+		PromptTokens: prompt, CompletionTokens: completion,
+		Partial: reported.Usage.PromptTokens == nil || reported.Usage.CompletionTokens == nil,
+	}
 	var doc openaiCacheUsage
 	if json.Unmarshal(raw, &doc) != nil || doc.Usage == nil {
 		return u

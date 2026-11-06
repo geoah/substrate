@@ -174,6 +174,12 @@ type Usage struct {
 	// its own rate; the rest of PromptTokens is priced at the input rate.
 	CacheReadTokens  int
 	CacheWriteTokens int
+	// Partial is set when the reply reported some of its counts and left
+	// others out: an input count with no output count, say. The counts it
+	// did report are kept and the missing ones read as 0, so the owner's
+	// tally counts what is known while a caller that must not undercount (the
+	// host's ledger) treats the usage as unreported.
+	Partial bool
 }
 
 // UncachedPromptTokens is the part of PromptTokens priced at the input rate.

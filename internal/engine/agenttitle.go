@@ -130,13 +130,17 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 	if err != nil {
 		l.ds.svc.log.Warn("substrate: thread title call failed; the thread keeps its first message as its subject",
 			"thread", l.threadID, "model", model, "error", err)
-		return
+		// Usage beside a failure was billed all the same, so it lands on
+		// the thread below like a title-less answer's.
+		if res == nil || res.Usage == nil {
+			return
+		}
 	}
 	title := ""
-	if len(res.ToolCalls) == 0 {
+	if err == nil && len(res.ToolCalls) == 0 {
 		title = cleanTitle(res.Content)
 	}
-	if title == "" {
+	if err == nil && title == "" {
 		l.ds.svc.log.Warn("substrate: thread title call returned no title; the thread keeps its first message as its subject",
 			"thread", l.threadID, "model", model, "stop", res.Stop)
 	}

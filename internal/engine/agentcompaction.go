@@ -780,10 +780,13 @@ func (l *agentLoop) compact(ctx context.Context, plan *compactionPlan, tokensBef
 		Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt.String()}},
 		Params:   params,
 	}, nil)
+	if res != nil {
+		// Usage beside a failure was billed all the same.
+		l.charge(res.Usage)
+	}
 	if err != nil {
 		return fmt.Errorf("summarizer: %w", err)
 	}
-	l.charge(res.Usage)
 	switch {
 	case res.Stop == llm.StopLength:
 		return errors.New("summarizer stopped on its output ceiling, so the summary is incomplete")

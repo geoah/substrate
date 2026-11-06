@@ -16,9 +16,33 @@ import (
 // A caller paying per call (the host's ledger, internal/engine/hostspend.go)
 // releases a reservation only on what these tests hold: a failure is marked
 // egress.ErrUnprocessed only when the endpoint cannot have acted on the
-// request, a Result carries Usage only when the reply reported it whole, and
-// a RetryOnlyUnbilled client makes no attempt after one that may have been
-// billed.
+// request, a Result's Usage is Partial unless the reply reported it whole,
+// and a RetryOnlyUnbilled client makes no attempt after one that may have
+// been billed.
+
+// usageReport is how much of its usage a reply reported.
+type usageReport int
+
+const (
+	reportedNone usageReport = iota
+	reportedPart
+	reportedWhole
+)
+
+// reportOf reads a Usage as a usageReport.
+func reportOf(u *Usage) usageReport {
+	switch {
+	case u == nil:
+		return reportedNone
+	case u.Partial:
+		return reportedPart
+	}
+	return reportedWhole
+}
+
+func (r usageReport) String() string {
+	return [...]string{"none", "part", "whole"}[r]
+}
 
 // openaiOneShot is a whole one-shot reply; usage, when set, is its usage.
 func openaiOneShot(usage string) string {
@@ -194,8 +218,9 @@ func TestAFailureSaysWhetherTheEndpointCanHaveActedOnIt(t *testing.T) {
 
 // A reply that leaves its usage out returns no Usage, on both wires,
 // one-shot and streamed, so it is never read as having cost nothing; a reply
-// that reports it returns it.
-func TestUsageIsNilUnlessTheReplyReportedItWhole(t *testing.T) {
+// that reports one of its two counts returns a Partial Usage holding that
+// count; a reply that reports both returns them whole.
+func TestUsageIsPartialUnlessTheReplyReportedItWhole(t *testing.T) {
 	anthropicNoDelta := []string{
 		`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"usage":{"input_tokens":4,"output_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
@@ -217,18 +242,24 @@ func TestUsageIsNilUnlessTheReplyReportedItWhole(t *testing.T) {
 		stream      bool
 		contentType string
 		body        string
-		reported    bool
+		want        usageReport
+		// prompt and completion are the counts a reported Usage holds.
+		prompt, completion int
 	}{
-		{"openai one-shot without usage", WireOpenAI, false, "application/json", openaiOneShot(""), false},
-		{"openai one-shot with an empty usage", WireOpenAI, false, "application/json", openaiOneShot(`{}`), false},
-		{"openai one-shot with usage", WireOpenAI, false, "application/json", openaiOneShot(openaiUsageJSON), true},
-		{"openai stream without usage", WireOpenAI, true, "text/event-stream", openaiStream(""), false},
-		{"openai stream with usage", WireOpenAI, true, "text/event-stream", openaiStream(openaiUsageJSON), true},
-		{"anthropic one-shot without usage", WireAnthropic, false, "application/json", anthropicOneShot(""), false},
-		{"anthropic one-shot without output_tokens", WireAnthropic, false, "application/json", anthropicOneShot(`{"input_tokens":4}`), false},
-		{"anthropic one-shot with usage", WireAnthropic, false, "application/json", anthropicOneShot(`{"input_tokens":4,"output_tokens":2}`), true},
-		{"anthropic stream without a final output count", WireAnthropic, true, "text/event-stream", anthropicEventStream(anthropicNoDelta...), false},
-		{"anthropic stream with usage", WireAnthropic, true, "text/event-stream", anthropicEventStream(anthropicStreamOK...), true},
+		{"openai one-shot without usage", WireOpenAI, false, "application/json", openaiOneShot(""), reportedNone, 0, 0},
+		{"openai one-shot with an empty usage", WireOpenAI, false, "application/json", openaiOneShot(`{}`), reportedNone, 0, 0},
+		{"openai one-shot without completion_tokens", WireOpenAI, false, "application/json", openaiOneShot(`{"prompt_tokens":3}`), reportedPart, 3, 0},
+		{"openai one-shot without prompt_tokens", WireOpenAI, false, "application/json", openaiOneShot(`{"completion_tokens":2}`), reportedPart, 0, 2},
+		{"openai one-shot with usage", WireOpenAI, false, "application/json", openaiOneShot(openaiUsageJSON), reportedWhole, 3, 2},
+		{"openai stream without usage", WireOpenAI, true, "text/event-stream", openaiStream(""), reportedNone, 0, 0},
+		{"openai stream without completion_tokens", WireOpenAI, true, "text/event-stream", openaiStream(`{"prompt_tokens":3}`), reportedPart, 3, 0},
+		{"openai stream with usage", WireOpenAI, true, "text/event-stream", openaiStream(openaiUsageJSON), reportedWhole, 3, 2},
+		{"anthropic one-shot without usage", WireAnthropic, false, "application/json", anthropicOneShot(""), reportedNone, 0, 0},
+		{"anthropic one-shot without output_tokens", WireAnthropic, false, "application/json", anthropicOneShot(`{"input_tokens":4}`), reportedPart, 4, 0},
+		{"anthropic one-shot without input_tokens", WireAnthropic, false, "application/json", anthropicOneShot(`{"output_tokens":2}`), reportedPart, 0, 2},
+		{"anthropic one-shot with usage", WireAnthropic, false, "application/json", anthropicOneShot(`{"input_tokens":4,"output_tokens":2}`), reportedWhole, 4, 2},
+		{"anthropic stream without a final output count", WireAnthropic, true, "text/event-stream", anthropicEventStream(anthropicNoDelta...), reportedPart, 4, 0},
+		{"anthropic stream with usage", WireAnthropic, true, "text/event-stream", anthropicEventStream(anthropicStreamOK...), reportedWhole, 1, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -244,39 +275,43 @@ func TestUsageIsNilUnlessTheReplyReportedItWhole(t *testing.T) {
 			if res.Content != "ok" {
 				t.Fatalf("content = %q", res.Content)
 			}
-			if got := res.Usage != nil; got != tc.reported {
-				t.Fatalf("usage = %+v, want reported %v", res.Usage, tc.reported)
+			if got := reportOf(res.Usage); got != tc.want {
+				t.Fatalf("usage = %+v, reported %v, want %v", res.Usage, got, tc.want)
+			}
+			if u := res.Usage; u != nil && (u.PromptTokens != tc.prompt || u.CompletionTokens != tc.completion) {
+				t.Fatalf("usage = %+v, want %d prompt and %d completion tokens", u, tc.prompt, tc.completion)
 			}
 		})
 	}
 }
 
-// A call that fails after the endpoint reported its whole usage returns that
-// usage beside the error: a reply with no choices, a stream cut off after its
-// usage. A stream cut off before its final count returns none.
+// A call that fails after the endpoint reported its usage returns that usage
+// beside the error: a reply with no choices, a stream cut off after its
+// usage. A stream cut off before its final count returns its input count,
+// Partial.
 func TestAFailureAfterTheUsageKeepsIt(t *testing.T) {
 	anthropicUpToDelta := anthropicEventStream(anthropicStreamOK[:5]...)
 	anthropicUpToBlock := anthropicEventStream(anthropicStreamOK[:3]...)
 	openaiUpToUsage := strings.TrimSuffix(openaiStream(openaiUsageJSON), "data: [DONE]\n\n")
 	cases := []struct {
-		name     string
-		wire     Wire
-		stream   bool
-		serve    func(w http.ResponseWriter)
-		reported bool
+		name   string
+		wire   Wire
+		stream bool
+		serve  func(w http.ResponseWriter)
+		want   usageReport
 	}{
 		{"openai one-shot with no choices", WireOpenAI, false, func(w http.ResponseWriter) {
 			answer(w, "application/json", `{"id":"c","object":"chat.completion","choices":[],"usage":`+openaiUsageJSON+`}`)
-		}, true},
+		}, reportedWhole},
 		{"openai stream cut off after its usage", WireOpenAI, true, func(w http.ResponseWriter) {
 			cutOff(w, "text/event-stream", openaiUpToUsage)
-		}, true},
+		}, reportedWhole},
 		{"anthropic stream cut off after its final count", WireAnthropic, true, func(w http.ResponseWriter) {
 			cutOff(w, "text/event-stream", anthropicUpToDelta)
-		}, true},
+		}, reportedWhole},
 		{"anthropic stream cut off before its final count", WireAnthropic, true, func(w http.ResponseWriter) {
 			cutOff(w, "text/event-stream", anthropicUpToBlock)
-		}, false},
+		}, reportedPart},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -290,8 +325,12 @@ func TestAFailureAfterTheUsageKeepsIt(t *testing.T) {
 			if errors.Is(err, egress.ErrUnprocessed) {
 				t.Fatalf("a failure after an answer is marked unprocessed: %v", err)
 			}
-			if got := res != nil && res.Usage != nil; got != tc.reported {
-				t.Fatalf("usage beside the error = %+v, want reported %v", res, tc.reported)
+			var usage *Usage
+			if res != nil {
+				usage = res.Usage
+			}
+			if got := reportOf(usage); got != tc.want {
+				t.Fatalf("usage beside the error = %+v, reported %v, want %v", usage, got, tc.want)
 			}
 		})
 	}
@@ -362,7 +401,7 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 				if err != nil {
 					t.Fatalf("complete: %v", err)
 				}
-				if n := attempts.Load(); n != 2 || res.Content != "ok" || res.Usage == nil {
+				if n := attempts.Load(); n != 2 || res.Content != "ok" || reportOf(res.Usage) != reportedWhole {
 					t.Fatalf("content %q, usage %+v after %d attempts, want the second attempt's answer", res.Content, res.Usage, n)
 				}
 			})

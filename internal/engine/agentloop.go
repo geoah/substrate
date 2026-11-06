@@ -920,6 +920,13 @@ loop:
 		}
 		l.turns++
 		res, err := l.complete(lctx, messages)
+		if res != nil {
+			// A failed call may carry the usage the endpoint reported beside
+			// it (a reply with no choices, a stream cut off after its input
+			// count): the endpoint billed it, so the thread and the cap count
+			// it like a success's.
+			l.charge(res.Usage)
+		}
 		if err != nil {
 			if stopped, why := l.stopReason(ctx); stopped {
 				// A stop or a shutdown ended the call: what streamed so far
@@ -964,11 +971,10 @@ loop:
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
-		l.charge(usage)
 		if !l.measured {
 			l.measured = true
 			l.firstContext = l.estimateTokens(messages)
-			if usage != nil {
+			if usage != nil && (!usage.Partial || usage.PromptTokens > 0) {
 				l.firstContext = usage.PromptTokens
 			}
 		}
@@ -1325,7 +1331,8 @@ func (l *agentLoop) emitAllows(ident string) bool {
 }
 
 // charge adds one completion's usage to the thread's counters and the root
-// tally, priced at the provider row's rate for the model.
+// tally, priced at the provider row's rate for the model. A Partial usage
+// adds the counts it carries.
 func (l *agentLoop) charge(usage *llm.Usage) {
 	if usage == nil {
 		return

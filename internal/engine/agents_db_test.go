@@ -61,6 +61,12 @@ type fakeTurn struct {
 	// noUsage leaves usage out of the reply, one-shot or streamed, as a
 	// gateway that reports none does.
 	noUsage bool
+	// noCompletionCount leaves completion_tokens and total_tokens out of the
+	// usage: a reply that reported part of its usage.
+	noCompletionCount bool
+	// noChoices answers a one-shot request with an empty choices list beside
+	// the usage: a reply the client refuses after the endpoint billed it.
+	noChoices bool
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
@@ -172,6 +178,10 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		finish = turn.finish
 	}
 	usage := map[string]any{"prompt_tokens": prompt, "completion_tokens": 5, "total_tokens": prompt + 5}
+	if turn.noCompletionCount {
+		delete(usage, "completion_tokens")
+		delete(usage, "total_tokens")
+	}
 	if turn.cacheReadTokens > 0 || turn.cacheWriteTokens > 0 {
 		usage["prompt_tokens_details"] = map[string]any{
 			"cached_tokens": turn.cacheReadTokens, "cache_creation_tokens": turn.cacheWriteTokens,
@@ -202,6 +212,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		if turn.noUsage {
 			delete(reply, "usage")
+		}
+		if turn.noChoices {
+			reply["choices"] = []any{}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(reply)
