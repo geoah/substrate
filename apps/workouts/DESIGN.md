@@ -2157,7 +2157,7 @@ the undo offer, whether the open editor is scrolled out of view) and compute no 
 | |     last 105                                 | |
 | |     8 reps                       ( −1 | +1 ) | |
 | |     last 10                                  | |
-| |     2 left             (↺)  (?)  ( −1 | +1 ) | |  <- reps left, and why the set ended, a menu
+| |     2 left             (?)  (↺)  ( −1 | +1 ) | |  <- reps left, and why the set ended, a menu
 | |     last 2                                   | |
 | | [       ✓ Log 110 kg × 8 · 2 left       ]    | |
 | +----------------------------------------------+ |
@@ -2253,7 +2253,8 @@ line when fixing). In order:
   changed, nor does what is written (owner, 2026-11-02). When the row is narrow (larger text) the round buttons go
   under the stepper; at the accessibility sizes the buttons and the stepper go under the value.
 - Reps left (`RowsEffort`, owner, 2026-11-05), a third value built like the others: the number, "left" (as the Log
-  button says it), `last` under them, the reset and why the set ended as round buttons, and "−1 | +1" under the thumb (on a timed or distance set, the scale's word,
+  button says it), `last` under them, why the set ended and then the reset as round buttons (the reset next to the
+  steps, where it is on every row, owner, 2026-11-06), and "−1 | +1" under the thumb (on a timed or distance set, the scale's word,
   "Hard", "effort", and Easier and Harder; §4.14). A long press on the number offers "Clear reps left". 0 to 4,
   where 4 reads "4+" (RPE 6, "could do 4 or more"); a value with a half point from an import or an older entry reads
   "1–2", and a step from it lands on the whole count beside it. The plan's value (and a pre-filled or copied one) is
@@ -2263,8 +2264,8 @@ line when fixing). In order:
   steps start from last time's rating, else 2. The value is still `rpe` on the RIR-based scale, RPE = 10 − reps
   left, so nothing that reads it changes (§4.14). Folded behind "Reps left" when there is nothing to show (a warm-up,
   a timed set, or a set with no planned effort and none last time).
-- Why the set ended (`RowsStopMenu`), on reps left's row of a working set, just left of its stepper (owner,
-  2026-11-06): a round button the size of the reset, "?" with none chosen, that lists "Muscular fatigue", "Form broke
+- Why the set ended (`RowsStopMenu`), on reps left's row of a working set, left of the reset beside its stepper
+  (owner, 2026-11-06): a round button the size of the reset, "?" with none chosen, that lists "Muscular fatigue", "Form broke
   down", "Pain or discomfort" and "Other reason" (`set.stopReason`: `fatigue`, `technique`, `pain`, `other`) and, once
   one is chosen, "Clear reason". The button then fills with the reason's symbol (`battery.25percent`,
   `figure.strengthtraining.traditional`, `bandage` in orange, `ellipsis`). A done line carries the word as a tag, as History does after the
