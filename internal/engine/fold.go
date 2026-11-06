@@ -425,6 +425,7 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		}
 		changed, version, err := t.applyTombstone(op.ref(), op.Finalizer)
 		if err == nil && changed {
+			t.noteProviderKey(op.ref(), nil, nil, true)
 			err = t.afterUnitFold(op.ref().Kind)
 			ty, _ := t.derivationView().ByIdentity(op.ref().Kind)
 			t.noteMetricRules(ty, op.ref(), nil)
@@ -450,6 +451,7 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		if err := t.applyPurge(op.ref()); err != nil {
 			return foldResult{}, err
 		}
+		t.noteProviderKey(op.ref(), nil, nil, true)
 		if err := t.afterUnitFold(op.ref().Kind); err != nil {
 			return foldResult{}, err
 		}
@@ -535,10 +537,14 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 	if err := t.beforeUnitFold(ref.Kind); err != nil {
 		return foldResult{}, err
 	}
+	keyBefore := row.Props["apiKey"]
 	op.Delta.applyTo(row)
 	changed, created, version, err := t.upsertRecord(row, t.foldFTS(row), op.Delta.Force, op.Delta.Restored)
 	if err != nil {
 		return foldResult{}, err
+	}
+	if changed {
+		t.noteProviderKey(ref, keyBefore, row.Props["apiKey"], false)
 	}
 	row.Version = version
 	if !changed {

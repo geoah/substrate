@@ -327,7 +327,7 @@ func (p *embedProvider) operatorEmbed(ctx context.Context, texts []string) ([][]
 	if err != nil {
 		return nil, err
 	}
-	vecs, usage, err := p.client.EmbedUsage(ctx, texts)
+	vecs, usage, err := p.request(ctx, texts)
 	p.gate.settleCall(ctx, r, err, float64(usage.PromptTokens)*p.per1M/1e6*100, usage.PromptTokens > 0)
 	return vecs, err
 }

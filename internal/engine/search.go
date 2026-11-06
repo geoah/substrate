@@ -725,13 +725,15 @@ const embedBatchQuery = `SELECT record_kind, record_id, property, generation FRO
 // a repository that names none drains nothing and reports 0, which is why the
 // drain loop runs for every repository whether or not any of them embeds.
 //
-// A key the vendor refused (401 or 403) is not called again until its
-// backoff ends (keyrefusals.go): a minute after the refusal, doubling with
-// each refusal after it, up to an hour. The operator's key is one fact for
-// every repository, so one drain asks the vendor per step however many
-// repositories it serves. Until then the queue waits and the pass reports 0,
-// as it does at the allowance; a call the vendor accepts on the same key (a
-// chat, a search) ends the wait at once.
+// A key the vendor refused (providersecret.RefusesKey) is not called again
+// until its wait ends (keyrefusals.go): a minute after the refusal, doubling
+// with each refusal after it, up to an hour. The operator's key is one fact
+// for every repository, so one drain asks the vendor per step however many
+// repositories it serves: the first whose request is about to be sent, so a
+// pass with nothing to buy, or one the allowance holds, leaves the step to
+// the next. Until then the queue waits and the pass reports 0, as it does at
+// the allowance; a call the vendor accepts on the same key (a chat, a
+// search) ends the wait at once.
 func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error) {
 	provider, err := ds.resolveEmbedProvider(ctx)
 	if err != nil {
@@ -740,11 +742,12 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	if provider == nil {
 		return 0, nil
 	}
-	if !ds.svc.keyRefusals.drainMay(provider.key, ds.svc.operatorNow()) {
+	if ds.svc.keyRefusals.drainHeld(provider.key, ds.svc.operatorNow()) {
 		ds.svc.log.Debug("substrate: embed queue waits: the vendor refused the embeddings key",
 			"repository", ds.Repository().ID, "provider", provider.id)
 		return 0, nil
 	}
+	provider.drain = true
 	// The write refuses a model of another width, so this is the second gate,
 	// for a row that predates the rule or a client the table's width no longer
 	// describes (decision record 0026).
@@ -806,6 +809,13 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 				// log one every tick.
 				ds.svc.log.Debug("substrate: embed queue waits for the operator's allowance",
 					"repository", ds.Repository().ID, "error", err)
+				return d.done, nil
+			}
+			if errors.Is(err, errEmbedKeyHeld) {
+				// Another drain took the step's probe of a refused key
+				// between this pass's check and its request.
+				ds.svc.log.Debug("substrate: embed queue waits: the vendor refused the embeddings key",
+					"repository", ds.Repository().ID, "provider", provider.id)
 				return d.done, nil
 			}
 			return d.done, err

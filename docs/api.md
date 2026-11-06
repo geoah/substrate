@@ -2134,15 +2134,19 @@ item has its `slot` (`llm`, `embeddings`, `oauth` or `function`), its `source`
 is not `ready`, a `message`. `operatorOffers` is true when the operator's file serves the slot
 to this repository, whatever the source, the readiness or the allowance:
 removing your own key would fall back to the operator's. A row, or the
-`embeddings` item, whose key the vendor refused (`401` or `403`) reads
-`failing` with the vendor and the status, "OpenAI refused the key (401)",
-until a call the vendor accepts; the operator's key is one fact for every
-repository it serves, and a key of your own is your repository's alone.
-Otherwise a row whose agent has an open alert reads `failing` with the
-alert's error. An agent call that meets a refused key answers `403 guard`,
-and a chat turn ends with an `error` event, both in words like "OpenAI
-refused this key (401). Add a working key on the OpenAI card under
-Providers.", never the vendor's own response. The `embeddings`
+`embeddings` item, whose key the vendor refused reads `failing` with the
+vendor and the status, "OpenAI refused the key (401)", until a call the
+vendor accepts or a new key is written; the operator's key is one fact for
+every repository it serves, and a key of your own is your repository's
+alone. A refusal is a `401`, or a `403` whose error names the key
+(`authentication_error`, `invalid_api_key`); a `403` about one request (a
+region, a model, a missing permission, moderation) fails that request and
+leaves the key `ready`. Otherwise a row whose agent has an open alert reads
+`failing` with the alert's error. An agent call that meets a refused key
+answers `503 unavailable` with the reason `key_refused` and a one-minute
+`Retry-After`, and a chat turn ends with an `error` event, both in words
+like "OpenAI refused this key (401). Add a working key on the OpenAI card
+under Providers.", never the vendor's own response. The `embeddings`
 item's `target` is the row whose card shows the search line: the row that
 declares `embedModel`, else the row the operator's embeddings entry is
 nested under, absent when that row does not exist. An `oauth` item's
@@ -2402,10 +2406,12 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has two members: `observed_rederiving` on `unavailable`, an
-aggregate read over an observed index the server is re-deriving
-([readiness](#readiness)), and `quota` on `guard`, an operator-paid call past
-the repository's allowance for the day ([operator defaults](#operator-defaults)).
+set is closed and has three members: `observed_rederiving` on `unavailable`,
+an aggregate read over an observed index the server is re-deriving
+([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
+vendor refused for its key, which answers the same until someone writes a
+working key ([operator defaults](#operator-defaults)); and `quota` on
+`guard`, an operator-paid call past the repository's allowance for the day.
 A client that does not know a reason acts on the code.
 
 Every response carries an `X-Request-Id` header: 16 characters the server

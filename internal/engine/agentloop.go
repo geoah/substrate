@@ -427,6 +427,9 @@ func pricingRow(entry map[string]any) modelPrice {
 }
 
 func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerConfig, error) {
+	// Before the read, so a key change committed after it moves the row's
+	// generation past the calls this read pays for (keyrefusals.go).
+	gen := ds.svc.keyRefusals.generation()
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: id})
 	if err != nil {
 		return nil, err
@@ -452,6 +455,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		id: id, pricing: map[string]modelPrice{},
 		key: ownKeyID(ds.Repository().ID, id, storedKey), name: name,
 	}
+	pc.key.gen = gen
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
 	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)

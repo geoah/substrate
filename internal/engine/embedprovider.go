@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/operatordefaults"
@@ -51,24 +52,53 @@ type embedProvider struct {
 	// claiming row's own. A provider built without ds tells nobody.
 	ds  *dataset
 	key keyID
+	// drain is set on the provider a drain pass resolved (ProcessEmbedQueue).
+	// Its first request asks the key table, right before it is sent, whether
+	// it may go (keyRefusals.takeDrain), and one on a key whose wait stands
+	// is not sent (errEmbedKeyHeld); asked records the answer, which the
+	// pass's later requests go on.
+	drain bool
+	asked bool
 }
 
+// errEmbedKeyHeld is a drain's request left unsent: the vendor refused the
+// key and its wait has not ended, or another drain is asking. It is sent
+// marked egress.ErrUnprocessed, so the allowance settles the request's
+// reservation at nothing.
+var errEmbedKeyHeld = errors.New("substrate/engine: the embeddings key was refused and its wait has not ended")
+
 // Embed and Dimension make embedProvider a substrate.Embedder, so the queue
-// drains through the resolved row. The drain, the semantic query and the
-// endpoint check all reach the vendor here, so each answer reaches the
-// refused-key table.
+// drains through the resolved row.
 func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	var vecs [][]float32
-	var err error
 	if p.gate != nil {
-		vecs, err = p.operatorEmbed(ctx, texts)
-	} else {
-		vecs, err = p.client.Embed(ctx, texts)
+		return p.operatorEmbed(ctx, texts)
 	}
-	if p.ds != nil {
-		p.ds.svc.keyRefusals.observe(p.key, err, p.ds.svc.operatorNow())
-	}
+	vecs, _, err := p.request(ctx, texts)
 	return vecs, err
+}
+
+// request sends one embeddings request. The drain, the semantic query and
+// the endpoint check all reach the vendor here, inside the allowance gate,
+// so each answer reaches the refused-key table, and a drain's probe of a
+// refused key is taken only where a request follows at once.
+func (p *embedProvider) request(ctx context.Context, texts []string) ([][]float32, embed.Usage, error) {
+	if p.ds == nil {
+		return p.client.EmbedUsage(ctx, texts)
+	}
+	refusals, now := &p.ds.svc.keyRefusals, p.ds.svc.operatorNow
+	if p.drain && !p.asked {
+		probe, ok := refusals.takeDrain(p.key, now())
+		if !ok {
+			return nil, embed.Usage{}, egress.Unprocessed(errEmbedKeyHeld)
+		}
+		p.asked = true
+		if probe {
+			defer func() { refusals.endProbe(p.key, now()) }()
+		}
+	}
+	vecs, usage, err := p.client.EmbedUsage(ctx, texts)
+	refusals.observe(p.key, err, now())
+	return vecs, usage, err
 }
 
 func (p *embedProvider) Dimension() int { return p.client.Dimension() }
