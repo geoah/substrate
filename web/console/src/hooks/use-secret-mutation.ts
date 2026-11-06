@@ -5,12 +5,15 @@
  * holds whatever form values it closed over. Devtools, or code reading the
  * query client, can read either back.
  *
- * Here the input rides a ref the request reads once and clears, the
- * mutation takes no variables, and the settled mutation is removed from the
- * cache whether the write succeeded or failed. The callbacks are TanStack's,
- * so a pending state lasts until `onSuccess` resolves; they get the result
- * and never the input. The returned object is useMutation's, with `mutate`
- * and `mutateAsync` taking the input; `variables` is always undefined. */
+ * Here each call puts its input in a ref under a new ticket number, the
+ * mutation's variables are that number, and the request takes the input
+ * out of the ref once. Each call sends its own input, even when a second
+ * call comes before TanStack starts the first one's request. The settled
+ * mutation is removed from the cache whether the write succeeded or
+ * failed. The callbacks are TanStack's, so a pending state lasts until
+ * `onSuccess` resolves; they get the result and never the input. The
+ * returned object is useMutation's, with `mutate` and `mutateAsync` taking
+ * the input and no `variables`. */
 
 import { useId, useRef } from "react"
 import {
@@ -33,8 +36,8 @@ export interface SecretMutationOptions<TInput, TData> {
 type OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
 export type SecretMutationResult<TInput, TData> = OmitEach<
-  UseMutationResult<TData, Error, void>,
-  "mutate" | "mutateAsync"
+  UseMutationResult<TData, Error, number>,
+  "mutate" | "mutateAsync" | "variables"
 > & {
   /** Sends the input; a refusal reaches `onError` and `error`, never a
    * rejection. */
@@ -50,26 +53,29 @@ export function useSecretMutation<TInput, TData>({
   onError,
 }: SecretMutationOptions<TInput, TData>): SecretMutationResult<TInput, TData> {
   const client = useQueryClient()
-  const held = useRef<{ input: TInput } | null>(null)
+  const held = useRef(new Map<number, TInput>())
+  const tickets = useRef(0)
   const key = [...mutationKey, useId()]
-  const mutation = useMutation<TData, Error, void>({
+  const mutation = useMutation<TData, Error, number>({
     mutationKey: key,
-    mutationFn: async () => {
-      const sent = held.current
-      held.current = null
-      if (!sent) throw new Error("There is no value to save.")
-      return mutationFn(sent.input)
+    mutationFn: async (ticket) => {
+      const waiting = held.current
+      if (!waiting.has(ticket)) throw new Error("There is no value to save.")
+      const input = waiting.get(ticket) as TInput
+      waiting.delete(ticket)
+      return mutationFn(input)
     },
     onMutate: onMutate && (() => void onMutate()),
     onSuccess: onSuccess && ((data) => onSuccess(data)),
     onError: onError && ((error) => onError(error)),
   })
   async function mutateAsync(input: TInput): Promise<TData> {
-    held.current = { input }
+    const ticket = (tickets.current += 1)
+    held.current.set(ticket, input)
     try {
-      return await mutation.mutateAsync()
+      return await mutation.mutateAsync(ticket)
     } finally {
-      held.current = null
+      held.current.delete(ticket)
       const cache = client.getMutationCache()
       for (const m of cache.findAll({ mutationKey: key, exact: true })) {
         if (m.state.status !== "pending") cache.remove(m)
