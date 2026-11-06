@@ -75,7 +75,7 @@ var wireTypes = map[string]any{
 	// the landing read their brand from it.
 	"SiteInfo": SiteInfo{},
 
-	// The operator's defaults and allowance (decision 0232): the console's
+	// The operator's defaults and allowance (decision 0235): the console's
 	// Providers page reads them, so a field that moves here moves a card.
 	"OperatorDefaults":  OperatorDefaults{},
 	"OperatorInfo":      OperatorInfo{},

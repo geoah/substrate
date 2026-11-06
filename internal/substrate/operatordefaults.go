@@ -5,7 +5,7 @@ import "time"
 // The operator is whoever runs the deployment. An operator default is a key or
 // an OAuth client the operator supplies, read from the file
 // SUBSTRATE_OPERATOR_DEFAULTS names, and used only where the repository holds
-// none of its own. It never enters a repository (decision 0232,
+// none of its own. It never enters a repository (decision 0235,
 // docs/plans/host-defaults.md).
 
 // The slots an operator default can fill, one per place the substrate spends a
