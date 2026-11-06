@@ -25,7 +25,7 @@ struct RowsIslandView: View {
     let perform: (RowsAction) -> Void
     /// Brings the open set's full editor into view.
     let showOpenRow: () -> Void
-    /// Takes the list to a set and marks it ("Then …").
+    /// Takes the list to a set and marks it ("Next …").
     let showLine: (RowID) -> Void
     let finish: () -> Void
     let addExercise: () -> Void
@@ -97,21 +97,19 @@ struct RowsIslandView: View {
         }
     }
 
-    /// `Then  Calf Press (Machine), set 1, 60 kg × 12  ›`: a tap takes the
-    /// list to that set; the open set stays open.
+    /// `Next  Calf Press (Machine), set 1, 60 kg × 12  ›` on one line, cut
+    /// short at its end (owner, 2026-11-06): a tap takes the list to that
+    /// set; the open set stays open.
     @ViewBuilder
     private func afterLine(_ after: RowsAfterPart) -> some View {
         let content = HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(after.label)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
-            // Wraps between words rather than cutting a name in the middle;
-            // only what two lines (three at the accessibility sizes) cannot
-            // hold is cut, at its end.
             Text(after.text)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(typeSize.isAccessibilitySize ? 3 : 2)
+                .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
             if after.row != nil {

@@ -252,6 +252,35 @@ struct RowsFilledButtonStyle: ButtonStyle {
     }
 }
 
+/// A round button's symbol on a Liquid Glass circle (`rowsGlassCircle`):
+/// a menu's grows out of the button it was opened from, rather than fading
+/// in beside it (owner, 2026-11-06). `glyph` is the symbol's frame; the
+/// glass adds its own padding (20 draws a 34 pt circle, 30 one as tall as a stepper).
+struct RowsGlassIcon: View {
+    let systemImage: String
+    var glyph: CGFloat = 20
+
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.body.weight(.semibold))
+            .frame(width: glyph * scale, height: glyph * scale)
+    }
+}
+
+extension View {
+    /// A button or menu as a glass circle in `tint`; `isProminent` fills it (a choice made).
+    @ViewBuilder
+    func rowsGlassCircle(tint: Color, isProminent: Bool = false) -> some View {
+        if isProminent {
+            buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(tint)
+        } else {
+            buttonStyle(.glass).buttonBorderShape(.circle).tint(tint)
+        }
+    }
+}
+
 /// A tinted capsule button: the secondary beside Start or Stop.
 struct RowsTintedButtonStyle: ButtonStyle {
     let tint: Color

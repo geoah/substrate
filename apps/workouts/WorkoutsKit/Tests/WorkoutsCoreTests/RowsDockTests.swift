@@ -4,7 +4,7 @@ import Testing
 @testable import WorkoutsCore
 
 // The review of the three-part island (PR #1110): when the island docks the
-// open set, what "Then …" may open, a group's warm-up in the island, and the
+// open set, what "Next …" may open, a group's warm-up in the island, and the
 // minimised bar while a timed set runs.
 
 private let set1 = RowID("set-1")
@@ -267,9 +267,9 @@ struct RowsDockTests {
     }
 }
 
-@Suite("Rows island: \"Then\" takes the list to the set, never opens it", .timeLimit(.minutes(10)))
+@Suite("Rows island: \"Next\" takes the list to the set, never opens it", .timeLimit(.minutes(10)))
 struct RowsAfterActionTests {
-    /// Every "Then" line that names a row names one the list shows, so a tap lands on it.
+    /// Every "Next" line that names a row names one the list shows, so a tap lands on it.
     private func expectEveryLineLands(_ start: RowsSession, logs: Int) throws {
         var session = start
         var second = 10
@@ -298,7 +298,7 @@ struct RowsAfterActionTests {
         #expect(lines > 10, "\(lines) lines")
     }
 
-    @Test("walking two whole sessions, every \"Then\" that names a set names a line in the list")
+    @Test("walking two whole sessions, every \"Next\" that names a set names a line in the list")
     func everyLineLands() throws {
         try expectEveryLineLands(try RowsSession.dayOne(), logs: 40)
         try expectEveryLineLands(try RowsSession.fullyBody(), logs: 40)

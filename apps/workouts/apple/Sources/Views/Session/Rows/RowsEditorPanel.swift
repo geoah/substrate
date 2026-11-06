@@ -283,14 +283,9 @@ struct RowsEditorPanel: View {
                         untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
                         delete: { screen.delete(editor.row, name: name, session: session) })
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(tint)
-                        .frame(width: 32, height: 32)
-                        .background(tint.opacity(0.13), in: .circle)
-                        .frame(width: 44, height: 44)
-                        .contentShape(.rect)
+                    RowsGlassIcon(systemImage: "ellipsis")
                 }
+                .rowsGlassCircle(tint: tint)
                 .accessibilityLabel("\(editor.title) options")
                 .accessibilityHint(editor.mode == .fix ? "Untick, delete, set kind, rest and note" : "Delete, set kind, rest and note")
             }
@@ -560,25 +555,6 @@ struct RowsLastText: View {
     }
 }
 
-/// A round button as tall as the stepper, beside it: the reset, why the set ended.
-struct RowsRoundButtonLabel: View {
-    let systemImage: String
-    let color: Color
-    /// Chosen: the colour fills the circle.
-    var isFilled = false
-
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 44
-
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.body.weight(.semibold))
-            .foregroundStyle(isFilled ? Color.white : color)
-            .frame(width: size, height: size)
-            .background(isFilled ? color : color.opacity(0.13), in: .circle)
-            .contentShape(.circle)
-    }
-}
-
 /// `↺`, back to the suggestion, the plan's value or what was logged. Its
 /// place is kept while there is nothing to go back to, so the row does not
 /// shift under the thumb when a step makes one.
@@ -591,9 +567,9 @@ struct RowsResetButton: View {
         Button {
             if let reset { onPatch(reset.patch) }
         } label: {
-            RowsRoundButtonLabel(systemImage: "arrow.uturn.backward", color: tint)
+            RowsGlassIcon(systemImage: "arrow.uturn.backward", glyph: 30)
         }
-        .buttonStyle(.plain)
+        .rowsGlassCircle(tint: tint)
         .opacity(reset == nil ? 0 : 1)
         .disabled(reset == nil)
         .accessibilityLabel(reset?.accessibilityLabel ?? "")
@@ -718,7 +694,7 @@ struct RowsEffortRow: View {
     }
 }
 
-/// Why the set ended, a round button: `?` with none chosen, else the
+/// Why the set ended, a glass round button: `?` with none chosen, else the
 /// reason's symbol on its colour (pain in orange). A tap lists the four
 /// reasons and, with one chosen, `Clear reason`.
 struct RowsStopMenuButton: View {
@@ -744,10 +720,9 @@ struct RowsStopMenuButton: View {
                 Button("Clear reason") { onPatch(clear) }
             }
         } label: {
-            RowsRoundButtonLabel(
-                systemImage: menu.selected.map(Self.symbol) ?? "questionmark", color: color, isFilled: menu.selected != nil)
+            RowsGlassIcon(systemImage: menu.selected.map(Self.symbol) ?? "questionmark", glyph: 30)
         }
-        .buttonStyle(.plain)
+        .rowsGlassCircle(tint: color, isProminent: menu.selected != nil)
         .accessibilityLabel(menu.accessibilityLabel)
         .accessibilityValue(menu.accessibilityValue)
     }

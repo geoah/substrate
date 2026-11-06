@@ -232,14 +232,9 @@ private struct PlanBlockCard: View {
                 change(edit) { $0.removeBlocks(at: [index]) }
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.body.weight(.bold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                .background(Color(.tertiarySystemFill), in: .circle)
-                .frame(width: 44, height: 44)
-                .contentShape(.rect)
+            RowsGlassIcon(systemImage: "ellipsis")
         }
+        .rowsGlassCircle(tint: .accentColor)
         .accessibilityLabel("\(block.spokenTitle) options")
     }
 

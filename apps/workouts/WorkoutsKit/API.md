@@ -245,7 +245,7 @@ parts; draw `island.parts(editorInView:)`, top to bottom:
   the editor's `fields` (steppers and keypads as in the editor), `rpe` ("@ 8") and `primary` ("Log", "Start" or "Stop",
   its `accessibilityLabel` the editor's full title). `timerStartedAt` while a timed set runs. `parts` leaves it out
   while `editorInView`: the list shows the set then.
-- `after`, a `RowsAfterPart`: the set after the next one. `label` ("Then"), `text` ("Calf Press (Machine), set 1,
+- `after`, a `RowsAfterPart`: the set after the next one. `label` ("Next"), `text` ("Calf Press (Machine), set 1,
   60 kg × 12") and `action` (`.touch(row)`); `row` and `action` are nil for a mini-set not made yet.
 - `end`: `.allDone(title:detail:)` with Finish, or `.empty`, where a tap opens the exercise picker.
 
