@@ -536,7 +536,10 @@ quietly does less than it claims is worse than none. The destination filter is
 outside that choice: `best-effort` degrades a layer it cannot apply to the body
 itself, but where the *supervisor* cannot run, a body that declares network is
 refused under `best-effort` too, because running it would mean handing it the
-deployment's own network rather than a weaker version of the internet.
+deployment's own network rather than a weaker version of the internet. The
+same holds when the syscall filter itself cannot be installed: a body that
+declares network, or runs outside code, is refused rather than started with
+the connect gate alone, because its socket rules live in that filter.
 
 **What it does not do.** It is not a container. A body still shares a uid and a
 pid namespace with the substrate. On Landlock ABI 6 (Linux 6.12) and newer,
