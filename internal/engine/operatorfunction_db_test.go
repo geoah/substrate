@@ -14,6 +14,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -936,6 +937,79 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	process()
 	if state, started := syncOf(); state != substrate.SyncStateOK || started == nil || started == firstStart {
 		t.Fatalf("after the reset syncState %v started %v, want ok from a new run (the first started %v)", state, started, firstStart)
+	}
+	requireNoFailures(t, ds, trigger)
+}
+
+// A webhook trigger of a function on the operator's key waits at the
+// allowance too: the admitted request stays pending, neither run nor parked,
+// through the hold, through a fire refused at its reservation after the hold
+// let it through, and through another walk of the pending requests; the first
+// walk after the reset delivers it under its own fire id.
+func TestAnOperatorPaidWebhookTriggerWaitsForTheReset(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, clock := openMeterDataset(t, 1)
+	trigger := meterTrigger(t, ds, map[string]any{"webhook": map[string]any{}})
+	spendFunctionCents(t, ds, 0.6)
+	pending := func() []pendingWebhook {
+		t.Helper()
+		rows, err := ds.pendingWebhooks(ctx, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	stillPending := func(when, fid string) foldFailure {
+		t.Helper()
+		rows := pending()
+		if len(rows) != 1 || rows[0].trigger != trigger || rows[0].row.FireID != fid || rows[0].row.Attempts != 0 {
+			t.Fatalf("%s: pending requests = %+v, want fire %s pending at no attempts", when, rows, fid)
+		}
+		return rows[0].row
+	}
+
+	fid, err := ds.svc.receiveWebhook(ctx, testdb.Repository(t), trigger, "", substrate.WebhookRequest{
+		Method: "POST", ContentType: "application/json",
+		Headers: map[string]string{"content-type": "application/json"},
+		Body:    []byte(`{"n":1}`),
+	}, webhookFireInline)
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	reading := "fire-" + fid
+	stillPending("held at its fire", fid)
+	requireReading(t, ds, reading, false)
+	if held := heldText(t, ds, trigger); !strings.HasPrefix(held, allowancePrefix) {
+		t.Fatalf("status held = %q, want the allowance's words", held)
+	}
+
+	// The race: the hold let the fire through, then the reservation was
+	// refused. Nothing runs and the request stays pending.
+	tr, _, err := ds.triggerByID(ctx, trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := stillPending("before the race", fid)
+	var envelope map[string]any
+	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if _, settled, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row); !errors.Is(err, errUnstartedAtAllowance) || settled {
+		t.Fatalf("a fire refused at its reservation = settled %v, %v; want it unsettled with the allowance's refusal", settled, err)
+	}
+	stillPending("refused at the reservation", fid)
+	requireReading(t, ds, reading, false)
+
+	ds.runPendingWebhooks(ctx)
+	stillPending("a walk while the allowance is spent", fid)
+	requireReading(t, ds, reading, false)
+
+	clock.Set(time.Date(2026, 11, 7, 0, 0, 1, 0, time.UTC))
+	ds.runPendingWebhooks(ctx)
+	requireReading(t, ds, reading, true)
+	if rows := pending(); len(rows) != 0 {
+		t.Fatalf("after the reset the request is still pending: %+v", rows)
 	}
 	requireNoFailures(t, ds, trigger)
 }
