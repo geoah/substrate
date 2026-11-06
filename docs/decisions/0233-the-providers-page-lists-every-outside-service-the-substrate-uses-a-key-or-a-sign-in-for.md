@@ -4,15 +4,15 @@ date: 2026-11-06
 decision-makers: George Antoniadis
 ---
 
-# 0233. The Providers page lists every outside service the substrate spends a key on
+# 0233. The Providers page lists every outside service the substrate uses a key or a sign-in for
 
 ## Context and Problem Statement
 
 A deployment's operator can now supply keys and OAuth clients a repository
 uses where it holds none of its own ([the plan](../plans/host-defaults.md),
 and decision 0232 in PR 1213). The console had nowhere that showed,
-in one place, every service the substrate spends a key on and whose key each
-one runs on: Providers held only the catalog providers that bring data in
+in one place, every service the substrate uses a key or a sign-in for and
+whose key each one runs on: Providers held only the catalog providers that bring data in
 ([0130](0130-the-console-serves-four-things-and-its-navigation-follows-them.md)),
 and the AI model rows (`llm/provider`) were reached only through their
 records and an agent's "Add your key" dialog. A new person on a deployment
@@ -24,8 +24,8 @@ that pays for chat could not see that it did, or swap in their own key.
   where its key comes from (built first in PR 1212).
 - Keep Providers as the data-bringing providers, and leave the
   `llm/provider` rows on their records.
-- One **Providers** page listing every outside service the substrate spends
-  a key on, in three groups.
+- One **Providers** page listing every outside service the substrate uses a
+  key or a sign-in for, in three groups.
 
 ## Decision Outcome
 
@@ -37,7 +37,8 @@ offers functions to agents,
 and **AI models** (one card per `llm/provider` row, seeded or made by the
 person, titled by its label). This amends what 0130 and
 [docs/console.md](../console.md#providers) say Providers holds: it is every
-outside service with a key, not only the ones that bring data in.
+outside service with a key or a sign-in, not only the ones that bring data
+in.
 
 A Services page split one question, "what does my substrate connect to",
 across two pages that both listed Google and its sign-in, and needed its own
@@ -61,9 +62,9 @@ The rules the page keeps:
 - Where the deployment loads an operator defaults file, registration lands
   on Providers with a welcome the person dismisses. Home is unchanged
   ([0148](0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)).
-- The sidebar's Providers count and Home's Providers card count what the page
-  shows as set up: installed provider packages and AI model rows whose key
-  resolves.
+- The sidebar's Providers count and Home's Providers card count the provider
+  packages added plus the AI models with a key (their own or the
+  operator's), read the same way the page reads them.
 
 ### Consequences
 

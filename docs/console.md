@@ -19,9 +19,9 @@ The console is built around four things, and Home opens on one card for each:
 
 - **Your data**: the collections you keep, and the copies your providers
   bring in. A collection is every record of one kind.
-- **Providers**: the outside services the substrate spends a key on: the
-  accounts that bring data in, the tools your agents call and the AI models
-  they run on.
+- **Providers**: the outside services the substrate uses a key or a sign-in
+  for: the accounts that bring data in, the tools your agents call and the AI
+  models they run on.
 - **Agents**: the assistants that work on your data, in a chat.
 - **Tools**: everything that can act on your data besides you, each saying
   what it may see and change and when it runs.
@@ -41,8 +41,8 @@ The sidebar holds, top to bottom: the repository name, which opens the account
 menu (**Account and settings**, **Appearance**, the **Technical details**
 switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
 the five places (**Home**, **All data**, **Agents**, **Tools**,
-**Providers**, with the number of things [Providers](#providers) shows as
-set up beside the last, and
+**Providers**, with the provider packages added plus the AI models with a
+key counted beside the last, and
 [**Observations**](#observations) after All data where some kind records
 measurements),
 **Favorites**, the collections, and at the foot **History**, **Settings** and
@@ -183,8 +183,8 @@ nesting and grouping, its columns, and the Search page's ranking choice.
 ## Home
 
 **Home** (`/`) is what the substrate holds and what just happened: the four
-cards (how many collections, how many things Providers shows as set up, the
-agents by name, how many tools and how many of them came from your
+cards (how many collections, the provider packages added plus the AI models
+with a key, the agents by name, how many tools and how many of them came from your
 providers), up to nine **Collections**
 with their record counts and where each comes from ("Yours", "From Google",
 "Made by _agent_" where an agent declared its package; yours first, those
@@ -957,9 +957,9 @@ and one trigger's record page is the trigger.
 
 ## Providers
 
-**Providers** (`/providers`) lists every outside service the substrate spends
-a key on, in three groups
-([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-spends-a-key-on.md)):
+**Providers** (`/providers`) lists every outside service the substrate uses a
+key or a sign-in for, in three groups
+([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)):
 
 - **Accounts you connect**: the shipped catalog's
   [providers](bundles-catalog.md) that bring data in, joined with what this
@@ -985,12 +985,21 @@ operator is the one running the deployment, named by its
 
 An AI model card says **On** when a key resolves, **Set up** when none does
 and **Needs attention** when its calls fail, with the server's reason; never
-**Paused**, because a row has no off switch. Its key form opens in place and
+**Paused**, because a row has no off switch. Until the operator's defaults
+are read it says **Checking**, and **Couldn't check** where that read failed
+(with **Try again** over the cards), never **Set up**: a row with no key of
+its own may still run on the operator's; the sidebar shows no count then,
+and Home's card says **Couldn't check**. The read is asked whatever
+`server.json` lists; only a server older than it (`404`, `405`, `501`) falls
+back to each row's own `apiKey`. Its key form opens in place and
 writes the row's sealed `apiKey`: **Use your own key** over the operator's,
 **Replace key** over your own, **Add key** where there is none, and **Use
-_Site_'s again** where your key replaced one the operator still offers,
-which asks first and deletes your key. Where the operator serves a row, the
-card names the models its key allows. The card that search by meaning runs
+_Site_'s key again** where your key replaced one the operator still offers,
+which asks first and deletes your key. The key is written under the version
+the row had when the form opened, so a key written elsewhere meanwhile is
+refused rather than overwritten, and the typed key is kept nowhere once it is
+sent. Where the operator serves a row, the card names the models its key
+allows: "Using _Site_'s key, for gpt-5 and gpt-5-mini." The card that search by meaning runs
 through adds "Search by meaning: _Site_'s key" or "Search by meaning: your
 key"; choosing another row for it is a Technical details action, on the
 row's record. A seeded row you deleted is an **Add** card, which writes it
@@ -1003,8 +1012,9 @@ today's allowance: what it has spent of the day's limit, split by what spent
 it (chat, search by meaning, tools, sign-in), and when it resets, in your own
 time zone. Your own keys do not count against it, and it is separate from
 your own daily spend cap in [Settings](#settings). Where a tool runs on the
-operator's key, the **Tools for your agents** heading says "Counts toward
-today's allowance from _Site_". The allowance is never at the top of the page
+operator's key, the **Tools for your agents** heading says "counts toward
+today's allowance from _Site_", and the card names the tool by what it does
+("Web search for your agents."). The allowance is never at the top of the page
 or over the accounts.
 
 Where the deployment loaded an operator defaults file (`server.json` lists
