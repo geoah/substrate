@@ -1,9 +1,14 @@
 package api
 
 import (
+	"bytes"
+	"html"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -38,7 +43,23 @@ func (h *handler) serveSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rel := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(site.URLPrefix, "/"))
-	rel = strings.TrimPrefix(rel, "/")
+	h.serveSiteFile(w, r, strings.TrimPrefix(rel, "/"))
+}
+
+// serveTabIcon answers /favicon.ico with the site's tab icon, under the
+// headers and the type its own /site/ URL carries.
+func (h *handler) serveTabIcon(w http.ResponseWriter, r *http.Request) {
+	href, _ := h.site.TabIcon()
+	rel, err := url.PathUnescape(strings.TrimPrefix(href, site.URLPrefix))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.serveSiteFile(w, r, rel)
+}
+
+// serveSiteFile serves the site file at the slash-separated path rel.
+func (h *handler) serveSiteFile(w http.ResponseWriter, r *http.Request, rel string) {
 	f, info, err := h.site.Open(rel)
 	if err != nil {
 		http.NotFound(w, r)
@@ -58,4 +79,48 @@ func (h *handler) serveSite(w http.ResponseWriter, r *http.Request) {
 	}
 	hdr.Set("Content-Type", ctype)
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+}
+
+var (
+	shellIcon  = regexp.MustCompile(`(?i)<link\s[^>]*\brel=["']?icon["']?[^>]*>`)
+	shellTitle = regexp.MustCompile(`(?is)<title>.*?</title>`)
+)
+
+// brandShell returns the rewrite the console's index.html takes on a server
+// with a site: its tab icon becomes the site's and its title the site's name.
+// The console makes the same change once discovery answers, but a tab draws
+// the icon the HTML names before any script runs, and a bookmark or a link
+// preview never runs one.
+func brandShell(s *site.Site) func([]byte) []byte {
+	title := []byte("<title>" + html.EscapeString(s.Info().Name) + "</title>")
+	var icon []byte
+	if href, typ := s.TabIcon(); href != "" {
+		tag := `<link rel="icon"`
+		if typ != "" {
+			tag += ` type="` + html.EscapeString(typ) + `"`
+		}
+		icon = []byte(tag + ` href="` + html.EscapeString(href) + `" />`)
+	}
+	return func(page []byte) []byte {
+		page = replaceFirst(shellTitle, page, title)
+		if icon == nil {
+			return page
+		}
+		if shellIcon.Match(page) {
+			return replaceFirst(shellIcon, page, icon)
+		}
+		if i := bytes.Index(bytes.ToLower(page), []byte("</head>")); i >= 0 {
+			return slices.Concat(page[:i], icon, page[i:])
+		}
+		return page
+	}
+}
+
+// replaceFirst replaces re's first match in b with the literal repl.
+func replaceFirst(re *regexp.Regexp, b, repl []byte) []byte {
+	loc := re.FindIndex(b)
+	if loc == nil {
+		return b
+	}
+	return slices.Concat(b[:loc[0]], repl, b[loc[1]:])
 }

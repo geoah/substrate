@@ -320,6 +320,12 @@ func New(cfg Config) http.Handler {
 		// The deployer's files, every method, so a wrong one is the 404 the
 		// rest of /site/ answers rather than the console shell.
 		r.Handle(site.URLPrefix+"*", http.HandlerFunc(h.serveSite))
+		// A browser asks for /favicon.ico wherever a page names no icon it can
+		// use (a bookmark, a feed reader, an older Safari), and the console's
+		// shell is no answer to that.
+		if href, _ := h.site.TabIcon(); href != "" {
+			r.Get("/favicon.ico", h.serveTabIcon)
+		}
 	}
 
 	// An unmatched path is a 404 — but WHICH 404 depends on where it sits. A
@@ -330,7 +336,11 @@ func New(cfg Config) http.Handler {
 	// whose deep links are the reason the fallback exists at all.
 	fallback := http.NotFound
 	if cfg.WebDir != "" {
-		fallback = spaHandler(cfg.WebDir)
+		var shell func([]byte) []byte
+		if h.site != nil {
+			shell = brandShell(h.site)
+		}
+		fallback = spaHandler(cfg.WebDir, shell)
 	}
 	if h.site != nil {
 		// chi matches the RAW path, so `/site%2Flogo.svg` misses the route
@@ -591,19 +601,46 @@ const (
 )
 
 // spaHandler serves the built web app: a real file as itself, and any other
-// path as index.html so client-side routes deep-link.
+// path as index.html so client-side routes deep-link. A non-nil shell rewrites
+// index.html on every serve of it, the fallbacks included.
 //
 // A path that names a static asset is the ONE thing the fallback does not
 // cover. A tab left open across a rebuild asks for the chunk hashes it was
 // built with, and those files are gone: answering them with index.html turns a
 // plain 404 into a MIME-type parse error the app cannot report on.
-func spaHandler(dir string) http.HandlerFunc {
+func spaHandler(dir string, shell func([]byte) []byte) http.HandlerFunc {
 	root := filepath.Clean(dir)
 	if abs, err := filepath.Abs(root); err == nil {
 		root = abs
 	}
 	index := filepath.Join(root, "index.html")
 	gz := newGzipAssets()
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
+		// index.html names the current chunk hashes, so a stored copy is a tab
+		// that cannot learn about a deploy.
+		w.Header().Set("Cache-Control", cacheNever)
+		if shell == nil {
+			http.ServeFile(w, r, index)
+			return
+		}
+		f, err := os.Open(index)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		info, err := f.Stat()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		raw, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, "reading the console", http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, r, "index.html", info.ModTime(), bytes.NewReader(shell(raw)))
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A URL path never legitimately carries a backslash, and path.Clean does
 		// not read one as a separator: left in, it reaches filepath as one on the
@@ -634,6 +671,8 @@ func spaHandler(dir string) http.HandlerFunc {
 		}
 		info, err := os.Stat(file)
 		switch {
+		case err == nil && !info.IsDir() && file == index:
+			serveIndex(w, r)
 		case err == nil && !info.IsDir():
 			if strings.HasPrefix(rel, assetPrefix) {
 				w.Header().Set("Cache-Control", cacheImmutable)
@@ -647,10 +686,7 @@ func spaHandler(dir string) http.HandlerFunc {
 		case strings.HasPrefix(rel, assetPrefix) || assetExts[strings.ToLower(path.Ext(rel))]:
 			http.NotFound(w, r)
 		default:
-			// index.html names the current chunk hashes, so a stored copy is a tab
-			// that cannot learn about a deploy.
-			w.Header().Set("Cache-Control", cacheNever)
-			http.ServeFile(w, r, index)
+			serveIndex(w, r)
 		}
 	}
 }

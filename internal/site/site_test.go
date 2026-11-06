@@ -31,8 +31,9 @@ func TestLoadEmptyDirIsNoSite(t *testing.T) {
 
 func TestLoadReadsEveryKey(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "site.yaml", "name: Example\ntagline: A place for friends\nlogo: img/logo one.svg\nlanding: landing.html\n")
+	write(t, dir, "site.yaml", "name: Example\ntagline: A place for friends\nlogo: img/logo one.svg\nicon: icon.png\nlanding: landing.html\n")
 	write(t, dir, "img/logo one.svg", "<svg/>")
+	write(t, dir, "icon.png", "\x89PNG")
 	write(t, dir, "landing.html", "<h1>hi</h1>")
 	s, err := Load(dir)
 	if err != nil {
@@ -40,7 +41,7 @@ func TestLoadReadsEveryKey(t *testing.T) {
 	}
 	want := substrate.SiteInfo{
 		Name: "Example", Tagline: "A place for friends",
-		Logo: "/site/img/logo%20one.svg", Landing: "/site/landing.html",
+		Logo: "/site/img/logo%20one.svg", Icon: "/site/icon.png", Landing: "/site/landing.html",
 	}
 	if s.Info() != want {
 		t.Fatalf("Info() = %+v, want %+v", s.Info(), want)
@@ -104,7 +105,7 @@ func TestLoadRefuses(t *testing.T) {
 		{"unknown key", func(t *testing.T, dir string) string {
 			write(t, dir, "site.yaml", "name: Example\ntagLine: hi\n")
 			return dir
-		}, `line 2: unknown key "tagLine" (the keys are name, tagline, logo, landing)`},
+		}, `line 2: unknown key "tagLine" (the keys are name, tagline, logo, icon, landing)`},
 		{"a list, not a mapping", func(t *testing.T, dir string) string {
 			write(t, dir, "site.yaml", "- name: Example\n")
 			return dir
@@ -125,6 +126,15 @@ func TestLoadRefuses(t *testing.T) {
 			write(t, dir, "site.yaml", "name: Example\nlogo: logo.svg\n")
 			return dir
 		}, "logo"},
+		{"missing icon", func(t *testing.T, dir string) string {
+			write(t, dir, "site.yaml", "name: Example\nicon: icon.svg\n")
+			return dir
+		}, "icon"},
+		{"icon is not an image", func(t *testing.T, dir string) string {
+			write(t, dir, "site.yaml", "name: Example\nicon: icon.html\n")
+			write(t, dir, "icon.html", "<h1>x</h1>")
+			return dir
+		}, "not an image a browser shows"},
 		{"missing landing", func(t *testing.T, dir string) string {
 			write(t, dir, "site.yaml", "name: Example\nlanding: landing.html\n")
 			return dir
@@ -170,6 +180,34 @@ func TestLoadRefuses(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Load error = %q, want it to name %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestTabIcon(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml        string
+		wantHref, wantTyp string
+	}{
+		{"none", "name: Example\n", "", ""},
+		{"logo stands in", "name: Example\nlogo: logo.svg\n", "/site/logo.svg", "image/svg+xml"},
+		{"icon wins", "name: Example\nlogo: logo.svg\nicon: icon.PNG\n", "/site/icon.PNG", "image/png"},
+		{"logo of no image type", "name: Example\nlogo: logo\n", "/site/logo", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, dir, "site.yaml", tc.yaml)
+			write(t, dir, "logo.svg", "<svg/>")
+			write(t, dir, "logo", "<svg/>")
+			write(t, dir, "icon.PNG", "\x89PNG")
+			s, err := Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			href, typ := s.TabIcon()
+			if href != tc.wantHref || typ != tc.wantTyp {
+				t.Fatalf("TabIcon() = %q, %q; want %q, %q", href, typ, tc.wantHref, tc.wantTyp)
 			}
 		})
 	}

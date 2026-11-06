@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -46,7 +47,21 @@ type document struct {
 	Name    string `yaml:"name"`
 	Tagline string `yaml:"tagline"`
 	Logo    string `yaml:"logo"`
+	Icon    string `yaml:"icon"`
 	Landing string `yaml:"landing"`
+}
+
+// iconTypes are the formats every current browser shows as a tab icon, by
+// extension. An icon in another format is refused at boot rather than served
+// as a tab icon no browser draws.
+var iconTypes = map[string]string{
+	".svg":  "image/svg+xml",
+	".png":  "image/png",
+	".ico":  "image/x-icon",
+	".webp": "image/webp",
+	".gif":  "image/gif",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
 }
 
 // Load reads and validates the site directory at dir. An empty dir is no
@@ -95,6 +110,14 @@ func Load(dir string) (*Site, error) {
 	if s.info.Logo, err = fileURL(root, doc.Logo); err != nil {
 		return nil, fmt.Errorf("%s: logo: %w", File, err)
 	}
+	if doc.Icon != "" {
+		if _, ok := iconTypes[strings.ToLower(path.Ext(doc.Icon))]; !ok {
+			return nil, fmt.Errorf("%s: icon: %q is not an image a browser shows as a tab icon (the extensions are .svg, .png, .ico, .webp, .gif, .jpg, .jpeg)", File, doc.Icon)
+		}
+	}
+	if s.info.Icon, err = fileURL(root, doc.Icon); err != nil {
+		return nil, fmt.Errorf("%s: icon: %w", File, err)
+	}
 	if s.info.Landing, err = fileURL(root, doc.Landing); err != nil {
 		return nil, fmt.Errorf("%s: landing: %w", File, err)
 	}
@@ -106,6 +129,21 @@ func (s *Site) Dir() string { return s.dir }
 
 // Info is what discovery announces.
 func (s *Site) Info() substrate.SiteInfo { return s.info }
+
+// TabIcon is the URL of the browser tab's icon and its media type: the icon
+// where site.yaml names one, else the logo, else "" for both. The type is ""
+// for a logo whose extension names no image format, so a page states no type
+// rather than a wrong one.
+func (s *Site) TabIcon() (href, mediaType string) {
+	href = s.info.Icon
+	if href == "" {
+		href = s.info.Logo
+	}
+	if href == "" {
+		return "", ""
+	}
+	return href, iconTypes[strings.ToLower(path.Ext(href))]
+}
 
 // Open opens the file at the slash-separated path rel inside the directory,
 // for serving. It refuses, as fs.ErrNotExist, every path Servable refuses
@@ -159,7 +197,7 @@ func readDescription(root *os.Root) ([]byte, error) {
 }
 
 // keys is site.yaml's closed key set, in the order the refusal lists it.
-var keys = []string{"name", "tagline", "logo", "landing"}
+var keys = []string{"name", "tagline", "logo", "icon", "landing"}
 
 func decode(raw []byte) (document, error) {
 	var doc document

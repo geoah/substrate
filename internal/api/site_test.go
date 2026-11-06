@@ -240,3 +240,90 @@ func TestDiscoveryOmitsSiteWithoutOne(t *testing.T) {
 		t.Fatalf("body = %s, want no site key", rec.Body.String())
 	}
 }
+
+const consoleShell = "<!doctype html>\n<html><head>\n<link rel=\"icon\" type=\"image/svg+xml\" href=\"/substrate.svg\" />\n" +
+	"<title>Substrate Console</title>\n</head><body></body></html>"
+
+// A tab draws the icon the HTML names before any script runs, so the shell
+// itself names the site's icon and name on every path that serves it.
+func TestSiteBrandsTheConsoleShell(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(consoleShell), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	branded := func(s *site.Site) http.Handler {
+		return New(Config{
+			Service: newFakeService(),
+			Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+			WebDir:  dir,
+			Site:    s,
+		})
+	}
+	h := branded(siteDir(t))
+	for _, target := range []string{"/", "/index.html", "/login", "/kinds/example.com/people/person"} {
+		rec := serve(h, http.MethodGet, target, nil)
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d", target, rec.Code)
+		}
+		if !strings.Contains(body, `<link rel="icon" type="image/svg+xml" href="/site/logo.svg" />`) ||
+			strings.Contains(body, "/substrate.svg") {
+			t.Errorf("%s: body = %q, want the site logo as the only icon", target, body)
+		}
+		if !strings.Contains(body, "<title>Example</title>") {
+			t.Errorf("%s: body = %q, want the site's name as the title", target, body)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != cacheNever {
+			t.Errorf("%s: Cache-Control = %q, want %q", target, got, cacheNever)
+		}
+	}
+
+	rec := serve(branded(nil), http.MethodGet, "/", nil)
+	if rec.Body.String() != consoleShell {
+		t.Fatalf("no site: body = %q, want the shell untouched", rec.Body.String())
+	}
+}
+
+func TestSiteAnswersFaviconWithItsIcon(t *testing.T) {
+	rec := serve(siteHandler(t, siteDir(t)), http.MethodGet, "/favicon.ico", nil)
+	if rec.Code != http.StatusOK || rec.Body.String() != `<svg xmlns="http://www.w3.org/2000/svg"/>` {
+		t.Fatalf("/favicon.ico: status = %d, body = %q; want the logo", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Type") != "image/svg+xml" || rec.Header().Get("Content-Security-Policy") != sitePolicy {
+		t.Fatalf("/favicon.ico: headers = %v", rec.Header())
+	}
+}
+
+func TestBrandShell(t *testing.T) {
+	dir := t.TempDir()
+	for rel, body := range map[string]string{
+		"site.yaml":    "name: A <b> & \"c\"\nlogo: logo.svg\nicon: fav icon.png\n",
+		"logo.svg":     "<svg/>",
+		"fav icon.png": "\x89PNG",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := site.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell := brandShell(s)
+	for _, tc := range []struct{ name, in, want string }{
+		{"replaces", consoleShell, "<!doctype html>\n<html><head>\n" +
+			`<link rel="icon" type="image/png" href="/site/fav%20icon.png" />` + "\n" +
+			"<title>A &lt;b&gt; &amp; &#34;c&#34;</title>\n</head><body></body></html>"},
+		{
+			"inserts where no icon is named", "<html><head><title>x</title></HEAD></html>",
+			`<html><head><title>A &lt;b&gt; &amp; &#34;c&#34;</title><link rel="icon" type="image/png" href="/site/fav%20icon.png" /></HEAD></html>`,
+		},
+		{"leaves a page with no head", "plain", "plain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(shell([]byte(tc.in))); got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}

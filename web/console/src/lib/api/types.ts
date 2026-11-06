@@ -817,13 +817,15 @@ export interface DomainCheck {
 }
 
 /** The deployer's site, discovery's optional `site` object: absent where the
- * server has no `SUBSTRATE_SITE_DIR`. `logo` and `landing` are server-relative
- * URLs under `/site/`; `landing` is an HTML fragment the console renders at `/`
- * for a signed-out visitor. */
+ * server has no `SUBSTRATE_SITE_DIR`. `logo`, `icon` and `landing` are
+ * server-relative URLs under `/site/`; `icon` is the browser tab's icon, the
+ * logo standing in where it is absent; `landing` is an HTML fragment the
+ * console renders at `/` for a signed-out visitor. */
 export interface SiteInfo {
   name: string
   tagline?: string
   logo?: string
+  icon?: string
   landing?: string
 }
 

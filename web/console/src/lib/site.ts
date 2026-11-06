@@ -1,5 +1,5 @@
 /** The deployment's own site (`SUBSTRATE_SITE_DIR`): a name, a tagline, a
- * logo and a landing page an operator may set, read from the `site` block of
+ * logo, a tab icon and a landing page an operator may set, read from the `site` block of
  * the discovery document. Every part is optional, and a substrate that sets
  * none looks exactly as one without this module: the doors keep the default
  * brand and a signed-out `/` goes to the sign-in. */
@@ -37,9 +37,11 @@ export function readSite(raw: unknown): SiteInfo | null {
   const site: SiteInfo = { name }
   const tagline = text(r.tagline)
   const logo = localPath(r.logo)
+  const icon = localPath(r.icon)
   const landing = localPath(r.landing)
   if (tagline) site.tagline = tagline
   if (logo) site.logo = logo
+  if (icon) site.icon = icon
   if (landing) site.landing = landing
   return site
 }
@@ -121,22 +123,25 @@ const ICON_TYPES: Record<string, string> = {
   jpeg: "image/jpeg",
 }
 
-/** Point the tab's icon at the site's logo and name the tab after the site
- * until a page names it. Nothing changes where no site is set. */
+/** Point the tab's icon at the site's icon, else its logo, and name the tab
+ * after the site until a page names it. Nothing changes where no site is set.
+ * The server already names both in the HTML it serves; this covers the dev
+ * server, which serves the shell as it was built. */
 export function applySiteBranding(site: SiteInfo | null, doc = document): void {
   if (!site) return
-  if (site.logo) {
+  const href = site.icon ?? site.logo
+  if (href) {
     let link = doc.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {
       link = doc.createElement("link")
       link.rel = "icon"
       doc.head.appendChild(link)
     }
-    const ext = site.logo.split("?")[0].split(".").pop()?.toLowerCase() ?? ""
+    const ext = href.split("?")[0].split(".").pop()?.toLowerCase() ?? ""
     const type = ICON_TYPES[ext]
     if (type) link.type = type
     else link.removeAttribute("type")
-    link.href = site.logo
+    link.href = href
   }
   if (doc.title === "Substrate Console") doc.title = site.name
 }

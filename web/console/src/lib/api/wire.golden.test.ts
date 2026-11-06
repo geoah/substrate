@@ -343,6 +343,7 @@ const siteInfo: Shape<SiteInfo> = {
   name: true,
   tagline: false,
   logo: false,
+  icon: false,
   landing: false,
 }
 

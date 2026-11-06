@@ -520,6 +520,7 @@ visitors. Point `SUBSTRATE_SITE_DIR` at a directory holding a `site.yaml`:
 name: Example               # required: the brand the console shows
 tagline: A place for our photos and plans   # optional: one line under it
 logo: logo.svg              # optional: a file in the directory
+icon: icon.svg              # optional: the browser tab's icon, a file in the directory
 landing: landing.html       # optional: a file in the directory
 ```
 
@@ -528,15 +529,20 @@ Under it the sign-in and register pages say "A Substrate provider": a site
 names who hosts the Substrates on this server, and the doors keep calling
 what a visitor signs in to "your Substrate". `tagline` is the line under the
 name on a landing whose fragment cannot load, and the second half of the
-landing's page title. `logo` is an image shown beside the name.
+landing's page title. `logo` is an image shown beside the name. `icon` is
+the browser tab's icon (`.svg`, `.png`, `.ico`, `.webp`, `.gif`, `.jpg` or
+`.jpeg`); without one the logo is the tab's icon. The server writes that icon
+and the site's `name` into the console's HTML, so the tab shows them before
+any script runs, and answers `/favicon.ico` with the same file.
 `landing` is an HTML fragment the console renders at `/` for a visitor who is
 not signed in, in place of sending them straight to sign in. Without
 `SUBSTRATE_SITE_DIR` none of this exists: `/site/` is the console's like
 any other path and discovery carries no `site`.
 
 The server reads `site.yaml` once, at boot, and refuses to boot when it is
-wrong: no `name`, a key it does not know, more than one YAML document, or a
-`logo` or `landing` that is not a regular file inside the directory (an
+wrong: no `name`, a key it does not know, more than one YAML document, an
+`icon` of another extension, or a `logo`, `icon` or `landing` that is not a
+regular file inside the directory (an
 absolute path, a `..`, a segment starting with a dot, or a symlink that leads
 out of the directory). A change to `site.yaml` needs a restart; the files it
 names are read on every request, so an edited `landing.html` shows on the

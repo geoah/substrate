@@ -874,6 +874,7 @@
     "upgrade": true
   },
   "SiteInfo": {
+    "icon": false,
     "landing": false,
     "logo": false,
     "name": true,
