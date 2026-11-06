@@ -903,7 +903,8 @@ serve it:
               {"name": "changefeed", "stability": "stable", "surfaces": ["rest"]},
               {"name": "search", "stability": "beta", "surfaces": ["rest"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
- "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"}},
+ "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
+              "mcp": {"endpoint": "/mcp", "compatibility": "preview"}},
  "grammar": {"kind": "<authority>/<package>/<name>",
              "record": "<authority>/<package>/<kind>/<id>",
              "collection": "/api/v1/records",
@@ -922,12 +923,12 @@ serve it:
 
 A feature's `surfaces` are the doors to its own operations, not to its
 records: a trigger and a blob manifest are ordinary records and read through
-the records route whatever the entry says. Every entry lists `rest`, the one
-surface, and the key stays a list so a second surface, should one come, lands
-as a new name beside it rather than a reshaped document. The example above is
-abridged; the full list, and it is the same for every deployment of a given
-build, is `triggers`, `functions`, `bundles`, `blobs`, `export`, `changefeed`,
-`search`, `aggregate`, `units`, `embeddings` and `agents`. `grammar.collection`
+the records route whatever the entry says. Every entry lists `rest` but
+`mcp`, which lists the MCP surface ([connecting an assistant](mcp.md)). The
+example above is abridged; the full list, and it is the same for every
+deployment of a given build, is `triggers`, `functions`, `bundles`, `blobs`,
+`export`, `changefeed`, `search`, `aggregate`, `units`, `embeddings`,
+`agents`, `apps` and `mcp`. `grammar.collection`
 is the records route and `grammar.recordPath` the record path, so a client
 checks the two shapes it must agree with the substrate about before it
 addresses anything.
@@ -935,7 +936,7 @@ addresses anything.
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
 is the interface a client builds on, and a break there is announced, never
-silent. A second, preview surface used to sit beside it and is gone
+silent. It is `preview` on `mcp`, at `/mcp`, whose tools may still move. A second, preview surface used to sit beside it and is gone
 ([decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md));
 the object is keyed so its removal was one key leaving, not a reshaped
 document. A feature's `stability` says how far that feature's own shape has
