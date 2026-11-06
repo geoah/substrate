@@ -86,10 +86,10 @@ describe("collectionSamples", () => {
   it("offers a sample by its primary kinds whatever else it ships", () => {
     const out = collectionSamples(
       [
-        sample("firecrawl", {
-          kinds: [`${HOME}/firecrawl/webdocument`],
-          kindPurposes: { [`${HOME}/firecrawl/webdocument`]: "supporting" },
-          functions: [`${HOME}/firecrawl/scrape`],
+        sample("pebble", {
+          kinds: [`${HOME}/pebble/instruction`],
+          kindPurposes: { [`${HOME}/pebble/instruction`]: "supporting" },
+          functions: [`${HOME}/pebble/ingest`],
         }),
         sample("notes", {
           kinds: [`${HOME}/notes/note`],
@@ -156,15 +156,17 @@ describe("callableSamples", () => {
       functions: [`${HOME}/notes/savenote`],
       agents: [`${HOME}/notes/titler`],
     }),
-    sample("firecrawl", { functions: [`${HOME}/firecrawl/scrapepage`] }),
+    sample("readinglist", {
+      functions: [`${HOME}/readinglist/fetchpage`],
+    }),
     sample("llm", { agents: [`${HOME}/llm/substrate`] }),
     sample("people", { kinds: [`${HOME}/people/person`] }),
   ]
 
   it("offers the samples that ship tools, by name, with their tools", () => {
     const out = callableSamples(rows, "functions")
-    expect(out.map((s) => s.row.package)).toEqual(["firecrawl", "notes"])
-    expect(out[1].members).toEqual([`${HOME}/notes/savenote`])
+    expect(out.map((s) => s.row.package)).toEqual(["notes", "readinglist"])
+    expect(out[0].members).toEqual([`${HOME}/notes/savenote`])
   })
 
   it("offers the samples that ship agents", () => {

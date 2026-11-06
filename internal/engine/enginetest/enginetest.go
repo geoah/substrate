@@ -317,7 +317,7 @@ func InstallShelfVersion(ctx context.Context, ds substrate.Dataset, version int6
 }
 
 // InstallBundle installs one shipped sample package that ships callables
-// ("web", "firecrawl") through the ordinary batch apply, under the bundle's own
+// ("readinglist") through the ordinary batch apply, under the bundle's own
 // actor — the closure a catalog install carries, minus the catalog. A test that
 // needs function, agent and bundle declaration rows calls this.
 func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error {

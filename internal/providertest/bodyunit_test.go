@@ -47,6 +47,41 @@ func TestBodyHelpersBeeper(t *testing.T) {
 	runBodyCases(t, bodyPython(t, dir), "py/test_beeper_offline.py", dir)
 }
 
+// TestBodyHelpersFirecrawl runs internal/providertest/py/test_firecrawl_api.py
+// over the shipped firecrawl_api module: the origin the key may go to, that
+// a call with no baseUrl (what the operator's key arrives with) goes to the
+// pinned origin, and that the opener refuses every redirect.
+func TestBodyHelpersFirecrawl(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if written := writeModules(t, firecrawlDir+"/bundle.yaml", dir); written != 1 {
+		t.Fatalf("wrote %d firecrawl modules, want firecrawl_api.py alone", written)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_firecrawl_api.py", dir)
+}
+
+// writeModules writes every shared module the bundle document ships into dir
+// under its own file name, and returns how many.
+func writeModules(t *testing.T, bundle, dir string) int {
+	t.Helper()
+	written := 0
+	for _, d := range loadDocs(t, bundle) {
+		if d["kind"] != vocabulary.CoreKind(vocabulary.DocBundle) {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		modules, _ := data["modules"].(map[string]any)
+		for name, src := range modules {
+			text, _ := src.(string)
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			written++
+		}
+	}
+	return written
+}
+
 // bodyPython is an interpreter every body written into dir runs on. A body
 // with no PEP 723 block runs on the deployment's own python3, which may be as
 // old as the host's floor (.ruff.toml), so python3 is the one to test it on. A
