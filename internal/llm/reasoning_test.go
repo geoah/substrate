@@ -164,7 +164,7 @@ func TestAnthropicStreamsThinkingBeforeTextAndKeepsTheSignature(t *testing.T) {
 	srv := anthropicEventServer(t, anthropicThinkingEvents)
 	var got []Delta
 	client := newAnthropic(Config{BaseURL: srv.srv.URL, APIKey: "sk-test"})
-	msg, err := client.complete(context.Background(), anthropicParams(Request{
+	msg, _, err := client.complete(context.Background(), anthropicParams(Request{
 		Model: "m", Messages: []Message{{Role: RoleUser, Content: "weather?"}},
 	}), func(d Delta) { got = append(got, d) })
 	if err != nil {

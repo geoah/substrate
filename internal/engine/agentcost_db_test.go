@@ -2,7 +2,11 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -155,6 +159,68 @@ func TestAFailedThreadCountsTheUsageReportedBesideItsFailure(t *testing.T) {
 	}
 	if got := anyFloat2(th["costUSD"]); math.Abs(got-want) > 1e-12 {
 		t.Fatalf("failed thread costUSD = %v, want %v", got, want)
+	}
+	ag, err := ds.registry().ResolveAgent(namerAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.spend.expire()
+	if spent, _, err := ds.spendOf(ctx, ag); err != nil || math.Abs(spent-want) > 1e-12 {
+		t.Fatalf("the spend cap reads %v (%v), want %v", spent, err, want)
+	}
+}
+
+// On the person's own key an anthropic-wire answer that broke after it
+// reported its usage is retried, and the thread and the person's spend cap
+// count both attempts: the dropped one billed its tokens as surely as the one
+// that answered.
+func TestAThreadCountsEveryBilledAttemptOfARetriedCompletion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"name","content":[{"type":"text","text":"named"}],"stop_reason":"end_turn"`
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			// A 200 whose body breaks after its usage object.
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			partial := head + `,"usage":{"input_tokens":40,"output_tokens":20}`
+			_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRetry-After-Ms: 0\r\nContent-Length: %d\r\n\r\n%s",
+				len(partial)+1000, partial)
+			_ = buf.Flush()
+			_ = conn.Close()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, head+`,"usage":{"input_tokens":70,"output_tokens":30}}`)
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "namellm",
+		Properties: map[string]any{
+			"wire": "anthropic", "baseURL": srv.URL, "apiKey": "row-key-namellm",
+			"pricing": []any{map[string]any{"model": "name", "inputPer1M": "1", "outputPer1M": "5"}},
+		},
+	}); err != nil {
+		t.Fatalf("put llm/provider row namellm: %v", err)
+	}
+	res, err := ds.CallAgent(ctx, namerAgent, "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if n := attempts.Load(); n != 2 {
+		t.Fatalf("the endpoint saw %d attempts, want the dropped one and its retry", n)
+	}
+	const want = ((40+70)*1.0 + (20+30)*5.0) / 1e6
+	th := getThread(t, ds, res.Thread).Properties
+	if intProp(th, "promptTokens") != 110 || intProp(th, "completionTokens") != 50 {
+		t.Fatalf("thread tallies = %+v, want both attempts' 110 prompt and 50 completion tokens", th)
+	}
+	if got := anyFloat2(th["costUSD"]); math.Abs(got-want) > 1e-12 {
+		t.Fatalf("thread costUSD = %v, want %v", got, want)
 	}
 	ag, err := ds.registry().ResolveAgent(namerAgent)
 	if err != nil {

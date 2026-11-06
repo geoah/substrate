@@ -408,3 +408,140 @@ func TestARetryOnlyUnbilledClientMakesNoAttemptAfterABillableOne(t *testing.T) {
 		}
 	}
 }
+
+// Every attempt of one anthropic call that reported usage counts toward the
+// call's. On the person's own key a one-shot answer that broke after its
+// usage object arrived is retried, and the usage of the attempt that answered
+// adds to it, Partial when either report was; an attempt that reported nothing
+// adds nothing and leaves the sum whole. A RetryOnlyUnbilled client (the
+// operator's) still makes the one billable attempt, and returns its usage
+// beside the failure.
+func TestEveryAttemptThatReportedUsageCountsTowardTheCall(t *testing.T) {
+	const head = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"`
+	answerWith := func(usage string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) {
+			body := head
+			if usage != "" {
+				body += `,"usage":` + usage
+			}
+			answer(w, "application/json", body+"}")
+		}
+	}
+	// droppedAfter answers a body that breaks after usage, or before any
+	// usage when usage is empty.
+	droppedAfter := func(usage string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) {
+			body := head
+			if usage != "" {
+				body += `,"usage":` + usage
+			}
+			cutOff(w, "application/json", body)
+		}
+	}
+	const (
+		firstUsage  = `{"input_tokens":4,"output_tokens":2}`
+		secondUsage = `{"input_tokens":7,"output_tokens":3}`
+	)
+	cases := []struct {
+		name     string
+		operator bool
+		serve    []func(w http.ResponseWriter)
+		failed   bool
+		want     usageReport
+		// prompt and completion are the counts the call's Usage holds.
+		prompt, completion int
+	}{
+		{
+			"an answer dropped after its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith(secondUsage)},
+			false, reportedWhole, 11, 5,
+		},
+		{
+			"an answer dropped before its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(""), answerWith(secondUsage)},
+			false, reportedWhole, 7, 3,
+		},
+		{
+			"an answer dropped mid-usage, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) {
+				cutOff(w, "application/json", head+`,"usage":{"input_tokens":4,"output_tokens":2`)
+			}, answerWith(secondUsage)},
+			false, reportedWhole, 7, 3,
+		},
+		{
+			"an answer dropped after part of its usage, then an answer", false,
+			[]func(http.ResponseWriter){droppedAfter(`{"input_tokens":4}`), answerWith(secondUsage)},
+			false, reportedPart, 11, 3,
+		},
+		{
+			"an answer dropped after its usage, then an answer without usage", false,
+			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith("")},
+			false, reportedPart, 4, 2,
+		},
+		{
+			"an answer dropped after its usage, then two 500s", false,
+			[]func(http.ResponseWriter){
+				droppedAfter(firstUsage),
+				func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) },
+				func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) },
+			},
+			true, reportedWhole, 4, 2,
+		},
+		{
+			"a 500, then an answer", false,
+			[]func(http.ResponseWriter){func(w http.ResponseWriter) { refuse(w, http.StatusInternalServerError) }, answerWith(secondUsage)},
+			false, reportedWhole, 7, 3,
+		},
+		{
+			"the operator's: an answer dropped after its usage", true,
+			[]func(http.ResponseWriter){droppedAfter(firstUsage), answerWith(secondUsage)},
+			true, reportedWhole, 4, 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var attempts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n := int(attempts.Add(1))
+				if n > len(tc.serve) {
+					t.Errorf("attempt %d, want %d at most", n, len(tc.serve))
+					refuse(w, http.StatusBadRequest)
+					return
+				}
+				tc.serve[n-1](w)
+			}))
+			t.Cleanup(srv.Close)
+			client, err := New(WireAnthropic, Config{BaseURL: srv.URL, APIKey: "sk-billing-fixture", RetryOnlyUnbilled: tc.operator})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := client.Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, nil)
+			if failed := err != nil; failed != tc.failed {
+				t.Fatalf("err = %v, want failed %v", err, tc.failed)
+			}
+			wantAttempts := len(tc.serve)
+			if tc.operator {
+				wantAttempts = 1
+			}
+			if n := int(attempts.Load()); n != wantAttempts {
+				t.Fatalf("%d attempts, want %d", n, wantAttempts)
+			}
+			if !tc.failed && res.Content != "ok" {
+				t.Fatalf("content = %q, want the answering attempt's", res.Content)
+			}
+			var usage *Usage
+			if res != nil {
+				usage = res.Usage
+			}
+			if got := reportOf(usage); got != tc.want {
+				t.Fatalf("usage = %+v, reported %v, want %v", usage, got, tc.want)
+			}
+			if usage.PromptTokens != tc.prompt || usage.CompletionTokens != tc.completion {
+				t.Fatalf("usage = %+v, want %d prompt and %d completion tokens", usage, tc.prompt, tc.completion)
+			}
+		})
+	}
+}
