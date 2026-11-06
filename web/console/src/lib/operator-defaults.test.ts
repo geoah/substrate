@@ -61,6 +61,38 @@ describe("modelKey", () => {
     expect(failing).toMatchObject({ state: "attention", message: "401" })
   })
 
+  it("says a row with no key needs one, never in the server's words", () => {
+    const keyless = modelKey(
+      row("gemini", { label: "gemini" }),
+      item({
+        id: "llm/gemini",
+        source: "none",
+        operatorOffers: false,
+        readiness: "not-set-up",
+        message: "no apiKey: add your own key to the row to use it",
+      })
+    )
+    expect(keyless).toMatchObject({ state: "setup", status: "Needs a key" })
+    expect(keyless.message).toBeUndefined()
+    expect(modelKey(row("gemini"), undefined).status).toBe("Needs a key")
+  })
+
+  it("keeps the server's reason where a key of the row's own does not resolve", () => {
+    const broken = modelKey(
+      row("proxy", { apiKey: "••••" }),
+      item({
+        id: "llm/proxy",
+        source: "own",
+        operatorOffers: false,
+        readiness: "not-set-up",
+        message: 'llm/provider row "proxy" declares no wire',
+      })
+    )
+    expect(broken.state).toBe("setup")
+    expect(broken.status).toBeUndefined()
+    expect(broken.message).toBe('llm/provider row "proxy" declares no wire')
+  })
+
   it("names the operator's models only where its key serves the row", () => {
     const models = ["gpt-5"]
     expect(
@@ -128,6 +160,14 @@ describe("names", () => {
     expect(modelName(row("openai", { label: "openai" }))).toBe("OpenAI")
     expect(modelName(row("router", { label: "OpenRouter" }))).toBe("OpenRouter")
     expect(modelName(row("gemini"))).toBe("Gemini")
+  })
+
+  it("titles the well-known rows by the vendor's name, and a person's own label as written", () => {
+    expect(modelName(row("azure", { label: "azure" }))).toBe("Azure OpenAI")
+    expect(modelName(row("router", { label: "openrouter" }))).toBe("OpenRouter")
+    expect(modelName(row("local", { label: "ollama" }))).toBe("Ollama")
+    expect(modelName(row("gw", { label: "My gateway" }))).toBe("My gateway")
+    expect(modelName(row("gw", { label: "my gateway" }))).toBe("my gateway")
   })
 
   it("names the operator by its site name, or as this server", () => {
@@ -218,6 +258,34 @@ describe("welcomeFacts", () => {
         }),
       ])
     ).toEqual({ works: ["chat", "search by meaning"], connect: ["Google"] })
+  })
+
+  it("names an account to connect by its brand, though the server labels it by its package word", () => {
+    expect(
+      welcomeFacts([
+        item({
+          id: "oauth/providers.substrate.reamde.dev/google",
+          slot: "oauth",
+          label: "google",
+          target: "providers.substrate.reamde.dev/google",
+          readiness: "needs-connect",
+        }),
+        item({
+          id: "oauth/providers.substrate.reamde.dev/whoop",
+          slot: "oauth",
+          label: "whoop",
+          target: "providers.substrate.reamde.dev/whoop",
+          readiness: "reconnect-needed",
+        }),
+        item({
+          id: "oauth/providers.substrate.reamde.dev/github",
+          slot: "oauth",
+          label: "github",
+          target: "providers.substrate.reamde.dev/github",
+          readiness: "needs-connect",
+        }),
+      ]).connect
+    ).toEqual(["Google", "WHOOP", "GitHub"])
   })
 
   it("names a tool by what it does, never by its vendor, after chat and search by meaning", () => {

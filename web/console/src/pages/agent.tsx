@@ -193,7 +193,7 @@ export function AgentPage() {
         glyph={<AgentMark id={id} size="lg" />}
         meta={
           <span className="text-muted-foreground">
-            {[model, provider && providerName(provider)]
+            {[model, provider && (providerLabel ?? providerName(provider))]
               .filter(Boolean)
               .join(" · ") || "Agent"}
             {hidden && " · Works for other agents"}
