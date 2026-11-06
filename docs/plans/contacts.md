@@ -46,6 +46,19 @@ and sharing between substrates later.
 - `jobTitle`, not `title`: `title` is reserved on every kind
   (`internal/vocabulary/load.go:1336`, decision 0016).
 
+Settled in a second round, the same day:
+
+- **The migration runs only when the owner's agent asks.** No repository
+  migration moves a repository at boot. A repository nobody migrates keeps
+  the sample and its mappings, and the core mappings stay held for it.
+- **No `lastContactAt` on the contact.** It stays on Mneme's own kind.
+- **The owner's own contact is `substrate.reamde.dev/core/contact/me`** (see
+  [The owner's own contact](#the-owners-own-contact)).
+- **The shipped views are built separately**, as
+  [#1208](https://github.com/geoah/substrate/issues/1208): the
+  `console/collectionview` kind, its seed and the console's tabs. The
+  contacts work adds the six contact views once both land.
+
 ## Prior art
 
 | Source | Party types | Name | Accounts | Dates |
@@ -283,7 +296,38 @@ down, and a map path reaches one (`internal/vocabulary/mapping.go:134`).
 `groupType` keeps the user's own labels); filling each member's `memberOf`
 is a function's job.
 
+### The owner's own contact
+
+The owner is the contact with the id `me`. The engine writes
+`substrate.reamde.dev/core/contact/me` when it creates a repository
+(`contactType: person`, `prominence: known`, `substrate` set to the
+repository's name), and at the first open of a repository created before the
+kind existed. It follows the pattern of the three keyless `llm/provider` rows
+(`internal/engine/seedproviders.go`): written only where no hand but the
+engine's ever wrote or deleted the record, so an owner's edit stands and a
+deleted `me` stays deleted.
+
+- **Why an id and not a property.** A flag or a matching `substrate` value
+  can be held by two contacts; an id cannot. A `contact` reference on the
+  core `repository` record is not writable: `repository` is a system kind that
+  takes only lifecycle transitions (`internal/engine/dataset.go:60`,
+  `internal/engine/write.go:640`).
+- **A merge keeps it reachable.** A read by a former id returns the winner
+  (docs/projection.md, "Former ids resolve to the winner"), so merging `me`
+  with the owner's Google contact leaves `contact/me` resolving to the
+  merged record whichever side wins.
+- **The id is legal under PR 1199.** That PR makes `contact` a minted-id
+  kind (it is not `internal` and declares no `ids`), and the engine is one of
+  the writers that keep an id they choose; a person or an agent could not
+  create `me`.
+
+Mneme's `owneridentity` then proposes merging each connected account's
+identity into `contact/me`, instead of choosing a winner between two persons.
+
 ## Console views
+
+Built separately as [#1208](https://github.com/geoah/substrate/issues/1208);
+the contacts work ships only the six view records once it lands.
 
 The Contacts collection opens on a People tab, with tabs beside it for the
 other types. The console has no way to ship such tabs today. A saved view (a
@@ -534,46 +578,40 @@ Each is a record in [docs/decisions](../decisions/README.md) before the
 implementation merges:
 
 1. `contact` is a core kind with `purpose: primary`; the console and the
-   generic merge treat it as owner data.
+   generic merge treat it as owner data, and the owner's own contact is
+   `contact/me`, written by the engine.
 2. Core declares mappings from provider kinds, held back while the provider
    is absent or a mapping from the same source targets a `people/person`
    kind, recomputed whenever the registry is built.
 3. A kind move on the owner's request, with a property map, the mappings and
    pinning declarations carried in the same transaction (extends 0078).
 4. A collection's shipped saved views are records of a seeded console kind
-   (a sibling of 0166).
+   (a sibling of 0166), written by #1208.
 5. The people sample is removed from the catalog.
 
 ## Steps
 
-1. Decision records 1, 2 and 3, and the move operation with its preview,
-   tested against a repository that imported the people sample.
-2. In one release, with the footer above: the `contact` kind in core with
-   its three exceptions (console, shipped-purpose test, merge); the held
-   mappings; calendar, messaging and tasks sample versions that pin
-   `core/contact` and no longer require people; the people sample removed
-   (decision record 5). They ship together because a fresh repository
-   importing tasks would otherwise import people, and its mappings would hold
-   the core ones for a migration it never needed. A repository that imported
-   the old samples is offered their upgrade, which waits for the migration:
-   the new pin is a narrowing while records still point at `person`.
-3. Decision record 4: the record seed, the `console/collectionview` kind, the
-   console changes and the six contact views.
-4. Mneme migrated by its agent against a copy of the owner's repository
+Each step is one pull request against `main`. A merge releases nothing, so
+steps 1 to 4 reach a release together; each is safe on `main` alone.
+
+1. Decision record 1. The `contact` kind in core with its three exceptions
+   (console, shipped-purpose test, merge) and the `contact/me` seed.
+   Additive: nothing maps onto the kind yet.
+2. Decision record 2 and the held mappings. A repository that imported the
+   people sample keeps its own mappings, and the core ones stay held.
+3. Decision record 3, the move operation with its preview, and
+   `substratectl contacts migrate`, tested against a repository that
+   imported the people sample.
+4. Decision record 5, with the footer above: calendar, messaging and tasks
+   sample versions that pin `core/contact` and no longer require people, and
+   the people sample removed. Until this lands, a fresh repository importing
+   tasks also imports people, and the core mappings stay held for it. A
+   repository that imported the old samples is offered their upgrade, which
+   waits for the migration: the new pin is a narrowing while records still
+   point at `person`.
+5. The six contact views, after #1208 lands.
+6. Mneme migrated by its agent against a copy of the owner's repository
    first, then the live one.
-
-## Open questions
-
-1. Whether the sample migration runs only when the agent asks (this plan) or
-   also by itself at boot as a repository migration (decision 0099).
-2. Whether `lastContactAt` belongs on the contact now or waits for a second
-   app that needs it.
-3. Which contact is the owner. Matching `substrate` against the
-   repository's name is not enough, since two contacts may carry it, and a
-   `contact` reference on the core `repository` record is not writable:
-   `repository` is a system kind that takes only lifecycle transitions
-   (`internal/engine/dataset.go:60`, `internal/engine/write.go:640`). Mneme
-   keeps deciding it with `owneridentity`, which writes a merge request.
 
 ## Reviews
 
