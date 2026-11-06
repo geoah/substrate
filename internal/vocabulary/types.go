@@ -949,6 +949,10 @@ type Registry struct {
 	byIdent  map[string]*Kind
 	byName   map[string][]*Kind
 	version  int64
+	// held is the seeded mappings Mappings() leaves out, by identity, with
+	// the reason (seededmapping.go). Replaced whole at every build, never
+	// mutated, so a clone shares it.
+	held map[string]string
 }
 
 // NewRegistry returns an empty registry.
@@ -977,6 +981,7 @@ func (r *Registry) Clone() *Registry {
 		c.byName[k] = append([]*Kind(nil), v...)
 	}
 	c.version = r.version
+	c.held = r.held
 	return c
 }
 

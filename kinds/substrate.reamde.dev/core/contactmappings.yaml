@@ -1,0 +1,290 @@
+# The mappings from the shipped providers' people onto `contact` (decision
+# record 0232, docs/plans/contacts.md). Core declares them because only the
+# package that owns a mapping's target may (record 49), and core owns
+# `contact`.
+#
+# Each one WAITS while its provider is not installed, or does not fit it, and
+# switches on with the install: core is seeded into every repository and no
+# token may edit it, so a mapping here never refuses a repository's
+# vocabulary (internal/vocabulary/seededmapping.go). Each fills a slot named
+# `contact` on its source, beside any slot a sample or an app maps the same
+# mirror through.
+#
+# A mapping writes properties and nothing else: no state, no constant, no
+# translated value. So a contact minted from a mail address has no
+# `contactType`, and promoting one to `known` is a function's or the owner's
+# job.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/applecontact
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a card from Apple Contacts to the contact it describes, found by
+    its email addresses and then by its full name, and copies the name parts,
+    the company, the job title, the addresses and the numbers.
+  from: providers.substrate.reamde.dev/apple/contact
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: "emailAddresses[].value"
+      to: emails
+    - from: displayName
+      to: name
+  map:
+    contactType:
+      path: contactType
+    name:
+      path: displayName
+    givenName:
+      path: givenName
+    familyName:
+      path: familyName
+    nickname:
+      path: nickname
+    organizationName:
+      path: organizationName
+    jobTitle:
+      path: jobTitle
+    emails:
+      path: "emailAddresses[].value"
+      merge: union
+    phones:
+      path: "phoneNumbers[].value"
+      merge: union
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/googlecontact
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a Google contact to the contact it describes, found by its email
+    addresses, and copies the name parts, the first organization and job title,
+    the addresses and the numbers.
+  from: providers.substrate.reamde.dev/google/contact
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: "emailAddresses[].value"
+      to: emails
+  map:
+    name:
+      path: "names[].displayName"
+      merge: first
+    givenName:
+      path: "names[].givenName"
+      merge: first
+    familyName:
+      path: "names[].familyName"
+      merge: first
+    nickname:
+      path: "nicknames[].value"
+      merge: first
+    organizationName:
+      path: "organizations[].name"
+      merge: first
+    jobTitle:
+      path: "organizations[].jobTitle"
+      merge: first
+    emails:
+      path: "emailAddresses[].value"
+      merge: union
+    phones:
+      path: "phoneNumbers[].value"
+      merge: union
+---
+# A label the owner made in Google Contacts is a group of people, so it is a
+# contact of its own. Google's system groups (My Contacts, Starred) are not.
+# Nothing to match on: each label is a contact of its own.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/googlecontactgroup
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Makes each label the owner created in Google Contacts a contact of its
+    own, named after the label.
+  from: providers.substrate.reamde.dev/google/contactgroup
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  where:
+    groupType:
+      eq: usercontactgroup
+  map:
+    name:
+      path: name
+---
+# Every address a mail header or an attendee list carries is one of these,
+# and this is what makes an address-book card and a mail sender meet on one
+# contact. The mirror holds the address alone: the name beside it in a header
+# stays on the message.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/googleemailaddress
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links an address seen in Google mail or calendars to the contact that
+    carries it, or makes a contact for it.
+  from: providers.substrate.reamde.dev/google/emailaddress
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: address
+      to: emails
+  map:
+    emails:
+      path: address
+      merge: union
+---
+# A bot's Slack user is left to the bot's own mapping below, so a bot is one
+# contact and not two.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/slackuser
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a Slack member to the contact they are, found by their profile address
+    and then by their full name, and copies the name parts, the job title,
+    the pronouns, the address and the number.
+  from: providers.substrate.reamde.dev/slack/user
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  where:
+    isBot:
+      eq: false
+  match:
+    - from: profile.email
+      to: emails
+    - from: realName
+      to: name
+  map:
+    name:
+      path: realName
+    givenName:
+      path: profile.firstName
+    familyName:
+      path: profile.lastName
+    nickname:
+      path: profile.displayName
+    jobTitle:
+      path: profile.jobTitle
+    pronouns:
+      path: profile.pronouns
+    emails:
+      path: profile.email
+      merge: union
+    phones:
+      path: profile.phone
+      merge: union
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/slackbot
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Makes each Slack bot a contact of its own, named after the bot.
+  from: providers.substrate.reamde.dev/slack/bot
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  map:
+    name:
+      path: name
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/githubuser
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a GitHub account to the contact it belongs to, found by its public
+    email address, and copies the name, the login, the company, the address
+    and the profile link.
+  from: providers.substrate.reamde.dev/github/user
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: email
+      to: emails
+  map:
+    name:
+      path: name
+    nickname:
+      path: login
+    organizationName:
+      path: company
+    emails:
+      path: email
+      merge: union
+    urls:
+      path: htmlUrl
+      merge: union
+---
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/linearuser
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a Linear workspace member to the contact they are, found by their
+    login address, and copies the name, the display name, the job title and
+    the address.
+  from: providers.substrate.reamde.dev/linear/user
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: email
+      to: emails
+  map:
+    name:
+      path: name
+    nickname:
+      path: displayName
+    jobTitle:
+      path: jobTitle
+    emails:
+      path: email
+      merge: union
+---
+# The number first: a person reached through WhatsApp and through SMS has two
+# Beeper rows and two numbers, and both are theirs.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/beeperuser
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links a Beeper chat participant to the contact they are, found by their
+    number, then their address, then their full name, and copies the name,
+    the address and the number.
+  from: providers.substrate.reamde.dev/beeper/user
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: phoneNumber
+      to: phones
+    - from: email
+      to: emails
+    - from: fullName
+      to: name
+  map:
+    name:
+      path: fullName
+    emails:
+      path: email
+      merge: union
+    phones:
+      path: phoneNumber
+      merge: union

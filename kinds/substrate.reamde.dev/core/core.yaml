@@ -84,8 +84,10 @@ data:
   # none is given (decision record 0228).
   # version 50: the `contact` kind, a person, business, group or bot the owner
   # deals with, the owner's own one named by the setting
-  # `substrate.reamde.dev/core/ownerContact` (decision record 0231).
-  version: 50
+  # `substrate.reamde.dev/core/ownerContact` (decision record 0231). version
+  # 51: the mappings from the shipped providers onto `contact`, each waiting
+  # until its provider is installed (decision record 0232).
+  version: 51
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

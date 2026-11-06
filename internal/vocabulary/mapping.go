@@ -627,8 +627,11 @@ func (r *Registry) crossPackageMappingProblems(installed []*Package) []string {
 	}
 	var problems []string
 	for _, m := range r.Mappings() {
-		if inside[m.Package] {
-			continue // its own package's resolve already covered it
+		if inside[m.Package] || mappingsWait(m.Package) {
+			// Its own package's resolve already covered it, or it is a
+			// seeded mapping, which holdSeededMappings resolved and held
+			// rather than refuse.
+			continue
 		}
 		if !inside[KindPackage(m.From)] && !inside[KindPackage(m.To)] {
 			continue
@@ -654,12 +657,18 @@ type mappingSlot struct{ from, property string }
 // --- registry lookups ------------------------------------------------------
 
 // Mappings lists every loaded mapping, ordered by identity — one mirror
-// record each.
+// record each. A held seeded mapping is not one of them
+// (seededmapping.go): HeldMappings lists those.
 func (r *Registry) Mappings() []*Mapping {
+	r.mu.RLock()
+	held := r.held
+	r.mu.RUnlock()
 	var out []*Mapping
 	for _, g := range r.PackageList() {
 		for _, n := range g.MappingOrder {
-			out = append(out, g.Mappings[n])
+			if m := g.Mappings[n]; !r.heldMapping(m, held) {
+				out = append(out, m)
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Identity() < out[j].Identity() })

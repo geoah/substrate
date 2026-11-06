@@ -358,7 +358,19 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != shelf+"/bookeditionwork" {
+	// The shelf's mapping, beside the ones core ships onto contacts
+	// (decision record 0232), which are declared whether or not their
+	// providers are installed.
+	var shelfMappings int
+	for _, r := range page.Records {
+		switch {
+		case r.ID == shelf+"/bookeditionwork":
+			shelfMappings++
+		case !strings.HasPrefix(r.ID, "substrate.reamde.dev/core/"):
+			t.Fatalf("mapping mirrors = %v", ids(page.Records))
+		}
+	}
+	if shelfMappings != 1 {
 		t.Fatalf("mapping mirrors = %v", ids(page.Records))
 	}
 

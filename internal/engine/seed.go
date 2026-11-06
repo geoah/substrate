@@ -272,6 +272,11 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// A shipped mapping whose provider is installed links the mirrors
+		// that provider already synced, as an apply admitting it would.
+		if err := t.linkShippedMappings(ds.registry(), st.candidate); err != nil {
+			return err
+		}
 		background, err = t.reprojectShipped(st)
 		return err
 	})
