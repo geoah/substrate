@@ -101,6 +101,11 @@ import type {
   DomainCheck,
   DomainProof,
   SiteInfo,
+  OperatorDefaults,
+  OperatorInfo,
+  OperatorAllowance,
+  OperatorSpend,
+  OperatorDefault,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -345,6 +350,41 @@ const siteInfo: Shape<SiteInfo> = {
   logo: false,
   icon: false,
   landing: false,
+}
+
+const operatorDefaults: Shape<OperatorDefaults> = {
+  operator: false,
+  items: true,
+}
+
+const operatorInfo: Shape<OperatorInfo> = {
+  name: false,
+  allowance: false,
+}
+
+const operatorAllowance: Shape<OperatorAllowance> = {
+  centsPerDay: true,
+  usedCents: true,
+  resetsAt: true,
+  bySlot: false,
+}
+
+const operatorSpend: Shape<OperatorSpend> = {
+  slot: true,
+  cents: true,
+}
+
+const operatorDefault: Shape<OperatorDefault> = {
+  id: true,
+  slot: true,
+  label: true,
+  target: false,
+  source: true,
+  operatorOffers: true,
+  readiness: true,
+  message: false,
+  notice: false,
+  models: false,
 }
 
 const change: Shape<Change> = {
@@ -1282,6 +1322,11 @@ const mirrors: Record<string, Record<string, boolean>> = {
   DomainProof: domainProof,
   DomainCheck: domainCheck,
   SiteInfo: siteInfo,
+  OperatorDefaults: operatorDefaults,
+  OperatorInfo: operatorInfo,
+  OperatorAllowance: operatorAllowance,
+  OperatorSpend: operatorSpend,
+  OperatorDefault: operatorDefault,
   Change: change,
   AffectedRecord: affectedRecord,
   PropertyChange: propertyChange,

@@ -736,6 +736,36 @@
     "cursor": false,
     "items": true
   },
+  "OperatorAllowance": {
+    "bySlot": false,
+    "centsPerDay": true,
+    "resetsAt": true,
+    "usedCents": true
+  },
+  "OperatorDefault": {
+    "id": true,
+    "label": true,
+    "message": false,
+    "models": false,
+    "notice": false,
+    "operatorOffers": true,
+    "readiness": true,
+    "slot": true,
+    "source": true,
+    "target": false
+  },
+  "OperatorDefaults": {
+    "items": true,
+    "operator": false
+  },
+  "OperatorInfo": {
+    "allowance": false,
+    "name": false
+  },
+  "OperatorSpend": {
+    "cents": true,
+    "slot": true
+  },
   "Page": {
     "count": false,
     "cursor": false,

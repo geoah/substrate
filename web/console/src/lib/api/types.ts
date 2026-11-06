@@ -833,6 +833,72 @@ export interface SiteInfo {
   landing?: string
 }
 
+/** Where a slot's key comes from now (`substrate.Source*`): a key the
+ * person wrote always wins over the operator's. */
+export type OperatorDefaultSource = "operator" | "own" | "none"
+
+/** Whether a slot works, apart from where its key comes from
+ * (`substrate.Readiness*`). `ready` means the key resolves, not that a call
+ * succeeded. */
+export type OperatorDefaultReadiness =
+  | "ready"
+  | "not-set-up"
+  | "needs-connect"
+  | "reconnect-needed"
+  | "failing"
+  | "install-failed"
+
+/** `GET /api/v1/operator/defaults` (`substrate.OperatorDefaults`): every
+ * slot the repository spends a key through, and the operator's allowance for
+ * today. `operator` is absent on a deployment with no operator defaults
+ * file. */
+export interface OperatorDefaults {
+  operator?: OperatorInfo
+  items: OperatorDefault[]
+}
+
+/** The operator as the person sees it: the site's name and today's
+ * allowance. */
+export interface OperatorInfo {
+  name?: string
+  allowance?: OperatorAllowance
+}
+
+/** What the operator pays for this repository in one UTC calendar day. */
+export interface OperatorAllowance {
+  centsPerDay: number
+  usedCents: number
+  /** RFC 3339; the end of the UTC day. */
+  resetsAt: string
+  bySlot?: OperatorSpend[]
+}
+
+/** One slot's share of a day's operator-paid spend. */
+export interface OperatorSpend {
+  slot: string
+  cents: number
+}
+
+/** One slot and where it stands. `id` is stable across reads:
+ * `llm/<row id>`, `embeddings`, `oauth/<package>`, `function/<package>`. */
+export interface OperatorDefault {
+  id: string
+  slot: "llm" | "embeddings" | "oauth" | "function"
+  label: string
+  /** An llm/provider record path or a package id. */
+  target?: string
+  source: OperatorDefaultSource
+  /** The operator serves this slot, whatever the source: removing your own
+   * key falls back to the operator's. */
+  operatorOffers: boolean
+  readiness: OperatorDefaultReadiness
+  message?: string
+  /** The operator's own words about this slot. */
+  notice?: string
+  /** The models an operator-served llm slot allows. */
+  models?: string[]
+}
+
 /** What a client calls one record of a kind and what it calls the
  * collection, as the kind's `label:` declares them. */
 export interface KindLabel {
