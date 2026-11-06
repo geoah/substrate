@@ -1,0 +1,66 @@
+diff --git a/web/console/src/components/app-sidebar.tsx b/web/console/src/components/app-sidebar.tsx
+index f663666fe..086dbbd21 100644
+--- a/web/console/src/components/app-sidebar.tsx
++++ b/web/console/src/components/app-sidebar.tsx
+@@ -36,6 +36,7 @@ import {
+   PlugIcon,
+   SearchIcon,
+   SlidersHorizontalIcon,
++  SparklesIcon,
+   StarIcon,
+   SunIcon,
+   SunMoonIcon,
+@@ -119,6 +120,7 @@ type Place =
+   | "/providers"
+   | "/history"
+   | "/settings"
++  | "/services"
+ 
+ function NavRow({
+   to,
+@@ -704,6 +706,12 @@ export function AppSidebar({
+       </SidebarContent>
+       <SidebarFooter className="gap-0 border-t border-sidebar-border p-2">
+         <NavRow to="/history" icon={HistoryIcon} label="History" />
++        <NavRow
++          to="/services"
++          icon={SparklesIcon}
++          label="Services"
++          extra={<span aria-label="new" className="ml-auto size-1.5 rounded-full bg-primary" />}
++        />
+         <NavRow to="/settings" icon={SlidersHorizontalIcon} label="Settings" />
+         <TechnicalSwitchRow />
+       </SidebarFooter>
+diff --git a/web/console/src/router.tsx b/web/console/src/router.tsx
+index 4f7276277..f6e5f7602 100644
+--- a/web/console/src/router.tsx
++++ b/web/console/src/router.tsx
+@@ -46,6 +46,7 @@ import { searchText } from "@/lib/search-params"
+ import { loadSite } from "@/lib/site"
+ import { ProviderPage } from "@/pages/provider"
+ import { ConsoleSettingsPage } from "@/pages/console-settings"
++import { ServicesPage } from "@/pages/services"
+ 
+ const rootRoute = createRootRoute()
+ 
+@@ -237,6 +238,12 @@ export const connectionDetailRoute = createRoute({
+   },
+ })
+ 
++export const servicesRoute = createRoute({
++  getParentRoute: () => shellRoute,
++  path: "/services",
++  component: ServicesPage,
++})
++
+ export const settingsRoute = createRoute({
+   getParentRoute: () => shellRoute,
+   path: "/settings",
+@@ -456,6 +463,7 @@ const routeTree = rootRoute.addChildren([
+     connectionsRoute,
+     connectionDetailRoute,
+     settingsRoute,
++    servicesRoute,
+     bundleSettingsRoute,
+     agentsRoute,
+     agentRoute,
