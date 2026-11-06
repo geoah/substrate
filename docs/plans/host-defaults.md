@@ -1,7 +1,9 @@
-# Plan: host defaults and the Services page
+# Plan: operator defaults on the Providers page
 
-Status: accepted by the owner 2026-11-06, after two review rounds by Astra
-(gpt-6-astra) and one by Fable. Implementation follows the phases below.
+Status: accepted by the owner 2026-11-06. The design went through two review
+rounds by Astra (gpt-6-astra) and one by Fable; the vocabulary and the console
+were then revised once more, reviewed by both, to drop a separate Services
+page. Implementation follows the phases below.
 
 ## The problem
 
@@ -10,56 +12,76 @@ most of it until they set up paid services themselves:
 
 - Every agent refuses at dispatch until the person pastes an OpenAI key into
   the seeded `openai` row (`kinds/substrate.reamde.dev/llm/provider.yaml`).
-- Semantic search stays off until one `llm/provider` row names an
+- Search by meaning stays off until one `llm/provider` row names an
   `embedModel`.
 - Connecting Google, GitHub or WHOOP needs an OAuth client the person creates
   in that vendor's developer console.
 - Web search and page reading (the Firecrawl sample) need a Firecrawl key,
   and the person must first know to import the sample.
 
-The host (the operator running the deployment) holds accounts for all of
-these and may be willing to pay for the people it invites. It has no way to offer
-them: the codebase removed the host-wide LLM key on purpose ("no host-wide
+The operator (whoever runs the deployment) holds accounts for all of these
+and may be willing to pay for the people it invites. It has no way to offer
+them: the codebase removed the server-wide LLM key on purpose ("no host-wide
 bearer can reach a repository-chosen endpoint by construction"). Nothing in
 the console tells a new person what to set up, in what order, or what is
 optional.
 
 ## The outcome
 
-1. The host lists, in its own configuration, the services it pays for and
-   the packages every repository gets. A new repository can chat with
-   agents, search semantically and search the web on day one, and connects
-   Google with one approval.
-2. Each host-supplied service is a **default**: the person's own key, where
-   they write one, always wins; removing it returns to the host's.
-3. A host key never enters a repository: not a record, not the sealed store,
-   not the changelog, not the recovery export, not a function's input except
-   the specific published functions the host names. It is spent only
-   against the transport the host configured, and only within the host's
-   budget.
-4. The console has one page, **Services**, that says for each service where
-   its credential comes from, whether it works, and how much of the host's
-   budget is left, with the one action that changes it.
+1. The operator lists, in its own file, the keys it pays for and the
+   packages every repository gets. A new repository can chat with agents,
+   search by meaning and search the web on day one, and connects Google with
+   one approval.
+2. Each key the operator supplies is a **default**: the person's own key,
+   where they write one, always wins; removing it returns to the operator's.
+3. An operator key never enters a repository: not a record, not the sealed
+   store, not the changelog, not the recovery export, not a function's input
+   except the specific published functions the operator names. It is spent
+   only against the transport the operator configured, and only within the
+   operator's allowance.
+4. The console's **Providers** page lists every outside service the
+   substrate spends a key on, says for each whose key it uses and whether it
+   works, and is where a new person lands after registering.
 
-## Inventory: what the host could supply
+## Words
 
-| Service | Slot today | Code that spends the key | Host default |
-| --- | --- | --- | --- |
-| OpenAI, Anthropic, Gemini chat | seeded `llm/provider` rows `openai`, `anthropic`, `gemini`, `apiKey` | engine LLM adapters (Go) | yes, phase 1 |
-| Embeddings | the one `llm/provider` row with `embedModel` | engine embed drain (Go) | yes, phase 1 |
-| Google, GitHub, WHOOP sign-in | the bundle's OAuth client input (`config` record) | engine OAuth facility; functions never see the client secret | yes, phase 2 |
-| Firecrawl search and scrape | `secret` record of the **sample** | the sample's Python functions | phase 3, after it becomes a hardened provider |
-| Linear, Notion, Slack, Beeper | the person's own token on their account | provider functions | no, the token is the person's |
-| Apple, Apple Health | pushed by the person's device | none | nothing to supply |
+| Word | Means |
+| --- | --- |
+| **operator** | Whoever runs the deployment, as in docs/operations.md and the CLI's operator hat. Never "host" for this meaning: host already means the server (host functions, the host credential key, the `host` SDK object). |
+| **operator default** | A key or an OAuth client the operator supplies, used only where the repository holds none of its own. |
+| **allowance** | What the operator pays for one repository in one UTC calendar day. |
+| **provider** | Unchanged in code: the catalog tier. The Providers page also lists `llm/provider` rows, as AI models. |
+
+The console never says operator, host, bundle or `llm/provider` in everyday
+copy. It names the operator by the site's name from `site.yaml` ("Crane" in
+the examples), or "this server" where the deployment has none. "Service" is
+not a substrate word. Names avoid "credential", which is the core kind for
+the login credential.
+
+## Inventory
+
+| Provider | Providers group | What it is | Key or sign-in | Operator default |
+| --- | --- | --- | --- | --- |
+| Google, GitHub, WHOOP | Accounts you connect | catalog provider | OAuth client input | yes, phase 2 |
+| Linear, Notion, Slack, Slack live updates, Beeper | Accounts you connect | catalog provider | the person's own token on the provider's config | no, the token is the person's |
+| Apple | Accounts you connect | catalog provider with kinds only; the device app writes | none | nothing to supply |
+| Apple Health | Accounts you connect | webhook provider | a key the phone sends in, on its trigger | nothing to supply |
+| Firecrawl | Tools for your agents | catalog provider (phase 3; a sample today) | an API key | yes, phase 3 |
+| OpenAI, Anthropic, Gemini, and rows the person adds | AI models | `llm/provider` rows; no package, no code | the row's `apiKey` | yes, phase 1, for rows the operator lists |
+| Search by meaning | a line on one AI model card | the embeddings provider | the claiming row's key, or the operator's | yes, phase 1 |
+
+A key the substrate sends out belongs to exactly one card. A key others send
+in (Apple Health's webhook key, any trigger's) is set up where it is today and
+has no "whose key" line. A sample's own secret stays on the sample's package
+page.
 
 ## Design
 
-### Host configuration, never records
+### The operator's defaults file, never records
 
-One file named by `SUBSTRATE_HOST_DEFAULTS`, mounted from the deployment's
-secret store (never from `SUBSTRATE_SITE_DIR`, which is served). The host's
-display name comes from the existing `site.yaml`. Key material is read from
-a file or an environment variable:
+One file named by `SUBSTRATE_OPERATOR_DEFAULTS`, mounted from the
+deployment's secret store (never from `SUBSTRATE_SITE_DIR`, which is served).
+Key material is read from a file or an environment variable, never inline:
 
 ```yaml
 install:
@@ -67,32 +89,32 @@ install:
   - providers.substrate.reamde.dev/firecrawl
 
 llm:
-  openai:                          # the provider row id it stands in for
+  openai:                          # the llm/provider row id it stands in for
     wire: openai
     baseURL: https://api.openai.com/v1
     apiKey: {file: /run/secrets/openai}
-    models:                        # the only models it serves, at host prices
+    models:                        # the only models it serves, at the operator's prices
       - {model: gpt-5, inputPer1M: "1.25", outputPer1M: "10", contextWindow: 400000}
       - {model: gpt-5-mini, inputPer1M: "0.25", outputPer1M: "2", contextWindow: 400000}
-    maxOutputTokens: 16000         # imposed where an agent names none, capped where it names more
-    titleModel: gpt-5-mini         # absent: a thread is titled by the model it ran
-    defaults: {}                   # request params under the agent's own; absent: none
-    cache: {key: true}             # absent: the wire's own default
-    headers: []                    # absent: none
-    embeddings: {model: text-embedding-3-small, per1M: "0.02"}
+    maxOutputTokens: 16000         # required: imposed where an agent names none, caps one that names more
+    titleModel: gpt-5-mini         # optional; absent: a thread is titled by the model it ran
+    defaults: {}                   # optional request params under the agent's own
+    cache: {key: true}             # optional
+    headers: []                    # optional; Idempotency-Key and X-Idempotency-Key are refused
+    embeddings: {model: text-embedding-3-small, per1M: "0.02"}   # at most one entry in the file
   anthropic:
     wire: anthropic
     baseURL: https://api.anthropic.com/
-    apiKey: {env: HOST_ANTHROPIC_KEY}
+    apiKey: {env: OPERATOR_ANTHROPIC_KEY}
     models: [...]
+    maxOutputTokens: 16000
 
 oauthClients:
   providers.substrate.reamde.dev/google:
     clientId: 1234.apps.googleusercontent.com
     clientSecret: {file: /run/secrets/google-client-secret}
-    # Shown on Services and on the provider's setup step while the client
-    # is in Google's Testing mode (see "Google: testing now, production
-    # later").
+    # Shown on the provider's card and setup step while the client is in
+    # Google's Testing mode.
     notice: >-
       Crane's Google sign-in is in testing. Ask Crane to add your Google
       address before you connect, and expect to reconnect once a week.
@@ -100,415 +122,269 @@ oauthClients:
 functionSecrets:
   providers.substrate.reamde.dev/firecrawl:
     apiKey: {file: /run/secrets/firecrawl}
-    consumers: [websearch, scrapepage]
-    pricePerCall: {websearch: "0.1", scrapepage: "0.1"}   # cents
+    consumers: [websearch, webscrape]
+    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # cents
 
 budget:
-  centsPerDay: 200                 # per repository, everything host-paid
+  centsPerDay: 200                 # required: the allowance per repository per UTC day
 ```
 
-The server refuses to boot when a key file is missing, a base URL is not
-https, a `functionSecrets` or `oauthClients` entry names a package the
-binary does not ship as a provider, or a host model has no price. Rotation
-is a file change and a restart. An entry removed stops at the next start.
+The server refuses to boot on a missing key file or unset variable, an
+inline key, a base URL that is not https, a model without a price, more than
+one embeddings entry, an idempotency header, an unknown key anywhere, or an
+`oauthClients` or `functionSecrets` entry naming a package the binary does
+not ship as a provider. Rotation is a file change and a restart. An entry
+removed stops at the next start. Without the file the server behaves as
+before, apart from two changes that apply everywhere: credential-bearing
+LLM and embeddings requests refuse redirects, and migration 0019 creates the
+(empty) ledger table.
 
-### LLM: an empty key on a host-listed row uses the host's transport
+### LLM: an empty key on an operator-listed row uses the operator's transport
 
-A live `llm/provider` row with an empty `apiKey` whose id the host lists
-(`openai`, `anthropic`) is served by the **host transport**, and the row's own transport
-fields are ignored: `wire`, `baseURL`, `headers`, `defaults`, `cache`,
-`titleModel` and `pricing` all come from the host entry, each with the
-absent-case behavior the example states.
+A live `llm/provider` row with an empty `apiKey` whose id the operator lists
+(`openai`, `anthropic`) runs on the operator's whole transport: `wire`,
+`baseURL`, `headers`, `defaults`, `cache`, `titleModel`, pricing and
+`maxOutputTokens` all come from the file, and the row's own values are
+ignored. Nothing the person writes reaches an operator-paid request except
+the prompt and a model name from the allowed list.
 
-Eligibility, case by case:
-
-- A row the person deleted stays deleted (the seed is create-only and
-  never brings it back), and an agent naming it is refused as today. Services
-  shows the host-listed service as **Not set up** with **Restore**, which
-  recreates the row with the seed's fields and no key.
-- A row the person deleted and recreated under the same id with no key is
-  host-backed again: eligibility is the id and the empty key, not the seed.
-- An agent naming a row id the host does not list behaves as today: it runs
-  on that row's own key or is refused.
-- An agent asking a host-backed row for a model the host does not list is
-  refused with a message naming the allowed models and saying how to add
-  your own key.
+- A row the person deleted stays deleted (the seed is create-only), and an
+  agent naming it is refused as today. The Providers page shows it as an
+  **Add** card that recreates it with the seed's fields and no key.
+- A row deleted and recreated under the same id with no key is operator-backed
+  again: eligibility is the id and the empty key.
+- An agent naming a row the operator does not list runs on that row's own key
+  or is refused, as today.
+- A model off the operator's list is refused, naming the allowed models and
+  saying how to add your own key.
 - A row with the person's key behaves exactly as today.
 
-Nothing the person writes reaches a host-paid request except the prompt and
-a model name from the allowed list.
+Turns, retries, compaction, titles and sub-agents all go through the same
+gated client. Operator-paid Anthropic calls stop retrying once an attempt may
+have been billed (a 5xx or a broken answer), so one reservation covers the one
+billable attempt; a 408, 409, 429 or an unsent request still retries.
+Credential-bearing requests refuse redirects for every key, reusing
+`internal/egress/confined.go`'s `CheckRedirect`.
 
-Credential-bearing LLM requests refuse redirects, for host and own keys
-alike. `internal/llm/openai.go` and `anthropic.go` follow redirects today;
-Go strips `Authorization` on a cross-host redirect but not `x-api-key` or a
-row's own headers. `internal/egress/confined.go` already has the policy to
-reuse (`CheckRedirect` returning `http.ErrUseLastResponse`).
+### Embeddings: independent of chat keys
 
-### Embeddings: a service of its own
+When no row claims `embedModel`, the operator's `embeddings` entry is the
+repository's embeddings provider. A row that claims it wins, by the existing
+single-claimant rule, and must carry its own key: a claimed `embedModel` never
+runs on an operator key. Keying a chat row never moves embeddings, because a
+person's row may point at a gateway with no embeddings endpoint, and moving
+would re-buy every vector unannounced.
 
-The host file names at most one `embeddings` entry across all its `llm`
-entries, refused at boot otherwise. When no row claims `embedModel`, that
-entry is the repository's embeddings provider. A row that claims it wins, by
-the existing single-claimant rule (`internal/engine/embedprovider.go`), and
-that row must carry its own key: a claimed `embedModel` never runs on a host
-key, because the model and its price would be the person's choice. Nothing
-is written to the seed, which is create-only and would never reach existing
-rows.
-
-Embeddings are therefore independent of the chat rows. Keying the `openai`
-row moves chat to the person's key and leaves embeddings on the host's; the
-person's own path is claiming `embedModel` on a keyed row. Services lists
-embeddings as their own row, **Search by meaning**, so this is visible.
-
-Vectors are stamped with the `(provider, model)` pair that bought them
-(`embeddings.provider`, `embeddings.model`), and the semantic query, the
-reconcile after an import or restore, and the "has vectors" check all take
-that pair from `embedClaims`, which reads rows only
-(`internal/engine/embedprovider.go`, `internal/engine/search.go`). The host
-entry stamps the reserved provider id `host`, and every `embedClaims`
-consumer goes through the resolver instead, so a host-backed repository is
-not read as "no provider" (which would mark every vector stale and refuse
-semantic search). Moving between the host's embeddings and your own changes
-the pair, so the repository's vectors are bought again under the new one,
-as they are today when a row's `embedModel` changes.
+Vectors are stamped with the pair that bought them. Operator-bought vectors
+carry the provider id `(operator)`, which the record id alphabet refuses, so
+no row can collide with it. The drain, the reconcile after an import or
+restore, the semantic arm's pair check and the agent loop all read the pair
+through one resolver (`embedPair`), so an operator-backed repository is never
+read as having no provider. Switching between the operator's embeddings and
+your own changes the pair and re-buys the vectors, as any embeddings change
+does. At the allowance the embed queue waits, and a hybrid search falls back
+to word matching with a note.
 
 ### OAuth clients: a fallback inside client resolution only
 
-The host client is used only when the bundle's OAuth client input resolves
-to **no record at all**. Ambiguous, dangling and incomplete inputs keep
-their current setup items: a person who started their own client and broke
-it sees that, not a silent switch. The id and secret are taken as one pair,
-never a person's id with the host's secret. Only published providers listed
-in `oauthClients` qualify.
+The operator's client is used only when the provider's OAuth client input
+resolves to no record at all. Ambiguous, dangling and incomplete inputs keep
+their current setup items. The id and secret are taken as one pair. Only
+published providers listed in `oauthClients` qualify. An operator-registered
+client says nothing about who pays: it is a sign-in, not a billed key.
 
 Each account records the client its grant was issued to: a nonsecret
-`oauthClient` property holding the client id (and `host` or `own`), declared
-`writer: oauth` on each provider's account kind with a provider version
-bump. Refresh resolves the current client and compares ids; on a mismatch
-(the person added or removed their own client, or the host rotated to a new
-client) the account reads "reconnect needed" and is not refreshed. An
-account connected before the property existed has none and is treated as
-connected through the person's own client, which is the only kind there
-was. On a host-connected account the functions ignore the config's
-`apiBase` test seam and call Google's own API base.
+`oauthClient` property (`writer: oauth`) on each provider's account kind,
+with a provider version bump. Refresh compares it with the client resolving
+now; on a mismatch the account reads **Reconnect** and is not refreshed. An
+account connected before the property existed is treated as connected through
+the person's own client. On an operator-connected account the functions
+ignore the config's `apiBase` test seam.
 
-### Google: testing now, production later
-
-A host may start with a Google client in **Testing** mode and move to a
-production client later. What Testing mode means for people, and what the
-plan does about it:
-
-- Only addresses listed as test users on the client (at most 100) can
-  consent. Anyone else gets Google's "access blocked" page. The host adds
-  each person's address by hand, and the client's `notice` says so on
-  Services and on the provider's setup step.
-- Google expires a Testing client's refresh tokens after 7 days. The refresh
-  then fails with `invalid_grant`, which the OAuth facility already turns
-  into `tokenError` and a parked credential (decision 0180), so the account
-  reads **Reconnect** on Services and the provider page. Nothing new is
-  built for it; the notice sets the expectation.
-- `gmail.readonly` is a restricted scope and works in Testing mode for
-  listed users only.
-
-The move to production is a client id change, which the `oauthClient` rule
-above already handles: after the host swaps `clientId` and `clientSecret`
-in the file and restarts, every account connected through the testing
-client reads **Reconnect needed** once, and reconnecting issues a grant
-from the production client. The production client needs Google's OAuth
-verification for the sensitive scopes (contacts, calendar, Drive) and a
-security assessment (CASA) for `gmail.readonly`; that is the host's work in
-the new project and is tracked outside this plan.
+**Google in Testing mode.** Only listed test users (at most 100) can consent,
+so the operator adds each address by hand and the client's `notice` says so.
+Google expires a Testing client's refresh tokens after 7 days; the refresh
+then fails with `invalid_grant`, which the OAuth facility already turns into
+`tokenError` and a parked credential (decision 0180), so the account reads
+**Reconnect**. A production client later is a client id change: after the swap
+every Google account reconnects once. Its verification (sensitive scopes, and
+a security assessment for `gmail.readonly`) is the operator's own work.
 
 ### Function secrets: handed to named code, never stored
 
-The host's Firecrawl key is not a `secret` record. At invocation, the engine
-adds it to `config.settings.apiKey` only when all of these hold: the function
-is one of the `consumers` of a package whose `source` is `published`, the
-repository holds no own `apiKey` secret for that package, and the host budget
-admits the call. It is not a fallback in generic secret reads or input
-injection, so it never reaches the sealed store, an export or another
-bundle's function.
+The operator's Firecrawl key is not a `secret` record. At invocation the
+engine adds it to `config.settings.apiKey` only when the function is one of
+the `consumers` of a package whose `source` is `published`, the repository
+holds no `apiKey` secret of its own for that package, and the allowance admits
+the call at its `pricePerCall`. It never reaches the sealed store, an export
+or another package's function.
 
-Firecrawl moves from `samples/firecrawl` to
-`providers.substrate.reamde.dev/firecrawl` and is hardened first: in
-host-key mode the body calls exactly `https://api.firecrawl.dev` on port 443
-with fixed paths, no loopback, and no redirects (`urllib`'s `urlopen`
-follows them today). Triggers stay editable by the person, so how often the
-function runs is bounded by the budget, not by the code. Existing sample
-copies stay as they are and never receive the host key.
+Firecrawl becomes `providers.substrate.reamde.dev/firecrawl`, published so its
+code cannot be edited by the repository. Its tools are `websearch` and
+`webscrape` (the sample's `scrapepage`, renamed), both declaring `offer` and
+`effect` (decision 0198) so the default assistant takes them. In operator mode
+the bodies call only `https://api.firecrawl.dev`, never loopback, and refuse
+redirects. The Firecrawl sample leaves the catalog; copies already imported
+keep `scrapepage` and their own key and never receive the operator's.
+Installing the provider while a copy exists offers to remove the copy, because
+both would offer `firecrawl_websearch` and the copy's would win.
 
-### Budget: host prices, host ledger, reserved before the call
+### Allowance: operator prices, an operator ledger, reserved before the call
 
 The person's own spend cap (decision 0149, the setting
-`substrate.reamde.dev/llm/spendCentsPerDay`) stays
-theirs and unchanged. The host budget is separate and does not read anything
-the person can write:
+`substrate.reamde.dev/llm/spendCentsPerDay`) stays theirs and unchanged. The
+allowance is separate and reads nothing the person can write.
 
-- Prices come from the host file: per model for chat and titles, per million
-  tokens for embeddings (the embed client must return usage; it does not
-  today, `internal/embed/embed.go`), per call for function secrets.
-- The window is one UTC calendar day: `centsPerDay` covers the
-  reservations a repository opened between 00:00 and 24:00 UTC, and resets
-  at midnight UTC. This differs on purpose from the person's own cap, which
-  is a rolling 24 hours, because a friend can read "resets at 1:00 in the
-  morning" and cannot read a rolling window. The console shows the reset in
-  the person's local time.
-- **Ledger.** A control-plane table `host_spend_reservations (id,
-  repository, opened_at, ceiling_cents, settled_cents, settled_at)` holds
-  one row per host-paid call, so settlement is idempotent by id and expiry
-  has a timestamp.
+- **Day.** One UTC calendar day: `centsPerDay` covers the reservations a
+  repository opened between 00:00 and 24:00 UTC. The console shows the reset
+  in the viewer's local time.
+- **Ledger.** The control-plane table `operator_spend_reservations` (migration
+  0019) holds one row per operator-paid call, under row level security like
+  every per-repository table. It is not a fold table and not in the recovery
+  export, so a restore or rebuild leaves the allowance as it was.
 - **Reserve.** Before each call the engine reserves a ceiling in one
-  transaction that sums the repository's rows for the day, refused when it
-  would pass `centsPerDay`. The ceiling counts every billable part at its
-  highest rate: the prompt estimate with a safety margin at the higher of
-  the input and cache-write prices, plus `maxOutputTokens` at the output
-  price; an embedding batch's token estimate with the same margin; the
-  per-call price for a function.
-- **Settle.** The call settles to its reported cost. A call whose usage is
-  missing keeps its ceiling.
-- **Expire.** A reservation unsettled after an hour settles at its ceiling,
-  so a crash or a silent vendor charges more, never less. The overshoot is
-  bounded by how far a vendor's real bill exceeds the margined estimate,
-  which the host watches on its vendor dashboards.
-- The ledger is host data and is not in a repository's recovery export.
-  Restoring or rebuilding a repository leaves its host allowance as it was.
-  Losing the host database loses at most one day of ledger, so the
-  allowance restarts at full for that day; the host accepts that.
-- The gate sits beneath every caller: agent runs, chat, title generation,
-  retries, embeddings, scoped app tokens calling functions or search. At the
-  limit the caller gets an explicit `quota` error naming the host's limit
-  and the reset time, never an empty key.
+  transaction, serialized per repository, refused when it would pass
+  `centsPerDay`. The ceiling counts every billable part at its highest rate:
+  the prompt estimate with a margin at the higher of the input and cache-write
+  prices plus `maxOutputTokens` at the output price; an embedding batch's
+  token estimate with the same margin; a function's `pricePerCall`.
+- **Settle.** A call settles to the usage the vendor reported, even when the
+  call then failed. It settles to zero only when no request left or the vendor
+  refused it outright with a redirect or a 4xx (`egress.ErrUnprocessed`).
+  Anything else keeps its ceiling: a 5xx, a timeout, a broken or undecodable
+  answer, a reply without usage. A partial usage report settles at the ceiling
+  or its own cost if higher, and still counts on the person's own spend cap.
+- **Expire.** A reservation unsettled after an hour settles at its ceiling.
+- **At the limit.** Triggered runs are held the way decision 0149 holds them;
+  a direct call is refused with the `quota` reason, a message naming the site,
+  the reset time and how to add your own key. The gate sits beneath every
+  caller: agent runs, chat, titles, compaction, retries, embeddings and scoped
+  app tokens.
 
 ### Installs, recorded in the repository
 
-`install:` runs the ordinary published catalog install for each listed
-package, at registration and at a repository's first open under a
-configuration that lists a package it has not held. "Has not held" is read
-from the repository's own changelog: if a bundle record for the package was
-ever written there, including one later uninstalled, the host does not
-install it again. That fact travels with the recovery export, so a restore
-never reinstalls something the person removed, and no new table is needed.
-It holds while the changelog keeps full history, which is today's policy
-(`internal/api/watch.go`); a future compaction must keep each package's
-"was installed" fact before it discards the records that show it.
-A failed install is logged and retried at the next open; it shows on
-Services as "Couldn't add" with the server's message.
+`install:` runs the ordinary published catalog install at registration and at
+a repository's first open under a file that lists a package it has not held.
+"Has not held" is read from the repository's own changelog: a package whose
+bundle record was ever written there, even if later uninstalled, is not
+installed again, and that fact travels with the recovery export. It holds
+while the changelog keeps full history; a future compaction must keep it. A
+failed install is logged, retried at the next open, and shown on its card as
+the server's message.
 
 ### What the API tells the console
 
-`GET /api/v1/host/services` answers one entry per service, resolved through
-the **same** resolver dispatch, OAuth and injection use, so the page and the
-bundle setup items cannot disagree:
+`GET /api/v1/operator/defaults` answers `OperatorDefaults`
+(`internal/substrate/operatordefaults.go`), resolved by the same resolver
+dispatch, the OAuth facility and injection use:
 
 ```json
 {
-  "host": {"name": "Crane", "budget": {"centsPerDay": 200, "usedCents": 37, "resetsAt": "2026-11-07T00:00:00Z"}},
+  "operator": {"name": "Crane", "allowance": {"centsPerDay": 200, "usedCents": 74, "resetsAt": "2026-11-07T00:00:00Z",
+    "bySlot": [{"slot": "llm", "cents": 61}, {"slot": "embeddings", "cents": 2}, {"slot": "function", "cents": 11}]}},
   "items": [
-    {"id": "llm/openai", "label": "OpenAI", "target": "substrate.reamde.dev/llm/provider/openai",
-     "source": "host", "readiness": "ready"},
-    {"id": "llm/gemini", "label": "Gemini", "target": "substrate.reamde.dev/llm/provider/gemini",
-     "source": "own", "readiness": "failing", "message": "the last call was refused: 401 invalid api key"},
-    {"id": "oauth/providers.substrate.reamde.dev/google", "label": "Google",
-     "source": "host", "readiness": "needs-connect"}
+    {"id": "llm/openai", "slot": "llm", "label": "OpenAI", "target": "substrate.reamde.dev/llm/provider/openai",
+     "source": "operator", "operatorOffers": true, "readiness": "ready", "models": ["gpt-5", "gpt-5-mini"]},
+    {"id": "llm/anthropic", "slot": "llm", "label": "Anthropic", "target": "substrate.reamde.dev/llm/provider/anthropic",
+     "source": "own", "operatorOffers": true, "readiness": "ready"},
+    {"id": "embeddings", "slot": "embeddings", "label": "Search by meaning", "target": "substrate.reamde.dev/llm/provider/openai",
+     "source": "operator", "operatorOffers": true, "readiness": "ready"},
+    {"id": "oauth/providers.substrate.reamde.dev/google", "slot": "oauth", "label": "Google",
+     "target": "providers.substrate.reamde.dev/google", "source": "operator", "operatorOffers": true,
+     "readiness": "needs-connect", "notice": "Crane's Google sign-in is in testing. ..."}
   ]
 }
 ```
 
-Three separate facts, never one state: `source` (`host`, `own`, `none`),
-`readiness` and the one host budget. Each readiness value says where the
-server reads it:
+Three separate facts per item: `source` (`operator`, `own`, `none`),
+`operatorOffers` (removing your own key would fall back to the operator's),
+and `readiness` (`ready` means the key resolves, not that a call succeeded;
+`not-set-up`, `needs-connect`, `reconnect-needed`, `failing` from the newest
+open alert of an agent on the row, `install-failed`). For embeddings,
+`target` is the row whose card shows the search line. Owner tokens and
+full-access app tokens may read it; scoped app tokens are refused. The
+discovery feature `operatorDefaults` is listed only when a file is loaded.
+Bundle setup items and the keyless-provider probe use the same resolver, so a
+provider page never asks for what the operator covers.
 
-- `ready`: the service resolves (a key, a client, an installed package).
-  It does not claim a call has succeeded.
-- `not-set-up`: source `none`, or a host-listed row the person deleted.
-- `needs-connect`, `reconnect-needed`: an OAuth provider's accounts, from
-  their `tokenStatus`, `tokenError` and the `oauthClient` comparison.
-- `failing`: the newest open alert (decision 0148) of an agent or function
-  whose provider row or package this service is, with its message. A row
-  itself records no last error.
-- `install-failed`: the last install attempt's error, kept in memory by
-  the server until the next attempt.
+### The console: one Providers page
 
-`withdrawn` is not a server state: the server keeps no record of what the
-host once offered. The console derives it from the seen ids on
-`consolepreference`: an id it showed before that the server no longer
-lists. Readable by the
-owner and by a full-access app token; a scoped app token is refused. A named
-struct in `internal/substrate`, pinned by the wire golden. `server.json`
-gains a `hostServices` feature so a client knows to ask. The bundle status
-`setup` items and the keyless-provider probe call the same resolver, so a
-provider page stops asking for what the host covers.
+`/providers` lists three groups:
 
-### The console: Services
+1. **Accounts you connect**: catalog providers that bring data in, one card
+   per package as today.
+2. **Tools for your agents**: catalog providers with no account kind that
+   offer functions to agents (Firecrawl).
+3. **AI models**: one card per `llm/provider` row, seeded or added by the
+   person, titled by its label. A deleted seeded row shows as an **Add** card.
 
-`/services`, in the sidebar foot beside Settings. Account connection details
-stay on each provider's page; Services links there.
+Every card shows what it gives you, whether it works (On, Set up, Needs
+attention, Paused; an AI model card is On when a key resolves, Set up when
+none does, Needs attention when `failing`, never Paused), and, only where
+someone can supply a key, whose: "Using Crane's key", "Using your key",
+"Through Crane's Google sign-in" with the client's `notice`. AI model cards
+are their own component with the key form inline: **Use your own key**,
+**Replace key**, and **Use Crane's again** where `operatorOffers` (confirmed;
+it clears the row's key). The card the embeddings item names shows a second
+line, "Search by meaning: Crane's key" or "your key"; changing the embeddings
+provider stays a Technical details action in v1. The record page of an
+`llm/provider` row is linked only with Technical details on.
 
-- **First sign-in**: registration lands on `/services` with a welcome header
-  (unless it was started from an app's authorization or a domain-verification
-  link, which keep their return addresses). It says what works now (chat,
-  search, web search), what needs the person (connecting accounts), and that
-  any service can use their own key. **Done** dismisses it.
-- **Later**: a plain list. A service the person has not seen carries **New**,
-  and the sidebar entry a dot until the page is opened. Dismissal and seen
-  ids are two additive properties on `consolepreference`, with a version
-  bump.
-- **No host defaults** (a self-hosted substrate, `hostServices` absent from
-  `server.json`): registration lands where it does today, not on Services;
-  the page lists the same services with source `none` and the provider
-  pages' existing "add your key" actions, and no welcome copy about a host.
+The allowance is one bar on the AI models group header (used of total, split
+by slot, reset in local time), and a one-line note on the Tools header when a
+tool runs on the operator's key. It never sits over the data cards.
 
-Sections:
+Registration lands on `/providers` with a dismissible welcome header when
+discovery lists `operatorDefaults`, except when it began from an app's
+authorization or a domain verification link. Without the feature it lands
+where it does today. Home is unchanged, so decision 0148 stands. One optional
+`consolepreference` property, `welcomeDismissed`, remembers the dismissal.
 
-1. **Today's allowance**: one bar for the host budget, used of total, and
-   when it resets in the person's local time.
-2. **Provided by _host_**: each host-backed service, its readiness, and **Use
-   your own key**. **Search by meaning** (embeddings) is its own row, whose
-   button opens the provider row to claim `embedModel` there.
-3. **Using your own**: each own-key service, its readiness (an invalid key
-   shows the vendor's refusal), **Replace key**, and, where the host offers
-   that service, **Use _host_'s again** (confirmed; it clears your key).
-4. **Connect your accounts**: OAuth providers with their readiness
-   (**Connect**, **Reconnect**), token providers with **Set up**.
-5. **Not set up**: services with source `none`, such as the seeded `gemini`
-   row the host does not list, each with **Add key**, and host-listed rows
-   the person deleted, with **Restore**.
-6. **Couldn't add / Withdrawn**: installs that failed and services the host
-   stopped offering, each with what to do. Withdrawing is for every
-   repository at once (an entry removed from the file); there is no
-   per-repository switch.
-7. **Who sees what**: host-paid calls are made with the host's vendor
-   accounts and billed to it; your own key bills your account. Either way
-   this server runs your agents, so the host operating it can see the
-   requests; your own key changes who pays, not who operates the server.
-
-Home stays as decisions 0130 and 0148 leave it: it asks for nothing.
-
-A prototype of the page, drawn from fixed data and not wired to the API, is
-on the `screenshots/host-defaults` branch with these screens:
-
-- [First sign-in](https://raw.githubusercontent.com/geoah/substrate/screenshots/host-defaults/1-welcome.png)
-- [Services, steady state](https://raw.githubusercontent.com/geoah/substrate/screenshots/host-defaults/2-services.png)
-- [Replacing the host's key with your own](https://raw.githubusercontent.com/geoah/substrate/screenshots/host-defaults/3-own-key.png)
-- [The prototype's source](https://raw.githubusercontent.com/geoah/substrate/screenshots/host-defaults/services-prototype.tsx)
+Elsewhere: an agent's panel says "Runs on OpenAI, gpt-5", linking to the
+card, and the "Add your OpenAI key" prompt in a chat links there too. The
+sidebar's and Home's provider counts count what the page shows as set up:
+installed provider packages plus AI model rows whose key resolves. Settings
+keeps the person's own spend cap. Tools is unchanged; Firecrawl's two tools
+show there as Google's syncs do.
 
 ## What this amends
 
-- The `llm/provider` comment and docs/agents.md: an empty key on a row the
-  host lists is served by the host's transport. Needs a decision record.
-- docs/bundles.md: the OAuth client resolution gains the host step;
-  function injection gains host secrets for named consumers. Same record.
-- Firecrawl changes tier, sample to provider (decision 0048's line).
+- Decision 0230 (new, PR #1213): an empty key on an operator-listed row runs on
+  the operator's whole transport; operator keys never enter a repository; the
+  allowance is the operator's ledger; the embeddings stamp.
+- A new console decision (PR #1212): the Providers page lists every outside
+  service the substrate spends a key on, as provider packages and
+  `llm/provider` rows in three groups; it amends what docs/console.md says
+  Providers holds (decision 0130).
+- Firecrawl leaves the sample tier for the provider tier (decision 0048), and
+  its tools declare offers (decision 0198). Phase 3 records it.
+- docs/terms.md gains operator, operator default and allowance.
 
 ## Implementation plan
 
-Three pull requests, in order. Each lands behind the host file: a deployment
-without `SUBSTRATE_HOST_DEFAULTS` behaves exactly as today, which is what
-every existing test keeps proving.
+| PR | Holds | State |
+| --- | --- | --- |
+| #1205 | this plan | open |
+| #1209 | the wire shape, `OperatorDefaults` | open, stacked on #1205 |
+| #1213 | phase 1 engine: the file, the operator transport, embeddings, the ledger and gate, redirect refusal, the read, decision 0230 | draft, stacked on #1209; three Astra rounds, all findings fixed; being renamed to operator words |
+| #1212 | phase 1 console: the Providers page, AI model cards, the welcome landing, the console decision | draft, stacked on #1209; being reworked from the Services page |
+| phase 2 | OAuth client defaults with `oauthClient` provenance (Google first), `install:` | after #1213 |
+| phase 3 | Firecrawl as a provider with `websearch` and `webscrape`, function secrets, the sample's removal | after #1213 |
 
-### Phase 1: LLM, embeddings, budget, Services
-
-Makes agents and semantic search work on day one.
-
-1. **Decision record** (the `adr` skill; number checked with `mise run
-   decisions:check`): an empty key on a host-listed row runs on the host's
-   transport; host keys never enter a repository; the host budget is the
-   host's ledger. It amends the "no host key" line of
-   `kinds/substrate.reamde.dev/llm/provider.yaml` and docs/agents.md.
-2. **Host file**: a new `internal/hostdefaults` package parses and
-   validates the file (https base URLs, a price for every model, at most one
-   `embeddings` entry, packages the binary ships as providers, key files
-   present); `internal/config` gains `SUBSTRATE_HOST_DEFAULTS`; an invalid
-   file refuses the boot, like an invalid `site.yaml`. Documented in
-   docs/operations.md.
-3. **Host transport**: `resolveProvider` (`internal/engine/agentloop.go`)
-   takes the host entry whole for an empty-key, host-listed row and refuses
-   a model outside its list. `internal/llm/openai.go` and `anthropic.go`
-   refuse redirects on every credential-bearing request, reusing the
-   `CheckRedirect` of `internal/egress/confined.go`.
-4. **Host embeddings**: `internal/engine/embedprovider.go` falls back to the
-   host entry when no row claims `embedModel`, stamping the provider id
-   `host`; every `embedClaims` consumer (the drain, the reconcile, the
-   semantic arm's pair check in `search.go`, the agent loop) reads the
-   resolver instead of the rows; `internal/embed/embed.go` returns usage so
-   the ledger can settle.
-5. **Ledger and gate**: a SQL migration adds `host_spend_reservations`; a
-   new `internal/engine/hostspend.go` reserves, settles and expires; the
-   gate runs beneath agent runs, chat, titles, embeddings and scoped app
-   calls, and answers a `quota` error.
-6. **Read**: `GET /api/v1/host/services` with its named struct in
-   `internal/substrate` (wire golden regenerated), the handler in
-   `internal/api` tested against `fake_test.go`, and a `hostServices`
-   feature in `server.json`. The keyless-provider setup item reads the same
-   resolver.
-7. **Console**: `/services` (the prototype behind this plan's screenshots
-   is the starting point; it is not in the route tree until this step, and
-   the host's name comes from `site.yaml`, never from code), the sidebar entry and its dot, the registration
-   redirect in `pages/register.tsx` that keeps app and domain return
-   addresses, `types.ts` matching the golden, and two additive
-   `consolepreference` properties (welcome dismissed, seen service ids) with
-   the kind's version bumped.
-
-Checks: engine tests per rule, each shown to fail against the code before
-the change (empty key uses the host transport; an edited `baseURL` or
-header never reaches a host-paid request; a deleted row is not revived; a
-model off the list is refused; redirects are refused; reservations admit,
-refuse at the limit, settle, and expire at the ceiling; a scoped app token
-is held by the same gate; host embeddings survive an import without marking
-vectors stale; a deployment with no host file behaves as before), the wire golden, console tests for each
-Services state, and a smoke on a local substrate with a host file pointing
-at real keys.
-
-### Phase 2: Google sign-in and installs
-
-1. Client resolution (`internal/engine/inputs.go`, `oauth.go`) gains the host
-   step for an input that resolves to no record, taking id and secret as a
-   pair, for published providers listed in `oauthClients` only.
-2. The account kinds of `google`, `github` and `whoop` declare
-   `oauthClient` with `writer: oauth`, each provider's version bumped
-   (`mise run kinds:check`). The callback writes it; refresh compares it and
-   marks a mismatch "reconnect needed".
-3. Host-connected Google accounts ignore `apiBase`.
-4. `install:` runs the catalog's published install in `CreateRepository`
-   (`internal/engine/engine.go`) and at a repository's first open, skipping
-   a package the changelog shows was ever held.
-5. Bundle status `setup` items (`internal/engine/bundles.go`) read the same
-   resolver, so a host-covered client is not a setup item. The client's
-   `notice` reaches Services and the provider page.
-
-Checks: engine tests for the pair rule, the mismatch, the no-revive install
-rule across export and restore, and a real connect of a listed test user
-against a Testing client.
-
-### Phase 3: Firecrawl as a provider
-
-1. `providers.substrate.reamde.dev/firecrawl`, the sample's closure moved
-   and hardened. The bodies already pin the origin to
-   `https://api.firecrawl.dev`; what changes is no loopback in host mode and
-   no redirects. `samples/firecrawl` stays for people who want to edit it,
-   and its copies never receive a host key.
-2. Injection (`internal/engine/invocationconfig.go`) adds the host secret
-   for the named consumers only, after the gate admits the call at its
-   per-call price.
-3. Services lists it; the welcome copy names web search.
-
-Checks: `internal/providertest` cases for host mode (key injected, refused
-past the budget, absent for a sample copy, absent for a function not named
-as a consumer).
-
-### After phase 3: Google production client
-
-The host creates the production client in a new GCP project, completes
-Google's verification, swaps the client in the file, and every Google
-account reconnects once.
+Each PR's tests are shown to fail against a deliberate break of the behavior
+they cover. The orchestrator runs the full database suites once, one after
+another, before the stack leaves draft, and takes the final screenshots
+against a running server with a defaults file.
 
 ## Owner decisions, 2026-11-06
 
 - The plan must work with a Google client in Testing mode; a production
-  client is the host's own work after the plan lands, and needs nothing
-  more than the client swap described above.
-- One per-repository daily budget is enough; no host-wide monthly stop.
-- No per-repository withdrawal: removing an entry from the file withdraws
-  it for everyone.
-- Speech (ElevenLabs) and transcription (Soniox) are out of scope for now.
-  A later provider would follow phase 3's rule for function secrets.
+  client is the operator's own work after the plan lands.
+- One per-repository daily allowance is enough; no deployment-wide monthly
+  stop.
+- No per-repository withdrawal: removing an entry from the file withdraws it
+  for everyone.
+- No separate Services page: every key belongs to one card on Providers.
+- Firecrawl's page tool is `webscrape`, beside `websearch`.
+- Speech (ElevenLabs) and transcription (Soniox) are out of scope for now; a
+  later provider follows phase 3's rule.
