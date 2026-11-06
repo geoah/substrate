@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
@@ -1022,5 +1023,88 @@ func TestOperatorOAuthClientRemovedFromTheFileNeedsAReconnect(t *testing.T) {
 	_, entry := opConfigEntry(t, ds)
 	if _, has := entry["token"]; has || entry["tokenError"] != reasonOAuthClientChanged {
 		t.Fatalf("account entry = %v, want no token and the reconnect ask", entry)
+	}
+}
+
+// Concurrent first opens of a repository whose file lists a package it never
+// held run one install: every caller but the opener returns while it runs,
+// none surfaces an error, and no failure is remembered for the package.
+func TestOperatorInstallConcurrentFirstOpensInstallOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root := MigratedDSN(t), t.TempDir()
+	f := newOpTokenFake(t)
+	svc, _ := openOpMailAt(t, dsn, root, f, nil, true)
+	_ = svc.Close()
+
+	const callers = 8
+	returned := make(chan struct{}, callers)
+	var mu sync.Mutex
+	calls := 0
+	installer := func(ctx context.Context, d substrate.Dataset, pkg string) error {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			// The other callers return while this install runs; a guard
+			// timer only turns a hang into a failure.
+			guard := time.NewTimer(time.Minute)
+			defer guard.Stop()
+			for range callers - 1 {
+				select {
+				case <-returned:
+				case <-guard.C:
+					return errors.New("the other callers did not return while the install ran")
+				}
+			}
+		}
+		docs := opMailDocs(f.srv.URL+"/token", true)
+		_, err := d.InstallBundleClosure(ctx, substrate.BundleActor(opMailAuthority, "mail"), docs, nil, substrate.BundleInstall{Published: true})
+		return err
+	}
+	cfg := opClientsConfig()
+	cfg.Install = []string{opMailPackage}
+	svc2, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithKindsFS(SeedKinds), WithCredentialKey(TestCredentialKey),
+		WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+		WithOperatorDefaults(cfg, "Example"), WithOperatorInstaller(installer))
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc2.Dataset(ctx, testdb.Repository(t))
+			errs <- err
+			returned <- struct{}{}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("an open surfaced %v", err)
+		}
+	}
+	mu.Lock()
+	ran := calls
+	mu.Unlock()
+	if ran != 1 {
+		t.Fatalf("%d concurrent first opens ran %d installs, want 1", callers, ran)
+	}
+	if msg := svc2.(*service).operatorInstalls.failure(testdb.Repository(t), opMailPackage); msg != "" {
+		t.Fatalf("the install is remembered as failed: %s", msg)
+	}
+	d, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := d.(*dataset).registry().BundleOf(opMailPackage); !ok {
+		t.Fatal("the listed package is not installed")
 	}
 }
