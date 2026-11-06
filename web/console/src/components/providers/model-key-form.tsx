@@ -1,6 +1,7 @@
 /** A key for one AI model row, typed in place on its Providers card: the
- * row's `apiKey`, written as one property under `ifVersion`. The write is the
- * secret one
+ * row's `apiKey`, written as one property under the version the row had when
+ * the form opened (`useEditBase`), so a key someone else wrote meanwhile is
+ * refused as a conflict instead of overwritten. The write is the secret one
  * (`useSecretPatch`): the typed key is cleared from the form as it is sent,
  * and nothing of it stays in the mutation cache, whether the write succeeds
  * or fails. The words say what the key changes: switching from the
@@ -10,6 +11,7 @@ import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import {
+  useEditBase,
   useSecretPatch,
   writeError,
 } from "@/components/property-sheet/use-record-patch"
@@ -49,7 +51,7 @@ export function ModelKeyForm({
   onDone: () => void
 }) {
   const [key, setKey] = useState("")
-  const write = useSecretPatch(row, "apiKey", row.version)
+  const write = useSecretPatch(row, "apiKey", useEditBase(row))
   const client = useQueryClient()
   const id = `model-key-${row.id}`
   return (
