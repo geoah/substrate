@@ -142,6 +142,10 @@ type options struct {
 	// and as an open catch-up (unitseed.go).
 	seedUnits    bool
 	seedUnitsSet bool
+	// seedRecords writes the data records the seeded packages ship beside
+	// their declarations at creation and as an open catch-up (recordseed.go).
+	seedRecords    bool
+	seedRecordsSet bool
 	// perRecordSeed seeds the units one put at a time instead of in one bulk
 	// run, the test seam that holds the two to one answer.
 	perRecordSeed bool
@@ -447,6 +451,15 @@ func WithOperatorDefaults(c *operatordefaults.Config, name string) Option {
 	return func(o *options) { o.operatorDefaults, o.operatorName = c, name }
 }
 
+// WithRecordSeed controls whether CreateRepository and repository open write
+// the data records the seeded packages ship beside their declarations, such
+// as the console's collection views (decision 0229, recordseed.go).
+// Production Open defaults on. OpenForTest turns it off so fixtures that
+// count records see only the ones they wrote; a test that needs them asks.
+func WithRecordSeed(on bool) Option {
+	return func(o *options) { o.seedRecords, o.seedRecordsSet = on, true }
+}
+
 type service struct {
 	outsideCode           string
 	unconfinedOutsideCode bool
@@ -633,6 +646,12 @@ type service struct {
 	// seedUnits writes the shipped unit and conversion records at creation
 	// and as an open catch-up (unitseed.go).
 	seedUnits bool
+	// seedRecords writes shippedRecords at creation and as an open catch-up
+	// (recordseed.go).
+	seedRecords bool
+	// shippedRecords are the data records the shipped tree carries beside its
+	// declarations, in file order; none for a service built from a registry.
+	shippedRecords []vocabulary.ShippedRecord
 	// bulkSeed writes a seed the repository holds none of in one bulk run
 	// (bulkwrite.go); off only under the test seam WithTestPerRecordSeed.
 	bulkSeed bool
@@ -759,20 +778,22 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		fn(&o)
 	}
 	reg := o.registry
+	var shippedRecords []vocabulary.ShippedRecord
 	switch {
 	case reg != nil:
-	case o.kindsFS != nil:
-		r, err := vocabulary.LoadFS(o.kindsFS)
+	case o.kindsFS != nil, o.kindsDir != "":
+		fsys := o.kindsFS
+		if fsys == nil {
+			fsys = os.DirFS(o.kindsDir)
+		}
+		r, err := vocabulary.LoadFS(fsys)
 		if err != nil {
 			return nil, err
 		}
 		reg = r
-	case o.kindsDir != "":
-		r, err := vocabulary.LoadDir(o.kindsDir)
-		if err != nil {
+		if shippedRecords, err = vocabulary.ShippedRecordsFS(fsys); err != nil {
 			return nil, err
 		}
-		reg = r
 	default:
 		return nil, errors.New("substrate/engine: no schema source (WithKindsFS/WithKindsDir/WithRegistry)")
 	}
@@ -844,6 +865,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.seedUnitsSet {
 		o.seedUnits = true
 	}
+	if !o.seedRecordsSet {
+		o.seedRecords = true
+	}
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -913,6 +937,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMSample:    o.seedLLMSample,
 		seedLLMProviders: o.seedLLMProviders,
 		seedUnits:        o.seedUnits,
+		seedRecords:      o.seedRecords,
+		shippedRecords:   shippedRecords,
 		bulkSeed:         !o.perRecordSeed,
 		log:              o.log,
 		bg:               newBackground(),
@@ -1457,6 +1483,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.checkObservedIndex,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
+		// The shipped records after the upgrade, which declares the kinds a
+		// newer binary's records are of (recordseed.go).
+		ds.ensureShippedRecords,
 		ds.ensureTriggerCursors,
 		ds.settleInterruptedSyncs,
 		ds.settleInterruptedAgentRuns,
@@ -1678,6 +1707,11 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		// The shipped units, onto the kinds the seed just declared. A fresh
 		// repository holds nothing they could contradict.
 		if _, _, err := t.seedUnits(); err != nil {
+			return err
+		}
+		// The records the seeded packages ship, onto the kinds the seed just
+		// declared (recordseed.go).
+		if err := t.seedShippedRecords(); err != nil {
 			return err
 		}
 		// Every row a creation writes is indexed under this binary's rules,

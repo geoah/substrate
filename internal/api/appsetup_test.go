@@ -293,7 +293,9 @@ func seededKinds(t *testing.T, pkg string) []substrate.KindInfo {
 		if err != nil {
 			return err
 		}
-		docs, err := vocabulary.ParseStream(raw)
+		// The declarations alone: a seeded package ships data records beside
+		// them (decision record 0229).
+		docs, _, err := vocabulary.ParseShipped(raw)
 		if err != nil {
 			return err
 		}

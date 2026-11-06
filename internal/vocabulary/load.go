@@ -38,12 +38,13 @@ const (
 // (bareNameProblem) rather than call the whole entry unparseable.
 var reCapBinding = regexp.MustCompile(`^((?:[a-z0-9][a-z0-9.-]*/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
-// LoadFS parses every .yaml document under fsys into one registry. The unit is
+// LoadFS parses every declaration under fsys into one registry. The unit is
 // the document, not the file: manifests are grouped by the PACKAGE they
 // declare into, and all packages are built before any pin or cross-package
-// trait is resolved, so files may reference each other in any order.
+// trait is resolved, so files may reference each other in any order. A data
+// record shipped beside the declarations is left to ShippedRecordsFS.
 func LoadFS(fsys fs.FS) (*Registry, error) {
-	docs, err := readDocuments(fsys)
+	docs, _, err := readTree(fsys)
 	if err != nil {
 		return nil, err
 	}
@@ -69,10 +70,20 @@ func LoadFS(fsys fs.FS) (*Registry, error) {
 // LoadDir is LoadFS over a filesystem path.
 func LoadDir(dir string) (*Registry, error) { return LoadFS(os.DirFS(dir)) }
 
-// readDocuments walks the schema tree in lexical order and parses every
-// document it holds.
-func readDocuments(fsys fs.FS) ([]Document, error) {
+// ShippedRecordsFS reads the data records a tree ships beside its
+// declarations, in lexical file order and document order within a file. A
+// seeded package ships them as a bundle does (decision record 0229), and the
+// engine's record seed writes them into every repository.
+func ShippedRecordsFS(fsys fs.FS) ([]ShippedRecord, error) {
+	_, records, err := readTree(fsys)
+	return records, err
+}
+
+// readTree walks the schema tree in lexical order and parses every document
+// it holds into the declarations and the data records beside them.
+func readTree(fsys fs.FS) ([]Document, []ShippedRecord, error) {
 	var out []Document
+	var records []ShippedRecord
 	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -87,17 +98,18 @@ func readDocuments(fsys fs.FS) ([]Document, error) {
 		if err != nil {
 			return fmt.Errorf("substrate/schema: read %s: %w", name, err)
 		}
-		docs, err := ParseStream(data)
+		docs, recs, err := ParseShipped(data)
 		if err != nil {
 			return fmt.Errorf("substrate/schema: %s: %w", name, err)
 		}
 		out = append(out, docs...)
+		records = append(records, recs...)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	return out, records, nil
 }
 
 // ParseYAML parses one manifest stream into its packages — one file, one test

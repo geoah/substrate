@@ -540,6 +540,7 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 		WithLLMSampleSeed(false),
 		WithLLMProviderSeed(false),
 		WithUnitSeed(false),
+		WithRecordSeed(false),
 		// Every fixture here declares fixed `*.example.com` authorities into
 		// a repository named after its test; a test of the rule itself
 		// passes WithInsecureForeignPackages(false).

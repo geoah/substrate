@@ -1,0 +1,30 @@
+# The saved views the console package ships for the seeded kinds' collections
+# (decision record 0229). They are records, not declarations: the record seed
+# (internal/engine/recordseed.go) writes them into every repository at
+# registration and at every open, and never again once the owner edits or
+# deletes one. A reference is spelled as the engine stores it, `{ref: …}`, so
+# the seed reads a seeded row as already holding what ships.
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: memory-active
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/llm/memory
+    name: Active
+    where:
+      active:
+        eq: true
+    default: true
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: memory-retired
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/llm/memory
+    name: Retired
+    where:
+      active:
+        eq: false

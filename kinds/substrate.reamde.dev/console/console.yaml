@@ -23,4 +23,6 @@ data:
   # deprecated sameAs (decision record 0184).
   # 4 adds the table's show, which draws observed results as tiles
   # (decision record 0185).
-  version: 4
+  # 5 adds collectionview, a collection's shipped saved views (decision
+  # record 0229).
+  version: 5
