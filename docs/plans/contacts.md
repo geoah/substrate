@@ -3,7 +3,7 @@
 Status: proposal, 2026-11-06. Line numbers are against `main` at
 `b9cf1ffc2`. Nothing here is merged: step 1 is
 [#1210](https://github.com/geoah/substrate/pull/1210), with decision record
-0229. Two design reviews of earlier drafts are folded in; what each changed
+0231. Two design reviews of earlier drafts are folded in; what each changed
 is listed at the end.
 
 ## The problem
