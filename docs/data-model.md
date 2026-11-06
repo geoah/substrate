@@ -220,8 +220,8 @@ its own package: `samples.substrate.reamde.dev/people`,
 and agent examples `notes`, `llm`, `readinglist` and `pebble`
 under the same authority (each a bundle you **import**); the substrate's
 own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
-`substrate.reamde.dev/llm`, the console's record views in
-`substrate.reamde.dev/console` and measured values in
+`substrate.reamde.dev/llm`, the console's record views and collection views
+in `substrate.reamde.dev/console` and measured values in
 `substrate.reamde.dev/observations`, which are the four packages a new
 repository is seeded with; and the well-known catalogues
 `substrate.reamde.dev/health`, `labs` and `environment`, which a repository
@@ -231,8 +231,9 @@ An import lands the closure under your repository's own
 authority, so `samples.substrate.reamde.dev/tasks/task` becomes
 `ada.example.com/tasks/task` in a repository whose authority is
 `ada.example.com`. Registration also imports the `llm` sample and writes three
-keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), and nothing
-else. Packages namespace names; they never partition the data: a
+keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the
+[shipped units](units.md#the-shipped-units) and the console package's shipped
+collection views, and nothing else. Packages namespace names; they never partition the data: a
 reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
