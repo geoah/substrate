@@ -58,6 +58,9 @@ type fakeTurn struct {
 	// in usage.prompt_tokens_details the way LiteLLM writes them.
 	cacheReadTokens  int
 	cacheWriteTokens int
+	// noUsage leaves usage out of the reply, one-shot or streamed, as a
+	// gateway that reports none does.
+	noUsage bool
 	// finish is the turn's finish_reason; empty sends "stop". A "length"
 	// turn is a reply cut off by its output ceiling.
 	finish string
@@ -192,12 +195,16 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		if len(toolCalls) > 0 {
 			msg["tool_calls"] = toolCalls
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		reply := map[string]any{
 			"id": "cmpl", "object": "chat.completion",
 			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}},
 			"usage":   usage,
-		})
+		}
+		if turn.noUsage {
+			delete(reply, "usage")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(reply)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -254,7 +261,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
 		map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": finish},
 	}})
-	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{}, "usage": usage})
+	if !turn.noUsage {
+		chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{}, "usage": usage})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 

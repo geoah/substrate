@@ -150,15 +150,32 @@ func anthropicEndpoint(base string) (string, error) {
 
 // scrubbed rebuilds a provider error with the row's bearer taken back out,
 // rebuilt rather than %w-wrapped so no unwrap can recover the key. A context
-// overflow is classified on the scrubbed text (providerError).
+// overflow is classified on the scrubbed text (providerError), and an
+// egress.ErrUnprocessed mark survives the rebuild.
 func (c *anthropicClient) scrubbed(err error) error {
-	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	out := providerError(providersecret.Scrub(c.apiKey, err.Error()))
+	if errors.Is(err, egress.ErrUnprocessed) {
+		return egress.Unprocessed(out)
+	}
+	return out
 }
 
+// Complete runs one completion. A failure before any request wrote its
+// headers is marked egress.ErrUnprocessed, as post marks a refusal, and a
+// failure after the endpoint reported its whole usage still carries that
+// usage: the endpoint may have billed it.
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error) {
+	ctx, watch := egress.WatchSends(ctx)
 	msg, err := c.complete(ctx, anthropicParams(req), onDelta)
 	if err != nil {
-		return nil, c.scrubbed(err)
+		if !watch.Sent() {
+			err = egress.Unprocessed(err)
+		}
+		var res *Result
+		if usage := anthropicUsageOf(msg); usage != nil {
+			res = &Result{Usage: usage}
+		}
+		return res, c.scrubbed(err)
 	}
 	return anthropicResult(msg), nil
 }
@@ -489,27 +506,40 @@ func toolInput(arguments string) json.RawMessage {
 // status. A one-shot response's body is read inside its attempt, so a
 // connection dropped mid-body is retried like a failed dial, and comes back
 // as payload; a stream's body is the caller's to read and close.
+//
+// A failed call is marked egress.ErrUnprocessed when no attempt can have
+// been acted on (anthropicProcessed): one 5xx or one dropped answer among
+// the retries is enough to leave the mark off.
 func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*http.Response, []byte, error) {
 	if c.endpointErr != nil {
 		return nil, nil, c.endpointErr
 	}
+	processed := false
+	failed := func(err error) error {
+		if processed {
+			return err
+		}
+		return egress.Unprocessed(err)
+	}
 	for retry := 0; ; retry++ {
 		last := retry == anthropicMaxRetries
-		res, payload, again, err := c.attempt(ctx, body, stream, last)
+		wctx, watch := egress.WatchSends(ctx)
+		res, payload, again, err := c.attempt(wctx, body, stream, last)
+		processed = processed || anthropicProcessed(res, err, watch)
 		// Once the caller's context is done there is nothing left to retry,
 		// and its error is the call's.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			if res != nil {
 				_ = res.Body.Close()
 			}
-			return nil, nil, ctxErr
+			return nil, nil, failed(ctxErr)
 		}
 		if last || !again {
 			switch {
 			case err != nil:
-				return nil, nil, err
+				return nil, nil, failed(err)
 			case res.StatusCode >= http.StatusBadRequest:
-				return nil, nil, c.statusError(res, payload)
+				return nil, nil, failed(c.statusError(res, payload))
 			}
 			return res, payload, nil
 		}
@@ -522,10 +552,23 @@ func (c *anthropicClient) post(ctx context.Context, body []byte, stream bool) (*
 		select {
 		case <-ctx.Done():
 			wait.Stop()
-			return nil, nil, ctx.Err()
+			return nil, nil, failed(ctx.Err())
 		case <-wait.C:
 		}
 	}
+}
+
+// anthropicProcessed reports whether one attempt may have been acted on: it
+// was answered with a status egress.RefusedStatus does not name, or it failed
+// with no answer after its headers went out. A refused redirect is an answer.
+func anthropicProcessed(res *http.Response, err error, watch *egress.SendWatch) bool {
+	switch {
+	case res != nil:
+		return !egress.RefusedStatus(res.StatusCode)
+	case egress.IsRedirect(err):
+		return false
+	}
+	return watch.Sent()
 }
 
 // attempt sends the request once and reports whether the policy retries what
@@ -677,11 +720,14 @@ type anthropicContent struct {
 	Input     json.RawMessage `json:"input"`
 }
 
+// anthropicUsage is a message's usage. The two counts every reply carries are
+// pointers, nil where the reply left them out, so a reply that reported no
+// usage is told from one that reported zero.
 type anthropicUsage struct {
-	InputTokens              anthropicCount `json:"input_tokens"`
-	OutputTokens             anthropicCount `json:"output_tokens"`
-	CacheReadInputTokens     anthropicCount `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens anthropicCount `json:"cache_creation_input_tokens"`
+	InputTokens              *anthropicCount `json:"input_tokens"`
+	OutputTokens             *anthropicCount `json:"output_tokens"`
+	CacheReadInputTokens     anthropicCount  `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens anthropicCount  `json:"cache_creation_input_tokens"`
 }
 
 // anthropicCount is a token count read as leniently as the SDK read one: a
@@ -735,10 +781,11 @@ type anthropicEvent struct {
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
-	// Usage on message_delta is cumulative. output_tokens is always its final
-	// word; the input counts overwrite only when sent and not null.
+	// Usage on message_delta is cumulative: its output_tokens is the
+	// message's final count, and every count overwrites only when sent and
+	// not null.
 	Usage struct {
-		OutputTokens             anthropicCount  `json:"output_tokens"`
+		OutputTokens             *anthropicCount `json:"output_tokens"`
 		InputTokens              *anthropicCount `json:"input_tokens"`
 		CacheReadInputTokens     *anthropicCount `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens *anthropicCount `json:"cache_creation_input_tokens"`
@@ -758,7 +805,9 @@ type anthropicStream struct {
 
 // readStream reads the event stream of res. Events are dispatched on their
 // SSE event name; ping and any name the adapter has no use for are skipped,
-// and an error event ends the call with that event's data as its error.
+// and an error event ends the call with that event's data as its error. A
+// failure returns what the stream folded so far beside its error, so a usage
+// the stream already reported in full is not lost.
 func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*anthropicMessage, error) {
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), anthropicMaxEvent)
@@ -770,11 +819,11 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*
 		if len(line) == 0 {
 			switch name {
 			case "error":
-				return nil, c.statusError(res, data)
+				return &s.msg, c.statusError(res, data)
 			case "message_start", "message_delta", "message_stop",
 				"content_block_start", "content_block_delta", "content_block_stop":
 				if err := s.fold(data, onDelta); err != nil {
-					return nil, err
+					return &s.msg, err
 				}
 			}
 			name, data = "", data[:0]
@@ -787,16 +836,16 @@ func (c *anthropicClient) readStream(res *http.Response, onDelta func(Delta)) (*
 			name = string(value)
 		case "data":
 			if len(data)+len(value) >= anthropicMaxEvent {
-				return nil, fmt.Errorf("anthropic: a stream event exceeds %d bytes", anthropicMaxEvent)
+				return &s.msg, fmt.Errorf("anthropic: a stream event exceeds %d bytes", anthropicMaxEvent)
 			}
 			data = append(append(data, value...), '\n')
 		}
 	}
 	if err := sc.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
-			return nil, fmt.Errorf("anthropic: a stream line exceeds %d bytes", anthropicMaxEvent)
+			return &s.msg, fmt.Errorf("anthropic: a stream line exceeds %d bytes", anthropicMaxEvent)
 		}
-		return nil, err
+		return &s.msg, err
 	}
 	for i := range s.msg.Content {
 		if s.msg.Content[i].Type == "thinking" {
@@ -819,15 +868,20 @@ func (s *anthropicStream) fold(data []byte, onDelta func(Delta)) error {
 	switch ev.Type {
 	case "message_start":
 		s.msg, s.text, s.size = ev.Message, nil, 0
+		// The output count message_start carries is what was written so
+		// far, not the message's: only a message_delta reports that.
+		s.msg.Usage.OutputTokens = nil
 		for _, block := range s.msg.Content {
 			s.text = append(s.text, []byte(block.Text+block.Thinking))
 		}
 	case "message_delta":
 		s.msg.StopReason = ev.Delta.StopReason
 		u := &s.msg.Usage
-		u.OutputTokens = ev.Usage.OutputTokens
+		if ev.Usage.OutputTokens != nil {
+			u.OutputTokens = ev.Usage.OutputTokens
+		}
 		if ev.Usage.InputTokens != nil {
-			u.InputTokens = *ev.Usage.InputTokens
+			u.InputTokens = ev.Usage.InputTokens
 		}
 		if ev.Usage.CacheReadInputTokens != nil {
 			u.CacheReadInputTokens = *ev.Usage.CacheReadInputTokens
@@ -925,22 +979,28 @@ func settleInput(block *anthropicContent) {
 	}
 }
 
-func anthropicResult(msg *anthropicMessage) *Result {
+// anthropicUsageOf is a message's neutral tally, or nil when the message did
+// not report it whole: an input_tokens and a final output_tokens.
+func anthropicUsageOf(msg *anthropicMessage) *Usage {
+	if msg == nil || msg.Usage.InputTokens == nil || msg.Usage.OutputTokens == nil {
+		return nil
+	}
 	// This wire reports cache reads and writes beside input_tokens, never
 	// inside it, and the window holds all three. A negative count reads as
 	// none, as on the openai wire: the thread's tallies refuse a value below 0.
-	input := max(0, int(msg.Usage.InputTokens))
+	input := max(0, int(*msg.Usage.InputTokens))
 	read := max(0, int(msg.Usage.CacheReadInputTokens))
 	write := max(0, int(msg.Usage.CacheCreationInputTokens))
-	res := &Result{
-		Usage: &Usage{
-			PromptTokens:     input + read + write,
-			CompletionTokens: int(msg.Usage.OutputTokens),
-			CacheReadTokens:  read,
-			CacheWriteTokens: write,
-		},
-		Stop: anthropicStop(msg.StopReason),
+	return &Usage{
+		PromptTokens:     input + read + write,
+		CompletionTokens: int(*msg.Usage.OutputTokens),
+		CacheReadTokens:  read,
+		CacheWriteTokens: write,
 	}
+}
+
+func anthropicResult(msg *anthropicMessage) *Result {
+	res := &Result{Usage: anthropicUsageOf(msg), Stop: anthropicStop(msg.StopReason)}
 	var content, reasoning strings.Builder
 	var blocks []any
 	for _, block := range msg.Content {

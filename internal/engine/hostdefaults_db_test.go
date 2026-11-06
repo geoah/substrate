@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
@@ -383,12 +385,15 @@ func TestHostLedgerReservesSettlesAndExpires(t *testing.T) {
 		}
 	}
 
-	// A call that reports no usage keeps its ceiling; one that failed while
-	// its caller waited costs nothing.
-	missing := reserve(0.25)
+	// A call that reports no usage keeps its ceiling, and so does one that
+	// failed after it left; one the endpoint refused costs nothing, and the
+	// mark is read through whatever wraps it.
+	missing := reserve(0.125)
 	ds.settleCall(ctx, missing, nil, 0, false)
-	refused := reserve(0.25)
-	ds.settleCall(ctx, refused, errors.New("401 refused"), 0, false)
+	dropped := reserve(0.125)
+	ds.settleCall(ctx, dropped, errors.New("connection reset by peer"), 0, false)
+	refused := reserve(0.125)
+	ds.settleCall(ctx, refused, fmt.Errorf("agent: %w", egress.Unprocessed(errors.New("401 refused"))), 0, false)
 	if u := used(); u != 9.75 {
 		t.Fatalf("used = %v, want 9.75", u)
 	}

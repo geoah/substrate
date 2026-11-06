@@ -309,7 +309,10 @@ type Request struct {
 	Cache *Cache
 }
 
-// Result is one settled completion. Usage is nil when the wire returned none.
+// Result is one settled completion. Usage is nil when the wire did not report
+// it whole (an openai-wire reply without prompt_tokens and completion_tokens,
+// an anthropic-wire one without input_tokens and a final output_tokens), so a
+// caller paying per call never prices a billed call at nothing.
 type Result struct {
 	Content   string
 	ToolCalls []ToolCall
@@ -341,6 +344,12 @@ type Delta struct {
 type Client interface {
 	// Complete runs one turn. onDelta nil is a one-shot request; non-nil
 	// streams deltas as they arrive and still returns the whole result.
+	//
+	// A failure may still return a Result carrying the Usage the endpoint
+	// reported before the call failed, and nothing else. A failure the
+	// endpoint cannot have acted on is marked egress.ErrUnprocessed: no
+	// request wrote its headers, or every attempt was refused with a
+	// redirect or a 4xx.
 	Complete(ctx context.Context, req Request, onDelta func(Delta)) (*Result, error)
 }
 

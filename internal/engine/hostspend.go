@@ -6,9 +6,11 @@ package engine
 // host_spend_reservations, in one transaction that sums the repository's
 // reservations for the UTC calendar day under an advisory lock, and is
 // refused when the sum would pass the host file's budget.centsPerDay. The call
-// then SETTLES to its reported cost. A call whose usage is missing keeps its
-// ceiling, and a reservation still open an hour after it opened (a crash, a
-// lost settle) is settled at its ceiling, so the ledger only ever overcounts.
+// then SETTLES to its reported cost, failed or not. A call that reported no
+// usage keeps its ceiling unless it failed in a way the endpoint cannot have
+// billed (egress.ErrUnprocessed), and a reservation still open an hour after
+// it opened (a crash, a lost settle) is settled at its ceiling, so the ledger
+// only ever overcounts.
 //
 // The gate sits beneath every caller because it wraps the clients
 // themselves: hostLLMClient is the llm.Client every agent loop on a
@@ -31,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/hostdefaults"
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
@@ -162,16 +165,19 @@ func (ds *dataset) settleHost(ctx context.Context, r *hostReservation, cents flo
 	}
 }
 
-// settleCall settles r after the call it reserved for: to cost when the call
-// reported usage, to nothing when it failed while its caller still waited (the
-// endpoint refused it or it never left), and at its ceiling otherwise (a
-// result with no usage, or a call its caller abandoned midway, which the
-// vendor may have billed in part).
+// settleCall settles r after the call it reserved for: to cost when the
+// endpoint reported the call's usage, whether or not the call then failed (a
+// reply with no choices, a vector of the wrong width); to nothing when the
+// call failed in a way the endpoint cannot have billed (egress.ErrUnprocessed:
+// no request left, or every one was refused with a redirect or a 4xx); and at
+// its ceiling otherwise. A dropped answer, a timeout, a 5xx, a reply that does
+// not decode and a success with no usage all keep the ceiling: the endpoint
+// may have done the work.
 func (ds *dataset) settleCall(ctx context.Context, r *hostReservation, callErr error, cents float64, reported bool) {
 	switch {
-	case callErr == nil && reported:
+	case reported:
 		ds.settleHost(ctx, r, cents)
-	case callErr != nil && ctx.Err() == nil:
+	case callErr != nil && errors.Is(callErr, egress.ErrUnprocessed):
 		ds.settleHost(ctx, r, 0)
 	default:
 		ds.settleHost(ctx, r, r.ceiling)
@@ -243,7 +249,7 @@ func (c *hostLLMClient) Complete(ctx context.Context, req llm.Request, onDelta f
 	}
 	res, err := c.inner.Complete(ctx, req, onDelta)
 	cents, reported := 0.0, false
-	if err == nil && res != nil && res.Usage != nil {
+	if res != nil && res.Usage != nil {
 		cents, reported = price.cost(res.Usage)*100, true
 	}
 	c.ds.settleCall(ctx, r, err, cents, reported)
@@ -300,7 +306,8 @@ func embedCeilingCents(texts []string, per1M float64) float64 {
 }
 
 // hostEmbed is one embeddings request on the host's entry: reserved, made,
-// settled to the tokens the endpoint reported.
+// settled to the tokens the endpoint reported, which EmbedUsage returns beside
+// an answer it then refused. A count of zero is no report.
 func (p *embedProvider) hostEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	r, err := p.gate.reserveHost(ctx, substrate.HostServiceEmbeddings, embedCeilingCents(texts, p.per1M))
 	if err != nil {
