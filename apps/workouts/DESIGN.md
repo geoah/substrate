@@ -2227,16 +2227,18 @@ in orange once the chain has ended.
 filled with the accent at 8 % and a 1 pt accent line (orange for a warm-up or a drop; the card's colour with a grey
 line when fixing). In order:
 
-- The header, at least 36 pt: the ring, the badge and title (17 pt semibold), the note (a sparkle and the suggestion's
-  reason in 13 pt; a status such as "of 2" (in a group, after the exercise's name, "warm-up 1 of 2"; none in a warm-up
-  circuit, whose round says it) or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
+- The header, at least 36 pt: the ring, the badge and title (17 pt semibold: the exercise's name, in a group or not,
+  since the card's own title is often scrolled away from the set open in it; a chain's part after it, owner,
+  2026-11-06), the note (a sparkle and the suggestion's reason in 13 pt; a status such as "warm-up 1 of 2" (none in a
+  warm-up circuit, whose round says it) or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
   rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and Cancel when fixing; the set menu `…` is
   beside Log, not in the header, so the title keeps the width (owner, 2026-11-06). The note sits beside the title when it fits, else on its own line under it. After
   a reps-left step the new value's meaning ("1 left: very hard") shows in the note's place for 2.5 s without
   changing the header's height.
 - The slot's cue, when the routine gives one (`RowsEditor.cue`): a lightbulb and one line in 13 pt secondary,
-  indented to the values. The slot's notes stay above the block, folded past five lines.
-- Each value on a row of at least 48 pt, indented to the title, the same for load, reps and reps left (owner,
+  flush with the panel's edge, as everything under the header is. The slot's notes stay above the block, folded past five lines.
+- Each value on a row of at least 48 pt, flush with the ring (no indent: the width goes to the values and the round
+  buttons, owner, 2026-11-06), the same for load, reps and reps left (owner,
   2026-11-06): the number at 26 pt semibold with monospaced digits and a faint dotted underline (a tap opens the
   keypad; the target is at least 44 pt tall), its unit (15 pt secondary) and `last` (13 pt secondary) under them; on
   the right, under the thumb, the row's round buttons and then the stepper: one tinted capsule, 44 pt tall, two 56 pt

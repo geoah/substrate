@@ -427,7 +427,8 @@ larger text puts each value on a line of its own, steppers kept.
 | ![RPE label](docs/screenshots/session-after-rpe-label.jpg) | ![AX docked](docs/screenshots/session-after-accessibility-size.jpg) | ![AX timed](docs/screenshots/session-after-accessibility-timed.jpg) | ![AX Stop](docs/screenshots/session-after-accessibility-stop.jpg) |
 
 The open set's values after the owner's feedback from the gym (2026-11-06,
-iPhone 17e simulator, the narrowest phone): load, reps and reps left built the
+iPhone 17e simulator, the narrowest phone): the open set named after its
+exercise, flush with the panel's edge, and load, reps and reps left built the
 same, each with its last time under the number and, beside its steps, the
 reset and (on reps left) why the set ended as round buttons; the keypad sets
 the field as each key is typed, so Log never takes the old value, with Done

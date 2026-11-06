@@ -423,6 +423,10 @@ struct RowsBuilder {
         let title = title(row, head: head, isGroup: isGroup)
         let setLabel = view?.label.short ?? ""
         let caption = caption(row, head: head, isGroup: isGroup)
+        // An editor names its exercise as a group's does, plain exercise or
+        // not: the card's title is often scrolled away from the set open in
+        // it (owner, 2026-11-06). A line keeps the shorter caption.
+        let editorCaption = self.caption(row, head: head, isGroup: true)
         let ghost = evaluator.ghost(row.id)
         let typedOnlyReps = row.isPending && row.entered.reps == nil
         let placeholder = typedOnlyReps ? ghost.repsPlaceholder : nil
@@ -491,7 +495,7 @@ struct RowsBuilder {
         if rowState == .now, let view {
             let source = editorSource(
                 row, head: head, view: view, mode: .log, title: title, setLabel: setLabel,
-                caption: caption, isGroup: isGroup)
+                caption: editorCaption)
             let rpe: RowRPE = if case .prefill = view.rpeEntry, !p.settings.prefillsRPE { .none } else { view.rpeEntry }
             let running = p.timedID == row.id
             editor = source.editor(
@@ -502,7 +506,7 @@ struct RowsBuilder {
         if let done, let view {
             let source = editorSource(
                 row, head: head, view: view, mode: .fix, title: title, setLabel: setLabel,
-                caption: caption, isGroup: isGroup)
+                caption: editorCaption)
             fix = RowsFix(row: row.id, logged: done, source: source)
         }
         return RowsSetItem(
@@ -594,7 +598,7 @@ struct RowsBuilder {
 
     func editorSource(
         _ row: Row, head: Row, view: SetRowPresentation, mode: RowsEditor.Mode, title: String,
-        setLabel: String, caption: String?, isGroup: Bool
+        setLabel: String, caption: String?
     ) -> RowsEditorSource {
         let exercise = state.exercise(ofRow: row.id)
         let measurement = exercise?.measurement ?? .weightreps
@@ -625,10 +629,10 @@ struct RowsBuilder {
             } else if head.role == .warmup, row.isHead, warmups > 1,
                 !(state.slot(row.slot)?.group.map { UpNext.isWarmupCircuit(group: $0, in: state) } ?? false)
             {
-                // "of 2" follows "Warm-up 1". A group's title is the exercise, so
-                // the note names the warm-up; a warm-up circuit's round says it.
+                // The title is the exercise, so the note names the warm-up;
+                // a warm-up circuit's round says it.
                 let ordinal = state.ordinal(of: row.id) ?? 1
-                note = RowsNote(text: isGroup ? "warm-up \(ordinal) of \(warmups)" : "of \(warmups)", kind: .status)
+                note = RowsNote(text: "warm-up \(ordinal) of \(warmups)", kind: .status)
             } else if role == .drop, ghost.repsPlaceholder != nil {
                 note = RowsNote(text: GhostValues.toFailure, kind: .status)
             } else if isMini, let load = Format.load(shown, mode: measurement.loadMode), load != "BW" {
