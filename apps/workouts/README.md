@@ -432,8 +432,8 @@ same, each with its last time under the number and, beside its steps, the
 reset and (on reps left) why the set ended as round buttons; the keypad sets
 the field as each key is typed, so Log never takes the old value, with Done
 and Cancel; every other set on one line, with no round headers; every menu's
-button on Liquid Glass, so its menu grows out of it; and "Next", on one line,
-for the set after. They are `docs/screenshots/rows-input-*.jpg`.
+button on Liquid Glass, so its menu grows out of it, the open set's `…` beside
+Log; and "Next", on one line, for the set after. They are `docs/screenshots/rows-input-*.jpg`.
 
 | The open set | Typing 12.75 | Why the set ended | A superset |
 | --- | --- | --- | --- |

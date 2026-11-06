@@ -2273,7 +2273,9 @@ line when fixing). In order:
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
   has Save, enabled once the draft differs; Delete set is in the `…`, as on every set. The `…` (the Table's set menu
-  items) is a 50 pt glass circle at the end of the row Log or Save is on, so every action is under the thumb.
+  items) is a 50 pt glass circle at the end of the row Log or Save is on, so every action is under the thumb. Log's
+  label takes one line beside it and is cut short at its end where it does not fit (two lines at the accessibility
+  sizes); VoiceOver reads it whole.
 - **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02; a lone done warm-up is
   drawn as its own line rather than folded, so it has one too): the Table's set menu items,
   with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and
