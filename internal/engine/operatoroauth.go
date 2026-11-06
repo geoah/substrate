@@ -385,19 +385,25 @@ func (ds *dataset) oauthDefault(ctx context.Context, pkg string, c *operatordefa
 	_, word := vocabulary.SplitPackageRef(pkg)
 	item := substrate.OperatorDefault{
 		ID: substrate.SlotOAuth + "/" + pkg, Slot: substrate.SlotOAuth, Label: word, Target: pkg,
-		OperatorOffers: true, Notice: c.Notice,
+		Notice: c.Notice,
 	}
 	b, installed := ds.registry().BundleOf(pkg)
 	if !installed || b.OAuth2 == nil {
 		// Nothing of the person's can stand in front of the operator's client
 		// while the provider is absent, so installing it signs in through
 		// the operator's.
-		item.Source, item.Readiness, item.Message = substrate.SourceOperator, substrate.ReadinessNotSetUp, pkg+" is not installed"
+		item.Source, item.OperatorOffers = substrate.SourceOperator, true
+		item.Readiness, item.Message = substrate.ReadinessNotSetUp, pkg+" is not installed"
 		if msg := ds.svc.operatorInstalls.failure(ds.scope.Repository, pkg); msg != "" {
 			item.Readiness, item.Message = substrate.ReadinessInstallFailed, msg
 		}
 		return item, nil
 	}
+	// Offered where removing the person's records would fall back to the
+	// operator's client: operatorOAuthClient's eligibility, which refuses a
+	// copy the repository owns and an install that cannot record the client.
+	eligible, _ := ds.operatorOAuthClient(pkg)
+	item.OperatorOffers = eligible != nil
 	ri, err := ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput)
 	if err != nil {
 		return item, err

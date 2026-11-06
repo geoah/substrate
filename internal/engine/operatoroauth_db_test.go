@@ -924,6 +924,46 @@ func TestOperatorOAuthClientStampSparesAReconnect(t *testing.T) {
 	opAccountConnectedThroughOperator(t, ds, account)
 }
 
+// `operatorOffers` says whether the operator's client would serve the
+// package once the person's own record is gone, so it is false where the
+// operator's client is refused: an install that cannot record the client,
+// and a copy the repository owns. The published provider that records it
+// is offered with and without the person's record.
+func TestOperatorOAuthOffersOnlyWhereItServes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cases := []struct {
+		name                      string
+		published, withProvenance bool
+		offers                    bool
+	}{
+		{"the published provider", true, true, true},
+		{"an install that cannot record the client", true, false, false},
+		{"the repository's own copy", false, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newOpTokenFake(t)
+			ds := openCoreDataset(t,
+				WithOAuth("test-state-key", "https://substrate.example/cb", f.srv.Client()),
+				WithOperatorDefaults(opClientsConfig(), "Example"))
+			installOpMail(t, ds, f.srv.URL+"/token", tc.published, tc.withProvenance)
+			opPutOwnClient(t, ds, "default", map[string]any{"clientId": ownClientID, "clientSecret": ownClientSecret})
+			if item := opMailItem(t, ds); item.Source != substrate.SourceOwn || item.OperatorOffers != tc.offers {
+				t.Fatalf("with the person's record: %+v, want own and operatorOffers %v", item, tc.offers)
+			}
+			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, "default", substrate.DeleteInput{}); err != nil {
+				t.Fatalf("delete the own client: %v", err)
+			}
+			item := opMailItem(t, ds)
+			if item.OperatorOffers != tc.offers || (item.Source == substrate.SourceOperator) != tc.offers {
+				t.Fatalf("without the person's record: %+v, want operatorOffers %v and the operator as source only where offered", item, tc.offers)
+			}
+		})
+	}
+}
+
 // openOpMailAt opens a service over dsn and root with the OAuth facility on
 // against f and cfg as the operator's file, and returns it with the test
 // repository's dataset, creating the repository when create is set.
