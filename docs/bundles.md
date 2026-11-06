@@ -558,16 +558,16 @@ Nothing new is parsed: a closure already carries data records, so a bundle
 declares a setting by writing an empty one.
 
 **The id is the ownership.** A setting's id is `<bundle id>/<name>`, and the
-bundle id is `<authority>/<package>`, so the Firecrawl sample ships
-`samples.substrate.reamde.dev/firecrawl/apiKey` and an import rehomes it with
-the rest of the closure. Two bundles may each own an `apiKey`, and the prefix
+bundle id is `<authority>/<package>`, so the Firecrawl provider ships
+`providers.substrate.reamde.dev/firecrawl/apiKey`, and a sample's settings are
+rehomed with the rest of its closure on import. Two bundles may each own an `apiKey`, and the prefix
 is the only thing that says whose a record is — a hand-written record under
 another bundle's prefix is that bundle's setting.
 
 ```yaml
 kind: substrate.reamde.dev/core/secret
 metadata:
-  id: samples.substrate.reamde.dev/firecrawl/apiKey
+  id: providers.substrate.reamde.dev/firecrawl/apiKey
 data:
   properties:
     displayName: API key
@@ -590,6 +590,18 @@ and held there by the invocation scrubber, exactly as an input's secret is
 empty is a setup item on the bundle's status, coded `setting`, so the
 console's provider page asks for it. Purging a bundle removes its settings;
 uninstall leaves them, as it leaves every record.
+
+**The operator's key.** A published package the deployment's
+[operator defaults](operations.md#operator-defaults) file lists under
+`functionSecrets` may run on the operator's key. While the package's own
+`apiKey` secret is empty, a call of a function the file names gets that key
+as `config.settings.apiKey` and no other setting beside it, so a value the
+person wrote never reaches a call the operator pays for. The call reserves the
+file's `pricePerCall` against the day's allowance first, and is refused with
+reason `quota` when it does not fit. The key never becomes a record, and the
+empty secret is no setup item while the operator covers it. A key the person
+writes wins, and clearing it returns the calls to the operator's
+([0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
 
 ## Connections
 
@@ -783,13 +795,13 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the ten **providers** under `kinds/providers.substrate.reamde.dev`, the
+the eleven **providers** under `kinds/providers.substrate.reamde.dev`, the
 four well-known **catalogues** under `kinds/substrate.reamde.dev`
 (`health`, `labs`, `environment` and `clinical`), which take the provider
 door, and the
-eleven **samples** under `samples/` (`people`, `tasks`, `messaging`,
+ten **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
-`readinglist`, `pebble`, `firecrawl`). A catalogue is a first-party package:
+`readinglist` and `pebble`). A catalogue is a first-party package:
 it installs under `substrate.reamde.dev`, published, and upgrades from the
 catalog as a provider does, but no seed writes it
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).

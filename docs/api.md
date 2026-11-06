@@ -2126,11 +2126,12 @@ routes read the repository's graph at one revision.
 `GET /api/v1/operator/defaults` answers each slot the repository spends a
 key through that the operator, whoever runs the deployment, could fill
 ([decision 0235](decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)):
-one item per `llm/provider` row, one `embeddings` item, and one
-`oauth/<package>` item per provider the operator's file lists under
-`oauthClients`. Each item has its `slot` (`llm`, `embeddings` or `oauth`),
-its `source` (`operator`, `own` or `none`), `operatorOffers`, its `readiness`
-and, where it is not `ready`, a `message`. `operatorOffers` is true when the operator's file serves the slot
+one item per `llm/provider` row, one `embeddings` item, one `oauth/<package>`
+item per provider the operator's file lists under `oauthClients`, and one
+`function/<package>` item per package it lists under `functionSecrets`. Each
+item has its `slot` (`llm`, `embeddings`, `oauth` or `function`), its `source`
+(`operator`, `own` or `none`), `operatorOffers`, its `readiness` and, where it
+is not `ready`, a `message`. `operatorOffers` is true when the operator's file serves the slot
 to this repository, whatever the source, the readiness or the allowance:
 removing your own key would fall back to the operator's. A row whose agent
 has an open alert reads `failing` with the alert's error. The `embeddings`
@@ -2148,7 +2149,11 @@ readiness is `needs-connect` until an account holds a grant,
 one resolving now or its last refresh failed, `not-set-up` while the package
 is not installed, and `install-failed`, with the error, when the operator's
 install of it failed ([the operator's OAuth
-client](bundles.md#the-operators-oauth-client)). Where the deployment
+client](bundles.md#the-operators-oauth-client)). A `function` item's
+`target` is the package; its source is `own` while the package's `apiKey`
+secret holds a value, `operator` while it is empty and the package is
+installed as the published provider, and `none`, `not-set-up`, while the
+package is not installed. Where the deployment
 loaded an [operator defaults](operations.md#operator-defaults) file,
 `operator` carries the site's name from `site.yaml` and today's `allowance`:
 `centsPerDay`, `usedCents` (open reservations count at their ceiling),

@@ -166,7 +166,7 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_SITE_DIR`           | unset (no site)                        | An absolute path to a site directory: a `site.yaml` naming the brand the console's sign-in, register and landing pages show, and files served at `/site/`. An invalid `site.yaml` refuses the boot, naming the problem. See [a site for the deployment](#a-site-for-the-deployment). |
-| `SUBSTRATE_OPERATOR_DEFAULTS`  | unset (no operator defaults)           | An absolute path to the operator defaults file: the LLM providers and embeddings the operator pays for on behalf of every repository, and the daily allowance bounding them. It may not sit inside `SUBSTRATE_SITE_DIR`. An invalid file refuses the boot, naming the problem. See [operator defaults](#operator-defaults). |
+| `SUBSTRATE_OPERATOR_DEFAULTS`  | unset (no operator defaults)           | An absolute path to the operator defaults file: the LLM providers, embeddings and provider function keys the operator pays for on behalf of every repository, and the daily allowance bounding them. It may not sit inside `SUBSTRATE_SITE_DIR`. An invalid file refuses the boot, naming the problem. See [operator defaults](#operator-defaults). |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
@@ -338,12 +338,22 @@ file the server behaves as the section above says. With it:
 - Where no row declares `embedModel`, the file's one `embeddings` entry buys
   the repository's vectors, stamped with the provider id `(operator)`, which
   no row id can be.
+- A function the file lists under `functionSecrets` (Firecrawl's `websearch`
+  and `webscrape`), of a package installed as the published provider, gets
+  the file's key as `config.settings.apiKey` while the repository's own
+  `apiKey` secret for that package is empty, and none of the repository's
+  settings beside it, so a `baseUrl` the person wrote never reaches a call the
+  operator pays for. The key never becomes a record. A copy of the package
+  under the repository's own authority, such as an earlier import of the
+  Firecrawl sample, never gets it
+  ([decision 0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
 - Every operator-paid call first reserves its worst-case cost against the
   allowance, `budget.centsPerDay`, per repository and per UTC calendar day,
-  and settles to its reported cost after. A call that reports no usage, or
-  only part of it, counts at that worst case, unless it reported nothing and
-  failed before the vendor could bill it: it never left, or the vendor
-  answered a redirect or a 4xx. The reservation covers one attempt, so an
+  and settles to its reported cost after; a function call reserves its
+  `pricePerCall` and settles at it once its body ran. A call that reports no
+  usage, or only part of it, counts at that worst case, unless it reported
+  nothing and failed before the vendor could bill it: it never left, or the
+  vendor answered a redirect or a 4xx. The reservation covers one attempt, so an
   operator-paid Anthropic call is not retried after a 5xx, a dropped answer
   or a timeout; a 429 is still retried. At the limit a trigger is held, and a
   chat, a call or a search's semantic arm is refused with `403 guard`, reason
@@ -401,14 +411,17 @@ llm:
     models:
       - {model: claude-sonnet-5-5, inputPer1M: "3", outputPer1M: "15"}
     maxOutputTokens: 8000
+functionSecrets:
+  providers.substrate.reamde.dev/firecrawl:
+    apiKey: {file: /run/secrets/firecrawl}
+    consumers: [websearch, webscrape]          # the functions that receive the key
+    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # cents, one per consumer
 budget:
   centsPerDay: 200                 # the allowance: per repository, everything operator-paid
 ```
 
 Key material is never written in the file: every key is `{file: /path}`, an
-absolute path read once at boot, or `{env: NAME}`. The file also reads
-`functionSecrets` (`apiKey`, `consumers`, `pricePerCall` in cents) and
-validates it, but nothing acts on it yet. Each package `install`,
+absolute path read once at boot, or `{env: NAME}`. Each package `install`,
 `oauthClients` and `functionSecrets` name must be one this binary ships as a
 provider.
 
