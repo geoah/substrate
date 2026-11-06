@@ -724,12 +724,25 @@ const embedBatchQuery = `SELECT record_kind, record_id, property, generation FRO
 // The embeddings provider is the repository's own row, resolved on every pass:
 // a repository that names none drains nothing and reports 0, which is why the
 // drain loop runs for every repository whether or not any of them embeds.
+//
+// A key the vendor refused (401 or 403) is not called again until its
+// backoff ends (keyrefusals.go): a minute after the refusal, doubling with
+// each refusal after it, up to an hour. The operator's key is one fact for
+// every repository, so one drain asks the vendor per step however many
+// repositories it serves. Until then the queue waits and the pass reports 0,
+// as it does at the allowance; a call the vendor accepts on the same key (a
+// chat, a search) ends the wait at once.
 func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error) {
 	provider, err := ds.resolveEmbedProvider(ctx)
 	if err != nil {
 		return 0, err
 	}
 	if provider == nil {
+		return 0, nil
+	}
+	if !ds.svc.keyRefusals.drainMay(provider.key, ds.svc.operatorNow()) {
+		ds.svc.log.Debug("substrate: embed queue waits: the vendor refused the embeddings key",
+			"repository", ds.Repository().ID, "provider", provider.id)
 		return 0, nil
 	}
 	// The write refuses a model of another width, so this is the second gate,

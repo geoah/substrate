@@ -46,15 +46,29 @@ type embedProvider struct {
 	// tokens, and settles to what the endpoint reported.
 	gate  *dataset
 	per1M float64
+	// ds and key are where every request tells the refused-key table what the
+	// vendor answered (keyrefusals.go): the operator entry's key, or the
+	// claiming row's own. A provider built without ds tells nobody.
+	ds  *dataset
+	key keyID
 }
 
 // Embed and Dimension make embedProvider a substrate.Embedder, so the queue
-// drains through the resolved row.
+// drains through the resolved row. The drain, the semantic query and the
+// endpoint check all reach the vendor here, so each answer reaches the
+// refused-key table.
 func (p *embedProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	var vecs [][]float32
+	var err error
 	if p.gate != nil {
-		return p.operatorEmbed(ctx, texts)
+		vecs, err = p.operatorEmbed(ctx, texts)
+	} else {
+		vecs, err = p.client.Embed(ctx, texts)
 	}
-	return p.client.Embed(ctx, texts)
+	if p.ds != nil {
+		p.ds.svc.keyRefusals.observe(p.key, err, p.ds.svc.operatorNow())
+	}
+	return vecs, err
 }
 
 func (p *embedProvider) Dimension() int { return p.client.Dimension() }
@@ -135,7 +149,10 @@ func (ds *dataset) openOperatorEmbedProvider(entry *operatordefaults.LLM) (*embe
 		return nil, fmt.Errorf("substrate/engine: the operator's embeddings entry %q: %w", entry.ID, err)
 	}
 	per1M, _ := priceFloat(entry.Embeddings.Per1M)
-	return &embedProvider{id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M}, nil
+	return &embedProvider{
+		id: operatorEmbedProviderID, model: entry.Embeddings.Model, client: client, gate: ds, per1M: per1M,
+		ds: ds, key: operatorKeyID(entry.ID),
+	}, nil
 }
 
 // embedClaims is every live row claiming the embeddings job, by id, read
@@ -200,7 +217,7 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 	if err != nil {
 		return nil, fmt.Errorf("%w: llm/provider row %q: %w", substrate.ErrValidation, id, err)
 	}
-	return &embedProvider{id: id, model: model, client: client}, nil
+	return &embedProvider{id: id, model: model, client: client, ds: ds, key: pc.key}, nil
 }
 
 // Reembed enqueues the properties the resolved pair did not embed. It buys no

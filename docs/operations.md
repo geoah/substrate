@@ -362,6 +362,18 @@ file the server behaves as the section above says. With it:
   resets at 00:00 UTC; add your own key to keep going". The site's name comes
   from `site.yaml` ([a site for the deployment](#a-site-for-the-deployment)),
   and is "this server" without one.
+- A key the vendor refuses with a `401` or a `403`, the operator's or a
+  person's own, reads `failing` on the operator defaults read with the
+  vendor and the status ("OpenAI refused the key (401)") until a call the
+  vendor accepts. A refusal of an operator key reads in every repository the
+  key serves; a person's own key's reads in their repository alone. An agent
+  call on a refused key answers `403 guard` and a chat turn ends with an
+  `error` event, both with the plain refusal, and the vendor's own words go
+  to the log. The embed drain stops calling a refused key until a backoff
+  ends: a minute after the refusal, doubling with each refusal after it, up
+  to an hour, and one drain asks per step however many repositories the key
+  serves. The server holds this in memory, so a restart forgets it: the
+  slots read ready until the next call meets the refusal again.
 - A published provider listed under `oauthClients` signs in through the
   operator's OAuth client wherever its client input resolves to no record of
   the person's

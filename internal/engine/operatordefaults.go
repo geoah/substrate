@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -133,8 +134,10 @@ func (ds *dataset) providerRows(ctx context.Context) ([]*erow, error) {
 	return out, nil
 }
 
-// llmDefault is one provider row's slot. failing is the newest open alert's
-// error of an agent running on the row, empty for none.
+// llmDefault is one provider row's slot. A key the vendor refused reads
+// `failing` with the vendor and the status (keyrefusals.go); otherwise failing
+// is the newest open alert's error of an agent running on the row, empty for
+// none.
 func (ds *dataset) llmDefault(ctx context.Context, row *erow, failing string) substrate.OperatorDefault {
 	item := substrate.OperatorDefault{
 		ID: "llm/" + row.ID, Slot: substrate.SlotLLM, Label: propString(row, "label"),
@@ -148,10 +151,15 @@ func (ds *dataset) llmDefault(ctx context.Context, row *erow, failing string) su
 	switch entry := ds.operatorEntryFor(row.ID, storedKey); {
 	case entry != nil:
 		item.Source, item.Readiness, item.Models = substrate.SourceOperator, substrate.ReadinessReady, entry.ModelIDs()
+		if status := ds.keyStatus(operatorKeyID(entry.ID)); status != 0 {
+			failing = keyRefusedText(vendorName(propString(row, "label"), row.ID), status)
+		}
 	case storedKey != "":
 		item.Source, item.Readiness = substrate.SourceOwn, substrate.ReadinessReady
 		if _, err := ds.resolveProvider(ctx, row.ID); err != nil {
 			item.Readiness, item.Message = substrate.ReadinessNotSetUp, refusalText(err)
+		} else if status := ds.keyStatus(ownKeyID(ds.Repository().ID, row.ID, storedKey)); status != 0 {
+			failing = keyRefusedText(vendorName(propString(row, "label"), row.ID), status)
 		}
 	default:
 		item.Source, item.Readiness = substrate.SourceNone, substrate.ReadinessNotSetUp
@@ -166,7 +174,8 @@ func (ds *dataset) llmDefault(ctx context.Context, row *erow, failing string) su
 // embeddingsDefault is the repository's embeddings provider as a slot. Its
 // target is the row whose card shows the search line: the one row claiming
 // embedModel, else the live row whose id the operator's embeddings entry is
-// nested under, else none. live is every live provider row id.
+// nested under, else none. live is every live provider row id. A key the
+// vendor refused reads `failing` with the vendor and the status.
 func (ds *dataset) embeddingsDefault(ctx context.Context, live map[string]bool) (substrate.OperatorDefault, error) {
 	entry := ds.svc.operatorDefaults.EmbeddingsEntry()
 	item := substrate.OperatorDefault{
@@ -208,7 +217,42 @@ func (ds *dataset) embeddingsDefault(ctx context.Context, live map[string]bool) 
 	default:
 		item.Readiness = substrate.ReadinessReady
 	}
+	if p != nil && err == nil {
+		if status := ds.keyStatus(p.key); status != 0 {
+			vendor, verr := ds.rowVendorName(ctx, entryOrClaim(entry, claims))
+			if verr != nil {
+				return item, verr
+			}
+			item.Readiness, item.Message = substrate.ReadinessFailing, keyRefusedText(vendor, status)
+		}
+	}
 	return item, nil
+}
+
+// entryOrClaim is the provider row id whose key buys the repository's
+// vectors: the one claiming row, else the operator entry's id.
+func entryOrClaim(entry *operatordefaults.LLM, claims []embedClaim) string {
+	if len(claims) == 1 {
+		return claims[0].id
+	}
+	if entry != nil {
+		return entry.ID
+	}
+	return ""
+}
+
+// rowVendorName is the vendor of the llm/provider row id as a person reads it
+// (vendorName), from its label where the row is live.
+func (ds *dataset) rowVendorName(ctx context.Context, id string) (string, error) {
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: id})
+	if err != nil {
+		return "", err
+	}
+	label := ""
+	if row != nil && row.DeletedAt == nil {
+		label = propString(row, "label")
+	}
+	return vendorName(label, id), nil
 }
 
 // refusalText is an engine refusal without its sentinel's prefix, the words a

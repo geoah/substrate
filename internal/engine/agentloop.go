@@ -15,6 +15,7 @@ import (
 
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/operatordefaults"
+	"github.com/geoah/substrate/internal/providersecret"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
@@ -340,6 +341,11 @@ type providerConfig struct {
 	// nil for a row the person keyed. Every field above then came from it,
 	// and every call goes through the allowance gate (operatorspend.go).
 	operator *operatordefaults.LLM
+	// key is the key every call carries, as the refused-key table names it
+	// (keyrefusals.go): the operator entry's, or the row's own.
+	key keyID
+	// name is the row's vendor as a refusal names it (vendorName).
+	name string
 }
 
 // providerCacheTTLs maps the declared cache.ttl words onto the wire's TTLs:
@@ -436,10 +442,16 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	// on a row the operator lists is the operator's transport, taken whole:
 	// nothing else on the row is read (decision 0235).
 	storedKey, _ := row.Props["apiKey"].(string)
+	name := vendorName(propString(row, "label"), id)
 	if entry := ds.operatorEntryFor(id, storedKey); entry != nil {
-		return operatorProviderConfig(entry), nil
+		pc := operatorProviderConfig(entry)
+		pc.name = name
+		return pc, nil
 	}
-	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
+	pc := &providerConfig{
+		id: id, pricing: map[string]modelPrice{},
+		key: ownKeyID(ds.Repository().ID, id, storedKey), name: name,
+	}
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
 	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)
@@ -786,6 +798,9 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	if wrap != nil {
 		client = wrap(provider.wire, client)
 	}
+	// Every call the loop makes on this client (its turns, compaction and
+	// the thread title) tells the refused-key table what the vendor said.
+	client = &keyWatchClient{ds: ds, key: provider.key, inner: client}
 	if provider.operator != nil {
 		// Outermost, so every call the loop makes on this client (its turns,
 		// their retries, compaction and the thread title) reserves first.
@@ -962,6 +977,18 @@ loop:
 				}
 				l.ds.svc.log.Warn("substrate: agent thread overflowed its context and could not compact",
 					"thread", l.threadID, "error", cerr)
+			}
+			if status := providersecret.KeyRefusal(err); status != 0 {
+				// The vendor refused the row's key: the thread and the caller
+				// get the plain refusal and what to do, and the vendor's own
+				// words go to the log.
+				l.ds.svc.log.Warn("substrate: the vendor refused an llm/provider row's key",
+					"repository", l.ds.Repository().ID, "provider", l.provider.id, "status", status, "error", err.Error())
+				refusal := l.ds.keyRefusal(l.provider, status)
+				if serr := l.settleAfterFailure(ctx, refusal.Error(), reply); serr != nil {
+					return nil, errors.Join(refusal, serr)
+				}
+				return nil, refusal
 			}
 			serr := l.settleAfterFailure(ctx, err.Error(), reply)
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)

@@ -2133,8 +2133,16 @@ item has its `slot` (`llm`, `embeddings`, `oauth` or `function`), its `source`
 (`operator`, `own` or `none`), `operatorOffers`, its `readiness` and, where it
 is not `ready`, a `message`. `operatorOffers` is true when the operator's file serves the slot
 to this repository, whatever the source, the readiness or the allowance:
-removing your own key would fall back to the operator's. A row whose agent
-has an open alert reads `failing` with the alert's error. The `embeddings`
+removing your own key would fall back to the operator's. A row, or the
+`embeddings` item, whose key the vendor refused (`401` or `403`) reads
+`failing` with the vendor and the status, "OpenAI refused the key (401)",
+until a call the vendor accepts; the operator's key is one fact for every
+repository it serves, and a key of your own is your repository's alone.
+Otherwise a row whose agent has an open alert reads `failing` with the
+alert's error. An agent call that meets a refused key answers `403 guard`,
+and a chat turn ends with an `error` event, both in words like "OpenAI
+refused this key (401). Add a working key on the OpenAI card under
+Providers.", never the vendor's own response. The `embeddings`
 item's `target` is the row whose card shows the search line: the row that
 declares `embedModel`, else the row the operator's embeddings entry is
 nested under, absent when that row does not exist. An `oauth` item's

@@ -465,7 +465,11 @@ type service struct {
 	operatorInstalls operatorInstallFailures
 	// operatorNow is the allowance ledger's clock (operatorspend.go); never
 	// nil, and a test sets it before the dataset's first operator-paid call.
+	// The refused-key table's backoff runs on it too.
 	operatorNow func() time.Time
+	// keyRefusals is the keys a vendor refused lately, the operator's for
+	// every repository and a person's own for theirs (keyrefusals.go).
+	keyRefusals keyRefusals
 	// admin is the DSN's own user: the DDL, the role setup, and the index
 	// materialization the bound roles are not allowed to run.
 	admin *sql.DB
