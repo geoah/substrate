@@ -319,6 +319,14 @@ export function toolWords(pkg: string | undefined): string | undefined {
   return pkg ? TOOL_WORDS[pkg] : undefined
 }
 
+/** The order the welcome names what works in, whatever order the read
+ * lists the slots in: chat, then search by meaning, then the tools. */
+const WELCOME_ORDER: Record<string, number> = {
+  llm: 0,
+  embeddings: 1,
+  function: 2,
+}
+
 /** What the welcome says works now: the operator-served slots that are
  * ready, in words ("chat", "search by meaning", what a tool does), and the
  * accounts the operator's sign-in waits on the reader to connect. */
@@ -330,12 +338,18 @@ export function welcomeFacts(items: readonly OperatorDefault[]): {
   const add = (word: string) => {
     if (!works.includes(word)) works.push(word)
   }
-  for (const item of items) {
-    if (item.source !== "operator" || item.readiness !== "ready") continue
+  const served = items
+    .filter(
+      (i) =>
+        i.source === "operator" &&
+        i.readiness === "ready" &&
+        i.slot in WELCOME_ORDER
+    )
+    .sort((a, b) => WELCOME_ORDER[a.slot] - WELCOME_ORDER[b.slot])
+  for (const item of served) {
     if (item.slot === "llm") add("chat")
     else if (item.slot === "embeddings") add("search by meaning")
-    else if (item.slot === "function")
-      add(toolWords(itemPackage(item)) ?? "tools for your agents")
+    else add(toolWords(itemPackage(item)) ?? "tools for your agents")
   }
   const connect = items
     .filter(

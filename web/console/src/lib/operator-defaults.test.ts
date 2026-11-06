@@ -220,9 +220,10 @@ describe("welcomeFacts", () => {
     ).toEqual({ works: ["chat", "search by meaning"], connect: ["Google"] })
   })
 
-  it("names a tool by what it does, never by its vendor", () => {
+  it("names a tool by what it does, never by its vendor, after chat and search by meaning", () => {
     expect(
       welcomeFacts([
+        item({ id: "embeddings", slot: "embeddings" }),
         item({ id: "llm/openai" }),
         item({
           id: "function/providers.substrate.reamde.dev/firecrawl",
@@ -236,6 +237,11 @@ describe("welcomeFacts", () => {
           label: "Othervendor",
         }),
       ]).works
-    ).toEqual(["chat", "web search", "tools for your agents"])
+    ).toEqual([
+      "chat",
+      "search by meaning",
+      "web search",
+      "tools for your agents",
+    ])
   })
 })
