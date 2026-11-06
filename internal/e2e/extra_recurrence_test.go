@@ -316,10 +316,14 @@ func xcCaseWeekdayStandup(c *C) {
 	c.requiref(len(oldSlot) == 0 && len(newSlot) == 1 && newSlot[0] == movedID,
 		"the override still answers at the old slot (%v) or not at the new one (%v)", oldSlot, newSlot)
 
-	// The canceled day is empty live, and the tombstone shows under
-	// deleted:true only.
+	// The canceled day holds no standup live, and the tombstone shows under
+	// deleted:true only. Other cases' events may fall on the same day (the
+	// stories' meetings do when the run starts on that Friday), so the live
+	// window is read for this series' instances.
 	day := xcWindowIDs(c, canceledAt.Truncate(24*time.Hour), canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1))
-	c.requiref(len(day) == 0, "the canceled day still answers: %v", day)
+	for _, id := range day {
+		c.requiref(!written[id], "the canceled day still answers the standup %s: %v", id, day)
+	}
 	filter := map[string]any{
 		"kinds":   []string{kindOf(eventCollection)},
 		"deleted": true,
@@ -344,7 +348,7 @@ func xcCaseWeekdayStandup(c *C) {
 		}
 	}
 	c.requiref(standups == 14, "the full window holds %d live standups, want 14", standups)
-	c.stepf("window queries: week 2 has 5 (moved one at its new hour, third by time), the old slot is empty, the canceled day is empty live and one tombstone under deleted:true, the horizon holds 14")
+	c.stepf("window queries: week 2 has 5 (moved one at its new hour, third by time), the old slot is empty, the canceled day holds no live standup and one tombstone under deleted:true, the horizon holds 14")
 
 	// Past the rows anybody wrote, the timeline keeps going: week 4 over both
 	// kinds is five COMPUTED occurrences of the series, one per weekday at
