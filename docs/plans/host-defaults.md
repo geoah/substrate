@@ -1,9 +1,11 @@
 # Plan: operator defaults on the Providers page
 
-Status: accepted by the owner 2026-11-06. The design went through two review
-rounds by Astra (gpt-6-astra) and one by Fable; the vocabulary and the console
-were then revised once more, reviewed by both, to drop a separate Services
-page. Implementation follows the phases below.
+Status: implemented. Accepted by the owner 2026-11-06. The design went
+through two review rounds by Astra (gpt-6-astra) and one by Fable; the
+vocabulary and the console were then revised once more, reviewed by both, to
+drop a separate Services page. All three phases merged on 2026-11-06; the
+[implementation plan](#implementation-plan) lists each pull request with its
+merge commit, and one follow-up, #1228, is open.
 
 ## The problem
 
@@ -349,32 +351,46 @@ show there as Google's syncs do.
 
 ## What this amends
 
-- Decision 0235 (new, PR #1213): an empty key on an operator-listed row runs on
-  the operator's whole transport; operator keys never enter a repository; the
-  allowance is the operator's ledger; the embeddings stamp.
-- A new console decision (PR #1212): the Providers page lists every outside
-  service the substrate spends a key on, as provider packages and
-  `llm/provider` rows in three groups; it amends what docs/console.md says
-  Providers holds (decision 0130).
+- [Decision 0235](../decisions/0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md)
+  (PR #1213): an empty key on an operator-listed row runs on the operator's
+  whole transport; operator keys never enter a repository; the allowance is
+  the operator's ledger; the embeddings stamp.
+- [Decision 0233](../decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)
+  (PR #1212): the Providers page lists every outside service the substrate
+  spends a key on, as provider packages and `llm/provider` rows in three
+  groups; it amends what docs/console.md says Providers holds (decision 0130).
 - Firecrawl leaves the sample tier for the provider tier (decision 0048), and
-  its tools declare offers (decision 0198). Phase 3 records it.
-- docs/terms.md gains operator, operator default and allowance.
+  its tools declare offers (decision 0198).
+  [Decision 0234](../decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)
+  records it (PR #1221).
+- docs/terms.md defines operator, operator default and allowance.
 
 ## Implementation plan
 
 | PR | Holds | State |
 | --- | --- | --- |
-| #1205 | this plan | open |
-| #1209 | the wire shape, `OperatorDefaults` | open, stacked on #1205 |
-| #1213 | phase 1 engine: the file, the operator transport, embeddings, the ledger and gate, redirect refusal, the read, decision 0235 | draft, stacked on #1209; three Astra rounds, all findings fixed; being renamed to operator words |
-| #1212 | phase 1 console: the Providers page, AI model cards, the welcome landing, the console decision | draft, stacked on #1209; being reworked from the Services page |
-| phase 2 | OAuth client defaults with `oauthClient` provenance (Google first), `install:` | after #1213 |
-| phase 3 | Firecrawl as a provider with `websearch` and `webscrape`, function secrets, the sample's removal | after #1213 |
+| #1205 | this plan | merged, deaf53879 |
+| #1209 | the wire shape, `OperatorDefaults` | merged, 9bcb1e3b8 |
+| #1213 | phase 1 engine: the file, the operator transport, embeddings, the ledger and gate, redirect refusal, the read, decision 0235 | merged, d6db60c69 |
+| #1212 | phase 1 console: the Providers page, AI model cards, the welcome landing, decision 0233 | merged, 0311c5995 |
+| #1223 | phase 2: OAuth client defaults with `oauthClient` provenance (Google first), `install:` | merged, b8c23c98d |
+| #1221 | phase 3: Firecrawl as a provider with `websearch` and `webscrape`, function secrets, the sample's removal, decision 0234 | merged, 8e885836c |
+| #1228 | follow-up: the function sandbox's connect gate refuses the connections a network body could open unchecked (other address families, TCP Fast Open sends, SCTP). Firecrawl's tools, which receive the operator's key, are network bodies. | open |
 
 Each PR's tests are shown to fail against a deliberate break of the behavior
-they cover. The orchestrator runs the full database suites once, one after
-another, before the stack leaves draft, and takes the final screenshots
-against a running server with a defaults file.
+they cover.
+
+Screenshots from `main` at 399f91dbe, on a dev substrate whose site is named
+Crane and whose defaults file lists the `anthropic` and `openai` rows, OpenAI
+embeddings, a Google OAuth client with a notice, the Firecrawl key, and both
+providers under `install:`:
+
+- [The welcome a new repository lands on after registering](https://raw.githubusercontent.com/geoah/substrate/screenshots/operator-defaults/1-welcome.png)
+- [The Providers page](https://raw.githubusercontent.com/geoah/substrate/screenshots/operator-defaults/2-providers.png): the three groups, the allowance
+  bar after one chat, Crane's Google sign-in with its notice, and Firecrawl on
+  Crane's key
+- [The Anthropic card with its key form open](https://raw.githubusercontent.com/geoah/substrate/screenshots/operator-defaults/3-model-key.png)
+- [An agent's panel saying what it runs on](https://raw.githubusercontent.com/geoah/substrate/screenshots/operator-defaults/4-agent-runs-on.png)
 
 ## Owner decisions, 2026-11-06
 
