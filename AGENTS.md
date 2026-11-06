@@ -254,6 +254,11 @@ conversions from `internal/engine/unitseed`, edited by hand), and every open
 fills what a repository lacks without touching a record its owner wrote or
 deleted ([0186](docs/decisions/0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md),
 [docs/units.md](docs/units.md)).
+A seeded package's other data records sit beside its declarations, as a
+bundle's do, and the record seed (`internal/engine/recordseed.go`) writes them
+at registration and at every open by the same rule: today the console's two
+collection views of `llm/memory`, the saved views a collection shows as tabs
+([0229](docs/decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)).
 No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
 a tool-using agent names the value itself. `tasks` is a SAMPLE
