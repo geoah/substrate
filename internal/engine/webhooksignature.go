@@ -220,7 +220,10 @@ func parseWebhookSignature(raw any) (*webhookSignature, error) {
 	case isRecord && id != "":
 		sig.SecretRecord = id
 	default:
-		return nil, fmt.Errorf("source.webhook.signature.secret: %s/<id> or %s, got %q", kindSecret, webhookSecretOAuthClient, secret)
+		// The value is not quoted back: what lands here is most often the
+		// signing secret itself, pasted in place of the record naming it,
+		// and the trigger loader logs a stored row's parse error.
+		return nil, fmt.Errorf("source.webhook.signature.secret: %s/<id> or %s", kindSecret, webhookSecretOAuthClient)
 	}
 	return sig, nil
 }
