@@ -263,6 +263,15 @@
   }
   html {
     @apply font-sans;
+    /* No double-tap zoom; the rest of the no-zoom rule is lib/no-zoom.ts. */
+    touch-action: manipulation;
+  }
+  /* The page itself never rubber-bands or pulls to reload: the shell is one
+     screen tall and scrolls inside its panes. On the root alone, so a pane
+     that reaches its end still hands the scroll on to the pane around it. */
+  html,
+  body {
+    overscroll-behavior: none;
   }
 }
 
