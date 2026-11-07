@@ -40,7 +40,7 @@ struct ToolLineWords {
         #expect(toolSummary(call("query", #"{"q":"handover"}"#, #"{"records":[{"kind":"a.b/c/d","id":"1"}]}"#), query) == "Searched for “handover”, found 1")
         #expect(
             toolSummary(call("query", #"{"filter":{"kinds":["ada.localhost/tasks/task","ada.localhost/notes/note"]}}"#), query)
-                == "Looked through your Tasks and Notes")
+                == "Looked through your tasks and notes")
         #expect(toolSummary(call("query", #"{"kind":"ada.localhost/people/person","id":"g"}"#), query) == "Looked up a person")
         #expect(toolSummary(call(), query) == "Looked things up")
         // The one record found is named.

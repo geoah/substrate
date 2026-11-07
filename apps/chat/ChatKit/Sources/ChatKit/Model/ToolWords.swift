@@ -170,7 +170,7 @@ func toolLine(_ call: ToolCall, _ resolved: ResolvedTool) -> ToolLine {
         } else if let kind = args["kind"]?.text, args["id"]?.text != nil {
             words = "Looked up \(withArticle(kindDisplayName(kind).lowercasedFirst))"
         } else if !kinds(in: args).isEmpty {
-            words = "Looked through your \(joinWords(kinds(in: args).map(kindDisplayPlural)))"
+            words = "Looked through your \(joinWords(kinds(in: args).map { kindDisplayPlural($0).lowercasedFirst }))"
         }
         let payload = JSONValue.parse(call.output)
         var line = ToolLine(words: words)
