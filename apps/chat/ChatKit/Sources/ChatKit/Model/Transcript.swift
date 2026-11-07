@@ -42,6 +42,9 @@ struct ToolCall: Codable, Hashable, Sendable {
     /// Persisted rows only: the live stream carries no stamps.
     var changes: [ChangeStamp]?
     var subagentWrites: SubagentWrites?
+    /// A background call's job (decision 0200): `working` until it ends, then
+    /// `completed`, `failed` or `canceled`; nil on a call that held the loop.
+    var job: String?
 
     var running: Bool { ok == nil }
 }
@@ -111,8 +114,10 @@ private func changes(of record: Record) -> [ChangeStamp]? {
     return out.isEmpty ? nil : out
 }
 
-private func mentions(of record: Record) -> [Mention]? {
-    guard let raw = record["mentions"]?.array else { return nil }
+/// The records a reply links, as its row or its run's result lists them;
+/// an entry without a kind and an id is no link.
+func mentions(_ raw: [JSONValue]?) -> [Mention]? {
+    guard let raw else { return nil }
     let out = raw.compactMap { item -> Mention? in
         guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
         return Mention(
@@ -140,6 +145,11 @@ private func subagentWrites(of record: Record) -> SubagentWrites? {
         records: records,
         kinds: raw["kinds"]?.array?.compactMap(\.text) ?? [],
         moreKinds: raw["moreKinds"]?.int ?? 0)
+}
+
+/// A background call's job state, as its tool row carries it.
+private func jobState(of record: Record) -> String? {
+    record["job"]?["state"]?.text
 }
 
 private func compaction(of record: Record) -> Compaction {
@@ -176,6 +186,9 @@ func transcript(of messages: [Record]) -> [Turn] {
     var turns: [Turn] = []
     // Every unsettled call so far, by id → (turn index, call index).
     var pending: [String: (Int, Int)] = [:]
+    // Every call so far, settled or not: a background job's end names its
+    // call after the call's own row settled it.
+    var located: [String: (Int, Int)] = [:]
 
     for record in messages {
         let role = record["role"]?.string ?? ""
@@ -190,10 +203,11 @@ func transcript(of messages: [Record]) -> [Turn] {
                     contextRecords: role == "user" ? contextRecords(of: record) : nil,
                     reasoning: reasoning,
                     reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
-                    mentions: role == "assistant" ? mentions(of: record) : nil,
+                    mentions: role == "assistant" ? mentions(record["mentions"]?.array) : nil,
                     createdAt: record.createdDate))
             for (i, call) in tools.enumerated() where !call.id.isEmpty {
                 pending[call.id] = (turns.count - 1, i)
+                located[call.id] = (turns.count - 1, i)
             }
         case "summary":
             // The engine's fold of older turns; no model said it to the reader.
@@ -202,11 +216,18 @@ func transcript(of messages: [Record]) -> [Turn] {
                     id: record.id, role: .summary, content: record["content"]?.string ?? "",
                     compaction: compaction(of: record), createdAt: record.createdDate))
         case "system":
-            // The substrate's own turn: a decision envelope. Nothing dispatched it.
-            turns.append(
-                Turn(
-                    id: record.id, role: .system, content: record["content"]?.string ?? "",
-                    changes: changes(of: record), createdAt: record.createdDate))
+            // The substrate's own turn: a decision, an answer or a background
+            // job's end. Nothing dispatched it.
+            let turn = Turn(
+                id: record.id, role: .system, content: record["content"]?.string ?? "",
+                changes: changes(of: record), createdAt: record.createdDate)
+            turns.append(turn)
+            // A job's end settles its call a second time: the call's own row
+            // keeps the handle it answered with, and the result is here.
+            if let ended = jobNotice(turn), let (t, c) = located[ended.callID] {
+                if let output = ended.output { turns[t].tools[c].output = output }
+                turns[t].tools[c].ok = ended.ok
+            }
         case "tool":
             let callID = record["toolCallId"]?.string ?? ""
             let output = record["content"]?.string ?? ""
@@ -217,6 +238,7 @@ func transcript(of messages: [Record]) -> [Turn] {
                 turns[t].tools[c].changes = changes(of: record)
                 if let wrote = subagentWrites(of: record) { turns[t].tools[c].subagentWrites = wrote }
                 if turns[t].tools[c].callable == nil { turns[t].tools[c].callable = callable }
+                turns[t].tools[c].job = jobState(of: record)
                 pending[callID] = nil
             } else {
                 // An orphan: its call is not in this window. Its own turn,
@@ -228,9 +250,11 @@ func transcript(of messages: [Record]) -> [Turn] {
                             ToolCall(
                                 id: callID, name: record["name"]?.string ?? "", callable: callable,
                                 arguments: "", output: output, ok: toolOK(record),
-                                changes: changes(of: record), subagentWrites: subagentWrites(of: record))
+                                changes: changes(of: record), subagentWrites: subagentWrites(of: record),
+                                job: jobState(of: record))
                         ],
                         createdAt: record.createdDate))
+                if !callID.isEmpty { located[callID] = (turns.count - 1, 0) }
             }
         default:
             continue

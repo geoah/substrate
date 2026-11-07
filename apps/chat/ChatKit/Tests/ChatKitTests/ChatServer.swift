@@ -26,6 +26,7 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var routes: [Route] = []
     private var kept: [String] = []
+    private var bodies: [String: String] = [:]
     private var released = false
     private var heldPaths: [String: Bool] = [:]
 
@@ -54,6 +55,11 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
 
     var requests: [String] { lock.withLock { kept } }
 
+    /// The body of the last request whose method and path end as given.
+    func body(_ method: String, _ path: String) -> String? {
+        lock.withLock { bodies.first { $0.key.hasPrefix(method + " ") && $0.key.hasSuffix(path) }?.value }
+    }
+
     private func answer(for request: URLRequest) async -> (Answer, URL) {
         let url = request.url!
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -62,6 +68,7 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         let method = request.httpMethod ?? "GET"
         let route = lock.withLock { () -> Route? in
             kept.append("\(method) \(path)?\(query)")
+            if let body = request.httpBody { bodies["\(method) \(path)"] = String(decoding: body, as: UTF8.self) }
             return routes.first { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) }
         }
         while let held = lock.withLock({ heldPaths.first { path.hasSuffix($0.key) }?.value }), !held, !Task.isCancelled {

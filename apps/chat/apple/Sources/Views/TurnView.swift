@@ -40,7 +40,7 @@ struct TurnView: View, Equatable {
                 if let card = cards[suggestion]?.suggestion { SuggestionCardView(id: suggestion, card: card) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        case let .answer(line): OutcomeRow(line: line)
+        case let .answer(line), let .jobEnded(line): OutcomeRow(line: line)
         case let .system(text):
             Text(text)
                 .lineLimit(3)
@@ -112,6 +112,9 @@ private struct AssistantTurnView: View {
             } else if turn.typing {
                 TypingDots()
             }
+            if let sources = turn.sources {
+                SourceListView(list: sources)
+            }
             if !turn.linked.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(turn.linkedLabel)
@@ -134,8 +137,6 @@ private struct AssistantTurnView: View {
                     if let card = cards[id]?.question { QuestionCardView(id: id, card: card) }
                 case let .change(panel)?:
                     ChangePanel(panel: panel)
-                case let .changes(list)?:
-                    ChangeList(list: list)
                 case nil:
                     EmptyView()
                 }
@@ -188,12 +189,34 @@ struct ReasoningView: View {
     }
 }
 
+/// Opens a thread in the window the action came from: a sub-agent's own
+/// conversation, from the call that ran it.
+struct OpenThreadAction {
+    let handler: @MainActor (String) -> Void
+
+    @MainActor func callAsFunction(_ thread: String) { handler(thread) }
+}
+
+extension EnvironmentValues {
+    @Entry var openThread: OpenThreadAction?
+}
+
 /// One tool call in the console's words, opening to what it found, changed
-/// or failed on.
+/// or failed on; the pages a search found or a call read, and the records
+/// it found or changed where there are several, show under it, open or not.
 struct ToolCallRow: View {
+    @Environment(\.openThread) private var openThread
+    @Environment(\.recordDirectory) private var directory
     let tool: ToolRowPresentation
     @State private var open = false
     @State private var raw = false
+
+    /// The line, naming the record it worked on once its heading is read
+    /// where nothing in the chat carried it.
+    private var summary: String {
+        guard let unnamed = tool.unnamed, let title = directory?.title(for: unnamed.record) else { return tool.summary }
+        return unnamed.line(titled: title)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -203,10 +226,17 @@ struct ToolCallRow: View {
                 HStack(spacing: 8) {
                     status
                         .frame(width: 18)
-                    Text(tool.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                        if let label = tool.statusLabel {
+                            Text(label)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(tool.status == .held ? Color.orange : Color.secondary)
+                        }
+                    }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -220,6 +250,11 @@ struct ToolCallRow: View {
             if open {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(tool.details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
+                    if let link = tool.thread, let openThread {
+                        Button(link.label, systemImage: "bubble.left.and.bubble.right") { openThread(link.thread) }
+                            .font(.footnote)
+                            .buttonStyle(.borderless)
+                    }
                     DisclosureGroup("Details", isExpanded: $raw) {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(tool.raw, id: \.self) { line in
@@ -238,14 +273,26 @@ struct ToolCallRow: View {
                 }
                 .padding(.leading, 26)
             }
+            if let sources = tool.sources {
+                SourceListView(list: sources)
+                    .padding(.leading, 26)
+            }
+            ForEach(Array(tool.chips.enumerated()), id: \.offset) { _, chips in
+                RecordChipsView(chips: chips)
+                    .padding(.leading, 26)
+            }
+        }
+        .task(id: tool.unnamed?.record) {
+            if let record = tool.unnamed?.record { await directory?.resolve(record) }
         }
     }
 
     @ViewBuilder private var status: some View {
         switch tool.status {
-        case .running: ProgressView().controlSize(.mini)
+        case .running, .working: ProgressView().controlSize(.mini)
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        case .held: Image(systemName: "hourglass.circle.fill").foregroundStyle(.orange)
         }
     }
 }
@@ -267,11 +314,9 @@ private struct DetailLine: View {
                 }
                 .font(.footnote)
             }
-        case let .changed(lines):
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(lines, id: \.self) { line in
-                    Label(line, systemImage: "square.and.pencil").font(.footnote).foregroundStyle(.secondary)
-                }
+        case let .changed(runs):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(runs.enumerated()), id: \.offset) { _, chips in RecordChipsView(chips: chips) }
             }
         case let .wrote(words):
             Text(words).font(.footnote).foregroundStyle(.secondary)
@@ -284,6 +329,37 @@ private struct DetailLine: View {
         case let .output(raw):
             Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(12).textSelection(.enabled)
         }
+    }
+}
+
+/// Records a call found or changed, as pills: the first few, then "and N
+/// more", which shows the rest the call's answer holds.
+private struct RecordChipsView: View {
+    let chips: RecordChips
+    @State private var all = false
+
+    var body: some View {
+        let shown = all ? chips.records : Array(chips.records.prefix(RecordChips.first))
+        WrapLayout(spacing: 6) {
+            if let lead = chips.lead {
+                Text(lead).foregroundStyle(.secondary)
+            }
+            ForEach(Array(shown.enumerated()), id: \.offset) { _, chip in
+                RecordPill(chip.record, title: chip.title)
+            }
+            if let more = chips.more(shown: shown.count) {
+                if chips.records.count > shown.count {
+                    Button(more) { withAnimation(.snappy) { all = true } }
+                        .buttonStyle(.borderless)
+                        .accessibilityHint("Shows the rest")
+                } else {
+                    Text(more).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .font(.footnote)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(chips.label)
     }
 }
 

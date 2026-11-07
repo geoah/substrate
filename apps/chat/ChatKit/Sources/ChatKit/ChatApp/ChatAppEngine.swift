@@ -221,6 +221,8 @@ extension ChatApp {
         case .settingsOpened:
             next.asks.append(.readPermission)
             if let disk = next.disk { next.asks.append(.readUsage(disk)) }
+            guidance(&next, .asked)
+        case let .guidance(step): guidance(&next, step)
         case .clearAsked:
             guard let disk = next.disk else { break }
             for thread in Array(next.transcripts.keys) where !next.owned(thread) {
@@ -302,6 +304,11 @@ extension ChatApp {
             state.notified = cached.notified
             state.baselined = cached.baselined
             state.lastAgent = cached.lastAgent
+            if let memories = cached.memories, let instructions = cached.instructions {
+                state.guidance.memories = memories
+                state.guidance.instructions = instructions
+                state.guidance.read = true
+            }
             state.loaded = true
         }
         state.feedBatch.formUnion(disk.stale)

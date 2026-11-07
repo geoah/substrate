@@ -25,3 +25,11 @@ public enum CardReference: Codable, Hashable, Sendable {
         }
     }
 }
+
+/// What the owner does to one of their memories or instructions.
+public enum GuidanceChange: Codable, Equatable, Sendable {
+    /// Switched on or off: the agents read only the ones on.
+    case active(Bool)
+    case text(String)
+    case delete
+}

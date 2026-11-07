@@ -123,10 +123,8 @@ struct SuggestionCardView: View {
                 if let note = card.consoleNote {
                     Text(note).font(.footnote).foregroundStyle(.secondary)
                 }
-                Link(destination: console) {
-                    Label("Open in the Console", systemImage: "arrow.up.right.square")
-                }
-                .font(.footnote.weight(.semibold))
+                ConsoleLink(title: "Open in the Console", destination: console)
+                    .font(.footnote.weight(.semibold))
             } else {
                 HStack {
                     Button {
@@ -220,27 +218,6 @@ struct ChangePanel: View {
     }
 }
 
-/// A call's changes that carry no values: one line each, in one card.
-struct ChangeList: View {
-    let list: ChangeListPresentation
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(list.headings.enumerated()), id: \.offset) { _, heading in
-                ChangeHeaderView(heading: heading)
-                    .font(.footnote)
-            }
-            if let more = list.more {
-                Text(more).font(.caption).foregroundStyle(.secondary)
-            }
-            if let wrote = list.wrote {
-                Label(wrote, systemImage: "square.stack.3d.up").font(.footnote)
-            }
-        }
-        .card()
-    }
-}
-
 /// Writes a provider's API key. The key lives in the field until it is sent:
 /// never kept, never logged.
 struct ProviderKeySheet: View {
@@ -258,9 +235,7 @@ struct ProviderKeySheet: View {
                 if let console = sheet.console.flatMap(URL.init(string:)) {
                     Section {
                         Text(sheet.consoleNote)
-                        Link(destination: console) {
-                            Label(sheet.consoleLink, systemImage: "arrow.up.right.square")
-                        }
+                        ConsoleLink(title: sheet.consoleLink, destination: console)
                     } header: {
                         Text(sheet.header)
                     } footer: {

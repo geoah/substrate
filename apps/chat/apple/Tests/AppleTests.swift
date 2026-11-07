@@ -5,6 +5,11 @@ import Testing
 
 @testable import SubstrateChat
 
+#if os(macOS)
+import AppKit
+import SwiftUI
+#endif
+
 /// What only the Apple app holds; the chat's rules are ChatKit's.
 @Suite struct LoopbackSignIn {
     @Test(.timeLimit(.minutes(1))) func theLoopbackReceiverHandsOverTheRedirectsQuery() async throws {
@@ -74,4 +79,37 @@ private struct LegacySession: Codable {
         #expect(links == [URL(string: "substrate://\(kind)/q4")!])
         #expect(String(out.characters) == "Q4 and Ghost and x")
     }
+
+    @Test func aLinkThatLeavesTheAppIsMarkedOnceAfterItsTextAndARecordLinkIsNot() {
+        let line = "[F1](https://www.formula1.com)[BBC](https://www.bbc.co.uk) and [Q4](ref:\(kind)/q4) and [**bold** one](mailto:a@example.com)."
+        let words = inlinePieces(parseInline(line)).map { piece -> String in
+            switch piece {
+            case let .text(part): String(part.characters)
+            case .leaves: "↗"
+            }
+        }
+        #expect(words == ["F1", "↗", "BBC", "↗", " and Q4 and bold one", "↗", "."])
+        #expect(!inlinePieces(parseInline("Only [Q4](substrate://\(kind)/q4).")).contains(.leaves))
+    }
 }
+
+#if os(macOS)
+/// What a screen reader is told of a link that leaves the app, read from the
+/// accessibility tree the system is handed for the view.
+@MainActor @Suite struct LeavingTheApp {
+    @Test func aLinkToTheConsoleSaysItOpensInTheBrowser() throws {
+        let hosting = NSHostingView(rootView: ConsoleLink(title: "Open in the Console", destination: URL(string: "https://s.example.com/")!))
+        hosting.frame = CGRect(x: 0, y: 0, width: 320, height: 60)
+        hosting.layoutSubtreeIfNeeded()
+        let link = try #require(Self.elements(under: hosting).first { $0.accessibilityRole?() == .link })
+        #expect(link.accessibilityLabel?() == "Open in the Console")
+        #expect(link.accessibilityHelp?() == ExternalMark.words)
+    }
+
+    /// Every element under `root`, depth first.
+    static func elements(under root: AnyObject) -> [AnyObject] {
+        let children = (root.accessibilityChildren?() ?? nil) ?? []
+        return children.flatMap { child in [child as AnyObject] + elements(under: child as AnyObject) }
+    }
+}
+#endif

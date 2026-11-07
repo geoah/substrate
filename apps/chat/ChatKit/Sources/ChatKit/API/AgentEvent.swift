@@ -13,6 +13,9 @@ struct AgentResult: Codable, Hashable, Sendable {
     var completionTokens: Int = 0
     var totalTokens: Int = 0
     var costUSD: Double = 0
+    /// The records the reply links, as the engine read them when the run
+    /// settled: what its row will carry.
+    var mentions: [Mention]?
 
     init() {}
 
@@ -28,6 +31,7 @@ struct AgentResult: Codable, Hashable, Sendable {
         completionTokens = (try? c.decode(Int.self, forKey: .completionTokens)) ?? 0
         totalTokens = (try? c.decode(Int.self, forKey: .totalTokens)) ?? 0
         costUSD = (try? c.decode(Double.self, forKey: .costUSD)) ?? 0
+        mentions = ChatKit.mentions(try? c.decode([JSONValue].self, forKey: .mentions))
     }
 }
 
@@ -64,6 +68,10 @@ struct AgentEvent: Codable, Sendable, Equatable {
     var turn: Int?
     /// Rides `idle`: the thread row's status.
     var status: String?
+    /// Rides a background call's `toolFinished`: `working` on the one its
+    /// handle answers, then where the job ended on a second one under the
+    /// same `id`.
+    var job: String?
 
     /// One ndjson line, or nil: a blank line, an unknown kind (a newer
     /// server's) or garbage. The `{}` heartbeat is `.heartbeat`.
@@ -88,6 +96,7 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.error = string("error")
         event.turn = int("turn")
         event.status = string("status")
+        event.job = string("job")
         if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }

@@ -26,6 +26,17 @@ struct InteractionNotice: Hashable, Sendable {
     var answers: [Answer]
 }
 
+/// A system turn a background job's end wrote (internal/engine/agentjobs.go):
+/// the call it ends, by id and by the name the model saw, and what it
+/// answered.
+struct JobNotice: Hashable, Sendable {
+    var callID: String
+    var name: String
+    var callable: String?
+    var ok: Bool
+    var output: String?
+}
+
 /// A triggered thread's opening message: the delivery envelope a trigger
 /// wrote as its first user turn.
 struct DeliveryNotice: Hashable, Sendable {
@@ -64,6 +75,13 @@ func interactionNotice(_ turn: Turn) -> InteractionNotice? {
     return InteractionNotice(interactionID: id, answered: event == "interactionAnswered", answers: answers)
 }
 
+func jobNotice(_ turn: Turn) -> JobNotice? {
+    guard let env = envelope(turn, role: .system), env["event"]?.string == "toolCompleted",
+        let callID = env["toolCallId"]?.text, let ok = env["ok"]?.bool
+    else { return nil }
+    return JobNotice(callID: callID, name: env["name"]?.text ?? "", callable: env["callable"]?.text, ok: ok, output: env["output"]?.string)
+}
+
 func deliveryNotice(_ turn: Turn) -> DeliveryNotice? {
     guard let env = envelope(turn, role: .user), let change = env["change"]?.object,
         let record = env["record"]?.object,
@@ -89,9 +107,11 @@ func isMintedID(_ s: String) -> Bool {
 
 /// The change request a settled call landed: from the engine's stamp where
 /// the row carries one, else (a live card, an older row) from the payload,
-/// checked strictly, because the NAME is an alias and not provenance.
+/// checked strictly, because the NAME is an alias and not provenance. A
+/// failed call landed one when the owner's policy held its write for review.
 func requestID(of call: ToolCall) -> String? {
     if let stamped = call.changes?.first(where: { $0.kind == Kinds.request && $0.op == "put" }) { return stamped.id }
+    if call.ok == false { return heldRequestID(toolFailure(call.output)) }
     guard call.ok == true else { return nil }
     if let callable = call.callable {
         guard callable == "function:substrate.reamde.dev:core:propose" else { return nil }
@@ -102,6 +122,19 @@ func requestID(of call: ToolCall) -> String? {
         let id = object["id"]?.string, isMintedID(id)
     else { return nil }
     return id
+}
+
+/// The request a held write's refusal names (policy.go `heldForReview`): a
+/// live card's only word of it, since the stream carries no stamps. The path
+/// is read as the engine reads it back, and the id must be one it minted.
+private func heldRequestID(_ failure: String?) -> String? {
+    guard let failure, let marker = failure.range(of: "held for review as ") else { return nil }
+    let allowed = Set("._~:@/-")
+    let path = failure[marker.upperBound...].prefix { ($0.isASCII && ($0.isLetter || $0.isNumber)) || allowed.contains($0) }
+    let prefix = "\(Kinds.request)/"
+    guard path.hasPrefix(prefix) else { return nil }
+    let id = String(path.dropFirst(prefix.count))
+    return isMintedID(id) ? id : nil
 }
 
 /// The interaction a settled `ask` landed, from the engine's stamp.

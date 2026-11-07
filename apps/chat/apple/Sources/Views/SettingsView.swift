@@ -3,8 +3,9 @@ import Speech
 import SubstrateKit
 import SwiftUI
 
-/// Settings: Chat's assistants, its own rows (Chats, Notifications, Voice,
-/// Storage), and the kit's Repository, Status and About.
+/// Settings: Chat's assistants, the owner's memories and instructions, its
+/// own rows (Chats, Notifications, Voice, Storage), and the kit's
+/// Repository, Status and About.
 struct SettingsView: View {
     @Environment(ChatHost.self) private var host
     @Environment(\.dismiss) private var dismiss
@@ -21,6 +22,7 @@ struct SettingsView: View {
             Form {
                 if let settings {
                     assistants(settings.assistants)
+                    GuidanceSectionView(section: settings.guidance)
                     ForEach(settings.sections) { section in
                         SettingsSectionView(section, send: send)
                         if section.id == .app("notifications") { voice(settings) }

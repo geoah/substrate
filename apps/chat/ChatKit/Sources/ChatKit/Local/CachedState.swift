@@ -25,6 +25,10 @@ struct CachedState: Codable, Equatable, Sendable {
     var baselined = false
     /// The default agent when Settings names none: the last one chatted with.
     var lastAgent: String?
+    /// The owner's memories and instructions, as Settings last read them;
+    /// absent from a file an earlier build wrote, and until the first read.
+    var memories: [Record]?
+    var instructions: [Record]?
     /// The watch's cursor before the kit's record cache kept it: read once,
     /// to resume from, and written no more.
     var feedSeq: Int?

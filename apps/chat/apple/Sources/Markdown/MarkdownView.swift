@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 enum MarkdownCache {
     private static var blocks: [String: [MarkdownBlock]] = [:]
-    static var inlines: [String: AttributedString] = [:]
+    static var inlines: [String: Text] = [:]
     private static var order: [String] = []
 
     static func parse(_ text: String) -> [MarkdownBlock] {
@@ -58,16 +58,56 @@ extension EnvironmentValues {
     @Entry var missingRecords: Set<String> = []
 }
 
-/// Inline Markdown, with links limited to http, https, mailto and record
-/// links; memoized, since every visible paragraph asks again on each redraw.
+/// Inline Markdown as text, with links limited to http, https, mailto and
+/// record links, each that leaves the app marked; memoized, since every
+/// visible paragraph asks again on each redraw.
 @MainActor
-func inline(_ text: String, missing: Set<String> = []) -> AttributedString {
+func inline(_ text: String, missing: Set<String> = []) -> Text {
     let key = missing.isEmpty ? text : text + "\u{0}" + missing.sorted().joined(separator: "\u{0}")
     if let hit = MarkdownCache.inlines[key] { return hit }
-    let out = parseInline(text, missing: missing)
+    let out = marked(parseInline(text, missing: missing))
     MarkdownCache.inlines[key] = out
     if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
     return out
+}
+
+/// A line of inline text, cut where a link that leaves the app ends: its
+/// mark goes there.
+enum InlinePiece: Equatable {
+    case text(AttributedString)
+    case leaves
+}
+
+/// The pieces of a line: a link that is not a record's leaves the app, and
+/// its mark follows the last run it covers.
+func inlinePieces(_ text: AttributedString) -> [InlinePiece] {
+    var pieces: [InlinePiece] = []
+    var pending = AttributedString()
+    var open: URL?
+    for run in text.runs {
+        let leaving = run.link.flatMap { linkedRecord($0) == nil ? $0 : nil }
+        if let current = open, leaving != current {
+            pieces += [.text(pending), .leaves]
+            pending = AttributedString()
+        }
+        pending.append(text[run.range])
+        open = leaving
+    }
+    if !pending.characters.isEmpty { pieces.append(.text(pending)) }
+    if open != nil { pieces.append(.leaves) }
+    return pieces
+}
+
+/// The line as one text, each mark kept beside its link by a no-break space.
+func marked(_ text: AttributedString) -> Text {
+    let pieces = inlinePieces(text)
+    guard pieces.contains(.leaves) else { return Text(text) }
+    return pieces.reduce(Text(verbatim: "")) { line, piece in
+        switch piece {
+        case let .text(part): Text("\(line)\(part)")
+        case .leaves: Text("\(line)\u{00A0}\(ExternalMark.text)")
+        }
+    }
 }
 
 func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString {
@@ -108,10 +148,10 @@ private struct BlockView: View {
     var body: some View {
         switch block {
         case let .paragraph(text):
-            Text(inline(text, missing: missing))
+            inline(text, missing: missing)
                 .fixedSize(horizontal: false, vertical: true)
         case let .heading(level, text):
-            Text(inline(text, missing: missing))
+            inline(text, missing: missing)
                 .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
                 .padding(.top, level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
@@ -209,7 +249,7 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
-                        Text(inline(cell, missing: missing)).font(.subheadline.weight(.semibold))
+                        inline(cell, missing: missing).font(.subheadline.weight(.semibold))
                             .gridColumnAlignment(alignment(i))
                     }
                 }
@@ -217,7 +257,7 @@ private struct TableBlock: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(inline(cell, missing: missing)).font(.subheadline)
+                            inline(cell, missing: missing).font(.subheadline)
                         }
                     }
                 }

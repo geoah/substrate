@@ -23,6 +23,8 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     /// A send is out and nothing has come back yet.
     public var typing: Bool
     public var status: [ConversationNote]
+    /// The last turn ended before it finished, and nothing runs now.
+    public var unfinished: UnfinishedNotice?
     public var outcomes: [OutcomePresentation]
     /// The thread's reference and the run's figures, each labelled, where
     /// the owner asked for technical details.
@@ -70,6 +72,20 @@ public struct ConversationNote: Codable, Hashable, Sendable {
         self.action = action
         self.detail = detail
     }
+}
+
+/// A chat whose last turn ended before it finished: what happened, why, and
+/// a way to go on.
+public struct UnfinishedNotice: Codable, Hashable, Sendable {
+    public var tone: UnfinishedTurn.Tone
+    public var title: String
+    public var detail: String?
+    /// "Continue"
+    public var action: String
+    /// Why Continue cannot send now, as the composer says it.
+    public var blocked: String?
+    /// What Continue does: "Sends “Continue where you left off.”"
+    public var hint: String
 }
 
 /// A send that started no turn, as its card says it.

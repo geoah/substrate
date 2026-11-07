@@ -34,9 +34,15 @@ public struct ThreadRow: Codable, Hashable, Sendable, Identifiable {
     public enum Mark: String, Codable, Hashable, Sendable {
         /// A card waits on the owner.
         case attention
-        /// The last turn ended in an error.
-        case failed
         case unread
+    }
+
+    /// A chat whose last turn didn't finish, so it is found from the list;
+    /// the chat itself says why.
+    public struct Unfinished: Codable, Hashable, Sendable {
+        public var tone: UnfinishedTurn.Tone
+        /// "Didn’t finish", "Stopped", "Failed".
+        public var words: String
     }
 
     public var id: String
@@ -52,4 +58,5 @@ public struct ThreadRow: Codable, Hashable, Sendable, Identifiable {
     public var mode: String?
     public var unread: Bool
     public var mark: Mark?
+    public var unfinished: Unfinished?
 }

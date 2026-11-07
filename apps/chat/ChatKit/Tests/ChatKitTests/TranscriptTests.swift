@@ -199,7 +199,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
         call.arguments = "{\"filter\":{\"kinds\":[\"x.example.com/tasks/task\",\"x.example.com/people/person\"]}}"
         #expect(toolSummary(call, query) == "Looked through your tasks and people, found 2")
         let write = ToolCall(id: "c", name: "write", arguments: "{\"op\":\"create\",\"kind\":\"x.example.com/tasks/task\"}")
-        #expect(toolSummary(write, ResolvedTool(function: HostFunction.write)) == "Saved a task")
+        #expect(toolSummary(write, ResolvedTool(function: HostFunction.write)) == "Added a task")
         #expect(toolSummary(write, ResolvedTool(subagent: "x.example.com/pkg/researcher")) == "Asked Researcher")
     }
 

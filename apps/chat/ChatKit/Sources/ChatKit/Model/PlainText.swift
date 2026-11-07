@@ -33,7 +33,7 @@ func plainText(markdown: String) -> String {
 /// A line's inline Markdown as its text: a link as its label, emphasis and
 /// code marks gone. By rule rather than through a Markdown reader, which
 /// Linux's and Android's Foundation do not carry.
-private func inlinePlain(_ line: String) -> String {
+func inlinePlain(_ line: String) -> String {
     var text = line
     for (pattern, replacement) in [
         (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),

@@ -36,8 +36,12 @@ public struct ChatApp: LinkedApp {
         case dismissQuestions(String)
         case decide(suggestion: String, accept: Bool)
         case settings(SettingsCommand)
-        /// Settings opened: the permission and the storage read again.
+        /// Settings opened: the permission, the storage and the owner's
+        /// memories and instructions read again.
         case readSettings
+        /// The memories or the instructions shown: read again.
+        case readGuidance
+        case changeGuidance(RecordReference, GuidanceChange)
         case clearSavedChats
         /// Whether the sign-out that follows forgets the saved chats.
         case forgetOnSignOut(Bool)
@@ -124,6 +128,14 @@ public struct ChatApp: LinkedApp {
             default: return []
             }
         case .readSettings: return [Event(.settingsOpened)]
+        case .readGuidance: return [Event(.guidance(.asked))]
+        case let .changeGuidance(reference, change):
+            // The text is required: an empty one is not sent.
+            if case let .text(text) = change {
+                let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return words.isEmpty ? [] : [Event(.guidance(.changeAsked(reference, .text(words))))]
+            }
+            return [Event(.guidance(.changeAsked(reference, change)))]
         case .clearSavedChats: return [Event(.clearAsked)]
         case let .forgetOnSignOut(forget): return [Event(.forget(forget))]
         case let .phase(phase): return [Event(.phase(phase))]
@@ -178,6 +190,7 @@ public struct ChatApp: LinkedApp {
             failure.report
         case let .watchEnded(_, failure?): failure.report
         case let .feedApplied(feed): feed.failure?.report
+        case let .guidance(.readFailed(failure)), let .guidance(.writeFailed(_, failure, _)): failure.report
         default: nil
         }
     }
@@ -231,6 +244,8 @@ public struct ChatApp: LinkedApp {
         case .setKey: "key"
         case let .readCard(reference, _): "card:\(reference.id)"
         case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
+        case .readGuidance: "guidance"
+        case let .writeGuidance(reference, _, _), let .deleteGuidance(reference, _): "guidance:\(reference.path)"
         case .followRuns: "runs"
         case .followResponses: "responses"
         case .backgroundRefresh: "background"

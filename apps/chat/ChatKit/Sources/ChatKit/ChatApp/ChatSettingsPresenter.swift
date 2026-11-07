@@ -1,3 +1,4 @@
+import SubstrateCore
 import SubstrateLocal
 import SubstrateScreens
 
@@ -62,6 +63,54 @@ extension ChatApp {
         ]
         if state.session != nil { sections.append(SettingsPresenter.storage(state.usage, budget: ChatStorage.budget)) }
         return ChatSettingsPresentation(
-            assistants: assistants, sections: sections, notificationsDenied: denied, voiceLocale: prefs.voiceLocale)
+            assistants: assistants, guidance: guidance(state), sections: sections, notificationsDenied: denied,
+            voiceLocale: prefs.voiceLocale)
+    }
+
+    /// The owner's memories and instructions, in the words the console's
+    /// Assistant group uses for them.
+    func guidance(_ state: State) -> GuidanceSection {
+        let held = state.guidance
+        func row(_ record: Record) -> GuidanceRow {
+            let reference = RecordReference(kind: record.kind, id: record.id)
+            var facts: [LabeledValue] = []
+            if let path = record["agent"]?.referencePath {
+                let prefix = "\(Kinds.agent)/"
+                let agent = path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+                facts.append(LabeledValue("For", state.agent(agent)?.name ?? agentName(agent)))
+            }
+            switch record["source"]?.string {
+            case "agent": facts.append(LabeledValue("Added by", "an assistant, accepted by you"))
+            case "import": facts.append(LabeledValue("Added by", "an import"))
+            default: facts.append(LabeledValue("Added by", "you"))
+            }
+            return GuidanceRow(
+                reference: reference, text: record["text"]?.string ?? "", active: record["active"]?.bool != false, facts: facts,
+                busy: held.busy.contains(reference.path), problem: held.failed[reference.path])
+        }
+        func count(_ rows: [GuidanceRow]) -> String {
+            let on = rows.count { $0.active }
+            if rows.isEmpty { return "None" }
+            return on == rows.count ? "\(rows.count)" : "\(on) of \(rows.count) on"
+        }
+        let memories = held.memories.map(row)
+        let instructions = held.instructions.map(row)
+        return GuidanceSection(
+            title: "Assistant", footer: "What your assistants know about you, and how you asked them to work.",
+            memories: GuidanceList(
+                title: "Memories", count: count(memories),
+                footer:
+                    "Facts you keep for your assistants. One that keeps memories reads the ones switched on at the start of every chat.",
+                empty: "No memories yet. Tell your assistant something about yourself to remember.", rows: memories,
+                editTitle: "Edit Memory", deleteQuestion: "Delete this memory?",
+                deleteMessage: "Your assistants stop reading it. To keep it without using it, switch it off instead."),
+            instructions: GuidanceList(
+                title: "Instructions", count: count(instructions),
+                footer:
+                    "How you asked each assistant to work. It reads its instructions that are switched on at the start of every chat, after its own.",
+                empty: "No instructions yet. Ask your assistant to work differently, and it suggests one for you to accept.",
+                rows: instructions, editTitle: "Edit Instruction", deleteQuestion: "Delete this instruction?",
+                deleteMessage: "Its assistant stops reading it. To keep it without using it, switch it off instead."),
+            loading: held.read ? nil : (held.problem == nil ? "Loading…" : nil), problem: held.problem.map { "Couldn't read them: \($0)" })
     }
 }
