@@ -926,6 +926,7 @@ run = ".mise/apple.sh sim"
 # do SUBSTRATE_APPLE_SITE_URL (the https origin the site is served at, which
 # every release requires and claims its sign-in callback on),
 # SUBSTRATE_APPLE_SITE_UPLOAD_URL, SUBSTRATE_APPLE_SITE_AUTHORITY,
+# SUBSTRATE_APPLE_SITE_NAME,
 # SUBSTRATE_APPLE_TEAM_ID, and the Android release key's
 # SUBSTRATE_ANDROID_KEYSTORE, _KEYSTORE_PASSWORD, _KEY_ALIAS, _KEY_PASSWORD
 # and _CERT_SHA256 (apps/README.md). The names keep their APPLE_ prefix

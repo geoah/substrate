@@ -280,7 +280,7 @@ site_url() {
 apple_callback() { echo "$(site_url)/apps/$1/callback"; }
 android_callback() { echo "$(site_url)/apps/$1/android/callback"; }
 
-# The page an app's client document links to: its feed's install page, else
+# An app's install page, which the site's index links to: its feed's, else
 # the site's root.
 release_page() {
 	if [ -z "${SUBSTRATE_APPLE_RELEASE_URL:-}" ]; then
@@ -295,11 +295,12 @@ release_page() {
 # site, and it names the authority that speaks for it
 # (`substrate_authority`). Never a loopback redirect (RFC 8252), which any
 # program on the device may also listen on, so the approval page could not
-# tell the app from another.
+# tell the app from another. Its `client_uri` is the site's index, on the
+# client id's own host: a page elsewhere is one the client id does not
+# prove the app runs, and the approval page says so.
 client_document() {
-	local app="$1" client page name site redirects="[]"
+	local app="$1" client name site redirects="[]"
 	client="$(client_url "$app")" || return 1
-	page="$(release_page "$app")" || return 1
 	name="$(app_get "$app" .name)"
 	site="$(site_url)" || return 1
 	if app_has_apple "$app"; then
@@ -308,7 +309,7 @@ client_document() {
 	if app_has "$app" android; then
 		redirects="$(jq -c --arg uri "$(android_callback "$app")" '. + [$uri]' <<<"$redirects")"
 	fi
-	jq -n --arg id "$client" --arg name "$name" --arg uri "$page" --argjson redirects "$redirects" \
+	jq -n --arg id "$client" --arg name "$name" --arg uri "$site/" --argjson redirects "$redirects" \
 		--arg authority "${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}" '{
 		client_id: $id, client_name: $name, client_uri: $uri, redirect_uris: $redirects,
 		token_endpoint_auth_method: "none", substrate_authority: $authority
@@ -1191,10 +1192,11 @@ site_build() {
 			+ [$new | to_entries[] | select(.key as $name | $names | index($name) | not) | {package: .key, versions: (.value | sort_by(-.version))}])
 		| sort_by(.package)' <<<"$published")"
 
-	local details="[]" ids="[]" apps="[]" links="[]" entry fingerprints
+	local details="[]" ids="[]" apps="[]" links="[]" listed="" entry fingerprints
 	for app in $(ui_apps); do
 		mkdir -p "$out/apps/$app"
 		client_document "$app" >"$out/apps/$app/client.json"
+		listed="$listed<li><a href=\"$(release_page "$app")\">$(app_get "$app" .name)</a></li>"
 		entry="$(jq -n --arg client "$site/apps/$app/client.json" --arg name "$(app_get "$app" .name)" \
 			--argjson packages "$(jq -c '[.publishes[] | split("/") | last]' "$(app_json "$app")")" \
 			'{client_id: $client, name: $name, packages: $packages}')"
@@ -1220,12 +1222,17 @@ site_build() {
 		fi
 		apps="$(jq -c --argjson entry "$entry" '. + [$entry]' <<<"$apps")"
 	done
-	site_index "$authority" >"$out/index.html"
+	# The publisher's name: SUBSTRATE_APPLE_SITE_NAME, else what the live
+	# document says, so a release that does not set it keeps the name, else
+	# the authority itself, never a name the publisher did not choose.
+	local name="${SUBSTRATE_APPLE_SITE_NAME:-}"
+	[ -n "$name" ] || name="$(jq -r --arg authority "$authority" '.name // $authority' <<<"$published")"
+	site_index "$authority" "$name" "$listed" >"$out/index.html"
 	jq -n --argjson details "$details" --argjson ids "$ids" \
 		'{applinks: {details: $details}, webcredentials: {apps: $ids}}' >"$out/.well-known/apple-app-site-association"
 	jq -n --argjson links "$links" '$links' >"$out/.well-known/assetlinks.json"
-	jq -n --arg authority "$authority" --argjson apps "$apps" --argjson packages "$packages" \
-		'{authority: $authority, name: "Substrate", packages: $packages, apps: $apps}' >"$out/.well-known/substrate/authority.json"
+	jq -n --arg authority "$authority" --arg name "$name" --argjson apps "$apps" --argjson packages "$packages" \
+		'{authority: $authority, name: $name, packages: $packages, apps: $apps}' >"$out/.well-known/substrate/authority.json"
 	local key
 	while read -r key; do
 		case "$key" in packages/*) ;; *) etag_read site "$key" ;; esac
@@ -1306,17 +1313,20 @@ unused.</p>
 HTML
 }
 
-# The site's own front page.
+# The site's front page, and every app's client_uri: the publisher's name
+# ($2), its apps' install pages ($3, list items) and the authority ($1).
 site_index() {
 	cat <<HTML
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>$1</title>
+<title>$2</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222}code{font-size:.9em}</style>
-<h1>$1</h1>
-<p>The authority the Substrate apps and packages publish under. Servers read
+<h1>$2</h1>
+<p>The Substrate apps $2 publishes:</p>
+<ul>$3</ul>
+<p>$1 is the authority they and their packages publish under. Servers read
 <a href="/.well-known/substrate/authority.json"><code>/.well-known/substrate/authority.json</code></a>,
 which the <code>_substrate.$1</code> TXT record names.</p>
 <p>Source: <a href="https://github.com/geoah/substrate">github.com/geoah/substrate</a>.</p>
