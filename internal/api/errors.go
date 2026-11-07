@@ -49,6 +49,11 @@ const (
 	// delivery still cannot be made, which is the row's state and not a
 	// server fault, so it is never the masked 500 it once was.
 	codeParked = "parked" // 409 — the retried delivery failed again and stays parked
+	// codeTOTPRequired is 401: the password was right and the account has a
+	// second factor, so the same request with a code is what succeeds
+	// (substrate.ErrTOTPRequired). Distinct from codeAuth so a client asks for
+	// the code rather than saying the password was wrong.
+	codeTOTPRequired = "totp_required" // 401
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -136,6 +141,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
+	case errors.Is(err, substrate.ErrTOTPRequired):
+		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeTOTPRequired, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
 	case errors.Is(err, substrate.ErrTooLarge):

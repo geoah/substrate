@@ -33,9 +33,10 @@ sets every one it can:
 - `totp`: the enforced door, which AUTH-05 and AUTH-07 need and skip without:
   `SUBSTRATE_INSECURE_DISABLE_TOTP=false mise run test:e2e`, or a server of
   your own under `mise run dev:totp`. AUTH-06 and OPR-03 run on either door
-  and carry a live code when the door asks for one. ISO-01's second
-  registration skips against the enforced door instead, because a second user
-  there needs an enrolled seed of its own.
+  and carry a live code when the door asks for one. ISO-01's second user
+  registers without a second factor, so it runs on either door. ERR-04
+  produces `totp_required` only on the enforced door, where the run's own
+  account owes a code, and says so in its report on the other.
 - `egress`: loopback allowed on the server, which is what lets it reach the
   test's own stubs. `SUBSTRATE_EGRESS_ALLOW` governs the server's own dials
   (the agents' completions, the embeddings queue, the OAuth token endpoint)

@@ -31,6 +31,7 @@ func (a *app) registerCommand() *cobra.Command {
 		contextName       string
 		recoveryPublicKey string
 		passwordStdin     bool
+		skipTOTP          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "register",
@@ -51,6 +52,12 @@ reads none.
 --totp-secret brings your own seed and skips the enrollment call, which is what
 makes an unattended registration possible; without it the seed comes from the
 substrate and the code is prompted for.
+
+--skip-totp registers without a second factor: no enrollment and no code, and
+signing in asks for the password alone. The owner can turn one on later in the
+console's Settings.
+
+  substratectl register --repository geoah --skip-totp --password-stdin < password
 
 A substrate that verifies no second factor (SUBSTRATE_INSECURE_DISABLE_TOTP, a
 local-development setting) is neither enrolled with nor asked for a code: a
@@ -112,8 +119,8 @@ name you log in with, and permanent. Pass any hostname you control
 			if err != nil {
 				return err
 			}
-			totpRequired := true
-			if secret == "" || code == "" {
+			totpRequired := !skipTOTP
+			if totpRequired && (secret == "" || code == "") {
 				totpRequired = door().totpRequired
 			}
 			if secret == "" && totpRequired {
@@ -154,10 +161,10 @@ name you log in with, and permanent. Pass any hostname you control
 					return rerr
 				}
 			}
-			res, err := a.retryWhenPaced(cmd.Context(), func() (*registerResult, error) {
+			res, err := retryWhenPaced(cmd.Context(), a, func() (*registerResult, error) {
 				return cl.register(cmd.Context(), registerRequest{
 					InviteCode: invite, Repository: repository, Password: password,
-					TOTPSecret: secret, TOTPCode: code, Label: label,
+					TOTPSecret: secret, TOTPCode: code, SkipTOTP: skipTOTP, Label: label,
 					RecoveryPublicKey: recoveryPublicKey,
 				})
 			})
@@ -206,6 +213,9 @@ name you log in with, and permanent. Pass any hostname you control
 	f.StringVar(&contextName, "context", "", "name for the stored context (default: the repository name)")
 	f.StringVar(&recoveryPublicKey, "recovery-public-key", "", "age recipient for the recovery key (default: generate the pair locally and hand you the key)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (one line) instead of prompting")
+	f.BoolVar(&skipTOTP, "skip-totp", false, "register without a second factor; it can be turned on later in Settings")
+	cmd.MarkFlagsMutuallyExclusive("skip-totp", "totp-secret")
+	cmd.MarkFlagsMutuallyExclusive("skip-totp", "totp-code")
 	return cmd
 }
 
@@ -215,25 +225,27 @@ name you log in with, and permanent. Pass any hostname you control
 const pacedWait = 15 * time.Second
 
 // retryWhenPaced sends once more after a 429 that names a wait, and only
-// then. It exists for ONE sequence — the enrollment and the commit behind it —
-// where the second request is substratectl's own doing.
-func (a *app) retryWhenPaced(ctx context.Context, send func() (*registerResult, error)) (*registerResult, error) {
+// then. It exists for the sequences where the second request is substratectl's
+// own doing: the enrollment and the commit behind it, and a login and the one
+// that carries the code it asked for.
+func retryWhenPaced[T any](ctx context.Context, a *app, send func() (T, error)) (T, error) {
+	var zero T
 	res, err := send()
 	if err == nil {
 		return res, nil
 	}
 	var ae *apiError
 	if !errors.As(err, &ae) || ae.Status != http.StatusTooManyRequests {
-		return nil, err
+		return zero, err
 	}
 	wait, perr := time.ParseDuration(ae.RetryAfter + "s")
 	if perr != nil || wait <= 0 || wait > pacedWait {
-		return nil, err
+		return zero, err
 	}
 	fmt.Fprintf(a.errOut, "the substrate paces this door; waiting %s and sending once more\n", wait)
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return zero, ctx.Err()
 	case <-time.After(wait):
 	}
 	return send()

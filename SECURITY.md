@@ -32,9 +32,10 @@ unless you ask it not to.
   user's repository, or any bypass of the row level security that binds the
   `substrate_app` role.
 - **Authentication bypass.** Registering without the invite code, logging in
-  without the password and the TOTP code, using or forging a token that was not
-  issued to you, or changing a credential without the current password and TOTP
-  code in the request body.
+  without the password, or without the TOTP code of an account that has a
+  second factor, using or forging a token that was not issued to you, or
+  changing a credential without the current password and, where the account
+  has a second factor, its TOTP code in the request body.
 - **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value or a
   provider OAuth token reaching a response, a log line, another repository, or a
   record a token can read. A secret-typed property reads back `<redacted>`

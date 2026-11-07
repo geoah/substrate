@@ -455,7 +455,11 @@ type registerRequest struct {
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
-	Label      string `json:"label,omitempty"`
+	// SkipTOTP registers without a second factor. omitempty keeps a
+	// registration that does not skip readable by a substrate that predates
+	// the field.
+	SkipTOTP bool   `json:"skipTotp,omitempty"`
+	Label    string `json:"label,omitempty"`
 	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
 	// matching identity never rides the wire.
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
@@ -521,11 +525,6 @@ func (c *client) door(ctx context.Context) doorPolicy {
 		inviteRequired: reg.InviteRequired == nil || *reg.InviteRequired,
 		totpRequired:   reg.TOTPRequired == nil || *reg.TOTPRequired,
 	}
-}
-
-// totpRequired reports whether this deployment verifies a second factor.
-func (c *client) totpRequired(ctx context.Context) bool {
-	return c.door(ctx).totpRequired
 }
 
 func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*substrate.TOTPEnrollment, error) {

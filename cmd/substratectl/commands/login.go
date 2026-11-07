@@ -27,14 +27,16 @@ func (a *app) loginCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in with a repository name, password and TOTP code, and store the token",
+		Short: "Log in with a repository name, password and, where the account has one, a TOTP code, and store the token",
 		Long: `Log in to a substrate.
 
 The repository is the name registration created — its authority
 (ada.example.com), or a bare label the substrate completes under its own host.
-Both factors are presented directly: the password and one code from the
-authenticator holding this account — unless the substrate verifies no second
-factor, in which case no code is asked for. The login mints a token record and returns
+The factors are presented directly: the password, then one code from the
+authenticator holding this account, asked for only when the substrate answers
+that the account has a second factor. An account registered without one, and
+any account on a substrate that verifies no code, signs in with the password
+alone. --totp-code sends the code up front. The login mints a token record and returns
 its secret exactly once; substratectl writes it to the config file (mode 0600) as the
 current context. The token implies the repository — there is nothing else to
 configure.
@@ -65,20 +67,31 @@ configure.
 				return err
 			}
 			cl := newClient(server, "", a.hc)
-			// Validated before the request: every auth attempt is rate limited
-			// and a failure counts toward a lockout, so a code that cannot be
-			// right must not spend one. The deployment says whether there is a
-			// code to ask for at all.
-			code, err = a.askCodeIfRequired(cmd.Context(), cl, code, "TOTP code: ")
-			if err != nil {
-				return err
+			// A code in hand is validated before the request: every auth
+			// attempt is paced, so a code that cannot be right must not spend
+			// one.
+			if code != "" {
+				if code, err = normalizeCode(code); err != nil {
+					return err
+				}
 			}
 			if label == "" {
 				label = defaultTokenLabel()
 			}
-			res, err := cl.login(cmd.Context(), factors{
-				Repository: repository, Password: password, TOTPCode: code, Label: label,
-			})
+			in := factors{Repository: repository, Password: password, TOTPCode: code, Label: label}
+			res, err := cl.login(cmd.Context(), in)
+			// The two-step sign-in (decision 0237): the substrate asks for a
+			// code only once the password is right, and only of an account
+			// that has a second factor. The second attempt follows the first
+			// inside the door's interval, so it waits out the pacing.
+			if code == "" && isCodeRequired(err) {
+				if in.TOTPCode, err = a.askCode("", "TOTP code: "); err != nil {
+					return err
+				}
+				res, err = retryWhenPaced(cmd.Context(), a, func() (*tokenResult, error) {
+					return cl.login(cmd.Context(), in)
+				})
+			}
 			if err != nil {
 				return authError(err)
 			}
@@ -105,7 +118,7 @@ configure.
 	f := cmd.Flags()
 	f.StringVar(&server, "server", "", "substrate base URL")
 	f.StringVar(&repository, "repository", "", "repository to log in to: ada.example.com, or a bare label under the substrate's host (prompted for when omitted)")
-	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted)")
+	f.StringVar(&code, "totp-code", "", "current 6-digit code (prompted for when omitted and the account has a second factor)")
 	f.StringVar(&label, "label", "", "label for the minted token (default: substratectl@<hostname>)")
 	f.StringVar(&contextName, "context", "", "name for the stored context (default: the repository name)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (one line) instead of prompting")
@@ -180,6 +193,13 @@ func defaultTokenLabel() string {
 		host = "unknown"
 	}
 	return "substratectl@" + host
+}
+
+// isCodeRequired reports the door's one other 401: the password was right and
+// the account has a second factor, so the same login with a code succeeds.
+func isCodeRequired(err error) bool {
+	var ae *apiError
+	return errors.As(err, &ae) && ae.Status == http.StatusUnauthorized && ae.Code == "totp_required"
 }
 
 // authError replaces the door's deliberately uniform 401 with the reasons a

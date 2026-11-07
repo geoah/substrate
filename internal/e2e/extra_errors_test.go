@@ -416,6 +416,19 @@ func xeCodeCases() []xeCodeCase {
 			xeRequireError(c, "an unminted bearer", status, raw, http.StatusUnauthorized, "auth")
 		},
 	}, {
+		code: "totp_required",
+		name: "the run's right password with no code answers 401, asking for the code (decision 0237)",
+		run: func(c *C) {
+			if !xaTOTPRequired(c) {
+				c.stepf("`totp_required` is not produced here: this door verifies no code, so no account owes one (the enforced door is `mise run dev:totp`)")
+				return
+			}
+			c.paceAuth()
+			status, raw := c.doAs("", http.MethodPost, "/login",
+				map[string]any{"repository": c.r.repository, "password": c.r.password}, nil)
+			xeRequireError(c, "a right password with no code", status, raw, http.StatusUnauthorized, "totp_required")
+		},
+	}, {
 		code: "rate_limited",
 		name: "a second login for one repository inside the door's interval answers 429 with Retry-After",
 		run: func(c *C) {

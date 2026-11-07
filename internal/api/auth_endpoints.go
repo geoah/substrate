@@ -12,7 +12,8 @@ package api
 //     distributed attempt costs what a single one does;
 //   - one answer for every failure — an unknown repository, a wrong password
 //     and a wrong code are indistinguishable, which is why the engine does
-//     the same argon2id and HMAC work on all three;
+//     the same argon2id and HMAC work on all three. The one other answer,
+//     totp_required, comes only after the password verified;
 //   - the password-factor rule: a credential change carries
 //     BOTH current factors in its body. A bearer token alone is refused,
 //     so a leaked token's blast radius is the data, never the account.
@@ -126,8 +127,14 @@ func (h *handler) inviteOK(w http.ResponseWriter, presented string) bool {
 }
 
 // writeAuthFailure is the one answer every refused factor gets: no oracle for
-// which of the three was wrong, and none for whether the user exists.
+// which of the three was wrong, and none for whether the user exists. A
+// missing code on an account that has a second factor is the exception, told
+// only to a caller who proved the password.
 func writeAuthFailure(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, substrate.ErrTOTPRequired) {
+		writeError(w, http.StatusUnauthorized, codeTOTPRequired, "a code from your authenticator is required")
+		return
+	}
 	if errors.Is(err, substrate.ErrAuth) {
 		writeError(w, http.StatusUnauthorized, codeAuth, "invalid repository, password or code")
 		return
@@ -184,6 +191,7 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		Password:          req.Password,
 		TOTPSecret:        req.TOTPSecret,
 		TOTPCode:          req.TOTPCode,
+		SkipTOTP:          req.SkipTOTP,
 		Label:             req.Label,
 		RecoveryPublicKey: req.RecoveryPublicKey,
 	})
@@ -239,7 +247,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+	if !h.factorsPresented(w, req.Password) {
 		return
 	}
 	err := h.svc.ChangePassword(r.Context(), substrate.LoginInput{
@@ -265,7 +273,7 @@ func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+	if !h.factorsPresented(w, req.Password) {
 		return
 	}
 	err := h.svc.DeleteRepository(r.Context(), substrate.LoginInput{
@@ -290,7 +298,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+	if !h.factorsPresented(w, req.Password) {
 		return
 	}
 	enrollment, err := h.svc.BeginTOTPReenrollment(r.Context(), substrate.LoginInput{
@@ -315,7 +323,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+	if !h.factorsPresented(w, req.Password) {
 		return
 	}
 	err := h.svc.ReenrollTOTP(r.Context(), substrate.LoginInput{
@@ -334,17 +342,17 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 // does not accept tokens, and saying so with 403 is what tells a caller their
 // token will never be enough.
 //
-// The code is not demanded on a deployment whose second factor is disabled
-// (SUBSTRATE_INSECURE_DISABLE_TOTP): asking for something nothing verifies
-// would refuse honest callers over a formality. The PASSWORD is still
-// required — the rule is about what a bearer token buys, and that does not
-// change with the factor.
-func (h *handler) factorsPresented(w http.ResponseWriter, password, code string) bool {
-	if password != "" && (code != "" || h.totpDisabled) {
+// Only the password is demanded here. Whether a code is owed is the
+// account's, not the door's: an account registered without a second factor
+// owes none, and one that has a factor and sent no code is answered
+// totp_required by the engine once the password verifies. The rule is about
+// what a bearer token buys, and that does not change with the factor.
+func (h *handler) factorsPresented(w http.ResponseWriter, password string) bool {
+	if password != "" {
 		return true
 	}
 	writeError(w, http.StatusForbidden, codeForbidden,
-		"changing auth material requires the current password and TOTP code in the request body — a bearer token is not accepted")
+		"changing auth material requires the current password, and the TOTP code where the account has one, in the request body — a bearer token is not accepted")
 	return false
 }
 

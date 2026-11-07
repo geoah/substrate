@@ -22,8 +22,9 @@ configured admits only a request that presents it; the local substrate from
 `docker compose up` or `mise run dev` has none and reads none.
 [Users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
-Registration needs three things from you: a repository name, a password, and a
-TOTP second factor. All three are required on a deployment, and the name is
+Registration needs a repository name and a password from you, and offers a
+TOTP second factor, which you may skip and turn on later in Settings
+([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)). The name is
 yours permanently. The local substrate
 [verifies no second factor](auth.md#the-second-factor-can-be-switched-off-locally),
 so there a repository name and a password are the whole of it.
@@ -55,18 +56,24 @@ substratectl register --repository ada.example.com --invite-code CODE \
     --totp-secret BASE32SEED --totp-code 123456 --password-stdin < password
 ```
 
+`--skip-totp` registers without a second factor instead: no enrollment and no
+code, and signing in asks for the password alone.
+
 Underneath, registration is two HTTP calls, and only the second writes
 anything. The response carries the token secret, shown exactly once, and a
 recovery key exists either way: `substratectl register` generates the pair
 itself and hands you the key (saved to 1Password when `op` is signed in,
-printed once otherwise), while a raw HTTP request that names no
+printed once otherwise), the console generates it in the browser and shows it
+beside the password so a password manager saves the two together, while a raw HTTP request that names no
 `recoveryPublicKey` gets a one-time server-minted `recoveryKey` back.
 [Users, tokens, and actors](auth.md) documents the wire, recovery fields
 included.
 
 ## Log in
 
-A login is both factors presented directly, and it mints a token record:
+A login presents the password, and the code where the account has a second
+factor, and it mints a token record. `substratectl login` asks for the code
+only when the substrate answers that the account has one:
 
 ```bash
 substratectl login --server https://substrate.example --repository ada.example.com

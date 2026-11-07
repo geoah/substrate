@@ -18,10 +18,10 @@ VITE_PROXY_SUBSTRATE=https://substrate.example.com pnpm dev
 ```
 
 `VITE_PROXY_SUBSTRATE` is the only knob — nothing in `src/` hardcodes a host.
-Sign in on `/login` with a repository name, a password and the current TOTP
-code (`GET /.well-known/substrate/server.json` says in `registration.totpRequired`
-whether the door wants the third: `mise run dev` runs with the factor off,
-`mise run dev:totp` with it on). What comes back is a token RECORD
+Sign in on `/login` with a repository name and a password; the page asks for
+the current TOTP code only when the door answers `totp_required`, which it
+does for an account with a second factor (`mise run dev` runs with the factor
+off, `mise run dev:totp` with it on). What comes back is a token RECORD
 and its secret — there is no session beside it, so what the browser keeps in
 localStorage is a `substrate_tok_…` like any other client's, and a 401 anywhere
 drops it.

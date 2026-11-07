@@ -32,6 +32,9 @@ type fakeService struct {
 	// these tests exercise.
 	passwords map[string]string
 	codes     map[string]string
+	// noFactor holds the repositories registered with skipTotp: their
+	// password is the whole credential until a re-enrollment gives them one.
+	noFactor map[string]bool
 
 	createRepositoryErr error
 	registerErr         error
@@ -65,6 +68,7 @@ func newFakeService() *fakeService {
 		tokens:    map[string]fakeToken{},
 		passwords: map[string]string{},
 		codes:     map[string]string{},
+		noFactor:  map[string]bool{},
 	}
 	s.addRepository(fakeRepository)
 	s.passwords[fakeRepository] = "correct-horse-battery-staple"
@@ -171,7 +175,7 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 	if _, taken := s.datasets[in.Repository]; taken {
 		return substrate.RegisterResult{}, fmt.Errorf("%w: repository %q already exists", substrate.ErrValidation, in.Repository)
 	}
-	if in.TOTPCode != fakeCode(in.Repository) {
+	if !in.SkipTOTP && in.TOTPCode != fakeCode(in.Repository) {
 		return substrate.RegisterResult{}, fmt.Errorf("%w: bad code", substrate.ErrAuth)
 	}
 	// The engine requires a concrete authority: the handler resolves whatever
@@ -181,6 +185,7 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 	}
 	s.addRepository(in.Repository)
 	s.passwords[in.Repository] = in.Password
+	s.noFactor[in.Repository] = in.SkipTOTP
 	secret := s.token(in.Repository)
 	info := s.tokens[secret].info
 	info.Label = in.Label
@@ -195,13 +200,19 @@ func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (s
 
 // verify is the fake's whole factor check: the recorded password and the
 // repository's canned code, answering ONE error for every failure exactly as
-// the engine does.
+// the engine does, but for the missing code of an account that has a factor.
 func (s *fakeService) verify(in substrate.LoginInput) error {
 	password, known := s.passwords[in.Repository]
 	if !known || password != in.Password {
 		return fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
 	}
-	if !s.totpDisabled && in.TOTPCode != fakeCode(in.Repository) {
+	if s.totpDisabled || s.noFactor[in.Repository] {
+		return nil
+	}
+	if in.TOTPCode == "" {
+		return substrate.ErrTOTPRequired
+	}
+	if in.TOTPCode != fakeCode(in.Repository) {
 		return fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
 	}
 	return nil
@@ -251,6 +262,7 @@ func (s *fakeService) ReenrollTOTP(_ context.Context, in substrate.LoginInput, n
 	if newSecret == "" || newCode == "" {
 		return fmt.Errorf("%w: the new enrollment is incomplete", substrate.ErrValidation)
 	}
+	s.noFactor[in.Repository] = false
 	return nil
 }
 

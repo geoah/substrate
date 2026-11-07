@@ -9,8 +9,10 @@ facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code gates who registers, where
 one is set. Registering
-creates a **repository** and its **user**: one name, one password and TOTP,
-all three. That name IS the repository's one **authority** (a bare label is
+creates a **repository** and its **user**: one name, one password and a TOTP
+second factor the user may skip and turn on later
+([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
+That name IS the repository's one **authority** (a bare label is
 completed under the server's host; the home of the kinds the user declares,
 the name they log in with, and the repository's id on disk, in the database
 and on the wire,
@@ -213,8 +215,8 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, repository, password, TOTP enroll, recovery key (auto-saved to 1Password when `op` is signed in)
-bin/substratectl login --repository <yours>  # password + TOTP; mints a token record
+bin/substratectl register                    # invite code, repository, password, TOTP enroll (--skip-totp for none), recovery key (auto-saved to 1Password when `op` is signed in)
+bin/substratectl login --repository <yours>  # password, then a TOTP code if the account has one; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition
 bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds

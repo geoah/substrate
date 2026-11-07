@@ -927,6 +927,7 @@ const registerInput: Shape<RegisterInput> = {
   password: true,
   totpSecret: true,
   totpCode: true,
+  skipTotp: false,
   label: false,
   recoveryPublicKey: false,
 }

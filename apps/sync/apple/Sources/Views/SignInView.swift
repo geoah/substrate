@@ -19,13 +19,15 @@ struct SignInView: View {
 
     @State private var password = ""
     @State private var code = ""
+    /// The server answered that this account has a second factor: the code
+    /// field is shown and the next sign-in carries it.
+    @State private var codeAsked = false
     @State private var busy = false
     @State private var problem: String?
     /// The name's DNS lookup did not answer: Continue reads Try Again.
     @State private var retryable = false
 
     private var door: SignInDoor? { probe.map { model.door(for: $0) } }
-    private var totpRequired: Bool { probe?.discovery.registration.totpRequired ?? true }
 
     var body: some View {
         Form {
@@ -86,7 +88,7 @@ struct SignInView: View {
                             .textContentType(.password)
                             .multilineTextAlignment(.trailing)
                     }
-                    if totpRequired {
+                    if codeAsked {
                         LabeledContent("Code") {
                             TextField("6 digits", text: $code)
                                 .textContentType(.oneTimeCode)
@@ -100,7 +102,7 @@ struct SignInView: View {
                         WideLabel(title: "Sign In", systemImage: "person.badge.key", busy: busy)
                     }
                     .primaryAction()
-                    .disabled(busy || repository.isEmpty || password.isEmpty || (totpRequired && code.isEmpty))
+                    .disabled(busy || repository.isEmpty || password.isEmpty || (codeAsked && code.isEmpty))
                     .buttonRow()
                 }
             } else {
@@ -166,10 +168,13 @@ struct SignInView: View {
             do {
                 try await model.signIn(
                     server: server, repository: repository.trimmingCharacters(in: .whitespaces),
-                    password: password, totp: totpRequired ? code : nil)
+                    password: password, totp: codeAsked ? code : nil)
                 password = ""
                 code = ""
+            } catch let refused as LoginRefused where refused.codeRequired && !codeAsked {
+                codeAsked = true
             } catch {
+                code = ""
                 problem = explain(error, server: server)
             }
         }

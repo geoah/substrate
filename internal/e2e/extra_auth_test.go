@@ -257,13 +257,8 @@ func xaCaseTokenRecordRevoke(c *C) {
 func xaCaseIsolation(c *C) {
 	r := c.r
 
-	if xaTOTPRequired(c) {
-		// A second user would need its own enrolled seed and its own code on
-		// every attempt, which is AUTH-05's subject and not this one's.
-		c.skipf("this server enforces the second factor, so a second registration needs its own enrolled seed")
-		return
-	}
-
+	// The second user skips the second factor (decision 0237): its own seed
+	// and code on every attempt are AUTH-05's subject, not this one's.
 	second := xaName("iso")
 	c.paceAuth()
 	var reg struct {
@@ -273,11 +268,11 @@ func xaCaseIsolation(c *C) {
 		Secret string `json:"secret"`
 	}
 	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "repository": second, "password": r.password}, &reg)
+		map[string]any{"inviteCode": r.invite, "repository": second, "password": r.password, "skipTotp": true}, &reg)
 	c.requiref(status == http.StatusCreated, "registering a second user answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(reg.Secret != "", "the second registration returned no token secret")
 	xaSecond.username, xaSecond.token = second, reg.Secret
-	c.stepf("registered a second user `%s` with its own repository and first token `%s`", second, reg.Token.ID)
+	c.stepf("registered a second user `%s`, skipping the second factor, with its own repository and first token `%s`", second, reg.Token.ID)
 
 	// The first user's vocabulary is not the second user's: the kinds do not
 	// exist there at all, so a list narrowed to one is a 404 naming the kind.

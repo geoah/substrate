@@ -53,7 +53,8 @@ no server and no token.
 it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
-registration possible. `--repository` names the repository, which BECOMES its
+registration possible. `--skip-totp` registers without a second factor, which
+the owner can turn on later in the console's Settings. `--repository` names the repository, which BECOMES its
 authority: the home of every package you declare kinds in, and the name you
 log in with. A name carrying a dot is taken as it is; a bare label is
 completed under the substrate's own host, and `register` prints the result.
@@ -64,8 +65,10 @@ Against a substrate that verifies no second factor
 entirely: `substratectl` reads `GET /.well-known/substrate/server.json` first
 and stops asking for something nothing checks.
 
-`substratectl login` presents both factors and mints a token record, which it stores
-as the current context. `substratectl logout` revokes that token record and then
+`substratectl login` presents the password and mints a token record, which it stores
+as the current context. Where the account has a second factor the substrate
+answers `totp_required`, and `login` then asks for the code and sends it;
+`--totp-code` sends one up front. `substratectl logout` revokes that token record and then
 forgets it, because a session is its [token record](auth.md#tokens).
 
 `substratectl token create --label backup` mints a token for a script or a device and

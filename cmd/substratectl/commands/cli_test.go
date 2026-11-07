@@ -260,6 +260,15 @@ func TestLoginPromptsForWhatItIsNotGiven(t *testing.T) {
 			t.Errorf("prompt %q missing from stderr: %q", want, errOut)
 		}
 	}
+	// The code was asked for by the door's answer, and the second login
+	// carried it.
+	if got := h.fake.doorRequests(); len(got) != 2 || got[0] != "POST /login" || got[1] != "POST /login" {
+		t.Fatalf("requests = %v, want the login and the one carrying the code", got)
+	}
+	var code string
+	if err := json.Unmarshal(h.fake.lastBody["totpCode"], &code); err != nil || code != "123456" {
+		t.Fatalf("the second login sent code %q (%v), want the prompted one", code, err)
+	}
 	var username string
 	if err := json.Unmarshal(h.fake.lastBody["repository"], &username); err != nil {
 		t.Fatalf("decode username: %v", err)
@@ -291,6 +300,43 @@ func TestLoginRejectsNonSixDigitCodesWithoutARequest(t *testing.T) {
 	}
 }
 
+// An account registered without a second factor signs in with the password
+// alone: the door never asks, so neither does the CLI. The stdin holds ONLY a
+// password, so a prompt for a code would fail rather than pass quietly.
+func TestLoginAsksForNoCodeOfAnAccountWithoutAFactor(t *testing.T) {
+	h := newHarness(t)
+	h.fake.noFactor = true
+	h.stdin.WriteString("hunter2\n")
+	_, errOut := h.mustRun("login", "--server", h.server, "--repository", "geoah")
+	if strings.Contains(errOut, "TOTP code: ") {
+		t.Errorf("a code was asked for an account without a factor: %q", errOut)
+	}
+	if got := h.fake.doorRequests(); len(got) != 1 || got[0] != "POST /login" {
+		t.Fatalf("requests = %v, want the login alone", got)
+	}
+}
+
+// --skip-totp registers without a second factor: no enrollment round trip, no
+// code, and the skip said outright.
+func TestRegisterSkipsTheSecondFactorWhenAsked(t *testing.T) {
+	h := newHarness(t)
+	h.stdin.WriteString("hunter2\nhunter2\n")
+	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah", "--skip-totp")
+	if strings.Contains(out, "TOTP enrollment") {
+		t.Errorf("an enrollment was shown for a skipped factor:\n%s", out)
+	}
+	if got := h.fake.doorRequests(); len(got) != 1 || got[0] != "POST /register" {
+		t.Fatalf("requests = %v, want the commit alone", got)
+	}
+	var skip bool
+	if err := json.Unmarshal(h.fake.lastBody["skipTotp"], &skip); err != nil || !skip {
+		t.Fatalf("skipTotp = %v (%v), want true", skip, err)
+	}
+	if _, _, err := h.run("register", "--server", h.server, "--skip-totp", "--totp-code", "123456"); err == nil {
+		t.Fatal("--skip-totp beside --totp-code was accepted")
+	}
+}
+
 // A substrate that verifies no second factor is not asked for a code: the
 // prompt would have nothing to read it from, and the substrate ignores what it
 // is sent. The stdin below holds ONLY a password, so a prompt for a code would
@@ -313,8 +359,9 @@ func TestLoginAsksForNoCodeWhereNoneIsVerified(t *testing.T) {
 }
 
 // Registration against the same substrate: no enrollment round trip, no code,
-// and an EMPTY seed — which is what asks the substrate to mint the one it
-// seals, so the credential still has a factor for the day the flag comes off.
+// and an EMPTY seed, which such a substrate takes as an account without a
+// second factor. No skipTotp is sent, so a substrate that predates the field
+// reads the request too.
 func TestRegisterSkipsTheEnrollmentWhereNoCodeIsVerified(t *testing.T) {
 	h := newHarness(t)
 	h.fake.totpDisabled = true

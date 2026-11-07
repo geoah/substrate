@@ -50,23 +50,16 @@ vi.mock("@/router", () => ({
 }))
 
 /** What GET /.well-known/substrate/server.json said about the door. A settled
- * answer is what most cases want, so the fetch assertions below stay about the
- * login call itself; discovery.test.ts covers the fetching.
- *
- * `policy.live` hands the hook back to the real module for the last describe,
- * which is about the one render the stub cannot show: the policy landing after
- * the first paint, with whatever the reader already typed in the fields. */
+ * answer is what every case wants, so the fetch assertions below stay about
+ * the login call itself; discovery.test.ts covers the fetching. Whether a code
+ * is asked for is the login's own answer, not the policy's. */
 const policy = vi.hoisted(() => ({
   inviteRequired: true,
   totpRequired: true,
-  live: false,
 }))
 vi.mock("@/lib/api/discovery", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api/discovery")>()
-  return {
-    ...real,
-    useAuthPolicy: () => (policy.live ? real.useAuthPolicy() : policy),
-  }
+  return { ...real, useAuthPolicy: () => policy }
 })
 
 /** The deployment's site (lib/site.ts): none unless a case sets one. */
@@ -77,8 +70,6 @@ vi.mock("@/lib/site", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/site")>()
   return { ...real, useSite: () => door.site }
 })
-
-import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { LoginPage } from "./login"
 
@@ -98,6 +89,12 @@ const MINT = {
   secret: "substrate_tok_minted",
 }
 
+/** The substrate's answer to a right password on an account that has a second
+ * factor and sent no code. */
+const CODE_ASKED = {
+  error: { code: "totp_required", message: "a code is required" },
+}
+
 function signIn() {
   fireEvent.change(screen.getByLabelText("Your address"), {
     target: { value: "geoah" },
@@ -105,8 +102,13 @@ function signIn() {
   fireEvent.change(screen.getByLabelText("Password"), {
     target: { value: "correct horse battery" },
   })
-  fireEvent.change(screen.getByLabelText("One-time code"), {
-    target: { value: "123 456" },
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+}
+
+/** The second step: the code the substrate asked for, then Sign in again. */
+async function enterCode(code = "123 456") {
+  fireEvent.change(await screen.findByLabelText("One-time code"), {
+    target: { value: code },
   })
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
 }
@@ -119,7 +121,6 @@ describe("LoginPage", () => {
     clearSession()
     navigate.mockClear()
     policy.totpRequired = true
-    policy.live = false
     door.site = null
     loginSearch.redirect = undefined
     loginSearch.login_hint = undefined
@@ -131,11 +132,11 @@ describe("LoginPage", () => {
     fetchMock.mockReset()
   })
 
-  it("asks for the repository, password and the one-time code", () => {
+  it("asks for the repository and password, and no code until the substrate does", () => {
     render(<LoginPage />)
     expect(screen.getByLabelText("Your address")).toBeTruthy()
     expect(screen.getByLabelText("Password")).toBeTruthy()
-    expect(screen.getByLabelText("One-time code")).toBeTruthy()
+    expect(screen.queryByLabelText("One-time code")).toBeNull()
   })
 
   it("shows the deployment's brand where it sets a site", () => {
@@ -182,7 +183,7 @@ describe("LoginPage", () => {
     )
   })
 
-  it("logs in and stores the minted token, repository and token id", async () => {
+  it("logs in with the password alone where the account has no second factor", async () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<LoginPage />)
     signIn()
@@ -190,19 +191,45 @@ describe("LoginPage", () => {
     expect(getRepository()).toBe("geoah")
     expect(getTokenId()).toBe("tok-1")
     expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/login")
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body).toEqual({
       repository: "geoah",
       password: "correct horse battery",
-      totpCode: "123456",
+      totpCode: "",
       label: "console",
     })
     // The door is anonymous: no bearer rides a login.
     expect(
       ((init as RequestInit).headers as Record<string, string>).Authorization
     ).toBeUndefined()
+  })
+
+  it("asks for the code when the substrate does, then signs in with it", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, CODE_ASKED))
+      .mockResolvedValueOnce(jsonResponse(201, MINT))
+    render(<LoginPage />)
+    signIn()
+    // Being asked is not a failure: no alert, and the field takes the focus.
+    const field = await screen.findByLabelText("One-time code")
+    await waitFor(() => expect(document.activeElement).toBe(field))
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(getToken()).toBeNull()
+
+    await enterCode()
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const body = JSON.parse(
+      (fetchMock.mock.calls[1][1] as RequestInit).body as string
+    )
+    expect(body).toEqual({
+      repository: "geoah",
+      password: "correct horse battery",
+      totpCode: "123456",
+      label: "console",
+    })
   })
 
   it("returns to an app's approval page after signing in", async () => {
@@ -261,7 +288,7 @@ describe("LoginPage", () => {
     ).toBeNull()
   })
 
-  it("shows the factor/lockout message on a refused sign-in", async () => {
+  it("names the address and password on a refused first step", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, {
         error: { code: "auth", message: "invalid credentials" },
@@ -269,9 +296,28 @@ describe("LoginPage", () => {
     )
     render(<LoginPage />)
     signIn()
-    await screen.findByText(/address, password or code is wrong/i)
+    await screen.findByText(/address or password is wrong/i)
+    expect(screen.queryByLabelText("One-time code")).toBeNull()
     expect(getToken()).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it("names the code too once it was asked for, and clears it", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, CODE_ASKED))
+      .mockResolvedValueOnce(
+        jsonResponse(401, {
+          error: { code: "auth", message: "invalid credentials" },
+        })
+      )
+    render(<LoginPage />)
+    signIn()
+    await enterCode()
+    await screen.findByText(/address, password or code is wrong/i)
+    expect(screen.getByLabelText<HTMLInputElement>("One-time code").value).toBe(
+      ""
+    )
+    expect(getToken()).toBeNull()
   })
 
   it("shows the retry hint on a rate limit", async () => {
@@ -288,131 +334,12 @@ describe("LoginPage", () => {
     expect(getToken()).toBeNull()
   })
 
-  it("asks for no code where the substrate verifies none", async () => {
-    policy.totpRequired = false
-    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+  it("rejects a non-six-digit code before the second request", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, CODE_ASKED))
     render(<LoginPage />)
-    expect(screen.queryByLabelText("One-time code")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Your address"), {
-      target: { value: "geoah" },
-    })
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "correct horse battery" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("/login")
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      repository: "geoah",
-      password: "correct horse battery",
-      totpCode: "",
-      label: "console",
-    })
-  })
-
-  it("rejects a non-six-digit code before any request", async () => {
-    render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Your address"), {
-      target: { value: "geoah" },
-    })
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "correct horse battery" },
-    })
-    fireEvent.change(screen.getByLabelText("One-time code"), {
-      target: { value: "12345" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+    signIn()
+    await enterCode("12345")
     await screen.findByText("Enter the current 6-digit code.")
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-})
-
-/** The same page against the REAL discovery hook: the policy lands one render
- * after the first paint, and whatever the reader (or their password manager)
- * put in the fields before then has to survive it. */
-describe("LoginPage and the door's own answer", () => {
-  const fetchMock = vi.fn<typeof fetch>()
-
-  beforeEach(() => {
-    vi.stubGlobal("fetch", fetchMock)
-    clearSession()
-    navigate.mockClear()
-    policy.live = true
-    resetAuthPolicy()
-  })
-
-  afterEach(() => {
-    cleanup()
-    vi.unstubAllGlobals()
-    fetchMock.mockReset()
-  })
-
-  it("keeps what was typed before the policy landed, and asks for no code after", async () => {
-    let releaseDiscovery: (() => void) | undefined
-    const discovered = new Promise<void>((resolve) => {
-      releaseDiscovery = resolve
-    })
-    fetchMock.mockImplementation(async (input) => {
-      if (String(input) === "/.well-known/substrate/server.json") {
-        await discovered
-        return jsonResponse(200, { registration: { totpRequired: false } })
-      }
-      return jsonResponse(201, MINT)
-    })
-
-    render(<LoginPage />)
-    // Discovery has not answered yet: the strict door is what renders, so a
-    // deployment that DOES want a code never hides the field.
-    expect(screen.getByLabelText("One-time code")).toBeTruthy()
-    fireEvent.change(screen.getByLabelText("Your address"), {
-      target: { value: "geoah" },
-    })
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "correct horse battery" },
-    })
-
-    releaseDiscovery!()
-    await waitFor(() =>
-      expect(screen.queryByLabelText("One-time code")).toBeNull()
-    )
-    // The two fields survived the answer. A password manager fills them the
-    // moment the page paints, and nothing here may throw that away.
-    expect(screen.getByLabelText<HTMLInputElement>("Your address").value).toBe(
-      "geoah"
-    )
-    expect(screen.getByLabelText<HTMLInputElement>("Password").value).toBe(
-      "correct horse battery"
-    )
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    const call = fetchMock.mock.calls.find(([url]) => String(url) === "/login")!
-    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
-      password: "correct horse battery",
-      totpCode: "",
-      label: "console",
-    })
-  })
-
-  it("still refuses to sign in without a code where discovery never answers", async () => {
-    fetchMock.mockImplementation(async (input) => {
-      if (String(input) === "/.well-known/substrate/server.json")
-        throw new TypeError("offline")
-      return jsonResponse(201, MINT)
-    })
-    render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Your address"), {
-      target: { value: "geoah" },
-    })
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "correct horse battery" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
-    await screen.findByText("Enter the current 6-digit code.")
-    expect(fetchMock.mock.calls.some(([url]) => String(url) === "/login")).toBe(
-      false
-    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

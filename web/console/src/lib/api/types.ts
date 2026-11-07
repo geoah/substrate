@@ -12,6 +12,7 @@
 export type ErrorCode =
   | "bad_request"
   | "auth"
+  | "totp_required"
   | "forbidden"
   | "guard"
   | "lossy"

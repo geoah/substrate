@@ -181,7 +181,8 @@ type totpMaterial struct {
 }
 
 // authMaterial is a user's factors as the login path needs them: the stored
-// password hash, the TOTP seed and step, and the refs they came from.
+// password hash, the TOTP seed and step, and the refs they came from. An empty
+// totpRef is an account registered without a second factor.
 type authMaterial struct {
 	passwordRef  string
 	passwordHash string
@@ -237,6 +238,9 @@ func (s *service) authMaterialOf(ctx context.Context, repoID string) (authMateri
 		return m, err
 	}
 	m.passwordHash = string(hash)
+	if totpRef == "" {
+		return m, nil
+	}
 	raw, err := s.openSealed(ctx, repoID, totpRef)
 	if err != nil {
 		return m, err
@@ -470,14 +474,26 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 // cannot register themselves out of their own account — and the step it matched
 // is stored as consumed, so the code that registered cannot also log in.
 //
+// A registration that skips the factor commits none, and an empty seed is what
+// writeCredential reads as "no factor". The skip is explicit, so a client that
+// lost its enrollment on the way is refused rather than registered without one.
 // With the factor disabled (WithInsecureDisableTOTP) no code is asked for, and
-// a registration that sends no seed at all gets a freshly minted one: the
-// credential still HAS a second factor, sealed and unused, for the day the flag
-// comes off.
+// a registration that sends no seed has none either: a seed nobody holds would
+// lock the account out the day the flag comes off.
 func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, error) {
-	if s.totpDisabled && in.TOTPSecret == "" {
-		seed, err := NewTOTPSecret()
-		return seed, 0, err
+	if in.SkipTOTP {
+		if in.TOTPSecret != "" || in.TOTPCode != "" {
+			return "", 0, fmt.Errorf("%w: skipTotp registers without a second factor, so it takes no totpSecret or totpCode",
+				substrate.ErrValidation)
+		}
+		return "", 0, nil
+	}
+	if in.TOTPSecret == "" {
+		if s.totpDisabled {
+			return "", 0, nil
+		}
+		return "", 0, fmt.Errorf("%w: send the enrollment's totpSecret and one totpCode from it, or skipTotp",
+			substrate.ErrValidation)
 	}
 	seed, err := normalizeTOTPSecret(in.TOTPSecret)
 	if err != nil {
@@ -534,14 +550,21 @@ func validPassword(p string) error {
 // RB-6 needs them identical). It answers the SAME error for an unknown
 // repository, a wrong password and a wrong code, and does the same argon2id
 // and HMAC work on every path so the timing says nothing either.
+//
+// The one other answer is ErrTOTPRequired: the password is right, the account
+// has a second factor and no code came. It is what lets a client ask for the
+// password first and the code only of an account that has one, and it is
+// given only to a caller who already proved the password.
 func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (Repository, authMaterial, error) {
 	authErr := fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
 	repo, rerr := s.repositoryByID(ctx, in.Repository)
 	material := authMaterial{passwordHash: dummyPasswordHash, totp: totpMaterial{}}
 	key := dummyTOTPKey
+	hasFactor := false
 	if rerr == nil {
 		if got, err := s.authMaterialOf(ctx, repo.ID); err == nil {
 			material = got
+			hasFactor = got.totpRef != ""
 			if k, err := decodeTOTPSecret(got.totp.Secret); err == nil && len(k) >= totpMinSeedBytes {
 				key = k
 			}
@@ -549,18 +572,25 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 	}
 	passwordOK := verifyPassword(ctx, material.passwordHash, in.Password)
 	step, codeOK := totpVerify(key, in.TOTPCode, s.now(), material.totp.Step)
-	// The dev escape hatch (WithInsecureDisableTOTP): the code is still
-	// evaluated above, so the work and the timing are unchanged, and only the
-	// VERDICT is dropped. Nothing is consumed either — a step spent here would
+	// The dev escape hatch (WithInsecureDisableTOTP), and an account
+	// registered without a second factor: the code is still evaluated above,
+	// so the work and the timing are unchanged, and only the VERDICT is
+	// dropped. Nothing is consumed either — a step spent here would
 	// invalidate codes the enrolled authenticator is still showing, which is
 	// what would make turning the factor back on a lockout.
-	if s.totpDisabled {
+	if s.totpDisabled || !hasFactor {
 		if rerr != nil || !passwordOK {
 			return Repository{}, authMaterial{}, authErr
 		}
 		return repo, material, nil
 	}
-	if rerr != nil || !passwordOK || !codeOK {
+	if rerr != nil || !passwordOK {
+		return Repository{}, authMaterial{}, authErr
+	}
+	if normalizeTOTPCode(in.TOTPCode) == "" {
+		return Repository{}, authMaterial{}, substrate.ErrTOTPRequired
+	}
+	if !codeOK {
 		return Repository{}, authMaterial{}, authErr
 	}
 	// The code is spent BEFORE anything is handed out, under the sealed row's
@@ -678,8 +708,9 @@ func (s *service) BeginTOTPReenrollment(ctx context.Context, in substrate.LoginI
 	return newEnrollment(in.Repository)
 }
 
-// ReenrollTOTP swaps the second factor: the current factors AND one code from
-// the candidate seed, so the swap cannot land on a seed nobody holds.
+// ReenrollTOTP swaps the second factor, or enrolls the first one of an account
+// registered without: the current factors AND one code from the candidate
+// seed, so the swap cannot land on a seed nobody holds.
 func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, newSecret, newCode string) error {
 	seed, err := normalizeTOTPSecret(newSecret)
 	if err != nil {
@@ -803,7 +834,7 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 	// lock. Never write a step below what is stored for the same secret, or a
 	// spent code could be replayed at the new credential.
 	step := cw.totp.Step
-	if curT.String != "" {
+	if curT.String != "" && cw.totp.Secret != "" {
 		if raw, err := t.openSealedRef(curT.String); err == nil {
 			var cur totpMaterial
 			if json.Unmarshal(raw, &cur) == nil && cur.Secret == cw.totp.Secret && cur.Step > step {
@@ -822,21 +853,29 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 	if err != nil {
 		return err
 	}
-	totpRef, err := newAuthRef("totp")
-	if err != nil {
-		return err
-	}
 	sealedPassword, err := t.ds.sealPayload([]byte(cw.passwordHash),
 		sealedAAD(hashRef, kindCredential, credentialID))
 	if err != nil {
 		return err
 	}
-	sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}),
-		sealedAAD(totpRef, kindCredential, credentialID))
-	if err != nil {
-		return err
+	material := map[string][]byte{hashRef: sealedPassword}
+	props := map[string]any{"repository": cw.repository, "passwordRef": hashRef}
+	// An empty seed is an account without a second factor: no sealed row and
+	// no totpRef, so the record itself says the account has none.
+	if cw.totp.Secret != "" {
+		totpRef, err := newAuthRef("totp")
+		if err != nil {
+			return err
+		}
+		sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}),
+			sealedAAD(totpRef, kindCredential, credentialID))
+		if err != nil {
+			return err
+		}
+		material[totpRef] = sealedTOTP
+		props["totpRef"] = totpRef
 	}
-	for ref, payload := range map[string][]byte{hashRef: sealedPassword, totpRef: sealedTOTP} {
+	for ref, payload := range material {
 		var updated time.Time
 		if err := t.row(`
 			INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
@@ -847,10 +886,7 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		t.mirrorSealedWrite(sealedRecordOf(ref, kindCredential, credentialID, payload, sql.NullTime{}, updated))
 	}
 	if _, err := t.put(substrate.PutInput{
-		Kind: kindCredential, ID: credentialID,
-		Properties: map[string]any{
-			"repository": cw.repository, "passwordRef": hashRef, "totpRef": totpRef,
-		},
+		Kind: kindCredential, ID: credentialID, Properties: props,
 	}); err != nil {
 		return err
 	}

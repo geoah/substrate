@@ -57,6 +57,9 @@ export interface RegisterInput {
   password: string
   totpSecret: string
   totpCode: string
+  /** Registers without a second factor, which the owner may turn on later in
+   * Settings; `totpSecret` and `totpCode` are then empty. */
+  skipTotp?: boolean
   label?: string
   /** A client-generated age recipient; absent asks the substrate to mint the
    * pair and return the identity once. */

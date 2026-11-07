@@ -646,8 +646,9 @@ metadata, and takes one of two doors, which make two kinds of session
   (`SUBSTRATE_SYNC_REDIRECT`). The sign-in
   screen lists what the approval will ask for, in the approval page's
   words, before it opens the sheet.
-- Any other server gets the password form, as before: the repository, the
-  password, and a code only when `registration.totpRequired` says so.
+- Any other server gets the password form, as before: the repository and the
+  password, and a code only when the door answers `totp_required`, which it
+  does for an account with a second factor.
 
 Either session is kept in the Keychain under the service
 `dev.reamde.substrate.sync` and the app's access group, which the share

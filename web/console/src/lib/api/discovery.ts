@@ -1,8 +1,9 @@
 /** Discovery (`GET /.well-known/substrate/server.json`): what this deployment
  * serves, answered without a token and without opening a repository — which
- * is what lets the DOOR read it. The login and register pages ask it two
- * things: does this substrate read an invite code, and does it verify a
- * second factor at all? Registration also reads one feature, `operatorDefaults`,
+ * is what lets the DOOR read it. The register page asks it two things: does
+ * this substrate read an invite code, and does it verify a second factor at
+ * all? Login asks it the first; whether to ask for a code is the login's own
+ * answer (`totp_required`). Registration also reads one feature, `operatorDefaults`,
  * to decide where a new repository lands. The Settings page shows the
  * version, the REST endpoint and the features it lists.
  *
