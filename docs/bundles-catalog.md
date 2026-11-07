@@ -153,7 +153,20 @@ rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
 that row and they run. A later import of this bundle onto a repository born
 before the seed writes the same three rows and the same agents.
 
-- `substrate` is the one to chat with, a general assistant: it reads the
+- `moss` is the one to chat with: Moss, a general assistant with a name and a
+  temperament (calm, plain-spoken, dry), that answers a question about the
+  world from the model's own knowledge with no tool call and a question
+  about the owner from their records. It holds what `substrate` holds
+  (below), plus `wait`, and two sub-agents: `mossArchitect`, the one agent
+  with the [`vocabulary`](agents.md#tools) built-in, which plans every
+  change to the owner's kinds and applies it only when the owner asked,
+  its writes naming `core/package` and `core/kind` alone; and
+  `mossLibrarian`, which Moss calls as a
+  [background job](agents.md#background-jobs) for bulk record work on a
+  budget of its own (128 tool calls over 24 turns). Both are
+  `hiddenFromChat`.
+- `substrate` is the assistant before Moss, `supporting` now and kept so
+  its threads continue, a general assistant: it reads the
   whole graph through the `query` built-in, calls every function an
   installed bundle [offers](agents.md#offered-functions) before composing
   queries of its own, writes a change the owner asked for through `write`,

@@ -2,14 +2,18 @@
 
 Package `samples.substrate.reamde.dev/llm`: the agents the substrate seeds
 into every new repository, imported onto the repository's own authority at
-registration. It is the practice surface for the decision loop: `substrate`
-answers questions about your records and proposes changes, `substrateEditor`
+registration. `moss` is the one to chat with: Moss, your assistant, which
+answers a question about the world on its own and a question about you from
+your records, hands a new collection to `mossArchitect` and bulk record work
+to `mossLibrarian` ([the plan](../../docs/plans/moss.md)). The rest are the
+practice surface for the decision loop: `substrate`, the assistant before
+Moss, answers questions about your records and proposes changes, `substrateEditor`
 writes them, `substrateArbiter` and `substrateJudge` decide on proposals,
 `substrateSummarizer` summarizes a thread (hidden from chat), and
 `substrateEcho` returns its input. Every agent names the provider row
 `openai`, which is keyless until you write an `apiKey` onto it.
 
-`bundle.yaml` is the closure: the package, the six agents and one kind,
+`bundle.yaml` is the closure: the package, the nine agents and one kind,
 `scratchpad`, a name and a note with no stakes, so the proposals, edits and
 verdicts have a record to land on. `providers.yaml` is the three keyless
 `substrate.reamde.dev/llm/provider` rows, `openai`, `anthropic` and `gemini`,
