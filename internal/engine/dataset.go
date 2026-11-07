@@ -538,6 +538,10 @@ type txn struct {
 	// written (admitRequestDiff), so checkCreateID does not judge it again
 	// against the accepting owner.
 	idAdmitted bool
+	// effectBy is the function whose effect the transaction is applying
+	// (applyEffects), so a refusal can name the body that has to change
+	// rather than the actor it writes as.
+	effectBy *vocabulary.Function
 	// wc is the context tx was begun under (beginWrite): the request's until
 	// commitAndMirror starts, the commit budget's from then on. Nil on a
 	// transaction that commits some other way.

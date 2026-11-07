@@ -35,6 +35,10 @@ func TestAnAgentWriteCreatesUnderAMintedID(t *testing.T) {
 	if !toolResultsContain(t, ds, res.Thread, "is not a minted id") {
 		t.Fatalf("the named create was not refused: %+v", threadMessages(t, ds, res.Thread))
 	}
+	// An agent cannot POST: the refusal tells it to leave the id out.
+	if !toolResultsContain(t, ds, res.Thread, "Leave the id out") {
+		t.Fatalf("the refusal does not say the agent's fix: %+v", threadMessages(t, ds, res.Thread))
+	}
 	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-made"); err == nil {
 		t.Fatal("the agent named a new widget")
 	}

@@ -370,7 +370,9 @@ func (t *txn) applyEffects(emit []string, effects []effect) error {
 	if err := t.lockEffectTargets(effects); err != nil {
 		return err
 	}
+	defer func() { t.effectBy = nil }()
 	for _, ef := range effects {
+		t.effectBy = ef.by
 		if err := t.applyEffect(ef); err != nil {
 			return yieldedConflict(ef, err)
 		}
