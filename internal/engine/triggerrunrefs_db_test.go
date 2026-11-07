@@ -74,6 +74,13 @@ func TestTriggerRunsAreReadThroughRefs(t *testing.T) {
 	for i := range 8 {
 		putRuns(fmt.Sprintf("other-%d", i), runStatusOK, runRetention)
 	}
+	// And fresh statistics: on the planner's defaults for unanalyzed rows the
+	// two still tie, and the rows every repository is seeded with decide.
+	for _, table := range []string{"refs", "records"} {
+		if _, err := ds.svc.admin.ExecContext(ctx, `ANALYZE `+table); err != nil {
+			t.Fatalf("analyze %s: %v", table, err)
+		}
+	}
 	// The read counts parked runs only while their delivery (seq 7) still
 	// stands in the ledger, from the oldest one (decision 0177).
 	if _, err := ds.db.ExecContext(ctx, `
