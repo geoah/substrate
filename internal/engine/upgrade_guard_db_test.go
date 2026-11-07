@@ -295,7 +295,7 @@ func openMovedRefused(t *testing.T, dsn, tree string) string {
 func openRefused(t *testing.T, dsn, tree string) string {
 	t.Helper()
 	var refused string
-	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+	log := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{ //nolint:sloglint // ReplaceAttr captures the refusal, which slog.DiscardHandler never calls
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if a.Key == "refused" {
 				refused = a.Value.String()

@@ -895,7 +895,7 @@ func (t *txn) derivationView() foldView {
 // apply leaves its reshaped kinds to the background pass behind its commit
 // (reprojection.go), which holds no lock across a kind.
 func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
-	prog := t.ds.svc.progress("substrate: re-deriving the search index of one kind",
+	prog := t.ds.svc.progress("re-deriving the search index of one kind",
 		"repository", logSafeID(t.ds.scope.Repository))
 	for _, kind := range kinds {
 		after := ""

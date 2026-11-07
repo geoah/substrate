@@ -26,6 +26,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,10 @@ import (
 )
 
 func main() {
+	// slog's built-in default prints a message unquoted through the stdlib
+	// log package. stdout is this tool's output, so lines go to stderr, and
+	// only warnings and worse.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "synth:", err)
 		os.Exit(1)

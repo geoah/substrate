@@ -199,7 +199,7 @@ func (l *writerLease) acquireNew(parent context.Context, repository string) (boo
 		}
 		// The session could not be reached, so nothing it holds can be
 		// vouched for either.
-		l.dropConn(err, "substrate: the writer lease's connection failed while taking a lease")
+		l.dropConn(err, "taking a lease")
 		if attempt == 1 {
 			return false, fmt.Errorf("substrate/engine: take the writer lease on %s: %w", repository, err)
 		}
@@ -235,13 +235,15 @@ func (l *writerLease) closeConn() {
 
 // dropConn is closeConn plus the refusal, for a connection that failed while
 // the process was holding leases on it. The heartbeat takes back whatever was
-// on it. Called with mu held.
-func (l *writerLease) dropConn(cause error, msg string) {
+// on it. while names what the connection was doing when it failed. Called
+// with mu held.
+func (l *writerLease) dropConn(cause error, while string) {
 	if len(l.held) > 0 {
 		// Nothing held is nothing lost: latching here would refuse every
 		// write on behalf of a session that was guarding no repository.
 		l.lost.Store(true)
-		l.log.Error(msg, "repositories", len(l.held), "error", cause)
+		l.log.Error("substrate: the writer lease's connection failed; it is discarded, and the leases on it are retaken",
+			"while", while, "repositories", len(l.held), "error", cause)
 	}
 	l.closeConn()
 }
@@ -305,7 +307,7 @@ func (l *writerLease) release(repository string) {
 		// it, so the connection goes: ending the session releases this lease
 		// and every other on it, and the refusal that follows has the
 		// heartbeat retake the ones that are still this process's.
-		l.dropConn(err, "substrate: could not release the writer lease of a creation that failed; discarding its connection, and the leases on it are retaken")
+		l.dropConn(err, "releasing the lease of a creation that failed")
 	}
 }
 

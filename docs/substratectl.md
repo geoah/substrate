@@ -271,7 +271,8 @@ answer whole.
   `apply` prints `applying 96 documents in 12 packages, 1m20s elapsed` to
   stderr every 10 s (`previewing …` for the `--allow-data-loss` preview), and
   stdout carries the summary alone. The server logs each step of the batch
-  at info as the step starts, each message prefixed `vocabulary apply:`.
+  at info as the step starts, each a `substrate: vocabulary apply` line
+  whose `step` names it.
   Every batch logs `holding the registry lock`, one `writing the
   declarations of one package` line per package with its `index` among the
   batch's `packages`, and `committed` or `ended with an error` with the time

@@ -42,6 +42,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,6 +56,10 @@ import (
 )
 
 func main() {
+	// slog's built-in default prints a message unquoted through the stdlib
+	// log package. stdout is this tool's output, so lines go to stderr, and
+	// only warnings and worse.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	terms := flag.String("terms", "docs/terms.md", "the page whose dead words a new kind id may not carry")
 	flag.Parse()
 	if flag.NArg() != 2 {

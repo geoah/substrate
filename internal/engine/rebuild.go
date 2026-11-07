@@ -285,7 +285,7 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// One cursor across every page, so each segment is read once (issue 745).
 	cur := log.Cursor(0)
 	defer func() { _ = cur.Close() }()
-	prog := t.ds.svc.progress("substrate: replaying the changelog into the fold",
+	prog := t.ds.svc.progress("replaying the changelog into the fold",
 		"repository", t.ds.scope.Repository, "head", log.Head())
 	for {
 		entries, err := cur.Next(rebuildBatch)

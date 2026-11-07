@@ -189,7 +189,7 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	// pass below reads again rather than opening the directory a second time.
 	// A directory that does not verify is one finding, and the table is
 	// still walked so the report says what the table holds.
-	prog := s.progress("substrate: verifying the changelog files", "repository", repo.ID)
+	prog := s.progress("verifying the changelog files", "repository", repo.ID)
 	log, fileReport, fileErr := changelogfile.VerifyDir(changelogfile.ChangelogDir(dir), changelogfile.VerifyOptions{Progress: prog.tick, Known: opts.known})
 	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
 	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
@@ -244,7 +244,7 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	}
 	fileSeq := expected - 1
 	var fileSum [32]byte
-	prog = s.progress("substrate: verifying the changelog table against the files", "repository", repo.ID)
+	prog = s.progress("verifying the changelog table against the files", "repository", repo.ID)
 	var openTxn int64
 	for {
 		var page []checksumRow

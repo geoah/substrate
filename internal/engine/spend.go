@@ -586,17 +586,20 @@ func (ds *dataset) noteHold(tr *trigger, text string) {
 		delete(s.held, tr.ID)
 	}
 	s.mu.Unlock()
-	held, resumed := "substrate: agent trigger held at a spend cap, its deliveries wait",
-		"substrate: agent trigger under its spend cap again, its deliveries resume"
-	if tr.Agent == nil {
-		held, resumed = "substrate: function trigger held at the allowance, its deliveries wait",
-			"substrate: function trigger within the allowance again, its deliveries resume"
-	}
+	agent := tr.Agent != nil
 	switch {
+	case text != "" && !was && agent:
+		ds.svc.log.Warn("substrate: agent trigger held at a spend cap, its deliveries wait",
+			"trigger", logSafeID(tr.ID), "callable", tr.CallableID, "held", text)
 	case text != "" && !was:
-		ds.svc.log.Warn(held, "trigger", logSafeID(tr.ID), "callable", tr.CallableID, "held", text)
+		ds.svc.log.Warn("substrate: function trigger held at the allowance, its deliveries wait",
+			"trigger", logSafeID(tr.ID), "callable", tr.CallableID, "held", text)
+	case text == "" && was && agent:
+		ds.svc.log.Info("substrate: agent trigger under its spend cap again, its deliveries resume",
+			"trigger", logSafeID(tr.ID), "callable", tr.CallableID)
 	case text == "" && was:
-		ds.svc.log.Info(resumed, "trigger", logSafeID(tr.ID), "callable", tr.CallableID)
+		ds.svc.log.Info("substrate: function trigger within the allowance again, its deliveries resume",
+			"trigger", logSafeID(tr.ID), "callable", tr.CallableID)
 	}
 }
 
