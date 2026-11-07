@@ -45,8 +45,8 @@ import (
 // backup repairs it.
 var ErrChangelogDamaged = fmt.Errorf("%w: a finished changelog segment does not match its sidecar; restore the repository directory from a backup", substrate.ErrCorrupt)
 
-// checkInBackground is the background digest's progress line.
-const checkInBackground = "substrate: digesting the changelog segments the open did not read"
+// checkInBackground is the background digest's progress walk.
+const checkInBackground = "digesting the changelog segments the open did not read"
 
 // DefaultDigestBytesPerSecond is the rate the background digests hash at
 // when no option names one: 8 MiB per second over every repository the

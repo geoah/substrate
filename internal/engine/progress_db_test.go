@@ -59,12 +59,12 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 
 	out := logs.String()
 	for _, msg := range []string{
-		"substrate: verifying the changelog files",
-		"substrate: verifying the changelog table against the files",
-		"substrate: replaying the changelog into the fold",
-		"substrate: importing the changelog rows",
+		"verifying the changelog files",
+		"verifying the changelog table against the files",
+		"replaying the changelog into the fold",
+		"importing the changelog rows",
 	} {
-		lines := linesWith(out, `msg="`+msg+`"`)
+		lines := linesWith(out, `msg="substrate: progress" walk="`+msg+`"`)
 		if len(lines) == 0 {
 			t.Errorf("no progress line for %q\n%s", msg, out)
 			continue
@@ -78,7 +78,7 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 		// The file walk ticks per entry, so its lines cross segments (every
 		// transaction here is one); the paged passes tick per page of 500,
 		// which this history fits in, so their one line is at the head.
-		if first := lines[0]; msg == "substrate: verifying the changelog files" &&
+		if first := lines[0]; msg == "verifying the changelog files" &&
 			(segmentOf(first) == "" || segmentOf(first) >= segmentOf(last)) {
 			t.Errorf("%q did not move across segments: first %s, last %s", msg, first, last)
 		}

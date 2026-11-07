@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"strings"
@@ -14,6 +15,51 @@ import (
 // is not doing, so it is asserted rather than eyeballed: and asserted for
 // platforms this test is not running on, because the macOS branch is the one
 // that matters most and the one no CI machine executes.
+
+// captureHandler keeps every record a report logs.
+type captureHandler struct{ records []slog.Record }
+
+func (h *captureHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *captureHandler) WithGroup(string) slog.Handler      { return h }
+
+// logged is the one line fn logs, as its level, message and key-value
+// attributes, and false when it logs none.
+func logged(fn func(*slog.Logger)) (slog.Level, string, []any, bool) {
+	h := &captureHandler{}
+	fn(slog.New(h))
+	if len(h.records) == 0 {
+		return 0, "", nil, false
+	}
+	r := h.records[0]
+	var attrs []any
+	r.Attrs(func(a slog.Attr) bool {
+		attrs = append(attrs, a.Key, a.Value.Any())
+		return true
+	})
+	return r.Level, r.Message, attrs, true
+}
+
+func sandboxReport(mode sandbox.Mode, report sandbox.Report) (slog.Level, string, []any) {
+	level, msg, attrs, _ := logged(func(log *slog.Logger) { logSandbox(log, mode, report) })
+	return level, msg, attrs
+}
+
+func trustReport(trust runner.TrustStore, err error) (slog.Level, string, []any) {
+	level, msg, attrs, _ := logged(func(log *slog.Logger) { logTrust(log, trust, err) })
+	return level, msg, attrs
+}
+
+func egressAllowReport(name, raw string) (string, []any, bool) {
+	_, msg, attrs, ok := logged(func(log *slog.Logger) { logEgressAllow(log, name, raw) })
+	return msg, attrs, ok
+}
 
 func attr(attrs []any, key string) string {
 	for i := 0; i+1 < len(attrs); i += 2 {
@@ -33,8 +79,8 @@ func TestBootLineOnMacOSEnumeratesWhatIsNotEnforced(t *testing.T) {
 	if level != slog.LevelWarn {
 		t.Fatalf("level = %v, want WARN: an unsupported platform is a development choice, not a broken deployment", level)
 	}
-	if !strings.Contains(msg, "darwin") || !strings.Contains(msg, "NOT confined") {
-		t.Fatalf("message does not name the platform and the consequence: %q", msg)
+	if !strings.Contains(msg, "NOT confined") {
+		t.Fatalf("message does not name the consequence: %q", msg)
 	}
 	// The advice must NOT be the one that cannot help here: there is no kernel
 	// setting to change, and enforce would refuse to run any function at all.
@@ -100,7 +146,7 @@ func TestBootLineNamesIgnoredEgressAllowEntries(t *testing.T) {
 	if !ok {
 		t.Fatal("two unparseable entries produced no line")
 	}
-	if !strings.Contains(msg, "SUBSTRATE_SANDBOX_EGRESS_ALLOW") || attr(attrs, "variable") != "SUBSTRATE_SANDBOX_EGRESS_ALLOW" {
+	if attr(attrs, "variable") != "SUBSTRATE_SANDBOX_EGRESS_ALLOW" {
 		t.Fatalf("the line does not name the variable: %q %v", msg, attrs)
 	}
 	if got := attr(attrs, "ignored"); got != "10.0.0.0/33, beeper.local" {
@@ -210,9 +256,6 @@ func TestBootLineNamesEachMissingLayer(t *testing.T) {
 			for _, want := range tc.want {
 				if !strings.Contains(missing, want) {
 					t.Fatalf("missing = %q, want it to name %q", missing, want)
-				}
-				if !strings.Contains(msg, want) {
-					t.Fatalf("message = %q, want it to name %q", msg, want)
 				}
 			}
 			for _, not := range tc.notWant {

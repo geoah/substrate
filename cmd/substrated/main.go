@@ -67,6 +67,11 @@ const (
 )
 
 func main() {
+	// slog's built-in default prints a message unquoted through the stdlib
+	// log package, so a quoting handler is in place before anything can log.
+	// setupLogger replaces it once the configured level is known.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
 	// FIRST, before anything reads configuration or opens a connection: every
 	// moment between execve and this call is a moment a same-uid process can
 	// read this one's environment, and the environment is where the credential
@@ -137,7 +142,7 @@ func run() error {
 		return fmt.Errorf("SUBSTRATE_SITE_DIR: %w", err)
 	}
 	if siteDir != nil {
-		slog.Info("serving the site directory at "+site.URLPrefix, "dir", siteDir.Dir(), "name", siteDir.Info().Name)
+		slog.Info("serving the site directory", "prefix", site.URLPrefix, "dir", siteDir.Dir(), "name", siteDir.Info().Name)
 	}
 	// The operator defaults file the same way, and before the boot: a missing
 	// key file is a refusal in the first second. It holds key references, so

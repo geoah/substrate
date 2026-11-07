@@ -19,7 +19,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const applyLog = `msg="substrate: vocabulary apply: `
+const applyLog = `msg="substrate: vocabulary apply" step=`
 
 func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 	t.Parallel()
@@ -62,11 +62,11 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		}),
 	)
 	wantSteps(t, lines,
-		[]string{applyLog + `building an index"`, "kind=" + depot + "/crate", "index=idx_"},
-		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=5", "packages=2"},
-		[]string{applyLog + `writing the declarations of one package"`, "package=" + depot, "declarations=2", "index=1", "packages=2"},
-		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "declarations=3", "index=2", "packages=2"},
-		[]string{applyLog + `committed"`, "took="},
+		[]string{applyLog + `"building an index"`, "kind=" + depot + "/crate", "index=idx_"},
+		[]string{applyLog + `"holding the registry lock, checking the batch against the stored records"`, "documents=5", "packages=2"},
+		[]string{applyLog + `"writing the declarations of one package"`, "package=" + depot, "declarations=2", "index=1", "packages=2"},
+		[]string{applyLog + `"writing the declarations of one package"`, "package=" + shop, "declarations=3", "index=2", "packages=2"},
+		[]string{applyLog + `committed`, "took="},
 	)
 
 	// A backfill walks the stored widgets after the declarations are
@@ -81,11 +81,11 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		"mood":  map[string]any{"type": "string", "required": true, "default": "neutral"},
 	}))
 	wantSteps(t, lines,
-		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
-		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
-		[]string{applyLog + `rewriting records for the declared conversions"`},
-		[]string{applyLog + `requesting the search and observed index re-derivation behind the commit"`, "kinds=1"},
-		[]string{applyLog + `committed"`, "took="},
+		[]string{applyLog + `"holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
+		[]string{applyLog + `"writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
+		[]string{applyLog + `"rewriting records for the declared conversions"`},
+		[]string{applyLog + `"requesting the search and observed index re-derivation behind the commit"`, "kinds=1"},
+		[]string{applyLog + `committed`, "took="},
 	)
 	// The pass deletes the request before it logs the kind, so the log is
 	// read once the run has returned.
@@ -107,13 +107,13 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		"mood": map[string]any{"type": "string", "required": true, "default": "neutral"},
 	}))
 	wantSteps(t, lines,
-		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
-		[]string{applyLog + `ended with an error"`, "took="},
+		[]string{applyLog + `"holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
+		[]string{applyLog + `"ended with an error"`, "took="},
 	)
 
 	// One the loader refuses before any lock is taken ends the same way.
 	lines = logged(true, widget(map[string]any{"label": map[string]any{"type": "nosuchtype"}}))
-	wantSteps(t, lines, []string{applyLog + `ended with an error"`, "took="})
+	wantSteps(t, lines, []string{applyLog + `"ended with an error"`, "took="})
 
 	// A batch behind another says it is waiting before it waits.
 	release := engine.HoldVocabularyWrites(ds)
@@ -126,7 +126,7 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		})})
 		done <- err
 	}()
-	waiting := applyLog + `waiting for the vocabulary batch ahead of this one"`
+	waiting := applyLog + `"waiting for the vocabulary batch ahead of this one"`
 	for deadline := time.Now().Add(30 * time.Second); !strings.Contains(logs.String()[before:], waiting); {
 		if time.Now().After(deadline) {
 			release()
@@ -140,9 +140,9 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 	}
 	wantSteps(t, linesWith(logs.String()[before:], applyLog),
 		[]string{waiting},
-		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
-		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
-		[]string{applyLog + `committed"`, "took="},
+		[]string{applyLog + `"holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
+		[]string{applyLog + `"writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
+		[]string{applyLog + `committed`, "took="},
 	)
 }
 

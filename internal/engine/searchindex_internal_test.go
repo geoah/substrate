@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -12,7 +11,7 @@ import (
 // a shutdown closing many repositories would otherwise wait once for each.
 func TestClosingADatasetAfterTheShutdownDrainDoesNotWaitForTheReindex(t *testing.T) {
 	t.Parallel()
-	svc := &service{bg: newBackground(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	svc := &service{bg: newBackground(), log: slog.New(slog.DiscardHandler)}
 	svc.stopBackground(time.Second)
 	canceled := false
 	ds := &dataset{svc: svc}

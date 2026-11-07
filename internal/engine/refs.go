@@ -442,7 +442,7 @@ func (t *txn) syncRefsOfKind(ident string) error {
 	// One row at a time, so the walk says where it is: a kind of many rows
 	// takes minutes here, and the registry-dependency lock the caller holds
 	// has every write on the repository waiting.
-	prog := t.ds.svc.progress("substrate: re-deriving the refs index of one kind",
+	prog := t.ds.svc.progress("re-deriving the refs index of one kind",
 		"repository", logSafeID(t.ds.scope.Repository), "kind", ident, "total", len(ids))
 	for i, id := range ids {
 		if err := t.syncRefsOf(eref{Kind: ident, ID: id}); err != nil {

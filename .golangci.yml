@@ -39,6 +39,7 @@ linters:
     - nolintlint
     - reassign
     - rowserrcheck
+    - sloglint
     - staticcheck
     - unconvert
     - unused
@@ -137,6 +138,14 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+    # CodeQL's go/log-injection exclusion rests on slog's handlers quoting a
+    # value; a message built from one is the half a reader takes as the
+    # substrate's own words, so it is a constant and the value an attribute.
+    # Arguments are key-value pairs, as the whole tree writes them.
+    sloglint:
+      no-mixed-args: true
+      kv-only: true
+      static-msg: true
     staticcheck:
       checks:
         - all

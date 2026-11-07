@@ -540,13 +540,13 @@ func (ds *dataset) spoolDrainFailed(name string, err error) {
 	metrics.WebhookSpoolDrainFailures.WithLabelValues(ds.Repository().ID).Inc()
 	outcome := webhookFireOutcome(err)
 	if errors.Is(err, errSpoolUnreadable) {
-		ds.svc.log.Error("substrate: a spooled webhook request does not open; it is set aside as "+changelogfile.UnreadableSpoolSuffix,
-			"repository", ds.Repository().ID, "file", name)
+		ds.svc.log.Error("substrate: a spooled webhook request does not open; it is set aside under a suffix",
+			"repository", ds.Repository().ID, "file", name, "suffix", changelogfile.UnreadableSpoolSuffix)
 		return
 	}
 	if reason := spoolAdmissionRefused(err); reason != "" {
-		ds.svc.log.Error("substrate: a spooled webhook request was refused at admission; it is set aside as "+changelogfile.RefusedSpoolSuffix,
-			"repository", ds.Repository().ID, "file", name, "reason", reason)
+		ds.svc.log.Error("substrate: a spooled webhook request was refused at admission; it is set aside under a suffix",
+			"repository", ds.Repository().ID, "file", name, "suffix", changelogfile.RefusedSpoolSuffix, "reason", reason)
 		return
 	}
 	ds.svc.log.Warn("substrate: a spooled webhook request could not be recorded; the drain retries",

@@ -152,11 +152,11 @@ func TestTheServerDigestsEachSegmentOnceAfterTheOpen(t *testing.T) {
 
 			out := logs.String()
 			for _, msg := range []string{
-				"substrate: boot check: checking the changelog segments",
-				"substrate: open: checking the changelog segments",
-				"substrate: digesting the changelog segments the open did not read",
+				"boot check: checking the changelog segments",
+				"open: checking the changelog segments",
+				"digesting the changelog segments the open did not read",
 			} {
-				lines := linesWith(out, `msg="`+msg+`"`)
+				lines := linesWith(out, `msg="substrate: progress" walk="`+msg+`"`)
 				if len(lines) == 0 {
 					t.Errorf("no progress line for %q\n%s", msg, out)
 					continue

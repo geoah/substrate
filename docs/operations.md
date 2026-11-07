@@ -918,12 +918,13 @@ it trusts:
   transactions of 500 rows, and leaves every other row alone, since a row
   carrying none of them derives the same rows under either declaration. It
   logs `substrate: re-deriving the indexes of the kinds a declaration change
-  reshaped` with the kinds, `substrate: re-deriving the indexes of a
-  reshaped kind` as progress with `rows` and `elapsed`, `substrate:
-  re-derived the indexes of one kind` after each kind, and `substrate:
-  re-derived the indexes of the kinds a declaration change reshaped` with
-  `rows` and `took` at the end. A transaction that fails logs `substrate: a
-  background index re-derivation step failed; trying it again` and is tried
+  reshaped` with the kinds, `substrate: progress` with the `walk`
+  `re-deriving the indexes of a reshaped kind`, `rows` and `elapsed`,
+  `substrate: re-derived the indexes of one kind` after each kind, and
+  `substrate: re-derived the indexes of the kinds a declaration change
+  reshaped` with `rows` and `took` at the end. A transaction that fails logs
+  `substrate: a background pass step failed; trying it again` with the
+  `pass` `background index re-derivation` and the `step`, and is tried
   again after a pause of up to a minute. Each page records the id it ended
   at, so a pass a shutdown interrupts resumes there at the next open, and
   `repository rebuild` finishes it for the refs and the search index,
@@ -936,11 +937,12 @@ it trusts:
   over an older version) use the same pass for the search index and the
   observed index. Their transaction holds the registry lock every write
   waits on, so it re-derives only the refs rows of the rows carrying a
-  moved reference property, logging `substrate: vocabulary apply:
-  re-deriving the refs index`, and records the `fts` half and the observed
-  points of a kind that starts or stops binding the `observed` trait for
-  the pass, logging `substrate: vocabulary apply: requesting the search and
-  observed index re-derivation behind the commit` with `kinds`. The pass
+  moved reference property, logging `substrate: vocabulary apply` with the
+  `step` `re-deriving the refs index`, and records the `fts` half and the
+  observed points of a kind that starts or stops binding the `observed`
+  trait for the pass, logging `substrate: vocabulary apply` with the `step`
+  `requesting the search and observed index re-derivation behind the
+  commit` and `kinds`. The pass
   starts once the batch has committed and logs the lines above. A reverse
   read is current when the batch answers; until the pass reaches a row, a
   search over a moved `fts` flag and the observed index of a rebound kind
@@ -959,8 +961,9 @@ it trusts:
   `substrate: re-derived the search index of one kind` with `kind`, `done`
   and `total` after each kind, then `substrate: re-derived the search index`
   once it finishes. A transaction that fails logs
-  `substrate: a search index re-derivation step failed; trying it again` and
-  is tried again after a pause of up to a minute. A reindex a shutdown
+  `substrate: a background pass step failed; trying it again` with the
+  `pass` `search index re-derivation`, and is tried again after a pause of
+  up to a minute. A reindex a shutdown
   interrupts starts again at the next open; `repository rebuild` finishes
   it, because the replay indexes every row.
 - **The observed index is re-derived in the background** when the binary
@@ -1603,14 +1606,15 @@ the seqs the segment starts and ends at, and catch a segment cut short or
 torn, and takes the rest on the word of its `.sha256` sidecar. It reads the
 active segment whole, as before, and digests the last segment listed whole
 even when it is finished, since no segment after it says where it ends. After a segment, and at most once every
-30 s, it logs `boot check: checking the changelog segments` at info, marked
-`progress=true`, with the segments and bytes checked so far and the
-directory's totals; the repository's first open after the boot logs `open:
-checking the changelog segments` the same way. Once a repository is open,
+30 s, it logs `substrate: progress` at info, marked `progress=true`, with
+the `walk` `boot check: checking the changelog segments`, the segments and
+bytes checked so far and the directory's totals; the repository's first open
+after the boot logs the `walk` `open: checking the changelog segments` the
+same way. Once a repository is open,
 the server hashes its finished segments in the background, one at a time,
 logging `digesting the finished changelog segments behind the open` with the
-segments, the bytes and the rate cap when it starts, `digesting the
-changelog segments the open did not read` as progress at most every five
+segments, the bytes and the rate cap when it starts, the progress `walk`
+`digesting the changelog segments the open did not read` at most every five
 minutes, and `every finished changelog segment matches its sidecar` with
 `took` and the time it spent `paused` when done. The digest yields to real
 work: the process hashes at most `SUBSTRATE_DIGEST_BYTES_PER_SECOND` bytes a
@@ -1868,8 +1872,8 @@ the exec path needs nothing open at all.
   copied finished segment is hashed against its copied sidecar and held to
   the digest the source's verification took, so its lines are not walked a
   second time. It prints the same progress lines as `verify` while it
-  verifies the source, and `snapshot: checking the copied changelog
-  segments` while it reads the copy back. With `--base <earlier snapshot
+  verifies the source, and the progress `walk` `snapshot: checking the
+  copied changelog segments` while it reads the copy back. With `--base <earlier snapshot
   root>` it links what the base holds instead of reading and copying it
   ([backups](#backups)), and prints how many segments and blobs it linked.
   The

@@ -60,7 +60,7 @@ const searchReindexMaxPause = time.Minute
 // stopSearchReindex cancels the running reindex and waits for it to return;
 // final is the dataset closing.
 func (ds *dataset) stopSearchReindex(final bool) {
-	ds.reindex.stop(ds, final, "the search index re-derivation")
+	ds.reindex.stop(ds, final, "search index re-derivation")
 }
 
 // reindexSearch re-derives every row's `fts`, live and tombstoned, under this
@@ -114,7 +114,7 @@ func (ds *dataset) reindexSearch(ctx context.Context, from int) {
 	}
 	ds.svc.log.Info("substrate: re-deriving the search index",
 		"repository", repo, "from", from, "to", searchIndexVersion, "kinds", len(kinds), "rows", total)
-	prog := ds.svc.progress("substrate: re-deriving the search index", "repository", repo)
+	prog := ds.svc.progress("re-deriving the search index", "repository", repo)
 	for _, kind := range kinds {
 		n, err := ds.reindexKind(ctx, kind, func(rows int) {
 			done += int64(rows)

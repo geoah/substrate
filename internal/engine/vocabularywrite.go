@@ -1468,8 +1468,8 @@ type projectOpts struct {
 // registry lock, each package and the end always log, so an apply that
 // changes no stored record logs those alone.
 func (ds *dataset) logApply(step string, attrs ...any) {
-	ds.svc.log.Info("substrate: vocabulary apply: "+step,
-		append([]any{"repository", logSafeID(ds.scope.Repository)}, attrs...)...)
+	ds.svc.log.Info("substrate: vocabulary apply",
+		append([]any{"step", step, "repository", logSafeID(ds.scope.Repository)}, attrs...)...)
 }
 
 // projectPackages writes the touched packages' declarations as record rows

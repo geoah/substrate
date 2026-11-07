@@ -381,7 +381,7 @@ func (t *txn) requestReprojections(rs []indexReprojection) error {
 // waits on the registry lock this transaction holds.
 func (t *txn) rederiveMovedRefs(rs []indexReprojection) error {
 	view := t.derivationView()
-	prog := t.ds.svc.progress("substrate: re-deriving the refs index of one kind",
+	prog := t.ds.svc.progress("re-deriving the refs index of one kind",
 		"repository", logSafeID(t.ds.scope.Repository))
 	for _, r := range rs {
 		if !r.refs.moved {
@@ -539,7 +539,7 @@ func (ds *dataset) kickIndexReprojection() {
 // stopIndexReprojection cancels the running pass and waits for it to
 // return; final is the dataset closing.
 func (ds *dataset) stopIndexReprojection(final bool) {
-	ds.reproject.stop(ds, final, "the "+reprojectionPass)
+	ds.reproject.stop(ds, final, reprojectionPass)
 }
 
 // reprojectIndexes runs the pass: every kind owed, each in pages of
@@ -579,7 +579,7 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 		}
 		ds.svc.log.Info("substrate: the index re-derivation stopped before it finished; the next open resumes it", attrs...)
 	}
-	prog := ds.svc.progress("substrate: re-deriving the indexes of a reshaped kind", "repository", repo)
+	prog := ds.svc.progress("re-deriving the indexes of a reshaped kind", "repository", repo)
 	announced := false
 	for {
 		var pending []indexReprojection
@@ -903,8 +903,8 @@ func (ds *dataset) retryStep(ctx context.Context, pass, step string, fn func() e
 		if errors.Is(err, errRegistryUnsettled) {
 			return err
 		}
-		ds.svc.log.Error("substrate: a "+pass+" step failed; trying it again",
-			"repository", logSafeID(ds.scope.Repository), "step", step, "retry_in", pause, "error", err)
+		ds.svc.log.Error("substrate: a background pass step failed; trying it again",
+			"repository", logSafeID(ds.scope.Repository), "pass", pass, "step", step, "retry_in", pause, "error", err)
 		timer := time.NewTimer(pause)
 		select {
 		case <-ctx.Done():

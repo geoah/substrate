@@ -646,7 +646,7 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 	// One cursor across every batch, so each segment is read once (issue 745).
 	cur := log.Cursor(tableHead)
 	defer func() { _ = cur.Close() }()
-	prog := ds.svc.progress("substrate: importing the changelog rows",
+	prog := ds.svc.progress("importing the changelog rows",
 		"repository", ds.scope.Repository, "fileHead", log.Head())
 	var n int64
 	for {

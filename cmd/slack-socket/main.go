@@ -47,6 +47,10 @@ type Config struct {
 }
 
 func main() {
+	// slog's built-in default prints a message unquoted through the stdlib
+	// log package, so a quoting handler is in place before anything can log.
+	// run replaces it once the configured level is known.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
 		slog.Error("slack-socket stopped", "error", err)
 		os.Exit(1)

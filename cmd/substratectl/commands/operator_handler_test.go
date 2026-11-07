@@ -18,8 +18,8 @@ func TestOperatorHandlerPassesProgressAndWarningsOnly(t *testing.T) {
 	log := slog.New(operatorHandler{slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})})
 	log.Debug("substrate: debug")
 	log.Info("substrate: boot check started")
-	log.Info("substrate: verifying the changelog files", "seq", 5, engine.ProgressKey, true)
-	log.With("repository", "ada").Info("substrate: replaying the changelog into the fold", engine.ProgressKey, true)
+	log.Info("substrate: progress", "walk", "verifying the changelog files", "seq", 5, engine.ProgressKey, true)
+	log.With("repository", "ada").Info("substrate: progress", "walk", "replaying the changelog into the fold", engine.ProgressKey, true)
 	log.Warn("substrate: the changelog file was behind the table at open and was caught up")
 	out := buf.String()
 	for _, absent := range []string{"substrate: debug", "boot check started"} {
@@ -28,8 +28,8 @@ func TestOperatorHandlerPassesProgressAndWarningsOnly(t *testing.T) {
 		}
 	}
 	for _, present := range []string{
-		`msg="substrate: verifying the changelog files" seq=5 progress=true`,
-		`msg="substrate: replaying the changelog into the fold" repository=ada progress=true`,
+		`msg="substrate: progress" walk="verifying the changelog files" seq=5 progress=true`,
+		`msg="substrate: progress" repository=ada walk="replaying the changelog into the fold" progress=true`,
 		`level=WARN msg="substrate: the changelog file was behind the table at open and was caught up"`,
 	} {
 		if !strings.Contains(out, present) {
