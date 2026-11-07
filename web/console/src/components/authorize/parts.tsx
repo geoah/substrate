@@ -1,8 +1,8 @@
 /** The approval page's building blocks: a labelled fact, a warning, a
- * refusal, and the technical view's terms, identifiers and counted lists. */
+ * caution, a refusal, and the technical view's terms, identifiers and counted lists. */
 
 import type { ReactNode } from "react"
-import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react"
+import { ChevronRightIcon, InfoIcon, TriangleAlertIcon } from "lucide-react"
 
 import {
   Collapsible,
@@ -46,6 +46,25 @@ export function Warning({
         {title && <p className="font-medium">{title}</p>}
         <div>{children}</div>
       </div>
+    </div>
+  )
+}
+
+/** Something the owner should know before approving that is not a reason to
+ * hesitate: one quiet line, where a Warning would shout. */
+export function Caution({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div role="note" className="flex gap-2 text-xs text-muted-foreground">
+      <InfoIcon aria-hidden className="mt-px size-3.5 shrink-0" />
+      <p>
+        <span className="font-medium text-foreground">{title}</span>. {children}
+      </p>
     </div>
   )
 }

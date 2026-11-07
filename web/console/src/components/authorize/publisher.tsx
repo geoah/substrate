@@ -10,21 +10,32 @@ import { Fact, Warning } from "@/components/authorize/parts"
 import type { AuthorizationRequest } from "@/lib/api/types"
 import { accessGoesTo } from "@/lib/app-publisher"
 
-/** The lines under the heading that say who publishes the app. */
+/** The lines under the app's name that say who publishes it. A verified
+ * publisher is its name and the authority that proved it, on one line: the
+ * name is the publisher's own word, so the authority stays beside it. */
 export function PublisherLines({ request }: { request: AuthorizationRequest }) {
   const { app } = request
   const publisher = app.publisher
   if (app.verified) {
+    const named =
+      publisher.name &&
+      publisher.name.toLowerCase() !== publisher.authority?.toLowerCase()
     return (
       <>
-        <p className="flex items-center gap-1 text-sm">
+        <p className="flex flex-wrap items-center gap-x-1 text-sm">
           <BadgeCheckIcon aria-hidden className="size-4 text-primary" />
           <span>
             by{" "}
             <span className="font-medium [overflow-wrap:anywhere]">
-              {publisher.authority}
+              {named ? publisher.name : publisher.authority}
             </span>
           </span>
+          {named && (
+            <span className="[overflow-wrap:anywhere]">
+              {" "}
+              · {publisher.authority}
+            </span>
+          )}
         </p>
         {publisher.fromFile && (
           <Warning title="Verified by a file on this server, not by DNS">
@@ -32,14 +43,6 @@ export function PublisherLines({ request }: { request: AuthorizationRequest }) {
             document from a local file in place of its DNS record. Whoever set
             up the server vouches for this app, not {publisher.authority}.
           </Warning>
-        )}
-        {publisher.name && (
-          <p className="text-xs text-muted-foreground">
-            Publisher’s name{" "}
-            <span className="[overflow-wrap:anywhere] text-foreground">
-              {publisher.name}
-            </span>
-          </p>
         )}
       </>
     )

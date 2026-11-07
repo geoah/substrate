@@ -8,6 +8,7 @@ import type {
 } from "@/lib/api/types"
 
 import {
+  approvalHeading,
   asSentence,
   blockedWords,
   blockRemedy,
@@ -31,7 +32,6 @@ import {
   propertyValue,
   reachName,
   reachWords,
-  reauthorizationHeading,
   keptWords,
   packagePage,
   publishedWords,
@@ -453,12 +453,32 @@ describe("re-authorization", () => {
     ])
   })
 
-  it("heads by what changed", () => {
-    expect(reauthorizationHeading(0, 0)).toBe("Renew access")
-    expect(reauthorizationHeading(2, 0)).toBe("Allow more access")
-    expect(reauthorizationHeading(0, 1)).toBe("Update server setup")
-    expect(reauthorizationHeading(1, 1)).toBe(
-      "Allow more access and update server setup"
+  it("asks a first approval, a lapsed one and a renewal by what changed", () => {
+    const ask = (
+      reauth: boolean,
+      live: boolean,
+      newAccess: number,
+      toDo: number
+    ) =>
+      approvalHeading("Notes", "ada.example.com", {
+        reauth,
+        live,
+        newAccess,
+        toDo,
+      })
+    expect(ask(false, false, 3, 1)).toBe("Connect Notes to ada.example.com?")
+    expect(ask(true, false, 3, 0)).toBe("Reconnect Notes to ada.example.com?")
+    expect(ask(true, true, 0, 0)).toBe(
+      "Keep Notes connected to ada.example.com?"
+    )
+    expect(ask(true, true, 2, 0)).toBe(
+      "Give Notes more access to ada.example.com?"
+    )
+    expect(ask(true, true, 0, 1)).toBe(
+      "Update what Notes set up on ada.example.com?"
+    )
+    expect(ask(true, true, 1, 1)).toBe(
+      "Give Notes more access to ada.example.com and update its setup?"
     )
   })
 })

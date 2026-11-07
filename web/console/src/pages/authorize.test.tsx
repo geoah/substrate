@@ -429,7 +429,7 @@ describe("AuthorizePage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Unverified app at notes.example.com",
+        name: "Connect this app to ada.example.com?",
       })
     ).toBeTruthy()
 
@@ -446,13 +446,10 @@ describe("AuthorizePage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Unverified app at notes.example.com",
+        name: "Connect this app to ada.example.com?",
       })
     ).toBeTruthy()
-    expect(screen.getByText(/An app wants to connect to/).textContent).toBe(
-      "An app wants to connect to ada.example.com"
-    )
-    // The name is the app's claim, under the host its client id proves.
+    // The heading asks about "this app": the name is the app's claim, under the host its client id proves.
     expect(screen.getByText(/It calls itself/).textContent).toBe(
       "It calls itself Notes for Ada"
     )
@@ -514,20 +511,29 @@ describe("AuthorizePage", () => {
     expect(screen.getByText(/^It ends on \d+ \w+/)).toBeTruthy()
   })
 
-  it("shows who asks, where the code goes, the repository and every scope with what it reaches, technically", async () => {
+  it("shows who asks, where the code goes and every scope with what it reaches, technically", async () => {
     renderPage({ technical: true })
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Unverified app at notes.example.com",
+        name: "Connect this app to ada.example.com?",
       })
     ).toBeTruthy()
+    // The identifiers wait in one block under the answer.
+    const details = screen.getByRole("region", { name: "Technical details" })
     expect(
-      screen.getByText("https://notes.example.com/oauth/client.json")
+      within(details).getByText("https://notes.example.com/oauth/client.json")
+    ).toBeTruthy()
+    expect(
+      screen
+        .getByRole("button", { name: "Approve" })
+        .compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
 
     // What the app claims, as text and never as a link, with the warning.
-    const claims = screen.getByRole("region", { name: "The app says it is" })
+    const claims = within(details).getByRole("region", {
+      name: "The app says it is",
+    })
     expect(within(claims).getByText("Notes for Ada")).toBeTruthy()
     expect(
       within(claims).getByText("https://notes-app.example.org")
@@ -537,18 +543,20 @@ describe("AuthorizePage", () => {
       /not on notes\.example\.com/
     )
 
-    const sends = screen.getByRole("region", {
+    const sends = within(details).getByRole("region", {
       name: "After you answer, you go to",
     })
     expect(
       within(sends).getByText("http://127.0.0.1:53021/oauth/callback")
     ).toBeTruthy()
-    expect(within(sends).getByRole("note").textContent).toMatch(
-      /A program on this device receives the access.*Nothing confirms that program is notes\.example\.com/
-    )
-
-    const repository = screen.getByRole("region", { name: "Repository" })
-    expect(within(repository).getByText("ada.example.com")).toBeTruthy()
+    // The warning about where the access goes stays above, once, as in the
+    // everyday view.
+    expect(within(sends).queryByRole("note")).toBeNull()
+    expect(
+      screen.getAllByText("A program on this device receives the access")
+    ).toHaveLength(1)
+    // The repository is in the heading; the block does not say it again.
+    expect(screen.queryByRole("region", { name: "Repository" })).toBeNull()
 
     // No local-app warning for an app with a fetched document.
     expect(
@@ -582,12 +590,12 @@ describe("AuthorizePage", () => {
     expect(within(access).getByText("read:~/tasks/*")).toBeTruthy()
     // A write scope is asked for, so the page names what its changes are
     // recorded as, and what they set off.
-    const changes = screen.getByRole("region", {
+    const changes = within(details).getByRole("region", {
       name: "Its changes appear as",
     })
     expect(within(changes).getByText("app:notes.example.com")).toBeTruthy()
     expect(within(changes).getByText(/never as yours/)).toBeTruthy()
-    const automations = within(changes)
+    const automations = screen
       .getByText("Your automations run on its changes")
       .closest("[role=note]") as HTMLElement
     expect(automations.textContent).toContain("run code you installed")
@@ -698,7 +706,7 @@ describe("AuthorizePage", () => {
       renderPage({ technical })
       await screen.findByRole("heading", {
         level: 1,
-        name: "An app on this device",
+        name: "Connect this app to ada.example.com?",
       })
       expect(
         screen.getByText("This app says it runs on this device")
@@ -842,8 +850,11 @@ describe("AuthorizePage", () => {
         )
       ).toBeTruthy()
       expect(
-        screen.getByText(/An AI assistant wants to connect to/).textContent
-      ).toBe("An AI assistant wants to connect to ada.example.com")
+        screen.getByRole("heading", {
+          level: 1,
+          name: "Connect this assistant to ada.example.com?",
+        })
+      ).toBeTruthy()
       expect(screen.queryByText("It asks for full access")).toBeNull()
       expect(screen.queryByRole("checkbox")).toBeNull()
       expect(screen.queryByText(/Uncheck anything/)).toBeNull()
@@ -940,7 +951,12 @@ describe("AuthorizePage", () => {
     await screen.findByRole("checkbox", { name: TASKS_WORDS })
     expect(screen.queryByText(SHARED_CALLBACK)).toBeNull()
     expect(screen.queryByRole("region", { name: "Where it works" })).toBeNull()
-    expect(screen.getByText(/An app wants to connect to/)).toBeTruthy()
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Connect this app to ada.example.com?",
+      })
+    ).toBeTruthy()
   })
 
   it("denies, then goes to the app with the refusal", async () => {
@@ -1108,7 +1124,7 @@ describe("AuthorizePage", () => {
     renderPage()
     await screen.findByRole("heading", {
       level: 1,
-      name: "Unverified app at sync.example.com",
+      name: "Connect this app to ada.example.com?",
     })
     expect(screen.getByRole("checkbox", { name: ACCOUNTS_WORDS })).toBeTruthy()
     // The webhook's access is not a scope of its own.
@@ -2147,11 +2163,8 @@ describe("AuthorizePage", () => {
         renderPage({ technical })
         await screen.findByRole("heading", {
           level: 1,
-          name: "Allow more access",
+          name: "Give this app more access to ada.example.com?",
         })
-        expect(screen.getByText(/An app you approved asks/).textContent).toBe(
-          "An app you approved asks ada.example.com again"
-        )
         expect(
           screen.getByText("Unverified app at notes.example.com")
         ).toBeTruthy()
@@ -2202,7 +2215,10 @@ describe("AuthorizePage", () => {
           previous: { ...previous, scopes: ["write:ada.example.com/*"] },
         })
       renderPage()
-      await screen.findByRole("heading", { level: 1, name: "Renew access" })
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Keep this app connected to ada.example.com?",
+      })
       expect(
         screen.queryByRole("region", { name: "It will be able to" })
       ).toBeNull()
@@ -2216,8 +2232,19 @@ describe("AuthorizePage", () => {
           previous,
         })
       renderPage()
-      await screen.findByRole("heading", { level: 1, name: "Renew access" })
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Keep this app connected to ada.example.com?",
+      })
       expect(screen.getByText(/It asks for nothing new/)).toBeTruthy()
+      // A renewal is a decision about what it already holds, so that list
+      // starts open, and the answer says what approving does.
+      expect(
+        within(
+          screen.getByRole("region", { name: "Already allowed" })
+        ).getByRole("checkbox", { name: TASKS_WORDS })
+      ).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Keep access" })).toBeTruthy()
 
       cleanup()
       const installed = { ...INSTALL, action: "none" }
@@ -2231,7 +2258,7 @@ describe("AuthorizePage", () => {
       renderPage()
       await screen.findByRole("heading", {
         level: 1,
-        name: "Update server setup",
+        name: "Update what this app set up on ada.example.com?",
       })
       // The new rows lead, the webhook's access said as held already; what
       // is in place folds away.
@@ -2264,7 +2291,7 @@ describe("AuthorizePage", () => {
       renderPage()
       await screen.findByRole("heading", {
         level: 1,
-        name: "Allow more access and update server setup",
+        name: "Give this app more access to ada.example.com and update its setup?",
       })
 
       // A renewal of an app that reads and delivers: each delivery runs
@@ -2282,7 +2309,10 @@ describe("AuthorizePage", () => {
           previous: held,
         })
       renderPage()
-      await screen.findByRole("heading", { level: 1, name: "Renew access" })
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Keep this app connected to ada.example.com?",
+      })
       expect(
         screen.getByText("Your automations run on its changes")
       ).toBeTruthy()
@@ -2306,7 +2336,7 @@ describe("AuthorizePage", () => {
       renderPage()
       await screen.findByRole("heading", {
         level: 1,
-        name: "Allow more access",
+        name: "Give this app more access to ada.example.com?",
       })
       const on = within(
         screen.getByRole("region", { name: "It will set up on your server" })
@@ -2328,7 +2358,10 @@ describe("AuthorizePage", () => {
             previous: { ...previous, expiresAt: "2026-10-31T09:00:00Z" },
           })
         renderPage({ technical })
-        await screen.findByRole("heading", { level: 1, name: "Renew access" })
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Reconnect this app to ada.example.com?",
+        })
         expect(screen.getByText(/that access ended on 31 October/)).toBeTruthy()
         expect(screen.queryByText(/It asks for nothing new/)).toBeNull()
         // Nothing is held, so nothing folds away checked.
@@ -2384,7 +2417,7 @@ describe("AuthorizePage", () => {
       renderPage()
       await screen.findByRole("heading", {
         level: 1,
-        name: "Update server setup",
+        name: "Update what this app set up on ada.example.com?",
       })
       fireEvent.click(
         screen.getByRole("button", { name: "Approve and set up" })
@@ -2462,7 +2495,10 @@ describe("AuthorizePage", () => {
       expect(setupRows()).toHaveLength(1)
       expect(screen.queryByRole("alert")).toBeNull()
       expect(
-        screen.getByRole("heading", { level: 1, name: "Update server setup" })
+        screen.getByRole("heading", {
+          level: 1,
+          name: "Update what this app set up on ada.example.com?",
+        })
       ).toBeTruthy()
     })
   })
@@ -2471,7 +2507,7 @@ describe("AuthorizePage", () => {
     renderPage()
     await screen.findByRole("heading", {
       level: 1,
-      name: "Unverified app at notes.example.com",
+      name: "Connect this app to ada.example.com?",
     })
     const key = new KeyboardEvent("keydown", {
       key: "b",
@@ -2616,13 +2652,14 @@ describe("AuthorizePage", () => {
       expect(
         await screen.findByRole("heading", {
           level: 1,
-          name: "Example Workouts",
+          name: "Connect Example Workouts to ada.example.com?",
         })
       ).toBeTruthy()
-      expect(screen.getByText(/^by/).textContent).toBe("by example.org")
-      expect(screen.getByText(/Publisher’s name/).textContent).toBe(
-        "Publisher’s name Example"
+      // The publisher's own name, beside the authority that proved it.
+      expect(screen.getByText(/^by/).parentElement?.textContent).toBe(
+        "by Example · example.org"
       )
+      expect(screen.queryByText(/Publisher’s name/)).toBeNull()
       expect(screen.queryByText(/Unverified/)).toBeNull()
       const check = screen.queryByRole("region", { name: "Publisher check" })
       expect(check !== null).toBe(technical)
@@ -2662,7 +2699,7 @@ describe("AuthorizePage", () => {
     renderPage({ technical: true })
     await screen.findByRole("heading", {
       level: 1,
-      name: "Unverified app at notes.example.com",
+      name: "Connect this app to ada.example.com?",
     })
     expect(screen.getByText(/It calls itself/).textContent).toBe(
       "It calls itself Notes for Ada"
@@ -2681,7 +2718,7 @@ describe("AuthorizePage", () => {
     renderPage()
     await screen.findByRole("heading", {
       level: 1,
-      name: "Unverified app at notes.example.com",
+      name: "Connect this app to ada.example.com?",
     })
     expect(screen.getByText(/^Unverified\.$/).parentElement?.textContent).toBe(
       "Unverified. Its access goes to an app on this device"
@@ -2724,7 +2761,10 @@ describe("AuthorizePage", () => {
         },
       })
     renderPage()
-    await screen.findByRole("heading", { level: 1, name: "Example Workouts" })
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Connect Example Workouts to ada.example.com?",
+    })
     expect(
       screen.getByText("Verified by a file on this server, not by DNS")
     ).toBeTruthy()
@@ -2736,7 +2776,10 @@ describe("AuthorizePage", () => {
   it("says nothing of a file when DNS verified the publisher", async () => {
     answers.GET = () => jsonResponse(200, PUBLISHED)
     renderPage()
-    await screen.findByRole("heading", { level: 1, name: "Example Workouts" })
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Connect Example Workouts to ada.example.com?",
+    })
     expect(screen.queryByText(/Verified by a file/)).toBeNull()
   })
 })
