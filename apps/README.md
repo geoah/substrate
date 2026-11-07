@@ -987,6 +987,9 @@ and an Add Key for an agent whose provider has none: the console's provider
 record for an app token, which never writes a key, or the provider row's
 `apiKey` for a password sign-in (never kept). The agents whose purpose is primary are
 offered until the owner says otherwise; one hidden from chat is listed apart.
+Settings → Assistant lists the owner's memories and instructions
+(`llm/memory`, `llm/instruction`), each list a screen of its own, where one
+is switched off, reworded or deleted over the version shown.
 
 **Voice typing.** The microphone runs `SpeechAnalyzer` with a
 `SpeechTranscriber` (on device; a `DictationTranscriber` where that is not

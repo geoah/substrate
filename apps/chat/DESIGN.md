@@ -36,7 +36,8 @@ changed is listed at the end.
 - Registering a repository. Sign-in only.
 - Editing agents, grants, tools or policies. The app reads agents and writes
   only what a chat writes: messages, a thread's subject, answers, decisions,
-  and a provider key under a password sign-in.
+  and a provider key under a password sign-in; and the owner's memories and
+  instructions, switched on or off, reworded or deleted in Settings.
 - Deleting threads. The console offers none; a thread is a run and its cost
   counts after deletion. A thread deleted elsewhere says so when opened.
 - Push through APNs. The server has no push channel; the app notifies from
@@ -131,6 +132,9 @@ one segment, encoded exactly once: an agent's id
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
 | Add a model key | `PATCH …/llm/provider/{id}` `{properties: {apiKey}}`, a password sign-in only |
+| Memories and instructions | `{"kinds":["…/llm/memory"]}` and `{"kinds":["…/llm/instruction"]}`, `createdAt:desc`, every page |
+| Switch one, reword one | `PATCH …/llm/memory/{id}` or `…/llm/instruction/{id}` `{properties: {active} or {text}, ifVersion}` |
+| Delete one | `DELETE …/llm/memory/{id}?ifVersion=` or `…/llm/instruction/{id}?ifVersion=` |
 | Live | `GET /api/v1/changes?watch=1&kinds=…&from=&generation=` |
 
 Resolving an interaction or a request must carry the version the owner read
@@ -352,7 +356,9 @@ safe on any prefix of a reply: an unclosed fence is code, a half table is
 text. Settled messages are parsed once and memoized; only the streaming one
 re-parses on each flush; text past 200,000 characters is plain. Code blocks
 scroll sideways and have Copy. A link opens only when it is `http`, `https`,
-`mailto` or a record link (below).
+`mailto` or a record link (below), and one that opens outside the app
+carries the external-link mark beside its text, which VoiceOver reads as
+"opens in your browser".
 
 ## The interface
 
@@ -395,9 +401,21 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Thinking**: "Thinking…" with a shimmer while the model reasons, then
   "Thought for 6 s", collapsed; tap to read.
 - **Tool calls**: one line per call in the console's words ("Searched for
-  “dentist”, found 3", "Saved a task", "Asked Researcher"), a spinner while it
-  runs, a check or a cross when it settles; tap for what it found or failed
-  on, and the raw arguments and output.
+  “dentist”, found 3", "Saved a task", "Asked Researcher", "Edited a task in
+  2 places"), a spinner while it runs, a check or a cross when it settles;
+  tap for what it found or failed on, and the raw arguments and output. A
+  call that runs in the background says "Working in the background" until
+  its job ends, and its end is a line of its own ("Librarian finished in the
+  background") that settles the call with what it returned. A write the
+  owner's policy held for review says "Waiting for you" above its
+  suggestion, not a failure. A sub-agent's call opens to "Open its
+  conversation", its own thread.
+- **Results of a known shape** (the console's `lib/tool-views.ts`): a
+  function whose output is a list of web links draws them under its line as
+  numbered source pills (the site and the title, the snippet as a long
+  press's preview and the Mac's help), and one page read as one pill, each
+  opening the page in the browser. The match is on the shape, never a
+  provider's name, and only an `http` or `https` address is a link.
 - **Changes**: a call that wrote shows what it wrote, open, under its line: a
   `write` as a panel ("Changed [Groceries]", each value it set), a function
   or a sub-agent as the records it changed. All of it comes from the
@@ -416,6 +434,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   `mentions`, marked `missing`) is its text alone, so an invented id never
   reads as a record. Under a settled reply, "Linked records" repeats each
   record it links as a pill, since a link inside a line of text cannot be one.
+  The `done` event's mentions reach the reply at once, so its links read so
+  from the run's end, before its rows land.
+- **Sources**: under a finished reply, the web pages it links as numbered
+  pills, once each, in the order it first cites them.
 - **Questions** (`ask`): a card with each question's options (one or many,
   as the console), Answer and Dismiss; a resolved one shows the choices.
 - **Suggestions** (`propose`): a card for a create, a patch or a delete:
@@ -472,6 +494,10 @@ the microphone, and Send, which morphs into Stop while a turn runs
 
 ### Settings
 
+- **Assistant**: the owner's memories and instructions (what their
+  assistants know about them and how they should work), each list a screen
+  of its own: switch one off, reword it or delete it, each write over the
+  version shown, at once on screen and put back if the server refuses.
 - **Account**: SubstrateKit's: the server, the repository, the server's
   version, the approved access in the approval page's words and until when,
   Change Access and Sign Out. **App**: the version and updates.
