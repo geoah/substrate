@@ -86,7 +86,24 @@ beforeEach(() => {
           items: [
             status(PROV, "google"),
             status(PROV, "whoop"),
+            status(PROV, "slacklive"),
+            status("substrate.reamde.dev", "health"),
             status("ada.example.com", "tasks"),
+          ],
+        })
+      // The providers the page lists: an add-on is listed on its provider's
+      // page and a standard package is no provider, so neither counts.
+      if (url === "/api/v1/catalog")
+        return Response.json({
+          items: [
+            { id: `${PROV}/google`, provider: true },
+            { id: `${PROV}/whoop`, provider: true },
+            {
+              id: `${PROV}/slacklive`,
+              provider: true,
+              addonFor: `${PROV}/slack`,
+            },
+            { id: "substrate.reamde.dev/health" },
           ],
         })
       if (url.startsWith("/api/v1/records"))

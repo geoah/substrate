@@ -695,10 +695,11 @@ func packagesTool() Tool {
 		Name:  "packages",
 		Title: "Packages and the catalog",
 		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. install takes a " +
-			"provider under the authority that publishes it; import copies a sample under the owner's authority. status reads one " +
+			"published package (a provider or a standard package) under the authority that publishes it; import copies a sample " +
+			"under the owner's authority. status reads one " +
 			"installed package's state, or every one's without id. enable and disable switch one; bind points one of its inputs at a " +
-			"record. upgrades previews what this server would move in the shipped packages. Connecting a provider account, and " +
-			"uninstalling or purging a package, are the owner's, on the console's Providers page.",
+			"record. upgrades previews what this server would move in the shipped packages. Connecting a provider account " +
+			"(on the console's Providers page), and uninstalling or purging a package, are the owner's.",
 		Input: object(map[string]any{
 			"action": enum("what to do", "catalog", "item", "install", "import", "status", "enable", "disable", "bind", "upgrades"),
 			"id":     str("the package, <authority>/<package>"),

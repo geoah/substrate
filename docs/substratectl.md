@@ -434,7 +434,7 @@ under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. So do the conversion steps an upgrade would run, each with the live
 records it rewrites; a step marked lossy removes values from the fold, and an
-upgrade with one runs only with `--allow-data-loss` on `install <provider>` or
+upgrade with one runs only with `--allow-data-loss` on `install <package>` or
 `import <sample>`, which reads the preview again, prints the steps and
 confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
 sample copy edited since it was imported reads `edited copy` in the column

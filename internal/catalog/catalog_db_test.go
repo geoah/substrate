@@ -92,7 +92,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 
 func loadCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

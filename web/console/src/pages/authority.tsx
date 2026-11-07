@@ -15,6 +15,7 @@ import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 import { AgentCard } from "@/components/agent/agent-ref"
 import { PublisherDetails } from "@/components/packages/publisher"
 import { PublishedPackageSection } from "@/components/packages/published-package"
+import { StandardPackageSection } from "@/components/packages/standard-package"
 import { catalogQueryOptions } from "@/lib/api/catalog"
 
 import { CopyButton } from "@/components/identity/copy-button"
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHeldPackage } from "@/hooks/use-held-package"
 import {
   PROVIDERS_AUTHORITY,
   actorIdentity,
@@ -45,6 +47,7 @@ import {
 } from "@/lib/actor-identity"
 import { functionsQueryOptions } from "@/lib/api/functions"
 import { splitKind } from "@/lib/api/http"
+import { isStandard } from "@/lib/bundles"
 import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -331,6 +334,7 @@ export function PackagePage() {
     (item) => item.id === `${authority}/${pkg}`
   )?.publisher
   const published = packages.data?.get(`${authority}/${pkg}`)?.publishedFrom
+  const held = useHeldPackage(`${authority}/${pkg}`)
   const functions = useQuery(functionsQueryOptions)
   const kinds = useMemo(
     () =>
@@ -427,12 +431,19 @@ export function PackagePage() {
           </ul>
         </section>
       )}
+      {held && !published && isStandard(held) && (
+        <StandardPackageSection
+          row={held}
+          name={packageTitle(authority, pkg)}
+        />
+      )}
       {published && (
         <section className="space-y-4">
           {publisher && <PublisherDetails publisher={publisher} />}
           <PublishedPackageSection
             publisher={authority}
             packageId={`${authority}/${pkg}`}
+            row={held}
           />
         </section>
       )}

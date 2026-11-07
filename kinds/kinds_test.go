@@ -145,7 +145,7 @@ func TestBothViewsLoad(t *testing.T) {
 	if len(r.Packages()) == 0 || len(r.Kinds()) == 0 {
 		t.Fatalf("the seed registry is empty: %v", r.Packages())
 	}
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -467,7 +467,7 @@ func asMapping(v any) map[string]any {
 }
 
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // (decision record 0049): this is the install order in which they all land,
 // and the mapping set at the end is what they projected.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -532,7 +532,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 		t.Errorf("%d mappings onto contacts are live on the seed alone", len(got))
 	}
 	done := map[string]bool{}
-	for _, tier := range []string{substrate.TierProvider, substrate.TierSample} {
+	for _, tier := range []string{substrate.TierPublished, substrate.TierSample} {
 		for _, b := range cat.Bundles() {
 			if b.Tier != tier {
 				continue
@@ -602,7 +602,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // rewrites the samples authority alone.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -831,7 +831,7 @@ func rootNames(t *testing.T, fsys fs.FS) []string {
 // and pluralizes it ("Conversations", "Calendar series"), and a person calls
 // it something else; the label is what every client shows instead.
 func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -845,7 +845,7 @@ func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
 	}
 	done := map[string]bool{}
 	for _, b := range cat.Bundles() {
-		if b.Tier != substrate.TierProvider {
+		if b.Tier != substrate.TierPublished {
 			continue
 		}
 		if err := installClosure(reg, byPackage, b, done); err != nil {

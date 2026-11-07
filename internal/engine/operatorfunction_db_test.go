@@ -85,7 +85,7 @@ func openFirecrawlDataset(t *testing.T, cfg *operatordefaults.Config, opts ...Op
 
 func installShippedProvider(t *testing.T, ds *dataset, id string) {
 	t.Helper()
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		t.Fatalf("load the catalog: %v", err)
 	}

@@ -249,7 +249,7 @@ type setupEnv struct {
 
 func newSetupEnv(t *testing.T) *setupEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("view = state %q hash %q, %d details, %d rows", v.State, v.PlanHash, len(v.Details), len(v.Setup))
 	}
 	apple := v.Setup[0]
-	if apple.Action != substrate.SetupInstall || apple.Package.Tier != substrate.TierProvider || apple.Package.Shipped != 4 ||
+	if apple.Action != substrate.SetupInstall || apple.Package.Tier != substrate.TierPublished || apple.Package.Shipped != 4 ||
 		apple.Package.Held != 0 || apple.Package.Required != 3 || len(apple.Package.Kinds) == 0 || len(apple.Package.Functions) != 0 {
 		t.Fatalf("apple row = %+v %+v", apple, apple.Package)
 	}

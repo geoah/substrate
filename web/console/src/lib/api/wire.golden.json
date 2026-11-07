@@ -518,7 +518,9 @@
     "softwareVersion": false
   },
   "CatalogBundle": {
+    "addonFor": false,
     "authority": true,
+    "brings": false,
     "closure": true,
     "description": true,
     "id": true,
@@ -529,6 +531,7 @@
     "origin": false,
     "originVersion": false,
     "package": true,
+    "provider": false,
     "publisher": false,
     "requires": false,
     "requiresAtLeast": false,
@@ -542,7 +545,9 @@
     "kind": true
   },
   "CatalogItem": {
+    "addonFor": false,
     "authority": true,
+    "brings": false,
     "closure": true,
     "description": true,
     "id": true,
@@ -554,6 +559,7 @@
     "origin": false,
     "originVersion": false,
     "package": true,
+    "provider": false,
     "publisher": false,
     "requires": false,
     "requiresAtLeast": false,

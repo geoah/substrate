@@ -1,10 +1,11 @@
 /** What the observations pages say where nothing has been measured: no kind
  * binds the `observed` trait yet, or none of its records holds a value, and
- * the two places a measurement comes from, a sample that records them
- * (All data's "Add a collection", on its samples) and a provider. */
+ * the two places a measurement comes from, a standard collection that
+ * records them (All data's "Add a collection", on its standard collections:
+ * `health` is one, decision records 0192 and 0238) and a provider. */
 
 import { Link } from "@tanstack/react-router"
-import { ActivityIcon, LayersIcon, PlugIcon } from "lucide-react"
+import { ActivityIcon, LibraryIcon, PlugIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -24,11 +25,11 @@ export function MeasurementSources({ className }: { className?: string }) {
       <Button
         variant="outline"
         size="sm"
-        render={<Link to="/data" search={{ add: "sample" } as never} />}
+        render={<Link to="/data" search={{ add: "standard" } as never} />}
         nativeButton={false}
       >
-        <LayersIcon />
-        Add a sample
+        <LibraryIcon />
+        Add a standard collection
       </Button>
       <Button
         variant="outline"
@@ -52,8 +53,8 @@ export function NoObservations() {
         </EmptyMedia>
         <EmptyTitle>Nothing here records measurements yet</EmptyTitle>
         <EmptyDescription>
-          Measurements come from a sample that records them, such as health, or
-          from a provider that writes them.
+          Measurements come from a standard collection that records them, such
+          as health, or from a provider that writes them.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>

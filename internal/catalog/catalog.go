@@ -6,10 +6,12 @@
 // rows).
 //
 // Every entry carries a TIER, and the tier is the tree it came from (decision
-// record 0048). A PROVIDER (kinds/providers.substrate.reamde.dev) INSTALLS
-// under the authority that publishes it. A SAMPLE (samples/) IMPORTS: the
-// closure is rehomed onto the repository's own authority first, so what lands
-// is the repository's to edit.
+// record 0048). A PUBLISHED package (kinds/) INSTALLS under the authority that
+// publishes it. A SAMPLE (samples/) IMPORTS: the closure is rehomed onto the
+// repository's own authority first, so what lands is the repository's to edit.
+// What an entry is FOR is a second answer, read from its declarations
+// (decision record 0238): whether it is a provider, what it brings, and which
+// provider an add-on extends.
 //
 // A closure that declares ONTO another package names it in `requires:`, and
 // admission refuses the install while that package is absent (vocabulary
@@ -157,7 +159,28 @@ func Load(roots ...Root) (*Catalog, error) {
 		}
 	}
 	sort.Slice(c.bundles, func(i, j int) bool { return c.bundles[i].ID < c.bundles[j].ID })
+	// After every root: an add-on may sort before the provider it extends.
+	for _, b := range c.bundles {
+		b.AddonFor = c.addonFor(b)
+	}
 	return c, nil
+}
+
+// addonFor is the provider b extends: the first package b requires that the
+// binary ships as a provider, when b is published and brings no account of
+// its own. A package with an account is a provider in its own right whatever
+// it requires (WHOOP requires health), and a sample is the user's copy, which
+// extends nothing it would be listed under.
+func (c *Catalog) addonFor(b *Bundle) string {
+	if b.Tier != substrate.TierPublished || slices.Contains(b.Brings, substrate.BringsAccount) {
+		return ""
+	}
+	for _, id := range b.Requires {
+		if dep, ok := c.byID[id]; ok && dep.Provider {
+			return id
+		}
+	}
+	return ""
 }
 
 // LoadWithReader adds document-published packages to the binary catalog.
@@ -181,14 +204,25 @@ func LoadWithReader(reader *authority.Reader, seeded []string, roots ...Root) (*
 
 // Root is one shipped tree and the tier every closure in it takes.
 type Root struct {
-	// Tier is substrate.TierProvider or substrate.TierSample.
+	// Tier is substrate.TierPublished or substrate.TierSample.
 	Tier string
-	FS   fs.FS
+	// Provider says every closure in the tree is a provider: the publisher
+	// put it among its providers, which is the one statement a closure that
+	// declares no account (Apple's devices push) can make.
+	Provider bool
+	FS       fs.FS
 }
 
-// ProviderRoot is a tree of published packages (kinds/), whose closures
-// install under the authority they name.
-func ProviderRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierProvider, FS: fsys} }
+// ProviderRoot is a tree of providers (kinds/providers.…): published packages
+// that connect the substrate to an outside service.
+func ProviderRoot(fsys fs.FS) Root {
+	return Root{Tier: substrate.TierPublished, Provider: true, FS: fsys}
+}
+
+// PublishedRoot is a tree of published packages that are not providers (the
+// seed authority's catalogues), whose closures install under the authority
+// they name.
+func PublishedRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierPublished, FS: fsys} }
 
 // SampleRoot is a tree of copyable packages (samples/), whose closures import
 // under the repository's own authority.
@@ -234,6 +268,7 @@ func (c *Catalog) load(root Root, dir string) error {
 		return nil
 	}
 	b.Tier = root.Tier
+	b.Provider = root.Provider || b.Tier == substrate.TierPublished && slices.Contains(b.Brings, substrate.BringsAccount)
 	c.bundles = append(c.bundles, b)
 	c.byID[b.ID] = b
 	return nil
@@ -518,15 +553,15 @@ func (c *Catalog) installReviewed(ctx context.Context, actor substrate.Actor, id
 // install list (the defaults file's `install:`). Like SeedImport it does not
 // require a human actor: it runs at registration and at a repository's open,
 // with no request behind it, and the changelog is attributed to the bundle as
-// any install's is. It refuses anything but a provider, because the list
-// gives a repository published packages and nothing it would own.
+// any install's is. It refuses anything but a published package, because the
+// list gives a repository published packages and nothing it would own.
 func (c *Catalog) SeedInstall(ctx context.Context, ds substrate.Dataset, id string) error {
 	b, ok := c.byID[id]
 	if !ok {
 		return fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	if b.Tier != substrate.TierProvider {
-		return fmt.Errorf("%w: %s is not a provider", substrate.ErrValidation, b.ID)
+	if b.Tier != substrate.TierPublished {
+		return fmt.Errorf("%w: %s is not a published package", substrate.ErrValidation, b.ID)
 	}
 	resolved, err := c.ResolveFor(ctx, id, 0, ds)
 	if err != nil {
@@ -635,8 +670,8 @@ func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset
 			}
 		}
 	}
-	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
-	if b.Tier == substrate.TierProvider {
+	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierPublished, Confirm: confirm}
+	if b.Tier == substrate.TierPublished {
 		opts.ShippedVersion = b.Version
 		if b.origin != nil {
 			opts.PublishedFrom = b.origin.DocumentURL
@@ -804,7 +839,7 @@ func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.
 			// it is placed all the same: the planner reads it as a server
 			// update, and the admission refuses it.
 			dep, err := c.ResolveFor(ctx, req, b.RequiresAtLeast[req], ds)
-			if err != nil || dep.Tier != substrate.TierProvider {
+			if err != nil || dep.Tier != substrate.TierPublished {
 				// Placed too, so a second bundle requiring it reports it
 				// no second time.
 				placed[req] = true

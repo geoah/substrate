@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"slices"
+
 	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -32,6 +34,9 @@ type FunctionFact struct {
 	Reads   []string
 	Writes  []string
 	Network []string
+	// Offered is whether the function offers itself to agents (decision
+	// record 0198).
+	Offered bool
 }
 
 // TriggerFact is one trigger a closure ships, as the install writes it.
@@ -92,11 +97,13 @@ func (b *Bundle) readFacts() {
 			})
 		case vocabulary.DocFunction:
 			perms := mmap(data, "permissions")
+			offered, _ := mmap(data, "offer")["agents"].(bool)
 			b.functions = append(b.functions, FunctionFact{
 				ID:      docID(d),
 				Reads:   kindGrants(docID(d), mslice(mmap(perms, "reads"), "kinds")),
 				Writes:  kindGrants(docID(d), mslice(perms, "writes")),
 				Network: strs(mslice(perms, "network")),
+				Offered: offered,
 			})
 		case vocabulary.DocAgent:
 			perms := mmap(data, "permissions")
@@ -126,6 +133,44 @@ func (b *Bundle) readFacts() {
 		})
 	}
 	b.readReach()
+	b.Brings = b.brings()
+}
+
+const kindMetric = vocabulary.PackageObservations + "/metric"
+
+// brings is what taking the closure gives a reader (substrate.Brings*), in
+// the constants' order.
+func (b *Bundle) brings() []string {
+	has := map[string]bool{}
+	for _, k := range b.kinds {
+		traits := vocabulary.ReferentIDs(mslice(k.Definition, "traits"), vocabulary.CoreKind(vocabulary.DocTrait))
+		if slices.Contains(traits, vocabulary.TraitAccountConfigCore) {
+			has[substrate.BringsAccount] = true
+		}
+		if k.Purpose == "" || k.Purpose == vocabulary.PurposePrimary {
+			has[substrate.BringsCollections] = true
+		}
+	}
+	for _, f := range b.functions {
+		if f.Offered {
+			has[substrate.BringsTools] = true
+		}
+	}
+	for _, d := range b.dataDocs {
+		if mstr(d, "kind") == kindMetric {
+			has[substrate.BringsMetrics] = true
+		}
+	}
+	if len(b.agents) > 0 {
+		has[substrate.BringsAgents] = true
+	}
+	var out []string
+	for _, v := range []string{substrate.BringsAccount, substrate.BringsTools, substrate.BringsCollections, substrate.BringsMetrics, substrate.BringsAgents} {
+		if has[v] {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // strs reads a list of scalars as strings, blanks dropped.

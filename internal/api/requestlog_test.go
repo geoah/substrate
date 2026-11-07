@@ -309,7 +309,7 @@ func TestExportAbortLogsTheClientLeavingAtDebug(t *testing.T) {
 // not an ERROR line either, while a preview that fails on its own is one
 // naming the route.
 func TestCatalogPreviewCanceledByTheClientIsNotAnError(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

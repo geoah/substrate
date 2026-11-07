@@ -669,7 +669,7 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 		{
 			name: "lossy install",
 			err:  &apiError{Status: 403, Code: "lossy", Path: "/api/v1/catalog/providers.substrate.reamde.dev%2Fgoogle/install"},
-			want: []string{"hint: re-run `substratectl install <provider> --allow-data-loss`"},
+			want: []string{"hint: re-run `substratectl install <package> --allow-data-loss`"},
 		},
 		{
 			name: "lossy import",

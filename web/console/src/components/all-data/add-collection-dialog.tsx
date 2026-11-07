@@ -1,19 +1,31 @@
-/** "Add a collection": three ways to start one. Ask an agent to make it,
- * start from a sample (imported under the repository's own authority, the
- * packages it needs first; only samples that add a collection, see
- * `collectionSamples`), or declare the kind yourself in YAML. Asking goes to
- * the agent that can declare a kind, and is sent, not only written down. */
+/** "Add a collection": four ways to start one. Ask an agent to make it, add
+ * a standard collection (a published package the catalog says adds
+ * collections or metrics and connects to nothing, decision record 0238:
+ * kept up to date for you, its fields not yours to change), start from a
+ * sample (imported under the repository's own authority, the packages it
+ * needs first; only samples that add a collection, see `collectionSamples`),
+ * or declare the kind yourself in YAML. Asking goes to the agent that can
+ * declare a kind, and is sent, not only written down. */
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { BotIcon, CodeIcon, LayersIcon, type LucideIcon } from "lucide-react"
+import {
+  BotIcon,
+  CodeIcon,
+  LayersIcon,
+  LibraryIcon,
+  type LucideIcon,
+} from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
 import { CopyButton } from "@/components/identity/copy-button"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { SampleList } from "@/components/samples/sample-list"
-import { collectionSamples } from "@/components/samples/sample-picks"
+import {
+  collectionSamples,
+  standardCollections,
+} from "@/components/samples/sample-picks"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -35,7 +47,7 @@ import { cn } from "@/lib/utils"
 import { displayPlural } from "@/lib/kind-names"
 
 // eslint-disable-next-line react-refresh/only-export-components -- the URL's word for each way, shared with the page that opens it
-export const ADD_WAYS = ["agent", "sample", "yaml"] as const
+export const ADD_WAYS = ["agent", "standard", "sample", "yaml"] as const
 type Way = (typeof ADD_WAYS)[number]
 
 const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
@@ -46,10 +58,16 @@ const WAYS: { value: Way; icon: LucideIcon; title: string; line: string }[] = [
     line: "Say what you want to keep. An agent sets it up.",
   },
   {
+    value: "standard",
+    icon: LibraryIcon,
+    title: "Standard collections",
+    line: "Health, lab results, your medical record: kept up to date for you.",
+  },
+  {
     value: "sample",
     icon: LayersIcon,
     title: "Start from a sample",
-    line: "Tasks, people, calendars: ready-made collections to add.",
+    line: "Tasks, people, calendars: ready-made collections you can change.",
   },
   {
     value: "yaml",
@@ -85,7 +103,7 @@ export function AddCollectionDialog({
         <div
           role="radiogroup"
           aria-label="How to start"
-          className="grid gap-2 sm:grid-cols-3"
+          className="grid gap-2 sm:grid-cols-2"
           onKeyDown={radioKeys<Way | null>(
             ADD_WAYS,
             way,
@@ -114,6 +132,7 @@ export function AddCollectionDialog({
         </div>
         <div className="min-h-40">
           {way === "agent" && <AskAnAgent onSample={() => setWay("sample")} />}
+          {way === "standard" && <Standard />}
           {way === "sample" && <Samples />}
           {way === "yaml" && <WriteIt />}
         </div>
@@ -216,21 +235,45 @@ function pickCollections(rows: BundleRow[], registry: KindInfo[]) {
   return collectionSamples(rows, registry)
 }
 
+function pickStandard(rows: BundleRow[], registry: KindInfo[]) {
+  return standardCollections(rows, registry)
+}
+
+/** One collection a package adds, with its glyph. */
+function collectionMember(k: string, registry: readonly KindInfo[]) {
+  const held = registry.find((entry) => entry.identity === k) ?? k
+  return (
+    <>
+      <KindGlyph kind={held} size="xs" />
+      {displayPlural(held)}
+    </>
+  )
+}
+
+/** A standard package by the collections that will show up. */
+function Standard() {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <p className="text-[12.5px] text-muted-foreground">
+        One shape every app and provider writes, kept up to date for you. You
+        add the records; to change the fields, start from a sample instead.
+      </p>
+      <SampleList
+        pick={pickStandard}
+        empty="There are no standard collections to add."
+        member={collectionMember}
+      />
+    </div>
+  )
+}
+
 /** A sample by the collections that will show up, each with its glyph. */
 function Samples() {
   return (
     <SampleList
       pick={pickCollections}
       empty="There are no sample collections to add."
-      member={(k, registry) => {
-        const held = registry.find((entry) => entry.identity === k) ?? k
-        return (
-          <>
-            <KindGlyph kind={held} size="xs" />
-            {displayPlural(held)}
-          </>
-        )
-      }}
+      member={collectionMember}
     />
   )
 }

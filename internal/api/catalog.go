@@ -41,7 +41,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				st := installed.byID[id]
 				from, _ := row.Properties["publishedFrom"].(string)
-				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierProvider, Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{err.Error()}}})
+				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierPublished, Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{err.Error()}}})
 				continue
 			}
 			items = append(items, h.catalogItemFor(r, b, installed.byID[id]))

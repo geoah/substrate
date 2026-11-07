@@ -434,7 +434,7 @@ func closureRequires(docs []map[string]any) []string {
 // providers and the first-party catalogues, each installed verbatim and
 // published (decision records 0048 and 0192). Loaded once per test binary.
 var shippedCatalog = sync.OnceValues(func() (*catalog.Catalog, error) {
-	return catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	return catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 })
 
 // installShipped installs one shipped package through the catalog's install

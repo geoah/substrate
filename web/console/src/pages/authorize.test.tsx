@@ -155,7 +155,7 @@ const INSTALL = {
   package: {
     id: APPLEHEALTH,
     description: "Keeps a copy of the Health data your iPhone sends.",
-    tier: "provider",
+    tier: "published",
     required: 5,
     shipped: 5,
     requires: [

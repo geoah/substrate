@@ -7,11 +7,13 @@
  *
  * Vocabulary: the surface listing them is the REGISTRY and `bundle` stays the
  * schema/API term. The catalog has two TIERS (decision record 0048): a
- * PROVIDER is INSTALLED under the authority that publishes it, a SAMPLE is
- * IMPORTED under this repository's own authority and is the repository's to
- * edit afterwards. The tier is the backend `tier` field, never derived from an
- * authority's shape here. A bundle owns exactly one PACKAGE (decision 0047),
- * and its id IS that package identity. */
+ * PUBLISHED package is INSTALLED under the authority that publishes it, a
+ * SAMPLE is IMPORTED under this repository's own authority and is the
+ * repository's to edit afterwards. What a package is FOR is the catalog's
+ * second answer (decision record 0238): a provider, an add-on for one, or a
+ * standard package that adds collections. Both are backend fields, never
+ * derived from an authority's shape here. A bundle owns exactly one PACKAGE
+ * (decision 0047), and its id IS that package identity. */
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import {
@@ -160,17 +162,44 @@ export function mergeBundles(
  * anything applied outside the shipped catalog, which has no tier to sit
  * under and so is listed on its own rather than guessed into one. */
 interface BundleSections {
-  providers: BundleRow[]
+  published: BundleRow[]
   samples: BundleRow[]
   applied: BundleRow[]
 }
 
 export function bundleSections(rows: BundleRow[]): BundleSections {
   return {
-    providers: rows.filter((r) => r.tier === "provider"),
+    published: rows.filter((r) => r.tier === "published"),
     samples: rows.filter((r) => r.tier === "sample"),
     applied: rows.filter((r) => !r.tier),
   }
+}
+
+// ── what a package is for (decision record 0238) ────────────────────────────
+
+/** A provider: the catalog says the package connects the substrate to an
+ * outside service. Providers lists it, unless it is an add-on. */
+export function isProvider(row: Pick<BundleRow, "catalog">): boolean {
+  return Boolean(row.catalog?.provider)
+}
+
+/** The provider an add-on extends: its page lists the add-on, and Providers
+ * does not. */
+export function addonOf(row: Pick<BundleRow, "catalog">): string | undefined {
+  return row.catalog?.addonFor || undefined
+}
+
+/** A standard package: published, neither a provider nor an add-on, and it
+ * adds collections or metrics (`health`, `labs`, `clinical`, an app's own
+ * package). Add a collection lists it beside the samples. */
+export function isStandard(row: Pick<BundleRow, "tier" | "catalog">): boolean {
+  const brings = row.catalog?.brings ?? []
+  return (
+    row.tier === "published" &&
+    !isProvider(row) &&
+    !addonOf(row) &&
+    (brings.includes("collections") || brings.includes("metrics"))
+  )
 }
 
 // ── upgrades: the shipped closure moved past the stored one ─────────────────

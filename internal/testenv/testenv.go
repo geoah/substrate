@@ -224,7 +224,7 @@ func Start(t testing.TB, opts ...Option) *Env {
 		t.Fatalf("testenv: open engine: %v", err)
 	}
 
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		_ = svc.Close()
 		t.Fatalf("testenv: load catalog: %v", err)

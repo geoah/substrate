@@ -421,7 +421,7 @@ func TestAWebhookIsTheAppsOnlyWhereItsPackageIsRequested(t *testing.T) {
 // WHOOP signs its deliveries with the owner's OAuth client secret: an app
 // cannot deliver to its webhook, and keying it would refuse WHOOP's own.
 func TestTheShippedSignedWebhookIsNeverAnApps(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -416,16 +416,16 @@ substratectl sync status
   restart the server.
 - **`blocked`**: the guard lines under the table name the kind, the property
   and the count of live records in the old shape. Rewrite those records.
-  Then a seeded package needs a server restart, and a provider or sample
-  needs its `install` or `import` again (step 8). A plan that rewrites more
+  Then a seeded package needs a server restart, and a published package or
+  a sample needs its `install` or `import` again (step 8). A plan that rewrites more
   records than `SUBSTRATE_CONVERSION_CEILING` (10000 by default) is blocked
   too; the operator may raise the ceiling.
 - **`quarantined: true`** on a package: the new binary does not admit its
   stored declarations, and `quarantineReason` says why. Its kinds refuse
   writes and its functions do not run until a valid closure is re-applied.
   For the user's own package, fix the declarations and apply them
-  (`substratectl apply -f <package.yaml>`). For a provider or sample,
-  install or import it again (step 8). If the marker stays, show the user
+  (`substratectl apply -f <package.yaml>`). For a published package or a
+  sample, install or import it again (step 8). If the marker stays, show the user
   the `quarantineReason`.
 - **Parked deliveries or a new last error** on a trigger, or a sync account
   in an error state: read the error before you retry anything. `substratectl
@@ -436,13 +436,15 @@ substratectl sync status
 
 ## Step 8: Take the upgrades the catalog offers
 
-`substratectl catalog` lists each provider or sample with a newer shipped
-version as a motion (`16 -> 17`). Read the conversion steps printed under the
-table before you take one. Take the providers first, then the samples,
-because a sample's suggested mapping can wait on a provider's upgrade:
+`substratectl catalog` lists each published package (a provider or a standard
+package such as `substrate.reamde.dev/health`, `published` in its TIER column)
+or sample with a newer shipped version as a motion (`16 -> 17`). Read the
+conversion steps printed under the table before you take one. Take the
+published packages first, then the samples, because a sample's suggested
+mapping can wait on a provider's upgrade:
 
 ```bash
-substratectl install providers.substrate.reamde.dev/github   # a provider: re-running install is the upgrade
+substratectl install providers.substrate.reamde.dev/github   # a published package: re-running install is the upgrade
 substratectl import samples.substrate.reamde.dev/tasks       # a sample: importing again is the upgrade
 ```
 

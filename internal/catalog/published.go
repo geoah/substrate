@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authority"
@@ -121,6 +122,10 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 			break
 		}
 	}
+	b.AddonFor = b.origin.AddonFor
+	if b.AddonFor == "" {
+		b.AddonFor = c.addonFor(b)
+	}
 	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256}
 	return b, nil
 }
@@ -178,7 +183,8 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	if b.Version != version || version < 1 {
 		return nil, fmt.Errorf("closure version %d does not match listed version %d", b.Version, version)
 	}
-	b.Tier = substrate.TierProvider
+	b.Tier = substrate.TierPublished
+	b.Provider = slices.Contains(b.Brings, substrate.BringsAccount)
 	return b, nil
 }
 

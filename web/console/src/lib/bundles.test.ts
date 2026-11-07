@@ -103,7 +103,7 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
       functions: ["c"],
     },
     installed: false,
-    tier: "provider",
+    tier: "published",
     ...over,
   }
 }
@@ -168,7 +168,7 @@ describe("mergeBundles", () => {
       "ada.example.com"
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["providers.substrate.reamde.dev/google"].tier).toBe("provider")
+    expect(byId["providers.substrate.reamde.dev/google"].tier).toBe("published")
     expect(byId["ada.example.com/tasks"].tier).toBe("sample")
   })
 
@@ -525,7 +525,7 @@ describe("bundleSections", () => {
 
   it("splits the rows by tier and lists an untiered bundle on its own", () => {
     const sections = bundleSections(rows)
-    expect(sections.providers.map((r) => r.id)).toEqual([
+    expect(sections.published.map((r) => r.id)).toEqual([
       "providers.substrate.reamde.dev/google",
     ])
     expect(sections.samples.map((r) => r.id)).toEqual(["ada.example.com/tasks"])

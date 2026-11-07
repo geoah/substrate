@@ -43,7 +43,7 @@ var clinicalKinds = []string{
 
 func shippedCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 		{id: clinicalPackage, kinds: clinicalKindRefs(), requires: []string{labsPackage}},
 	} {
 		b := shippedBundle(t, cat, c.id)
-		if b.Tier != substrate.TierProvider || b.Authority != kinds.SeedAuthority {
+		if b.Tier != substrate.TierPublished || b.Authority != kinds.SeedAuthority {
 			t.Errorf("%s is served as a %s under %s, want a published package under %s", c.id, b.Tier, b.Authority, kinds.SeedAuthority)
 		}
 		if landed := b.LandedID("ada.example.com"); landed != c.id {

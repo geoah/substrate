@@ -196,7 +196,9 @@ const CATALOG: CatalogItem = {
   package: "google",
   description: "Keeps a copy of your Google contacts.",
   version: 34,
-  tier: "provider",
+  tier: "published",
+  provider: true,
+  brings: ["account", "collections"],
   installed: true,
   closure: {
     kinds: [ACCOUNT, CONFIG, CONTACT, `${GOOGLE}/contactgroup`],
@@ -996,6 +998,60 @@ describe("ProviderPage", () => {
     })
   })
 
+  // Decision record 0238: an add-on is listed on the page of the provider it
+  // extends, not on Providers, and is added from here or from its own page.
+  describe("add-ons", () => {
+    const ADDON: CatalogItem = {
+      ...CATALOG,
+      id: "providers.substrate.reamde.dev/googlepush",
+      name: "googlepush",
+      package: "googlepush",
+      description: "Applies Google's pushed changes within seconds. Optional.",
+      brings: [],
+      addonFor: GOOGLE,
+      installed: false,
+      closure: { ...CATALOG.closure, kinds: null, functions: null },
+    }
+
+    it("lists the provider's add-ons, each opening its own page", async () => {
+      serve({ catalog: [CATALOG, ADDON] })
+      renderPage(<ProviderPage />)
+      expect(
+        await screen.findByRole("heading", { name: "Add-ons" })
+      ).toBeTruthy()
+      const row = document.querySelector<HTMLElement>('[data-slot="addon"]')!
+      expect(
+        within(row).getByText("Googlepush", { selector: "a" }).dataset.params
+      ).toBe(
+        JSON.stringify({
+          authority: "providers.substrate.reamde.dev",
+          pkg: "googlepush",
+        })
+      )
+      expect(
+        within(row).getByText("Applies Google's pushed changes within seconds.")
+      ).toBeTruthy()
+      expect(within(row).getByRole("button", { name: "Add" })).toBeTruthy()
+    })
+
+    // An app's add-on from its publisher's document brings no account and
+    // is no provider itself, and is still listed with the one it extends.
+    it("lists an add-on that is no provider itself", async () => {
+      serve({ catalog: [CATALOG, { ...ADDON, provider: false }] })
+      renderPage(<ProviderPage />)
+      expect(
+        await screen.findByRole("heading", { name: "Add-ons" })
+      ).toBeTruthy()
+      expect(screen.getByText("Googlepush", { selector: "a" })).toBeTruthy()
+    })
+
+    it("lists none where the provider has none", async () => {
+      renderPage(<ProviderPage />)
+      await screen.findByText("Google", { selector: "h1" })
+      expect(screen.queryByRole("heading", { name: "Add-ons" })).toBeNull()
+    })
+  })
+
   describe("what it adds", () => {
     it("lists its collections with what they fill in of yours, and counts the rest", async () => {
       renderPage(<ProviderPage />)
@@ -1540,6 +1596,8 @@ describe("ProviderPage", () => {
       package: "people",
       description: "One record per human.",
       tier: "sample",
+      provider: false,
+      brings: ["collections"],
       closure: { ...CATALOG.closure, kinds: null, functions: null },
       suggestedMappings: [
         {

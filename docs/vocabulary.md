@@ -164,9 +164,11 @@ upgrade, an install, which is what the actors `substrate` and
 `bundle:<authority>:<package>` name. A generic API write into one is
 `forbidden`, and neither actor form can be claimed by a request.
 
-A **provider** package is refused on the same terms. Installing one from the
-catalog's provider tier (`providers.substrate.reamde.dev/google` and the six
-beside it) writes `source: published` on its package row and its declarations,
+A **published** package is refused on the same terms. Installing one from the
+catalog's published tier (a provider such as
+`providers.substrate.reamde.dev/google`, or a catalogue such as
+`substrate.reamde.dev/labs`) writes `source: published` on its package row and
+its declarations,
 and afterwards a `POST …/vocabulary/apply` naming that package is `403`,
 whoever holds the token. The publisher ships each change with a version bump
 and the [upgrade preview](bundles.md#install-and-lifecycle) offers it; the

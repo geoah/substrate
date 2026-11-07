@@ -7,10 +7,14 @@
  * and version, which record each declared need uses, and the connection
  * details (triggers, runs, parked deliveries).
  *
- * The same address serves any other package this repository holds (an
- * imported sample, the seeded llm package): the Providers list links its
- * Other packages here, so a package's settings, update and removal have a
- * home. Such a page has no set-up steps and no accounts. */
+ * A provider's add-ons (decision record 0238) are listed here, each opening
+ * its own page at the same kind of address.
+ *
+ * The same address serves any other package this repository holds (a
+ * standard package, an imported sample, the seeded llm package): the
+ * Providers list links its Other packages here, so a package's settings,
+ * update and removal have a home. Such a page has no set-up steps and no
+ * accounts. */
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -27,6 +31,7 @@ import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { OAuthHosts } from "@/components/packages/outside-code"
 import { AccountsSection } from "@/components/providers/accounts-section"
+import { AddonsSection } from "@/components/providers/addons-section"
 import {
   ImportAgainNote,
   LossyUpgradeDialog,
@@ -79,6 +84,7 @@ import { settingRecordsQueryOptions } from "@/lib/api/settings"
 import type { BundleStatus, KindInfo } from "@/lib/api/types"
 import {
   isInputSetupCode,
+  isProvider,
   isSettingSetupCode,
   missingChain,
   upgradeAvailable,
@@ -358,6 +364,11 @@ function ProviderDoc({
         </>
       )}
 
+      <AddonsSection
+        addons={data.addonsOf(row.id)}
+        providerName={info.name}
+        chains={data.chains}
+      />
       <BringsIn
         bundleId={row.id}
         kinds={data.kinds}
@@ -442,9 +453,11 @@ function PackageDoc({
             <span>
               {row.tier === "sample"
                 ? "A sample you added"
-                : row.tier === "provider"
+                : isProvider(row)
                   ? "A provider"
-                  : "Added by hand"}
+                  : row.tier === "published"
+                    ? "A standard package, kept up to date for you"
+                    : "Added by hand"}
             </span>
             {technical && <IdText value={row.id} copy />}
             {technical && status.version !== undefined && (

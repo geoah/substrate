@@ -205,7 +205,7 @@ changelog head and leaves the confirmation standing ([decision
 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
 a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
 **Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
-guard lines where something blocks; `substratectl install <provider>
+guard lines where something blocks; `substratectl install <package>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
@@ -287,8 +287,8 @@ every installed bundle under an `{items}` envelope and
 one: `{id, name, authority, package, installed, enabled, inputs, setup,
 accounts, functions, kinds, liveRecords, version}`, plus the quarantine pair
 when it applies and, on an imported sample, the `origin`, `originVersion` and
-`modified` its [stamp](#the-two-doors) carries. On a provider the catalog
-installed, `shippedVersion` is the shipped package version that install took,
+`modified` its [stamp](#the-two-doors) carries. On a published package the
+catalog installed, `shippedVersion` is the shipped package version that install took,
 which can sit below `version`: the API lands every change at stored+1, so an
 install over hand applies lands above the shipped number. `id` is the package the bundle
 owns, and `name` and `package` are both that package's own word.
@@ -939,8 +939,9 @@ Rewrite the authority with `sed` first (`sed
 's/samples\.substrate\.reamde\.dev/alice.example.com/g'` for a repository
 named `alice.example.com`).
 
-`POST …/catalog/{id}/install` is the **provider** door. The closure lands
-verbatim, under the authority that publishes it, with the shipped version it
+`POST …/catalog/{id}/install` is the **published** door, for a provider and a
+catalogue alike. The closure lands verbatim, under the authority that
+publishes it, with the shipped version it
 took stamped as `shippedVersion` on the package row, and the version bump the
 publisher ships next is what the upgrade preview above offers.
 
@@ -972,7 +973,7 @@ reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
 `modified` covers declaration data only: labels, annotations and the data
 records a sample ships beside its closure do not flip it.
-The provider door stamps no origin (only its `shippedVersion`), and neither
+The install door stamps no origin (only its `shippedVersion`), and neither
 does a hand `apply -f` unless the request names an `origin`: `substratectl apply --as <authority>` sends
 the package the input was authored as when the input carries its package
 document (one package per run; an input carrying several is refused, since

@@ -78,7 +78,7 @@ func CataloguePackage(name string) string { return vocabulary.AuthorityPublisher
 // they and their requirements name are put first, because a test repository
 // holds only the units a test puts.
 func InstallCatalogues(ctx context.Context, ds substrate.Dataset, names ...string) error {
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		return fmt.Errorf("enginetest: load the catalog: %w", err)
 	}

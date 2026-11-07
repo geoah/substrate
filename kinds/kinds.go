@@ -15,7 +15,9 @@
 // a package under the seed authority is adding a directory that is either in
 // [SeedPackages] or carries a bundle document, which kinds_test.go holds.
 // [Bundles] also serves the seed authority's catalogues (record 0192), the
-// well-known packages a repository installs when it wants them.
+// well-known packages a repository installs when it wants them. It is two
+// views the catalog loads apart (record 0238): [Providers], the packages that
+// connect the substrate to an outside service, and [Catalogues], the rest.
 package kinds
 
 import (
@@ -36,6 +38,10 @@ const (
 	SeedConsolePackage      = SeedAuthority + "/console"
 	SeedObservationsPackage = SeedAuthority + "/observations"
 )
+
+// ProvidersAuthority publishes the providers: every package under it connects
+// the substrate to an outside service (records 0048 and 0238).
+const ProvidersAuthority = "providers.substrate.reamde.dev"
 
 // SeedPackages is every package the binary seeds. A directory under the seed
 // authority that is not here is a catalogue, and must carry a bundle document.
@@ -78,6 +84,21 @@ func Bundles() fs.FS {
 			return true
 		}
 		return !isDir(name) || !seeded(name)
+	}}
+}
+
+// Providers is the providers authority whole, one directory per package
+// inside it.
+func Providers() fs.FS {
+	return rootFilterFS{keep: func(name string) bool { return name == ProvidersAuthority }}
+}
+
+// Catalogues is everything else the catalog serves: [Bundles] without the
+// providers authority.
+func Catalogues() fs.FS {
+	bundles := Bundles().(rootFilterFS)
+	return rootFilterFS{keep: func(name string) bool {
+		return name != ProvidersAuthority && bundles.keep(name)
 	}}
 }
 
