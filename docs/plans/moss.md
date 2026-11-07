@@ -2,7 +2,7 @@
 
 Status: proposed 2026-11-07, a proof of concept. It is a plan, not a
 contract: [agents](../agents.md) describes what is in the tree, and the
-sample's declarations are in `samples/assistant/bundle.yaml`.
+assistant's declarations are in `kinds/substrate.reamde.dev/assistant/assistant.yaml`.
 
 The seeded assistant was called `substrate`, the same word the console uses
 for the engine's own hand, so a transcript could not say which of the two had
@@ -112,16 +112,90 @@ paragraphs, and changes in five places:
 
 ### Where it lives
 
-The three agents are one sample package, `samples.substrate.reamde.dev/assistant`,
-seeded at registration beside the LLM sample and rehomed onto the owner's
-authority like it: `<authority>/assistant/moss`, `…/architect`,
-`…/librarian`. A package is the unit the substrate installs, versions and
-pauses, so the assistant moves as one; its name is not the persona's, so a
-renamed Moss stays put; and what it grows next (example views, a briefing
-trigger) lands there rather than among the LLM sample's lessons. A shipped,
-`builtin` package was the other option. It would keep the prompts off every
-hand but the binary's, which is exactly what an owner tuning their own
-assistant should not meet.
+The assistant ships with the binary
+([0241](../decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
+`substrate.reamde.dev/assistant`, the fifth seeded package, holds `moss`,
+`architect` and `librarian`, the same three in every repository, upgraded
+at boot. A prompt fix reaches every repository with the binary, and the
+declarations are `builtin`, so nothing but the binary writes them. It was a
+sample for a day; an owner's edits to a sample are replaced by the next
+upgrade they accept, and its prompts will change every week while the
+evals are written.
+
+### How the owner shapes it
+
+An owner shapes the shipped agents without editing them, with three kinds of
+record, each with its own job:
+
+| Record | What it says | How an agent reads it | Who writes it |
+| --- | --- | --- | --- |
+| `llm/instruction` | how one agent should work: "no bullet points", "go by Juniper", "give new collections a notes field" | rendered into that agent's system prompt as the owner's direction, `<owner_instructions>` | the owner; an agent only by proposal |
+| `llm/memory` | what the owner is: "vegetarian", "works from home on Fridays" | pinned as data by the agents that pin it | the owner; Moss by proposal |
+| the owner's policies | what an agent may do without asking | the policy door, on every write | the owner alone |
+
+An instruction names one agent, so "tell the architect to always add a
+notes field" is an instruction for the architect, read by no one else.
+Moss changes itself the same way: asked for a lasting change, it proposes
+an instruction for itself, and the owner's accept is what lands it. A
+glob grant never reaches the instruction kind, so a record or a web page
+that talks Moss into "updating its instructions" produces a proposal the
+owner reads, never a change. No instruction widens what an agent may do;
+grants and policies decide that.
+
+#### What the other harnesses do
+
+Researched 2026-11-07; items marked (unv.) rest on secondary sources.
+
+Personal agent harnesses converged on one stack, most trusted and smallest
+first: the vendor's prompt; an identity or voice (OpenClaw's `SOUL.md` and
+`IDENTITY.md`, Letta's `persona` block, ChatGPT's personality); operating
+instructions (`AGENTS.md`, `CLAUDE.md`, Cursor's rules, custom and project
+instructions); a model of the user (`USER.md`, Letta's `human` block, memory
+summaries); and memory that is searched rather than loaded (daily notes,
+chat history, Letta's archival memory), with skills loaded on demand by
+name and description. Precedence is the order the layers are concatenated
+in: Claude Code and Codex read the files nearest the work last, so
+"closer files override earlier guidance because they appear later"
+([Codex](https://learn.chatgpt.com/docs/agent-configuration/agents-md),
+[Claude Code](https://code.claude.com/docs/en/memory)).
+
+| | Who changes it | Does the agent change itself | What holds it |
+| --- | --- | --- | --- |
+| OpenClaw `SOUL.md`, `AGENTS.md`, `USER.md` ([templates](https://github.com/openclaw/openclaw/tree/main/docs/reference/templates)) | owner and agent | yes: "This file is yours to evolve", and "If you change this file, tell the user" | the model's own restraint, a git backup, and since July 2026 a provenance taint that keeps a file written on a tainted turn out of context ([provenance](https://github.com/openclaw/openclaw/blob/main/docs/concepts/memory-provenance.md)) |
+| Letta memory blocks ([docs](https://docs.letta.com/guides/agents/memory-blocks)) | API, agent, a background agent | yes, through exact-match `memory_replace` and whole `memory_rethink` | `read_only` blocks, size limits, a history of every block's states with its actor |
+| Claude Code `CLAUDE.md` and auto memory | user; Claude writes memory unprompted | memory yes, instructions only when asked | a "Saved N memories" notice; instructions arrive as a user message, "context, not enforced configuration" |
+| ChatGPT custom instructions and memory (unv.) | user; the model through a `bio` tool | memory yes | "Memory updated", and a page to manage them |
+| Cursor and Windsurf rules ([Cursor](https://cursor.com/docs/context/rules)) | user | on request | rules scoped by file glob or loaded when their description fits |
+| Hermes `SOUL.md` and memory ([docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory)) | user and agent | yes | an injection scan on every write, a snapshot frozen at session start, approval for skill writes |
+
+Every layer an agent can write has been poisoned in public:
+- A web page planted a ChatGPT memory that exfiltrated later chats
+  ([2024](https://embracethered.com/blog/posts/2024/chatgpt-macos-app-persistent-data-exfiltration/)).
+- A document injection scheduled an OpenClaw `SOUL.md` rewrite every two
+  minutes ([Zenity, 2026-02-04](https://labs.zenity.io/post/openclaw-or-opendoor-indirect-prompt-injection-makes-openclaw-vulnerable-to-backdoors-and-much-more)).
+- An email-summary job carried an attacker's claims into `MEMORY.md` and
+  `USER.md` ([IronCore, 2026-08-26](https://ironcorelabs.com/blog/2026/prompt-laundering/)).
+
+The mitigations that held sit outside the prompt: approval, provenance,
+versioned writes, layers the agent cannot write, and keeping what an agent
+wrote out of the system prompt.
+
+Substrate's instructions take the layer shape and keep the agent out of the
+write. The shipped prompt is the vendor's layer and the binary's alone. An
+instruction is the operating layer, scoped to one agent the way a Cursor
+rule is scoped to files. A memory is the user model, read as data. What an
+agent changes in its own direction is a proposal: the owner reads it before
+it exists, and every version has an author in the changelog. A glob grant
+cannot write one at all, which a model's restraint cannot promise.
+
+Next steps the survey suggests:
+- **An identity** clients show, so "go by Juniper" renames the agent in the
+  console and the apps as well as in its replies; OpenClaw's first run asks
+  for it.
+- **Skills as records**: a procedure an agent loads when its description
+  fits, rather than a standing instruction in every prompt.
+- **Instructions scoped to a kind**, read when the agent touches that kind,
+  as a rule scoped to files is.
 
 The old `substrate` agent stays declared and `supporting`, so a thread
 started with it continues. Pruning it would leave every such thread naming an

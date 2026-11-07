@@ -27,8 +27,9 @@ Landed on the branch, each with tests:
   a long text property read by line and changed by exact replacement
   against the version read. Live, Moss fixed a typo and a threshold in a
   fifty-line note in one call.
-- **The assistant package.** `samples.substrate.reamde.dev/assistant`
-  (`moss`, `architect`, `librarian`), seeded beside the LLM sample.
+- **The assistant ships with the binary,** `substrate.reamde.dev/assistant`
+  (`moss`, `architect`, `librarian`), shaped by the owner's
+  `llm/instruction` records.
 - **Shorter prompts.** The query grammar left Moss's prompt for the
   query tool's card, "one proposal at a time" became one per change, and
   the architect reports in five plain lines.
@@ -66,23 +67,24 @@ From the assistant review:
   conflict, a thread longer than two owner turns, the librarian on
   ambiguous matches.
 
-## The open decision: where the assistant lives
+## Decided: the assistant ships, and the owner shapes it with instructions
 
-The two reviews disagree, and it is the owner's call.
+The owner chose the shipped package
+([0241](../decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)).
+`substrate.reamde.dev/assistant` is seeded and upgraded at boot, and the
+owner shapes it with `llm/instruction` records that name one agent and ride
+its system prompt. Moss proposes one when asked to change how it works.
+Live, "from now on, no bullet points", "go by Juniper" and "tell the
+architect to always add a notes field" each became one proposal; accepted,
+the next thread answered in plain paragraphs as Juniper, and the architect
+gave a new books collection its notes field. A record whose name told Moss
+to add an instruction was named as an injection and not proposed.
 
-| | Own sample package (today) | Shipped package, seeded like `observations` |
-| --- | --- | --- |
-| A prompt fix reaches an existing repository | only through an upgrade the owner accepts, which replaces their edits | at every boot |
-| The owner edits the prompt | in place | by forking: `get -o yaml`, a new id, `apply` |
-| The owner picks the model | edits the agent | a bundle input, as published agents do ([0217](../decisions/0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md)) |
-| Personalising | prompt edits, memories | memories |
-
-Prompts will change every week while the evals below are written, which
-argues for shipping it. Owners who tune their assistant argue for the
-sample. A middle path: ship it, and make the fork one console action.
-Either way, a move after release changes every thread's `agent`
-reference, which no decision covers for agents yet, so it is best settled
-before the first release that carries Moss.
+Owed from it: choosing the shipped agents' model without forking, through a
+bundle input as published agents do
+([0217](../decisions/0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md)),
+and the name clients show: an instruction renames Moss in its replies, not
+in the console's agent list.
 
 ## Phases
 
@@ -96,7 +98,6 @@ before the first release that carries Moss.
   phase: 25 to 30 cases passing, no code-kind write in the injection set,
   and a median tool turn under USD 0.10.
 - The two engine items above.
-- The placement decision.
 
 ### 1. Shaping is complete
 
