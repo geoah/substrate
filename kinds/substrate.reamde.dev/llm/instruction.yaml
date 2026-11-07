@@ -1,0 +1,56 @@
+# One standing instruction the owner gives one agent: "no bullet points",
+# "go by Juniper", "add a notes field to every new collection". The engine
+# reads an agent's active instructions when a thread opens and renders them
+# into its system prompt after the agent's own prompt, as the owner's
+# instructions rather than as data (decision record 0241), so a shipped
+# agent's prompt stays the binary's and the owner's changes ride beside it.
+#
+# A memory is what an agent knows about the owner, pinned as data; an
+# instruction is how one agent should work, read as direction. An
+# instruction never widens what the agent may do: its tools and the owner's
+# policies decide that.
+#
+# An agent writes one only where its own writes name this kind; a glob never
+# reaches it. Moss proposes one when the owner asks it to change how it
+# works, so an instruction an agent wrote is one the owner accepted. PRIMARY,
+# like memory: the owner lists, edits and retires them as their own records.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/instruction
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    One standing instruction the owner gives one agent about how to work.
+    The agent reads its active instructions at the start of every thread,
+    after its own prompt.
+  purpose: primary
+  names:
+    singular: instruction
+  displayTemplate: "{text}"
+  properties:
+    agent:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      required: true
+      mustExist: true
+      description: the agent this instruction is for
+    text:
+      type: text
+      required: true
+      description: the instruction, in the owner's words, in one or two sentences
+    # Retiring an instruction keeps the record, so taking one back is one
+    # switch and its history stays readable; the engine reads active ones.
+    active:
+      type: bool
+      default: true
+      description: whether the agent reads this instruction
+    source:
+      type: enum
+      default: owner
+      values:
+        - owner
+        - agent
+        - import
+      description: where the instruction came from; owner (written by hand),
+        agent (an agent proposed it and the owner accepted) or import

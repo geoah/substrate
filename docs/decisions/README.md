@@ -396,3 +396,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0237](0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md) | A second factor is the owner's choice, and sign-in asks for the code only of an account that has one | accepted |
 | [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | proposed |
 | [0240](0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md) | An agent changes long text by exact replacement against the version it read | proposed |
+| [0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md) | The assistant ships with the binary, and the owner shapes it through instruction records | proposed |

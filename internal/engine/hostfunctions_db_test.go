@@ -183,6 +183,10 @@ func preHostKindsDir(t *testing.T) string {
 	if err := os.Remove(filepath.Join(core, "hostfunctions.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	// The assistant came after the host functions and names them as tools.
+	if err := os.RemoveAll(filepath.Join(dir, vocabulary.PackageAssistant)); err != nil {
+		t.Fatal(err)
+	}
 	fn := filepath.Join(core, "function.yaml")
 	raw, err := os.ReadFile(fn)
 	if err != nil {

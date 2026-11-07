@@ -152,7 +152,8 @@ this bundle, rehomed onto its own authority, and three keyless `llm/provider`
 rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
 that row and they run. A later import of this bundle onto a repository born
 before the seed writes the same three rows and the same agents. The owner's
-assistant is [the next sample](#assistant-sample).
+assistant, Moss, ships with the binary
+([builtin kinds](builtin-kinds.md#substratereamdedevassistant)).
 
 - `substrate` is the assistant before Moss, `supporting` now and kept so
   its threads continue, a general assistant: it reads the
@@ -183,31 +184,6 @@ on OpenAI's own wire, `anthropic` on Anthropic's, and `gemini` on Google's
 OpenAI-compatible endpoint. Keying one is an ordinary record write,
 and [registering a provider](agents.md#registering-a-provider) is where that
 write, the wires and the pricing table are described.
-
-## Assistant (sample)
-
-Package `samples.substrate.reamde.dev/assistant`. A new repository holds it
-beside the LLM sample, rehomed onto its own authority, so the owner edits
-its prompts as their own.
-
-- `moss` is the one to chat with: Moss, a general assistant with a name and
-  a temperament (calm, plain-spoken, dry), that answers a question about
-  the world from the model's own knowledge with no tool call and a
-  question about the owner from their records. It holds what the LLM
-  sample's `substrate` holds, plus `wait` and [`edit`](agents.md#tools),
-  and two sub-agents.
-- `architect` is the one agent with the [`vocabulary`](agents.md#tools)
-  built-in: it plans every change to the owner's kinds and applies it only
-  when the owner asked, its writes naming `core/package` and `core/kind`
-  alone, and it never converts records.
-- `librarian` is what Moss calls as a
-  [background job](agents.md#background-jobs) for bulk record work, on a
-  budget of its own (128 tool calls over 24 turns).
-
-The two helpers are `hiddenFromChat`. Moss and the architect run
-`claude-opus-5-5` (effort `low` and `medium`) on the `anthropic` row, the
-librarian `claude-sonnet-5-5` (`low`). [Recorded sessions](plans/moss-sessions.md)
-show each path.
 
 ## Notes (sample)
 

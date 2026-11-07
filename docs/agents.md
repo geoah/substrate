@@ -369,8 +369,10 @@ entry could name only a function.
   error otherwise), and every document's kind is held to the effective emit
   and must be named in the agent's own writes: **a glob never reaches a
   declaration kind**, through this tool or through `write`, nor a
-  `core/trigger`, which decides when code runs, so an agent granted `*`
-  writes every record of the owner's and no declaration or trigger, and
+  `core/trigger`, which decides when code runs, nor an
+  [`llm/instruction`](#owner-instructions), which decides how an agent
+  works, so an agent granted `*` writes every record of the owner's and no
+  declaration, trigger or instruction, and
   one whose writes name `core/package` and `core/kind` declares kinds and
   packages and no agent, function, trigger or mapping. A batch whose
   conversion plan would rewrite a live record (a rename, a backfill) is
@@ -515,7 +517,8 @@ tools on its page.
 ## The engine's guidance
 
 Every agent's system prompt carries a short block the engine writes, after
-the agent's own `prompt` and its kinds list and before any pinned context:
+the agent's own `prompt` and its kinds list and before the owner's
+[instructions](#owner-instructions) and any pinned context:
 
 ```text
 <substrate>
@@ -619,6 +622,55 @@ standing facts: `text`, `active` (default `true`) and `source` (`owner`,
 LLM sample's `substrate` assistant pins the active ones, ordered by id, and
 saves a fact the owner states about themselves by proposing an `llm/memory`
 create with `source: agent`, so a remembered fact is one the owner accepted.
+
+## Owner instructions
+
+The owner shapes an agent without editing its declaration
+([0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
+a record of `substrate.reamde.dev/llm/instruction` names one agent and
+carries one standing instruction, and the engine reads the agent's active
+ones into its system prompt when a thread opens:
+
+```yaml
+kind: substrate.reamde.dev/llm/instruction
+data:
+  properties:
+    agent: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    text: Answer in plain paragraphs, never bullet points.
+```
+
+```text
+<owner_instructions>
+How the owner wants you to work: their standing instructions to you, which they wrote or accepted, oldest first. Follow them where they differ from the prompt above, a later one over an earlier one. None widens what your tools and the owner's policies allow. Each line is one instruction, with the id that names its record.
+{"id":"01m6…","text":"Answer in plain paragraphs, never bullet points."}
+</owner_instructions>
+```
+
+- **Where.** After the engine's guidance and before the pinned context,
+  oldest first, at most 100 records and 8 KiB; the rest are counted on one
+  line. Each line is JSON, so an instruction's text never closes the block.
+- **When.** Read when a thread opens and kept with the pinned snapshot on
+  the thread row, so every run of the thread replays the same bytes. An
+  instruction written during a thread reaches the next thread, or the run
+  after a compaction.
+- **Who reads them.** Every run that takes the
+  [engine's guidance](#the-engines-guidance). A run whose reply the engine
+  parses, such as a policy judge's, and an agent with
+  `params.engineGuidance: false`, gets none.
+- **Who writes them.** The owner, by hand. An agent writes one only where
+  its own `permissions.writes` names `substrate.reamde.dev/llm/instruction`;
+  a glob never reaches it, as it never reaches a declaration or a trigger.
+  An agent granted `*` proposes one instead, and the owner's accept lands
+  it.
+- **What they cannot do.** Widen anything. An instruction changes how an
+  agent works; its tools, its grants and the owner's
+  [policies](#the-policy-door) decide what it may do.
+
+A memory is what an agent knows about the owner, read as data by every
+agent that pins it; an instruction is direction to one agent. The shipped
+assistant, `substrate.reamde.dev/assistant/moss`, proposes an instruction
+when the owner asks it to change how it works, so it changes itself only
+with the owner's accept.
 
 ## The decision loop
 

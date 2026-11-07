@@ -8,8 +8,8 @@
 #
 # A new repository is seeded with this bundle (rehomed onto its own
 # authority) and with three keyless llm/provider rows: openai, anthropic,
-# gemini. The agents here name `openai`; Moss, in the assistant sample,
-# names `anthropic`. Key a row's apiKey and the agents on it run; point an
+# gemini. The agents here name `openai`; Moss, the shipped assistant
+# (kinds/substrate.reamde.dev/assistant), names `anthropic`. Key a row's apiKey and the agents on it run; point an
 # agent at another row to use a different vendor.
 #
 #   1. Registration already imported this bundle.
@@ -23,8 +23,8 @@
 # provider row that is still keyless) is the host's own status probe, surfaced
 # on the bundle status as a "provider" setup item with no declaration needed.
 #
-# Moss, the owner's assistant, is its own sample package
-# (samples/assistant), seeded beside this one. The agents here are lessons.
+# Moss, the owner's assistant, ships with the binary
+# (kinds/substrate.reamde.dev/assistant). The agents here are lessons.
 # `substrate`, the assistant before Moss, is granted `*` for both reads and
 # writes, so it sees and changes
 # everything the repository holds EXCEPT its auth material, which no glob
@@ -95,7 +95,7 @@ data:
       description: whatever is being practised on
 ---
 # ---- the assistant before Moss ----------------------------------------------
-# Moss (samples/assistant) is the owner's assistant now. This one stays declared, and
+# Moss (kinds/substrate.reamde.dev/assistant) is the owner's assistant now. This one stays declared, and
 # `supporting`, so a thread started with it continues; a prune would leave
 # every such thread naming an agent that is gone.
 #

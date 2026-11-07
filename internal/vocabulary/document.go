@@ -41,11 +41,15 @@ const (
 	PackageLLM          = AuthorityPublisher + "/llm"
 	PackageConsole      = AuthorityPublisher + "/console"
 	PackageObservations = AuthorityPublisher + "/observations"
+	// PackageAssistant is the fifth (record 0241): the owner's assistant,
+	// agents the binary ships and upgrades, which the owner shapes through
+	// instructions rather than edits.
+	PackageAssistant = AuthorityPublisher + "/assistant"
 )
 
 // SeededPackage reports whether a package is one the binary seeds.
 func SeededPackage(name string) bool {
-	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageObservations
+	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageObservations || name == PackageAssistant
 }
 
 // SubstrateStatePackage reports whether a seeded package holds the
@@ -61,13 +65,17 @@ const KindContact = PackageCore + "/contact"
 // KindLLMMemory is the facts an owner keeps for their agents (record 0197).
 const KindLLMMemory = PackageLLM + "/memory"
 
+// KindLLMInstruction is the owner's standing instructions to one agent,
+// read into its system prompt (record 0241).
+const KindLLMInstruction = PackageLLM + "/instruction"
+
 // SeededOwnerData reports whether a kind of a substrate-state package holds
 // the owner's own data, so its records are listed, edited and merged like any
 // of the owner's: the generic merge admits them (engine merge.go) and the
 // console lists them under the purpose they declare. The console's
 // SEEDED_OWNER_DATA_KINDS (web/console/src/lib/core-kinds.ts) is this list.
 func SeededOwnerData(kind string) bool {
-	return kind == KindContact || kind == KindLLMMemory
+	return kind == KindContact || kind == KindLLMMemory || kind == KindLLMInstruction
 }
 
 // The manifest document kinds — the local names under PackageCore. The

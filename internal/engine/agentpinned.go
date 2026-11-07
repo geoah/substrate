@@ -18,7 +18,9 @@ import (
 // into the system prompt after the kinds list. The rendered block is stored on
 // the thread row and replayed by every later run of the thread, so the
 // prompt's prefix is the same bytes across messages and the provider's cache
-// holds. A compaction clears it, and a changed declaration replaces it.
+// holds. A compaction clears it, and a changed declaration replaces it. The
+// owner's instructions to the agent (agentinstructions.go) are read at the
+// same moment and stored in the same block, ahead of the pinned records.
 
 const (
 	propThreadPinned = "pinnedContext"
@@ -29,31 +31,42 @@ const (
 )
 
 // pinnedDigest names the `context` declaration a snapshot was taken under,
-// so a changed declaration is a fresh snapshot rather than a stale one.
-// encoding/json writes map keys sorted, so equal declarations digest equal.
-func pinnedDigest(ag *vocabulary.Agent) string {
+// and whether it carries the owner's instructions, so a changed declaration
+// (or a snapshot an older binary stored without them) is a fresh snapshot
+// rather than a stale one. encoding/json writes map keys sorted, so equal
+// declarations digest equal.
+func pinnedDigest(ag *vocabulary.Agent, instructions bool) string {
 	buf, _ := json.Marshal(ag.Definition["context"])
+	if instructions {
+		buf = append(buf, "\x00instructions"...)
+	}
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:16])
 }
 
 // storedPinned answers the block a thread row holds when it was taken under
 // the agent's current declaration, and false otherwise.
-func storedPinned(ag *vocabulary.Agent, v any) (string, bool) {
+func storedPinned(ag *vocabulary.Agent, instructions bool, v any) (string, bool) {
 	m, _ := v.(map[string]any)
 	if m == nil {
 		return "", false
 	}
 	block, ok := m["block"].(string)
-	if !ok || m["digest"] != pinnedDigest(ag) {
+	if !ok || m["digest"] != pinnedDigest(ag, instructions) {
 		return "", false
 	}
 	return block, true
 }
 
 // pinnedProps is the thread row's value for a snapshot.
-func pinnedProps(ag *vocabulary.Agent, block string, at time.Time) map[string]any {
-	return map[string]any{"block": block, "digest": pinnedDigest(ag), "takenAt": at.Format(time.RFC3339Nano)}
+func pinnedProps(ag *vocabulary.Agent, instructions bool, block string, at time.Time) map[string]any {
+	return map[string]any{"block": block, "digest": pinnedDigest(ag, instructions), "takenAt": at.Format(time.RFC3339Nano)}
+}
+
+// snapshots reports whether this run keeps a snapshot at all: an agent that
+// pins records, or one that reads the owner's instructions.
+func (l *agentLoop) snapshots() bool {
+	return len(l.ag.Context.Pinned) > 0 || l.takesInstructions()
 }
 
 // takePinned evaluates the agent's pinned reads and renders the block. It
@@ -191,16 +204,30 @@ func layoutPinned(sections []pinnedSection, n int) string {
 // value the thread row is created with, nil when the agent pins nothing or a
 // read failed.
 func (l *agentLoop) openPinned(ctx context.Context) any {
-	if len(l.ag.Context.Pinned) == 0 {
+	if !l.snapshots() {
 		return nil
 	}
 	at := nowUTC()
-	block, complete := l.ds.takePinned(ctx, l.ag)
-	l.pinnedBlock = block
+	var parts []string
+	complete := true
+	if l.takesInstructions() {
+		block, err := l.ds.takeInstructions(ctx, l.ag)
+		if err != nil {
+			l.ds.svc.log.Warn("substrate: an agent's instructions were not read", "agent", l.ag.Identity(), "error", err)
+			complete = false
+		}
+		parts = append(parts, block)
+	}
+	if len(l.ag.Context.Pinned) > 0 {
+		block, ok := l.ds.takePinned(ctx, l.ag)
+		complete = complete && ok
+		parts = append(parts, block)
+	}
+	l.pinnedBlock = composeSystem(parts...)
 	if !complete {
 		return nil
 	}
-	return pinnedProps(l.ag, block, at)
+	return pinnedProps(l.ag, l.takesInstructions(), l.pinnedBlock, at)
 }
 
 // continuePinned sets a continued thread's block: the stored one when it was
@@ -208,10 +235,10 @@ func (l *agentLoop) openPinned(ctx context.Context) any {
 // on the row. The row holds none when a compaction cleared it or the thread
 // predates pinning.
 func (l *agentLoop) continuePinned(ctx context.Context, stored any) error {
-	if len(l.ag.Context.Pinned) == 0 {
+	if !l.snapshots() {
 		return nil
 	}
-	if block, ok := storedPinned(l.ag, stored); ok {
+	if block, ok := storedPinned(l.ag, l.takesInstructions(), stored); ok {
 		l.pinnedBlock = block
 		return nil
 	}
@@ -232,7 +259,7 @@ func (l *agentLoop) continuePinned(ctx context.Context, stored any) error {
 // next run takes a fresh snapshot: the history it replays has moved anyway,
 // and the facts may have.
 func (l *agentLoop) dropPinned(ctx context.Context) {
-	if len(l.ag.Context.Pinned) == 0 {
+	if !l.snapshots() {
 		return
 	}
 	if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {

@@ -1,9 +1,10 @@
 # Built-in kinds
 
-This page maps the vocabulary this binary ships, package by package: the four
+This page maps the vocabulary this binary ships, package by package: the five
 packages a repository is seeded with, `substrate.reamde.dev/core`,
-`substrate.reamde.dev/llm`, `substrate.reamde.dev/console` and
-`substrate.reamde.dev/observations`, the four well-known catalogues it can
+`substrate.reamde.dev/llm`, `substrate.reamde.dev/console`,
+`substrate.reamde.dev/observations` and `substrate.reamde.dev/assistant`
+(agents, no kinds), the four well-known catalogues it can
 install (`health`, `labs`, `environment` and `clinical`, under the same
 authority), the
 LLM sample copied onto the repository's own authority at registration, and
@@ -234,9 +235,31 @@ not part of the frozen core:
 | `message`     | One turn in a thread, with its tool-call audit.                                                  |
 | `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
 | `memory`      | One standing fact or instruction the owner keeps for their agents: `text`, `active` (default true) and `source` (`owner`, `agent` or `import`). The one `primary` kind of the package, because the rows are the owner's data; an agent reads the active ones through `context.pinned` ([agents](agents.md#pinned-context), decision record [0197](decisions/0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md)). |
+| `instruction` | One standing instruction the owner gives one agent about how to work: `agent` (a reference to it), `text`, `active` (default true) and `source`. `primary`, like `memory`. The engine reads an agent's active ones into its system prompt when a thread opens, as the owner's direction; an agent writes one only where its own writes name the kind ([agents](agents.md#owner-instructions), decision record [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)). |
 
 The `agent` kind itself stays in core: it is one of the declarable kinds, and a
 manifest document is a record of a core kind whatever package it describes.
+
+## substrate.reamde.dev/assistant
+
+The fifth seeded package (decision record
+[0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
+the owner's assistant, three agents and no kinds, written into every
+repository and upgraded at boot, so a prompt fix reaches every repository
+with the binary.
+
+- `moss`, the one to chat with: a general assistant that answers a question
+  about the world on its own and a question about the owner from their
+  records, keeps those records, and changes long text with `edit`.
+- `architect`, the one agent holding `vocabulary`: it plans every change to
+  the owner's kinds and applies only what the owner asked for. Its writes
+  name `core/package` and `core/kind` alone, and it never converts records.
+- `librarian`, which Moss calls as a background job for bulk record work.
+
+The owner shapes them without editing them: `llm/instruction` records
+naming one of them ride its system prompt, and Moss proposes one when asked
+to change how it works. All three name the seeded `anthropic` row. The
+design and the recorded sessions are in [docs/plans/moss.md](plans/moss.md).
 
 ## substrate.reamde.dev/console
 

@@ -26,20 +26,21 @@ import (
 
 // SeedAuthority is the substrate's own authority. The SEED is a list of its
 // packages, not the whole authority (record 0192): core, llm (0077), console
-// (0166) and observations are written into every repository, and every other
-// package under it is a well-known catalogue the catalog serves, installed when
-// a repository wants it.
+// (0166), observations and assistant (0241) are written into every
+// repository, and every other package under it is a well-known catalogue the
+// catalog serves, installed when a repository wants it.
 const (
 	SeedAuthority           = "substrate.reamde.dev"
 	SeedCorePackage         = SeedAuthority + "/core"
 	SeedLLMPackage          = SeedAuthority + "/llm"
 	SeedConsolePackage      = SeedAuthority + "/console"
 	SeedObservationsPackage = SeedAuthority + "/observations"
+	SeedAssistantPackage    = SeedAuthority + "/assistant"
 )
 
 // SeedPackages is every package the binary seeds. A directory under the seed
 // authority that is not here is a catalogue, and must carry a bundle document.
-var SeedPackages = []string{SeedCorePackage, SeedLLMPackage, SeedConsolePackage, SeedObservationsPackage}
+var SeedPackages = []string{SeedCorePackage, SeedLLMPackage, SeedConsolePackage, SeedObservationsPackage, SeedAssistantPackage}
 
 func seeded(dir string) bool {
 	for _, p := range SeedPackages {

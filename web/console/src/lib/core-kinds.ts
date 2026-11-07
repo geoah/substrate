@@ -58,12 +58,16 @@ export const CONTACT_KIND = `${CORE_PACKAGE}/contact`
 /** The facts an owner keeps for their agents (decision record 0197). */
 export const MEMORY_KIND = `${LLM_PACKAGE}/memory`
 
+/** The owner's standing instructions to one agent (decision record 0241). */
+export const INSTRUCTION_KIND = `${LLM_PACKAGE}/instruction`
+
 /** The kinds of a machinery package whose records are the owner's own data:
  * listed under the purpose they declare, in a group of their own, and theirs
  * in every origin. The server's `vocabulary.SeededOwnerData` is this list. */
 export const SEEDED_OWNER_DATA_KINDS: readonly string[] = [
   CONTACT_KIND,
   MEMORY_KIND,
+  INSTRUCTION_KIND,
 ]
 
 /** Whether a kind reference is one of the owner-data kinds inside the

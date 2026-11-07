@@ -2,7 +2,9 @@
 
 Package `samples.substrate.reamde.dev/llm`: the agents the substrate seeds
 into every new repository, imported onto the repository's own authority at
-registration beside [the assistant](../assistant/README.md). They are the
+registration. The owner's assistant, Moss, ships with the binary instead
+([builtin kinds](../../docs/builtin-kinds.md#substratereamdedevassistant)).
+These are the
 practice surface for the decision loop: `substrate`, the assistant before
 Moss, answers questions about your records and proposes changes, `substrateEditor`
 writes them, `substrateArbiter` and `substrateJudge` decide on proposals,

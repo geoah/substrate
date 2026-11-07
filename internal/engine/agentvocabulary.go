@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // dispatchVocabulary runs one vocabulary call. A lossy batch is refused with
@@ -115,23 +116,36 @@ func vocabularyDocumentsArg(v any) ([]map[string]any, error) {
 	return docs, nil
 }
 
-// declarationNamed holds a declaration kind, and a trigger, to the agent's
-// OWN writes, spelled out: a glob never reaches one (decision 0239), as it
-// never reaches auth material (0080). A declaration changes what code runs
-// and what records hold, and a trigger decides when code runs, so an agent
-// whose `*` covers the owner's data does not by that grant also reshape the
-// vocabulary or schedule a body. The effective emit is checked beside it,
-// so a caller's ceiling still narrows a sub-agent that names the kind.
+// namedOnlyData are the data kinds held the way declarations are: a trigger
+// decides when code runs, and an instruction (decision 0241) decides how an
+// agent works, so neither is the owner's data a glob grant should reach.
+var namedOnlyData = map[string]string{
+	typeTrigger:                   "the trigger kind, which decides when code runs,",
+	vocabulary.KindLLMInstruction: "the instruction kind, which decides how an agent works,",
+}
+
+// declarationNamed holds a declaration kind, a trigger and an instruction to
+// the agent's OWN writes, spelled out: a glob never reaches one (decisions
+// 0239 and 0241), as it never reaches auth material (0080). A declaration
+// changes what code runs and what records hold, a trigger when code runs and
+// an instruction how an agent behaves, so an agent whose `*` covers the
+// owner's data does not by that grant also reshape the vocabulary, schedule a
+// body or rewrite its own direction; it proposes, and the owner accepts. The
+// effective emit is checked beside it, so a caller's ceiling still narrows a
+// sub-agent that names the kind.
 func (l *agentLoop) declarationNamed(kind string) error {
-	_, declaration := vocabularyRecordKinds[kind]
-	if (!declaration && kind != typeTrigger) || slices.Contains(l.ag.Emit, kind) {
+	what := "a declaration kind"
+	if _, declaration := vocabularyRecordKinds[kind]; !declaration {
+		w, held := namedOnlyData[kind]
+		if !held {
+			return nil
+		}
+		what = w
+	}
+	if slices.Contains(l.ag.Emit, kind) {
 		return nil
 	}
-	what := "a declaration kind"
-	if !declaration {
-		what = "the trigger kind, which decides when code runs,"
-	}
-	return fmt.Errorf("%w: %s is %s written only by an agent whose permissions.writes names it; a glob never reaches one, nothing applied",
+	return fmt.Errorf("%w: %s is %s written only by an agent whose permissions.writes names it; a glob never reaches one, so propose the change instead; nothing applied",
 		substrate.ErrForbidden, kind, what)
 }
 

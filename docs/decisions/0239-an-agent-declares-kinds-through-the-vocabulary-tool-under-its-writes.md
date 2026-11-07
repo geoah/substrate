@@ -98,7 +98,9 @@ and a renaming batch both refused with nothing changed.
 
 ## More Information
 
-The sample's agents are in `samples/assistant/bundle.yaml` (`moss`,
-`architect`, `librarian`) and the session examples in
+The assistant's agents are in `kinds/substrate.reamde.dev/assistant/assistant.yaml`
+(`moss`, `architect`, `librarian`, shipped since
+[0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md))
+and the session examples in
 [docs/plans/moss.md](../plans/moss.md). Revisit when a declaration can be
 held as a request, or when an agent's `*` stops reaching declaration kinds.

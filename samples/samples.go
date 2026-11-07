@@ -20,20 +20,16 @@ import (
 // Authority is the one authority every shipped sample is authored under.
 const Authority = "samples.substrate.reamde.dev"
 
-// LLM is a sample package a new repository is seeded with: the demo
+// LLM is the sample package a new repository is seeded with: the demo
 // agents and the scratchpad they practice on. Provider rows live beside
 // it as data of the seeded llm kind, not of this package.
 const LLM = Authority + "/llm"
-
-// Assistant is the other: Moss, the owner's assistant, and the agents it
-// hands work to.
-const Assistant = Authority + "/assistant"
 
 // The pattern is part of the contract: a package directory it misses is a
 // sample that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
 //
-//go:embed all:assistant all:authority.yaml all:calendar all:ink all:llm all:messaging
+//go:embed all:authority.yaml all:calendar all:ink all:llm all:messaging
 //go:embed all:notes all:pebble all:people all:readinglist all:scheduling
 //go:embed all:tasks
 var files embed.FS

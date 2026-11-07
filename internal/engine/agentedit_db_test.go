@@ -35,7 +35,7 @@ func TestAgentEditViewsAndReplacesText(t *testing.T) {
 		}})}},
 		fakeTurn{content: "edited"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "fix the note")
+	res, err := ds.CallAgent(ctx, mossID, "fix the note")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -84,14 +84,14 @@ func TestAgentEditRefusesAndAppliesNothing(t *testing.T) {
 		{replace(pad, rec.ID, "note", rec.Version+1, "b"), "view it again"},
 		{replace(pad, rec.ID, "note", rec.Version, "a"), "matches 2 places"},
 		{replace(pad, rec.ID, "note", rec.Version, "zzz"), "matches nothing"},
-		{replace(kindAgent, repo+"/assistant/moss", "prompt", 1, "You are Moss"), "a glob never reaches one"},
+		{replace(kindAgent, mossID, "prompt", 1, "You are Moss"), "a glob never reaches one"},
 	}
 	turns := make([]fakeTurn, 0, len(cases)+1)
 	for _, c := range cases {
 		turns = append(turns, fakeTurn{calls: []fakeCall{c.call}})
 	}
 	fake.script(mossModel, append(turns, fakeTurn{content: "refused"})...)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "try them all")
+	res, err := ds.CallAgent(ctx, mossID, "try them all")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}

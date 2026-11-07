@@ -101,7 +101,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", plant, "", map[string]any{"name": "Fern", "waterEveryDays": 7})}}},
 		fakeTurn{content: "Your plants have a home, and the fern is in it."},
 	)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, repo+"/assistant/moss", substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestAgentVocabularyRefusesOutsideItsGrant(t *testing.T) {
 		turns = append(turns, fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": c.docs})}}})
 	}
 	fake.script(mossModel, append(turns, fakeTurn{content: "refused, stopping"})...)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "try them all")
+	res, err := ds.CallAgent(ctx, architectID, "try them all")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: fid("gate-kinds"),
 		Properties: map[string]any{
-			"selector": map[string]any{"kinds": []any{kindKind}, "agents": []any{repo + "/assistant/architect"}},
+			"selector": map[string]any{"kinds": []any{kindKind}, "agents": []any{architectID}},
 			"action":   "gate",
 		},
 	}); err != nil {
@@ -231,7 +231,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": docs})}}},
 		fakeTurn{content: "gated"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "declare plants")
+	res, err := ds.CallAgent(ctx, architectID, "declare plants")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -280,12 +280,12 @@ func TestAGlobGrantWritesNoDeclarationOrTrigger(t *testing.T) {
 			"authority": repo, "package": "llm", "description": "x",
 		})}}},
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", typeTrigger, "", map[string]any{
-			"callable": kindAgent + "/" + repo + "/assistant/moss",
+			"callable": kindAgent + "/" + mossID,
 			"source":   map[string]any{"schedule": map[string]any{"every": "1h"}},
 		})}}},
 		fakeTurn{content: "refused"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "declare one, then schedule yourself")
+	res, err := ds.CallAgent(ctx, mossID, "declare one, then schedule yourself")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestAgentVocabularyRefusesAStringPlanAndAConversion(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": renamed})}}},
 		fakeTurn{content: "stopped"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "rename the interval")
+	res, err := ds.CallAgent(ctx, architectID, "rename the interval")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
