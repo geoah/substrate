@@ -196,6 +196,15 @@ mise run android:smoke   # on a booted emulator: the release build's checks, col
 mise run android:lock    # after a change to gradle/libs.versions.toml: the locks and the verification metadata
 ```
 
+`android:sdk` installs into the SDK at `ANDROID_HOME` with that SDK's own
+`sdkmanager`, so the machine brings the command-line tools. A Mac without
+Android Studio gets them from mise, once, in the user's own config:
+`mise use -g android-sdk@23.0` sets `ANDROID_HOME` to where mise keeps them.
+They are not in this tree's `.mise.toml` on purpose: the CI job builds on
+the runner's SDK, which a pinned `android-sdk` would replace with one
+downloaded on every run, and a pin would override an Android Studio SDK
+the same way.
+
 `SUBSTRATE_ABIS=arm64-v8a` builds one ABI (the default is `arm64-v8a` and
 `x86_64`). Swift on Android has no breakpoints, so the bridge's rules are
 debugged in the host tests, where they run.
