@@ -64,6 +64,10 @@ struct AgentEvent: Codable, Sendable, Equatable {
     var turn: Int?
     /// Rides `idle`: the thread row's status.
     var status: String?
+    /// Rides a background call's `toolFinished`: `working` on the one its
+    /// handle answers, then where the job ended on a second one under the
+    /// same `id`.
+    var job: String?
 
     /// One ndjson line, or nil: a blank line, an unknown kind (a newer
     /// server's) or garbage. The `{}` heartbeat is `.heartbeat`.
@@ -88,6 +92,7 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.error = string("error")
         event.turn = int("turn")
         event.status = string("status")
+        event.job = string("job")
         if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }

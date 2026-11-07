@@ -8,6 +8,8 @@ enum Kinds {
     static let core = "substrate.reamde.dev/core"
     static let llm = "substrate.reamde.dev/llm"
     static let agent = "\(core)/agent"
+    /// A kind's own declaration, as a `vocabulary` call's documents name it.
+    static let kind = "\(core)/kind"
     static let request = "\(core)/recordpatchrequest"
     static let provider = "\(llm)/provider"
     static let thread = "\(llm)/thread"

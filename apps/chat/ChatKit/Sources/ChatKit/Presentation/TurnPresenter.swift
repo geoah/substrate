@@ -46,8 +46,28 @@ enum TurnPresenter {
                             text: answer.answered ? "You answered" : "You dismissed the questions",
                             done: answer.answered)))
             }
+            if let ended = jobNotice(turn) {
+                let name = jobName(ended, agent: agent)
+                return TurnPresentation(
+                    id: turn.id,
+                    body: .jobEnded(
+                        OutcomeLine(
+                            text: ended.ok ? "\(name) finished in the background" : "\(name) didn't finish in the background",
+                            done: ended.ok)))
+            }
             return TurnPresentation(id: turn.id, body: .system(turn.content))
         }
+    }
+
+    /// What ran in the background, by the callable behind the name the
+    /// model saw: a sub-agent by its name, a function by its own.
+    static func jobName(_ ended: JobNotice, agent: Agent?) -> String {
+        let resolved = resolveTool(agent: agent, name: ended.name, callable: ended.callable)
+        if let sub = resolved.subagent { return agentName(sub) }
+        let fn = resolved.function ?? ended.name
+        let local = fn.split(separator: "/").last.map(String.init) ?? fn
+        let words = local.splittingWords().joined(separator: " ").lowercased()
+        return words.isEmpty ? "A tool" : words.capitalizedFirst
     }
 
     private static func assistant(_ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String]) -> AssistantTurn {
@@ -57,14 +77,41 @@ enum TurnPresenter {
             reasoning = ReasoningPresentation(label: thinking ? "Thinking…" : thoughtFor(turn.reasoningMillis), thinking: thinking, text: text)
         }
         let linked = live ? [] : (turn.mentions ?? []).filter { !$0.missing }.map { RecordReference(kind: $0.kind, id: $0.id) }
+        // A reply cites its pages once it is finished: a streaming one is
+        // still choosing them.
+        let cited = live || turn.content.isEmpty ? [] : replyLinks(turn.content)
         return AssistantTurn(
             live: live, reasoning: reasoning, text: turn.content.isEmpty ? nil : turn.content,
             missing: (turn.mentions ?? []).filter(\.missing).map(\.path),
             typing: live && turn.content.isEmpty && turn.tools.isEmpty && turn.reasoning == nil,
             linked: linked, linkedLabel: "Linked records",
+            sources: cited.isEmpty
+                ? nil
+                : SourceList(
+                    heading: "Sources", label: "Sources",
+                    pills: cited.enumerated().map { index, link in pill(link.url, title: link.text, index: index + 1) }, empty: nil),
             tools: turn.tools.enumerated().map { index, call in
                 tool(call, id: "\(turn.id)#\(index)", agent: agent, decided: decided, titles: titles)
             })
+    }
+
+    static func pill(_ url: String, title: String?, index: Int?, snippet: String? = nil) -> SourcePill {
+        let host = webHost(url)
+        return SourcePill(index: index, url: url, host: host, title: title == host ? nil : title, snippet: snippet)
+    }
+
+    /// A result of a known shape as pills: a search's hits numbered, a page
+    /// read as its one pill.
+    static func sources(_ result: ToolResult) -> SourceList {
+        switch result {
+        case let .webHits(hits):
+            SourceList(
+                heading: nil, label: "Results",
+                pills: hits.enumerated().map { index, hit in pill(hit.url, title: hit.title, index: index + 1, snippet: hit.snippet) },
+                empty: hits.isEmpty ? "No results." : nil)
+        case let .webPage(page):
+            SourceList(heading: nil, label: "Page", pills: [pill(page.url, title: page.title, index: nil)], empty: nil)
+        }
     }
 
     static func thoughtFor(_ millis: Int?) -> String {
@@ -75,23 +122,46 @@ enum TurnPresenter {
 
     static func tool(_ call: ToolCall, id: String, agent: Agent?, decided: Set<String>, titles: [String: String]) -> ToolRowPresentation {
         let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
+        // A function whose result has a shape the app knows draws it under
+        // the line, so its payload is not shown again as output. The host
+        // functions and sub-agents have details of their own.
+        let known = resolved.function.flatMap { HostFunction.all.contains($0) ? nil : toolResult(call) }
+        // A background call answers with its handle, which is not its result.
+        let working = call.job == "working"
+        let request = requestID(of: call)
+        // A failed call that landed a request was not a failure: the owner's
+        // policy held the write for review, and the suggestion under it is
+        // where it waits.
+        let held = call.ok == false && request != nil
         let details = toolDetails(call, resolved).compactMap { detail -> ToolDetailPresentation? in
             switch detail {
             case .changed, .wrote: return nil
-            case let .failed(reason): return .failed(reason ?? "It failed.")
+            case let .failed(reason): return held ? nil : .failed(reason ?? "It failed.")
             case let .found(records, total):
                 return .found(
                     total == 0 ? "Found nothing." : "Found \(plural(total, "record")).",
                     records.map { RecordReference(kind: $0.kind, id: $0.id) })
             case let .reply(agent, text): return .reply(heading: "\(agentName(agent)) said", text: text)
-            case let .output(raw): return .output(raw)
+            case let .output(raw): return known != nil || working ? nil : .output(raw)
             }
         }
         var raw = [RawLine(label: "Tool", value: call.callable ?? call.name)]
         if !call.arguments.isEmpty { raw.append(RawLine(label: "Arguments", value: pretty(call.arguments))) }
         if let output = call.output { raw.append(RawLine(label: "Output", value: pretty(output))) }
+        let status: ToolRowPresentation.Status =
+            if working {
+                .working
+            } else if call.ok == nil {
+                .running
+            } else if held {
+                .held
+            } else if call.ok == false || call.job == "failed" || call.job == "canceled" {
+                .failed
+            } else {
+                .done
+            }
         var attachment: ToolRowPresentation.Attachment?
-        if let request = requestID(of: call) {
+        if let request {
             if !decided.contains(request) { attachment = .suggestion(request) }
         } else if let interaction = interactionID(of: call) {
             attachment = .questions(interaction)
@@ -110,8 +180,9 @@ enum TurnPresenter {
             }
         }
         return ToolRowPresentation(
-            id: id, status: call.ok == nil ? .running : call.ok == true ? .done : .failed,
-            summary: toolSummary(call, resolved), details: details, raw: raw, attachment: attachment)
+            id: id, status: status,
+            statusLabel: status == .working ? "Working in the background" : status == .held ? "Waiting for you" : nil,
+            summary: toolSummary(call, resolved), details: details, raw: raw, sources: known.map(sources), attachment: attachment)
     }
 
     private static func pretty(_ text: String) -> String {

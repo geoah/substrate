@@ -42,6 +42,20 @@ private func kinds(in args: [String: JSONValue]) -> [String] {
     args["filter"]?["kinds"]?.array?.compactMap(\.text) ?? []
 }
 
+/// A list argument, which the engine also takes encoded as a string.
+private func list(_ value: JSONValue?) -> [JSONValue]? {
+    if let encoded = value?.string { return JSONValue.parse(encoded)?.array }
+    return value?.array
+}
+
+/// The kinds a `vocabulary` call's documents declare, by their last word.
+private func declaredKinds(_ documents: JSONValue?) -> [String] {
+    (list(documents) ?? []).compactMap { document in
+        guard document["kind"]?.string == Kinds.kind, let id = document["metadata"]?["id"]?.text else { return nil }
+        return id.split(separator: "/").last.map(String.init)
+    }
+}
+
 /// What a tool call did, in words.
 func toolSummary(_ call: ToolCall, _ resolved: ResolvedTool) -> String {
     let args = JSONValue.parse(call.arguments)?.object ?? [:]
@@ -72,7 +86,20 @@ func toolSummary(_ call: ToolCall, _ resolved: ResolvedTool) -> String {
         }
     case HostFunction.ask:
         return "Asked you some questions"
+    case HostFunction.wait:
+        return "Waited for work running in the background"
+    case HostFunction.edit:
+        let what = args["kind"]?.text.map { kindDisplayName($0).lowercasedFirst } ?? "record"
+        if args["op"]?.string == "view" { return "Read part of a \(what)" }
+        let edits = list(args["edits"])?.count ?? 0
+        return edits > 1 ? "Edited a \(what) in \(edits) places" : "Edited a \(what)"
+    case HostFunction.vocabulary:
+        let named = declaredKinds(args["documents"])
+        let what = named.isEmpty ? "" : " (\(joinWords(named)))"
+        return args["plan"]?.bool == true ? "Checked a change to your collections\(what)" : "Changed your collections\(what)"
     default:
+        // A function whose answer has a shape the app knows is said from it.
+        if resolved.function != nil, let shaped = toolResultSummary(call) { return shaped }
         if let description = resolved.description { return description }
         let fn = resolved.function ?? call.name
         let local = fn.split(separator: "/").last.map(String.init) ?? fn
@@ -137,7 +164,7 @@ func toolDetails(_ call: ToolCall, _ resolved: ResolvedTool, skip: Set<String> =
         if let text = payload?["reply"]?.text { out.append(.reply(agent: sub, text: text)) }
         return out
     }
-    if !HostFunction.all.contains(resolved.function ?? "") {
+    if !HostFunction.detailed.contains(resolved.function ?? "") {
         let raw: String
         if let returned = payload?["output"] {
             raw = returned.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? returned.jsonText

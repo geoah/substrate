@@ -11,7 +11,14 @@ enum HostFunction {
     static let write = "\(Kinds.core)/write"
     static let propose = "\(Kinds.core)/propose"
     static let ask = "\(Kinds.core)/ask"
-    static let all = [query, write, propose, ask]
+    static let wait = "\(Kinds.core)/wait"
+    static let edit = "\(Kinds.core)/edit"
+    static let vocabulary = "\(Kinds.core)/vocabulary"
+    /// Every function whose body is the engine's own.
+    static let all = [query, write, propose, ask, wait, edit, vocabulary]
+    /// The ones whose answers the details read themselves; the rest show
+    /// what they returned, as a function tool's do (the console's rule).
+    static let detailed = [query, write, propose, ask]
 }
 
 /// An agent's name as a person reads it: its local name, words split.

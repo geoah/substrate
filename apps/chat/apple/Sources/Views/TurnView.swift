@@ -40,7 +40,7 @@ struct TurnView: View, Equatable {
                 if let card = cards[suggestion]?.suggestion { SuggestionCardView(id: suggestion, card: card) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        case let .answer(line): OutcomeRow(line: line)
+        case let .answer(line), let .jobEnded(line): OutcomeRow(line: line)
         case let .system(text):
             Text(text)
                 .lineLimit(3)
@@ -111,6 +111,9 @@ private struct AssistantTurnView: View {
                     }
             } else if turn.typing {
                 TypingDots()
+            }
+            if let sources = turn.sources {
+                SourceListView(list: sources)
             }
             if !turn.linked.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -189,7 +192,8 @@ struct ReasoningView: View {
 }
 
 /// One tool call in the console's words, opening to what it found, changed
-/// or failed on.
+/// or failed on; the pages a search found or a call read show under it,
+/// open or not.
 struct ToolCallRow: View {
     let tool: ToolRowPresentation
     @State private var open = false
@@ -203,10 +207,17 @@ struct ToolCallRow: View {
                 HStack(spacing: 8) {
                     status
                         .frame(width: 18)
-                    Text(tool.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tool.summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                        if let label = tool.statusLabel {
+                            Text(label)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(tool.status == .held ? Color.orange : Color.secondary)
+                        }
+                    }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -238,14 +249,19 @@ struct ToolCallRow: View {
                 }
                 .padding(.leading, 26)
             }
+            if let sources = tool.sources {
+                SourceListView(list: sources)
+                    .padding(.leading, 26)
+            }
         }
     }
 
     @ViewBuilder private var status: some View {
         switch tool.status {
-        case .running: ProgressView().controlSize(.mini)
+        case .running, .working: ProgressView().controlSize(.mini)
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        case .held: Image(systemName: "hourglass.circle.fill").foregroundStyle(.orange)
         }
     }
 }

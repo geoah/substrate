@@ -49,14 +49,16 @@ struct LiveOverlay: Codable, Hashable, Sendable {
 
     /// Settles a call BY ID. A finish with no card opens its own, settled:
     /// the loop refuses a dispatch past its budget without starting it, and
-    /// that refusal is the card a reader most needs.
-    mutating func settleTool(_ call: ToolCall, output: String, ok: Bool, seq: Int) {
+    /// that refusal is the card a reader most needs. A background job's end
+    /// settles its card a second time, its output replacing the handle.
+    mutating func settleTool(_ call: ToolCall, output: String, ok: Bool, job: String? = nil, seq: Int) {
         // An empty id settles the oldest card still running, not all of them.
         let matches: (ToolCall) -> Bool = { call.id.isEmpty ? $0.running : $0.id == call.id }
         for t in turns.indices {
             if let c = turns[t].tools.firstIndex(where: matches) {
                 turns[t].tools[c].output = output
                 turns[t].tools[c].ok = ok
+                if let job { turns[t].tools[c].job = job }
                 closed = true
                 return
             }
@@ -64,6 +66,7 @@ struct LiveOverlay: Codable, Hashable, Sendable {
         var settled = call
         settled.output = output
         settled.ok = ok
+        settled.job = job
         turns.append(Turn(id: "live-a\(seq)", role: .assistant, content: "", tools: [settled]))
         closed = true
     }
@@ -98,7 +101,7 @@ struct LiveOverlay: Codable, Hashable, Sendable {
                 ToolCall(
                     id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable,
                     arguments: event.args ?? ""),
-                output: event.output ?? "", ok: event.ok ?? true, seq: seq)
+                output: event.output ?? "", ok: event.ok ?? true, job: event.job, seq: seq)
         case .compacted:
             pushCompacted(tokensBefore: event.tokensBefore, covered: event.covered, seq: seq)
         case .truncated:

@@ -74,4 +74,16 @@ private struct LegacySession: Codable {
         #expect(links == [URL(string: "substrate://\(kind)/q4")!])
         #expect(String(out.characters) == "Q4 and Ghost and x")
     }
+
+    @Test func aLinkThatLeavesTheAppIsMarkedOnceAfterItsTextAndARecordLinkIsNot() {
+        let line = "[F1](https://www.formula1.com)[BBC](https://www.bbc.co.uk) and [Q4](ref:\(kind)/q4) and [**bold** one](mailto:a@example.com)."
+        let words = inlinePieces(parseInline(line)).map { piece -> String in
+            switch piece {
+            case let .text(part): String(part.characters)
+            case .leaves: "↗"
+            }
+        }
+        #expect(words == ["F1", "↗", "BBC", "↗", " and Q4 and bold one", "↗", "."])
+        #expect(!inlinePieces(parseInline("Only [Q4](substrate://\(kind)/q4).")).contains(.leaves))
+    }
 }

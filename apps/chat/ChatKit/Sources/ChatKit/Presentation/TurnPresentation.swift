@@ -13,6 +13,8 @@ public struct TurnPresentation: Codable, Hashable, Sendable, Identifiable {
         case decision(OutcomeLine, suggestion: String)
         /// Questions the owner answered or dismissed.
         case answer(OutcomeLine)
+        /// A call that ran in the background ended.
+        case jobEnded(OutcomeLine)
         case system(String)
     }
 
@@ -43,6 +45,8 @@ public struct AssistantTurn: Codable, Hashable, Sendable {
     /// The records a settled reply links, as pills under it.
     public var linked: [RecordReference]
     public var linkedLabel: String
+    /// The web pages a finished reply links, in the order it cites them.
+    public var sources: SourceList?
     public var tools: [ToolRowPresentation]
 }
 
@@ -67,7 +71,14 @@ public struct OutcomeLine: Codable, Hashable, Sendable {
 /// One tool call in the console's words, opening to what it found, changed
 /// or failed on, and what it left: a card or the changes it wrote.
 public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
-    public enum Status: String, Codable, Hashable, Sendable { case running, done, failed }
+    public enum Status: String, Codable, Hashable, Sendable {
+        case running, done, failed
+        /// It answered with a handle, and its work runs on in the background.
+        case working
+        /// The owner's policy held its write for review: the change waits
+        /// on them in the suggestion under it.
+        case held
+    }
 
     public enum Attachment: Codable, Hashable, Sendable {
         case suggestion(String)
@@ -78,11 +89,44 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
 
     public var id: String
     public var status: Status
+    /// Said beside a status the mark alone does not: "Working in the
+    /// background", "Waiting for you".
+    public var statusLabel: String?
     public var summary: String
     public var details: [ToolDetailPresentation]
     /// The tool, its arguments and its output, under Details.
     public var raw: [RawLine]
+    /// The pages a result of a known shape found or read, under the line
+    /// whether or not it is open.
+    public var sources: SourceList?
     public var attachment: Attachment?
+}
+
+/// Web pages as pills: what a search found, the page a call read, the pages
+/// a reply cites. Each opens outside the app.
+public struct SourceList: Codable, Hashable, Sendable {
+    /// Shown above the pills: "Sources" under a reply.
+    public var heading: String?
+    /// What the list is to a screen reader: "Results", "Sources".
+    public var label: String
+    public var pills: [SourcePill]
+    /// Said in place of the pills when there are none: "No results."
+    public var empty: String?
+}
+
+/// One web page: its number where a list cites it, the site, the page's
+/// title, and what a search said of it.
+public struct SourcePill: Codable, Hashable, Sendable, Identifiable {
+    public var id: String { "\(index ?? 0):\(url)" }
+    public var index: Int?
+    /// An `http` or `https` address, and nothing else.
+    public var url: String
+    /// The site: the address's host without `www.`.
+    public var host: String
+    /// The page's title, where it says more than the host.
+    public var title: String?
+    /// A search hit's snippet.
+    public var snippet: String?
 }
 
 public struct RawLine: Codable, Hashable, Sendable {
