@@ -24,7 +24,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// hostFunctionIDs are the six, in the order the assertions name them.
+// hostFunctionIDs are the seven, in the order the assertions name them.
 var hostFunctionIDs = []string{
 	vocabulary.HostFunctionQuery,
 	vocabulary.HostFunctionWrite,
@@ -32,6 +32,7 @@ var hostFunctionIDs = []string{
 	vocabulary.HostFunctionAsk,
 	vocabulary.HostFunctionWait,
 	vocabulary.HostFunctionVocabulary,
+	vocabulary.HostFunctionEdit,
 }
 
 // A FRESH REPOSITORY HOLDS THEM. The seed writes the binary's tree into the

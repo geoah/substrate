@@ -1,5 +1,10 @@
 # Moss: recorded sessions
 
+The agents were `llm/moss`, `llm/mossArchitect` and `llm/mossLibrarian`
+when these ran; they are `assistant/moss`, `assistant/architect` and
+`assistant/librarian` now, with the same prompts but for the `edit` tool
+and the rule that an agent never converts records.
+
 Recorded 2026-11-07 against a development substrate built from
 [the Moss plan](moss.md)'s branch, on Anthropic's own endpoint: `moss` and
 `mossArchitect` on `claude-opus-5-5` (effort `low` and `medium`),

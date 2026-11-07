@@ -146,10 +146,10 @@ func (ds *dataset) ensureDefaultProviders(ctx context.Context) error {
 	return nil
 }
 
-// importLLMSample imports the shipped LLM example onto the repository's own
-// authority, the same admission a later Registry import would take. Tests
-// skip it (OpenForTest) so the suite does not pay a vocabulary apply on
-// every repository; production Open leaves it on.
+// importLLMSample imports the shipped LLM example and the assistant onto
+// the repository's own authority, the same admission a later Registry import
+// would take. Tests skip it (OpenForTest) so the suite does not pay a
+// vocabulary apply on every repository; production Open leaves it on.
 func (s *service) importLLMSample(ctx context.Context, ds *dataset) error {
 	if !s.seedLLMSample || s.readOnly {
 		return nil
@@ -158,7 +158,12 @@ func (s *service) importLLMSample(ctx context.Context, ds *dataset) error {
 	if err != nil {
 		return err
 	}
-	return cat.SeedImport(ctx, ds, samples.LLM)
+	for _, pkg := range []string{samples.LLM, samples.Assistant} {
+		if err := cat.SeedImport(ctx, ds, pkg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) sampleCatalog() (*catalog.Catalog, error) {

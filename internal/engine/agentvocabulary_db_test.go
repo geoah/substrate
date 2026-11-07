@@ -90,7 +90,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 
 	fake.script(mossModel,
 		// Moss: a collection is the architect's.
-		fakeTurn{calls: []fakeCall{{"mossArchitect", toolArgs(t, map[string]any{
+		fakeTurn{calls: []fakeCall{{"architect", toolArgs(t, map[string]any{
 			"input": "The owner asked to start tracking their plants: a name and how often each wants water. The owner asked for this.",
 		})}}},
 		// The architect plans, then applies the same batch.
@@ -101,7 +101,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", plant, "", map[string]any{"name": "Fern", "waterEveryDays": 7})}}},
 		fakeTurn{content: "Your plants have a home, and the fern is in it."},
 	)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, repo+"/llm/moss", substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, repo+"/assistant/moss", substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 
 	reqs := fake.requestsOf(mossModel)
 	names := toolNamesSent(t, reqs[0])
-	for _, name := range []string{"query", "write", "propose", "ask", "wait", "mossArchitect", "mossLibrarian"} {
+	for _, name := range []string{"query", "write", "propose", "ask", "wait", "edit", "architect", "librarian"} {
 		if !slices.Contains(names, name) {
 			t.Fatalf("Moss's tools = %v, want %s among them", names, name)
 		}
@@ -191,7 +191,7 @@ func TestAgentVocabularyRefusesOutsideItsGrant(t *testing.T) {
 		turns = append(turns, fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": c.docs})}}})
 	}
 	fake.script(mossModel, append(turns, fakeTurn{content: "refused, stopping"})...)
-	res, err := ds.CallAgent(ctx, repo+"/llm/mossArchitect", "try them all")
+	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "try them all")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: fid("gate-kinds"),
 		Properties: map[string]any{
-			"selector": map[string]any{"kinds": []any{kindKind}, "agents": []any{repo + "/llm/mossArchitect"}},
+			"selector": map[string]any{"kinds": []any{kindKind}, "agents": []any{repo + "/assistant/architect"}},
 			"action":   "gate",
 		},
 	}); err != nil {
@@ -231,7 +231,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": docs})}}},
 		fakeTurn{content: "gated"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/llm/mossArchitect", "declare plants")
+	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "declare plants")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -248,22 +248,101 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 }
 
 // The grant is a load error, not a dispatch surprise: vocabulary needs the
-// kind declaration in the agent's writes.
-func TestAgentVocabularyNeedsTheKindKindInWrites(t *testing.T) {
+// kind declaration named in the agent's writes, and a glob does not name it.
+func TestAgentVocabularyNeedsTheKindKindNamedInWrites(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _, repo := openMossDataset(t)
-	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.PackageManifest(repo+"/probe", 0),
-		vocabulary.AgentManifest(repo+"/probe", "shaper", map[string]any{
-			"description": "declares nothing", "prompt": "x", "provider": "openai", "model": "gpt-5",
-			"tools":       []any{map[string]any{"function": vocabulary.HostFunctionVocabulary}},
-			"permissions": map[string]any{"writes": []any{kindPackage}},
-		}),
-	})
-	if err == nil || !strings.Contains(err.Error(), "vocabulary needs "+kindKind) {
-		t.Fatalf("err = %v, want the load error naming %s", err, kindKind)
+	for _, writes := range [][]any{{kindPackage}, {"*"}} {
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+			vocabulary.PackageManifest(repo+"/probe", 0),
+			vocabulary.AgentManifest(repo+"/probe", "shaper", map[string]any{
+				"description": "declares nothing", "prompt": "x", "provider": "openai", "model": "gpt-5",
+				"tools":       []any{map[string]any{"function": vocabulary.HostFunctionVocabulary}},
+				"permissions": map[string]any{"writes": writes},
+			}),
+		})
+		if err == nil || !strings.Contains(err.Error(), "vocabulary needs "+kindKind+" named") {
+			t.Fatalf("writes %v: err = %v, want the load error naming %s", writes, err, kindKind)
+		}
 	}
+}
+
+// A glob never reaches a declaration kind: Moss's `*` covers the owner's
+// data, and its `write` still cannot reshape the vocabulary.
+func TestAGlobGrantWritesNoDeclaration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake, repo := openMossDataset(t)
+	fake.script(mossModel,
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", kindKind, repo+"/llm/sneaky", map[string]any{
+			"authority": repo, "package": "llm", "description": "x",
+		})}}},
+		fakeTurn{content: "refused"},
+	)
+	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "declare one")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	rows := toolRows(t, ds, res.Thread)
+	if content, _ := rows[0]["content"].(string); rows[0]["ok"] != false || !strings.Contains(content, "a glob never reaches one") {
+		t.Fatalf("write of a declaration under *: ok %v, %s", rows[0]["ok"], content)
+	}
+	if _, err := ds.resolveType(repo + "/llm/sneaky"); err == nil {
+		t.Fatal("a declaration landed through a glob grant")
+	}
+}
+
+// A preview flag that is not a boolean is refused, never read as an apply;
+// and a batch that would convert live records is the owner's, whatever the
+// plan said.
+func TestAgentVocabularyRefusesAStringPlanAndAConversion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake, repo := openMossDataset(t)
+	plant := repo + "/garden/plant"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docMaps(gardenDocs(repo))); err != nil {
+		t.Fatal(err)
+	}
+	fern, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: plant, Properties: map[string]any{"name": "Fern", "waterEveryDays": 7}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := gardenDocs(repo)[1:]
+	props := renamed[0].(map[string]any)["data"].(map[string]any)["properties"].(map[string]any)
+	delete(props, "waterEveryDays")
+	props["wateringDays"] = map[string]any{"type": "int", "renamedFrom": "waterEveryDays", "description": "days between waterings"}
+	fake.script(mossModel,
+		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": renamed, "plan": "true"})}}},
+		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": renamed})}}},
+		fakeTurn{content: "stopped"},
+	)
+	res, err := ds.CallAgent(ctx, repo+"/assistant/architect", "rename the interval")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	rows := toolRows(t, ds, res.Thread)
+	for i, want := range []string{"plan must be true or false", "would rewrite 1 live records"} {
+		if content, _ := rows[i]["content"].(string); rows[i]["ok"] != false || !strings.Contains(content, want) {
+			t.Fatalf("call %d: ok %v, %s; want a refusal naming %q", i, rows[i]["ok"], content, want)
+		}
+	}
+	got, err := ds.Get(ctx, plant, fern.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Properties["waterEveryDays"] == nil || got.Properties["wateringDays"] != nil {
+		t.Fatalf("the refused rename converted the record: %v", got.Properties)
+	}
+}
+
+// docMaps is gardenDocs' documents in the shape ApplyVocabularyDocuments takes.
+func docMaps(docs []any) []map[string]any {
+	out := make([]map[string]any, 0, len(docs))
+	for _, d := range docs {
+		out = append(out, d.(map[string]any))
+	}
+	return out
 }
 
 // toolDescription reads one tool's description off a completion request.

@@ -2,7 +2,7 @@
 
 Status: proposed 2026-11-07, a proof of concept. It is a plan, not a
 contract: [agents](../agents.md) describes what is in the tree, and the
-sample's declarations are in `samples/llm/bundle.yaml`.
+sample's declarations are in `samples/assistant/bundle.yaml`.
 
 The seeded assistant was called `substrate`, the same word the console uses
 for the engine's own hand, so a transcript could not say which of the two had
@@ -54,8 +54,8 @@ call.
 | Agent | Tools | Writes | Why it is separate |
 | --- | --- | --- | --- |
 | `moss` (primary, chat) | `query`, `write`, `propose`, `ask`, `wait`, every offered function, the two sub-agents | `*` | The owner's assistant: reads and keeps every record |
-| `mossArchitect` (hidden) | `query`, `vocabulary` | `core/package`, `core/kind` | The one agent that writes declarations, and only those two kinds |
-| `mossLibrarian` (hidden, background) | `query`, `write` | `*` | Bulk record work on a budget a chat turn cannot spend (128 tool calls, 24 turns, 10 minutes) |
+| `architect` (hidden) | `query`, `vocabulary` | `core/package`, `core/kind` | The one agent that writes declarations, and only those two kinds |
+| `librarian` (hidden, background) | `query`, `write` | `*` | Bulk record work on a budget a chat turn cannot spend (128 tool calls, 24 turns, 10 minutes) |
 
 The emit ceiling intersects each sub-agent's writes with Moss's, so neither
 can write what Moss could not. The architect's grant leaves out `agent`,
@@ -102,13 +102,26 @@ paragraphs, and changes in five places:
   ([0228](../decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
   Moss omits the id and the substrate mints one.
 - **Shaping the substrate.** A new collection, or a field added, renamed or
-  changed, goes to `mossArchitect` with whether the owner asked for it. A
+  changed, goes to `architect` with whether the owner asked for it. A
   sample that fits is suggested instead of a new kind.
 - **Bulk work.** More than about ten records at once goes to
-  `mossLibrarian` as a background job; Moss says it has started and reports
+  `librarian` as a background job; Moss says it has started and reports
   when the `toolCompleted` message arrives.
 - **Outside its reach.** Credentials, connecting an account, installing a
   provider and merging records are the owner's, and Moss says where.
+
+### Where it lives
+
+The three agents are one sample package, `samples.substrate.reamde.dev/assistant`,
+seeded at registration beside the LLM sample and rehomed onto the owner's
+authority like it: `<authority>/assistant/moss`, `…/architect`,
+`…/librarian`. A package is the unit the substrate installs, versions and
+pauses, so the assistant moves as one; its name is not the persona's, so a
+renamed Moss stays put; and what it grows next (example views, a briefing
+trigger) lands there rather than among the LLM sample's lessons. A shipped,
+`builtin` package was the other option. It would keep the prompts off every
+hand but the binary's, which is exactly what an owner tuning their own
+assistant should not meet.
 
 The old `substrate` agent stays declared and `supporting`, so a thread
 started with it continues. Pruning it would leave every such thread naming an
@@ -127,8 +140,8 @@ the cases a live recording should cover.
 | "I'm vegetarian, remember that" | owner | One `propose` of an `llm/memory` create, then one line |
 | "Suggest something for dinner" (after the memory is accepted) | world, shaped by memory | A vegetarian suggestion, no tool call |
 | "What needs me today?" | owner | Offered feeds first, then proposed requests, pending interactions, what is due |
-| "Start tracking my plants: name, where it lives, how often to water" | owner, shaping | `mossArchitect` plans and applies `<authority>/garden/plant`; Moss offers to add the first ones |
-| "Add these: fern, kitchen, weekly; basil, balcony, every 2 days; …" (15 lines) | owner, bulk | `mossLibrarian` in the background; Moss says it started, then reports the count |
+| "Start tracking my plants: name, where it lives, how often to water" | owner, shaping | `architect` plans and applies `<authority>/garden/plant`; Moss offers to add the first ones |
+| "Add these: fern, kitchen, weekly; basil, balcony, every 2 days; …" (15 lines) | owner, bulk | `librarian` in the background; Moss says it started, then reports the count |
 | "Also track when I last fertilized each one" | owner, shaping | The architect adds an optional `lastFertilizedAt`; nothing else changes |
 | "Drop the location field" | owner, shaping | The architect plans it, the plan refuses while plants hold a location, and Moss puts the choice to the owner (deprecate it, or clear the values first) |
 | "Delete my scratchpads" | owner | One `propose` per delete, never a direct delete |
@@ -145,7 +158,7 @@ model's judgment. The thread it records:
 
 ```text
 owner     start tracking my plants; I have a fern I water weekly
-moss      → mossArchitect {"input": "The owner asked to start tracking their
+moss      → architect {"input": "The owner asked to start tracking their
             plants: a name and how often each wants water. The owner asked
             for this."}
   architect  → vocabulary {"plan": true, "documents": [
@@ -205,7 +218,7 @@ Each example is one call, and the thread's `llm/message` rows hold every
 tool call:
 
 ```bash
-agent="$(printf '%s' "$AUTHORITY/llm/moss" | sed 's|/|%2F|g')"
+agent="$(printf '%s' "$AUTHORITY/assistant/moss" | sed 's|/|%2F|g')"
 curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/$agent/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": "Start tracking my plants: name, where it lives, how often to water"}' \

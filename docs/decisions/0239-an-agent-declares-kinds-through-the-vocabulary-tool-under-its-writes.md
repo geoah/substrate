@@ -32,7 +32,20 @@ batch, held to the same two things every agent write is held to, and it
 adds no hand an agent did not have.
 
 - One call is `{documents, plan}`. `plan: true` answers the door's preview
-  and writes nothing. An apply admits every document or none.
+  and writes nothing; a `plan` that is not a boolean is refused, never read
+  as an apply. An apply admits every document or none.
+- **A glob never reaches a declaration kind.** An agent writes a
+  declaration, through `vocabulary` or through `write`, only where its own
+  `permissions.writes` names that kind, as 0080 holds auth material. An
+  agent granted `*` keeps every record of the owner's and loses the
+  vocabulary; a sub-agent that names `core/kind` still declares under a
+  caller's `*`, because the effective emit is checked beside the named
+  grant. The loader refuses `vocabulary` unless `core/kind` is named.
+- **An agent declares; it does not convert.** A batch whose conversion plan
+  would rewrite a live record (a rename, a backfill, a remap) is refused
+  inside the transaction, under the locks the plan is counted under. The
+  agent's grant names declaration kinds, not the records a declaration
+  rewrites, and the policy door never saw those writes.
 - Every document's kind is held to the agent's EFFECTIVE emit. Writes naming
   `core/package` and `core/kind` declare kinds and packages and no agent,
   function, trigger or mapping, each of which widens what code runs or what
@@ -59,10 +72,16 @@ grants an agent carries would stop meaning anything.
   applies.
 - Good, because a preview costs nothing, so a model corrects a refused
   batch before anything lands.
-- Bad, because an agent granted `*` already reaches `core/kind` and every
-  other declaration kind through `write`; this record does not narrow that,
-  and the sample keeps declarations off its assistant only by prompt and by
-  giving the tool to the sub-agent.
+- Bad, because an agent granted `*` that wrote declarations through `write`
+  before this record no longer does; it names the kinds, or hands the
+  change to an agent that does.
+- Bad, because a rename or a backfill is now always the owner's to apply,
+  even one the owner asked an agent for.
+- Bad, because the policy door is read before the batch waits on the
+  schema-write mutex and not again inside its transaction, and a batch
+  carries no version per document, so two agents planning against the same
+  declaration can overwrite one another where admission allows. Both are
+  owed before an agent edits declarations unattended.
 - Bad, because a gate cannot hold a declaration for review; an owner who
   wants every schema change reviewed refuses the agent and applies its plan.
 
@@ -71,11 +90,13 @@ grants an agent carries would stop meaning anything.
 `internal/engine/agentvocabulary_db_test.go`: a seeded Moss session in which
 the architect plans and applies a package and a kind and Moss writes the
 first record; the refusals outside the emit, of a data kind and of a shipped
-package; a gated apply refused while the plan answers; and the load error.
+package; a gated apply refused while the plan answers; the load error, under
+a glob too; a declaration refused to `write` under `*`; and a string `plan`
+and a renaming batch both refused with nothing changed.
 
 ## More Information
 
-The sample's agents are in `samples/llm/bundle.yaml` (`moss`,
-`mossArchitect`, `mossLibrarian`) and the session examples in
+The sample's agents are in `samples/assistant/bundle.yaml` (`moss`,
+`architect`, `librarian`) and the session examples in
 [docs/plans/moss.md](../plans/moss.md). Revisit when a declaration can be
 held as a request, or when an agent's `*` stops reaching declaration kinds.

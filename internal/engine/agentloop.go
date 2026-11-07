@@ -2115,6 +2115,8 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchWait(ctx, args)
 	case tool.builtin == vocabulary.AgentToolVocabulary:
 		return l.dispatchVocabulary(ctx, c, args)
+	case tool.builtin == vocabulary.AgentToolEdit:
+		return l.dispatchEdit(ctx, c, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:

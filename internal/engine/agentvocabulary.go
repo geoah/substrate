@@ -34,7 +34,15 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	plan, _ := args["plan"].(bool)
+	// A preview that is not a boolean must never fall through to an apply.
+	plan := false
+	if v, present := args["plan"]; present {
+		b, ok := v.(bool)
+		if !ok {
+			return toolError(fmt.Sprintf("plan must be true or false, got %v; nothing applied", v)), false
+		}
+		plan = b
+	}
 	for i, d := range docs {
 		kind, _ := d["kind"].(string)
 		if _, ok := vocabularyRecordKinds[kind]; !ok {
@@ -44,6 +52,9 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 		if !l.emitAllows(kind) {
 			return toolError(fmt.Sprintf("documents[%d]: %s is not in agent %s's effective emit allowlist, nothing applied",
 				i, kind, l.ag.Identity())), false
+		}
+		if err := l.declarationNamed(kind); err != nil {
+			return toolError(fmt.Sprintf("documents[%d]: %v", i, err)), false
 		}
 		if plan {
 			continue
@@ -69,7 +80,7 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 		}
 		return toolJSON(map[string]any{"plan": p}), true
 	}
-	written, err := l.ds.applyVocabularyDocuments(ctx, l.actor, docs, substrate.VocabularyApply{}, &c.changes)
+	written, err := l.ds.applyVocabularyDocuments(ctx, l.actor, docs, substrate.VocabularyApply{}, &c.changes, true)
 	if err != nil {
 		return toolError(err.Error()), false
 	}
@@ -102,6 +113,20 @@ func vocabularyDocumentsArg(v any) ([]map[string]any, error) {
 		docs = append(docs, d)
 	}
 	return docs, nil
+}
+
+// declarationNamed holds a declaration kind to the agent's OWN writes, spelled
+// out: a glob never reaches one (decision 0239), as it never reaches auth
+// material (0080). A declaration changes what code runs and what records
+// hold, so an agent whose `*` covers the owner's data does not by that grant
+// also reshape the vocabulary. The effective emit is checked beside it, so a
+// caller's ceiling still narrows a sub-agent that names the kind.
+func (l *agentLoop) declarationNamed(kind string) error {
+	if _, ok := vocabularyRecordKinds[kind]; !ok || slices.Contains(l.ag.Emit, kind) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is a declaration kind, written only by an agent whose permissions.writes names it; a glob never reaches one, nothing applied",
+		substrate.ErrForbidden, kind)
 }
 
 // declarationKindRefs lists the kinds the vocabulary tool takes, sorted, for

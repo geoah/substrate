@@ -272,7 +272,7 @@ That is also what decides **where each is callable**:
 
 Two smaller rules follow. A host function is admissible **only from the shipped
 build**, so a bundle or an owner declaring one is refused, and a **bare name
-never resolves to one**: the six are named for what they do, which is exactly
+never resolves to one**: the seven are named for what they do, which is exactly
 what a repository's own function is likeliest to be called, so `query` keeps
 meaning the user's `query` and the built-in answers its full reference.
 

@@ -40,6 +40,8 @@ const (
 	// AgentToolVocabulary declares or changes kinds: a batch of declaration
 	// documents, every one held to the agent's writes.
 	AgentToolVocabulary = "vocabulary"
+	// AgentToolEdit views and replaces text inside one property.
+	AgentToolEdit = "edit"
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
@@ -56,6 +58,7 @@ var agentBuiltinByIdentity = map[string]string{
 	HostFunctionWait:    AgentToolWait,
 
 	HostFunctionVocabulary: AgentToolVocabulary,
+	HostFunctionEdit:       AgentToolEdit,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -407,11 +410,11 @@ var deletedAgentToolKeys = map[string]string{
 	"callable": "function — a tool entry names a function, and only a function",
 }
 
-// agentBuiltinIdentities lists the six host functions in the order the errors
-// name them.
+// agentBuiltinIdentities lists the seven host functions in the order the
+// errors name them.
 var agentBuiltinIdentities = []string{
 	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk, HostFunctionWait,
-	HostFunctionVocabulary,
+	HostFunctionVocabulary, HostFunctionEdit,
 }
 
 // buildPackageAgents parses one authority's agent documents — load.go's one-line
@@ -577,9 +580,15 @@ func (l *loader) parseAgent(d Document) *Agent {
 				l.errf("%s: data.tools: write needs data.permissions.writes, which names the kinds the agent may create or change", where)
 				return nil
 			}
+		case AgentToolEdit:
+			if a.Reads == nil || len(a.Emit) == 0 {
+				l.errf("%s: data.tools: edit needs data.permissions.reads and data.permissions.writes, since it reads the text it changes", where)
+				return nil
+			}
 		case AgentToolVocabulary:
-			if !a.EmitAllows(CoreKind(DocKind)) {
-				l.errf("%s: data.tools: vocabulary needs %s in data.permissions.writes, which names the declaration kinds the agent may write", where, CoreKind(DocKind))
+			// Named, not globbed: a glob never reaches a declaration kind.
+			if !slices.Contains(a.Emit, CoreKind(DocKind)) {
+				l.errf("%s: data.tools: vocabulary needs %s named in data.permissions.writes, which names the declaration kinds the agent may write; a glob never reaches one", where, CoreKind(DocKind))
 				return nil
 			}
 		case AgentToolAsk:
