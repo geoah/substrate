@@ -56,9 +56,16 @@ private func declaredKinds(_ documents: JSONValue?) -> [String] {
     }
 }
 
-/// A noun with its indefinite article: "a book", "an author".
+/// A noun with its indefinite article, by how it sounds: "a book", "an
+/// author", "a unit", "an hour". The console's rule (`withArticle` in
+/// web/console/src/lib/agent-chat.ts).
 func withArticle(_ noun: String) -> String {
-    "\(noun.first.map { "aeiouAEIOU".contains($0) } == true ? "an" : "a") \(noun)"
+    func starts(_ sound: Regex<Substring>) -> Bool { noun.prefixMatch(of: sound.ignoresCase()) != nil }
+    // A silent h takes "an"; a vowel said as "you" or "wun" does not.
+    let an =
+        starts(/hour|honest|honou?r|heir/)
+        || (starts(/[aeiou]/) && !starts(/uni|use|usu|uti|ure|uro|eu|ewe|one\b|once|url|uri\b|uuid|usb/))
+    return "\(an ? "an" : "a") \(noun)"
 }
 
 /// The longest title a tool call's line quotes whole.

@@ -87,6 +87,17 @@ struct ToolLineWords {
         failed.ok = false
         #expect(toolSummary(failed, write, title: "Dune") == "Deleted a book")
     }
+
+    @Test func aKindTakesItsArticleByHowItSounds() {
+        for noun in ["unit", "user", "URL", "utility", "eucalyptus", "one-off", "book"] {
+            #expect(withArticle(noun) == "a \(noun)")
+        }
+        for noun in ["umbrella", "update", "upload", "author", "event", "idea", "hour"] {
+            #expect(withArticle(noun) == "an \(noun)")
+        }
+        // The seeded unit kind, as a line says it.
+        #expect(toolSummary(call("query", #"{"kind":"substrate.reamde.dev/core/unit","id":"kg"}"#), query) == "Looked up a unit")
+    }
 }
 
 /// What the console's tool line shows under it and once opened
