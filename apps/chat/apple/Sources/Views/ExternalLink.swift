@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The mark beside every link that leaves the app, the console's
 /// external-link mark: a link in a reply, a page a tool found, a source a
-/// reply cites. It says so to a screen reader too, so a reader always knows
-/// before they tap.
+/// reply cites, a link out to the console. It says so to a screen reader
+/// too, so a reader always knows before they tap.
 enum ExternalMark {
     static let symbol = "arrow.up.right.square"
     static let words = "opens in your browser"
@@ -13,6 +13,20 @@ enum ExternalMark {
     /// The mark as text, to follow a link inside a line.
     static var text: Text {
         Text(Image(systemName: symbol)).foregroundStyle(.tint).accessibilityLabel(words)
+    }
+}
+
+/// A link out to the console, for what the app may not do itself: its
+/// words beside the external mark, and the mark's words as its hint.
+struct ConsoleLink: View {
+    let title: String
+    let destination: URL
+
+    var body: some View {
+        Link(destination: destination) {
+            Label(title, systemImage: ExternalMark.symbol)
+        }
+        .accessibilityHint(ExternalMark.words)
     }
 }
 

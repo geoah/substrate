@@ -44,7 +44,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   SubstrateChatTests:
     # What only the Apple app holds: the loopback receiver, the Keychain item
-    # every build kept the session in, inline Markdown. The chat's rules are
+    # every build kept the session in, inline Markdown, and what a screen
+    # reader is told of a link out to the console. The chat's rules are
     # ChatKit's, tested by `swift test` there (`mise run apple:test:chat`
     # runs both).
     type: bundle.unit-test

@@ -1264,7 +1264,7 @@ console/apple/Sources/App/          the app, its macOS menus, ServerStore, Conso
 console/apple/Sources/Shell/        the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
 chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/; and its tests, the seven rules by number among them; portable
 chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/
-chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown
+chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader
 sync/apple/Sources/                 Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens

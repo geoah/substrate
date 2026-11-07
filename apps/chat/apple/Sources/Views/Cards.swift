@@ -123,10 +123,8 @@ struct SuggestionCardView: View {
                 if let note = card.consoleNote {
                     Text(note).font(.footnote).foregroundStyle(.secondary)
                 }
-                Link(destination: console) {
-                    Label("Open in the Console", systemImage: "arrow.up.right.square")
-                }
-                .font(.footnote.weight(.semibold))
+                ConsoleLink(title: "Open in the Console", destination: console)
+                    .font(.footnote.weight(.semibold))
             } else {
                 HStack {
                     Button {
@@ -237,9 +235,7 @@ struct ProviderKeySheet: View {
                 if let console = sheet.console.flatMap(URL.init(string:)) {
                     Section {
                         Text(sheet.consoleNote)
-                        Link(destination: console) {
-                            Label(sheet.consoleLink, systemImage: "arrow.up.right.square")
-                        }
+                        ConsoleLink(title: sheet.consoleLink, destination: console)
                     } header: {
                         Text(sheet.header)
                     } footer: {
