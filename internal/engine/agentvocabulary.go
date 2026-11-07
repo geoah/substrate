@@ -115,18 +115,24 @@ func vocabularyDocumentsArg(v any) ([]map[string]any, error) {
 	return docs, nil
 }
 
-// declarationNamed holds a declaration kind to the agent's OWN writes, spelled
-// out: a glob never reaches one (decision 0239), as it never reaches auth
-// material (0080). A declaration changes what code runs and what records
-// hold, so an agent whose `*` covers the owner's data does not by that grant
-// also reshape the vocabulary. The effective emit is checked beside it, so a
-// caller's ceiling still narrows a sub-agent that names the kind.
+// declarationNamed holds a declaration kind, and a trigger, to the agent's
+// OWN writes, spelled out: a glob never reaches one (decision 0239), as it
+// never reaches auth material (0080). A declaration changes what code runs
+// and what records hold, and a trigger decides when code runs, so an agent
+// whose `*` covers the owner's data does not by that grant also reshape the
+// vocabulary or schedule a body. The effective emit is checked beside it,
+// so a caller's ceiling still narrows a sub-agent that names the kind.
 func (l *agentLoop) declarationNamed(kind string) error {
-	if _, ok := vocabularyRecordKinds[kind]; !ok || slices.Contains(l.ag.Emit, kind) {
+	_, declaration := vocabularyRecordKinds[kind]
+	if (!declaration && kind != typeTrigger) || slices.Contains(l.ag.Emit, kind) {
 		return nil
 	}
-	return fmt.Errorf("%w: %s is a declaration kind, written only by an agent whose permissions.writes names it; a glob never reaches one, nothing applied",
-		substrate.ErrForbidden, kind)
+	what := "a declaration kind"
+	if !declaration {
+		what = "the trigger kind, which decides when code runs,"
+	}
+	return fmt.Errorf("%w: %s is %s written only by an agent whose permissions.writes names it; a glob never reaches one, nothing applied",
+		substrate.ErrForbidden, kind, what)
 }
 
 // declarationKindRefs lists the kinds the vocabulary tool takes, sorted, for

@@ -268,9 +268,10 @@ func TestAgentVocabularyNeedsTheKindKindNamedInWrites(t *testing.T) {
 	}
 }
 
-// A glob never reaches a declaration kind: Moss's `*` covers the owner's
-// data, and its `write` still cannot reshape the vocabulary.
-func TestAGlobGrantWritesNoDeclaration(t *testing.T) {
+// A glob never reaches a declaration kind or a trigger: Moss's `*` covers
+// the owner's data, and its `write` still cannot reshape the vocabulary or
+// schedule code.
+func TestAGlobGrantWritesNoDeclarationOrTrigger(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
@@ -278,18 +279,31 @@ func TestAGlobGrantWritesNoDeclaration(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", kindKind, repo+"/llm/sneaky", map[string]any{
 			"authority": repo, "package": "llm", "description": "x",
 		})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", typeTrigger, "", map[string]any{
+			"callable": kindAgent + "/" + repo + "/assistant/moss",
+			"source":   map[string]any{"schedule": map[string]any{"every": "1h"}},
+		})}}},
 		fakeTurn{content: "refused"},
 	)
-	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "declare one")
+	res, err := ds.CallAgent(ctx, repo+"/assistant/moss", "declare one, then schedule yourself")
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	rows := toolRows(t, ds, res.Thread)
-	if content, _ := rows[0]["content"].(string); rows[0]["ok"] != false || !strings.Contains(content, "a glob never reaches one") {
-		t.Fatalf("write of a declaration under *: ok %v, %s", rows[0]["ok"], content)
+	for i, want := range []string{"is a declaration kind", "is the trigger kind"} {
+		if content, _ := rows[i]["content"].(string); rows[i]["ok"] != false || !strings.Contains(content, want) {
+			t.Fatalf("call %d under *: ok %v, %s; want a refusal naming %q", i, rows[i]["ok"], content, want)
+		}
 	}
 	if _, err := ds.resolveType(repo + "/llm/sneaky"); err == nil {
 		t.Fatal("a declaration landed through a glob grant")
+	}
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{typeTrigger}}, First: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Records) != 0 {
+		t.Fatalf("a trigger landed through a glob grant: %+v", page.Records)
 	}
 }
 

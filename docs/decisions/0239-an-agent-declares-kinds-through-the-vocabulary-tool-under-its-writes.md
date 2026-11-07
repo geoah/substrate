@@ -34,9 +34,11 @@ adds no hand an agent did not have.
 - One call is `{documents, plan}`. `plan: true` answers the door's preview
   and writes nothing; a `plan` that is not a boolean is refused, never read
   as an apply. An apply admits every document or none.
-- **A glob never reaches a declaration kind.** An agent writes a
-  declaration, through `vocabulary` or through `write`, only where its own
-  `permissions.writes` names that kind, as 0080 holds auth material. An
+- **A glob never reaches a declaration kind, or a trigger.** An agent
+  writes a declaration, through `vocabulary` or through `write`, only where
+  its own `permissions.writes` names that kind, as 0080 holds auth
+  material. A `core/trigger` is data, but it decides when code runs, so it
+  is held the same way. An
   agent granted `*` keeps every record of the owner's and loses the
   vocabulary; a sub-agent that names `core/kind` still declares under a
   caller's `*`, because the effective emit is checked beside the named

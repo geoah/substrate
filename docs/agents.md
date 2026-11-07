@@ -368,8 +368,9 @@ entry could name only a function.
   `permissions.writes` to name `substrate.reamde.dev/core/kind` (a load
   error otherwise), and every document's kind is held to the effective emit
   and must be named in the agent's own writes: **a glob never reaches a
-  declaration kind**, through this tool or through `write`, so an agent
-  granted `*` writes every record of the owner's and no declaration, and
+  declaration kind**, through this tool or through `write`, nor a
+  `core/trigger`, which decides when code runs, so an agent granted `*`
+  writes every record of the owner's and no declaration or trigger, and
   one whose writes name `core/package` and `core/kind` declares kinds and
   packages and no agent, function, trigger or mapping. A batch whose
   conversion plan would rewrite a live record (a rename, a backfill) is
