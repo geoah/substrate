@@ -448,7 +448,7 @@ describe("Conversation", () => {
     const { rerender } = render(view(runningThread("t-11")))
     await waitFor(() => expect(attaches).toHaveLength(1))
     act(() =>
-      attaches[0].onError?.(new ApiError("bad", "llm: overloaded", 400))
+      attaches[0].onError?.(new ApiError("bad_request", "llm: overloaded", 400))
     )
     expect(screen.getByText(/couldn’t answer: llm: overloaded/)).toBeTruthy()
     // The thread's record catches up with how the turn ended.
