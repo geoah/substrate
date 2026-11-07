@@ -319,7 +319,7 @@ data:
   package: core
   description: >-
     Read or change one long text property of one record (a function's source,
-    an agent's prompt, a document's body) without rewriting it. op view answers
+    an agent's prompt, a document's text) without rewriting it. op view answers
     numbered lines (start and end, at most 400 at once) and the record's version.
     op replace applies edits, a list of {old, new}, to the text at ifVersion:
     each old is copied exactly from a view, without the line numbers, and

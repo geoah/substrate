@@ -72,8 +72,10 @@ func TestAgentEditRefusesAndAppliesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	replace := func(kind, id, prop string, version int64, old string) fakeCall {
-		return fakeCall{"edit", toolArgs(t, map[string]any{"op": "replace", "kind": kind, "id": id, "property": prop,
-			"ifVersion": version, "edits": []any{map[string]any{"old": old, "new": "x"}}})}
+		return fakeCall{"edit", toolArgs(t, map[string]any{
+			"op": "replace", "kind": kind, "id": id, "property": prop,
+			"ifVersion": version, "edits": []any{map[string]any{"old": old, "new": "x"}},
+		})}
 	}
 	cases := []struct {
 		call fakeCall
