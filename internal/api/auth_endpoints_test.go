@@ -61,6 +61,57 @@ func TestRegisterThenLogin(t *testing.T) {
 	}
 }
 
+// A registration may skip the second factor: no enrollment, no code, and the
+// account signs in with its password alone until it enrolls one.
+func TestRegistrationMaySkipTheSecondFactor(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
+		"inviteCode": testInviteCode, "repository": "ada",
+		"password": "correct-horse-battery-staple", "skipTotp": true,
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	if out := decodeJSON[substrate.Registered](t, rec); out.Secret == "" {
+		t.Fatalf("registration response = %+v", out)
+	}
+	if !env.svc.noFactor["ada.example.com"] {
+		t.Fatal("skipTotp did not reach the service")
+	}
+
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, loginPath, "", loginBody("ada", "correct-horse-battery-staple", ""))
+	wantStatus(t, rec, http.StatusCreated)
+
+	// The credential changes take the password alone too: the door no longer
+	// demands a code the account does not have.
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
+		"repository": "ada", "password": "correct-horse-battery-staple",
+		"newPassword": "a-new-correct-horse",
+	})
+	wantStatus(t, rec, http.StatusOK)
+}
+
+// THE TWO-STEP SIGN-IN: a right password with no code, on an account that has
+// a second factor, answers totp_required, so a client asks for the code. A
+// wrong password with no code is the one `auth` answer it always was, so the
+// new code says nothing to a caller who does not hold the password.
+func TestLoginWithoutACodeAsksForOne(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodPost, loginPath, "", loginBody(fakeRepository, "correct-horse-battery-staple", ""))
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeTOTPRequired)
+
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, loginPath, "", loginBody(fakeRepository, "wrong", ""))
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
+
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
+		"repository": fakeRepository, "password": "correct-horse-battery-staple",
+		"newPassword": "a-new-correct-horse",
+	})
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeTOTPRequired)
+}
+
 // A repository name carrying a dot IS the authority: the host is not appended
 // to it, and the engine's answer is echoed verbatim.
 func TestRegistrationKeepsADottedRepositoryName(t *testing.T) {
@@ -303,7 +354,8 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 }
 
 // The default deployment is unchanged: discovery says a code is required, and
-// a credential change without one is refused before the service is reached.
+// a credential change without one, on an account that has a factor, is
+// answered totp_required.
 func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
@@ -316,7 +368,7 @@ func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 		"repository": fakeRepository, "password": "correct-horse-battery-staple",
 		"newPassword": "a-new-correct-horse",
 	})
-	wantStatus(t, rec, http.StatusForbidden)
+	wantErrorCode(t, rec, http.StatusUnauthorized, codeTOTPRequired)
 }
 
 // A deployment with no invite code configured says so in discovery, so a

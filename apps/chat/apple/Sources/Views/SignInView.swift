@@ -5,8 +5,8 @@ import SwiftUI
 /// The server first, the kit's connect screen against Chat's manifest. A
 /// substrate that can give the app access of its own is signed in to in the
 /// browser, where the owner approves what Substrate Chat may do; one with no
-/// app authorization takes the repository, the password and, when it asks,
-/// a code; one whose app authorization cannot reach the agents says it
+/// app authorization takes the repository and the password and, when the
+/// account has a second factor, then asks for its code; one whose app authorization cannot reach the agents says it
 /// needs an update. Below the door, a token an earlier sign-in left that its
 /// server has not revoked yet, with where to revoke it by hand.
 struct SignInView: View {
@@ -35,16 +35,17 @@ private struct PasswordDoor: View {
     let probe: ServerProbe.Result
     @State private var password = ""
     @State private var code = ""
+    /// The server answered that this account has a second factor: the code
+    /// field is shown and the next sign-in carries it.
+    @State private var codeAsked = false
     @State private var busy = false
     @State private var problem: String?
     @FocusState private var focus: Field?
 
     private enum Field { case repository, password, code }
 
-    private var totpRequired: Bool { probe.discovery.registration.totpRequired }
-
     private var ready: Bool {
-        !repository.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && (!totpRequired || !code.isEmpty)
+        !repository.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && (!codeAsked || !code.isEmpty)
     }
 
     var body: some View {
@@ -63,9 +64,9 @@ private struct PasswordDoor: View {
                 SecureField("Required", text: $password)
                     .textContentType(.password)
                     .focused($focus, equals: .password)
-                    .onSubmit { totpRequired ? (focus = .code) : signIn() }
+                    .onSubmit { codeAsked ? (focus = .code) : signIn() }
             }
-            if totpRequired {
+            if codeAsked {
                 field("Code", systemImage: "lock.shield") {
                     TextField("6 digits", text: $code)
                         .textContentType(.oneTimeCode)
@@ -125,10 +126,14 @@ private struct PasswordDoor: View {
             do {
                 try await host.signIn(
                     server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
-                    password: password, totp: totpRequired ? code : nil)
+                    password: password, totp: codeAsked ? code : nil)
                 password = ""
                 code = ""
+            } catch let refused as LoginRefused where refused.codeRequired && !codeAsked {
+                codeAsked = true
+                focus = .code
             } catch {
+                code = ""
                 problem = explain(error, app: ChatManifest.appName, server: probe.origin)
             }
         }

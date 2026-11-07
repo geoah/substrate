@@ -6,12 +6,23 @@ client. It reads the whole repository and writes through the same public verbs,
 so nothing it does needs an endpoint no other client has.
 
 Signing in is the same exchange [substratectl](substratectl.md) makes: the
-repository, the password, and the current 6-digit code where the deployment
-asks for one ([users and tokens](auth.md)). The console then holds a token
+repository and the password, then the current 6-digit code where the account
+has a second factor ([users and tokens](auth.md)). The console then holds a token
 exactly like a script does: a session is its [token record](auth.md#tokens),
 which is why signing out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field where the substrate reads one.
+
+The recovery key is made in the browser, as the registration page opens,
+and only its public half is sent; the server never sees the key itself. It is
+a field of the first step's form, beside the name and the password, so a
+password manager that offers to save the new login when that form is
+submitted saves the key on the same item, which the authenticator code then
+joins at the second step. Where the browser cannot make the key, the server
+makes the pair and returns the key once. Either way the key is shown again
+after the repository is created, beside a hidden username field, so a
+manager can still add it to a login it already holds (in 1Password, **Save**
+→ **Login** → **Update** from the toolbar icon's menu).
 
 Once the repository exists, and after the recovery key where one is shown,
 registration asks "What should we call you?". **Continue** creates your own
@@ -1549,8 +1560,8 @@ how many values are pending.
   `/settings/name`, which renames that contact or creates one. Then the
   repository name you sign in with, and the two credential
   changes: change your password, and replace your authenticator where the
-  second factor is on. Both ask for your current password (and code) in the
-  form, because
+  second factor is on, or turn it on where it is off. Both ask for your
+  current password (and code, where the account has one) in the form, because
   [the password-factor rule](auth.md#the-credential-and-the-password-factor-rule)
   refuses a bearer token here.
 - **Signed in**: this browser first, then every other browser and script

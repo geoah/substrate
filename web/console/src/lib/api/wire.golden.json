@@ -851,6 +851,7 @@
     "password": true,
     "recoveryPublicKey": false,
     "repository": true,
+    "skipTotp": false,
     "totpCode": true,
     "totpSecret": true
   },

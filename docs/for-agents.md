@@ -182,6 +182,7 @@ Every error is one shape, and the code set is closed
 | `lossy` | 403 | The change would drop values and needs the owner's confirmation. Stop and hand the plan to the owner. |
 | `forbidden` | 403 | The token may not do this at all. Stop. |
 | `auth` | 401 | The token is missing, revoked or expired. Stop and ask the owner for a new one; do not try a password. |
+| `totp_required` | 401 | Only from the sign-in door: a right password on an account with a second factor, sent no code. You never sign in; ask the owner for a token. |
 | `not_found` | 404 | No such kind, or no such record at that address. Check the kind reference first. |
 | `compacted` | 410 | Your changelog cursor is below the horizon or under another history generation. List again and resume from the new `head`. |
 | `rate_limited`, `unavailable` | 429, 503 | Wait the `Retry-After` the response carries, then retry the same request. |

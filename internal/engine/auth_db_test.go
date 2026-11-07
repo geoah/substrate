@@ -692,8 +692,9 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 		t.Fatalf("login with the new password: %v", err)
 	}
 
-	// A seed WAS minted and sealed: the factor is off, not absent, so turning
-	// the flag back off restores a credential that has one.
+	// No seed was sent, so the account has no second factor: a seed nobody
+	// holds would lock it out the day the flag comes off, where none lets it
+	// sign in with its password and enroll one.
 	ds, _, err := svc.Authenticate(ctx, res.Secret)
 	if err != nil {
 		t.Fatalf("authenticate the registration token: %v", err)
@@ -702,8 +703,95 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the credential record: %v", err)
 	}
+	if _, ok := cred.Properties["totpRef"]; ok {
+		t.Fatalf("a second factor nobody enrolled behind the credential: %v", cred.Properties)
+	}
+}
+
+// A registration may SKIP the second factor (decision 0237): the credential
+// carries no TOTP ref, the password alone signs in, and the owner enrolls one
+// later through the same two calls that replace one. From then on a sign-in
+// without a code is answered ErrTOTPRequired, but only once the password is
+// right.
+func TestRegistrationMaySkipTheSecondFactor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	repository := testdb.Repository(t)
+
+	// The skip is explicit: a registration that lost its enrollment is
+	// refused, and a skip that carries one is contradictory.
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Repository: repository, Password: testPassword,
+	}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("a registration with no enrollment and no skip: %v, want a validation error", err)
+	}
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Repository: repository, Password: testPassword, SkipTOTP: true, TOTPSecret: "JBSWY3DPEHPK3PXP",
+	}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("a skip carrying a seed: %v, want a validation error", err)
+	}
+
+	res, err := svc.Register(ctx, substrate.RegisterInput{
+		Repository: repository, Password: testPassword, SkipTOTP: true, Label: "cli",
+	})
+	if err != nil {
+		t.Fatalf("register skipping the second factor: %v", err)
+	}
+	ds, _, err := svc.Authenticate(ctx, res.Secret)
+	if err != nil {
+		t.Fatalf("authenticate the registration token: %v", err)
+	}
+	cred, err := ds.Get(ctx, "substrate.reamde.dev/core/credential", "self")
+	if err != nil {
+		t.Fatalf("the credential record: %v", err)
+	}
+	if _, ok := cred.Properties["totpRef"]; ok {
+		t.Fatalf("a skipped registration has a second factor: %v", cred.Properties)
+	}
+
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: repository, Password: testPassword}); err != nil {
+		t.Fatalf("login with the password alone: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: repository, Password: "not-the-password"}); !errors.Is(err, substrate.ErrAuth) || errors.Is(err, substrate.ErrTOTPRequired) {
+		t.Fatalf("a wrong password: %v, want the one auth answer", err)
+	}
+
+	// Enrolling one later: the current factors are the password alone.
+	enrollment, err := svc.BeginTOTPReenrollment(ctx, substrate.LoginInput{Repository: repository, Password: testPassword})
+	if err != nil {
+		t.Fatalf("begin enrolling a second factor: %v", err)
+	}
+	step := engine.TOTPStep(time.Now())
+	code, err := engine.TOTPCode(enrollment.Secret, step)
+	if err != nil {
+		t.Fatalf("code from the enrollment: %v", err)
+	}
+	if err := svc.ReenrollTOTP(ctx, substrate.LoginInput{Repository: repository, Password: testPassword},
+		enrollment.Secret, code); err != nil {
+		t.Fatalf("enroll a second factor: %v", err)
+	}
+	cred, err = ds.Get(ctx, "substrate.reamde.dev/core/credential", "self")
+	if err != nil {
+		t.Fatalf("the credential record: %v", err)
+	}
 	if cred.Properties["totpRef"] != "<redacted>" {
-		t.Fatalf("no sealed second factor behind the credential: %v", cred.Properties)
+		t.Fatalf("no second factor behind the credential after enrolling one: %v", cred.Properties)
+	}
+
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: repository, Password: testPassword}); !errors.Is(err, substrate.ErrTOTPRequired) {
+		t.Fatalf("a right password with no code: %v, want ErrTOTPRequired", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: repository, Password: "not-the-password"}); errors.Is(err, substrate.ErrTOTPRequired) || !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("a wrong password with no code: %v, want the one auth answer and no hint", err)
+	}
+	// The enrolling code was consumed; the next step's code signs in.
+	next, err := engine.TOTPCode(enrollment.Secret, step+1)
+	if err != nil {
+		t.Fatalf("next code: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: repository, Password: testPassword, TOTPCode: next}); err != nil {
+		t.Fatalf("login with both factors: %v", err)
 	}
 }
 

@@ -239,8 +239,8 @@ type LoginRequest struct {
 
 // RegisterRequest is the registration commit as the HTTP door decodes it:
 // the invite code, the repository to create, the password, and the enrollment
-// the caller was issued plus one code from it. The door builds the engine's
-// RegisterInput from it.
+// the caller was issued plus one code from it, or SkipTOTP in their place. The
+// door builds the engine's RegisterInput from it.
 type RegisterRequest struct {
 	InviteCode string `json:"inviteCode"`
 	// Repository is the name of the repository to create, which BECOMES its
@@ -252,6 +252,10 @@ type RegisterRequest struct {
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
+	// SkipTOTP registers without a second factor, which the owner may enroll
+	// later with the same two calls that replace one. It is explicit, so a
+	// request that merely lost its enrollment is refused.
+	SkipTOTP bool `json:"skipTotp,omitempty"`
 	// Label names the token registration mints; absent, the door's default.
 	Label string `json:"label,omitempty"`
 	// RecoveryPublicKey is the client-generated age recipient; absent asks
@@ -291,6 +295,9 @@ type RegisterInput struct {
 	Password   string
 	TOTPSecret string
 	TOTPCode   string
+	// SkipTOTP commits the credential with no second factor; TOTPSecret and
+	// TOTPCode are then refused.
+	SkipTOTP bool
 	// Label names the token registration mints, exactly as login's does.
 	Label string
 	// RecoveryPublicKey is the age recipient the repository's data-encryption

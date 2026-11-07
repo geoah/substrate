@@ -68,6 +68,9 @@ type fakeSubstrate struct {
 	// noInvite makes it answer `registration.inviteRequired: false` — the
 	// local substrate with no SUBSTRATE_INVITE_CODE, which reads none.
 	noInvite bool
+	// noFactor is an account registered without a second factor: a login
+	// with no code signs in rather than being asked for one.
+	noFactor bool
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
@@ -697,6 +700,15 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	if f.authFails(w) {
+		return
+	}
+	// The two-step sign-in: an account with a second factor answers a login
+	// that carries no code with totp_required, as the door does once the
+	// password is right.
+	var code string
+	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
+	if code == "" && !f.totpDisabled && !f.noFactor {
+		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
 		return
 	}
 	var label string

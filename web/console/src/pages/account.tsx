@@ -1,9 +1,9 @@
 /** The account, as Settings shows it: the repository name, the two
  * credential changes and the delete, all under the password-factor rule.
  *
- * These endpoints do not accept a bearer token at all: the current password
- * AND code travel in the body, and a request that brings only the browser's
- * token is refused. That is the whole point: a leaked token's blast radius is
+ * These endpoints do not accept a bearer token at all: the current password,
+ * and the code where the account has a second factor, travel in the body, and
+ * a request that brings only the browser's token is refused. That is the whole point: a leaked token's blast radius is
  * the data, never the account. So both forms ask for the password even though
  * you are plainly signed in.
  *
@@ -12,7 +12,7 @@
  * job. */
 
 import { useState, type ReactNode } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { CopyIcon } from "lucide-react"
 
@@ -41,15 +41,41 @@ import {
 } from "@/lib/api/auth"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useAuthPolicy } from "@/lib/api/discovery"
+import { recordQueryOptions } from "@/lib/api/records"
 import { clearSession, getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 8
 
+/** The credential record. Its TOTP ref, redacted on every read, is there
+ * exactly while the account has a second factor (decision 0237). */
+const credentialQuery = recordQueryOptions(
+  "substrate.reamde.dev",
+  "core",
+  "credential",
+  "self"
+)
+
+/** Whether signing in and the credential changes owe a code: the door verifies
+ * one and this account has a factor. Until the credential read answers, the
+ * strict answer stands, so a code field is never hidden from an account that
+ * owes one. */
+function useCodeOwed(): boolean {
+  const { totpRequired } = useAuthPolicy()
+  const credential = useQuery(credentialQuery)
+  const hasFactor = credential.data
+    ? credential.data.properties.totpRef !== undefined
+    : true
+  return totpRequired && hasFactor
+}
+
 function describe(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "forbidden") {
       return "Being signed in is not enough. Fill in your current password and code."
+    }
+    if (err.code === "totp_required") {
+      return "Your Substrate asks for a code too. Reload the page to enter one."
     }
     if (err.code === "auth") {
       return "The password or the code is wrong. Try a fresh code."
@@ -80,6 +106,7 @@ async function copy(value: string) {
 export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
   const repository = getRepository() ?? ""
   const { totpRequired } = useAuthPolicy()
+  const codeOwed = useCodeOwed()
   const [technical] = useTechnicalDetails()
   const [open, setOpen] = useState<"password" | "totp" | null>(null)
   const toggle = (which: "password" | "totp") =>
@@ -106,7 +133,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
       {afterName}
       <SettingRow
         title="Password"
-        description={`Changing it needs your current password${totpRequired ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}
+        description={`Changing it needs your current password${codeOwed ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}
         control={
           <Button
             variant="outline"
@@ -121,7 +148,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
         {open === "password" && (
           <PasswordForm
             repository={repository}
-            totpRequired={totpRequired}
+            codeOwed={codeOwed}
             onDone={() => setOpen(null)}
           />
         )}
@@ -129,7 +156,11 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
       {totpRequired ? (
         <SettingRow
           title="Second factor"
-          description="On. Signing in asks for a code from your authenticator app."
+          description={
+            codeOwed
+              ? "On. Signing in asks for a code from your authenticator app."
+              : "Off. Signing in asks only for your password. Turn it on to also ask for a code from an authenticator app."
+          }
           control={
             <Button
               variant="outline"
@@ -137,12 +168,20 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
               aria-expanded={open === "totp"}
               onClick={() => toggle("totp")}
             >
-              {open === "totp" ? "Cancel" : "Replace authenticator…"}
+              {open === "totp"
+                ? "Cancel"
+                : codeOwed
+                  ? "Replace authenticator…"
+                  : "Turn on…"}
             </Button>
           }
         >
           {open === "totp" && (
-            <TotpForm repository={repository} onDone={() => setOpen(null)} />
+            <TotpForm
+              repository={repository}
+              enabling={!codeOwed}
+              onDone={() => setOpen(null)}
+            />
           )}
         </SettingRow>
       ) : (
@@ -154,10 +193,9 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
               {technical && (
                 <>
                   {" "}
-                  It is a setting for local development. If you registered while
-                  it was off, nobody holds a secret for you; the operator issues
-                  one with{" "}
-                  <code className="font-mono">substratectl user reset</code>.
+                  It is a setting for local development. An account registered
+                  while it was off has no second factor, and turns one on here
+                  once the substrate verifies codes again.
                 </>
               )}
             </>
@@ -171,7 +209,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
 /** The danger zone's one row: deleting the repository for good. */
 export function DeleteRepositoryRow() {
   const repository = getRepository() ?? ""
-  const { totpRequired } = useAuthPolicy()
+  const codeOwed = useCodeOwed()
   const [open, setOpen] = useState(false)
   return (
     <SettingRow
@@ -189,10 +227,7 @@ export function DeleteRepositoryRow() {
       }
     >
       {open && (
-        <DeleteRepositoryForm
-          repository={repository}
-          totpRequired={totpRequired}
-        />
+        <DeleteRepositoryForm repository={repository} codeOwed={codeOwed} />
       )}
     </SettingRow>
   )
@@ -200,10 +235,10 @@ export function DeleteRepositoryRow() {
 
 function DeleteRepositoryForm({
   repository,
-  totpRequired,
+  codeOwed,
 }: {
   repository: string
-  totpRequired: boolean
+  codeOwed: boolean
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -217,10 +252,10 @@ function DeleteRepositoryForm({
   const canSubmit =
     confirmed &&
     password.length > 0 &&
-    (!totpRequired || normalizeCode(code) !== null)
+    (!codeOwed || normalizeCode(code) !== null)
 
   async function submit() {
-    const normalized = totpRequired ? normalizeCode(code) : ""
+    const normalized = codeOwed ? normalizeCode(code) : ""
     if (!canSubmit || normalized === null) return
     setError(null)
     setBusy(true)
@@ -287,7 +322,7 @@ function DeleteRepositoryForm({
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        {totpRequired && (
+        {codeOwed && (
           <Field>
             <FieldLabel htmlFor="delete-code">Current code</FieldLabel>
             <Input
@@ -319,11 +354,11 @@ function DeleteRepositoryForm({
 
 function PasswordForm({
   repository,
-  totpRequired,
+  codeOwed,
   onDone,
 }: {
   repository: string
-  totpRequired: boolean
+  codeOwed: boolean
   onDone: () => void
 }) {
   const [password, setPassword] = useState("")
@@ -337,12 +372,12 @@ function PasswordForm({
   const canSubmit =
     repository !== "" &&
     password.length > 0 &&
-    (!totpRequired || normalizeCode(code) !== null) &&
+    (!codeOwed || normalizeCode(code) !== null) &&
     next.length >= MIN_PASSWORD &&
     matches
 
   async function submit() {
-    const normalized = totpRequired ? normalizeCode(code) : ""
+    const normalized = codeOwed ? normalizeCode(code) : ""
     if (!canSubmit || normalized === null) return
     setError(null)
     setBusy(true)
@@ -386,7 +421,7 @@ function PasswordForm({
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        {totpRequired && (
+        {codeOwed && (
           <Field>
             <FieldLabel htmlFor="pw-code">Current code</FieldLabel>
             <Input
@@ -439,13 +474,19 @@ function PasswordForm({
   )
 }
 
+/** Replaces the authenticator, or with `enabling`, enrolls the first one of an
+ * account registered without: the same two calls, with no current code to
+ * prove where there is none (decision 0237). */
 function TotpForm({
   repository,
+  enabling,
   onDone,
 }: {
   repository: string
+  enabling: boolean
   onDone: () => void
 }) {
+  const queryClient = useQueryClient()
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
   const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
@@ -454,11 +495,13 @@ function TotpForm({
   const [isBusy, setBusy] = useState(false)
 
   const canBegin =
-    repository !== "" && password.length > 0 && normalizeCode(code) !== null
+    repository !== "" &&
+    password.length > 0 &&
+    (enabling || normalizeCode(code) !== null)
 
   async function begin() {
-    const normalized = normalizeCode(code)
-    if (!canBegin || !normalized) return
+    const normalized = enabling ? "" : normalizeCode(code)
+    if (!canBegin || normalized === null) return
     setError(null)
     setBusy(true)
     try {
@@ -472,9 +515,9 @@ function TotpForm({
   }
 
   async function finish() {
-    const normalizedCurrent = normalizeCode(code)
+    const normalizedCurrent = enabling ? "" : normalizeCode(code)
     const normalizedNew = normalizeCode(newCode)
-    if (!enrollment || !normalizedCurrent || !normalizedNew) return
+    if (!enrollment || normalizedCurrent === null || !normalizedNew) return
     setError(null)
     setBusy(true)
     try {
@@ -487,8 +530,11 @@ function TotpForm({
       )
       toast.add({
         type: "success",
-        title: "Authenticator replaced. The old secret no longer works.",
+        title: enabling
+          ? "Two-factor is on. Signing in now asks for a code."
+          : "Authenticator replaced. The old secret no longer works.",
       })
+      void queryClient.invalidateQueries({ queryKey: credentialQuery.queryKey })
       onDone()
     } catch (err) {
       setError(describe(err))
@@ -500,7 +546,9 @@ function TotpForm({
 
   return (
     <form
-      aria-label="Replace your authenticator"
+      aria-label={
+        enabling ? "Turn on two-factor" : "Replace your authenticator"
+      }
       className="max-w-sm"
       onSubmit={(e) => {
         e.preventDefault()
@@ -509,8 +557,9 @@ function TotpForm({
     >
       <FieldGroup>
         <p className="text-[12.5px] text-muted-foreground">
-          Enter your current password and code, add the new secret to your app,
-          then enter a code from it. The old secret stops working straight away.
+          {enabling
+            ? "Enter your password, add the secret to your authenticator app, then enter a code from it. From then on, signing in asks for a code."
+            : "Enter your current password and code, add the new secret to your app, then enter a code from it. The old secret stops working straight away."}
         </p>
         {error && (
           <p role="alert" className="text-sm font-normal text-destructive">
@@ -528,20 +577,22 @@ function TotpForm({
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        <Field>
-          <FieldLabel htmlFor="totp-current-code">Current code</FieldLabel>
-          <Input
-            id="totp-current-code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={CODE_DIGITS + 2}
-            placeholder="123456"
-            className="font-mono tracking-[0.25em]"
-            disabled={enrollment !== null}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-        </Field>
+        {!enabling && (
+          <Field>
+            <FieldLabel htmlFor="totp-current-code">Current code</FieldLabel>
+            <Input
+              id="totp-current-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              disabled={enrollment !== null}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
 
         {enrollment && (
           <>
@@ -574,7 +625,7 @@ function TotpForm({
             </div>
             <Field>
               <FieldLabel htmlFor="totp-new-code">
-                Code from the new secret
+                {enabling ? "Code from your app" : "Code from the new secret"}
               </FieldLabel>
               <Input
                 id="totp-new-code"
@@ -599,7 +650,11 @@ function TotpForm({
             }
           >
             {isBusy && <Spinner />}
-            {enrollment ? "Replace authenticator" : "Continue"}
+            {!enrollment
+              ? "Continue"
+              : enabling
+                ? "Turn on two-factor"
+                : "Replace authenticator"}
           </Button>
           {enrollment && (
             <Button

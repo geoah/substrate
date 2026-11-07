@@ -352,6 +352,30 @@ func conformanceCases() []codeCase {
 			wantError(t, status, body, http.StatusUnauthorized, "auth")
 		},
 	}, {
+		// The two-step sign-in (decision 0237): Start's user enrolled a
+		// second factor, so its right password with no code is asked for
+		// the code rather than refused as wrong.
+		name: "a right password with no code answers 401 totp_required",
+		code: "totp_required",
+		run: func(t *testing.T, e *testenv.Env) {
+			attempt, err := json.Marshal(substrate.LoginRequest{
+				Repository: e.Repository, Password: "correct-horse-battery-staple",
+			})
+			if err != nil {
+				t.Fatalf("marshal the attempt: %v", err)
+			}
+			headers := map[string]string{"Content-Type": "application/json", "Authorization": ""}
+			// Start's registration spent this repository's allowance, so the
+			// first attempt may be paced; the wait it names is the wait.
+			status, body, header := e.DoRaw(http.MethodPost, "/login", attempt, headers)
+			if status == http.StatusTooManyRequests {
+				seconds, _ := strconv.Atoi(header.Get("Retry-After"))
+				time.Sleep(time.Duration(seconds)*time.Second + 250*time.Millisecond)
+				status, body, _ = e.DoRaw(http.MethodPost, "/login", attempt, headers)
+			}
+			wantError(t, status, body, http.StatusUnauthorized, "totp_required")
+		},
+	}, {
 		// Not a record write: the pacing on the unauthenticated door is the
 		// only place a running substrate answers 429.
 		name: "a second login inside the interval answers 429 rate_limited",

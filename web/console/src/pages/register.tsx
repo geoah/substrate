@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CheckIcon,
@@ -84,9 +84,10 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
   )
 }
 
-/** A key shown once for the reader to carry off: a selectable field with the
- * copy affordance beside it. A named input rather than a display block, so a
- * password manager that captures submitted fields has something to take. */
+/** A key for the reader to carry off: a selectable field with the copy
+ * affordance beside it. A named input rather than a display block, so a
+ * password manager that captures submitted fields has something to take;
+ * it carries no `autocomplete="off"`, which a manager may read as "skip". */
 function KeepKeyField({
   id,
   label,
@@ -114,7 +115,6 @@ function KeepKeyField({
         name={id}
         className="h-10 min-w-0 flex-1 data"
         readOnly
-        autoComplete="off"
         value={value}
         onFocus={(e) => e.currentTarget.select()}
       />
@@ -129,6 +129,12 @@ function KeepKeyField({
       </Button>
     </div>
   )
+}
+
+/** The recovery pair as an age X25519 identity and its recipient. */
+interface RecoveryPair {
+  identity: string
+  recipient: string
 }
 
 /** A name as the reader typed it, the way the server reads it: trimmed,
@@ -203,12 +209,24 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * some existing item. Step two proves one code and commits the whole user in
  * one transaction — the repository, the sealed material, the credential and the
  * first token — ending LOGGED IN, because the response carries that token.
+ * Step two may also be skipped: the account is created without a second
+ * factor, which Settings turns on later (decision 0237).
  *
  * Where the substrate verifies no second factor there IS no step two: the one
- * form commits, and the seed is minted server-side and enrolled nowhere.
+ * form commits, skipping the factor nothing would check.
  *
- * Once the repository exists, and after the recovery key where one arrived,
- * the page asks the owner's name and saves it as their own contact, with no
+ * The recovery pair is made HERE, as the page opens, the way substratectl
+ * makes it: only the recipient rides the wire, and the identity is a field of
+ * step one's form. A password manager that saves the new login when that form
+ * submits saves the fields beside the password with it, so the key lands on
+ * the same item as the password and, at step two, the one-time code. Where
+ * the pair is not ready (the module failed to load), the registration names
+ * no recipient and the substrate mints the pair, returning the identity once.
+ * Either way the key is shown again once the repository exists, beside a
+ * hidden username, so a manager can still add it to the login it holds.
+ *
+ * Once the repository exists, and after the recovery key, the page asks the
+ * owner's name and saves it as their own contact, with no
  * way past it but saving. `land()` then decides where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
@@ -251,6 +269,22 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
+  const [pair, setPair] = useState<RecoveryPair | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    import("age-encryption")
+      .then(async (age) => {
+        const identity = await age.generateX25519Identity()
+        const recipient = await age.identityToRecipient(identity)
+        if (!cancelled) setPair({ identity, recipient })
+      })
+      .catch(() => {
+        /* no pair: the substrate mints one and returns the identity */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   // The repository's name once it exists and the session holds it: the name
   // step is due.
@@ -332,11 +366,12 @@ export function RegisterPage() {
     ? enrollment !== null && normalizeCode(code) !== null
     : canEnroll
 
-  async function finish() {
-    // An absent seed asks the substrate to mint one, which it only does where
-    // it verifies no code — so the enrolled-nowhere seed is never a surprise.
-    const normalized = totpRequired ? normalizeCode(code) : ""
-    if (!canFinish || normalized === null) return
+  /** Commits the registration, with the enrolled factor or, skipping it,
+   * without one. The skip is said to the substrate outright rather than
+   * implied by an empty seed, which it refuses. */
+  async function finish(skip = !totpRequired) {
+    const normalized = skip ? "" : normalizeCode(code)
+    if (normalized === null || !(skip ? canEnroll : canFinish)) return
     setError(null)
     setBusy(true)
     try {
@@ -344,8 +379,10 @@ export function RegisterPage() {
         inviteCode: inviteCode.trim(),
         repository: authority,
         password,
-        totpSecret: enrollment?.totpSecret ?? "",
+        totpSecret: skip ? "" : (enrollment?.totpSecret ?? ""),
         totpCode: normalized,
+        ...(skip && { skipTotp: true }),
+        ...(pair && { recoveryPublicKey: pair.recipient }),
         label: "console",
       })
       // The recovery identity arrives ONCE, on this response, and no later
@@ -353,7 +390,8 @@ export function RegisterPage() {
       // write, so a blocked localStorage cannot take the only showing with it,
       // and the page holds the reader until they carry it off instead of
       // navigating past it.
-      if (minted.recoveryKey) setRecoveryKey(minted.recoveryKey)
+      const kept = minted.recoveryKey ?? pair?.identity
+      if (kept) setRecoveryKey(kept)
       saveSession(
         minted.secret,
         minted.repository ?? authority,
@@ -362,12 +400,13 @@ export function RegisterPage() {
       setRegistered(minted.repository ?? authority)
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
-        // Which factor was wrong is whichever this door reads: a substrate
-        // that reads neither has nothing here to get wrong.
+        // Which factor was wrong is whichever this door read: a skipped
+        // factor and a door that reads no invite have nothing to get wrong.
+        const codeSent = totpRequired && !skip
         setError(
-          totpRequired && inviteRequired
+          codeSent && inviteRequired
             ? "The invite code or the 6-digit code is wrong. Check the code your authenticator shows right now and try again."
-            : totpRequired
+            : codeSent
               ? "The 6-digit code is wrong. Check the code your authenticator shows right now and try again."
               : inviteRequired
                 ? "The invite code is wrong."
@@ -402,7 +441,11 @@ export function RegisterPage() {
       <DoorLayout
         eyebrow="Substrate created"
         title="Save your recovery key"
-        description="It is shown once and never again. Put it in your password manager now."
+        description={
+          pair
+            ? "If your password manager saved it with your login, it’s kept. If not, put it there now: after this page it isn’t shown again."
+            : "It is shown once and never again. Put it in your password manager now."
+        }
       >
         <form
           onSubmit={(e) => {
@@ -413,6 +456,17 @@ export function RegisterPage() {
           }}
         >
           <FieldGroup>
+            {/* Which login the key belongs to: a manager asked to update an
+                existing item matches it by the username, as 1Password's
+                guide for websites asks of a form without one shown. */}
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={registered ?? authority}
+              readOnly
+              hidden
+            />
             <Field>
               <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
               <KeepKeyField
@@ -624,6 +678,21 @@ export function RegisterPage() {
               <FieldError errors={[{ message: "The two passwords differ." }]} />
             )}
           </Field>
+          {pair && (
+            <Field>
+              <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
+              <KeepKeyField
+                id="recovery-key"
+                label="recovery key"
+                value={pair.identity}
+              />
+              <FieldDescription>
+                Made in this browser and never sent to the server. Your password
+                manager saves it with your login. With it, a download of
+                everything you keep here opens on another server.
+              </FieldDescription>
+            </Field>
+          )}
           {!enrollment && (
             <Field>
               <Button
@@ -714,6 +783,22 @@ export function RegisterPage() {
                   {isBusy && <Spinner />}
                   Create your Substrate
                 </Button>
+              </Field>
+              <Field>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10"
+                  aria-describedby="skip-totp-note"
+                  disabled={isBusy}
+                  onClick={() => void finish(true)}
+                >
+                  Skip two-factor for now
+                </Button>
+                <FieldDescription id="skip-totp-note" className="text-center">
+                  Signing in will ask only for your password. You can turn
+                  two-factor on later in Settings.
+                </FieldDescription>
               </Field>
             </FieldGroup>
           </form>

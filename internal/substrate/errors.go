@@ -35,6 +35,10 @@ var (
 	// is not a wire error code (0037).
 	ErrGated = errors.New("substrate: held for review")
 	ErrAuth  = errors.New("substrate: authentication failed")
+	// ErrTOTPRequired is an ErrAuth that says one more thing: the password was
+	// right, the account has a second factor, and no code came. A client asks
+	// for the code and tries again (decision 0237).
+	ErrTOTPRequired = fmt.Errorf("%w: a code from the authenticator is required", ErrAuth)
 	// ErrFunctionFault marks a callable that failed WHILE ITS BODY RAN — a
 	// raise, a bad effect, a failed sub-call. It is distinct from ErrValidation,
 	// which is the caller's arguments failing the declared input schema before

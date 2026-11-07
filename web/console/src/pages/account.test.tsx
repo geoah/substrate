@@ -37,6 +37,45 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
+/** The credential read Settings asks whether the account has a second factor
+ * of: the TOTP ref is there, redacted, exactly while it has one. */
+const CREDENTIAL_KEY = [
+  "record",
+  "substrate.reamde.dev",
+  "core",
+  "credential",
+  "self",
+]
+
+/** A query client whose credential read has already answered, so no case's
+ * fetch mock has to serve it. */
+function answeredClient(hasFactor = true): QueryClient {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  })
+  client.setQueryData(CREDENTIAL_KEY, {
+    id: "self",
+    kind: "substrate.reamde.dev/core/credential",
+    properties: {
+      repository: "geoah",
+      passwordRef: "<redacted>",
+      ...(hasFactor && { totpRef: "<redacted>" }),
+    },
+    labels: {},
+    version: 1,
+  })
+  return client
+}
+
+/** The rows, with the credential read already answered. */
+function renderRows(hasFactor = true) {
+  render(
+    <QueryClientProvider client={answeredClient(hasFactor)}>
+      <AccountRows />
+    </QueryClientProvider>
+  )
+}
+
 /** Open a row's form by its button and hand back the form. */
 function open(button: string, form: string): HTMLElement {
   fireEvent.click(screen.getByRole("button", { name: button }))
@@ -60,13 +99,13 @@ describe("AccountRows", () => {
   })
 
   it("shows the signed-in repository", () => {
-    render(<AccountRows />)
+    renderRows()
     expect(screen.getByText("geoah")).toBeTruthy()
   })
 
   it("changes the password with the password factor in the body", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
-    render(<AccountRows />)
+    renderRows()
     const card = within(open("Change…", "Change your password"))
     fireEvent.change(card.getByLabelText("Current password"), {
       target: { value: "old-passphrase" },
@@ -103,7 +142,7 @@ describe("AccountRows", () => {
   })
 
   it("re-enrolls TOTP in two proven steps", async () => {
-    render(<AccountRows />)
+    renderRows()
     const card = within(
       open("Replace authenticator…", "Replace your authenticator")
     )
@@ -147,10 +186,64 @@ describe("AccountRows", () => {
     })
   })
 
+  it("turns two-factor on for an account registered without one", async () => {
+    renderRows(false)
+    expect(
+      screen.getByText(/Off\. Signing in asks only for your password\./)
+    ).toBeTruthy()
+    const card = within(open("Turn on…", "Turn on two-factor"))
+    // There is no current code to prove.
+    expect(card.queryByLabelText("Current code")).toBeNull()
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { totpSecret: "NEWSEED", otpauthUri: "otpauth://x" })
+    )
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "old-passphrase" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Continue" }))
+    await screen.findByText("NEWSEED")
+    const begin = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/totp/enroll"
+    )!
+    expect(JSON.parse((begin[1] as RequestInit).body as string)).toEqual({
+      repository: "geoah",
+      password: "old-passphrase",
+      totpCode: "",
+    })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
+    fireEvent.change(card.getByLabelText("Code from your app"), {
+      target: { value: "222 222" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Turn on two-factor" }))
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url) === "/totp")
+      ).toBe(true)
+    )
+    const change = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/totp"
+    )!
+    expect(JSON.parse((change[1] as RequestInit).body as string)).toEqual({
+      repository: "geoah",
+      password: "old-passphrase",
+      totpCode: "",
+      newTotpSecret: "NEWSEED",
+      newTotpCode: "222222",
+    })
+  })
+
+  it("asks no code to change the password of an account without a factor", () => {
+    renderRows(false)
+    const card = within(open("Change…", "Change your password"))
+    expect(card.queryByLabelText("Current code")).toBeNull()
+  })
+
   it("drops the code field and the re-enrollment where no factor is verified", async () => {
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
-    render(<AccountRows />)
+    renderRows()
     // Nothing to replace, so the re-enrollment is not offered at all.
     expect(
       screen.queryByRole("button", { name: "Replace authenticator…" })
@@ -212,7 +305,7 @@ describe("DeleteRepositoryRow", () => {
 
   function renderRow() {
     render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={answeredClient()}>
         <DeleteRepositoryRow />
       </QueryClientProvider>
     )

@@ -108,12 +108,12 @@ one segment, encoded exactly once: an agent's id
 
 | Need | Request |
 | ---- | ------- |
-| Server check | `GET /.well-known/substrate/server.json` (`server.version`, `registration.totpRequired`) |
+| Server check | `GET /.well-known/substrate/server.json` (`server.version`) |
 | Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization; `scopes_supported` must list `full`) |
 | Sign in | the browser on `GET /oauth/authorize` (code, PKCE S256, `scope`, `state`), the redirect on `http://127.0.0.1:<port>/oauth/callback`, then `POST /oauth/token` (form) → `{access_token, scope, expires_in?, repository}` |
 | Sign out | `POST /oauth/revoke` (form `token`, `client_id` it was approved under, none where the session never kept one); kept and tried again at launch until it answers 200 |
 | Still set up | `POST /api/v1/authorizations/check` `{scope, details}` → `{scopes: {missing}, setup, expiresAt}`, on a server whose metadata lists detail types |
-| Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`; out with `DELETE /tokens/{id}` |
+| Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`, or 401 `totp_required` to ask for the code and send it again; out with `DELETE /tokens/{id}` |
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
 | Whose key | `GET /api/v1/operator/defaults` → `{items: [{id: "llm/<row>", source, readiness}]}`, read with full access alone; 404, 405 or 501 on a server older than it, where each row's own `apiKey` says |

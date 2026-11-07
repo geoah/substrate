@@ -1,7 +1,9 @@
 # Users, tokens, and actors
 
-A **user** is a human principal: a repository name, a password, and a TOTP
-second factor, all three required. A user owns exactly one **repository**,
+A **user** is a human principal: a repository name, a password, and, unless
+they skipped it at registration, a TOTP second factor
+([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
+A user owns exactly one **repository**,
 whose name is its authority and their login name, and a **token** is how
 anything reaches it. Both the credential and every token are
 ordinary [records](data-model.md) in the repository they belong to, so the
@@ -56,6 +58,14 @@ POST /register
        "repository": "ada.example.com",
        "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
 ```
+
+A registration may skip the second factor instead: `"skipTotp": true` in
+place of `totpSecret` and `totpCode`, and no `/register/enroll` call before
+it. The account then signs in with its password alone until its owner turns a
+factor on ([below](#the-credential-and-the-password-factor-rule)). The skip
+is explicit: a registration that sends neither an enrollment nor `skipTotp` is
+refused `422`, so a client that lost its enrollment on the way does not create
+an account without one by accident.
 
 `repository` is the whole of the name: it BECOMES the repository's authority,
 any DNS name its user controls (`ada.example.com`, `geoah.me`), which is the
@@ -154,7 +164,7 @@ the same two calls.
 
 ## Logging in
 
-A login presents both factors directly and mints a token record:
+A login presents the factors directly and mints a token record:
 
 ```http
 POST /login
@@ -171,8 +181,17 @@ password change does not sign anything out. Live tokens survive it, because a
 token is data access and the credential is the account.
 
 Every failure (an unknown repository, a wrong password, a wrong code) answers
-one identical `401`, and the engine does the same password-hashing and HMAC
-work on all three so timing is not an oracle either.
+one identical `401 auth`, and the engine does the same password-hashing and
+HMAC work on all three so timing is not an oracle either.
+
+Sign-in is two steps for an account with a second factor. A login with the
+right password and no code answers `401` with the code `totp_required`
+instead, and the client asks for the code and sends the login again with it.
+An account without a factor signs in at the first step, and a code it is sent
+is ignored. The `totp_required` answer comes only after the password
+verified, so a caller without the password learns nothing from it; a caller
+with the password learns that it is right and that the account has a factor.
+The credential changes below answer a missing code the same way.
 
 ## Tokens
 
@@ -241,9 +260,11 @@ Authorization: Bearer substrate_tok_…
 ## The credential, and the password-factor rule
 
 The user's own auth material is one record,
-`substrate.reamde.dev/core/credential` at id `self`. It carries the repository it admits to and two
+`substrate.reamde.dev/core/credential` at id `self`. It carries the repository it admits to and
 secret-typed references into the repository's sealed store — one for the
-password hash (argon2id), one for the TOTP seed and its replay counter. **The
+password hash (argon2id), and one for the TOTP seed and its replay counter
+while the account has a second factor. `totpRef` is absent from an account
+without one, which is how a client reads whether it has one. **The
 material itself never enters the changelog or a record's data**, so the changelog shows
 "the credential changed at T" and nothing crackable, and a rotation deletes the
 old sealed rows in the same transaction rather than piling old hashes into an
@@ -259,7 +280,7 @@ POST /totp/enroll     # {"repository","password","totpCode"} → 200 {totpSecret
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
 ```
 
-Deleting the repository takes the same two factors, and nothing else:
+Deleting the repository takes the same factors, and nothing else:
 
 ```http
 POST /repository/delete  # {"repository","password","totpCode"} → 204
@@ -271,9 +292,18 @@ name for the next registration
 The console offers it under Settings, Danger zone.
 
 **The password-factor rule: changing auth material requires the current
-password and TOTP code, presented directly in the request body. A bearer token
-alone is refused — `403 forbidden`, because the endpoint does not accept tokens
-at all.**
+password, and the current TOTP code where the account has a second factor,
+presented directly in the request body. A bearer token alone is refused —
+`403 forbidden`, because the endpoint does not accept tokens at all.** A
+request with the right password and no code, on an account that has a factor,
+answers `401 totp_required`, as a login does.
+
+Turning a factor on, for an account registered without one, is the same two
+calls that replace one: `/totp/enroll` with the password and no code, then
+`/totp` with the password, the candidate seed and one code from it. The
+console's Settings offers it as **Turn on**. There is no call that turns a
+factor off again; the operator's [reset](#losing-both-factors) issues a new
+one.
 
 This is the one rule that bounds what a leaked token can do. Without it, any
 leaked token could rotate the password and outlive its own revocation; with it,
@@ -341,9 +371,9 @@ reason the second factor is there.
 
 What does **not** change: the password is still required and still argon2id, the
 [password-factor rule](#the-credential-and-the-password-factor-rule) still
-refuses a bearer token as evidence for a credential change, the rate limits are
-untouched, and a seed is still minted and sealed with every credential — the
-factor is off, not absent.
+refuses a bearer token as evidence for a credential change, and the rate
+limits are untouched. A seed a registration brings is still sealed, so an
+account that enrolled one keeps it for the day the flag comes off.
 
 A deployment states, unauthenticated at
 `GET /.well-known/substrate/server.json`, whether it verifies the second
@@ -358,14 +388,14 @@ so neither prompts for a code nothing will check; a client that cannot reach
 discovery, or one talking to a substrate too old to answer, asks for a code as
 before.
 
-Putting the factor back is one restart — but a user who **registered** while it was
-off holds no authenticator, because the seed sealed with their credential was
-minted server-side and shown to nobody. Reset them (below), or wipe the
-database.
+Putting the factor back is one restart. A user who **registered** while it
+was off without bringing a seed has no second factor, exactly as if they had
+skipped it, and signs in with the password alone until they turn one on in
+Settings.
 
 ## Losing both factors
 
-There is no self-serve recovery. A user who has lost both factors is reset by
+There is no self-serve recovery. A user who has lost their factors is reset by
 the operator, on the box, with `substratectl user reset` — which writes fresh sealed
 material and a new credential record and prints a fresh enrollment. The data is
 untouched; the account gets new keys. [Running a substrate](operations.md)

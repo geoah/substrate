@@ -150,6 +150,32 @@ import FoundationNetworking
         #expect(isCancellation(URLError(.cancelled)) && isCancellation(CancellationError()))
     }
 
+    /// The two-step sign-in: a login without a code, of an account that has
+    /// a second factor, is refused with `totp_required`, which says to ask
+    /// for the code; any other 401 is the name, the password or the code.
+    @Test func aLoginTheServerAsksACodeOfSaysSo() async throws {
+        let stub = StubTransport()
+        stub.on("POST", "/login", status: 401, json: #"{"error":{"code":"totp_required","message":"a code is required"}}"#)
+        stub.on("POST", "/login", status: 401, json: #"{"error":{"code":"auth","message":"invalid repository, password or code"}}"#)
+        stub.on("POST", "/login", status: 201, json: #"{"token":{"id":"tok-1"},"secret":"sub_x","repository":"ada.example.com"}"#)
+        let c = client(stub, token: nil)
+        do {
+            _ = try await c.login(repository: "ada", password: "pw", totp: nil, label: "test")
+            Issue.record("a login the server asked a code of succeeded")
+        } catch let refused as LoginRefused {
+            #expect(refused.codeRequired)
+        }
+        do {
+            _ = try await c.login(repository: "ada", password: "pw", totp: "000000", label: "test")
+            Issue.record("a refused login succeeded")
+        } catch let refused as LoginRefused {
+            #expect(!refused.codeRequired)
+            #expect(refused.localizedDescription == "invalid repository, password or code")
+        }
+        let result = try await c.login(repository: "ada", password: "pw", totp: "123456", label: "test")
+        #expect(result.secret == "sub_x")
+    }
+
     @Test func aWebhookDeliveryCarriesTheTokenAndWaitsOutABusyDoor() async throws {
         let stub = StubTransport()
         let path = "/webhooks/ada.example.com/applehealth-webhook"
