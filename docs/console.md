@@ -583,7 +583,10 @@ beside `start`. A view that binds `about` alone has no window: its table
 blocks narrow by the record's subject and nothing else. The blocks read the
 observations of who the record names, and the owner's where the view binds
 no `about` or the record names nobody, never everyone's. Its `fold` lists
-properties the sheet folds away because a section shows them. Then come its
+properties the sheet folds away because a section shows them, and its
+`collapsed` the ones it keeps closed under one line because they are rarely
+read, such as an upstream's raw payload; a view that only collapses draws no
+section of its own. Then come its
 `sections`, in order, each holding one block:
 
 - **heading**: a heading, and an optional `note` under it.

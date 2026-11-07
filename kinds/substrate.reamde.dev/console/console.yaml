@@ -25,4 +25,6 @@ data:
   # (decision record 0185).
   # 5 adds collectionview, a collection's shipped saved views (decision
   # record 0229).
-  version: 5
+  # 6 adds the record view's collapsed, the properties the sheet keeps
+  # closed until asked.
+  version: 6

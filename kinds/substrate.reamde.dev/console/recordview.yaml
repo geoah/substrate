@@ -121,6 +121,12 @@ data:
       repeated: true
       description: properties the generic sheet folds away, because a section
         of the view shows them
+    collapsed:
+      type: string
+      repeated: true
+      description: properties the generic sheet keeps closed under one line
+        until the reader opens it, because they are rarely read, such as an
+        upstream's raw payload
     sections:
       type: object
       repeated: true

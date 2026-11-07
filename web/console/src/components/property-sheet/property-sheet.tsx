@@ -48,6 +48,7 @@ import { useUnits } from "@/hooks/use-units"
 
 const NO_MAPPINGS: SubstrateRecord[] = []
 const NONE_MOVED: ReadonlySet<string> = new Set()
+const NONE_COLLAPSED: readonly string[] = []
 
 const LOCK_WORDS: Record<RowLock, string> = {
   managed: "Set automatically",
@@ -279,6 +280,9 @@ export interface PropertySheetProps {
    * kind's measurement), folded under one line naming it, and opened on
    * asking so they stay editable here. */
   elsewhere?: { names: readonly string[]; where: string }
+  /** Properties a record view keeps closed under one line, because they are
+   * rarely read (an upstream's raw payload), opened on asking. */
+  collapsed?: readonly string[]
   /** Properties that just changed under the reader: marked briefly. */
   moved?: ReadonlySet<string>
 }
@@ -291,6 +295,7 @@ export function PropertySheet({
   holders = false,
   mappings = NO_MAPPINGS,
   elsewhere,
+  collapsed = NONE_COLLAPSED,
   moved = NONE_MOVED,
 }: PropertySheetProps) {
   const units = useUnits()
@@ -305,9 +310,15 @@ export function PropertySheet({
   }, [units, record, kind, readOnly, draft])
   const [showEmpty, setShowEmpty] = useState(false)
   const [showElsewhere, setShowElsewhere] = useState(false)
+  const [showCollapsed, setShowCollapsed] = useState(false)
   const away = useMemo(
     () => filled.filter((r) => elsewhere?.names.includes(r.name)).map((r) => r),
     [filled, elsewhere]
+  )
+  // What another section shows is folded under its name, not here.
+  const closed = useMemo(
+    () => filled.filter((r) => collapsed.includes(r.name) && !away.includes(r)),
+    [filled, collapsed, away]
   )
   const [editing, setEditing] = useState<string | null>(null)
   const [open, setOpen] = useState<string[]>([])
@@ -331,7 +342,9 @@ export function PropertySheet({
     )
 
   const rows = (showEmpty ? all : filled).filter(
-    (r) => showElsewhere || !away.includes(r)
+    (r) =>
+      (showElsewhere || !away.includes(r)) &&
+      (showCollapsed || !closed.includes(r))
   )
   const rowErrors = draft ? { ...draft.errors, ...errors } : errors
 
@@ -588,6 +601,26 @@ export function PropertySheet({
             {away.length} shown under {elsewhere.where}
             <span className="hidden min-[480px]:inline">
               : {away.map((r) => r.spec.label).join(", ")}
+            </span>
+          </span>
+        </button>
+      )}
+      {closed.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowCollapsed((v) => !v)}
+          aria-expanded={showCollapsed}
+          className="col-span-full flex items-center gap-1.5 px-0.5 py-1.5 text-left text-[13px] text-faint hover:text-muted-foreground"
+        >
+          {showCollapsed ? (
+            <ChevronRightIcon aria-hidden className="size-3.5" />
+          ) : (
+            <ChevronDownIcon aria-hidden className="size-3.5" />
+          )}
+          <span className="truncate">
+            {closed.length} more
+            <span className="hidden min-[480px]:inline">
+              : {closed.map((r) => r.spec.label).join(", ")}
             </span>
           </span>
         </button>
