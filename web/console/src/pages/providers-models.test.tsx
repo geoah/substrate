@@ -1171,6 +1171,16 @@ describe("whose key a provider runs on", () => {
 })
 
 describe("the allowance", () => {
+  // Only Date is faked: the reset reads as "in N hours" against the clock, so
+  // a real one would turn RESETS_AT into "now" once the day passes.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-06T15:00:00Z"))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   const allowance = {
     centsPerDay: 200,
     usedCents: 37,
