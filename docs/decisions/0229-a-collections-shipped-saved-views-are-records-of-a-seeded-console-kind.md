@@ -40,8 +40,8 @@ only repositories whose console had run.
 - A record holds `appliesTo` (a reference to the kind's declaration, as
   `recordview.appliesTo`), `name`, `where`, `sort` (`property:asc` or
   `property:desc`), `columns` (the property columns the view shows, in order;
-  the rest are hidden), `group` (the property the rows are grouped by) and
-  `default`. `where` is one condition per property in the filter grammar,
+  the rest are hidden), `group` (the property the rows are grouped by),
+  `nest` (false shows a nesting collection flat) and `default`. `where` is one condition per property in the filter grammar,
   the same shape as a mapping's `where`
   ([0118](0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md)).
   It is a `json` property, because the loader keeps `json` out of declared
@@ -57,8 +57,8 @@ only repositories whose console had run.
   stored properties differ, unless any hand but the seed's and the engine's
   ever wrote or deleted it
   ([0191](0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md)).
-  A record whose kind the repository does not declare, or whose write is
-  refused, is skipped and logged; the open never fails for it. The refresh
+  A record whose kind the repository does not declare, or whose read or
+  write fails, is skipped and logged; the open never fails for it. The refresh
   reads content, not versions, so a changed shipped record needs no package
   bump to land, though `kinds:check` still asks for one as it does for a
   bundle's records. The units keep their own seed, whose graph checks no

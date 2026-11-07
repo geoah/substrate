@@ -671,11 +671,14 @@ export function KindBrowsePage() {
   // views are read. Not while the reader has since chosen anything (the
   // store says so) or the page shows something else, and not remembered as
   // their pick: the next bare address opens on the default again until they
-  // choose.
+  // choose. The page stays mounted from one collection to the next, so the
+  // open is keyed by the collection, not by a flag two collections share.
   const opening =
     remembered.collection === collection &&
     remembered.opensOnDefault &&
     shippedRecords.settled
+      ? collection
+      : undefined
   useEffect(() => {
     if (!opening || !shippedDefault || search) return
     if (loadBrowsePrefs(`${authority}/${pkg}`, name)) return
@@ -1032,17 +1035,20 @@ export function KindBrowsePage() {
             : change({ type: "forget-view", id: view.id })
         }
       />
-      {writeShipped.isError && (
-        <p
-          role="alert"
-          className={cn("mt-2 text-[12.5px] text-destructive", GUTTER_MX)}
-        >
-          The view did not change:{" "}
-          {writeShipped.error instanceof Error
-            ? writeShipped.error.message
-            : String(writeShipped.error)}
-        </p>
-      )}
+      {writeShipped.isError &&
+        shippedViews.some(
+          (v) => v.record === writeShipped.variables?.record
+        ) && (
+          <p
+            role="alert"
+            className={cn("mt-2 text-[12.5px] text-destructive", GUTTER_MX)}
+          >
+            The view did not change:{" "}
+            {writeShipped.error instanceof Error
+              ? writeShipped.error.message
+              : String(writeShipped.error)}
+          </p>
+        )}
       <div
         className={cn(
           "flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border py-2.5",

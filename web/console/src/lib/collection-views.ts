@@ -20,6 +20,7 @@ import {
   toRecordFilter,
   type ActiveFilter,
 } from "@/lib/filters"
+import { isMoney, moneyText } from "@/lib/money"
 import { kindDeclarationPath } from "@/lib/record-view"
 import type { SavedView, ViewState } from "@/lib/saved-views"
 import type { UnitReader } from "@/lib/unit-reader"
@@ -27,11 +28,13 @@ import type { UnitReader } from "@/lib/unit-reader"
 /** The kind a shipped saved view is a record of. */
 export const COLLECTION_VIEW_KIND = `${CORE_AUTHORITY}/console/collectionview`
 
-/** The list read of the views shipped for one collection. */
+/** The list read of the views shipped for one collection: one page as large
+ * as the server serves, since the list cannot be ordered by id and the
+ * strip orders the views itself. */
 export function collectionViewsParams(identity: string): ListParams {
   return {
     kinds: [COLLECTION_VIEW_KIND],
-    first: 50,
+    first: 500,
     filter: {
       properties: { appliesTo: { eq: kindDeclarationPath(identity) } },
     },
@@ -49,12 +52,27 @@ const COMPARATOR = { lt: "<", lte: "<=", gte: ">=", gt: ">" } as const
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v)
 
-/** A scalar operand as the bar types it; undefined for anything else. A
- * comma is membership in the bar, so a text value holding one cannot be an
- * exact value there. */
-function scalarText(v: unknown): string | undefined {
+/** An operand as the bar types it, which the bar reads back to the same
+ * operand: a scalar, a money value (`19.99 EUR`) or a quantity (`155 lb`) on
+ * a property of that type. Undefined for anything else. A comma is
+ * membership in the bar, so a text value holding one cannot be an exact
+ * value there. */
+function operandText(
+  v: unknown,
+  prop: DeclaredProperty | undefined
+): string | undefined {
   if (typeof v === "boolean" || typeof v === "number") return String(v)
-  if (typeof v === "string" && !v.includes(",")) return v
+  if (typeof v === "string") return v.includes(",") ? undefined : v
+  if (prop?.kind === "money" && isMoney(v)) return moneyText(v)
+  if (prop?.kind === "quantity" && isObject(v)) {
+    const { value, unit, ...rest } = v
+    if (
+      (typeof value === "string" || typeof value === "number") &&
+      typeof unit === "string" &&
+      Object.keys(rest).length === 0
+    )
+      return `${value} ${unit}`
+  }
   return undefined
 }
 
@@ -73,13 +91,15 @@ function condRows(
     switch (op) {
       case "eq":
       case "contains": {
-        const value = scalarText(operand)
+        const value = operandText(operand, prop)
         if (value === undefined) return cannot(op)
         rows.push({ field, op, value })
         break
       }
       case "in": {
-        const values = Array.isArray(operand) ? operand.map(scalarText) : []
+        const values = Array.isArray(operand)
+          ? operand.map((v) => operandText(v, prop))
+          : []
         if (!values.length || values.some((v) => v === undefined))
           return cannot(op)
         rows.push({ field, op: "eq", value: values.join(",") })
@@ -207,10 +227,12 @@ export function collectionViewOf(
   }
   const group = text(p.group)
   if (group) view.group = group
+  if (p.nest === false) view.nest = false
   return view
 }
 
-/** A collection's shipped views, in record id order. */
+/** A collection's shipped views, in record id order: the ids' code units,
+ * as the server compares them, never the reader's locale. */
 export function collectionViewsOf(
   records: readonly SubstrateRecord[],
   collection: string,
@@ -219,7 +241,7 @@ export function collectionViewsOf(
 ): SavedView[] {
   return [...records]
     .filter((r) => !r.deletedAt)
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((r) => collectionViewOf(r, collection, props, columns))
 }
 
@@ -250,5 +272,6 @@ export function collectionViewWrite(
     sort: state.sort === defaultSort ? null : state.sort,
     columns: shown.length ? shown : null,
     group: state.group ?? null,
+    nest: state.nest ? null : false,
   }
 }

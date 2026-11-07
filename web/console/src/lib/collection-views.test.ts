@@ -32,6 +32,7 @@ const CONTACT = [
   prop("prominence", "enum"),
   prop("name", "string"),
   prop("weight", "quantity"),
+  prop("fee", "money"),
   prop("emails", "email", true),
 ]
 
@@ -75,6 +76,17 @@ describe("a view's where and the bar's tokens", () => {
     { name: { match: "ada lov*" } },
     { name: { prefix: "Ada" } },
     { weight: { lt: { value: "155", unit: "lb" } } },
+    // What "save changes" writes for an exact quantity or money filter.
+    { weight: { eq: { value: "155", unit: "lb" } } },
+    { fee: { eq: { amount: 1999, currency: "EUR" } } },
+    {
+      weight: {
+        in: [
+          { value: "150", unit: "lb" },
+          { value: "155", unit: "lb" },
+        ],
+      },
+    },
   ]
 
   it.each(wheres.map((w) => [JSON.stringify(w), w] as const))(
@@ -107,6 +119,13 @@ describe("a view's where and the bar's tokens", () => {
     expect(problem({ name: { near: "x" } })).toContain("“near”")
     expect(problem({ name: "Ada" })).toContain("not an object")
     expect(problem(["contactType"])).toContain("one condition per property")
+    // An object operand reads only on a property of its type.
+    expect(problem({ name: { eq: { value: "1", unit: "lb" } } })).toContain(
+      "“eq”"
+    )
+    expect(
+      problem({ weight: { eq: { value: "1", unit: "lb", extra: 1 } } })
+    ).toContain("“eq”")
   })
 })
 
@@ -119,6 +138,7 @@ describe("a shipped view record", () => {
         sort: "name:asc",
         columns: ["name", "updatedAt", "gone"],
         group: "prominence",
+        nest: false,
         default: true,
       }),
       "substrate.reamde.dev/core/contact",
@@ -136,6 +156,7 @@ describe("a shipped view record", () => {
       columns: ["prop:name", "updatedAt"],
       hidden: ["prop:contactType", "prop:prominence"],
       group: "prominence",
+      nest: false,
     })
   })
 
@@ -157,6 +178,20 @@ describe("a shipped view record", () => {
     expect(views.map((v) => v.name)).toEqual(["Ranged", "Later", "Sorting"])
     expect(views[0].problem).toContain("“gt”")
     expect(defaultView(views)?.name).toBe("Sorting")
+  })
+
+  it("orders by the ids' code units, whatever the reader's locale", () => {
+    const views = collectionViewsOf(
+      [
+        record("a-other", { name: "Other", default: true }),
+        record("B-main", { name: "Main", default: true }),
+      ],
+      "x.example.com/p/k",
+      CONTACT,
+      columns
+    )
+    expect(views.map((v) => v.name)).toEqual(["Main", "Other"])
+    expect(defaultView(views)?.name).toBe("Main")
   })
 
   it("lights its tab where the page shows the rows with no type", () => {
@@ -206,6 +241,7 @@ describe("saving the page into a shipped view", () => {
       sort: null,
       columns: ["name", "updatedAt"],
       group: null,
+      nest: null,
     })
     expect(
       collectionViewWrite(
@@ -215,6 +251,15 @@ describe("saving the page into a shipped view", () => {
         propertyOf
       )
     ).toMatchObject({ where: null, sort: "name:asc", group: "prominence" })
+    // The tree switched off is written; on is the collection's own.
+    expect(
+      collectionViewWrite(
+        { ...state, nest: false },
+        "updatedAt:desc",
+        undefined,
+        propertyOf
+      ).nest
+    ).toBe(false)
   })
 })
 

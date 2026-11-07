@@ -61,6 +61,10 @@ data:
     group:
       type: string
       description: the property the rows are grouped by; absent groups none
+    nest:
+      type: bool
+      description: false shows the rows flat where the kind nests them under
+        a parent; absent keeps the tree
     default:
       type: bool
       default: false

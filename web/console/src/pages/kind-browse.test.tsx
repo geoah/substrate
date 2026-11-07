@@ -31,7 +31,9 @@ import {
 
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
-import type { KindInfo } from "@/lib/api/types"
+import { recordsQueryOptions } from "@/lib/api/records"
+import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { collectionViewsParams } from "@/lib/collection-views"
 import {
   DEFAULT_SETTINGS,
   type ConsoleAction,
@@ -47,17 +49,21 @@ vi.mock("@/lib/api/changes", async (importOriginal) => ({
   watchChanges: () => ({ stop: () => {} }),
 }))
 
+// The collection the route names; a test that moves to another collection
+// changes it and renders again, as the router keeps the page mounted.
+const TEAM_ROUTE = {
+  authority: "acme.example.com",
+  pkg: "people",
+  name: "team",
+}
+let route = TEAM_ROUTE
+
 vi.mock("@/router", () => ({
-  kindBrowseRoute: {
-    useParams: () => ({
-      authority: "acme.example.com",
-      pkg: "people",
-      name: "team",
-    }),
-  },
+  kindBrowseRoute: { useParams: () => route },
 }))
 
 const TEAM = "acme.example.com/people/team"
+const CREW = "acme.example.com/people/crew"
 const team: KindInfo = {
   identity: TEAM,
   name: "team",
@@ -115,8 +121,19 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
     ) => ({
       ...actual.recordsQueryOptions(p),
       queryFn: () => {
-        if (p.kinds?.includes(COLLECTION_VIEW))
-          return Promise.resolve({ records: shippedViewRecords })
+        if (p.kinds?.includes(COLLECTION_VIEW)) {
+          // One collection's views, as the server filters them.
+          const applies = (
+            p.filter?.properties?.appliesTo as { eq?: string } | undefined
+          )?.eq
+          return Promise.resolve({
+            records: shippedViewRecords.filter(
+              (r) =>
+                (r as { properties: { appliesTo: { ref: string } } }).properties
+                  .appliesTo.ref === applies
+            ),
+          })
+        }
         offsets.push(p.offset)
         orders.push(p.orderBy)
         return Promise.resolve({ records: pageRecords, cursor: pageCursor })
@@ -145,6 +162,7 @@ afterEach(() => {
   countFilters.length = 0
   countOf = EVERY_COUNT
   shippedViewRecords = []
+  route = TEAM_ROUTE
   localStorage.clear()
 })
 
@@ -383,8 +401,14 @@ describe("through the preference record", () => {
   let version = 1
   const writes: Record<string, unknown>[] = []
   // Writes to a shipped view's record: the method, the record path and the
-  // body.
+  // body. `refuseViewWrites` answers each with the server's refusal.
   const viewWrites: { method: string; path: string; body?: unknown }[] = []
+  let refuseViewWrites = false
+  const CREW_KIND: KindInfo = {
+    ...team,
+    identity: CREW,
+    name: "crew",
+  }
 
   beforeAll(() => {
     // `SidebarProvider`, inside the preference provider, asks whether the
@@ -407,6 +431,7 @@ describe("through the preference record", () => {
     version = 1
     writes.length = 0
     viewWrites.length = 0
+    refuseViewWrites = false
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -417,6 +442,11 @@ describe("through the preference record", () => {
             path: String(url).slice(at),
             body: init?.body ? JSON.parse(String(init.body)) : undefined,
           })
+          if (refuseViewWrites)
+            return new Response(
+              JSON.stringify({ error: "sort: does not match the pattern" }),
+              { status: 422 }
+            )
           return init?.method === "DELETE"
             ? new Response(null, { status: 204 })
             : new Response(
@@ -452,7 +482,7 @@ describe("through the preference record", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
-    const view = render(
+    const tree = () => (
       <QueryClientProvider client={client}>
         <ConsolePreferencesProvider>
           <NuqsTestingAdapter
@@ -465,13 +495,22 @@ describe("through the preference record", () => {
         </ConsolePreferencesProvider>
       </QueryClientProvider>
     )
+    const view = render(tree())
     await waitFor(async () => {
-      await act(async () => resolveRegistry([team, PREFERENCE]))
+      await act(async () => resolveRegistry([team, CREW_KIND, PREFERENCE]))
       expect(view.container.querySelector("[data-slot=page-header]")).not.toBe(
         null
       )
     })
-    return { url: () => urls[urls.length - 1] }
+    return {
+      url: () => urls[urls.length - 1],
+      client,
+      /** Follow a link to another collection: the page stays mounted. */
+      moveTo: (next: typeof route) => {
+        route = next
+        view.rerender(tree())
+      },
+    }
   }
 
   const sized = (id: string, size: string) => ({
@@ -658,15 +697,17 @@ describe("through the preference record", () => {
   // team collection, read through the mocked records read.
   const shipped = (
     id: string,
-    properties: Record<string, unknown>
-  ): Record<string, unknown> => ({
+    properties: Record<string, unknown>,
+    collection = TEAM
+  ): SubstrateRecord => ({
     id,
     kind: COLLECTION_VIEW,
+    labels: {},
     version: 1,
     createdAt: "2026-11-06T00:00:00Z",
     updatedAt: "2026-11-06T00:00:00Z",
     properties: {
-      appliesTo: { ref: `substrate.reamde.dev/core/kind/${TEAM}` },
+      appliesTo: { ref: `substrate.reamde.dev/core/kind/${collection}` },
       ...properties,
     },
   })
@@ -733,6 +774,66 @@ describe("through the preference record", () => {
     await renderPage("")
     await waitFor(() => expect(tabNames()).toContain("Unsized"))
     expect(pressedTabs()).toEqual(["All"])
+  })
+
+  it("opens the next collection on its own default when its views are already read", async () => {
+    // Team ships no default, so it opens on All and the address stays bare;
+    // Crew's views were read on an earlier visit.
+    const crewDefault = shipped(
+      "crew-unsized",
+      {
+        name: "Crew unsized",
+        where: { size: { exists: false } },
+        default: true,
+      },
+      CREW
+    )
+    shippedViewRecords = [
+      shipped("team-small", {
+        name: "Small",
+        where: { size: { eq: "small" } },
+      }),
+      crewDefault,
+    ]
+    const page = await renderPage("")
+    await waitFor(() => expect(tabNames()).toContain("Small"))
+    expect(pressedTabs()).toEqual(["All"])
+    page.client.setQueryData(
+      recordsQueryOptions(collectionViewsParams(CREW)).queryKey,
+      { records: [crewDefault], head: 1, generation: "g" }
+    )
+
+    act(() => page.moveTo({ ...TEAM_ROUTE, name: "crew" }))
+    await waitFor(() => expect(pressedTabs()).toEqual(["Crew unsized"]))
+    expect(page.url().getAll("filter")).toEqual(["size~exists~false"])
+  })
+
+  it("says a shipped view did not change on its own collection only", async () => {
+    shippedViewRecords = [
+      shipped("team-small", {
+        name: "Small",
+        where: { size: { eq: "small" } },
+      }),
+    ]
+    refuseViewWrites = true
+    const page = await renderPage("?filter=size~eq~small")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small"]))
+    await press("More for the “Small” view")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }))
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Little" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    expect(
+      (await screen.findByRole("alert")).textContent?.startsWith(
+        "The view did not change"
+      )
+    ).toBe(true)
+
+    act(() => page.moveTo({ ...TEAM_ROUTE, name: "crew" }))
+    await waitFor(() =>
+      expect(screen.queryByText(/The view did not change/)).toBeNull()
+    )
   })
 
   it("lists a shipped view the bar cannot show, and does not open it", async () => {
