@@ -21,7 +21,7 @@ package providertest
 //     loopback; real Firecrawl is never dialed). websearch answers hits and
 //     writes nothing; webscrape behaves as the sample's scrapepage did: it
 //     caps the markdown at 24000 characters, writes ONE webdocument keyed
-//     host.ids.url(url), and a re-scrape updates it in place.
+//     host.ids.minted(url), and a re-scrape updates it in place.
 //
 //  4. TestFirecrawlProviderRefusesRedirects: a 3xx from the API is refused,
 //     never followed, so the key never reaches the redirect's target.
@@ -120,6 +120,11 @@ func TestFirecrawlProviderAdmitsSchema(t *testing.T) {
 	}
 	if doc.DisplayTemplate != "{pageTitle|url}" {
 		t.Fatalf("webdocument displayTemplate = %q", doc.DisplayTemplate)
+	}
+	// The page is markdown, which the record page reads as the document's
+	// body rather than a clamped row.
+	if p, ok := doc.Prop("content"); !ok || p.Datatype != vocabulary.DatatypeMarkdown {
+		t.Fatalf("webdocument content = %+v, want markdown", p)
 	}
 
 	// Both callables are full tool cards, offered to agents under the names
@@ -384,8 +389,8 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 	}
 
 	// webscrape: the content caps at 24000, ONE webdocument lands under
-	// host.ids.url(url), titled by the page's own title.
-	docID := runner.URLID(firecrawlPageURL)
+	// host.ids.minted(url), titled by the page's own title.
+	docID := vocabulary.DerivedMintedID(firecrawlPageURL)
 	out, applied, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
 	if err != nil {
 		t.Fatalf("call webscrape: %v", err)

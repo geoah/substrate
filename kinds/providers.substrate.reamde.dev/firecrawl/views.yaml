@@ -1,0 +1,17 @@
+# The record page of a scraped web page, as DATA: a record of the seeded
+# console package's `recordview` kind (decision records 0166 and 0175). It
+# draws no section of its own. The page's markdown is the record's body, and
+# the scrape metadata Firecrawl answered is kept for provenance and rarely
+# read, so the sheet keeps it closed under one line until asked.
+#
+# The id carries the provider's authority, so it never meets an owner's own
+# view.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: providers.substrate.reamde.dev/firecrawl/webdocument
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/firecrawl/webdocument
+    name: Web page
+    collapsed:
+      - raw
