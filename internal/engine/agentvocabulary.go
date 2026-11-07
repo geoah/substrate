@@ -54,7 +54,11 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 			return toolError(fmt.Sprintf("documents[%d]: %s is not in agent %s's effective emit allowlist, nothing applied",
 				i, kind, l.ag.Identity())), false
 		}
-		if err := l.declarationNamed(kind); err != nil {
+		ty, err := l.ds.resolveType(kind)
+		if err != nil {
+			return toolError(fmt.Sprintf("documents[%d]: %v", i, err)), false
+		}
+		if err := l.namedOnly(ty); err != nil {
 			return toolError(fmt.Sprintf("documents[%d]: %v", i, err)), false
 		}
 		if plan {
@@ -81,7 +85,7 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 		}
 		return toolJSON(map[string]any{"plan": p}), true
 	}
-	written, err := l.ds.applyVocabularyDocuments(ctx, l.actor, docs, substrate.VocabularyApply{}, &c.changes, true)
+	written, err := l.ds.applyVocabularyDocuments(ctx, l.actor, docs, substrate.VocabularyApply{}, &c.changes)
 	if err != nil {
 		return toolError(err.Error()), false
 	}
@@ -116,37 +120,50 @@ func vocabularyDocumentsArg(v any) ([]map[string]any, error) {
 	return docs, nil
 }
 
-// namedOnlyData are the data kinds held the way declarations are: a trigger
-// decides when code runs, and an instruction (decision 0241) decides how an
-// agent works, so neither is the owner's data a glob grant should reach.
+// namedOnlyData are the kinds held to an agent's named grants with a reason
+// of their own: a trigger decides when code runs, and an instruction (decision
+// 0241), the owner's data otherwise, decides how an agent works.
 var namedOnlyData = map[string]string{
 	typeTrigger:                   "the trigger kind, which decides when code runs,",
 	vocabulary.KindLLMInstruction: "the instruction kind, which decides how an agent works,",
 }
 
-// declarationNamed holds a declaration kind, a trigger and an instruction to
-// the agent's OWN writes, spelled out: a glob never reaches one (decisions
-// 0239 and 0241), as it never reaches auth material (0080). A declaration
-// changes what code runs and what records hold, a trigger when code runs and
-// an instruction how an agent behaves, so an agent whose `*` covers the
-// owner's data does not by that grant also reshape the vocabulary, schedule a
-// body or rewrite its own direction; it proposes, and the owner accepts. The
-// effective emit is checked beside it, so a caller's ceiling still narrows a
-// sub-agent that names the kind.
-func (l *agentLoop) declarationNamed(kind string) error {
-	what := "a declaration kind"
-	if _, declaration := vocabularyRecordKinds[kind]; !declaration {
-		w, held := namedOnlyData[kind]
-		if !held {
-			return nil
-		}
-		what = w
+// namedOnly holds the substrate's own machinery and the owner's instructions
+// to the agent's OWN writes, spelled out: a glob never reaches them
+// (decisions 0239 and 0241), as it never reaches auth material (0080).
+// The machinery is every `internal` kind: the declarations (what code runs
+// and what records hold), triggers (when code runs), threads and messages
+// (what an agent's next turn reads as given, its pinned snapshot included),
+// provider rows (where a model key is sent), settings, requests and
+// interactions. An agent whose `*` covers the owner's data therefore does
+// not by that grant also reshape the vocabulary, schedule a body, rewrite
+// its own direction or redirect a key, whatever a record it read told it
+// to; it proposes, and the owner accepts. Every hand an agent writes
+// through is held here: its write and edit tools, its vocabulary tool and
+// the effects of a function it runs. The effective emit is checked beside
+// it, so a caller's ceiling still narrows a sub-agent that names the kind.
+func (l *agentLoop) namedOnly(ty *vocabulary.Kind) error {
+	kind := ty.Identity
+	what, held := namedOnlyData[kind]
+	switch {
+	case held:
+	case isDeclarationKind(kind):
+		what = "a declaration kind"
+	case ty.Purpose == vocabulary.PurposeInternal:
+		what = "an internal kind, the substrate's own machinery,"
+	default:
+		return nil
 	}
 	if slices.Contains(l.ag.Emit, kind) {
 		return nil
 	}
 	return fmt.Errorf("%w: %s is %s written only by an agent whose permissions.writes names it; a glob never reaches one, so propose the change instead; nothing applied",
 		substrate.ErrForbidden, kind, what)
+}
+
+func isDeclarationKind(kind string) bool {
+	_, declaration := vocabularyRecordKinds[kind]
+	return declaration
 }
 
 // declarationKindRefs lists the kinds the vocabulary tool takes, sorted, for

@@ -34,18 +34,24 @@ adds no hand an agent did not have.
 - One call is `{documents, plan}`. `plan: true` answers the door's preview
   and writes nothing; a `plan` that is not a boolean is refused, never read
   as an apply. An apply admits every document or none.
-- **A glob never reaches a declaration kind, or a trigger.** An agent
-  writes a declaration, through `vocabulary` or through `write`, only where
-  its own `permissions.writes` names that kind, as 0080 holds auth
-  material. A `core/trigger` is data, but it decides when code runs, so it
-  is held the same way. An
-  agent granted `*` keeps every record of the owner's and loses the
-  vocabulary; a sub-agent that names `core/kind` still declares under a
+- **An agent's glob never reaches the machinery.** An agent writes a
+  record of an `internal` kind only where its own `permissions.writes`
+  names that kind, as 0080 holds auth material. That covers every
+  declaration kind and `core/trigger` (when code runs), but also a
+  thread or a message (what the agent's next turn reads as given, its
+  pinned snapshot included), a provider row (where a model key is sent), a
+  setting and a request. It holds on every hand an agent writes through:
+  `vocabulary`, `write`, `edit` and the effects of a function it runs. An
+  agent granted `*` keeps every record of the owner's (its memories and
+  contacts among them) and loses the vocabulary and the machinery, so an
+  injected instruction cannot have it redirect a key or forge what it
+  reads next. A sub-agent that names `core/kind` still declares under a
   caller's `*`, because the effective emit is checked beside the named
   grant. The loader refuses `vocabulary` unless `core/kind` is named.
 - **An agent declares; it does not convert.** A batch whose conversion plan
   would rewrite a live record (a rename, a backfill, a remap) is refused
-  inside the transaction, under the locks the plan is counted under. The
+  inside the transaction, under the locks the plan is counted under,
+  whichever of an agent's tools carried it. The
   agent's grant names declaration kinds, not the records a declaration
   rewrites, and the policy door never saw those writes.
 - Every document's kind is held to the agent's EFFECTIVE emit. Writes naming

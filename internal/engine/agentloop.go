@@ -2893,11 +2893,8 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabu
 			return toolError("output: " + err.Error()), false
 		}
 	}
-	for _, ef := range effects {
-		if !l.emitAllows(ef.Type) {
-			return toolError(fmt.Sprintf("effect %s %s: %s is not in agent %s's effective emit allowlist — nothing applied",
-				ef.Action, ef.ID, ef.Type, l.ag.Identity())), false
-		}
+	if err := l.effectsAllowed(effects); err != nil {
+		return toolError(err.Error()), false
 	}
 	// The policy door, per effect, matched on this agent and on the function
 	// whose body returned the effect, plus the declaration's own floor
@@ -2981,6 +2978,28 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabu
 		}
 	}
 	return toolJSON(map[string]any{"output": output, "effects": len(effects)}), true
+}
+
+// effectsAllowed holds the effects of a function this agent ran to the
+// agent's own grants, as its own writes are: every kind in its effective
+// emit, and the machinery and the instructions only where its own writes name
+// them (namedOnly). A function's body is not a way around the agent that
+// called it, in a call or in a background job.
+func (l *agentLoop) effectsAllowed(effects []effect) error {
+	for _, ef := range effects {
+		if !l.emitAllows(ef.Type) {
+			return fmt.Errorf("effect %s %s: %s is not in agent %s's effective emit allowlist — nothing applied",
+				ef.Action, ef.ID, ef.Type, l.ag.Identity())
+		}
+		ty, err := l.ds.resolveType(ef.Type)
+		if err != nil {
+			return err
+		}
+		if err := l.namedOnly(ty); err != nil {
+			return fmt.Errorf("effect %s %s: %w", ef.Action, ef.ID, err)
+		}
+	}
+	return nil
 }
 
 // --- sub-agents ------------------------------------------------------------------

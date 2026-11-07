@@ -190,7 +190,7 @@ func (m *agentWriteDataset) allow(kindRef, verb string) (*vocabulary.Kind, error
 		return nil, fmt.Errorf("%w: %s %s: %s is not in agent %s's effective emit allowlist, nothing applied",
 			substrate.ErrForbidden, verb, kindRef, ty.Identity, m.loop.ag.Identity())
 	}
-	if err := m.loop.declarationNamed(ty.Identity); err != nil {
+	if err := m.loop.namedOnly(ty); err != nil {
 		return nil, err
 	}
 	return ty, nil

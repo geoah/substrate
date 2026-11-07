@@ -367,14 +367,17 @@ entry could name only a function.
   nothing, and a `plan` that is not a boolean is refused. It requires
   `permissions.writes` to name `substrate.reamde.dev/core/kind` (a load
   error otherwise), and every document's kind is held to the effective emit
-  and must be named in the agent's own writes: **a glob never reaches a
-  declaration kind**, through this tool or through `write`, nor a
-  `core/trigger`, which decides when code runs, nor an
-  [`llm/instruction`](#owner-instructions), which decides how an agent
-  works, so an agent granted `*` writes every record of the owner's and no
-  declaration, trigger or instruction, and
-  one whose writes name `core/package` and `core/kind` declares kinds and
-  packages and no agent, function, trigger or mapping. A batch whose
+  and must be named in the agent's own writes: **an agent's glob never
+  reaches an `internal` kind**, the substrate's machinery, through this
+  tool, `write`, `edit` or a function's effects. That is every declaration
+  kind, a `core/trigger` (when code runs), a thread or a message (what the
+  agent's next turn reads as given), a provider row (where a model key is
+  sent), a setting and a request, and the
+  [`llm/instruction`](#owner-instructions) kind is held the same way
+  because it decides how an agent works. So an agent granted `*` writes
+  every record of the owner's, memories and contacts included, and none
+  of those; one whose writes name `core/package` and `core/kind` declares
+  kinds and packages and no agent, function, trigger or mapping. A batch whose
   conversion plan would rewrite a live record (a rename, a backfill) is
   refused: converting records is the owner's. An apply passes the
   [policy door](#the-policy-door) for each document as a `put` of its kind;
@@ -658,7 +661,7 @@ How the owner wants you to work: their standing instructions to you, which they 
   `params.engineGuidance: false`, gets none.
 - **Who writes them.** The owner, by hand. An agent writes one only where
   its own `permissions.writes` names `substrate.reamde.dev/llm/instruction`;
-  a glob never reaches it, as it never reaches a declaration or a trigger.
+  an agent's glob never reaches it, as it never reaches the machinery.
   An agent granted `*` proposes one instead, and the owner's accept lands
   it.
 - **What they cannot do.** Widen anything. An instruction changes how an
