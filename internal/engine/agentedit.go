@@ -91,7 +91,9 @@ func (l *agentLoop) editView(rec *substrate.Record, text string, args map[string
 	if start < 1 || end < start || start > len(lines) {
 		return toolError(fmt.Sprintf("start and end must lie within 1..%d, start first", len(lines))), false
 	}
-	end = min(end, len(lines))
+	// A view is at most editViewLines whatever end asks for; the answer's
+	// end says where it stopped, so the next view starts after it.
+	end = min(end, len(lines), start+editViewLines-1)
 	var b strings.Builder
 	for i := start; i <= end; i++ {
 		b.WriteString(strconv.Itoa(i))
@@ -155,7 +157,10 @@ type textEdit struct {
 }
 
 // editsArg reads `edits`: a list of {old, new}, or the same list encoded as a
-// JSON string. An empty old would match everywhere, so it is refused.
+// JSON string. Each edit names exactly old and new, both strings: a lenient
+// decode reads a misspelled or missing new as "" and deletes the text, so
+// deleting is said with an explicit "new": "". An empty old would match
+// everywhere, so it is refused.
 func editsArg(v any) ([]textEdit, error) {
 	raw, err := json.Marshal(v)
 	if s, ok := v.(string); ok {
@@ -164,16 +169,39 @@ func editsArg(v any) ([]textEdit, error) {
 	if err != nil {
 		return nil, err
 	}
-	var edits []textEdit
-	if err := json.Unmarshal(raw, &edits); err != nil || len(edits) == 0 {
+	var list []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &list); err != nil || len(list) == 0 {
 		return nil, fmt.Errorf("edits is required: a list of {old, new}, old copied exactly from a view")
 	}
-	for i, e := range edits {
-		if e.Old == "" {
+	edits := make([]textEdit, len(list))
+	for i, e := range list {
+		for _, k := range slices.Sorted(maps.Keys(e)) {
+			if k != "old" && k != "new" {
+				return nil, fmt.Errorf("edits[%d]: unknown key %q; an edit is {old, new}", i, k)
+			}
+		}
+		old, okOld := jsonText(e["old"])
+		repl, okNew := jsonText(e["new"])
+		if !okOld || !okNew {
+			return nil, fmt.Errorf(`edits[%d]: an edit names old and new, both strings; "new": "" deletes`, i)
+		}
+		if old == "" {
 			return nil, fmt.Errorf("edits[%d]: old is empty; it must be text copied exactly from a view", i)
 		}
+		edits[i] = textEdit{Old: old, New: repl}
 	}
 	return edits, nil
+}
+
+// jsonText decodes raw as a JSON string; absent, null and every other value
+// are not one.
+func jsonText(raw json.RawMessage) (string, bool) {
+	var v any
+	if len(raw) == 0 || json.Unmarshal(raw, &v) != nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
 }
 
 // editTarget is the text a property holds, or one entry of a keyed one; an
