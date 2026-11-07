@@ -43,7 +43,11 @@ import {
   collectionSource,
   packageTitle,
 } from "@/lib/collections"
-import { isMachinery, isSeededOwnerData } from "@/lib/core-kinds"
+import {
+  isMachinery,
+  isSeededOwnerData,
+  sharedOwnerDataGroup,
+} from "@/lib/core-kinds"
 import { kindByIdentity } from "@/lib/definition"
 import {
   displayName,
@@ -108,9 +112,13 @@ function collectionCrumbs(
     ]
   }
   // An owner-data kind of a machinery package is its own group, so the
-  // collection is the only crumb ("Contacts", not "Contacts / Contacts").
+  // collection is the only crumb ("Contacts", not "Contacts / Contacts"),
+  // unless it shares a named group ("Assistant / Memories"), which has no
+  // page of its own to link.
   if (isSeededOwnerData(kind)) {
+    const shared = sharedOwnerDataGroup(kind)
     return [
+      ...(shared ? [{ label: shared }] : []),
       {
         label: displayPlural(kind),
         kind,

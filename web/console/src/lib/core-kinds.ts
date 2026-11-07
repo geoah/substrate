@@ -76,6 +76,23 @@ export function isSeededOwnerData(kind: string): boolean {
   return SEEDED_OWNER_DATA_KINDS.includes(kind)
 }
 
+/** The machinery packages whose owner-data kinds are listed together, under
+ * one name: what the assistant knows about the owner (memories) and how it
+ * should work (instructions) are both the assistant's, so they are one
+ * place. An owner-data kind of a package not named here is a group of its
+ * own, named by its plural. */
+export const SHARED_OWNER_DATA_GROUPS: Readonly<Record<string, string>> = {
+  [LLM_PACKAGE]: "Assistant",
+}
+
+/** The name of the group an owner-data kind shares with its package's
+ * others, or undefined for a kind that is a group of its own (or no
+ * owner-data kind at all). */
+export function sharedOwnerDataGroup(kind: string): string | undefined {
+  if (!isSeededOwnerData(kind)) return undefined
+  return SHARED_OWNER_DATA_GROUPS[kind.slice(0, kind.lastIndexOf("/"))]
+}
+
 /** Whether a kind is the substrate's machinery: a kind of core, llm or
  * console that is not the owner's data. */
 export function isMachineryKind(kind: string): boolean {
