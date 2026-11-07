@@ -415,10 +415,14 @@ func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) 
 		return false, err
 	}
 	var wrote bool
-	err = t.row(`SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`,
-		at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
+	err = t.row(anotherHandWroteSQL, at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
 	return wrote, err
 }
+
+// anotherHandWroteSQL is anotherHandWrote's question, which a seed's open
+// catch-up also asks outside any transaction: did any actor but the shipping
+// hands ($3) ever write the record?
+const anotherHandWroteSQL = `SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`
 
 // refuseTakenTrigger refuses a shipped trigger whose id a live trigger
 // already holds for ANOTHER package's callable (record 0192). Trigger ids are

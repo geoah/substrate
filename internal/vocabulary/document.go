@@ -189,6 +189,102 @@ func ParseStream(data []byte) ([]Document, error) {
 	return out, nil
 }
 
+// ShippedRecord is one data record a tree ships beside its declarations: a
+// document whose kind is not one of core's meta-kinds.
+type ShippedRecord struct {
+	Kind       string
+	ID         string
+	Properties map[string]any
+}
+
+// IsDeclarationRef reports whether a document's kind reference names one of
+// core's meta-kinds, which makes the document a declaration. Every other
+// document is a data record, the split the catalog and the version check
+// read a bundle's directory with.
+func IsDeclarationRef(ref string) bool {
+	return KindPackage(ref) == PackageCore && VocabularyDocumentKind(KindName(ref))
+}
+
+// ParseShipped splits a tree's stream into its declarations, each held to the
+// manifest envelope as ParseStream holds it, and the data records beside
+// them. A record is a full kind reference, an id, and its properties under
+// `data.properties`, and nothing else: a key the seed would not write is
+// refused rather than dropped.
+func ParseShipped(data []byte) ([]Document, []ShippedRecord, error) {
+	chunks, err := splitDocuments(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	var docs []Document
+	var records []ShippedRecord
+	var problems []string
+	for _, chunk := range chunks {
+		var raw map[string]any
+		if err := yaml.Unmarshal([]byte(trimBlankEdges(chunk)), &raw); err != nil {
+			problems = append(problems, fmt.Sprintf("parse yaml: %v", err))
+			continue
+		}
+		if len(raw) == 0 {
+			continue
+		}
+		ref := mstr(raw, "kind")
+		if authority, _, _ := SplitKindRef(ref); authority == "" || IsDeclarationRef(ref) {
+			doc, errs := documentFrom(raw)
+			problems = append(problems, errs...)
+			if len(errs) == 0 {
+				docs = append(docs, doc)
+			}
+			continue
+		}
+		rec, errs := shippedRecordFrom(ref, raw)
+		problems = append(problems, errs...)
+		if len(errs) == 0 {
+			records = append(records, rec)
+		}
+	}
+	if len(problems) > 0 {
+		return nil, nil, validationError(problems)
+	}
+	return docs, records, nil
+}
+
+func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string) {
+	var problems []string
+	errf := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
+	authority, pkg, name := SplitKindRef(ref)
+	if !ValidAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
+		errf("record: kind %q must be a kind reference, <authority>/<package>/<name>", ref)
+	}
+	for k := range raw {
+		if k != "kind" && k != "metadata" && k != "data" {
+			errf("record %s: unknown key %q (a shipped record is kind, metadata.id and data.properties)", ref, k)
+		}
+	}
+	meta := mmap(raw, "metadata")
+	for k := range meta {
+		if k != "id" {
+			errf("record %s: metadata: unknown key %q (a shipped record carries its id alone)", ref, k)
+		}
+	}
+	id := mstr(meta, "id")
+	if !ValidID(id) {
+		errf("record %s: metadata.id %q is not a record id", ref, id)
+	}
+	data := mmap(raw, "data")
+	for k := range data {
+		if k != "properties" {
+			errf("record %s %s: data: unknown key %q (properties go under data.properties)", ref, id, k)
+		}
+	}
+	props := mmap(data, "properties")
+	if len(props) == 0 {
+		errf("record %s %s: data.properties is required", ref, id)
+	}
+	return ShippedRecord{Kind: ref, ID: id, Properties: props}, problems
+}
+
 // DocumentFromMap turns one already-decoded manifest (a stored declaration
 // row's properties are one) into a Document.
 func DocumentFromMap(raw map[string]any) (Document, error) {

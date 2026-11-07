@@ -1,0 +1,72 @@
+# A saved view a package ships for one collection (decision record 0229): a
+# named filter, sort, column set and grouping, shown as a tab after All and
+# before the owner's own saved views, which stay on the owner's
+# consolepreference record. A seeded package ships its views as records beside
+# its declarations, which the record seed writes; a provider, catalogue or
+# sample ships them through its install or import, as it ships record views.
+#
+# Every name a view holds is a PROPERTY name: the filter's properties, the
+# sort's property, the columns and the grouping. The console's own column ids
+# and filter tokens never appear here, so a console that changes them reads
+# the same records.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/console/collectionview
+data:
+  authority: substrate.reamde.dev
+  package: console
+  description: >-
+    A saved view a package ships for one collection: a named filter, sort,
+    column set and grouping the console shows as a tab beside All. The owner
+    edits or deletes it like any record.
+  purpose: internal
+  names:
+    singular: collectionview
+  displayTemplate: "{name}"
+  properties:
+    # A reference to the kind's DECLARATION, as recordview.appliesTo: the
+    # import's rehoming rewrites it with the kind it names, and a filter on
+    # it reads the views of one collection.
+    appliesTo:
+      type: reference
+      kind: substrate.reamde.dev/core/kind
+      required: true
+      inverse: collectionViews
+      inverseDescription: the saved views shipped for this kind's collection
+      description: the kind whose collection this view belongs to
+    name:
+      type: string
+      required: true
+      description: the tab's name
+    # One condition per property in the filter grammar, the shape a
+    # mapping's `where` takes (decision record 0118). `json`, because a
+    # field is declared shape and an operator's operand takes the
+    # property's (record 49). The console checks it as it reads the view,
+    # and lists a view it cannot show as a tab saying why;
+    # kinds/kinds_test.go holds every shipped view to the grammar.
+    where:
+      type: json
+      description: the rows the view shows, one filter condition per property
+        such as {"active":{"eq":true}}; absent shows every row
+    sort:
+      type: string
+      pattern: "^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$"
+      description: the order, a property and a direction such as name:asc;
+        absent keeps the collection's own order
+    columns:
+      type: string
+      repeated: true
+      description: the property columns the view shows, in order; every other
+        column is hidden, and absent leaves the columns as they are
+    group:
+      type: string
+      description: the property the rows are grouped by; absent groups none
+    nest:
+      type: bool
+      description: false shows the rows flat where the kind nests them under
+        a parent; absent keeps the tree
+    default:
+      type: bool
+      default: false
+      description: the tab the collection opens on when the browser remembers
+        no choice for it; the first by id where several say so

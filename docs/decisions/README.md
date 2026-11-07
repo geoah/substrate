@@ -385,6 +385,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0225](0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md) | An app's scope may name a trait, and covers what `*` covers among the kinds that bind it | accepted |
 | [0226](0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `lifecycle` trait, and names its done and dropped states | accepted |
 | [0228](0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md) | A person, an app or an agent creates a record under a minted id, a UUIDv7 in 26 Crockford characters | accepted |
+| [0229](0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md) | A collection's shipped saved views are records of a seeded console kind | accepted |
 | [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | proposed |
 | [0231](0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md) | A contact is a core kind of the owner's data, and a setting names the owner's own | proposed |
 | [0232](0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md) | Core maps the providers' people onto contacts, and a seeded mapping waits instead of refusing | proposed |

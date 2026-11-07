@@ -248,12 +248,20 @@ it at its next open.
 
 | Kind         | What it is                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------------------ |
+| `collectionview` | A saved view a package ships for one collection, a tab after All ([saved views](console.md#a-collection)): `appliesTo`, a reference to the kind's declaration; `name`; `where`, one filter condition per property; `sort` (`property:asc` or `:desc`); the `columns` it shows, in order; the property it `group`s by; `nest`, false to show a nesting collection flat; and `default`, the tab a bare address opens on until the reader picks one (decision record [0229](decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)). |
 | `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart`, `spans`, `stats` (tiles, dials and bars against a baseline), `trend` (daily, weekly or monthly strips), `table` (records of one kind as rows), `breakdown` (shares of the record's own properties) or `lanes` (declared, not yet drawn) ([record views](console.md#record-views)). |
 
 A sample, a catalogue or a provider ships its views as records; a re-import
 or an upgrade replaces a view only that package and the engine wrote and
 leaves one any other hand edited or deleted as it was left
-([the two doors](bundles.md#the-two-doors)).
+([the two doors](bundles.md#the-two-doors)). The console package ships
+collection views in `views.yaml`: two of `llm/memory`, **Active** (the
+default) and **Retired**, and six of `core/contact`, **People** (known
+persons, the default), **Organizations**, **Groups**, **Bots**, **To sort**
+(no `contactType` yet) and **Hidden**. A seeded package's records sit beside its declarations as
+a bundle's do, and the record seed writes them at registration and at every
+open, under the same rule: a record only the seed and the engine wrote takes
+the newer shipped one, and one any other hand wrote or deleted stays.
 `consolepreference` stays in core.
 
 ## substrate.reamde.dev/observations

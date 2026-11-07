@@ -60,6 +60,7 @@ const WORDS = new Set([
   "chat",
   "client",
   "code",
+  "collection",
   "comment",
   "communication",
   "condition",

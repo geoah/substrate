@@ -13,7 +13,9 @@
  * string, text and markdown properties, and `=value` is how they ask for the
  * exact value instead. The wire's `contains` is jsonb membership on repeated
  * values, NOT substring, so it is only ever reached through `=` on a repeated
- * field. */
+ * field. `exists` is whether the property holds a value at all, its value
+ * `true` or `false`: a saved view that lists the rows nobody has sorted yet
+ * is one. */
 
 import type { Cond, RecordFilter } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
@@ -23,7 +25,7 @@ import { stateWord } from "@/lib/state-words"
 import type { UnitReader } from "@/lib/unit-reader"
 import type { Comparator } from "@/lib/units"
 
-export type FilterOp = "eq" | "contains" | "prefix" | "match"
+export type FilterOp = "eq" | "contains" | "prefix" | "match" | "exists"
 
 export interface ActiveFilter {
   field: string
@@ -42,18 +44,22 @@ export function encodeFilter(f: ActiveFilter): string {
 export function decodeFilter(token: string): ActiveFilter | null {
   const m =
     typeof token === "string"
-      ? token.match(/^([\w.]+)~(eq|contains|prefix|match)~(.*)$/)
+      ? token.match(/^([\w.]+)~(eq|contains|prefix|match|exists)~(.*)$/)
       : null
   if (!m) return null
   try {
-    return {
-      field: m[1],
-      op: m[2] as FilterOp,
-      value: decodeURIComponent(m[3]),
-    }
+    const value = decodeURIComponent(m[3])
+    if (m[2] === "exists" && value !== "true" && value !== "false") return null
+    return { field: m[1], op: m[2] as FilterOp, value }
   } catch {
     return null
   }
+}
+
+/** The filter that keeps the rows where a property holds a value, or the
+ * rows where it holds none. */
+export function existsFilter(field: string, has: boolean): ActiveFilter {
+  return { field, op: "exists", value: String(has) }
 }
 
 export function decodeFilters(tokens: string[] | null): ActiveFilter[] {
@@ -143,6 +149,13 @@ export function toRecordFilter(
     }
     if (f.op === "match") {
       properties[f.field] = { ...properties[f.field], match: f.value }
+      continue
+    }
+    if (f.op === "exists") {
+      properties[f.field] = {
+        ...properties[f.field],
+        exists: f.value === "true",
+      }
       continue
     }
     const range = quantityRange(units, f, prop)
@@ -236,6 +249,8 @@ export function parseValueInput(
  * back is what parseValueInput would take again: a prefix filter wears its
  * trailing `*`, and an exact value on a text field wears its leading `=`. */
 export function displayValue(f: ActiveFilter, prop?: DeclaredProperty): string {
+  // Whether a value is there is no value to edit: the editor starts empty.
+  if (f.op === "exists") return ""
   if (f.op === "prefix") return `${f.value}*`
   if (f.op !== "match" && canMatch(prop)) return `=${f.value}`
   return f.value
@@ -281,6 +296,8 @@ export function filterValueText(
   prop: DeclaredProperty | undefined,
   words: boolean
 ): string {
+  if (f.op === "exists")
+    return f.value === "true" ? "has a value" : "has no value"
   if (isChoiceField(prop) && f.op !== "match" && f.op !== "prefix")
     return f.value
       .split(",")
@@ -305,12 +322,19 @@ export interface BrowsePrefs {
   nest?: boolean
   /** The property the rows are grouped by; absent when they are not. */
   group?: string
+  /** The tab the reader picked last: a saved view's id, or `all`. Absent
+   * once they changed something by hand. */
+  view?: string
 }
 
 function prefsKey(group: string, name: string): string {
   return `substrate.browse.${group}/${name}`
 }
 
+/** The reader's last view of a collection, or null for a collection this
+ * browser never stored one for. An entry with nothing in it is All: the
+ * reader chose the collection as it opens, which a default view must not
+ * replace (decision record 0229). */
 export function loadBrowsePrefs(
   group: string,
   name: string
@@ -331,17 +355,16 @@ export function loadBrowsePrefs(
     if (typeof p.sort === "string" && p.sort) out.sort = p.sort
     if (p.nest === false) out.nest = false
     if (typeof p.group === "string" && p.group) out.group = p.group
-    return out.filter?.length || out.sort || out.nest === false || out.group
-      ? out
-      : null
+    if (typeof p.view === "string" && p.view) out.view = p.view
+    return out
   } catch {
     return null
   }
 }
 
-/** Persist the view; an all-default view (no filters, default sort, the tree
- * on, no grouping) removes the entry entirely — clearing filters clears the stored state
- * too. */
+/** Persist the view. An all-default view (no filters, default sort, the tree
+ * on, no grouping) is stored as an empty entry, not removed, so the next bare
+ * address opens on All rather than on a default view. */
 export function saveBrowsePrefs(
   group: string,
   name: string,
@@ -353,11 +376,8 @@ export function saveBrowsePrefs(
     if (prefs.sort) out.sort = prefs.sort
     if (prefs.nest === false) out.nest = false
     if (prefs.group) out.group = prefs.group
-    if (out.filter || out.sort || out.nest === false || out.group) {
-      localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
-    } else {
-      localStorage.removeItem(prefsKey(group, name))
-    }
+    if (prefs.view) out.view = prefs.view
+    localStorage.setItem(prefsKey(group, name), JSON.stringify(out))
   } catch {
     // Storage full or denied — the URL still carries the view.
   }

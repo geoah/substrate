@@ -1,12 +1,15 @@
 /** A collection's saved views as a strip of tabs above its grid: **All** (the
- * collection as it opens), each saved view by name, and **Save view**. A tab
+ * collection as it opens), each saved view by name (the views a package
+ * shipped first, then the reader's own), and **Save view**. A tab
  * is chosen when the grid shows what it names (`lib/saved-views.ts`), so no
  * tab is chosen while the reader has changed something none of them names.
  * The view picked last stays marked once the reader changes something, and
  * its menu saves those changes to it or discards them; the chosen view's
  * menu renames or deletes it. Saving, renaming, replacing and deleting each
  * ask first through the one confirmation dialog, and saving is refused while
- * a saved view is chosen. */
+ * a saved view is chosen. A shipped view whose filter the bar cannot show is
+ * listed, cannot be picked, and says why; its menu still renames or deletes
+ * it. */
 
 import { useId, useState, type ReactNode } from "react"
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react"
@@ -42,7 +45,8 @@ export function ViewTabs({
   onDelete,
   className,
 }: {
-  /** This collection's views, in the order they were saved. */
+  /** This collection's views: the shipped ones in id order, then the
+   * reader's own in the order they were saved. */
   views: SavedView[]
   /** The chosen tab: "all", a view's id, or null when none matches. */
   active: string | null
@@ -80,7 +84,15 @@ export function ViewTabs({
         const changed = !chosen && edited === view.id
         return (
           <div key={view.id} className="flex shrink-0 items-center">
-            <Tab pressed={chosen || changed} onClick={() => onPick(view)}>
+            <Tab
+              pressed={chosen || changed}
+              unavailable={
+                view.problem
+                  ? `This view cannot be shown here: ${view.problem}.`
+                  : undefined
+              }
+              onClick={() => onPick(view)}
+            >
               {view.name}
               {changed && (
                 <>
@@ -93,7 +105,7 @@ export function ViewTabs({
                 </>
               )}
             </Tab>
-            {(chosen || changed) && (
+            {(chosen || changed || view.problem) && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   disabled={busy}
@@ -196,7 +208,11 @@ export function ViewTabs({
       {dialog?.type === "delete" && (
         <ConfirmDialog
           title={`Delete the “${dialog.view.name}” view?`}
-          consequence="The view is gone from every browser. No records change, and All still shows the whole collection."
+          consequence={
+            dialog.view.record
+              ? "The view is gone from every browser, and a later version of the package that shipped it does not bring it back. No other records change, and All still shows the whole collection."
+              : "The view is gone from every browser. No records change, and All still shows the whole collection."
+          }
           confirm="Delete"
           destructive
           onConfirm={() => {
@@ -212,10 +228,13 @@ export function ViewTabs({
 
 function Tab({
   pressed,
+  unavailable,
   onClick,
   children,
 }: {
   pressed: boolean
+  /** Why the tab cannot be picked; it is drawn faint and says so. */
+  unavailable?: string
   onClick: () => void
   children: ReactNode
 }) {
@@ -223,10 +242,13 @@ function Tab({
     <button
       type="button"
       aria-pressed={pressed}
-      className="-mb-px max-w-56 shrink-0 cursor-pointer truncate border-b-2 border-transparent px-2 pt-1 pb-2 text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 aria-pressed:border-foreground aria-pressed:font-medium aria-pressed:text-foreground"
-      onClick={onClick}
+      aria-disabled={unavailable ? true : undefined}
+      title={unavailable}
+      className="-mb-px max-w-56 shrink-0 cursor-pointer truncate border-b-2 border-transparent px-2 pt-1 pb-2 text-[13px] text-muted-foreground outline-none hover:text-foreground focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 aria-disabled:cursor-default aria-disabled:text-faint aria-disabled:hover:text-faint aria-pressed:border-foreground aria-pressed:font-medium aria-pressed:text-foreground"
+      onClick={unavailable ? undefined : onClick}
     >
       {children}
+      {unavailable && <span className="sr-only">. {unavailable}</span>}
     </button>
   )
 }

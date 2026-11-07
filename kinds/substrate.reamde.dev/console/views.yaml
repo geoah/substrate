@@ -1,0 +1,107 @@
+# The saved views the console package ships for the seeded kinds' collections
+# (decision record 0229). They are records, not declarations: the record seed
+# (internal/engine/recordseed.go) writes them into every repository at
+# registration and at every open, and never again once the owner edits or
+# deletes one. A reference is spelled as the engine stores it, `{ref: …}`, so
+# the seed reads a seeded row as already holding what ships. The console shows
+# a collection's views in id order, so a number in the id sets the tab order.
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: memory-active
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/llm/memory
+    name: Active
+    where:
+      active:
+        eq: true
+    default: true
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: memory-retired
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/llm/memory
+    name: Retired
+    where:
+      active:
+        eq: false
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-1-people
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: People
+    where:
+      contactType:
+        eq: person
+      prominence:
+        eq: known
+    default: true
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-2-organizations
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: Organizations
+    where:
+      contactType:
+        eq: organization
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-3-groups
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: Groups
+    where:
+      contactType:
+        eq: group
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-4-bots
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: Bots
+    where:
+      contactType:
+        eq: bot
+---
+# Contacts minted from an address no one has typed yet.
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-5-tosort
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: To sort
+    where:
+      contactType:
+        exists: false
+---
+kind: substrate.reamde.dev/console/collectionview
+metadata:
+  id: contact-6-hidden
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact
+    name: Hidden
+    where:
+      prominence:
+        eq: hidden

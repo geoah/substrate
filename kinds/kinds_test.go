@@ -2,6 +2,7 @@ package kinds_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
@@ -1276,4 +1278,108 @@ func pythonPinProblems(deps []pythonDependency) []string {
 		}
 	}
 	return problems
+}
+
+// collectionViewKind is the seeded console kind a collection's shipped saved
+// views are records of (decision record 0229).
+const collectionViewKind = "substrate.reamde.dev/console/collectionview"
+
+// builtinColumns are the names every record answers beside its declared
+// properties, which a view may sort, show or group by.
+var builtinColumns = map[string]bool{
+	"title": true, "body": true, "at": true, "endsAt": true, "dueAt": true,
+	"createdAt": true, "updatedAt": true,
+}
+
+// Every data record a seeded package ships beside its declarations (decision
+// record 0229) is of a kind the seed declares, names only declared
+// properties, and spells each reference as the engine stores it, `{ref: …}`:
+// the record seed compares a stored row with the shipped record as JSON, so a
+// shorthand path would read as changed at every open. A shipped collection
+// view's `where` is held to the filter grammar, and the kind it applies to,
+// its sort, its columns and its grouping to what the seed declares, because
+// the engine admits any JSON there and only the console would notice.
+func TestEverySeededRecordIsOfASeededKindAndSpelledAsStored(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	records, err := vocabulary.ShippedRecordsFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("read the seed's records: %v", err)
+	}
+	views := 0
+	for _, rec := range records {
+		where := rec.Kind + " " + rec.ID
+		kind, ok := reg.ByIdentity(rec.Kind)
+		if !ok {
+			t.Errorf("%s: the seed declares no such kind", where)
+			continue
+		}
+		for name, value := range rec.Properties {
+			prop, ok := kind.Props[name]
+			if !ok {
+				t.Errorf("%s: %s declares no property %q", where, rec.Kind, name)
+				continue
+			}
+			if prop.Datatype == vocabulary.DatatypeReference {
+				if m, ok := value.(map[string]any); !ok || len(m) != 1 || m["ref"] == nil {
+					t.Errorf("%s: reference %s is %v; spell it as stored, {ref: <kind>/<id>}", where, name, value)
+				}
+			}
+		}
+		if rec.Kind == collectionViewKind {
+			views++
+			checkShippedView(t, reg, where, rec.Properties)
+		}
+	}
+	if views == 0 {
+		t.Fatal("the seed ships no collection view, so this test checks nothing")
+	}
+}
+
+func checkShippedView(t *testing.T, reg *vocabulary.Registry, where string, props map[string]any) {
+	t.Helper()
+	ref, _ := props["appliesTo"].(map[string]any)
+	path, _ := ref["ref"].(string)
+	target, ok := strings.CutPrefix(path, "substrate.reamde.dev/core/kind/")
+	if !ok {
+		t.Errorf("%s: appliesTo %q names no kind declaration", where, path)
+		return
+	}
+	kind, ok := reg.ByIdentity(target)
+	if !ok {
+		t.Errorf("%s: appliesTo names %s, which the seed does not declare", where, target)
+		return
+	}
+	known := func(name string) bool { return builtinColumns[name] || kind.Props[name] != nil }
+	conds, _ := props["where"].(map[string]any)
+	for name, raw := range conds {
+		if !known(name) {
+			t.Errorf("%s: where names %q, which %s does not declare", where, name, target)
+		}
+		enc, err := json.Marshal(raw)
+		if err != nil {
+			t.Errorf("%s: where.%s: %v", where, name, err)
+			continue
+		}
+		var c substrate.Cond
+		if err := strictjson.DecodeBytes(enc, &c, false); err != nil {
+			t.Errorf("%s: where.%s is no filter condition: %v", where, name, err)
+		}
+	}
+	if sort, ok := props["sort"].(string); ok {
+		if name, _, _ := strings.Cut(sort, ":"); !known(name) {
+			t.Errorf("%s: sort names %q, which %s does not declare", where, name, target)
+		}
+	}
+	if group, ok := props["group"].(string); ok && !known(group) {
+		t.Errorf("%s: group names %q, which %s does not declare", where, group, target)
+	}
+	columns, _ := props["columns"].([]any)
+	for _, c := range columns {
+		if name, _ := c.(string); !known(name) {
+			t.Errorf("%s: columns name %v, which %s does not declare", where, c, target)
+		}
+	}
 }

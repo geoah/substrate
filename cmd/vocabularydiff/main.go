@@ -186,8 +186,7 @@ func (t *tree) loadFile(rel string, raw []byte) error {
 			continue
 		}
 		ref, _ := m["kind"].(string)
-		name := vocabulary.KindName(ref)
-		if vocabulary.KindPackage(ref) != vocabulary.PackageCore || !vocabulary.VocabularyDocumentKind(name) {
+		if !vocabulary.IsDeclarationRef(ref) {
 			// A data document: the delivery wiring the install upserts beside
 			// the closure. It carries no version, so it is diffed WHOLE and
 			// held to its directory's package version.
@@ -199,6 +198,7 @@ func (t *tree) loadFile(rel string, raw []byte) error {
 			t.dataDocs[dir][ref+"\x00"+id] = m["data"]
 			continue
 		}
+		name := vocabulary.KindName(ref)
 		meta, _ := m["metadata"].(map[string]any)
 		id, _ := meta["id"].(string)
 		if id == "" {

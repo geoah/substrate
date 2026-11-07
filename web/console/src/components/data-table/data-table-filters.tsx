@@ -9,6 +9,10 @@
  * reads the chosen records' titles. A bar handed none (the changelog's) keeps
  * the text box.
  *
+ * Under every value step, two more choices ask only whether the property
+ * holds a value at all (`exists`): a saved view of the rows nobody has filled
+ * in yet is one, and its control reads "has no value".
+ *
  * Everyday, a property is its icon and its label; its datatype and a
  * reference's target kind are technical details, shown under the label only
  * with the switch on. */
@@ -41,6 +45,7 @@ import {
   canPrefix,
   choiceWord,
   displayValue,
+  existsFilter,
   filterValueText,
   isChoiceField,
   opFor,
@@ -75,6 +80,10 @@ interface DataTableFiltersProps {
    * whose facets only borrow the enum shape (the Observations bar's
    * metrics and sources), whose values read as plain words. */
   tags?: boolean
+  /** Offer the two choices on whether a property holds a value at all
+   * (`exists`). Only a bar whose filter goes to the records read takes
+   * them. */
+  presence?: boolean
   className?: string
 }
 
@@ -251,11 +260,39 @@ function ValueEditor({
   )
 }
 
+/** Whether the property holds a value at all, as two choices under the value
+ * step. `current` is the choice an `exists` filter already holds. */
+function PresenceChoice({
+  current,
+  onPick,
+}: {
+  current?: boolean
+  onPick: (has: boolean) => void
+}) {
+  return (
+    <div className="flex gap-1 border-t border-border p-1">
+      {[true, false].map((has) => (
+        <Button
+          key={String(has)}
+          variant="ghost"
+          size="sm"
+          aria-pressed={current === has}
+          className="h-7 flex-1 text-[12.5px] font-normal text-muted-foreground aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
+          onClick={() => onPick(has)}
+        >
+          {has ? "Has a value" : "Has no value"}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 function ActiveFilterControl({
   filter,
   field,
   words,
   tags,
+  presence,
   target,
   kinds,
   label,
@@ -266,6 +303,7 @@ function ActiveFilterControl({
   field: DeclaredProperty | undefined
   words: boolean
   tags: boolean
+  presence: boolean
   target?: KindInfo
   kinds?: KindInfo[]
   label: string
@@ -296,7 +334,7 @@ function ActiveFilterControl({
           {/* max-w-72 fits a full group identity (the longest common value,
               e.g. providers.substrate.reamde.dev/github) before truncating; the title
               carries the whole value regardless (sweep finding, 2026-08-06) */}
-          {target && kinds ? (
+          {target && kinds && filter.op !== "exists" ? (
             <ReferenceFilterLabel
               target={target}
               kinds={kinds}
@@ -341,11 +379,12 @@ function ActiveFilterControl({
               if (!value) onRemove()
               // A picked reference re-asserts its op: a filter stored before
               // pointers took `eq` may still say `contains`, which does not
-              // split a comma.
+              // split a comma. A picked value replaces whether one is there.
               else
                 onChange({
                   ...filter,
-                  op: target ? opFor(field) : filter.op,
+                  op:
+                    target || filter.op === "exists" ? opFor(field) : filter.op,
                   value,
                 })
             }}
@@ -358,6 +397,17 @@ function ActiveFilterControl({
             }}
           />
         ) : null}
+        {(presence || filter.op === "exists") && (
+          <PresenceChoice
+            current={
+              filter.op === "exists" ? filter.value === "true" : undefined
+            }
+            onPick={(has) => {
+              onChange(existsFilter(filter.field, has))
+              setOpen(false)
+            }}
+          />
+        )}
       </PopoverContent>
     </Popover>
   )
@@ -371,6 +421,7 @@ export function DataTableFilters({
   labelOf = (name) => name,
   words = false,
   tags = true,
+  presence = false,
   className,
 }: DataTableFiltersProps) {
   const [technical] = useTechnicalDetails()
@@ -412,6 +463,7 @@ export function DataTableFilters({
             field={field}
             words={words}
             tags={tags}
+            presence={presence}
             target={referenceTarget(field, kinds)}
             kinds={kinds}
             label={labelOf(filter.field)}
@@ -450,7 +502,11 @@ export function DataTableFilters({
             <ValueEditor
               field={pending}
               label={labelOf(pending.name)}
-              value={filters.find((f) => f.field === pending.name)?.value ?? ""}
+              value={
+                filters.find(
+                  (f) => f.field === pending.name && f.op !== "exists"
+                )?.value ?? ""
+              }
               words={words}
               tags={tags}
               target={pendingTarget}
@@ -470,7 +526,16 @@ export function DataTableFilters({
                 closeAdd()
               }}
             />
-          ) : (
+          ) : null}
+          {pending && presence && (
+            <PresenceChoice
+              onPick={(has) => {
+                upsert(existsFilter(pending.name, has))
+                closeAdd()
+              }}
+            />
+          )}
+          {pending ? null : (
             <Command>
               <CommandInput placeholder="Filter by…" />
               <CommandList>

@@ -249,10 +249,16 @@ const console2 = "testdata/console2"
 const console3 = "testdata/console3"
 
 // treeAtConsole is the shipped tree with the console package put back to the
-// version a fixture directory holds.
+// version a fixture directory holds: its two files, and none of the files a
+// later package added (collectionview.yaml and the views it ships).
 func treeAtConsole(t *testing.T, fixture string) string {
 	t.Helper()
 	tree := shippedTree(t)
+	for _, f := range []string{"collectionview.yaml", "views.yaml"} {
+		if err := os.Remove(filepath.Join(tree, vocabulary.PackageConsole, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, f := range []string{"console.yaml", "recordview.yaml"} {
 		raw, err := os.ReadFile(filepath.Join(fixture, f))
 		if err != nil {
@@ -677,14 +683,14 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 	}
 	_ = svc1.Close()
 
-	// --- binary N+1: the shipped tree, console package 4.
+	// --- binary N+1: the shipped tree, console package 4 or later.
 	svc2 := openTree(t, dsn, shippedTree(t))
 	ds2, err := svc2.Dataset(ctx, name)
 	if err != nil {
 		t.Fatalf("open on binary N+1: %v", err)
 	}
-	if v := packageRowVersion(t, ds2, vocabulary.PackageConsole); v != 4 {
-		t.Fatalf("the boot upgrade left the console package at version %d, want 4", v)
+	if v := packageRowVersion(t, ds2, vocabulary.PackageConsole); v < 4 {
+		t.Fatalf("the boot upgrade left the console package at version %d, want 4 or later", v)
 	}
 	engine.DrainIndexReprojection(t, ds2)
 	for id, before := range stored {

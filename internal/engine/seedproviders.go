@@ -133,7 +133,7 @@ func (ds *dataset) ensureDefaultProviders(ctx context.Context) error {
 		// Read before the transaction, so an open after the sweep collected
 		// a deleted row takes no changelog lock to find nothing to write.
 		var held bool
-		if err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`,
+		if err := ds.db.QueryRowContext(ctx, anotherHandWroteSQL,
 			p.id, typeProvider, shippedHands(substrate.ActorSystem)).Scan(&held); err != nil {
 			return err
 		}

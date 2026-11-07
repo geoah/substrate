@@ -330,7 +330,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 		typ := vocabulary.KindName(ref)
 		id := docID(d)
 		switch {
-		case isSchemaDoc(vocabulary.KindPackage(ref), typ):
+		case vocabulary.IsDeclarationRef(ref):
 			b.vocabularyDocs = append(b.vocabularyDocs, d)
 		default:
 			// EVERY data document, not the trigger alone: whatever the install
@@ -345,7 +345,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 		// the vocabulary/data split above reads it. Switching on the kind's
 		// last word alone would count a data record of some other package's
 		// kind named `trait` or `agent` as a declaration of this closure.
-		if !isSchemaDoc(vocabulary.KindPackage(ref), typ) {
+		if !vocabulary.IsDeclarationRef(ref) {
 			typ = ""
 		}
 		switch typ {
@@ -416,12 +416,6 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	b.Version = version
 	b.readFacts()
 	return b, nil
-}
-
-// isSchemaDoc mirrors the loader's split (and substratectl's): a schema document IS a
-// record of one of the core meta-kinds; everything else is a data record.
-func isSchemaDoc(pkg, name string) bool {
-	return pkg == vocabulary.PackageCore && vocabulary.VocabularyDocumentKind(name)
 }
 
 // Bundles lists the shipped bundles, id-ordered.

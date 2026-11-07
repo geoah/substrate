@@ -180,11 +180,10 @@ func documentOf(e *substrate.Record, meta map[string]statusProperty) any {
 // to /vocabulary/apply, so the reader and the writer agree on what a
 // declaration is by construction.
 func declarationKindOf(kind string) (string, bool) {
-	name := vocabulary.KindName(kind)
-	if vocabulary.KindPackage(kind) != vocabulary.PackageCore || !vocabulary.VocabularyDocumentKind(name) {
+	if !vocabulary.IsDeclarationRef(kind) {
 		return "", false
 	}
-	return name, true
+	return vocabulary.KindName(kind), true
 }
 
 // declarationDocumentOf renders one declaration row as its authored document.

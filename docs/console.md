@@ -344,19 +344,41 @@ come in the server's order: an enum or a state by its stored value, a
 reference by the path it stores, the records with none last.
 
 **Saved views** are the tabs above the toolbar: **All** (the collection as it
-opens), each view saved for this collection, and **Save view**. A view is a
+opens), the views a package shipped for this collection, each view you saved,
+and **Save view**. A view is a
 name for a filter, sort, column set, nesting and grouping, never a search or a
-page, and it is kept on the console preference record, so it follows you to
+page. Yours are kept on the console preference record, so they follow you to
 every browser. A tab is lit when the grid shows what it names, the one you
 picked where two name the same; the view you picked last stays marked once
 you change something, and its menu saves those changes to it or discards
 them. Saving what a view already shows is refused, naming that view. Saving,
 renaming and deleting ask first.
 
-Opening a collection at its bare address restores the filters, sort, nesting
-and grouping you last used there; an address that names them always wins, so a
-shared view stays exact. A search is never restored: it is the question of the
-moment, not the shape of the view.
+A **shipped view** is a record of the seeded
+`substrate.reamde.dev/console/collectionview` kind that names the collection
+in `appliesTo` (decision record
+[0229](decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)).
+Shipped views sit after All, in record id order. Its filter is the API's
+filter grammar (`where`, one condition per property), and the tab's menu
+renames, replaces or deletes the record itself; once you have written it,
+no later version of the package changes or restores it. A view whose
+condition the filter bar has no control for (a `gt` on a number, say) is
+listed but cannot be opened, and its tab says why. The console package ships
+two for memories, **Active** (the default) and **Retired**, and six for
+contacts: **People** (the default: persons whose prominence is known),
+**Organizations**, **Groups**, **Bots**, **To sort** (contacts with no type
+yet) and **Hidden**.
+
+Opening a collection at its bare address restores the tab you picked there
+last, or the filters, sort, nesting and grouping you last set by hand, All
+included. A collection you have never chosen anything on opens on the shipped
+view marked `default`, until you pick a tab. An address that names a view
+always wins, so a shared view stays exact. A search is never restored: it is
+the question of the moment, not the shape of the view.
+
+Besides a value, a collection's filter bar asks whether a property **has a
+value** or **has no value** (the filter grammar's `exists`), under every
+value step; the control then reads `Type | has no value`.
 
 A kind that declares a single-valued reference at itself (a team's `parent`
 pinned at `team`, a thread's `parent` thread) opens as a tree, by `parent`

@@ -1,6 +1,8 @@
 /** Saved views of a collection: a named filter, sort, column set, nesting and
  * grouping, kept on the console preference record (`views`) so they follow
- * the person to every browser signed in to the repository.
+ * the person to every browser signed in to the repository. A package ships
+ * views of its own as records (`lib/collection-views.ts`, decision record
+ * 0229), which read into the same shape and lead the owner's on the strip.
  *
  * A view is a SHAPE, not a place: it never carries a search (the question of
  * the moment) or a page. Which view is chosen is not stored anywhere either:
@@ -28,6 +30,15 @@ export interface SavedView {
   nest?: boolean
   /** The property the rows are grouped by; absent is no grouping. */
   group?: string
+  /** The `console/collectionview` record this view was read from, for a view
+   * a package shipped; absent for one kept on the preference record. Its
+   * menu writes that record. */
+  record?: string
+  /** The shipped view a bare address opens on (its record's `default`). */
+  isDefault?: boolean
+  /** Why the filter bar cannot show this view, for a shipped one whose
+   * `where` it cannot express: its tab is listed and cannot be picked. */
+  problem?: string
 }
 
 /** What the page shows now, in the terms a view compares. */
@@ -165,7 +176,9 @@ export function matchingView(
   defaultSort: string,
   preferred?: string
 ): SavedView | undefined {
-  const matches = views.filter((v) => viewMatches(v, state, defaultSort))
+  const matches = views.filter(
+    (v) => !v.problem && viewMatches(v, state, defaultSort)
+  )
   return matches.find((v) => v.id === preferred) ?? matches[0]
 }
 
