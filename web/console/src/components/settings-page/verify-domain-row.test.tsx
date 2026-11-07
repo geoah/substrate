@@ -21,14 +21,14 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status })
 }
 
-function repositoryPage(verifiedAt?: string) {
+function repositoryPage(authority: string, verifiedAt?: string) {
   return {
     records: [
       {
         kind: "substrate.reamde.dev/core/repository",
-        id: "ada.example.org",
+        id: authority,
         properties: {
-          authority: "ada.example.org",
+          authority,
           ...(verifiedAt ? { domainVerifiedAt: verifiedAt } : {}),
         },
       },
@@ -39,6 +39,7 @@ function repositoryPage(verifiedAt?: string) {
 describe("VerifyDomainRow", () => {
   const fetchMock = vi.fn<typeof fetch>()
   let verifiedAt: string | undefined
+  let authority: string
   let published: boolean
   const calls: string[] = []
 
@@ -47,6 +48,7 @@ describe("VerifyDomainRow", () => {
     clearSession()
     saveSession("substrate_tok_current", "ada.example.org", "tok-1")
     verifiedAt = undefined
+    authority = "ada.example.org"
     published = false
     calls.length = 0
     fetchMock.mockImplementation(async (url, init) => {
@@ -54,7 +56,7 @@ describe("VerifyDomainRow", () => {
       const path = String(url)
       calls.push(`${method} ${path.split("?")[0]}`)
       if (path.startsWith("/api/v1/records") && method === "GET") {
-        return json(200, repositoryPage(verifiedAt))
+        return json(200, repositoryPage(authority, verifiedAt))
       }
       if (path === "/api/v1/repository/domain" && method === "POST") {
         return json(200, {
@@ -100,8 +102,9 @@ describe("VerifyDomainRow", () => {
 
   it("shows the record to copy, the failed check's reason, then the verified name", async () => {
     renderRow()
-    // Unverified until a check passes, beside the name and in the row.
-    expect(await screen.findAllByText("Unverified")).toHaveLength(2)
+    // Unverified until a check passes, beside the name only: the row under
+    // it does not say it twice.
+    expect(await screen.findAllByText("Unverified")).toHaveLength(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Show record" }))
     expect(await screen.findByText("_substrate.ada.example.org")).toBeTruthy()
@@ -119,14 +122,25 @@ describe("VerifyDomainRow", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "no TXT record opening with"
     )
-    expect(screen.getAllByText("Unverified")).toHaveLength(2)
+    expect(screen.getAllByText("Unverified")).toHaveLength(1)
 
     published = true
     fireEvent.click(screen.getByRole("button", { name: "Check" }))
     expect(await screen.findByRole("status")).toBeTruthy()
-    // The check refreshes the repository record, so both marks follow.
+    // The check refreshes the repository record, so the mark follows.
     await waitFor(() => expect(screen.queryByText("Unverified")).toBeNull())
     expect(screen.getByText("Verified")).toBeTruthy()
+    expect(calls).toContain("POST /api/v1/repository/domain/verify")
+  })
+
+  it("checks a name under the server's own domain by itself, and never calls it unverified", async () => {
+    // jsdom serves the console from localhost, so ada.localhost is one label
+    // under the server's host: the check needs no record.
+    authority = "ada.localhost"
+    published = true
+    renderRow()
+    expect(await screen.findByText("Verified")).toBeTruthy()
+    expect(screen.queryByText("Unverified")).toBeNull()
     expect(calls).toContain("POST /api/v1/repository/domain/verify")
   })
 

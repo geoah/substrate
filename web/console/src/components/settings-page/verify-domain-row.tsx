@@ -1,10 +1,12 @@
 /** Settings' Verify domain row (decision 0208): the TXT record that proves the
  * repository's name, to copy into the name's DNS, and a Check that reads it
  * back. A repository named one label under the server's configured public URL
- * passes the check with no record. The register page sends a reader who chose
- * their own domain here, to `#verify-domain`. */
+ * passes the check with no record, and is checked for the owner on sight. The
+ * register page sends a reader who chose their own domain here, to
+ * `#verify-domain`. Settings puts this row under the name, which carries the
+ * Unverified mark, so the row itself says only Verified. */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { DnsRecord } from "@/components/dns-record"
 import { Pill } from "@/components/identity/pill"
@@ -14,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { startDomainVerification, verifyDomain } from "@/lib/api/domain"
 import { olderServerMessage } from "@/lib/api/http"
 import { repositoryQueryOptions } from "@/lib/api/repository"
+import { useRepository } from "@/hooks/use-repository"
 import { relativeRecordName, underHost } from "@/lib/dns"
 import { substrateHostname } from "@/lib/shell"
 
@@ -24,7 +27,7 @@ function when(at: string): string {
 
 export function VerifyDomainRow() {
   const queryClient = useQueryClient()
-  const repository = useQuery(repositoryQueryOptions)
+  const { repository } = useRepository()
   const verifiedAt = repository.data?.domainVerifiedAt ?? ""
   const start = useMutation({ mutationFn: startDomainVerification })
   const check = useMutation({
@@ -54,11 +57,7 @@ export function VerifyDomainRow() {
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           Verify domain
-          {verifiedAt ? (
-            <Pill tone="ok">Verified</Pill>
-          ) : (
-            repository.data && <Pill tone="warn">Unverified</Pill>
-          )}
+          {verifiedAt && <Pill tone="ok">Verified</Pill>}
         </span>
       }
       description={
