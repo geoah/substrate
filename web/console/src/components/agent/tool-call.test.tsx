@@ -342,6 +342,53 @@ describe("the tool line", () => {
     ).toHaveLength(1)
   })
 
+  it("stays open when its answer lands without a heading to read", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    const tree = (view: ToolCallView) => (
+      <ConsolePreferencesContext.Provider
+        value={{
+          preferences: {
+            collapsed: [],
+            favorites: [],
+            sidebarOpen: true,
+            ...DEFAULT_SETTINGS,
+            technicalDetails: true,
+          },
+          busy: false,
+          change: () => {},
+          set: () => {},
+        }}
+      >
+        <QueryClientProvider client={client}>
+          <ToolCallCard call={view} />
+        </QueryClientProvider>
+      </ConsolePreferencesContext.Provider>
+    )
+    const running = call({
+      name: "write",
+      arguments:
+        '{"op":"patch","kind":"crew.test.dev/crew/widget","id":"w1","input":{"properties":{"name":"w"}}}',
+      output: undefined,
+      ok: undefined,
+    })
+    const { rerender } = render(tree(running))
+    fireEvent.click(
+      screen.getByRole("button", { name: /Changed the name of a widget/ })
+    )
+    expect(screen.getByText("Waiting for the result")).toBeTruthy()
+    // The answer names its record without a heading, so the card reads one.
+    rerender(
+      tree({
+        ...running,
+        output: '{"record":{"id":"w1","kind":"crew.test.dev/crew/widget"}}',
+        ok: true,
+      })
+    )
+    expect(screen.getByText("Response")).toBeTruthy()
+  })
+
   it("does not open a call whose check mark already said everything", () => {
     renderCard(
       call({
