@@ -11,8 +11,12 @@ authority is written `ada.example.com`. Record ids are the ones the run
 minted. The owner's accepts were made through the API, with the version
 they reviewed.
 
-The whole run, nineteen threads with the sub-agents', cost USD 0.88. Moss
+The whole run, twenty-one threads with the sub-agents', cost USD 1.07. Moss
 read 79% of its prompt tokens from the provider's cache, the architect 80%.
+The two web sessions ran after the Firecrawl provider was installed
+(`substratectl install providers.substrate.reamde.dev/firecrawl` and its
+`apiKey` secret), whose `web_search` and `web_scrape` Moss takes as offered
+tools; every other session ran without it.
 Two sessions ran on the first prompts and show what the second ones fixed:
 the memory session's first turn wrote its deliberation as text, and the
 architect's first call in the collection session applied without planning.
@@ -72,7 +76,7 @@ moss       Wrap the file in a `bufio.Scanner` and loop over `Scan()`:
 
 1 turns, 0 tool calls, USD 0.011 on this thread.
 
-## A question past the model's cutoff
+## A question past the model's cutoff, with no web tool
 
 ```text
 owner      Who won the most recent Formula 1 world championship?
@@ -82,6 +86,37 @@ moss       The most recent finished season I know of is 2025, and Lando Norris w
 ```
 
 1 turns, 0 tool calls, USD 0.011 on this thread.
+
+## The same question with the Firecrawl provider installed
+
+```text
+owner      Who won the most recent Formula 1 world championship?
+(text)     This may have changed since my cutoff, so I'll check.
+→ web_search {"query": "Formula 1 world champion 2026"}
+← ok {"effects":0,"output":{"results":[{"snippet":"# 2026 Formula One World Championship\n[Kimi Antonelli](https://en.wikipedia.org/wiki/Kimi_Antonelli) won his first World Drivers' Championship, driving for [Mercedes](https://en.wikipedia.org/wiki/Mercedes-Benz_in …
+moss       Kimi Antonelli won the 2026 title with Mercedes. He sealed it on 1 November 2026, at the Mexico City Grand Prix, aged 20. That makes him the youngest world champion in F1 history ([Formula 1](https://www.formula1.com/en/latest/article/f1s-youngest-world-champions-as-antonelli-smashes-the-record.4otUr4h4wmWd6VmIEaNjzV), [Wikipedia](https://en.wikipedia.org/wiki/2026_Formula_One_World_Championship)). I checked this today, so it's current as of 7 November 2026.
+```
+
+2 turns, 1 tool calls, USD 0.096 on this thread.
+
+## A shopping question: what the search found, and what it did not
+
+```text
+owner      I want a quiet robot vacuum for a small flat with a cat. What are the two or three best options right now, and roughly what do they cost?
+→ web_search {"query": "best quiet robot vacuum pet hair small flat 2026 UK price", "limit": 6}
+← ok {"effects":0,"output":{"results":[{"snippet":"6 days ago · The Dyson Spot+Scrub Ai vacuums with 18,000Pa of suction, mops with a self-cleaning roller to scrub floors while limiting cross-contamination, ...","title":"I Tested the Best Robot Vacuums for 2026 - P …
+moss       For a small flat with a cat, I'd look at these:
+           
+           1. **eufy X10 Pro Omni, about £499.** Mumsnet's [pet-hair roundup](https://www.mumsnet.com/reviews/best-robot-vacuum-for-pet-hair) picks it as the best overall. It vacuums and mops, and its dock empties the bin and cleans the mop for you. Its brush is designed not to get tangled in hair. This is the one I'd get.
+           2. **Lefant M210P, roughly £100–150.** It's the [same roundup's](https://www.mumsnet.com/reviews/best-robot-vacuum-for-pet-hair) budget pick. It's small and fairly quiet, and it fits under furniture. It doesn't map your rooms and has no self-emptying dock, so you'll empty the bin often when the cat is shedding.
+           3. **A Roborock Q-series model (such as the Q7 or Q8), roughly £250–400.** This one comes from my own knowledge, not today's search. It's a good middle option with laser mapping, a rubber brush that copes well with hair, and a quiet mode.
+           
+           These are 2026 UK prices from the roundup. The Roborock figure is my own estimate, so check it. Prices move a lot around Black Friday, which is close. None of the reviews I found give noise figures. For quiet, look at the decibel rating in quiet mode (under about 60 dB is good). Also, models with a self-emptying dock are loud for a few seconds each time they empty.
+           
+           If your budget is under £300, the Lefant or a Roborock Q-series is the better fit.
+```
+
+2 turns, 1 tool calls, USD 0.094 on this thread.
 
 ## A world question that needs care
 

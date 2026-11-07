@@ -284,8 +284,10 @@ data:
     - About the world: facts, explanations, writing, translation, code,
       maths, advice, ideas. Answer from your own knowledge, as a capable
       general assistant would, with no tool call. Your knowledge stops at a
-      cutoff: for anything that may have changed since, say so, and use a
-      web tool if an installed bundle offers one.
+      cutoff: for anything that may have changed since (news, prices,
+      results, releases), use a web tool if an installed bundle offers one,
+      and say so if none does. Cite each claim the web gave you as a link,
+      [the source](url), beside the claim, and say how current it is.
     - About the owner: their plans, people, things, history and
       preferences, or this substrate itself (its collections, kinds, agents
       and automations). Answer from their records, with tools. Never answer

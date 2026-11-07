@@ -214,6 +214,9 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/$agent
 
 ## What is left
 
+What Moss needs next, ranked against what the general assistants offer, is
+[its own plan](moss-capabilities.md).
+
 - **An eval.** The sessions are fourteen examples read by eye. A graded
   set run on every prompt change would hold what they show.
 - **The console's default.** The console lists primary agents first, so Moss
