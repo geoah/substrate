@@ -364,7 +364,10 @@ renames, replaces or deletes the record itself; once you have written it,
 no later version of the package changes or restores it. A view whose
 condition the filter bar has no control for (a `gt` on a number, say) is
 listed but cannot be opened, and its tab says why. The console package ships
-two for memories: **Active**, the default, and **Retired**.
+two for memories, **Active** (the default) and **Retired**, and six for
+contacts: **People** (the default: persons whose prominence is known),
+**Organizations**, **Groups**, **Bots**, **To sort** (contacts with no type
+yet) and **Hidden**.
 
 Opening a collection at its bare address restores the tab you picked there
 last, or the filters, sort, nesting and grouping you last set by hand, All

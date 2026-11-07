@@ -256,8 +256,9 @@ deleted ([0186](docs/decisions/0186-units-and-conversions-are-core-records-and-a
 [docs/units.md](docs/units.md)).
 A seeded package's other data records sit beside its declarations, as a
 bundle's do, and the record seed (`internal/engine/recordseed.go`) writes them
-at registration and at every open by the same rule: today the console's two
-collection views of `llm/memory`, the saved views a collection shows as tabs
+at registration and at every open by the same rule: today the console's
+collection views of `llm/memory` and `core/contact`, the saved views a
+collection shows as tabs
 ([0229](docs/decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)).
 No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so

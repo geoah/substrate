@@ -22,6 +22,7 @@ import (
 const (
 	collectionViewKind = "substrate.reamde.dev/console/collectionview"
 	memoryDeclaration  = "substrate.reamde.dev/core/kind/substrate.reamde.dev/llm/memory"
+	contactDeclaration = "substrate.reamde.dev/core/kind/substrate.reamde.dev/core/contact"
 )
 
 // shippedViews is the views file the console package ships, read from the
@@ -33,6 +34,20 @@ func shippedViews(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// shippedViewIDs is the id of every view the console package ships.
+func shippedViewIDs(t *testing.T) []string {
+	t.Helper()
+	_, recs, err := vocabulary.ParseShipped(shippedViews(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		ids = append(ids, rec.ID)
+	}
+	return ids
 }
 
 // writeViews replaces a tree's shipped views file.
@@ -88,7 +103,15 @@ func TestRecordSeedWritesTheShippedViewsAtRegistration(t *testing.T) {
 			t.Errorf("the Active view's %s is %v, want %v", k, active.Properties[k], v)
 		}
 	}
-	before := viewVersions(t, ds, "memory-active", "memory-retired")
+	people, err := ds.Get(ctx, collectionViewKind, "contact-1-people")
+	if err != nil {
+		t.Fatalf("read the shipped People view: %v", err)
+	}
+	if got := people.Properties["appliesTo"]; !reflect.DeepEqual(got, map[string]any{"ref": contactDeclaration}) {
+		t.Errorf("the People view applies to %v, want %s", got, contactDeclaration)
+	}
+	ids := shippedViewIDs(t)
+	before := viewVersions(t, ds, ids...)
 	_ = svc.Close()
 
 	svc = openTree(t, dsn, tree, engine.WithRecordSeed(true))
@@ -97,7 +120,7 @@ func TestRecordSeedWritesTheShippedViewsAtRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after := viewVersions(t, ds, "memory-active", "memory-retired"); !reflect.DeepEqual(after, before) {
+	if after := viewVersions(t, ds, ids...); !reflect.DeepEqual(after, before) {
 		t.Fatalf("the open after registration wrote the views again: versions %v, then %v", before, after)
 	}
 }
@@ -133,7 +156,7 @@ func TestRecordSeedCatchesUpARepositoryCreatedWithoutTheKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"memory-active", "memory-retired"} {
+	for _, id := range shippedViewIDs(t) {
 		rec, err := ds.Get(ctx, collectionViewKind, id)
 		if err != nil {
 			t.Fatalf("the open after the upgrade did not seed %s: %v", id, err)

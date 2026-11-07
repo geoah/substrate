@@ -11,9 +11,9 @@ decision-makers: George Antoniadis
 A collection's saved views (the tabs above its table) live only in the
 owner's `substrate.reamde.dev/core/consolepreference/navigation` record,
 which the console writes. A package cannot ship one, so every collection
-opens on All, and the planned `core/contact`
-([PR #1206](https://github.com/geoah/substrate/pull/1206),
-[contacts plan, "Console views"](https://github.com/geoah/substrate/blob/t3/propose-core-contact-kind/docs/plans/contacts.md#console-views)) cannot
+opens on All, and `core/contact`
+([0231](0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md),
+[contacts plan, "Console views"](../plans/contacts.md#console-views)) cannot
 open on a People tab. Issue #1208 holds the work. Shipping views also needs
 something the tree lacks: a seeded package has no way to ship a data record.
 The only seeded records are the units, written by a seed of their own
@@ -110,6 +110,8 @@ and the address, the default tab, and a remembered All.
 
 ## More Information
 
-The first shipped views are on `llm/memory`, the one seeded kind that is
-the owner's data: Active (the default) and Retired. The contact views of
-the contacts plan follow once `core/contact` lands.
+The first shipped views are on the two seeded kinds that are the owner's
+data: `llm/memory`, Active (the default) and Retired, and `core/contact`,
+the six views of the contacts plan with People the default. A number in a
+contact view's id (`contact-1-people`) sets the tab order, since the console
+orders a collection's views by id.

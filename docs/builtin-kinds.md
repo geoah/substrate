@@ -254,9 +254,11 @@ it at its next open.
 A sample, a catalogue or a provider ships its views as records; a re-import
 or an upgrade replaces a view only that package and the engine wrote and
 leaves one any other hand edited or deleted as it was left
-([the two doors](bundles.md#the-two-doors)). The console package ships two
-collection views of `llm/memory` in `views.yaml`, **Active** (the default)
-and **Retired**. A seeded package's records sit beside its declarations as
+([the two doors](bundles.md#the-two-doors)). The console package ships
+collection views in `views.yaml`: two of `llm/memory`, **Active** (the
+default) and **Retired**, and six of `core/contact`, **People** (known
+persons, the default), **Organizations**, **Groups**, **Bots**, **To sort**
+(no `contactType` yet) and **Hidden**. A seeded package's records sit beside its declarations as
 a bundle's do, and the record seed writes them at registration and at every
 open, under the same rule: a record only the seed and the engine wrote takes
 the newer shipped one, and one any other hand wrote or deleted stays.
