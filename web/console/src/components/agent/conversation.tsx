@@ -36,6 +36,7 @@
 import {
   useEffect,
   useEffectEvent,
+  useId,
   useRef,
   useState,
   type ReactNode,
@@ -186,16 +187,18 @@ function UnfinishedNote({
   blocked?: string
 }) {
   const tone = UNFINISHED_TONES[turn.tone]
+  const why = useId()
   return (
     <div
-      role="status"
       className={cn(
         "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3.5 py-2.5 text-[13px]",
         tone.box
       )}
     >
       {tone.icon}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      {/* The live region is the words alone: one holding the button would
+          be read out whole on every change. */}
+      <div role="status" className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="font-medium">{turn.title}</span>
         {turn.detail && (
           <span className="[overflow-wrap:anywhere] text-muted-foreground">
@@ -203,15 +206,26 @@ function UnfinishedNote({
           </span>
         )}
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onContinue}
-        disabled={Boolean(blocked)}
-        title={blocked ?? `Sends “${CONTINUE_MESSAGE}”`}
-      >
-        Continue
-      </Button>
+      <div className="flex flex-col items-end gap-1">
+        {/* Held, not disabled: a disabled button takes no focus, so a
+            keyboard or a screen reader would never learn why it waits. */}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => !blocked && onContinue()}
+          aria-disabled={blocked ? true : undefined}
+          aria-describedby={blocked ? why : undefined}
+          className={cn(blocked && "cursor-default opacity-50")}
+          title={blocked ? undefined : `Sends “${CONTINUE_MESSAGE}”`}
+        >
+          Continue
+        </Button>
+        {blocked && (
+          <span id={why} className="text-[11.5px] text-muted-foreground">
+            {blocked}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -1017,7 +1031,9 @@ export function Conversation({
               here when it finishes.
             </p>
           )}
-          {error && (
+          {/* A turn that ended on the failure is said once, by the notice
+              below, which reads the reason the thread stored. */}
+          {error && !unfinished && (
             <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
               {name} couldn’t answer: {error}
             </div>
