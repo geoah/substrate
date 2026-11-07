@@ -76,9 +76,22 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case settingsOpened
     case clearAsked
     case forget(Bool)
+    case guidance(GuidanceStep)
 
     // A conversation's report
     case conversation(ChildKey, Report)
+
+    /// The owner's memories and instructions: read, and written one record
+    /// at a time.
+    enum GuidanceStep: Codable, Equatable, Sendable {
+        case asked
+        case read(memories: [Record], instructions: [Record])
+        case readFailed(Failure)
+        case changeAsked(RecordReference, GuidanceChange)
+        case written(Record)
+        case deleted(RecordReference)
+        case writeFailed(RecordReference, Failure, before: Record)
+    }
 
     /// What the device held for a repository when it was opened.
     struct Disk: Codable, Equatable, Sendable {

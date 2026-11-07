@@ -15,6 +15,10 @@ enum Kinds {
     static let thread = "\(llm)/thread"
     static let message = "\(llm)/message"
     static let interaction = "\(llm)/interaction"
+    /// What the owner keeps for their assistants: a standing fact about
+    /// them, and a standing instruction to one agent (decision 0241).
+    static let memory = "\(llm)/memory"
+    static let instruction = "\(llm)/instruction"
     /// The interaction kind before record 0077 moved it out of core: a
     /// stamp written then still spells it, and must still find its card.
     static let interactionBeforeMove = "\(core)/interaction"

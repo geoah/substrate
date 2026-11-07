@@ -54,6 +54,47 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var problem: String?
     }
 
+    /// The owner's memories and instructions, as Settings last read them:
+    /// what their assistants know about them and how they should work.
+    struct Guidance: Codable, Equatable, Sendable {
+        /// Newest first, each list as read.
+        var memories: [Record] = []
+        var instructions: [Record] = []
+        var read = false
+        var reading = false
+        var problem: String?
+        /// The records a write is out for, by path: one at a time each, so
+        /// no write is made over a version another is moving.
+        var busy: Set<String> = []
+        /// What a write that did not go through left to say, by path.
+        var failed: [String: String] = [:]
+
+        func record(_ reference: RecordReference) -> Record? {
+            (reference.kind == Kinds.memory ? memories : instructions).first { $0.id == reference.recordID }
+        }
+
+        /// The record in its list, where it stood, or back in it, newest
+        /// first.
+        mutating func put(_ record: Record) {
+            var list = record.kind == Kinds.memory ? memories : instructions
+            if let at = list.firstIndex(where: { $0.id == record.id }) {
+                list[at] = record
+            } else {
+                list.append(record)
+                list.sort { $0.createdDate > $1.createdDate }
+            }
+            if record.kind == Kinds.memory { memories = list } else { instructions = list }
+        }
+
+        mutating func remove(_ reference: RecordReference) {
+            if reference.kind == Kinds.memory {
+                memories.removeAll { $0.id == reference.recordID }
+            } else {
+                instructions.removeAll { $0.id == reference.recordID }
+            }
+        }
+    }
+
     /// What the watch reported, to read again once its batch is due.
     struct WatchKey: Codable, Hashable, Sendable {
         var kind: String
@@ -123,6 +164,7 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var answered = Signal<ChatAnswer>()
     var usage: [AreaUsage] = []
     var permission: NotificationPermission?
+    var guidance = Guidance()
     /// Whether the next sign-out forgets the saved chats: Sign Out does,
     /// Sign In Again after a refused token does not.
     var forgetOnSignOut = true

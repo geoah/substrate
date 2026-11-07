@@ -123,6 +123,7 @@ extension ChatAppState {
         CachedState(
             agents: agents, providers: providers.values.sorted { $0.id < $1.id }, keys: keys, threads: chats, automated: automated,
             openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
-            baselined: baselined, lastAgent: lastAgent)
+            baselined: baselined, lastAgent: lastAgent, memories: guidance.read ? guidance.memories : nil,
+            instructions: guidance.read ? guidance.instructions : nil)
     }
 }

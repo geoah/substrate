@@ -44,6 +44,11 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 
+    case readGuidance
+    /// Each carries the record as it stood before, which a refusal puts back.
+    case writeGuidance(RecordReference, properties: [String: JSONValue], before: Record)
+    case deleteGuidance(RecordReference, before: Record)
+
     case notify(NotificationRequest)
     case cancelGroup(String)
     case cancelAllNotifications

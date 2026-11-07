@@ -283,6 +283,39 @@ extension ChatApp {
                 }
             }
 
+        case .readGuidance:
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    async let memories = client.listAll(ListQuery(kinds: [Kinds.memory], first: 200, orderBy: "createdAt:desc"))
+                    async let instructions = client.listAll(ListQuery(kinds: [Kinds.instruction], first: 200, orderBy: "createdAt:desc"))
+                    let read = ChatAppStep.GuidanceStep.read(memories: try await memories.records, instructions: try await instructions.records)
+                    return Event(.guidance(read))
+                } catch {
+                    return Task.isCancelled ? nil : Event(.guidance(.readFailed(failed(error, client))))
+                }
+            }
+        case let .writeGuidance(reference, properties, before):
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    let record = try await client.patch(reference.kind, reference.recordID, properties: properties, ifVersion: before.version)
+                    return Event(.guidance(.written(record)))
+                } catch {
+                    return Event(.guidance(.writeFailed(reference, failed(error, client), before: before)))
+                }
+            }
+        case let .deleteGuidance(reference, before):
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    try await client.delete(reference.kind, reference.recordID, ifVersion: before.version)
+                    return Event(.guidance(.deleted(reference)))
+                } catch {
+                    return Event(.guidance(.writeFailed(reference, failed(error, client), before: before)))
+                }
+            }
+
         case let .notify(request):
             return Self.device(notifications) { await $0.schedule(request) }
         case let .cancelGroup(thread):
