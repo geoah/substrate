@@ -6,13 +6,18 @@
  * spelling the rows are stamped with, and adds the request and the response
  * verbatim.
  *
+ * A call that worked on one record names it in its line ("Changed the
+ * description of “Dune”"); one that worked on several lists the first few
+ * under the line as chips that open them, without opening the card.
+ *
  * A live card and the same card replayed off the records are one component:
  * `ToolCallView` (lib/api/transcript.ts) is filled from the stream while the
- * run is in flight and from the `llm/message` rows afterwards. Only what the
- * reader has to act on renders under the line, open or not: a suggested
+ * run is in flight and from the `llm/message` rows afterwards. What the
+ * reader has to act on renders under the line too, open or not: a suggested
  * change and a batch of questions. */
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
   CheckIcon,
@@ -26,22 +31,30 @@ import { ChangesList } from "@/components/agent/changes"
 import { InteractionCard } from "@/components/agent/interaction-card"
 import { MessageText } from "@/components/agent/message-text"
 import { ProposalCard } from "@/components/agent/proposal-card"
+import { ChangeChips, RecordChips } from "@/components/agent/tool-records"
 import { ToolResultView } from "@/components/agent/tool-views"
 import { CodeBlock } from "@/components/code-block"
 import { KindPath } from "@/components/identity/kind-ref"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Spinner } from "@/components/ui/spinner"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHasQueryClient } from "@/hooks/use-has-query-client"
 import {
   agentName,
   callableOf,
   resolveTool,
   toolDetails,
+  toolSubject,
   toolSummary,
   wroteParts,
   wroteSentence,
+  type ResolvedTool,
   type ToolDetail,
+  type ToolSubject,
 } from "@/lib/agent-chat"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { kindByIdentity } from "@/lib/definition"
+import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import {
   interactionIdOf,
   requestIdOf,
@@ -172,10 +185,48 @@ export function ToolCallCard({
   /** The agent that made the call, whose `tools:` say what the name means. */
   agent?: SubstrateRecord
 }) {
+  const resolved = resolveTool(agent, call.name, call.callable)
+  const subject = toolSubject(call, resolved)
+  const client = useHasQueryClient()
+  // The line names the one record the call worked on; an answer that did
+  // not carry its heading (an edit, a delete) has it read, as a mark does.
+  if (subject && !subject.title && client) {
+    return <TitledToolCall call={call} resolved={resolved} subject={subject} />
+  }
+  return <ToolCall call={call} resolved={resolved} />
+}
+
+function TitledToolCall({
+  subject,
+  ...rest
+}: {
+  call: ToolCallView
+  resolved: ResolvedTool
+  subject: ToolSubject
+}) {
+  const kinds = useQuery(kindsQueryOptions)
+  // A kind the repository never declared refuses the batched read.
+  const known = Boolean(kindByIdentity(kinds.data ?? [], subject.kind))
+  const title = useQuery({
+    ...recordTitleQueryOptions(subject.kind, subject.id),
+    enabled: known,
+  })
+  return <ToolCall {...rest} title={title.data ?? undefined} />
+}
+
+function ToolCall({
+  call,
+  resolved,
+  title,
+}: {
+  call: ToolCallView
+  resolved: ResolvedTool
+  /** The heading of the one record the call worked on, read for it. */
+  title?: string
+}) {
   const [technical] = useTechnicalDetails()
   const [open, setOpen] = useState(false)
-  const resolved = resolveTool(agent, call.name, call.callable)
-  const summary = toolSummary(call, resolved)
+  const summary = toolSummary(call, { ...resolved, title })
   // A background job still working reads as a running call: its handle is
   // not its result.
   const working = call.job === "working"
@@ -195,11 +246,22 @@ export function ToolCallCard({
       : undefined
   // The request and the interaction render as their own cards, so their
   // stamps are not listed again.
-  const details = toolDetails(
+  const all = toolDetails(
     call,
     resolved,
     [proposed, asked].filter((id): id is string => Boolean(id))
   ).filter((detail) => !(known && detail.type === "output"))
+  // Several records, and the changes of a call whose line says something
+  // else (a function's own words), show under the line; one record the line
+  // already names keeps its link in the details.
+  const host = HOST_FUNCTIONS.includes(resolved.function ?? "")
+  const inline = all.filter(
+    (detail) =>
+      (detail.type === "found" && detail.records.length > 1) ||
+      (detail.type === "changed" &&
+        (detail.changes.length > 1 || (!host && !resolved.subagent)))
+  )
+  const details = all.filter((detail) => !inline.includes(detail))
   // A failed call that LANDED a request was not a failure: the policy held
   // the write for review, and the line says so instead of crying red.
   const held = failed && proposed !== undefined
@@ -285,6 +347,18 @@ export function ToolCallCard({
         <div className="pl-1">
           <ToolResultView result={known} />
         </div>
+      )}
+      {inline.map((detail, i) =>
+        detail.type === "found" ? (
+          <RecordChips
+            key={`found:${i}`}
+            records={detail.records}
+            total={detail.total}
+            label="Records found"
+          />
+        ) : detail.type === "changed" ? (
+          <ChangeChips key={`changed:${i}`} changes={detail.changes} />
+        ) : null
       )}
       {proposed && <ProposalCard id={proposed} />}
       {asked && <InteractionCard id={asked} />}

@@ -208,13 +208,17 @@ describe("the tool line", () => {
         ],
       })
     )
-    expect(screen.getByText("Changed a widget")).toBeTruthy()
+    // The answer carried no heading, and the read for it has not come back:
+    // the line says the field and the kind.
+    expect(screen.getByText("Changed the name of a widget")).toBeTruthy()
     const mark = () =>
       container.querySelector('a[data-to="/data/$authority/$pkg/$name/$id"]')
-    // Closed, the line is the whole card, as it is for a search.
+    // Closed, the line is the whole card: it already names the one record.
     expect(screen.queryByText("Changed")).toBeNull()
     expect(mark()).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: /Changed a widget/ }))
+    fireEvent.click(
+      screen.getByRole("button", { name: /Changed the name of a widget/ })
+    )
     expect(screen.getByText("Changed")).toBeTruthy()
     expect(JSON.parse(mark()?.getAttribute("data-params") ?? "{}")).toEqual({
       authority: "crew.test.dev",
@@ -234,7 +238,7 @@ describe("the tool line", () => {
         output: '{"record":{"id":"w2","kind":"crew.test.dev/crew/widget"}}',
       })
     )
-    fireEvent.click(screen.getByRole("button", { name: /Saved a widget/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Added a widget/ }))
     expect(screen.getByText("Saved")).toBeTruthy()
     const mark = container.querySelector(
       'a[data-to="/data/$authority/$pkg/$name/$id"]'
@@ -244,7 +248,7 @@ describe("the tool line", () => {
     )
   })
 
-  it("lists what a search found once opened, and says when nothing matched", () => {
+  it("shows what a search found under the line, and says when nothing matched", () => {
     const found = renderCard(
       call({
         name: "query",
@@ -253,16 +257,15 @@ describe("the tool line", () => {
           '{"records":[{"kind":"crew.test.dev/crew/widget","id":"w1"},{"kind":"crew.test.dev/crew/widget","id":"w2"}]}',
       })
     )
-    expect(screen.queryByText("Found")).toBeNull()
-    fireEvent.click(
-      screen.getByRole("button", { name: /Searched for “cups”, found 2/ })
-    )
-    expect(screen.getByText("Found")).toBeTruthy()
+    // Unopened: the records are under the line, and there is nothing more
+    // to open.
+    expect(screen.getByText("Searched for “cups”, found 2")).toBeTruthy()
     expect(
       found.container.querySelectorAll(
         'a[data-to="/data/$authority/$pkg/$name/$id"]'
       )
     ).toHaveLength(2)
+    expect(screen.queryByRole("button", { name: /Searched/ })).toBeNull()
     cleanup()
 
     renderCard(
@@ -274,6 +277,69 @@ describe("the tool line", () => {
     )
     fireEvent.click(screen.getByRole("button", { name: /found 0/ }))
     expect(screen.getByText("Nothing matched.")).toBeTruthy()
+  })
+
+  it("shows the first three records a search found and the rest on asking", () => {
+    const records = ["Mug", "Cup", "Bowl", "Plate", "Jug"].map((title, i) => ({
+      kind: "crew.test.dev/crew/widget",
+      id: `w${i}`,
+      properties: { title },
+    }))
+    const { container } = renderCard(
+      call({
+        name: "query",
+        arguments: '{"q":"kitchen"}',
+        output: JSON.stringify({ records }),
+      })
+    )
+    const marks = () =>
+      [
+        ...container.querySelectorAll(
+          'a[data-to="/data/$authority/$pkg/$name/$id"]'
+        ),
+      ].map((a) => a.textContent)
+    expect(marks()).toEqual(["Mug", "Cup", "Bowl"])
+    fireEvent.click(screen.getByRole("button", { name: "and 2 more" }))
+    expect(marks()).toEqual(["Mug", "Cup", "Bowl", "Plate", "Jug"])
+  })
+
+  it("names the one record a write changed, and the fields, in its line", () => {
+    renderCard(
+      call({
+        name: "write",
+        arguments:
+          '{"op":"patch","kind":"crew.test.dev/crew/author","id":"a1","input":{"properties":{"description":"…"}}}',
+        output:
+          '{"record":{"id":"a1","kind":"crew.test.dev/crew/author","properties":{"title":"Hannu Rajaniemi"}}}',
+      })
+    )
+    expect(
+      screen.getByText("Changed the description of “Hannu Rajaniemi”")
+    ).toBeTruthy()
+  })
+
+  it("shows the records a function kept under its own words, unopened", () => {
+    const { container } = renderCard(
+      call({
+        name: "web_scrape",
+        callable: "function:providers.example.com:web:scrape",
+        arguments: '{"url":"https://example.com/"}',
+        output:
+          '{"output":{"document":"d1","url":"https://example.com/","content":"# Hi"},"effects":1}',
+        changes: [
+          {
+            seq: 9,
+            op: "put",
+            kind: "providers.example.com/web/page",
+            id: "d1",
+          },
+        ],
+      })
+    )
+    expect(screen.getByText("Saved")).toBeTruthy()
+    expect(
+      container.querySelectorAll('a[data-to="/data/$authority/$pkg/$name/$id"]')
+    ).toHaveLength(1)
   })
 
   it("does not open a call whose check mark already said everything", () => {

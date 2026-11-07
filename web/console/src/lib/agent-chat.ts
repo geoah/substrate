@@ -486,6 +486,99 @@ function kindsOf(args: Record<string, unknown>): string[] {
     : []
 }
 
+/** A noun with its indefinite article: "a book", "an author". */
+export function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`
+}
+
+/** The longest title a tool call's line quotes whole. */
+const LINE_TITLE = 60
+
+/** A title as the line quotes it: whole, or cut at a word and marked. */
+function quoted(title: string): string {
+  const flat = title.replace(/\s+/g, " ").trim()
+  if (flat.length <= LINE_TITLE) return `“${flat}”`
+  const cut = flat.slice(0, LINE_TITLE)
+  const word = cut.lastIndexOf(" ")
+  return `“${(word > LINE_TITLE / 2 ? cut.slice(0, word) : cut).trimEnd()}…”`
+}
+
+/** A record's heading from the envelope a tool answered with: the engine's
+ * derived `title`, stored among the properties, or beside them. */
+function envelopeTitle(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const r = value as Record<string, unknown>
+  const props = r.properties
+  const held =
+    props && typeof props === "object"
+      ? (props as Record<string, unknown>).title
+      : undefined
+  const title = typeof held === "string" ? held : r.title
+  return typeof title === "string" && title.trim() ? title.trim() : undefined
+}
+
+/** The one record a call worked on, when it worked on exactly one: what its
+ * line names. A call that touched several lists them under the line
+ * instead. */
+export interface ToolSubject {
+  kind: string
+  id: string
+  /** Its heading, when the answer carried it; otherwise the card reads it. */
+  title?: string
+}
+
+export function toolSubject(
+  call: ToolCallView,
+  resolved: ResolvedTool
+): ToolSubject | undefined {
+  if (call.ok === false) return undefined
+  const args = parseJSON(call.arguments)
+  const payload = parseJSON(call.output)
+  const one = (value: unknown): ToolSubject | undefined => {
+    const r = recordOf(value)
+    if (!r) return undefined
+    const title = envelopeTitle(value)
+    return title ? { ...r, title } : r
+  }
+  switch (resolved.function) {
+    case HOST_FUNCTION_WRITE:
+      return one(payload.record)
+    case HOST_FUNCTION_EDIT:
+      return one(args)
+    case HOST_FUNCTION_QUERY: {
+      if ("record" in payload) return one(payload.record)
+      const found = payload.records
+      return Array.isArray(found) && found.length === 1
+        ? one(found[0])
+        : undefined
+    }
+  }
+  return undefined
+}
+
+/** A property name as a line says it: "the description", "the page title". */
+function fieldWords(name: string): string {
+  return `the ${propertyLabel(name).toLowerCase()}`
+}
+
+/** The fields a patch wrote, as a line says them before "of": "the
+ * description", "the status and notes", "3 fields". */
+function fieldsWords(names: string[]): string | undefined {
+  if (!names.length) return undefined
+  if (names.length > 2) return `${names.length} fields`
+  return names.length === 1
+    ? fieldWords(names[0])
+    : `${fieldWords(names[0])} and ${propertyLabel(names[1]).toLowerCase()}`
+}
+
+/** The property names a write's `input` set. */
+function writtenFields(args: Record<string, unknown>): string[] {
+  const input = args.input
+  if (!input || typeof input !== "object") return []
+  const props = (input as Record<string, unknown>).properties
+  return props && typeof props === "object" ? Object.keys(props) : []
+}
+
 /** The kinds a vocabulary call's documents declare, by their last word. */
 function vocabularyKinds(documents: unknown): string[] {
   if (!Array.isArray(documents)) return []
@@ -514,23 +607,38 @@ export function toolSummary(
     subagent?: string
     /** The function's own description, for a function without fixed words. */
     description?: string
+    /** The heading of the one record the call worked on (toolSubject), when
+     * its answer did not carry it. */
+    title?: string
   } = {}
 ): string {
   const args = parseJSON(call.arguments)
   if (opts.subagent) return `Asked ${agentName(opts.subagent)}`
+  const subject = opts.function
+    ? toolSubject(call, { function: opts.function })
+    : undefined
+  const title = subject?.title ?? (subject ? opts.title : undefined)
+  const named = title ? quoted(title) : undefined
   switch (opts.function) {
     case HOST_FUNCTION_QUERY: {
       const q = typeof args.q === "string" ? args.q.trim() : ""
       const kinds = kindsOf(args)
+      if (named && "record" in parseJSON(call.output))
+        return `Looked up ${named}`
       let words = "Looked things up"
       if (q) words = `Searched for “${q}”`
       else if (typeof args.kind === "string" && typeof args.id === "string")
-        words = `Looked up one ${lowerFirst(displayName(args.kind))}`
+        words = `Looked up ${withArticle(lowerFirst(displayName(args.kind)))}`
       else if (kinds.length)
         words = `Looked through your ${joinWords(kinds.map((k) => displayPlural(k)))}`
       const found = parseJSON(call.output).records
       if (Array.isArray(found) && call.ok !== false) {
-        words += found.length === 1 ? ", found 1" : `, found ${found.length}`
+        words +=
+          found.length === 1
+            ? named
+              ? `, found ${named}`
+              : ", found 1"
+            : `, found ${found.length}`
       }
       return words
     }
@@ -539,9 +647,18 @@ export function toolSummary(
     case HOST_FUNCTION_WRITE: {
       const kind = typeof args.kind === "string" ? args.kind : ""
       const what = kind ? lowerFirst(displayName(kind)) : "record"
-      if (args.op === "put" || args.op === "create") return `Saved a ${what}`
-      if (args.op === "delete") return `Deleted a ${what}`
-      return kind ? `Changed a ${what}` : "Made a change"
+      const creates = args.op === "create" || (args.op === "put" && !args.id)
+      if (creates) {
+        return named
+          ? `Added ${named}${kind ? ` to your ${lowerFirst(displayPlural(kind))}` : ""}`
+          : `Added ${withArticle(what)}`
+      }
+      if (args.op === "put") return `Saved ${named ?? withArticle(what)}`
+      if (args.op === "delete") return `Deleted ${named ?? withArticle(what)}`
+      if (!kind) return "Made a change"
+      const fields = fieldsWords(writtenFields(args))
+      const target = named ?? withArticle(what)
+      return fields ? `Changed ${fields} of ${target}` : `Changed ${target}`
     }
     case HOST_FUNCTION_ASK:
       return "Asked you some questions"
@@ -550,11 +667,16 @@ export function toolSummary(
     case HOST_FUNCTION_EDIT: {
       const kind = typeof args.kind === "string" ? args.kind : ""
       const what = kind ? lowerFirst(displayName(kind)) : "record"
-      if (args.op === "view") return `Read part of a ${what}`
+      const target = named ?? withArticle(what)
+      const field =
+        typeof args.property === "string" && args.property
+          ? `${fieldWords(args.property)} of `
+          : ""
+      if (args.op === "view") return `Read part of ${field}${target}`
       const edits = Array.isArray(args.edits) ? args.edits.length : 0
       return edits > 1
-        ? `Edited a ${what} in ${edits} places`
-        : `Edited a ${what}`
+        ? `Edited ${field}${target} in ${edits} places`
+        : `Edited ${field}${target}`
     }
     case HOST_FUNCTION_VOCABULARY: {
       const named = vocabularyKinds(args.documents)
@@ -756,15 +878,18 @@ export function callableOf(call: ToolCallView, resolved: ResolvedTool): string {
 export function foundRecords(
   output: string | undefined,
   limit = 8
-): { kind: string; id: string }[] {
+): { kind: string; id: string; title?: string }[] {
   const records = parseJSON(output).records
   if (!Array.isArray(records)) return []
-  const out: { kind: string; id: string }[] = []
+  const out: { kind: string; id: string; title?: string }[] = []
   for (const item of records) {
     if (!item || typeof item !== "object") continue
     const r = item as Record<string, unknown>
     if (typeof r.kind === "string" && typeof r.id === "string") {
-      out.push({ kind: r.kind, id: r.id })
+      const title = envelopeTitle(r)
+      out.push(
+        title ? { kind: r.kind, id: r.id, title } : { kind: r.kind, id: r.id }
+      )
     }
     if (out.length >= limit) break
   }
@@ -776,6 +901,15 @@ export function foundRecords(
 export function toolFailure(output: string | undefined): string | undefined {
   const parsed = parseJSON(output)
   return typeof parsed.error === "string" ? parsed.error : undefined
+}
+
+/** What each stored op did, as the verb a change is said with. */
+export const CHANGE_VERBS: Record<string, string> = {
+  put: "Saved",
+  patch: "Changed",
+  delete: "Deleted",
+  merge: "Merged",
+  split: "Split",
 }
 
 /** One record a call wrote. `seq` is the changelog entry, known only once the
@@ -793,7 +927,11 @@ export interface LandedChange {
  * open. */
 export type ToolDetail =
   | { type: "failed"; reason?: string }
-  | { type: "found"; records: { kind: string; id: string }[]; total: number }
+  | {
+      type: "found"
+      records: { kind: string; id: string; title?: string }[]
+      total: number
+    }
   | { type: "changed"; changes: LandedChange[] }
   | {
       type: "wrote"
