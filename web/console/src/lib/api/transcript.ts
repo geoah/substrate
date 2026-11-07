@@ -396,12 +396,19 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
   // Every unsettled call in the transcript so far, so a tool row finds its
   // call even when another assistant turn has landed in between.
   const pending = new Map<string, ToolCallView>()
+  // Every call so far, settled or not: a background job's end settles its
+  // call a second time.
+  const located = new Map<string, ToolCallView>()
 
   for (const record of messages) {
     const role = str(record.properties.role)
     if (role === "user" || role === "assistant") {
       const tools = role === "assistant" ? callsOf(record) : []
-      for (const call of tools) if (call.id) pending.set(call.id, call)
+      for (const call of tools) {
+        if (!call.id) continue
+        pending.set(call.id, call)
+        located.set(call.id, call)
+      }
       const reasoning =
         role === "assistant" ? str(record.properties.reasoning) : ""
       const reasoningMillis =
@@ -438,16 +445,27 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
       continue
     }
     if (role === "system") {
-      // The substrate's own turn (a proposal decision): its content is a
-      // self-describing JSON envelope, and its `changes` say what the
-      // decision wrote. Never folded into a call — nothing dispatched it.
-      turns.push({
+      // The substrate's own turn (a proposal decision, an answer, a
+      // background job's end): its content is a self-describing JSON
+      // envelope, and its `changes` say what it wrote. Never folded into a
+      // call — nothing dispatched it.
+      const turn: TurnView = {
         key: record.id,
         role,
         content: str(record.properties.content),
         tools: [],
         changes: changesOf(record),
-      })
+      }
+      turns.push(turn)
+      // A job's end settles its call a second time: the call's own row keeps
+      // the handle it answered with, and the result is here, so a background
+      // search keeps its results on a re-read.
+      const ended = jobNoticeOf(turn)
+      const call = ended && located.get(ended.callId)
+      if (ended && call) {
+        if (ended.output !== undefined) call.output = ended.output
+        call.ok = ended.ok
+      }
       continue
     }
     if (role !== "tool") continue
@@ -496,6 +514,41 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
     })
   }
   return turns
+}
+
+/** A background job's end, decoded from the system row the engine writes
+ * when one finishes (internal/engine/agentjobs.go, event "toolCompleted"):
+ * the call it answers, the name the model called it by, the callable
+ * behind it, whether it worked and what it answered. */
+export interface JobNotice {
+  callId: string
+  name: string
+  callable?: string
+  ok: boolean
+  output?: string
+}
+
+export function jobNoticeOf(turn: TurnView): JobNotice | undefined {
+  if (turn.role !== "system" || !turn.content.trim().startsWith("{"))
+    return undefined
+  try {
+    const parsed: unknown = JSON.parse(turn.content)
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const env = parsed as Record<string, unknown>
+    if (env.event !== "toolCompleted") return undefined
+    const callId = str(env.toolCallId)
+    if (!callId) return undefined
+    const callable = str(env.callable)
+    return {
+      callId,
+      name: str(env.name),
+      ...(callable ? { callable } : {}),
+      ok: env.ok === true,
+      ...(typeof env.output === "string" ? { output: env.output } : {}),
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /** A system turn's decision envelope, decoded — `undefined` for a system turn

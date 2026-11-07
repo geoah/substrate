@@ -159,6 +159,45 @@ describe("ThreadList", () => {
     ).not.toContain("Working")
   })
 
+  it("marks a chat whose last turn didn't finish, by how it ended", async () => {
+    const ended = (
+      i: number,
+      title: string,
+      status: string,
+      reason?: string
+    ) => {
+      const r = row(i, HELPER, title)
+      r.thread.properties.status = status
+      if (reason) r.thread.properties.reason = reason
+      return r
+    }
+    renderList({
+      rows: [
+        ended(
+          0,
+          "Cut by a restart",
+          "stopped",
+          "stopped: the server shut down during the turn"
+        ),
+        ended(1, "Stopped by me", "stopped", "stopped by api"),
+        ended(2, "Out of turns", "overbudget", "max turns reached (8)"),
+        ended(3, "Broke", "error", "llm: overloaded"),
+        ended(4, "Fine", "ok"),
+      ],
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const text = (name: RegExp) =>
+      within(chats).getByRole("button", { name }).textContent
+    expect(text(/Cut by a restart/)).toContain("Didn’t finish")
+    expect(text(/Stopped by me/)).toContain("Stopped")
+    expect(text(/Out of turns/)).toContain("Didn’t finish")
+    expect(text(/Broke/)).toContain("Failed")
+    const fine = text(/Fine/)
+    for (const words of ["Didn’t finish", "Stopped", "Failed", "Working"]) {
+      expect(fine).not.toContain(words)
+    }
+  })
+
   it("lists the agents above the chats, one line each", async () => {
     renderList()
     const agents = await screen.findByRole("navigation", { name: "Agents" })

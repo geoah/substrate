@@ -92,11 +92,15 @@ same sections:
   ([0211](decisions/0211-the-console-groups-collections-by-package.md)).
 - **From _Provider_**: one section per provider (**From Google**, **From
   GitHub**), holding the copies that provider keeps up to date.
-- **Contacts** and **Memories**: the two kinds of the substrate's machinery
-  packages that hold your own data (`core/contact` and `llm/memory`,
+- **Contacts** and **Assistant**: the kinds of the substrate's machinery
+  packages that hold your own data (`core/contact`, `llm/memory` and
+  `llm/instruction`,
   [0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)),
-  each a section of its own, named for the kind, and listed under the
-  purpose it declares. A contact's page has one crumb, the collection.
+  listed under the purpose each declares. Contacts is a section of its own,
+  named for the kind, and a contact's page has one crumb, the collection.
+  **Assistant** holds Memories and Instructions together, the facts your
+  agents keep and the standing direction you give one of them, and their
+  pages read "Assistant / Memories".
 - **Substrate**: the substrate's own machinery, the `core`, `llm` and
   `console` packages under `substrate.reamde.dev`, listed only with
   Technical details on. Every other kind in them reads as `internal`,
@@ -606,7 +610,10 @@ beside `start`. A view that binds `about` alone has no window: its table
 blocks narrow by the record's subject and nothing else. The blocks read the
 observations of who the record names, and the owner's where the view binds
 no `about` or the record names nobody, never everyone's. Its `fold` lists
-properties the sheet folds away because a section shows them. Then come its
+properties the sheet folds away because a section shows them, and its
+`collapsed` the ones it keeps closed under one line because they are rarely
+read, such as an upstream's raw payload; a view that only collapses draws no
+section of its own. Then come its
 `sections`, in order, each holding one block:
 
 - **heading**: a heading, and an optional `note` under it.
@@ -927,14 +934,23 @@ panel on the right.
   reload shows the same conversation; while a run streams, the same turns fill
   in live and are replaced by the stored rows when it settles. Your messages
   are bubbles; the agent's consecutive turns read as one reply, each tool call
-  as one line saying what it did and whether it worked. Opening the line shows
-  what came back: the records a search found (or that nothing matched), the
-  records a write changed, a sub-agent's reply, a function's output, or why the
-  call failed. A call with nothing more to say than its check mark does not
-  open. With Technical details on, every line opens and adds the function and
-  the request and response verbatim. Only what you act on sits under the line
-  whether it is open or not: a suggested change and a batch of questions. A
-  thread a trigger started opens with the record whose change started it.
+  as one line saying what it did and whether it worked. A call that worked on
+  one record names it ("Changed the description of “Dune”", "Looked up
+  “Ada”"), and its record is linked when the line is opened. A call that
+  found or changed several shows the first three as chips under its line,
+  without opening it, and the rest on **and N more**. A web search shows its
+  results as numbered source pills and a page read shows the page as one,
+  each opening in a new tab; a finished reply lists the pages it cites as a
+  **Sources** row under it. Every link that leaves the console carries the
+  external-link mark. Opening the line shows the rest of what came back: a
+  sub-agent's reply, a function's output, or why the call failed. A call
+  with nothing more to say than its check mark does not open. With Technical
+  details on, every line opens and adds the function and the request and
+  response verbatim. Only what you act on sits under the line whether it is
+  open or not: a suggested change and a batch of questions. A job an agent
+  ran in the background says when it ended ("Librarian finished in the
+  background"), and its call's line shows what it answered. A thread a
+  trigger started opens with the record whose change started it.
   When the model exposed its thinking, a turn opens with a folded line,
   **Thought for 12 s**, whose text shows when opened; while the turn is still
   thinking the line reads **Thinking for 3 s** and counts.
@@ -951,6 +967,14 @@ panel on the right.
   chat is ready for the next message. A chat a trigger is still running says
   the agent is working on it in the background, and shows the answer when the
   run finishes.
+- **A reply that didn't finish says so.** When a chat's last turn was
+  stopped, ran out of time or turns, or failed, a note under the chat says
+  which, in plain words ("Moss didn't finish: the server restarted while it
+  was working", "What failed: …"), with **Continue**. Continue sends
+  "Continue where you left off." as your message, because a stopped chat
+  goes on only when you write again, and leaves anything you were typing in
+  the box. The chats column marks such a chat **Didn't finish**, **Stopped**
+  or **Failed**.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

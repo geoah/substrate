@@ -36,6 +36,7 @@ import {
   toolRoute,
   toolSummary,
   verdictWords,
+  withArticle,
 } from "./agent-chat"
 import type { ToolCallView } from "./api/transcript"
 import type { SubstrateRecord } from "./api/types"
@@ -390,14 +391,134 @@ describe("what a tool call did", () => {
         }),
         query
       )
-    ).toBe("Looked through your Tasks and Notes")
+    ).toBe("Looked through your tasks and notes")
     expect(
       toolSummary(
         call({ arguments: '{"kind":"ada.localhost/people/person","id":"g"}' }),
         query
       )
-    ).toBe("Looked up one person")
+    ).toBe("Looked up a person")
     expect(toolSummary(call({}), query)).toBe("Looked things up")
+    // The one record found is named.
+    expect(
+      toolSummary(
+        call({
+          arguments: '{"kind":"ada.localhost/people/person","id":"g"}',
+          output:
+            '{"record":{"kind":"ada.localhost/people/person","id":"g","properties":{"title":"Grace Hopper"}}}',
+        }),
+        query
+      )
+    ).toBe("Looked up “Grace Hopper”")
+    expect(
+      toolSummary(
+        call({
+          arguments: '{"q":"handover"}',
+          output:
+            '{"records":[{"kind":"a.b/c/d","id":"1","properties":{"title":"The handover"}}]}',
+        }),
+        query
+      )
+    ).toBe("Searched for “handover”, found “The handover”")
+  })
+
+  it("takes the article a word is said with, not the one its letter suggests", () => {
+    for (const noun of [
+      "unit",
+      "user",
+      "URL",
+      "utility",
+      "eucalyptus",
+      "one-off",
+      "book",
+    ]) {
+      expect(withArticle(noun)).toBe(`a ${noun}`)
+    }
+    for (const noun of [
+      "umbrella",
+      "update",
+      "upload",
+      "author",
+      "event",
+      "idea",
+      "hour",
+    ]) {
+      expect(withArticle(noun)).toBe(`an ${noun}`)
+    }
+  })
+
+  it("names the record a write or an edit worked on, and the fields it changed", () => {
+    const write = { function: "substrate.reamde.dev/core/write" }
+    const wrote = (args: object, title?: string) =>
+      call({
+        arguments: JSON.stringify(args),
+        output: JSON.stringify({
+          record: {
+            kind: "ada.localhost/reading/book",
+            id: "b1",
+            properties: title ? { title } : {},
+          },
+        }),
+      })
+    const book = { kind: "ada.localhost/reading/book", id: "b1" }
+    const props = (...names: string[]) => ({
+      input: { properties: Object.fromEntries(names.map((n) => [n, "x"])) },
+    })
+    expect(
+      toolSummary(
+        wrote({ op: "patch", ...book, ...props("description") }, "Dune"),
+        write
+      )
+    ).toBe("Changed the description of “Dune”")
+    expect(
+      toolSummary(
+        wrote({ op: "patch", ...book, ...props("status", "notes") }, "Dune"),
+        write
+      )
+    ).toBe("Changed the status and notes of “Dune”")
+    expect(
+      toolSummary(
+        wrote({ op: "patch", ...book, ...props("a", "b", "c") }, "Dune"),
+        write
+      )
+    ).toBe("Changed 3 fields of “Dune”")
+    expect(
+      toolSummary(
+        wrote(
+          { op: "put", kind: book.kind, ...props("name") },
+          "Children of Dune"
+        ),
+        write
+      )
+    ).toBe("Added “Children of Dune” to your books")
+    expect(toolSummary(wrote({ op: "delete", ...book }, "Dune"), write)).toBe(
+      "Deleted “Dune”"
+    )
+    // No heading: the kind, with its article.
+    expect(
+      toolSummary(
+        call({
+          arguments: '{"op":"patch","kind":"ada.localhost/reading/author"}',
+        }),
+        write
+      )
+    ).toBe("Changed an author")
+    // A heading read for the line, and one too long to quote whole.
+    expect(
+      toolSummary(
+        call({
+          arguments:
+            '{"op":"replace","kind":"ada.localhost/notes/note","id":"n1","property":"body","edits":[{},{}]}',
+          output: '{"kind":"ada.localhost/notes/note","id":"n1","edits":2}',
+        }),
+        { function: "substrate.reamde.dev/core/edit", title: "Garden" }
+      )
+    ).toBe("Edited the body of “Garden” in 2 places")
+    const long =
+      "A very long title that goes on and on about the garden and the weather"
+    expect(toolSummary(wrote({ op: "patch", ...book }, long), write)).toBe(
+      "Changed “A very long title that goes on and on about the garden and…”"
+    )
   })
 
   it("says the other host functions and a sub-agent in words", () => {

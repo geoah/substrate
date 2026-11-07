@@ -105,7 +105,7 @@ permissions:
   call:                            # which other functions its code may invoke
     - samples.substrate.reamde.dev/readinglist/setclass
   agents:                          # which agents its code may run
-    - samples.substrate.reamde.dev/llm/substrateSummarizer
+    - samples.substrate.reamde.dev/notes/titler
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
@@ -272,7 +272,7 @@ That is also what decides **where each is callable**:
 
 Two smaller rules follow. A host function is admissible **only from the shipped
 build**, so a bundle or an owner declaring one is refused, and a **bare name
-never resolves to one**: the five are named for what they do, which is exactly
+never resolves to one**: the seven are named for what they do, which is exactly
 what a repository's own function is likeliest to be called, so `query` keeps
 meaning the user's `query` and the built-in answers its full reference.
 
@@ -1179,9 +1179,9 @@ agent's work.
 
 ```python
 def main(input, host):
-    out = host.agents.call("samples.substrate.reamde.dev/llm/substrateSummarizer",
-                           {"page": input["args"]["id"]})
-    return {"output": {"summary": out["reply"], "status": out["status"]}}
+    out = host.agents.call("samples.substrate.reamde.dev/notes/titler",
+                           {"text": input["args"]["text"]})
+    return {"output": {"title": out["reply"], "status": out["status"]}}
 ```
 
 ## Triggers

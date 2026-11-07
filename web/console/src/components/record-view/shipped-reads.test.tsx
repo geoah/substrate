@@ -185,6 +185,8 @@ const READS: Record<string, number> = {
   "providers.substrate.reamde.dev/whoop/cycle": 8,
   // stats: 1, and 1 over the baseline. The trend: 1.
   "providers.substrate.reamde.dev/whoop/sleep": 3,
+  // No section: it only keeps the scrape's metadata closed on the sheet.
+  "providers.substrate.reamde.dev/firecrawl/webdocument": 0,
   "substrate.reamde.dev/labs/labreport": 0,
   "substrate.reamde.dev/labs/labresult": 0,
   "substrate.reamde.dev/labs/metric": 0,

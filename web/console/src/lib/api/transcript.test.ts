@@ -11,6 +11,7 @@ import {
   EMPTY_OVERLAY,
   interactionIdOf,
   interactionNoticeOf,
+  jobNoticeOf,
   proposedRequestId,
   pushCompacted,
   pushDelta,
@@ -111,6 +112,47 @@ describe("transcriptOf", () => {
     ])
     expect(turns[0].tools[0].output).toBe("late")
     expect(turns[1].tools).toHaveLength(0)
+  })
+
+  it("settles a background call again from its job's end, and reads that end as a notice", () => {
+    const ended = {
+      event: "toolCompleted",
+      toolCallId: "c1",
+      name: "librarian",
+      callable: "agent:substrate.reamde.dev:assistant:librarian",
+      ok: true,
+      output: '{"reply":"Filed 12 plants."}',
+    }
+    const turns = transcriptOf([
+      row({ role: "assistant", toolCalls: [call("c1", "librarian", "{}")] }),
+      row({
+        role: "tool",
+        content: '{"job":"working"}',
+        toolCallId: "c1",
+        name: "librarian",
+        job: { state: "done" },
+      }),
+      row({ role: "system", content: JSON.stringify(ended) }),
+    ])
+    expect(turns[0].tools[0].output).toBe('{"reply":"Filed 12 plants."}')
+    expect(turns[0].tools[0].ok).toBe(true)
+    expect(jobNoticeOf(turns[1])).toEqual({
+      callId: "c1",
+      name: "librarian",
+      callable: "agent:substrate.reamde.dev:assistant:librarian",
+      ok: true,
+      output: '{"reply":"Filed 12 plants."}',
+    })
+    // Another system row is no job's end, and a job's end names its call.
+    expect(
+      jobNoticeOf({ ...turns[1], content: '{"event":"proposalDecision"}' })
+    ).toBeUndefined()
+    expect(
+      jobNoticeOf({
+        ...turns[1],
+        content: JSON.stringify({ ...ended, toolCallId: "" }),
+      })
+    ).toBeUndefined()
   })
 
   it("gives an orphaned result its own turn rather than another turn's", () => {

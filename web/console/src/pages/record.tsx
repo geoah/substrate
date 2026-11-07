@@ -52,7 +52,7 @@ import { displayName, lowerFirst } from "@/lib/kind-names"
 import { METRIC_TRAIT, SYNC_TRAIT } from "@/lib/core-kinds"
 import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
 import { readOnlyReason } from "@/lib/provenance"
-import { foldedBy } from "@/lib/record-view"
+import { collapsedBy, foldedBy } from "@/lib/record-view"
 import { inkPlan, inkPlanNames } from "@/lib/ink-record"
 import { propSpecs } from "@/lib/record-schema"
 import { kindHasTrait } from "@/lib/sync"
@@ -166,6 +166,7 @@ export function RecordDocument({
         (inkNames.length ? "the ink above" : "the view above"),
     }
   }, [variant, views, inkNames])
+  const collapsed = useMemo(() => collapsedBy(views), [views])
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
@@ -207,6 +208,7 @@ export function RecordDocument({
             holders={holders}
             mappings={mappings.data?.records}
             elsewhere={elsewhere}
+            collapsed={collapsed}
             moved={moved}
           />
           {body && (

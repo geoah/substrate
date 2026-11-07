@@ -160,6 +160,15 @@ it("names an unnamed view's fold as the view above", async () => {
   ).toContain("1 shown under the view above")
 })
 
+it("keeps what a view collapses closed, and a view of nothing else draws no section", async () => {
+  mount([view({ name: "Raw", fold: [], sections: [], collapsed: ["coach"] })])
+  await waitFor(() => expect(sheetRows()).toEqual(["sport"]))
+  expect(screen.queryByRole("region", { name: "Raw" })).toBe(null)
+  const sheet = document.querySelector("[data-slot=property-sheet]")!
+  expect(sheet.textContent).toContain("1 more")
+  expect(sheet.textContent).not.toContain("shown under")
+})
+
 it("draws the generic sheet, nothing folded, for a kind with no view", async () => {
   mount([])
   await waitFor(() => expect(sheetRows().sort()).toEqual(["coach", "sport"]))

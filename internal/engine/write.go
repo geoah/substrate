@@ -357,6 +357,17 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 	if substrate.NamesItsRecords(t.actor) || ty.IDType() == vocabulary.IDsNamed || vocabulary.MintedID(id) {
 		return nil
 	}
+	// The fix is the hand's that chose the id, so the refusal says it in
+	// that hand's terms: an agent cannot POST, and a function body run as
+	// an agent's tool is changed by its author, not by the agent.
+	if strings.HasPrefix(string(t.actor), substrate.AgentActorPrefix) {
+		if fn := t.effectBy; fn != nil {
+			return fmt.Errorf("%w: %q is not a minted id: function %s runs as %s's tool and writes as the agent, so its new %s takes a minted id. The function has to derive it with host.ids.minted(<key>), which names the same record for the same key",
+				substrate.ErrValidation, id, fn.Identity(), t.actor, ty.Identity)
+		}
+		return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Leave the id out and the substrate mints one",
+			substrate.ErrValidation, id, ty.Identity)
+	}
 	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id yourself: a UUIDv7 as 26 lowercase Crockford base32 characters, or as canonical lowercase UUID text",
 		substrate.ErrValidation, id, ty.Identity)
 }

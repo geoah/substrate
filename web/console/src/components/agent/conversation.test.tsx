@@ -61,6 +61,7 @@ import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
 import { resetUnsent } from "@/lib/unsent-messages"
 import {
+  CONTINUE_MESSAGE,
   Conversation,
   RECONCILE_DELAY_MS,
   RELOAD_WAIT_MS,
@@ -83,12 +84,14 @@ function Harness({
   autoSend = false,
   onAutoSent,
   threadRecord,
+  keylessProvider,
 }: {
   initialThread?: string
   initialDraft?: string
   autoSend?: boolean
   onAutoSent?: () => void
   threadRecord?: SubstrateRecord
+  keylessProvider?: string
 }) {
   const [draft, setDraft] = useState(initialDraft)
   const [thread, setThread] = useState(initialThread)
@@ -103,6 +106,7 @@ function Harness({
       autoSend={autoSend}
       onAutoSent={onAutoSent}
       threadRecord={threadRecord}
+      keylessProvider={keylessProvider}
     />
   )
 }
@@ -398,6 +402,99 @@ describe("Conversation", () => {
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
     ).toBeTruthy()
+  })
+
+  it("says why the last turn didn't finish and continues it, leaving the draft alone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    const cut = runningThread("t-9")
+    cut.properties = {
+      status: "stopped",
+      reason: "stopped: the server shut down during the turn",
+    }
+    mount("t-9", { threadRecord: cut, initialDraft: "half a thought" })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(screen.getByText("Helper didn’t finish")).toBeTruthy()
+    expect(
+      screen.getByText("The server restarted while it was working.")
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(calls).toHaveLength(1)
+    expect(calls[0].thread).toBe("t-9")
+    expect(calls[0].message).toBe(CONTINUE_MESSAGE)
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "half a thought"
+    )
+    // The turn it started is running: the note is gone.
+    expect(screen.queryByText("Helper didn’t finish")).toBeNull()
+  })
+
+  it("says a failure once, in the notice, when the thread stored it", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = (threadRecord: SubstrateRecord) => (
+      <QueryClientProvider client={client}>
+        <Harness initialThread="t-11" threadRecord={threadRecord} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(view(runningThread("t-11")))
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() =>
+      attaches[0].onError?.(new ApiError("bad_request", "llm: overloaded", 400))
+    )
+    expect(screen.getByText(/couldn’t answer: llm: overloaded/)).toBeTruthy()
+    // The thread's record catches up with how the turn ended.
+    const failed = runningThread("t-11")
+    failed.properties = { status: "error", reason: "llm: overloaded" }
+    rerender(view(failed))
+    await waitFor(() =>
+      expect(
+        screen.getByText("Helper ran into a problem and didn’t finish")
+      ).toBeTruthy()
+    )
+    expect(screen.queryByText(/couldn’t answer/)).toBeNull()
+  })
+
+  it("holds Continue while the composer is blocked, and says why beside it", async () => {
+    stubRows([])
+    const cut = runningThread("t-12")
+    cut.properties = {
+      status: "stopped",
+      reason: "stopped: the server shut down during the turn",
+    }
+    mount("t-12", { threadRecord: cut, keylessProvider: "anthropic" })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    const go = screen.getByRole("button", { name: "Continue" })
+    expect(go.getAttribute("aria-disabled")).toBe("true")
+    expect(go.getAttribute("aria-describedby")).toBeTruthy()
+    expect(
+      document.getElementById(go.getAttribute("aria-describedby")!)?.textContent
+    ).toBe("Add an API key first")
+    fireEvent.click(go)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("says nothing about a turn that finished", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    const done = runningThread("t-10")
+    done.properties = { status: "ok" }
+    mount("t-10", { threadRecord: done })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull()
   })
 
   it("gives the message back when a turn is refused before it starts", async () => {

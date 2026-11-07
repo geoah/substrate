@@ -1,8 +1,8 @@
 package engine
 
-// The seeded default agent, as shipped: its system prompt carries the
-// owner's active memories, and its tools include what installed bundles
-// offer, on the request the model actually receives.
+// The shipped assistant, Moss: its system prompt carries the owner's active
+// memories, and its tools include what installed bundles offer, on the
+// request the model actually receives.
 
 import (
 	"context"
@@ -11,19 +11,19 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t, WithLLMSampleSeed(true))
+	ds := openInternalDataset(t)
 	fake := provisionAgents(t, ds)
-	// The sample names the `openai` row; point it at the fake server.
+	// Moss names the `anthropic` row; point it at the fake server, on the
+	// wire the fake speaks.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeProvider, ID: "openai",
-		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-openai"},
+		Kind: typeProvider, ID: "anthropic",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +46,11 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	putMemory(t, ds, fid("veg"), "The owner is vegetarian.", nil)
 	putMemory(t, ds, fid("old"), "The owner lives in Lisbon.", map[string]any{"active": false})
 
-	fake.script("gpt-5", fakeTurn{content: "hello"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, testdb.Repository(t)+"/llm/substrate", substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	fake.script(mossModel, fakeTurn{content: "hello"})
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
-	reqs := fake.requestsOf("gpt-5")
+	reqs := fake.requestsOf(mossModel)
 	if len(reqs) != 1 {
 		t.Fatalf("completions: %d, want 1", len(reqs))
 	}
@@ -66,7 +66,7 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 		t.Fatal("system prompt carries no engine guidance")
 	}
 	names := toolNamesSent(t, reqs[0])
-	for _, name := range []string{"query", "write", "propose", "ask", "offers_today"} {
+	for _, name := range []string{"query", "write", "propose", "ask", "wait", "edit", "offers_today"} {
 		if !slices.Contains(names, name) {
 			t.Fatalf("tools = %v, want %s among them", names, name)
 		}

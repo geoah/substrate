@@ -13,7 +13,7 @@ import { Link } from "@tanstack/react-router"
 import { MessagesSquareIcon, PlusIcon, SearchIcon } from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
-import { Pill } from "@/components/identity/pill"
+import { Pill, type PillTone } from "@/components/identity/pill"
 import { PurposeTag } from "@/components/identity/purpose-tag"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -31,6 +31,7 @@ import {
 } from "@/lib/agent-chat"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { unfinishedTone, type UnfinishedTurn } from "@/lib/agent-runs"
 import { CHAT_PAGE, visibleChats } from "./visible-chats"
 
 const AGENT_ROW =
@@ -38,6 +39,28 @@ const AGENT_ROW =
 const CHAT_ROW =
   "flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-hover aria-[current=true]:bg-selection"
 const HEADING = "px-2 pt-3 pb-1 text-[11.5px] font-medium text-faint"
+
+const UNFINISHED_PILLS = {
+  bad: { tone: "bad", words: "Failed" },
+  warn: { tone: "warn", words: "Didn’t finish" },
+  quiet: { tone: "neutral", words: "Stopped" },
+} as const satisfies Record<
+  UnfinishedTurn["tone"],
+  { tone: PillTone; words: string }
+>
+
+/** The mark of a chat whose last turn didn't finish, so it is found from
+ * the list; the chat itself says why. */
+function UnfinishedPill({ thread }: { thread: SubstrateRecord }) {
+  const tone = unfinishedTone(thread)
+  if (!tone) return null
+  const pill = UNFINISHED_PILLS[tone]
+  return (
+    <Pill tone={pill.tone} className="shrink-0">
+      {pill.words}
+    </Pill>
+  )
+}
 
 function Count({ n }: { n: number }) {
   if (!n) return null
@@ -283,6 +306,7 @@ export function ThreadList({
                           Working
                         </Pill>
                       )}
+                      <UnfinishedPill thread={row.thread} />
                     </span>
                     {row.preview && (
                       <span className="truncate text-xs text-muted-foreground">

@@ -330,3 +330,33 @@ export function chatBlocks(text: string): Block[] {
   flush()
   return blocks
 }
+
+/** The web pages a reply links, in the order it first links each, once
+ * each: the sources a reader may want to open. The text of a page's first
+ * link is its title. */
+export function replyLinks(text: string): { href: string; text: string }[] {
+  const seen = new Map<string, string>()
+  const walk = (runs: Inline[]) => {
+    for (const run of runs) {
+      if (run.type === "link" && !seen.has(run.href)) {
+        seen.set(run.href, run.text)
+      } else if (run.type === "strong") {
+        walk(run.runs)
+      }
+    }
+  }
+  for (const block of chatBlocks(text)) {
+    switch (block.type) {
+      case "paragraph":
+        block.lines.forEach(walk)
+        break
+      case "heading":
+        walk(block.runs)
+        break
+      case "list":
+        block.items.forEach(walk)
+        break
+    }
+  }
+  return [...seen].map(([href, text]) => ({ href, text }))
+}

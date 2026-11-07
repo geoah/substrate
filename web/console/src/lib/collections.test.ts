@@ -152,22 +152,27 @@ describe("the owner's data inside the machinery packages", () => {
       kind("substrate.reamde.dev/core/kind", "internal"),
       kind("substrate.reamde.dev/core/contact", "primary"),
       kind("substrate.reamde.dev/llm/memory", "primary"),
+      kind("substrate.reamde.dev/llm/instruction", "primary"),
       kind("substrate.reamde.dev/llm/thread", "internal"),
     ],
     "ada.example.com"
   )
 
-  it("gives each owner-data kind a group of its own, named by its plural, before the substrate", () => {
+  it("gives an owner-data kind a group of its own, and the assistant's memories and instructions one together, before the substrate", () => {
     expect(groups.map((g) => [g.id, g.label, g.type])).toEqual([
+      ["group:package:substrate.reamde.dev/llm", "Assistant", "package"],
       [
         "group:package:substrate.reamde.dev/core/contact",
         "Contacts",
         "package",
       ],
-      ["group:package:substrate.reamde.dev/llm/memory", "Memories", "package"],
       ["group:system", "Substrate", "system"],
     ])
     expect(groups[0].primary.map((k) => k.identity)).toEqual([
+      "substrate.reamde.dev/llm/instruction",
+      "substrate.reamde.dev/llm/memory",
+    ])
+    expect(groups[1].primary.map((k) => k.identity)).toEqual([
       "substrate.reamde.dev/core/contact",
     ])
     expect(
@@ -181,9 +186,12 @@ describe("the owner's data inside the machinery packages", () => {
     ])
   })
 
-  it("says an owner-data kind sits in its own group", () => {
+  it("says an owner-data kind sits in its own group, or the group it shares", () => {
     expect(collectionSource("substrate.reamde.dev/core/contact")).toBe(
       "Contacts"
+    )
+    expect(collectionSource("substrate.reamde.dev/llm/memory")).toBe(
+      "Assistant"
     )
   })
 })

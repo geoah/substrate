@@ -348,12 +348,12 @@ The agent loop is core: the `agent` kind, its built-in tools and the
 console's chat all ship in the engine, which is why `assistant` needed
 nothing installed. The one thing a substrate cannot invent is an LLM
 provider key. Providers are `llm/provider` records, and registration seeded
-three keyless rows (`openai`, `anthropic`, `gemini`) beside the LLM sample's
-agents, so the row `assistant` names already exists. That sample is a
-**bundle**, the install unit: a closure like `chores.yaml`, installed and
-removed as one thing. Its files are under [samples/llm](samples/llm), and
-the console adds the rest of the catalog the same way: a provider from its
-Providers page, a sample from All data's **Add a collection**.
+three keyless rows (`openai`, `anthropic`, `gemini`) beside Moss, the
+assistant every repository ships with, so the row `assistant` names already
+exists. A package the catalog serves is a **bundle**, the install unit: a
+closure like `chores.yaml`, installed and removed as one thing. The console
+adds them: a provider from its Providers page, a sample from All data's
+**Add a collection**.
 
 Put a key on the row `assistant` names. It is an ordinary record write, and
 `apiKey` is secret-typed, so it reads back redacted ever after:

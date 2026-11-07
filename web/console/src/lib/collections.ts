@@ -3,7 +3,9 @@
  * packages, every other authority's that is neither a provider's nor the
  * substrate's machinery, and the substrate's observations and well-known
  * catalogues), one group per owner-data kind inside the machinery packages
- * ("Contacts", named by its plural, since its package is core), one "From
+ * ("Contacts", named by its plural, since its package is core) or one
+ * named group for the ones a package lists together ("Assistant": the
+ * owner's memories and instructions), one "From
  * <Provider>" group per provider package, and the substrate's own machinery
  * (core, llm, console) last. The package is the
  * group because it is the unit one publisher versions and ships together,
@@ -19,7 +21,11 @@ import {
   type ProviderInfo,
 } from "@/lib/actor-identity"
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
-import { isMachineryKind, isSeededOwnerData } from "@/lib/core-kinds"
+import {
+  isMachineryKind,
+  isSeededOwnerData,
+  sharedOwnerDataGroup,
+} from "@/lib/core-kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural, lowerFirst, packageDisplayName } from "@/lib/kind-names"
@@ -132,9 +138,12 @@ export function collectionGroups(
     else {
       // An owner-data kind of a machinery package is a group of its own: its
       // package is the substrate's, and "Core" names nothing a person keeps.
-      const id = isSeededOwnerData(k.identity)
-        ? k.identity
-        : `${k.authority}/${k.package}`
+      // The ones a package lists together (the assistant's memories and
+      // instructions) share their package's group, under its own name.
+      const id =
+        isSeededOwnerData(k.identity) && !sharedOwnerDataGroup(k.identity)
+          ? k.identity
+          : `${k.authority}/${k.package}`
       packages.set(id, [...(packages.get(id) ?? []), k])
     }
   }
@@ -143,8 +152,8 @@ export function collectionGroups(
       id,
       list,
       authority: list[0].authority,
-      word: isSeededOwnerData(id)
-        ? displayPlural(list[0])
+      word: isSeededOwnerData(list[0].identity)
+        ? (sharedOwnerDataGroup(list[0].identity) ?? displayPlural(list[0]))
         : packageDisplayName(list[0].package),
     }))
     .sort(
@@ -187,7 +196,8 @@ export function collectionGroups(
 export function collectionSource(kind: string): string {
   const provider = providerOfKind(kind)
   if (provider) return `From ${provider.name}`
-  if (isSeededOwnerData(kind)) return displayPlural(kind)
+  if (isSeededOwnerData(kind))
+    return sharedOwnerDataGroup(kind) ?? displayPlural(kind)
   const { pkg } = splitKind(kind)
   return isMachineryKind(kind) ? "Substrate" : packageDisplayName(pkg)
 }

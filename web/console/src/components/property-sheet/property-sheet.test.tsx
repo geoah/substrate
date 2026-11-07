@@ -422,6 +422,29 @@ describe("PropertySheet on a kind binding observed", () => {
     expect(row("value")).not.toBeNull()
     expect(row("form")).not.toBeNull()
   })
+
+  it("keeps what a view collapses closed under one line, and opens it on asking", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <PropertySheet
+          record={reading}
+          kind={observation}
+          kinds={[observation]}
+          collapsed={["specimen", "nothere"]}
+        />
+      </QueryClientProvider>
+    )
+    expect(row("specimen")).toBeNull()
+    expect(row("value")).not.toBeNull()
+    const closed = screen.getByRole("button", { name: /1 more/ })
+    expect(closed.getAttribute("aria-expanded")).toBe("false")
+    expect(closed.textContent).toContain("Specimen")
+    fireEvent.click(closed)
+    expect(row("specimen")).not.toBeNull()
+  })
 })
 
 describe("PropertySheet inline edit", () => {

@@ -105,15 +105,15 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 // example is the case that proves it: its closure is agents, and the two
 // keyless llm/provider rows it writes are the things the reader is then told
 // to go and key. A preview that named only the declarations showed that
-// bundle as "six agents and nothing else", which is what it looked like on
+// bundle as "three agents and nothing else", which is what it looked like on
 // the Registry page.
 func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	b, ok := realCatalog(t).ByID("samples.substrate.reamde.dev/llm")
 	if !ok {
 		t.Fatal("llm bundle missing")
 	}
-	if got := len(b.Closure.Agents); got != 6 {
-		t.Errorf("agents = %d, want 6 (%v)", got, b.Closure.Agents)
+	if got := len(b.Closure.Agents); got != 3 {
+		t.Errorf("agents = %d, want 3 (%v)", got, b.Closure.Agents)
 	}
 	// `openai` is the row every shipped sample agent names: the seed writes
 	// it keyless, and importing this bundle is what makes the agents runnable

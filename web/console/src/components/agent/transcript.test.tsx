@@ -100,6 +100,47 @@ describe("the transcript", () => {
     expect(container.querySelector("li strong")?.textContent).toBe("late")
   })
 
+  it("says a background job's end as a quiet line, by the sub-agent's name", () => {
+    render(
+      <Transcript
+        turns={[
+          turn({
+            key: "s2",
+            role: "system",
+            content: JSON.stringify({
+              event: "toolCompleted",
+              toolCallId: "c1",
+              name: "librarian",
+              callable: "agent:substrate.reamde.dev:assistant:librarian",
+              ok: true,
+              output: "{}",
+            }),
+          }),
+          turn({
+            key: "s3",
+            role: "system",
+            content: JSON.stringify({
+              event: "toolCompleted",
+              toolCallId: "c2",
+              name: "librarian",
+              callable: "agent:substrate.reamde.dev:assistant:librarian",
+              ok: false,
+              output: '{"error":"interrupted"}',
+            }),
+          }),
+        ]}
+      />
+    )
+    expect(
+      screen.getByText("Librarian finished in the background")
+    ).toBeTruthy()
+    expect(
+      screen.getByText("Librarian didn’t finish in the background")
+    ).toBeTruthy()
+    // Decoded, so never shown as the raw envelope.
+    expect(screen.queryByText(/toolCompleted/)).toBeNull()
+  })
+
   it("says a decision in words", () => {
     render(
       <Transcript

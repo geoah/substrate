@@ -1,50 +1,40 @@
-# The LLM example: the provider rows a substrate needs before any agent can
-# run, and the agents that prove them.
+# The LLM sample: the agents that teach the decision loop, and the
+# scratchpad they practise on. Import it to see an agent write, judge and
+# decide; the owner's assistant, Moss, ships with the binary instead
+# (kinds/substrate.reamde.dev/assistant) and needs none of this.
 #
 # OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
 # example, not shipped vocabulary. Its declarations may change or leave
 # without an upgrade path, and installing it accepts that. Nothing outside
 # this directory declares against it.
 #
-# A new repository is seeded with this bundle (rehomed onto its own
-# authority) and with three keyless llm/provider rows: openai, anthropic,
-# gemini. The agents name `openai`. Key that row's apiKey and they run;
-# point an agent at another row to use a different vendor.
-#
-#   1. Registration already imported this bundle.
-#   2. Data → providers → `openai` → Edit, and put your key in `apiKey`.
-#      It is secret-typed: it reads back redacted ever after, and writing it
-#      again is how a rotation is done.
-#   3. Agents → `<authority>/llm/substrate` → chat.
+# Nothing imports it for you: `substratectl import
+# samples.substrate.reamde.dev/llm`, or All data, Add a collection. Its
+# agents name the seeded `openai` row; key that row's apiKey and they run.
 #
 # This bundle declares NO inputs: nothing here reads a configuration record.
 # The agents name their provider row directly, and the one setup signal (a
 # provider row that is still keyless) is the host's own status probe, surfaced
 # on the bundle status as a "provider" setup item with no declaration needed.
 #
-# Six agents, five lessons. `substrate` is the flagship, the owner's general
-# assistant, granted `*` for both reads and writes, so it sees and changes
-# everything the repository holds EXCEPT its auth material, which no glob
-# reaches (record 0080). It pins the owner's active llm/memory rows, takes
-# every function an installed bundle offers, and carries `propose` beside
-# `write` and chooses between them, so a change it inferred still lands as a
-# recordpatchrequest the owner decides on — and the decision comes BACK into
-# the thread as a `system` message, resuming it. `substrateEditor` holds the
-# `write` grant narrowed the other way, to this bundle's own `scratchpad`
-# kind, so its tool rows show engine-stamped `changes`. `substrateArbiter`
-# is the judge: point a trigger at fresh recordpatchrequests and it accepts
-# or rejects them through `write`.
-# `substrateEcho` demonstrates delegation, and `substrateSummarizer` is the
-# sub-agent it delegates to, marked `hiddenFromChat` so the chat list never
-# offers it: it exists to be called. For functions as tools, install the
-# notes example beside this one.
+# Three agents, three lessons. `substrateEditor` holds the `write` grant
+# narrowed to this bundle's own `scratchpad` kind, so its tool rows show
+# engine-stamped `changes`. `substrateArbiter` decides change requests: point
+# a trigger at fresh recordpatchrequests and it accepts or rejects them
+# through `write`. `substrateJudge` is the tool-less verdict a
+# recordpatchpolicy names under `judge:`. The assistant this sample once
+# carried, and its delegation pair, left when Moss shipped: Moss's own
+# helpers are the delegation example now. For functions as tools, install
+# the notes example beside this one.
 kind: substrate.reamde.dev/core/package
 metadata:
   id: samples.substrate.reamde.dev/llm
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 30
+  # 32: the assistant (`substrate`) and the delegation pair (`substrateEcho`,
+  # `substrateSummarizer`) left; Moss, shipped, replaces them.
+  version: 32
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -53,17 +43,13 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    Three keyless provider rows and six agents: chat with everything you have,
-    an editor, two judges, and a pair where one agent calls another. Paste
-    an OpenAI key, chat.
+    Three agents that teach the decision loop, an editor, an arbiter and a
+    policy judge, and the scratchpad they practise on.
   installs:
     - samples.substrate.reamde.dev/llm/scratchpad
-    - samples.substrate.reamde.dev/llm/substrate
     - samples.substrate.reamde.dev/llm/substrateEditor
     - samples.substrate.reamde.dev/llm/substrateArbiter
     - samples.substrate.reamde.dev/llm/substrateJudge
-    - samples.substrate.reamde.dev/llm/substrateSummarizer
-    - samples.substrate.reamde.dev/llm/substrateEcho
 ---
 # ---- the practice surface: a kind with no stakes ----------------------------
 # The decision loop needs a kind somebody may actually change: proposals
@@ -76,10 +62,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
-    A place to try out the assistant: a name and a note. A practice record
-    for the LLM sample: a name and a note, nothing else. Propose one through
-    the assistant, edit one through the editor, let the arbiter judge a change
-    to one.
+    A practice record for the LLM sample's lessons: a name and a note, nothing
+    else. Edit one through the editor, let the arbiter or the judge decide
+    a change to one.
   purpose: supporting
   names:
     singular: scratchpad
@@ -91,143 +76,6 @@ data:
     note:
       type: text
       description: whatever is being practised on
----
-# ---- the flagship: the owner's assistant -----------------------------------
-# Both grants are `*`, the widest an agent can hold: every kind the
-# repository has now and every kind it gains later, the four auth kinds
-# excepted, which a glob never reaches (record 0080). That is what keeps one
-# agent useful across a repository whose vocabulary keeps growing; the
-# alternative was editing its grant after every import.
-#
-# It holds `write` AND `propose`, and the prompt below is what chooses: a
-# change the owner asked for is written, a change the agent inferred is
-# proposed. NARROW BOTH GRANTS if you would rather it could not write: drop
-# the `write` tool and name the kinds, as `substrateEditor` does.
-#
-# The prompt is static on purpose. What changes per turn (the time, the zone,
-# the records the owner points at) rides the turn context, and the owner's
-# standing facts ride the pinned block, read once per thread, so the system
-# prompt is one cacheable prefix for a thread's whole life. The engine's
-# guidance already carries the link format, the trust boundary and the
-# parallel-reads rule, so the prompt does not repeat them.
-kind: substrate.reamde.dev/core/agent
-metadata:
-  id: samples.substrate.reamde.dev/llm/substrate
-data:
-  purpose: primary
-  authority: samples.substrate.reamde.dev
-  package: llm
-  description: >-
-    Your assistant: answers from your records, remembers what you ask it to,
-    uses the tools your bundles offer, and changes records or proposes the
-    changes you should decide.
-  prompt: |
-    You are the owner's assistant. You answer from their records, change
-    them when asked, and propose what they should decide themselves.
-
-    Answering. Answer in the first sentence; never restate the question.
-    Short paragraphs, and a list only for a list. After tool work, end with a
-    short summary that stands on its own: what you found or changed.
-
-    Honesty. Never state a date, amount, name or id no record gave you. When
-    the evidence is thin, say "I'm not sure" and what would settle it. When
-    nothing matches, say so and offer where to look next.
-
-    Time. Resolve today, tomorrow and weekdays against the turn context's
-    now, in its zone.
-
-    Memory. What you know about the owner is in the pinned context block.
-    When they state a lasting preference or fact about themselves, propose a
-    substrate.reamde.dev/llm/memory create: "text" one sentence, "source"
-    "agent". Never store what they told you in confidence about someone else.
-
-    Offered tools. Installed bundles may offer tools beside query, write,
-    propose and ask: a feed of what needs attention, a day's schedule, recent
-    activity. When one answers the question, call it before composing
-    queries, and do not re-check its answer with query. Query what no
-    offered tool covers.
-
-    What needs the owner: the offered tools that answer it, then change
-    requests waiting on them (substrate.reamde.dev/core/recordpatchrequest,
-    decision "proposed"), open questions from agents
-    (substrate.reamde.dev/llm/interaction, state "pending"), and what is due
-    or overdue in their own kinds.
-
-    Reading. query is the one read: kind + id for one record; filter
-    (+ orderBy, first, after, expand) for a page, answering
-    {records, cursor, included?}; q + filter.kinds (+ first) for search that
-    tolerates near-matches, naming kinds from the list below. A filter is
-    {kinds, ids, implements, properties, labels, deleted, referencing},
-    properties mapping a name to eq, in, prefix, gt, gte, lt, lte, contains
-    or exists. A filter matches exactly; when spelling may vary, use q. Never
-    guess a property name: read the declaration (kind
-    "substrate.reamde.dev/core/kind", id the kind reference) beside your
-    first search. Every failed call spends a small budget.
-
-    Writing. write changes a record now (op put or patch, properties under
-    input as {"properties": {...}}): use it for what the owner asked.
-    propose lands a change request the owner decides (op create, patch or
-    delete, values under diff.properties): use it for what you inferred,
-    anything large, a record you are unsure of, and every delete. One
-    proposal at a time unless asked for several. A kind is its full
-    reference, "{authority}/{package}/{name}", as a record's kind field
-    shows it. Ids come from query results, except a new record's, which you
-    choose short and lowercase after searching for it. After a proposal, say
-    in one line what you proposed and stop; after a write, do not repeat it.
-    Credentials, tokens, secrets and recovery keys are outside your grant;
-    say so if asked to change one.
-
-    Decisions. A message whose JSON carries event "proposalDecision" is the
-    owner's verdict on your proposal. Acknowledge it in one line, and never
-    re-propose a rejected change unless asked.
-
-    Asking. When the owner must choose, make one ask call with every
-    question (at most 8; each an id, a prompt, and options [{value, label}]
-    or none for yes or no; multi: true admits several), then end your turn.
-    The answers arrive later as event "interactionAnswered" or
-    "interactionDismissed", keyed by your ids; never re-ask while one is
-    pending. When no choice list helps, end your reply with one plain
-    clarifying question instead.
-  # gpt-5 thinks at `low` before a multi-read answer; `minimal` planned too
-  # little. No `reasoningSummary`: the seeded `openai` row is OpenAI's own
-  # endpoint, which refuses the extra `thinking` key. Point the agent at the
-  # `anthropic` row, or a gateway that forwards the key, and add it.
-  provider: openai
-  model: gpt-5
-  params:
-    reasoningEffort: low
-  tools:
-    - function: substrate.reamde.dev/core/query
-    - function: substrate.reamde.dev/core/write
-    - function: substrate.reamde.dev/core/propose
-    - function: substrate.reamde.dev/core/ask
-  # Every function an installed bundle offers (record 0198). It adds no
-  # authority this agent lacks: an offered function's effects are held to
-  # the writes below and pass the policy door like `write`'s.
-  toolsFrom:
-    - functions: "*"
-  # The owner's active memories, read once when a thread opens (record
-  # 0197). The `*` read grant below covers the kind.
-  context:
-    pinned:
-      - kind: substrate.reamde.dev/llm/memory
-        filter: '{"properties": {"active": {"eq": true}}}'
-        orderBy: id
-        first: 200
-        fields: [text]
-  permissions:
-    reads:
-      kinds: ["*"]
-    writes: ["*"]
-  # Calls that run together spend tool calls faster and need fewer model
-  # turns, hence many calls over few turns. The daily cap keeps a default
-  # agent from being the first thing to spend a budget.
-  budgets:
-    maxTurns: 12
-    maxToolCalls: 32
-    maxParallelTools: 4
-    deadlineSeconds: 300
-    spendCentsPerDay: 200
 ---
 # ---- the write lesson: direct writes, scoped to the practice kind -----------
 # Where `substrate` writes anything, this one WRITES scratchpads alone,
@@ -389,53 +237,3 @@ data:
     maxTurns: 2
     maxToolCalls: 1
     deadlineSeconds: 60
----
-# ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
-# no emit at all, so nothing it is asked to do can write a record; and it is
-# hiddenFromChat, so the chat list never offers it while the loop still
-# dispatches it when substrateEcho calls.
-kind: substrate.reamde.dev/core/agent
-metadata:
-  id: samples.substrate.reamde.dev/llm/substrateSummarizer
-data:
-  purpose: supporting
-  authority: samples.substrate.reamde.dev
-  package: llm
-  description: Summarize a piece of text in one sentence.
-  prompt: |
-    Summarize what you are given in ONE short sentence. No preamble, no
-    bullet points, no closing remark — the sentence alone.
-  provider: openai
-  model: gpt-5-mini
-  # One sentence and nothing else: no links, no guidance.
-  params:
-    engineGuidance: false
-  hiddenFromChat: true
-  budgets:
-    maxTurns: 2
-    maxToolCalls: 1
----
-# ---- the delegation demo: calls the sub-agent, which is a tool call like
-# any other and shows up as one in the console's transcript.
-kind: substrate.reamde.dev/core/agent
-metadata:
-  id: samples.substrate.reamde.dev/llm/substrateEcho
-data:
-  purpose: supporting
-  authority: samples.substrate.reamde.dev
-  package: llm
-  description: Answers you, and summarizes what you said through a sub-agent.
-  prompt: |
-    You are a demonstration agent. Whatever you are given, hand it to the
-    summarizer sub-agent, then answer in one short line: the summary it
-    returned, and one sentence of your own. Always call the sub-agent rather
-    than summarizing yourself — the point is to show the call.
-  provider: openai
-  model: gpt-5-mini
-  params:
-    reasoningEffort: minimal
-  subagents: [samples.substrate.reamde.dev/llm/substrateSummarizer]
-  budgets:
-    maxTurns: 4
-    maxToolCalls: 2
-    depth: 2

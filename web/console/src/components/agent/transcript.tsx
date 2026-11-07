@@ -31,37 +31,66 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { agentName, resolveTool } from "@/lib/agent-chat"
 import {
   decisionNoticeOf,
   deliveryNoticeOf,
   interactionNoticeOf,
+  jobNoticeOf,
   type CompactionView,
+  type JobNotice,
   type TurnView,
 } from "@/lib/api/transcript"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
+import { toolName } from "@/lib/tools"
 import { cn } from "@/lib/utils"
+import { ReplySources } from "@/components/agent/reply-sources"
 
-/** The substrate's own turn: a decision or an answer as one quiet line, or —
- * for a system row this reader cannot decode — the raw content, so nothing in
- * a thread is ever silently dropped. */
-function SystemTurn({ turn }: { turn: TurnView }) {
+/** What ran in the background, by the callable behind the name the model
+ * saw: a sub-agent by its name, a function by its own. */
+function jobName(ended: JobNotice, agent?: SubstrateRecord): string {
+  const resolved = resolveTool(agent, ended.name, ended.callable)
+  if (resolved.subagent) return agentName(resolved.subagent)
+  return toolName(resolved.function ?? ended.name) || "A tool"
+}
+
+/** The substrate's own turn: a decision, an answer or a background job's end
+ * as one quiet line, or — for a system row this reader cannot decode — the
+ * raw content, so nothing in a thread is ever silently dropped. */
+function SystemTurn({
+  turn,
+  agent,
+}: {
+  turn: TurnView
+  agent?: SubstrateRecord
+}) {
   const [technical] = useTechnicalDetails()
   const notice = decisionNoticeOf(turn)
   const interaction = interactionNoticeOf(turn)
+  const ended = jobNoticeOf(turn)
   const target = notice?.target ? splitRecordPath(notice.target) : undefined
   const positive = interaction
     ? interaction.event === "interactionAnswered"
-    : notice?.decision === "accepted"
+    : ended
+      ? ended.ok
+      : notice?.decision === "accepted"
   const Icon = positive ? CheckCircle2Icon : XCircleIcon
   return (
     <div className="flex flex-col items-center gap-1.5 text-[12.5px] text-muted-foreground">
-      {interaction || notice ? (
+      {interaction || notice || ended ? (
         <div className="flex flex-wrap items-center justify-center gap-1.5">
           <Icon
             className={positive ? "size-3.5 text-ok" : "size-3.5 text-faint"}
           />
-          {interaction ? (
+          {ended ? (
+            <span>
+              {jobName(ended, agent)}{" "}
+              {ended.ok
+                ? "finished in the background"
+                : "didn’t finish in the background"}
+            </span>
+          ) : interaction ? (
             <span>
               You{" "}
               {interaction.event === "interactionAnswered"
@@ -270,6 +299,9 @@ function AgentReply({
                 {turn.content && (
                   <MessageText text={turn.content} mentions={turn.mentions} />
                 )}
+                {turn.content && turn.key !== liveKey && (
+                  <ReplySources text={turn.content} />
+                )}
                 {turn.key === liveKey && (
                   <span
                     aria-label="Still writing"
@@ -351,7 +383,13 @@ export function Transcript({
           case "user":
             return <UserTurn key={group.turn.key} turn={group.turn} />
           case "system":
-            return <SystemTurn key={group.turn.key} turn={group.turn} />
+            return (
+              <SystemTurn
+                key={group.turn.key}
+                turn={group.turn}
+                agent={agent}
+              />
+            )
           case "summary":
             return <SummaryTurn key={group.turn.key} turn={group.turn} />
           default:

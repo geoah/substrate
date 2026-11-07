@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -233,13 +234,13 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	}
 }
 
-// Production Open imports the LLM sample at creation: the demo agents and
-// scratchpad land under the repository's own authority, and they name the
-// seeded openai provider.
-func TestCreationSeedsLLMSample(t *testing.T) {
+// A new repository ships one assistant: the seeded Moss and its two helpers,
+// naming the seeded anthropic provider, and no copy of the LLM sample, whose
+// lessons are the catalog's to import.
+func TestCreationSeedsTheAssistantAndNoSample(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, engine.WithLLMSampleSeed(true), engine.WithLLMProviderSeed(true))
+	svc, _ := newService(t, engine.WithLLMProviderSeed(true))
 	repo := testdb.Repository(t)
 	if _, err := svc.CreateRepository(ctx, repo); err != nil {
 		t.Fatalf("create: %v", err)
@@ -248,22 +249,32 @@ func TestCreationSeedsLLMSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.KindByRef(ctx, repo+"/llm/scratchpad"); err != nil {
-		t.Fatalf("the llm sample scratchpad kind: %v", err)
-	}
-	agent, err := ds.Get(ctx, "substrate.reamde.dev/core/agent", repo+"/llm/substrate")
+	moss, err := ds.Get(ctx, "substrate.reamde.dev/core/agent", "substrate.reamde.dev/assistant/moss")
 	if err != nil {
-		t.Fatalf("the seeded substrate agent: %v", err)
+		t.Fatalf("the shipped assistant: %v", err)
 	}
-	if got := fmt.Sprint(agent.Properties["provider"]); !strings.Contains(got, "openai") {
-		t.Fatalf("seeded agent provider = %v, want openai", agent.Properties["provider"])
+	if got := fmt.Sprint(moss.Properties["provider"]); !strings.Contains(got, "anthropic") {
+		t.Fatalf("Moss's provider = %v, want anthropic", moss.Properties["provider"])
 	}
-	// Never none: the agent carries tools on gpt-5, whose accepted set starts
-	// at minimal — "none" is the gpt-5.6 family's spelling and gpt-5 refuses
-	// it outright.
-	params, _ := agent.Properties["params"].(map[string]any)
-	if params["reasoningEffort"] != "low" {
-		t.Fatalf("seeded agent params.reasoningEffort = %v, want low", agent.Properties["params"])
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/agent"}}, First: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agents []string
+	for _, r := range page.Records {
+		agents = append(agents, r.ID)
+	}
+	slices.Sort(agents)
+	want := []string{
+		"substrate.reamde.dev/assistant/architect",
+		"substrate.reamde.dev/assistant/librarian",
+		"substrate.reamde.dev/assistant/moss",
+	}
+	if !slices.Equal(agents, want) {
+		t.Fatalf("agents = %v, want only the shipped assistant's %v", agents, want)
+	}
+	if _, err := ds.KindByRef(ctx, repo+"/llm/scratchpad"); err == nil {
+		t.Fatal("creation imported the LLM sample's scratchpad")
 	}
 }
 

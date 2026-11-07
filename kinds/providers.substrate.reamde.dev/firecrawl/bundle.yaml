@@ -29,7 +29,10 @@ data:
   # 1: moved from the samples tier, `scrapepage` renamed `webscrape`, both
   #    functions offered to agents, and `webdocument` titled by its
   #    `pageTitle`.
-  version: 1
+  # 2: a webdocument is kept under host.ids.minted(url), which an agent's
+  #    tool may name (decision 0228), and its content is markdown, which the
+  #    record page reads as the document's body.
+  version: 2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -138,8 +141,12 @@ data:
 ---
 # ---- the webdocument kind: what a scrape leaves behind ---------------------
 # webscrape's durable output, owned by THIS package (a bundle's effects stay
-# inside its own package's kinds). The id is host.ids.url(url), so scraping
-# the same URL again updates one document instead of minting a second.
+# inside its own package's kinds). The id is host.ids.minted(url), so scraping
+# the same URL again updates one document instead of minting a second. The
+# id is minted-shaped because webscrape runs as an agent's tool, and writes
+# as the agent, which may name a new record only by a minted id (decision
+# 0228). A document kept before version 2 keeps its `url-` id, and the next
+# scrape of its page keeps a second one under the minted id.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/firecrawl/webdocument
@@ -148,8 +155,8 @@ data:
   package: firecrawl
   description: >-
     A web page, saved as text. What a scrape leaves behind: the page as markdown,
-    capped, with the scrape metadata beside it. The id is a hash of the URL,
-    so scraping the same page again updates one document instead of minting
+    capped, with the scrape metadata beside it. The id is derived from the
+    URL, so scraping the same page again updates one document instead of minting
     a second.
   purpose: supporting
   names:
@@ -159,14 +166,14 @@ data:
     url:
       type: url
       displayName: URL
-      description: the scraped URL; the document id is host.ids.url(url),
-        a hash of it
+      description: the scraped URL; the document id is host.ids.minted(url),
+        derived from it
     pageTitle:
       type: string
       displayName: Page title
       description: the page's own title, as the scrape read it
     content:
-      type: text
+      type: markdown
       displayName: Content
       description: the page as markdown, capped at 24000 characters
     truncated:
@@ -249,7 +256,7 @@ data:
 ---
 # ---- function: webscrape ---------------------------------------------------
 # The write half: scrape one URL as markdown (capped), keep it as a
-# webdocument put under host.ids.url(url) (if_absent stays FALSE, so a
+# webdocument put under host.ids.minted(url) (if_absent stays FALSE, so a
 # re-scrape UPDATES the one document) and return the document id with the
 # content. An agent taking it needs this package's `webdocument` in its own
 # `permissions.writes`, because a tool's writes are its own intersected with
@@ -342,7 +349,10 @@ data:
                  "raw": meta}
         if title:
             props["pageTitle"] = title
-        doc = host.ids.url(url)
+        # Minted-shaped, because an agent's tool writes as the agent, which
+        # names a new record only by a minted id (decision 0228); derived
+        # from the url, so a re-scrape names the same document.
+        doc = host.ids.minted(url)
         # if_absent stays False: the SAME id on a re-scrape is an update of
         # the one document, never a silent no-op.
         host.effects.put(DOC_KIND, doc, properties=props)

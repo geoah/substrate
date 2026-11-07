@@ -142,6 +142,11 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 		}
 	}
 	finish := func(c *toolRun) {
+		if !c.ok && !c.refused && strings.Contains(c.out, context.Canceled.Error()) {
+			if stopped, why := l.stopReason(ctx); stopped {
+				c.out = stoppedCall(why)
+			}
+		}
 		c.out = l.capToolResult(c.out)
 		job := ""
 		if c.job != nil {

@@ -71,6 +71,19 @@ func reasonStoppedBy(actor substrate.Actor) string {
 	return "stopped by " + string(actor)
 }
 
+// stoppedCall is the result of a call a stop or the shutdown cut off, in
+// place of the bare "context canceled" its dispatch failed with. The owner
+// reads it under the call, and the model reads it when the owner's next
+// message replays the thread, so it says what happened and that nothing came
+// back. The shutdown's says "restarted": whoever reads the row reads it from
+// a server that came back.
+func stoppedCall(reason string) string {
+	if reason == reasonShutdown {
+		return toolError("the server restarted before this call finished, so it returned nothing; run it again if it is still needed")
+	}
+	return toolError("the turn was stopped before this call finished, so it returned nothing")
+}
+
 // agentSettleTimeout bounds a detached turn's last writes, which run on a
 // context its stop and its shutdown do not cancel.
 const agentSettleTimeout = 30 * time.Second
@@ -1891,6 +1904,11 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		if fn.Input != nil {
 			params = fn.Input
 		}
+		// The authority a new package must live under is the repository's,
+		// and nothing else the model sees names it.
+		if t.Builtin == vocabulary.AgentToolVocabulary {
+			description += " The owner's authority is " + l.ds.scope.Repository + "."
+		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)
 			if l.ag.Reads != nil {
@@ -2108,6 +2126,10 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchAsk(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolWait:
 		return l.dispatchWait(ctx, args)
+	case tool.builtin == vocabulary.AgentToolVocabulary:
+		return l.dispatchVocabulary(ctx, c, args)
+	case tool.builtin == vocabulary.AgentToolEdit:
+		return l.dispatchEdit(ctx, c, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:
@@ -2871,11 +2893,8 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabu
 			return toolError("output: " + err.Error()), false
 		}
 	}
-	for _, ef := range effects {
-		if !l.emitAllows(ef.Type) {
-			return toolError(fmt.Sprintf("effect %s %s: %s is not in agent %s's effective emit allowlist — nothing applied",
-				ef.Action, ef.ID, ef.Type, l.ag.Identity())), false
-		}
+	if err := l.effectsAllowed(effects); err != nil {
+		return toolError(err.Error()), false
 	}
 	// The policy door, per effect, matched on this agent and on the function
 	// whose body returned the effect, plus the declaration's own floor
@@ -2959,6 +2978,28 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, c *toolRun, fn *vocabu
 		}
 	}
 	return toolJSON(map[string]any{"output": output, "effects": len(effects)}), true
+}
+
+// effectsAllowed holds the effects of a function this agent ran to the
+// agent's own grants, as its own writes are: every kind in its effective
+// emit, and the machinery and the instructions only where its own writes name
+// them (namedOnly). A function's body is not a way around the agent that
+// called it, in a call or in a background job.
+func (l *agentLoop) effectsAllowed(effects []effect) error {
+	for _, ef := range effects {
+		if !l.emitAllows(ef.Type) {
+			return fmt.Errorf("effect %s %s: %s is not in agent %s's effective emit allowlist — nothing applied",
+				ef.Action, ef.ID, ef.Type, l.ag.Identity())
+		}
+		ty, err := l.ds.resolveType(ef.Type)
+		if err != nil {
+			return err
+		}
+		if err := l.namedOnly(ty); err != nil {
+			return fmt.Errorf("effect %s %s: %w", ef.Action, ef.ID, err)
+		}
+	}
+	return nil
 }
 
 // --- sub-agents ------------------------------------------------------------------

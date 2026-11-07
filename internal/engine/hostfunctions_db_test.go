@@ -24,13 +24,15 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// hostFunctionIDs are the five, in the order the assertions name them.
+// hostFunctionIDs are the seven, in the order the assertions name them.
 var hostFunctionIDs = []string{
 	vocabulary.HostFunctionQuery,
 	vocabulary.HostFunctionWrite,
 	vocabulary.HostFunctionPropose,
 	vocabulary.HostFunctionAsk,
 	vocabulary.HostFunctionWait,
+	vocabulary.HostFunctionVocabulary,
+	vocabulary.HostFunctionEdit,
 }
 
 // A FRESH REPOSITORY HOLDS THEM. The seed writes the binary's tree into the
@@ -179,6 +181,10 @@ func preHostKindsDir(t *testing.T) string {
 	}
 	core := filepath.Join(dir, vocabulary.PackageCore)
 	if err := os.Remove(filepath.Join(core, "hostfunctions.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	// The assistant came after the host functions and names them as tools.
+	if err := os.RemoveAll(filepath.Join(dir, vocabulary.PackageAssistant)); err != nil {
 		t.Fatal(err)
 	}
 	fn := filepath.Join(core, "function.yaml")

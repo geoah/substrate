@@ -187,8 +187,8 @@ build, `TestRepositoryProvisioningAndProjections` and
 
 **One opener per binary.** `engine.OpenForTest(t, ctx, dsn, opts...)` is
 `engine.Open` with the shipped seed tree (`engine.SeedKindsDir`), the
-binary's credential key, the test's TOTP clock, and the LLM sample and
-provider seeds off (`WithLLMSampleSeed(false)`, `WithLLMProviderSeed(false)`);
+binary's credential key, the test's TOTP clock, and the provider seed off
+(`WithLLMProviderSeed(false)`);
 every open in the engine's
 own binary goes through it, and a caller's options win where they name the
 same thing. It lives in `export_test.go`, so a package across the line cannot

@@ -491,7 +491,13 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 		// the flip falls through to it: a retype that also becomes required
 		// must count the rows lacking the property, not only the rows whose
 		// value does not convert.
-		flipped := curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed
+		// Text and markdown are one storage, one validation and one search
+		// band (vocabulary.IsLongText): the datatype says how a client draws
+		// the value, so a flip between them is no flip, and the same-shape
+		// checks below (a pattern, a length, a key) still judge it.
+		sameKind := curP.Datatype == candP.Datatype ||
+			(vocabulary.IsLongText(curP.Datatype) && vocabulary.IsLongText(candP.Datatype))
+		flipped := !sameKind || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed
 		if flipped {
 			from, to := kindShape(curP), kindShape(candP)
 			switch {

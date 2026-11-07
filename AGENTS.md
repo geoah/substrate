@@ -238,16 +238,22 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRA
 [0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md))
 and `observations` (measured values,
 [0192](docs/decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)),
-three keyless provider rows, the LLM sample, and the shipped units.** The agent runtime's
+`assistant` (Moss, the owner's assistant,
+[0241](docs/decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)),
+three keyless provider rows, and the shipped units.** The agent runtime's
 data kinds are the second seeded package, `substrate.reamde.dev/llm`
-(`provider`, `thread`, `message`, `interaction`, and `memory`, the owner's
-standing facts an agent pins), out of core so core is not
+(`provider`, `thread`, `message`, `interaction`, `memory`, the owner's
+standing facts an agent pins, and `instruction`, the owner's standing
+direction to one agent), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
 the `agent` kind stays core's, because a manifest document is a record of a
 core kind whatever package it describes. Creation also writes three keyless
-`llm/provider` rows (`openai`, `anthropic`, `gemini`) and imports the LLM
-sample onto the repository's own authority, so the demo agents are there and
-name `openai`. They refuse at dispatch until that row's `apiKey` is written.
+`llm/provider` rows (`openai`, `anthropic`, `gemini`). The seeded assistant,
+`substrate.reamde.dev/assistant/moss` with its `architect` and `librarian`,
+names `anthropic` and refuses at dispatch until that row's `apiKey` is
+written; the owner shapes it with `llm/instruction` records rather than
+editing it. The LLM sample (the decision-loop lessons) is in the catalog and
+nothing imports it.
 Creation also writes the shipped unit and conversion records
 (`substrate.reamde.dev/core/unit` and `…/core/conversion`, 216 units and 149
 conversions from `internal/engine/unitseed`, edited by hand), and every open

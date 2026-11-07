@@ -22,13 +22,17 @@ describe("MessageText links", () => {
     render(
       <MessageText text="See [BBC Weather](https://www.bbc.com/weather/2761369)." />
     )
-    const link = screen.getByRole("link", { name: "BBC Weather" })
+    const link = screen.getByRole("link", {
+      name: "BBC Weather (opens in a new tab)",
+    })
     expect(link.getAttribute("href")).toBe(
       "https://www.bbc.com/weather/2761369"
     )
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noopener")
     expect(link.getAttribute("rel")).toContain("noreferrer")
+    // The reader sees it leaves the console before they click.
+    expect(link.querySelector("[data-external-link-mark]")).not.toBeNull()
   })
 
   it("renders a record link as the record, not its markdown", () => {

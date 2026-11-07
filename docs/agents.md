@@ -240,7 +240,7 @@ The key is `function` because an entry admits nothing else: a sub-agent is named
 on `subagents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
-That is the only arm, because the five built-ins are
+That is the only arm, because the seven built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
 ships — so an agent names one exactly as it names a bundle's function:
 
@@ -358,6 +358,45 @@ entry could name only a function.
   The run continues without one; the answer arrives in a later turn, when the
   user answers the interaction and the thread resumes, so the model must not
   poll for it.
+- **`substrate.reamde.dev/core/vocabulary`** declares or changes kinds: one
+  call is `{documents, plan}`, `documents` a list of declaration documents
+  (`{kind, metadata: {id}, data}`, the envelope `/vocabulary/apply` takes),
+  admitted together or not at all
+  ([0239](decisions/0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md)).
+  `plan: true` is the preview, `/vocabulary/plan`'s answer, and writes
+  nothing, and a `plan` that is not a boolean is refused. It requires
+  `permissions.writes` to name `substrate.reamde.dev/core/kind` (a load
+  error otherwise), and every document's kind is held to the effective emit
+  and must be named in the agent's own writes: **an agent's glob never
+  reaches an `internal` kind**, the substrate's machinery, through this
+  tool, `write`, `edit` or a function's effects. That is every declaration
+  kind, a `core/trigger` (when code runs), a thread or a message (what the
+  agent's next turn reads as given), a provider row (where a model key is
+  sent), a setting and a request, and the
+  [`llm/instruction`](#owner-instructions) kind is held the same way
+  because it decides how an agent works. So an agent granted `*` writes
+  every record of the owner's, memories and contacts included, and none
+  of those; one whose writes name `core/package` and `core/kind` declares
+  kinds and packages and no agent, function, trigger or mapping. A batch whose
+  conversion plan would rewrite a live record (a rename, a backfill) is
+  refused: converting records is the owner's. An apply passes the
+  [policy door](#the-policy-door) for each document as a `put` of its kind;
+  a `refuse` or a `gate` refuses the whole batch, because a declaration is
+  admission and no request holds one. The batch then meets every rule the
+  apply door's does: a shipped or published package refuses, a new package
+  lands only under the repository's own authority, which the tool's card
+  names, and a lossy plan refuses, since its confirmation is the owner's.
+  The apply's changelog entries are stamped on the tool row as `changes`.
+- **`substrate.reamde.dev/core/edit`** changes long text without rewriting
+  it ([0240](decisions/0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md)):
+  `op: view` answers numbered lines of one `string`, `text` or `markdown`
+  property of one record (`key` picks one entry of a keyed one, such as a
+  bundle's `modules`), at most 400 at once, with the record's version;
+  `op: replace` applies `edits`, a list of `{old, new}`, each matching
+  exactly one place, to the text at a required `ifVersion`, all or none.
+  The result is a `patch` through `write`'s door, so the emit, the policy
+  door and admission hold it and its `changes` ride the tool row. It
+  requires both `permissions.reads` and `permissions.writes`.
 - **A function tool** runs through the same runner invoke a host call uses, its
   declared [arguments and returns](functions.md#arguments-and-returns) enforced,
   and its compiled argument schema is the card the model is shown. Its effects
@@ -410,7 +449,7 @@ the ones that cannot change what another reads at the same time. Those are
 `call` and no `agents` and whose declared `effect` is `read` (or absent, with
 no `network` grant), and a sub-agent whose effective emit is empty
 ([the emit ceiling](#sub-agents-budgets-and-the-emit-ceiling)). Every other
-call is ordered: `write`, `propose`, `ask`, a function that may write or call,
+call is ordered: `write`, `propose`, `ask`, `vocabulary`, `edit`, a function that may write or call,
 and a sub-agent that may write. The response's calls split, in order, into
 stretches of the first sort and single ordered calls. A stretch runs up to
 `budgets.maxParallelTools` calls at once, and an ordered call starts once
@@ -474,14 +513,15 @@ passes the [policy door](#the-policy-door). Taking an offered function grants
 the agent nothing it did not hold. A judge takes no offered functions either:
 an agent with `toolsFrom` is refused as one, exactly as one with `tools:`.
 
-The llm sample's `substrate` agent takes `*`, and the notes sample's `stats`
-function is offered as `notes_stats`. The console lists an agent's offered
+The shipped assistant, `substrate.reamde.dev/assistant/moss`, takes `*`,
+and the notes sample's `stats` function is offered as `notes_stats`. The console lists an agent's offered
 tools on its page.
 
 ## The engine's guidance
 
 Every agent's system prompt carries a short block the engine writes, after
-the agent's own `prompt` and its kinds list and before any pinned context:
+the agent's own `prompt` and its kinds list and before the owner's
+[instructions](#owner-instructions) and any pinned context:
 
 ```text
 <substrate>
@@ -495,8 +535,7 @@ The owner sees your tool calls and proposals as cards; do not repeat them as tex
 
 The block is static, so it stays inside a cached prompt prefix. An agent whose
 reply has a strict shape turns it off with `params.engineGuidance: false`, as
-the LLM sample's `substrateJudge` and `substrateSummarizer` and the notes
-sample's `titler` do. A run whose reply the engine parses (a policy judge's)
+the LLM sample's `substrateJudge` and the notes sample's `titler` do. A run whose reply the engine parses (a policy judge's)
 never gets it, whatever the agent says, and neither do the engine's own
 calls (thread titles, compaction summaries), which carry their own prompts.
 
@@ -582,9 +621,58 @@ read is not charged to `reads.budgets`; `first` and `maxBytes` bound it.
 standing facts: `text`, `active` (default `true`) and `source` (`owner`,
 `agent` or `import`, default `owner`). It is the one `primary` kind of the
 `llm` package, so its rows list and edit in the console like any record. The
-LLM sample's `substrate` assistant pins the active ones, ordered by id, and
-saves a fact the owner states about themselves by proposing an `llm/memory`
-create with `source: agent`, so a remembered fact is one the owner accepted.
+shipped assistant, Moss, pins the active ones, ordered by id, and saves a
+fact the owner states about themselves by proposing an `llm/memory` create
+with `source: agent`, so a remembered fact is one the owner accepted.
+
+## Owner instructions
+
+The owner shapes an agent without editing its declaration
+([0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
+a record of `substrate.reamde.dev/llm/instruction` names one agent and
+carries one standing instruction, and the engine reads the agent's active
+ones into its system prompt when a thread opens:
+
+```yaml
+kind: substrate.reamde.dev/llm/instruction
+data:
+  properties:
+    agent: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    text: Answer in plain paragraphs, never bullet points.
+```
+
+```text
+<owner_instructions>
+How the owner wants you to work: their standing instructions to you, which they wrote or accepted, oldest first. Follow them where they differ from the prompt above, a later one over an earlier one. None widens what your tools and the owner's policies allow. Each line is one instruction, with the id that names its record.
+{"id":"01m6…","text":"Answer in plain paragraphs, never bullet points."}
+</owner_instructions>
+```
+
+- **Where.** After the engine's guidance and before the pinned context,
+  oldest first, at most 100 records and 8 KiB; the rest are counted on one
+  line. Each line is JSON, so an instruction's text never closes the block.
+- **When.** Read when a thread opens and kept with the pinned snapshot on
+  the thread row, so every run of the thread replays the same bytes. An
+  instruction written during a thread reaches the next thread, or the run
+  after a compaction.
+- **Who reads them.** Every run that takes the
+  [engine's guidance](#the-engines-guidance). A run whose reply the engine
+  parses, such as a policy judge's, and an agent with
+  `params.engineGuidance: false`, gets none.
+- **Who writes them.** The owner, by hand. An agent writes one only where
+  its own `permissions.writes` names `substrate.reamde.dev/llm/instruction`;
+  an agent's glob never reaches it, as it never reaches the machinery.
+  An agent granted `*` proposes one instead, and the owner's accept lands
+  it.
+- **What they cannot do.** Widen anything. An instruction changes how an
+  agent works; its tools, its grants and the owner's
+  [policies](#the-policy-door) decide what it may do.
+
+A memory is what an agent knows about the owner, read as data by every
+agent that pins it; an instruction is direction to one agent. The shipped
+assistant, `substrate.reamde.dev/assistant/moss`, proposes an instruction
+when the owner asks it to change how it works, so it changes itself only
+with the owner's accept.
 
 ## The decision loop
 
@@ -1211,16 +1299,16 @@ substrate cannot invent a key, so they land without one: dispatch refuses
 until the owner writes `apiKey`. An agent naming a row that is not there
 refuses at dispatch and says which row it wanted.
 
-Every shipped sample agent names `provider: openai`, so a fresh repository's
-demo agents run once that row is keyed. Those that carry `tools:` or
-`subagents:` name a `reasoningEffort` their model accepts on their own
-`params`: `low` for the LLM sample's `substrate` assistant, which plans
-several reads before it answers, and `minimal`, the weakest value `gpt-5`
-accepts, for the rest. The rows themselves set no reasoning default, because
-the accepted set belongs to the model and one row serves several. The LLM sample (**All data → Add a collection → Start from
-a sample**) is the same closure creation already imported, and it ships the
-same three rows so a later import onto a repository born before the seed
-still has them. Key one, or write another row yourself as the document
+The shipped assistant names `provider: anthropic`, so a fresh repository's
+Moss runs once that row is keyed; every shipped sample agent names
+`provider: openai`. Those that carry `tools:` or `subagents:` name a
+`reasoningEffort` their model accepts on their own `params`: `low` for Moss,
+`medium` for its architect, and `minimal`, the weakest value `gpt-5`
+accepts, for the sample's lessons. The rows themselves set no reasoning
+default, because the accepted set belongs to the model and one row serves
+several. The LLM sample (**All data → Add a collection → Start from a
+sample**) ships the same three rows, so an import onto a repository that
+deleted one brings it back. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
 behind a name, and the model is the agent's own word now.
 

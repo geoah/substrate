@@ -81,7 +81,7 @@ func Callable(ctx context.Context, ds Reader, rec *substrate.Record) ([]Entry, e
 			id := vocabulary.ReferentID(tool["function"], vocabulary.CoreKind(vocabulary.DocFunction))
 			// These are the host arms agentLoop.dispatch implements under the agent's grants.
 			switch id {
-			case vocabulary.HostFunctionQuery, vocabulary.HostFunctionAsk, vocabulary.HostFunctionWrite, vocabulary.HostFunctionPropose, vocabulary.HostFunctionWait:
+			case vocabulary.HostFunctionQuery, vocabulary.HostFunctionAsk, vocabulary.HostFunctionWrite, vocabulary.HostFunctionPropose, vocabulary.HostFunctionWait, vocabulary.HostFunctionVocabulary, vocabulary.HostFunctionEdit:
 				continue
 			}
 			if err := follow(vocabulary.CoreKind(vocabulary.DocFunction), id); err != nil {

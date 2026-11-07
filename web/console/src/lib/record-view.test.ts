@@ -29,6 +29,7 @@ import {
   summaryValueIn,
   changeSinceWords,
   deltaWords,
+  collapsedBy,
   foldedBy,
   partialItem,
   partialWindow,
@@ -141,6 +142,7 @@ describe("a record view read into blocks", () => {
         intro: "What was measured.",
         window: WINDOW,
         fold: ["distance", "distance", "pace"],
+        collapsed: ["raw", "raw"],
         sections: [
           { heading: { text: "Effort", note: "how hard" } },
           { text: { text: "Read **this** first." } },
@@ -228,6 +230,8 @@ describe("a record view read into blocks", () => {
     ])
     expect(spans).toMatchObject({ totals: true, sources: "only" })
     expect(foldedBy([v])).toEqual(["distance", "pace"])
+    expect(collapsedBy([v])).toEqual(["raw"])
+    expect(collapsedBy([recordViewOf(view({}))])).toEqual([])
   })
 
   it("keeps a section it cannot draw as the reason why", () => {

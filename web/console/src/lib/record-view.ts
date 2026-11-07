@@ -396,6 +396,9 @@ export interface RecordView {
    * it say instead of reading. */
   windowProblem?: string
   fold: string[]
+  /** Properties the sheet keeps closed under one line, because they are
+   * rarely read. */
+  collapsed: string[]
   sections: Section[]
 }
 
@@ -484,6 +487,7 @@ export function recordViewOf(record: SubstrateRecord): RecordView {
     window,
     ...(windowProblem ? { windowProblem } : {}),
     fold: texts(p.fold),
+    collapsed: texts(p.collapsed),
     sections: bags(p.sections).map(sectionOf),
   }
 }
@@ -1055,6 +1059,11 @@ function chartReducerOf(r: Bag): ChartReducer | string {
 /** The properties the views fold away from the generic sheet. */
 export function foldedBy(views: readonly RecordView[]): string[] {
   return [...new Set(views.flatMap((v) => v.fold))]
+}
+
+/** The properties the views keep closed on the generic sheet. */
+export function collapsedBy(views: readonly RecordView[]): string[] {
+  return [...new Set(views.flatMap((v) => v.collapsed))]
 }
 
 /** The views in the order a page draws them: by id. */

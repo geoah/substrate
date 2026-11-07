@@ -501,28 +501,29 @@ func TestOperatorDefaultsReportsAFailedFunctionInstall(t *testing.T) {
 	}
 }
 
-// The seeded assistant takes both Firecrawl tools by its `toolsFrom`, under
+// The shipped assistant takes both Firecrawl tools by its `toolsFrom`, under
 // the names the provider declares, and a copy offering the names a copy
 // derives sits beside them instead of shadowing them.
 func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds := openInternalDataset(t, WithLLMSampleSeed(true))
+	ds := openInternalDataset(t)
 	fake := provisionAgents(t, ds)
+	// Moss names the `anthropic` row; the fake speaks the openai wire.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeProvider, ID: "openai",
-		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-openai"},
+		Kind: typeProvider, ID: "anthropic",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	installShippedProvider(t, ds, firecrawlProvider)
 	installFirecrawlCopy(t, ds, true)
 
-	fake.script("gpt-5", fakeTurn{content: "hello"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, testdb.Repository(t)+"/llm/substrate", substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	fake.script(mossModel, fakeTurn{content: "hello"})
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
-	reqs := fake.requestsOf("gpt-5")
+	reqs := fake.requestsOf(mossModel)
 	if len(reqs) != 1 {
 		t.Fatalf("completions: %d, want 1", len(reqs))
 	}

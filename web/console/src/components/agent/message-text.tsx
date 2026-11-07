@@ -7,6 +7,7 @@
 
 import { Fragment } from "react"
 
+import { ExternalLink } from "@/components/external-link"
 import { RecordRef } from "@/components/identity/record-ref"
 import type { AgentMention } from "@/lib/api/agents"
 import { chatBlocks, type Inline } from "@/lib/chat-text"
@@ -45,19 +46,18 @@ function Runs({ runs, missing }: { runs: Inline[]; missing: Set<string> }) {
             return <RecordRef key={i} kind={run.kind} id={run.id} />
           case "link":
             // A page outside the console: a new tab in a browser, the system
-            // browser in the Apple shell. No referrer and no opener, because
+            // browser in the Apple shell, marked as one. Nofollow, because
             // the address is the model's choice.
             return (
-              <a
+              <ExternalLink
                 key={i}
                 href={run.href}
                 title={run.href}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
+                nofollow
                 className="text-primary-text underline underline-offset-2"
               >
                 {run.text}
-              </a>
+              </ExternalLink>
             )
           default:
             return <Fragment key={i}>{run.text}</Fragment>

@@ -29,7 +29,9 @@ data:
   authority: substrate.reamde.dev
   package: llm
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: 2
+  # version 3: the `instruction` kind, the owner's standing instructions to
+  # one agent, read into its system prompt (decision record 0241).
+  version: 3
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

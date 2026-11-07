@@ -5,16 +5,8 @@
 
 import { RecordRef } from "@/components/identity/record-ref"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import type { LandedChange } from "@/lib/agent-chat"
+import { CHANGE_VERBS, type LandedChange } from "@/lib/agent-chat"
 import { cn } from "@/lib/utils"
-
-const VERBS: Record<string, string> = {
-  put: "Saved",
-  patch: "Changed",
-  delete: "Deleted",
-  merge: "Merged",
-  split: "Split",
-}
 
 function ChangeRow({ change }: { change: LandedChange }) {
   const [technical] = useTechnicalDetails()
@@ -26,7 +18,7 @@ function ChangeRow({ change }: { change: LandedChange }) {
           change.op === "delete" && "text-destructive"
         )}
       >
-        {VERBS[change.op] ?? "Wrote"}
+        {CHANGE_VERBS[change.op] ?? "Wrote"}
       </span>
       <RecordRef kind={change.kind} id={change.id} className="min-w-0" />
       {technical && (

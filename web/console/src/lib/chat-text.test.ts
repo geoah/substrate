@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { chatBlocks, inlineRuns, recordPathOf } from "./chat-text"
+import { chatBlocks, inlineRuns, recordPathOf, replyLinks } from "./chat-text"
 
 describe("record paths in prose", () => {
   it("lifts a path out of a sentence, leaving its full stop", () => {
@@ -341,5 +341,29 @@ describe("blocks", () => {
     expect(list.type === "list" && list.items[1]).toEqual([
       { type: "strong", runs: [{ type: "text", text: "b" }] },
     ])
+  })
+})
+
+describe("replyLinks", () => {
+  it("lists each page a reply links once, in the order it first cites it", () => {
+    expect(
+      replyLinks(
+        [
+          "Norris won ([Formula 1](https://www.formula1.com/a)).",
+          "",
+          "- also [Wikipedia](https://en.wikipedia.org/wiki/F1)",
+          "- and **[Formula 1 again](https://www.formula1.com/a)**",
+          "",
+          "A record ada.example.com/garden/plant/p1 is not a page.",
+        ].join("\n")
+      )
+    ).toEqual([
+      { href: "https://www.formula1.com/a", text: "Formula 1" },
+      { href: "https://en.wikipedia.org/wiki/F1", text: "Wikipedia" },
+    ])
+  })
+
+  it("lists nothing for a reply that links no page", () => {
+    expect(replyLinks("Just words, and `code`.")).toEqual([])
   })
 })

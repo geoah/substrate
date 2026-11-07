@@ -147,6 +147,9 @@ type vocabularyBatch struct {
 	// being installed, and declaration rows and data land or fail together. The
 	// registry publishes only after the whole installation committed.
 	extra func(t *txn) error
+	// changes, when set, receives the batch's committed changelog entries:
+	// the agent vocabulary tool stamps them on its tool row, as `write` does.
+	changes *[]changeEntry
 }
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
@@ -164,6 +167,13 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 // caller's decisions: the confirmation a lossy plan needs (decision 0067),
 // and the origin a hand-rehomed sample claims (decision record 0070).
 func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply) ([]*substrate.Record, error) {
+	return ds.applyVocabularyDocuments(ctx, actor, raw, opts, nil)
+}
+
+// applyVocabularyDocuments is ApplyVocabularyDocumentsWith handing the
+// batch's committed changelog entries to changes, when set: the agent
+// vocabulary tool stamps them on its tool row.
+func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply, changes *[]changeEntry) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
@@ -174,7 +184,7 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}
-	b := vocabularyBatch{docs: docs, confirm: opts.Confirm}
+	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes}
 	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
 		return nil, err
 	}
@@ -616,6 +626,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		}
 	}()
 	err = ds.inTx(ctx, actor, true, func(t *txn) error {
+		t.changeSink = b.changes
 		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
 		// #11): trigger admission holds the shared side from callable
 		// validation to commit, so the dropped-reference query below can
@@ -680,6 +691,14 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		bindEditedCopy(&plan, edited)
 		if err := admitConversion(plan, ds.svc.conversionCeiling, b.confirm, edited); err != nil {
 			return err
+		}
+		// An agent's grant names the declaration kinds it may write, not the
+		// records a declaration would convert, so that rewrite stays the
+		// owner's (decision 0239). Judged by the hand, not the door: an
+		// agent's vocabulary, write and edit tools all land here.
+		if strings.HasPrefix(string(t.actor), substrate.AgentActorPrefix) && plan.Work > 0 {
+			return fmt.Errorf("%w: this batch would rewrite %d live records to convert them (a rename, a backfill or a remap); an agent declares, and converting records is the owner's to apply",
+				substrate.ErrForbidden, plan.Work)
 		}
 		if err := t.checkSchemaCAS(b.meta); err != nil {
 			return err
