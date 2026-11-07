@@ -149,8 +149,9 @@ provider's own sync token gives them full-plus-incremental with no window.
 
 Package `samples.substrate.reamde.dev/llm`. A new repository already holds
 this bundle, rehomed onto its own authority, and three keyless `llm/provider`
-rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
-that row and they run. A later import of this bundle onto a repository born
+rows (`openai`, `anthropic`, `gemini`). Moss and its two helpers name
+`anthropic`, the other demo agents `openai`. Key a row and the agents on it
+run. A later import of this bundle onto a repository born
 before the seed writes the same three rows and the same agents.
 
 - `moss` is the one to chat with: Moss, a general assistant with a name and a
@@ -164,7 +165,9 @@ before the seed writes the same three rows and the same agents.
   `mossLibrarian`, which Moss calls as a
   [background job](agents.md#background-jobs) for bulk record work on a
   budget of its own (128 tool calls over 24 turns). Both are
-  `hiddenFromChat`.
+  `hiddenFromChat`. Moss and the architect run `claude-opus-5-5` (effort
+  `low` and `medium`), the librarian `claude-sonnet-5-5` (`low`).
+  [Recorded sessions](plans/moss-sessions.md) show each path.
 - `substrate` is the assistant before Moss, `supporting` now and kept so
   its threads continue, a general assistant: it reads the
   whole graph through the `query` built-in, calls every function an

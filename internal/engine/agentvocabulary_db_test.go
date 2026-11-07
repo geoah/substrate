@@ -18,9 +18,9 @@ import (
 )
 
 // openMossDataset opens a repository with the LLM sample seeded and its
-// `openai` row pointed at the fake. It installs nothing else: the sample
-// carries no function body, so the suite runs where no sandbox can confine
-// one.
+// `anthropic` row, the one Moss and its helpers name, pointed at the fake on
+// the wire the fake speaks. It installs nothing else: the sample carries no
+// function body, so the suite runs where no sandbox can confine one.
 func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
 	t.Helper()
 	ds := openInternalDataset(t, WithLLMSampleSeed(true))
@@ -29,13 +29,17 @@ func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
 	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
-		Kind: typeProvider, ID: "openai",
-		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-openai"},
+		Kind: typeProvider, ID: "anthropic",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return ds, fake, testdb.Repository(t)
 }
+
+// mossModel is the model Moss and its architect name, so one script serves
+// both, in the order the chain calls them.
+const mossModel = "claude-opus-5-5"
 
 // gardenDocs is a new package under authority and its one kind.
 func gardenDocs(authority string) []any {
@@ -84,7 +88,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 	docs := gardenDocs(repo)
 	plant := repo + "/garden/plant"
 
-	fake.script("gpt-5",
+	fake.script(mossModel,
 		// Moss: a collection is the architect's.
 		fakeTurn{calls: []fakeCall{{"mossArchitect", toolArgs(t, map[string]any{
 			"input": "The owner asked to start tracking their plants: a name and how often each wants water. The owner asked for this.",
@@ -105,7 +109,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 		t.Fatalf("settled %q (%s)", res.Status, res.Reason)
 	}
 
-	reqs := fake.requestsOf("gpt-5")
+	reqs := fake.requestsOf(mossModel)
 	names := toolNamesSent(t, reqs[0])
 	for _, name := range []string{"query", "write", "propose", "ask", "wait", "mossArchitect", "mossLibrarian"} {
 		if !slices.Contains(names, name) {
@@ -186,7 +190,7 @@ func TestAgentVocabularyRefusesOutsideItsGrant(t *testing.T) {
 	for _, c := range cases {
 		turns = append(turns, fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": c.docs})}}})
 	}
-	fake.script("gpt-5", append(turns, fakeTurn{content: "refused, stopping"})...)
+	fake.script(mossModel, append(turns, fakeTurn{content: "refused, stopping"})...)
 	res, err := ds.CallAgent(ctx, repo+"/llm/mossArchitect", "try them all")
 	if err != nil {
 		t.Fatalf("call: %v", err)
@@ -222,7 +226,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 		t.Fatalf("put the policy: %v", err)
 	}
 	docs := gardenDocs(repo)
-	fake.script("gpt-5",
+	fake.script(mossModel,
 		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": docs, "plan": true})}}},
 		fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": docs})}}},
 		fakeTurn{content: "gated"},

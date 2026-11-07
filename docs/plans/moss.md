@@ -78,6 +78,18 @@ Before it, an agent with `*` could `put` one declaration record at a time
 through `write`: a new package and its kind were two writes with nothing
 between them, and nothing previewed either.
 
+### The models
+
+Moss runs on `claude-opus-5-5` at effort `low`, with `reasoningSummary`
+so the chat streams its thinking; the architect on the same model at
+`medium`, because a declaration outlives every conversation that made it;
+the librarian on `claude-sonnet-5-5` at `low`, for many small, similar
+writes. Opus 5.5 always thinks (effort is its only control), so `low` is
+where chat answers stay quick: the world questions answered in two to seven
+seconds. Every one sets `maxTokens: 16000`, since the wire's 8192 default
+is tight once a turn thinks. The rest of the sample stays on the `openai`
+row.
+
 ### The prompt
 
 Moss's prompt keeps the old assistant's reading, writing, decision and asking
@@ -160,10 +172,37 @@ answers, and the load error for an agent whose writes do not name
 
 ### Live
 
-Not recorded yet: they need a model key on the repository's `openai` row (or
-Moss pointed at the `anthropic` row with a Claude model). Each example above
-is one call; the reply, the cost and the thread id come back, and the thread's
-`llm/message` rows hold every tool call:
+[The recorded sessions](moss-sessions.md) are every example above, run on
+2026-11-07 against a development substrate with a real Anthropic key:
+fourteen conversations, nineteen threads with the sub-agents', USD 0.88 in
+all, 79% of Moss's prompt tokens read from the cache. What they showed:
+
+- **Routing holds.** The four world questions and the dinner suggestion
+  made no tool call. The question past the cutoff (the latest Formula 1
+  champion) answered what it knew, said the season was still running, and
+  said it had no web search to check.
+- **Memory works end to end.** Two `propose` calls, the owner's accepts,
+  the `proposalDecision` rows, and a resume of one line. The next thread's
+  dinner suggestion was vegetarian and short, from the pinned block alone.
+- **Shaping works, and the guards teach.** The architect's first batch
+  carried `names.plural`, a retired key; the refusal named it, the next
+  plan was clean, and the apply landed `garden/plant` with `min: 1` on the
+  interval and a `date` for the day. Asked to drop `location` while plants
+  held one, it deprecated the property instead and Moss asked whether to
+  clear the values.
+- **The background job is the right shape.** Moss answered the pasted
+  twelve plants in eight seconds, the librarian searched for duplicates
+  and wrote twelve records, and the `toolCompleted` resume told the owner
+  which plants were due, with the dates right.
+
+Two prompt changes came out of the first runs, and the later sessions run
+on them: text beside a tool call is the owner's to read, so Moss writes one
+sentence there or nothing (its first memory turn had written out its
+deliberation), and the architect's first vocabulary call is always a plan
+(its first batch had gone straight to an apply).
+
+Each example is one call, and the thread's `llm/message` rows hold every
+tool call:
 
 ```bash
 agent="$(printf '%s' "$AUTHORITY/llm/moss" | sed 's|/|%2F|g')"
@@ -175,8 +214,8 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/$agent
 
 ## What is left
 
-- **Live sessions** against both vendors, and the measured cost of each
-  example, before the prompt is tuned further.
+- **An eval.** The sessions are fourteen examples read by eye. A graded
+  set run on every prompt change would hold what they show.
 - **The console's default.** The console lists primary agents first, so Moss
   leads; whether a new chat opens on Moss without a choice is the console's
   call and is not changed here.

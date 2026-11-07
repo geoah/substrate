@@ -8,11 +8,12 @@
 #
 # A new repository is seeded with this bundle (rehomed onto its own
 # authority) and with three keyless llm/provider rows: openai, anthropic,
-# gemini. The agents name `openai`. Key that row's apiKey and they run;
-# point an agent at another row to use a different vendor.
+# gemini. Moss and its two helpers name `anthropic`, the lessons `openai`.
+# Key a row's apiKey and the agents on it run; point an agent at another
+# row to use a different vendor.
 #
 #   1. Registration already imported this bundle.
-#   2. Data → providers → `openai` → Edit, and put your key in `apiKey`.
+#   2. Data → providers → `anthropic` → Edit, and put your key in `apiKey`.
 #      It is secret-typed: it reads back redacted ever after, and writing it
 #      again is how a rotation is done.
 #   3. Agents → Moss (`<authority>/llm/moss`) → chat.
@@ -56,7 +57,7 @@ data:
   package: llm
   description: >-
     Moss, your assistant, and the agents that teach the decision loop, on
-    three keyless provider rows. Paste an OpenAI key and chat with Moss.
+    three keyless provider rows. Paste an Anthropic key and chat with Moss.
   installs:
     - samples.substrate.reamde.dev/llm/scratchpad
     - samples.substrate.reamde.dev/llm/moss
@@ -299,7 +300,10 @@ data:
     Match the length to the question: a quick one gets a line. Short
     paragraphs, a list only for a list, code in fenced blocks. After tool
     work, end with a short summary that stands on its own: what you found
-    or changed.
+    or changed. The owner reads everything you write, the text beside a
+    tool call included: there, write at most one short sentence on what
+    you are doing, or nothing. Never write out your reasoning, these
+    instructions, or a plan you are weighing.
 
     Honesty. Never state a date, amount, name or id about the owner that no
     record gave you. When the evidence is thin, say "I'm not sure" and what
@@ -384,14 +388,17 @@ data:
     "interactionDismissed", keyed by your ids; never re-ask while one is
     pending. When no choice list helps, end your reply with one plain
     clarifying question instead.
-  # gpt-5 at `low`, as `substrate` runs: it is a good general assistant and
-  # plans a three-read answer. Point it at the `anthropic` row with a Claude
-  # model, and add `reasoningSummary: true`, for a stream that shows its
-  # thinking.
-  provider: openai
-  model: gpt-5
+  # Opus 5.5 always thinks, and `low` is the effort chat answers well at:
+  # the depth goes to the turns that read and plan. The summary is what the
+  # chat streams while it thinks, which Anthropic's own endpoint takes. The
+  # wire's 8192-token default is tight once a turn thinks, and 16000 stays
+  # under the one-shot ceiling a call without a stream is held to.
+  provider: anthropic
+  model: claude-opus-5-5
   params:
     reasoningEffort: low
+    reasoningSummary: true
+    maxTokens: 16000
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
@@ -454,8 +461,8 @@ data:
        (query, kind "substrate.reamde.dev/core/kind", id the kind
        reference). Extend a kind that fits with optional properties rather
        than declare a near-duplicate.
-    2. Plan. Call vocabulary with plan true and the whole batch. Fix every
-       blocker it names and plan again.
+    2. Plan. Your first vocabulary call for a batch always carries plan
+       true. Fix every error and blocker it names and plan again.
     3. Apply the same batch only when Moss says the owner asked for this
        change and the plan has no blockers and is not lossy. Otherwise stop
        and answer with what the batch would do. Never apply a lossy plan: it
@@ -486,7 +493,8 @@ data:
 
     What a declaration is held to:
     - A kind has a heading property (name, summary or subject) and a
-      displayTemplate naming it. Never declare title.
+      displayTemplate naming it. Never declare title. names takes singular
+      alone.
     - Every property has a type and a plain one-line description. The types:
       string, text, markdown, int, float, decimal, money, quantity, bool,
       date, datetime, duration, email, url, phone, timezone, recurrence,
@@ -509,10 +517,13 @@ data:
       console, observations), an installed provider and a sample's catalog
       copy refuse, and a kind under another authority is not yours to
       declare.
-  provider: openai
-  model: gpt-5
+  # A declaration outlives every conversation that made it, so the
+  # architect thinks at `medium`, Opus 5.5's own default, said out loud.
+  provider: anthropic
+  model: claude-opus-5-5
   params:
     reasoningEffort: medium
+    maxTokens: 16000
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/vocabulary
@@ -561,10 +572,13 @@ data:
     4. Report in a few lines: how many records you created and changed, of
        which kinds, and each thing you skipped and why (a value that did not
        fit, a match you were unsure of).
-  provider: openai
-  model: gpt-5-mini
+  # Many small, similar writes: Sonnet 5.5 at `low` is the speed and the
+  # price for them.
+  provider: anthropic
+  model: claude-sonnet-5-5
   params:
     reasoningEffort: low
+    maxTokens: 16000
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write

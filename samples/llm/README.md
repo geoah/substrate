@@ -10,8 +10,10 @@ practice surface for the decision loop: `substrate`, the assistant before
 Moss, answers questions about your records and proposes changes, `substrateEditor`
 writes them, `substrateArbiter` and `substrateJudge` decide on proposals,
 `substrateSummarizer` summarizes a thread (hidden from chat), and
-`substrateEcho` returns its input. Every agent names the provider row
-`openai`, which is keyless until you write an `apiKey` onto it.
+`substrateEcho` returns its input. Moss and its helpers name the provider
+row `anthropic` (Claude Opus 5.5, and Sonnet 5.5 for the librarian), the
+rest name `openai`, and each row is keyless until you write an `apiKey`
+onto it.
 
 `bundle.yaml` is the closure: the package, the nine agents and one kind,
 `scratchpad`, a name and a note with no stakes, so the proposals, edits and
