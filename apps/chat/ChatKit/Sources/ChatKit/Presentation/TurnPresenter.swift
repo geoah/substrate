@@ -133,17 +133,52 @@ enum TurnPresenter {
         // policy held the write for review, and the suggestion under it is
         // where it waits.
         let held = call.ok == false && request != nil
-        let details = toolDetails(call, resolved).compactMap { detail -> ToolDetailPresentation? in
+        let interaction = interactionID(of: call)
+        // What the call changed. A suggestion and questions are cards of
+        // their own, and a write's change is its panel.
+        let changes = request == nil && interaction == nil && resolved.function != HostFunction.write && call.ok == true ? stampedChanges(call) : []
+        // Several records, and the changes of a call whose line says
+        // something else (a function's own words), show under the line; one
+        // record the line already names keeps its link in the details.
+        let host = HostFunction.all.contains(resolved.function ?? "")
+        let changesInline = changes.count > 1 || (!host && resolved.subagent == nil)
+        var chips: [RecordChips] = []
+        var details: [ToolDetailPresentation] = []
+        for detail in toolDetails(call, resolved) {
             switch detail {
-            case .changed, .wrote: return nil
-            case let .failed(reason): return held ? nil : .failed(reason ?? "It failed.")
+            case let .failed(reason):
+                if !held { details.append(.failed(reason ?? "It failed.")) }
             case let .found(records, total):
-                return .found(
-                    total == 0 ? "Found nothing." : "Found \(plural(total, "record")).",
-                    records.map { RecordReference(kind: $0.kind, id: $0.id) })
-            case let .reply(agent, text): return .reply(heading: "\(agentName(agent)) said", text: text)
-            case let .output(raw): return known != nil || working ? nil : .output(raw)
+                let chipped = records.map { RecordChip(record: RecordReference(kind: $0.kind, id: $0.id), title: $0.title ?? titles["\($0.kind)/\($0.id)"]) }
+                if records.count > 1 {
+                    chips.append(RecordChips(lead: nil, label: "Records found", records: chipped, total: total))
+                } else {
+                    details.append(.found(total == 0 ? "Found nothing." : "Found \(plural(total, "record")).", chipped.map(\.record)))
+                }
+            case .changed:
+                guard !changes.isEmpty else { break }
+                if changesInline {
+                    chips += changeChips(changes, titles: titles)
+                } else {
+                    details.append(.changed(changeChips(changes, titles: titles)))
+                }
+            case let .wrote(records, kinds, moreKinds):
+                details.append(.wrote(wroteSentence(records: records, kinds: kinds, moreKinds: moreKinds)))
+            case let .reply(agent, text):
+                details.append(.reply(heading: "\(agentName(agent)) said", text: text))
+            case let .output(raw):
+                if known == nil, !working { details.append(.output(raw)) }
             }
+        }
+        // The line names the one record the call worked on: by the heading
+        // its answer carried, else the one the chat's lookups returned;
+        // failing both, the view reads it.
+        let line = toolLine(call, resolved)
+        let subject = toolSubject(call, resolved)
+        let named = subject.flatMap { $0.title ?? titles["\($0.kind)/\($0.id)"] }
+        var unnamed: UnnamedSubject?
+        if let subject, named == nil, let before = line.before {
+            unnamed = UnnamedSubject(record: subject.reference, before: before, after: line.after)
         }
         var raw = [RawLine(label: "Tool", value: call.callable ?? call.name)]
         if !call.arguments.isEmpty { raw.append(RawLine(label: "Arguments", value: pretty(call.arguments))) }
@@ -163,27 +198,36 @@ enum TurnPresenter {
         var attachment: ToolRowPresentation.Attachment?
         if let request {
             if !decided.contains(request) { attachment = .suggestion(request) }
-        } else if let interaction = interactionID(of: call) {
+        } else if let interaction {
             attachment = .questions(interaction)
         } else if resolved.function == HostFunction.write {
             attachment = writeChange(call).map { .change(panel($0.titled(titles), titles: titles)) }
-        } else if call.ok == true {
-            let stamped = stampedChanges(call)
-            let wrote = call.subagentWrites.flatMap {
-                $0.records > 0 ? wroteSentence(records: $0.records, kinds: $0.kinds, moreKinds: $0.moreKinds) : nil
-            }
-            if !stamped.isEmpty || wrote != nil {
-                attachment = .changes(
-                    ChangeListPresentation(
-                        headings: stamped.prefix(8).map { heading($0.titled(titles), tense: .done) },
-                        more: stamped.count > 8 ? "and \(stamped.count - 8) more" : nil, wrote: wrote))
-            }
         }
         return ToolRowPresentation(
             id: id, status: status,
             statusLabel: status == .working ? "Working in the background" : status == .held ? "Waiting for you" : nil,
-            summary: toolSummary(call, resolved), details: details, raw: raw, sources: known.map(sources),
+            summary: line.said(title: named), unnamed: unnamed, details: details, raw: raw, sources: known.map(sources), chips: chips,
             thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") }, attachment: attachment)
+    }
+
+    /// A call's changes as pills, one run per verb in the order they
+    /// happened: "Saved [a] [b]", then "Deleted [c]".
+    static func changeChips(_ changes: [ChangeStamp], titles: [String: String]) -> [RecordChips] {
+        var runs: [(op: String, changes: [ChangeStamp])] = []
+        for change in changes {
+            if let last = runs.indices.last, runs[last].op == change.op {
+                runs[last].changes.append(change)
+            } else {
+                runs.append((change.op, [change]))
+            }
+        }
+        return runs.map { run in
+            let verb = changeVerbs[run.op] ?? "Wrote"
+            return RecordChips(
+                lead: verb, label: "\(verb) records",
+                records: run.changes.map { RecordChip(record: RecordReference(kind: $0.kind, id: $0.id), title: titles["\($0.kind)/\($0.id)"]) },
+                total: run.changes.count)
+        }
     }
 
     private static func pretty(_ text: String) -> String {

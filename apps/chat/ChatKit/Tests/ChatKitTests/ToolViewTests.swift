@@ -45,7 +45,7 @@ struct HostFunctionWords {
     @Test func waitEditAndVocabularyAreSaidAsTheConsoleSaysThem() {
         #expect(words(HostFunction.wait, #"{"jobs":["c1"]}"#) == "Waited for work running in the background")
         let task = "ada.example.com/tasks/task"
-        #expect(words(HostFunction.edit, #"{"op":"view","kind":"\#(task)","id":"t1","property":"notes"}"#) == "Read part of a task")
+        #expect(words(HostFunction.edit, #"{"op":"view","kind":"\#(task)","id":"t1","property":"notes"}"#) == "Read part of the notes of a task")
         #expect(words(HostFunction.edit, #"{"op":"replace","kind":"\#(task)","edits":[{"old":"a","new":"b"}]}"#) == "Edited a task")
         #expect(
             words(HostFunction.edit, #"{"op":"replace","kind":"\#(task)","edits":[{"old":"a","new":"b"},{"old":"c","new":"d"}]}"#)

@@ -71,9 +71,8 @@ func proposedChange(_ call: ToolCall) -> (change: RecordChange, rationale: Strin
 
 /// The records a call's persisted row says it changed, other than the
 /// suggestions and questions that have cards of their own.
-func stampedChanges(_ call: ToolCall) -> [RecordChange] {
+func stampedChanges(_ call: ToolCall) -> [ChangeStamp] {
     (call.changes ?? []).filter { $0.kind != Kinds.request && $0.kind != Kinds.interaction && $0.kind != Kinds.interactionBeforeMove }
-        .map { RecordChange(op: $0.op, kind: $0.kind, id: $0.id) }
 }
 
 /// Every record title the chat's tool results carried, by `kind/id`: what

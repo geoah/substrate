@@ -220,27 +220,6 @@ struct ChangePanel: View {
     }
 }
 
-/// A call's changes that carry no values: one line each, in one card.
-struct ChangeList: View {
-    let list: ChangeListPresentation
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(list.headings.enumerated()), id: \.offset) { _, heading in
-                ChangeHeaderView(heading: heading)
-                    .font(.footnote)
-            }
-            if let more = list.more {
-                Text(more).font(.caption).foregroundStyle(.secondary)
-            }
-            if let wrote = list.wrote {
-                Label(wrote, systemImage: "square.stack.3d.up").font(.footnote)
-            }
-        }
-        .card()
-    }
-}
-
 /// Writes a provider's API key. The key lives in the field until it is sent:
 /// never kept, never logged.
 struct ProviderKeySheet: View {
