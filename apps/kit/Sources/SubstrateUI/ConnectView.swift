@@ -172,12 +172,16 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
                 } icon: {
                     Image(systemName: ScreenSymbol.found.systemName).foregroundStyle(.green)
                 }
+                .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
             if let repository = footer.repository {
                 fact(repository)
             }
             Text(footer.note)
         }
+        // The check lands while the sign-in waits to open: it is what says
+        // the name was found.
+        .animation(.spring(duration: 0.45, bounce: 0.45), value: footer.found)
     }
 }
 
@@ -185,10 +189,11 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
 /// repository's name, resolved by `ServerLocator` and checked against the
 /// server's discovery document and the app's requirement when the person
 /// presses Continue, then the door the server takes: the browser sign-in,
-/// the app's own password door, or what a server too old lacks. The logic
-/// is `ConnectController`'s, run on a runtime of its own, made once for the
-/// view's life however often SwiftUI makes the view again; this view draws
-/// its presentation and keeps the app's address binding in step with it.
+/// opened by itself, the app's own password door, or what a server too old
+/// lacks. The logic is `ConnectController`'s, run on a runtime of its own,
+/// made once for the view's life however often SwiftUI makes the view
+/// again; this view draws its presentation and keeps the app's address
+/// binding in step with it.
 public struct ConnectView<Header: View, PasswordDoor: View>: View {
     @Binding var address: String
     let header: Header

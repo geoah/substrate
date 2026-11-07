@@ -178,7 +178,7 @@
           "button": {
             "busy": true,
             "enabled": false,
-            "title": "Waiting for Your Browser…"
+            "title": "Signing In…"
           },
           "door": "browser",
           "field": {

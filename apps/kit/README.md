@@ -243,6 +243,9 @@ finds the server when the person presses Continue, and then shows one of
 three doors from
 `manifest.door(for:)`: the browser sign-in, the app's own password form
 (`passwordDoor:`, for a server the app falls back for), or `ServerTooOldScreen`.
+The browser sign-in needs no second press: the screen shows the server found
+with its check for `ConnectController.foundShown`, then opens it, and offers
+it again as a button only after it was closed or failed.
 An app that falls back to the password passes its form as `passwordDoor:`;
 without one, a server it would fall back for reads as too old.
 

@@ -1,5 +1,11 @@
 package dev.reamde.substrate.kit.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -143,10 +149,18 @@ private fun ConnectFact(fact: LabeledValue, color: Color) {
 private fun ConnectFooter(footer: ConnectPresentation.Footer) {
     val words = MaterialTheme.colorScheme.onSurfaceVariant
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
-        footer.found?.let { found ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
-                Icon(ScreenSymbol.found.icon, contentDescription = null, tint = ScreenTone.positive.tint, modifier = Modifier.size(16.dp))
-                ConnectFact(found, words)
+        // The check lands while the sign-in waits to open: it is what says the name was found.
+        val found = footer.found
+        AnimatedVisibility(
+            visible = found != null,
+            enter = fadeIn() + scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy), initialScale = 0.4f),
+            exit = ExitTransition.None,
+        ) {
+            if (found != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                    Icon(ScreenSymbol.found.icon, contentDescription = null, tint = ScreenTone.positive.tint, modifier = Modifier.size(16.dp))
+                    ConnectFact(found, words)
+                }
             }
         }
         footer.repository?.let { ConnectFact(it, words) }
