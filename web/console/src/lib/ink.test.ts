@@ -4,7 +4,7 @@
 
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { InkPageView } from "@/components/ink/ink-page"
 import {
@@ -19,6 +19,7 @@ import {
   newInkDocument,
   oriented,
   paperOf,
+  randomId,
   readInk,
   sizeLabel,
   strokeColor,
@@ -83,6 +84,26 @@ const stroke = (id: string, points: number[][]): InkStroke => ({
   opacity: 1,
   baseWidth: 2,
   points,
+})
+
+describe("randomId", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  // A console reached over plain http on a LAN or tailnet name is not a
+  // secure context, where crypto.randomUUID does not exist; a note made
+  // there, and the module that makes the empty one, must still get ids.
+  it("mints a version 4 UUID where crypto.randomUUID is missing", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: crypto.getRandomValues.bind(crypto),
+    })
+    const ids = new Set([randomId(), randomId(), randomId()])
+    expect(ids.size).toBe(3)
+    for (const id of ids)
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      )
+    expect(newInkDocument().id).toMatch(/^[0-9a-f-]{36}$/)
+  })
 })
 
 describe("readInk", () => {

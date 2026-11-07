@@ -8,7 +8,7 @@
 import { readBlobInfo } from "@/lib/api/blobs"
 import type { KindInfo } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
-import { readInk, type InkDocument } from "@/lib/ink"
+import { randomId, readInk, type InkDocument } from "@/lib/ink"
 import { declaredFormat, isInkBlob, isPdfBlob } from "@/lib/media-types"
 import {
   ownerWritable,
@@ -143,7 +143,7 @@ export function noteFileName(
 export function withPageCount(
   document: InkDocument,
   count: number,
-  newId: () => string = () => crypto.randomUUID()
+  newId: () => string = randomId
 ): InkDocument {
   if (document.pages.length >= count) return document
   const pages = document.pages.slice()
