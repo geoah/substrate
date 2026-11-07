@@ -98,7 +98,7 @@ struct GuidanceSettings {
         #expect(section.loading == nil)
         #expect(section.memories.count == "1 of 2 on")
         #expect(section.memories.rows.map(\.text) == ["I am vegetarian", "Summaries in bullet points"])
-        #expect(section.memories.rows[0].facts == [LabeledValue("Added by", "an assistant, with your yes")])
+        #expect(section.memories.rows[0].facts == [LabeledValue("Added by", "an assistant, accepted by you")])
         #expect(section.memories.rows[1].problem == "That didn't go through: offline")
         #expect(section.instructions.count == "1")
         #expect(section.instructions.rows[0].facts == [LabeledValue("For", "Moss"), LabeledValue("Added by", "you")])

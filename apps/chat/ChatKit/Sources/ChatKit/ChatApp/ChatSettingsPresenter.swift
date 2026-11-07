@@ -80,7 +80,7 @@ extension ChatApp {
                 facts.append(LabeledValue("For", state.agent(agent)?.name ?? agentName(agent)))
             }
             switch record["source"]?.string {
-            case "agent": facts.append(LabeledValue("Added by", "an assistant, with your yes"))
+            case "agent": facts.append(LabeledValue("Added by", "an assistant, accepted by you"))
             case "import": facts.append(LabeledValue("Added by", "an import"))
             default: facts.append(LabeledValue("Added by", "you"))
             }
