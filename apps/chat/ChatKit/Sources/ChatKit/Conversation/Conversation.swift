@@ -20,6 +20,9 @@ public struct Conversation: Controller, Equatable {
         case draft(String)
         case choose(agent: String)
         case send
+        /// Sends `continueMessage` as the owner's own, for a last turn that
+        /// didn't finish, and leaves the draft alone.
+        case continueTurn
         case stop
         case retryReload
         case dismiss(UUID)
@@ -38,7 +41,7 @@ public struct Conversation: Controller, Equatable {
         case chose(String)
         case listened
         case opened
-        case sent(message: String, agent: String, at: Date, baseline: Int?)
+        case sent(message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool)
         case named(String)
         case streamed(AgentEvent, at: Date)
         case streamEnded(Failure?, outcome: UUID)
@@ -71,6 +74,11 @@ public struct Conversation: Controller, Equatable {
     }
 
     public typealias State = ConversationState
+
+    /// What Continue sends. The server resumes a stopped thread only when its
+    /// owner writes again, so going on is a message like any other, and the
+    /// transcript shows it.
+    static let continueMessage = "Continue where you left off."
 
     /// An effect, opaque outside ChatKit.
     public struct Effect: Equatable, Sendable {
@@ -164,12 +172,20 @@ public struct Conversation: Controller, Equatable {
         case let .dismiss(id): return [Event(.dismissed(id))]
         case .send:
             let message = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !message.isEmpty, blockedReason(state) == nil, let agent = agent(state) else { return [] }
-            // Where the transcript stood, for a delivery check: unknown while
-            // its rows are unread, or stale because their re-read failed.
-            let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
-            return [Event(.sent(message: message, agent: agent, at: context.now, baseline: baseline))]
+            guard !message.isEmpty else { return [] }
+            return sent(message, fromDraft: true, state, at: context.now)
+        case .continueTurn:
+            guard state.thread != nil else { return [] }
+            return sent(Self.continueMessage, fromDraft: false, state, at: context.now)
         }
+    }
+
+    private func sent(_ message: String, fromDraft: Bool, _ state: State, at now: Date) -> [Event] {
+        guard blockedReason(state) == nil, let agent = agent(state) else { return [] }
+        // Where the transcript stood, for a delivery check: unknown while its
+        // rows are unread, or stale because their re-read failed.
+        let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
+        return [Event(.sent(message: message, agent: agent, at: now, baseline: baseline, fromDraft: fromDraft))]
     }
 
     /// Made while a scene shows it: as if it had just appeared there.

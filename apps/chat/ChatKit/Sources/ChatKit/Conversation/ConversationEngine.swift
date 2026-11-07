@@ -22,8 +22,8 @@ extension Conversation {
             } else if facts?.running == true {
                 attach(&next, attempt: 0)
             }
-        case let .sent(message, agent, at, baseline):
-            send(&next, message: message, agent: agent, at: at, baseline: baseline)
+        case let .sent(message, agent, at, baseline, fromDraft):
+            send(&next, message: message, agent: agent, at: at, baseline: baseline, fromDraft: fromDraft)
         case let .named(thread):
             guard case var .send(run)? = next.run else { break }
             run.named = true
@@ -149,10 +149,13 @@ extension Conversation {
         }
     }
 
-    private func send(_ state: inout State, message: String, agent: String, at: Date, baseline: Int?) {
+    private func send(_ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool) {
         startRun(&state)
-        state.draft = ""
-        state.draftRevision += 1
+        // Continue sends its own words and leaves what is being typed alone.
+        if fromDraft {
+            state.draft = ""
+            state.draftRevision += 1
+        }
         state.error = nil
         state.lastError = nil
         // An outcome stays until its message is sent again or dismissed.

@@ -149,6 +149,7 @@ struct ConversationView: View {
         h.combine(screen.turns.count)
         h.combine(screen.turns.last)
         h.combine(screen.outcomes.count)
+        h.combine(screen.unfinished)
         h.combine(screen.error)
         h.combine(screen.typing)
         return h.finalize()
@@ -266,10 +267,67 @@ private struct ConversationStatus: View {
                     .card()
             }
         }
+        if let unfinished = screen.unfinished {
+            UnfinishedCard(notice: unfinished) { host.send(.continueTurn, to: key) }
+        }
         ForEach(screen.outcomes) { outcome in
             OutcomeCard(outcome: outcome) {
                 if let id = UUID(uuidString: outcome.id) { host.send(.dismiss(id), to: key) }
             }
+        }
+    }
+}
+
+/// A chat whose last turn ended before it finished: what happened, why, and
+/// Continue, held back with the composer's reason while a send cannot go.
+private struct UnfinishedCard: View {
+    let notice: UnfinishedNotice
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: symbol)
+                    .foregroundStyle(tint ?? .secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notice.title).font(.subheadline.weight(.semibold))
+                    if let detail = notice.detail {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            Button(notice.action, action: onContinue)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(notice.blocked != nil)
+                .help(notice.blocked ?? notice.hint)
+                .accessibilityHint(notice.blocked ?? notice.hint)
+                // Under the words, past the symbol.
+                .padding(.leading, 26)
+        }
+        .card(tint: tint)
+    }
+
+    private var symbol: String {
+        switch notice.tone {
+        case .bad: "exclamationmark.circle.fill"
+        case .warn: "exclamationmark.triangle.fill"
+        case .quiet: "pause.circle.fill"
+        }
+    }
+
+    private var tint: Color? {
+        switch notice.tone {
+        case .bad: .red
+        case .warn: .orange
+        case .quiet: nil
         }
     }
 }

@@ -69,12 +69,25 @@ extension ChatApp {
 
     private func row(_ state: State, _ thread: ChatThread, _ input: PresenterInput<ChatApp>) -> ThreadRow {
         let unread = state.unread(thread)
-        let mark: ThreadRow.Mark? = state.attention(thread.id) > 0 ? .attention : thread.status == "error" ? .failed : unread ? .unread : nil
+        let mark: ThreadRow.Mark? = state.attention(thread.id) > 0 ? .attention : unread ? .unread : nil
         return ThreadRow(
             id: thread.id, title: state.title(thread), subject: thread.subject ?? state.title(thread),
             stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agentName(thread.agentID ?? ""),
             preview: thread.running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
-            unread: unread, mark: mark)
+            unread: unread, mark: mark, unfinished: Self.unfinished(thread))
+    }
+
+    /// The console's pill for a chat whose last turn didn't finish.
+    static func unfinished(_ thread: ChatThread) -> ThreadRow.Unfinished? {
+        unfinishedTone(status: thread.status, reason: thread.reason).map { tone in
+            let words =
+                switch tone {
+                case .bad: "Failed"
+                case .warn: "Didn’t finish"
+                case .quiet: "Stopped"
+                }
+            return ThreadRow.Unfinished(tone: tone, words: words)
+        }
     }
 
     static func sections(_ rows: [ThreadRow], _ threads: [ChatThread], now: Date, calendar: Calendar) -> [DaySection] {
@@ -147,10 +160,20 @@ extension ChatApp {
                     kind: .background, title: nil,
                     message: "\(live.name) is working on this chat in the background. Its answer shows here when it finishes."))
         }
+        // The thread's last turn, when it ended before it finished. Read off
+        // the stored thread, so a reload says it too, and only once nothing
+        // runs.
+        let unfinished =
+            live.phase == .idle && !live.deleted ? row.flatMap { unfinishedTurn(status: $0.status, reason: $0.reason, name: live.name) } : nil
         // A run that failed before this conversation was opened left its
         // words on the thread alone; the list marks it failed, so the chat says why.
         let failure = live.error ?? (working || row?.status != "error" ? nil : row?.reason ?? "The run ended in an error.")
-        if let failure { status.append(TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent)?.name)) }
+        // The notice of a turn that ended in an error says what failed, from
+        // the same words: the card stays beside it only where it names a
+        // cause the notice cannot, a refused key or a rate limit.
+        if let failure, unfinished?.tone != .bad || TurnFailureWords.cause(failure) != .other {
+            status.append(TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent)?.name))
+        }
         if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
             status.append(
@@ -177,7 +200,13 @@ extension ChatApp {
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
             olderHidden: (held?.records.count ?? 0) >= 500 ? "Older messages aren't shown here." : nil,
-            turns: turns, typing: live.awaitingFirstEvent, status: status, outcomes: live.outcomes.map(Self.outcome), technical: technical,
+            turns: turns, typing: live.awaitingFirstEvent, status: status,
+            unfinished: unfinished.map {
+                UnfinishedNotice(
+                    tone: $0.tone, title: $0.title, detail: $0.detail, action: "Continue", blocked: blocked,
+                    hint: "Sends “\(Conversation.continueMessage)”")
+            },
+            outcomes: live.outcomes.map(Self.outcome), technical: technical,
             cards: cards(state, all, titles: titles), titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, placeholder: agent.map { "Message \($0.name)" } ?? "Message",

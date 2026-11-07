@@ -245,15 +245,14 @@ struct ThreadRowView: View {
                     .font(.subheadline)
                     .lineLimit(2)
                 Spacer(minLength: 4)
+                if let unfinished = row.unfinished {
+                    UnfinishedPill(mark: unfinished)
+                }
                 switch row.mark {
                 case .attention?:
                     Image(systemName: "questionmark.circle.fill")
                         .foregroundStyle(.orange)
                         .accessibilityLabel("Waiting on you")
-                case .failed?:
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(.red)
-                        .accessibilityLabel("Ended in an error")
                 case .unread?:
                     Circle().fill(Color.accentColor).frame(width: 9, height: 9).padding(.top, 5)
                         .accessibilityLabel("Unread")
@@ -280,6 +279,31 @@ struct ThreadRowView: View {
         case "webhook": "antenna.radiowaves.left.and.right"
         case "record": "bolt"
         default: "gearshape.2"
+        }
+    }
+}
+
+/// The mark of a chat whose last turn didn't finish: "Didn’t finish",
+/// "Stopped" or "Failed", in its tone.
+private struct UnfinishedPill: View {
+    let mark: ThreadRow.Unfinished
+
+    var body: some View {
+        Text(mark.words)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.15), in: .capsule)
+            .fixedSize()
+            .padding(.top, 2)
+    }
+
+    private var tint: Color {
+        switch mark.tone {
+        case .bad: .red
+        case .warn: .orange
+        case .quiet: .secondary
         }
     }
 }
