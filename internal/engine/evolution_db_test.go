@@ -285,6 +285,37 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 	})
 }
 
+// Text and markdown are one storage and one validation, so a property flips
+// between them with live records on it, either way, and keeps every value;
+// a flip that leaves the pair is still a kind change.
+func TestSchemaEvolutionTextAndMarkdownFlipFreely(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	props := evoBaseProps()
+	props["note"] = map[string]any{"type": "text"}
+	if err := evoApply(t, ds, props); err != nil {
+		t.Fatalf("install base type: %v", err)
+	}
+	held := mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       evoPackage + "/gizmo",
+		Properties: map[string]any{"note": "# Heading\n\nA paragraph."},
+	})
+	for _, to := range []string{"markdown", "text", "markdown"} {
+		props["note"] = map[string]any{"type": to}
+		if err := evoApply(t, ds, props); err != nil {
+			t.Fatalf("a flip to %s with a live record must admit: %v", to, err)
+		}
+	}
+	got, err := ds.Get(ctx, evoPackage+"/gizmo", held.ID)
+	if err != nil || got.Properties["note"] != "# Heading\n\nA paragraph." {
+		t.Fatalf("the flipped value = %+v, %v", got, err)
+	}
+	props["note"] = map[string]any{"type": "string"}
+	wantNarrowingGuard(t, evoApply(t, ds, props),
+		`property "note" changes kind markdown → string`, "1 live records")
+}
+
 // The reserved keys of issue 110 travel the same road renamedFrom does: through
 // admission, into the stored declaration row, and back out of it when a later
 // write rebuilds the candidate registry from rows. A reference's LINK DATA is

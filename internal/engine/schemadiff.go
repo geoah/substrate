@@ -495,6 +495,12 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 		if flipped {
 			from, to := kindShape(curP), kindShape(candP)
 			switch {
+			// Text and markdown are one storage, one validation and one
+			// search band (vocabulary.IsLongText): the datatype says how a
+			// client draws the value, so a flip between them in one container
+			// strands nothing.
+			case vocabulary.IsLongText(curP.Datatype) && vocabulary.IsLongText(candP.Datatype) &&
+				curP.Repeated == candP.Repeated && curP.Keyed == candP.Keyed:
 			// A scalar retype to `int` strands only the rows whose stored
 			// value is not already an integral number: a backfill can
 			// rewrite the values first and the declaration then follows
