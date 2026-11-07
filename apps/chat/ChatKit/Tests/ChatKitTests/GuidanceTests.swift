@@ -79,6 +79,18 @@ struct GuidanceSettings {
         #expect(try step(.changeAsked(reference, .active(false)), moved).guidance.failed.isEmpty)
     }
 
+    @Test func aSwitchOrARewordingOfOneDeletedSinceIsPutBackSaidAndReadAgain() throws {
+        let gone = Failure(kind: .refused(status: 404, permanent: true), words: "record m1 is deleted; a put restores it")
+        for change in [GuidanceChange.active(false), .text("Vegan")] {
+            let next = try step(.changeAsked(reference, change), held([vegetarian]))
+            let missing = try step(.writeFailed(reference, gone, before: vegetarian), next)
+            #expect(missing.guidance.memories == [vegetarian])
+            #expect(missing.guidance.busy.isEmpty)
+            #expect(missing.guidance.failed[reference.path] == "It was deleted since you opened it, so nothing was saved.")
+            #expect(missing.asks == [.readGuidance])
+        }
+    }
+
     @Test func aDeleteLeavesAtOnceAndComesBackWhereItWasWhenRefused() throws {
         let older = memory("m0", "Call me Sam", at: "2026-11-01T09:00:00Z")
         let next = try step(.changeAsked(reference, .delete), held([vegetarian, older]))
@@ -141,5 +153,40 @@ struct GuidanceSettings {
         try await rig.harness.until { await $0.state.guidance.busy.isEmpty }
         let reworded = try #require(rig.server.body("PATCH", "/llm/memory/m1"))
         #expect(JSONValue.parse(reworded) == ["properties": ["text": "I eat fish too."], "ifVersion": 4])
+    }
+
+    @Test func aDeleteOfOneAlreadyGoneIsDoneAndASwitchOfOneDeletedSinceReadsTheListAgain() async throws {
+        let memories =
+            #"{"head":10,"generation":"g","records":[{"id":"m1","kind":"substrate.reamde.dev/llm/memory","version":3,"createdAt":"2026-11-07T09:00:00Z","updatedAt":"2026-11-07T09:00:00Z","properties":{"text":"I am vegetarian","active":true,"source":"agent"}},{"id":"m0","kind":"substrate.reamde.dev/llm/memory","version":1,"createdAt":"2026-11-01T09:00:00Z","updatedAt":"2026-11-01T09:00:00Z","properties":{"text":"Call me Sam","active":true,"source":"user"}}]}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/records", query: "llm/memory", answer: .json(200, memories)),
+                .init(method: "GET", path: "/api/v1/records", query: "llm/instruction", answer: .json(200, emptyPage)),
+                .init(method: "DELETE", path: "/llm/memory/m1", answer: .json(404, #"{"error":{"code":"not_found","message":"record m1"}}"#)),
+                .init(
+                    method: "PATCH", path: "/llm/memory/m0",
+                    answer: .json(404, #"{"error":{"code":"not_found","message":"record m0 is deleted; a put restores it"}}"#)),
+            ] + baseRoutes())
+        try await rig.signIn()
+        await rig.harness.send(.readSettings)
+        try await rig.harness.until { await $0.presentation.settings.guidance.memories.rows.count == 2 }
+        // Gone already: the delete is done, nothing is said and nothing read again.
+        await rig.harness.send(.changeGuidance(reference, .delete))
+        try await rig.harness.until { await $0.state.guidance.busy.isEmpty }
+        let left = await rig.harness.presentation.settings.guidance.memories.rows
+        #expect(left.map(\.text) == ["Call me Sam"])
+        #expect(left.first?.problem == nil)
+        #expect(rig.server.count("DELETE /api/v1/substrate.reamde.dev/llm/memory/m1") == 1)
+        #expect(rig.server.count("/api/v1/records", query: "llm/memory") == 1)
+        // Deleted elsewhere since the list was read: the switch is refused
+        // and the list read again, which no longer holds it.
+        rig.server.route("GET", "/api/v1/records", query: "llm/memory", .json(200, emptyPage))
+        await rig.harness.send(.changeGuidance(RecordReference(kind: Kinds.memory, id: "m0"), .active(false)))
+        try await rig.harness.until { harness in
+            let guidance = await harness.state.guidance
+            return guidance.busy.isEmpty && !guidance.reading
+        }
+        #expect(await rig.harness.presentation.settings.guidance.memories.rows.isEmpty)
+        #expect(rig.server.count("/api/v1/records", query: "llm/memory") == 2)
     }
 }

@@ -4,8 +4,9 @@ import SubstrateCore
 /// The owner's memories and instructions (Settings → Assistant): read when
 /// Settings shows them, and written one record at a time, on screen at
 /// once and put back when the server refuses. Each write names the version
-/// the owner saw, so one over a record that moved since is refused and the
-/// list read again, never applied blind.
+/// the owner saw, so one over a record that moved or went since is refused
+/// and the list read again, never applied blind; a delete of one already
+/// gone is done.
 extension ChatApp {
     func guidance(_ state: inout State, _ step: ChatAppStep.GuidanceStep) {
         switch step {
@@ -49,10 +50,16 @@ extension ChatApp {
             state.guidance.busy.remove(reference.path)
             state.guidance.put(before)
             guard failure.report == nil else { return }
-            if failure.status == 409 {
+            switch failure.status {
+            case 409:
                 state.guidance.failed[reference.path] = "It changed since you opened it, so nothing was saved. This is what it says now."
                 guidance(&state, .asked)
-            } else {
+            case 404:
+                // Only a switch or a rewording gets here: the kit's delete
+                // takes a 404 as done, the record being gone already.
+                state.guidance.failed[reference.path] = "It was deleted since you opened it, so nothing was saved."
+                guidance(&state, .asked)
+            default:
                 state.guidance.failed[reference.path] = "That didn't go through: \(failure.words)"
             }
         }
