@@ -5,11 +5,10 @@
  * where a person is about to paste a client ID: the provider page's
  * sign-in step and the sign-in details dialog. */
 
-import { ArrowUpRightIcon } from "lucide-react"
-
 import { CopyButton } from "@/components/identity/copy-button"
 import { oauthCallbackURL } from "@/lib/api/catalog"
 import { cn } from "@/lib/utils"
+import { ExternalLink } from "@/components/external-link"
 
 /** Where a provider documents creating an OAuth app, keyed by the bundle
  * id's package word. A provider not listed gets the address and no link. */
@@ -57,18 +56,12 @@ export function OAuthCallbackNote({
         {docs && (
           <>
             {" "}
-            <a
+            <ExternalLink
               href={docs.href}
-              target="_blank"
-              rel="noreferrer"
               className="text-primary-text underline-offset-2 hover:underline"
             >
               {docs.label}
-              <ArrowUpRightIcon
-                aria-hidden
-                className="inline size-3 align-text-top"
-              />
-            </a>
+            </ExternalLink>
           </>
         )}
       </p>

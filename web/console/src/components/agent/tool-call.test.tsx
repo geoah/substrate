@@ -496,3 +496,48 @@ describe("the tool line", () => {
     expect(screen.queryByText("lookup")).toBeNull()
   })
 })
+
+describe("a tool whose result has a known shape", () => {
+  const search = call({
+    name: "web_search",
+    callable: "function:providers.substrate.reamde.dev:firecrawl:websearch",
+    arguments: '{"query":"quiet robot vacuum"}',
+    output: JSON.stringify({
+      effects: 0,
+      output: {
+        results: [
+          {
+            title: "The Best Robot Vacuums",
+            url: "https://uk.pcmag.com/robot-vacuums/74630",
+            snippet: "We tested them.",
+          },
+          { title: "Sneaky", url: "javascript:alert(1)" },
+        ],
+      },
+    }),
+  })
+
+  it("says the search in words and draws its hits as pills that open a new tab", () => {
+    const { container } = renderCard(search)
+    expect(
+      screen.getByText("Searched for “quiet robot vacuum”, 1 result")
+    ).toBeTruthy()
+    const results = screen.getByRole("list", { name: "Results" })
+    const links = results.querySelectorAll("a")
+    expect(links).toHaveLength(1)
+    expect(links[0].getAttribute("href")).toBe(
+      "https://uk.pcmag.com/robot-vacuums/74630"
+    )
+    expect(links[0].getAttribute("target")).toBe("_blank")
+    expect(links[0].textContent).toContain("uk.pcmag.com")
+    expect(links[0].textContent).toContain("The Best Robot Vacuums")
+    expect(links[0].querySelector("[data-external-link-mark]")).not.toBeNull()
+    // The address no browser should follow is never a link.
+    expect(container.innerHTML).not.toContain("javascript:")
+  })
+
+  it("does not show the raw payload again when opened", () => {
+    renderCard(search)
+    expect(screen.queryByText("What it returned")).toBeNull()
+  })
+})

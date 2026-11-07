@@ -23,6 +23,7 @@ import { scalarText } from "@/lib/format"
 import { coverageWords } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import { REDACTED, elementSpec, type PropSpec } from "@/lib/record-schema"
+import { ExternalLink } from "@/components/external-link"
 
 export function Empty({ children }: { children?: ReactNode }) {
   return <EmptyValue>{children}</EmptyValue>
@@ -65,14 +66,12 @@ function ScalarValue({ spec, value }: { spec: PropSpec; value: unknown }) {
   }
   if (spec.kind === "url" && typeof value === "string") {
     return (
-      <a
+      <ExternalLink
         href={value}
-        target="_blank"
-        rel="noreferrer"
         className="font-mono text-[12.5px] break-all text-primary-text underline-offset-2 hover:underline"
       >
         {value}
-      </a>
+      </ExternalLink>
     )
   }
   if (spec.kind === "email" && typeof value === "string") {

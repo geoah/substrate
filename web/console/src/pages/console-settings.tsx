@@ -46,6 +46,7 @@ import {
 import { changeServer, checkForUpdates, nativeShell } from "@/lib/shell"
 import { AccountRows, DeleteRepositoryRow } from "@/pages/account"
 import { ApiTokens, AppTokenRows, SignedInRows } from "@/pages/tokens"
+import { ExternalLink } from "@/components/external-link"
 
 const RECORD_WIDTHS = [
   { value: "narrow", label: "Narrow", fill: "40%" },
@@ -306,14 +307,12 @@ function ShellPrivacyRow() {
       title="Privacy policy"
       description="What the app does with your data."
       control={
-        <a
+        <ExternalLink
           href={shell.privacyPolicy}
-          target="_blank"
-          rel="noreferrer"
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Open
-        </a>
+        </ExternalLink>
       }
     />
   )

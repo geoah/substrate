@@ -14,7 +14,6 @@ import {
   CircleDashedIcon,
   CircleXIcon,
   DownloadIcon,
-  ExternalLinkIcon,
   HourglassIcon,
   PlusIcon,
   ZapIcon,
@@ -55,6 +54,7 @@ import {
   versionWords,
 } from "@/lib/app-setup"
 import { cn } from "@/lib/utils"
+import { ExternalLink } from "@/components/external-link"
 
 const ACTION_ICONS: Partial<Record<SetupAction, typeof CheckIcon>> = {
   install: DownloadIcon,
@@ -540,16 +540,12 @@ export function SetupRow({
         {kept && row.package && (
           <p className="text-xs text-muted-foreground">
             {kept}{" "}
-            <a
+            <ExternalLink
               href={packagePage(row.package.id)}
-              target="_blank"
-              rel="noreferrer"
               className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
             >
-              Open its page{" "}
-              <span className="sr-only">(opens in a new tab)</span>
-              <ExternalLinkIcon aria-hidden className="size-3" />
-            </a>
+              Open its page
+            </ExternalLink>
           </p>
         )}
         {row.blocked && (
@@ -558,16 +554,12 @@ export function SetupRow({
               {asSentence(row.blocked.problem)}
             </p>
             {fix && (
-              <a
+              <ExternalLink
                 href={fix}
-                target="_blank"
-                rel="noreferrer"
                 className="inline-flex w-fit items-center gap-1 text-primary underline-offset-4 hover:underline"
               >
-                Fix this in the console{" "}
-                <span className="sr-only">(opens in a new tab)</span>
-                <ExternalLinkIcon aria-hidden className="size-3" />
-              </a>
+                Fix this in the console
+              </ExternalLink>
             )}
           </div>
         )}

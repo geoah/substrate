@@ -15,15 +15,18 @@ import {
 } from "@/lib/api/types"
 import {
   HOST_FUNCTION_ASK,
+  HOST_FUNCTION_EDIT,
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
+  HOST_FUNCTION_VOCABULARY,
+  HOST_FUNCTION_WAIT,
   HOST_FUNCTION_WRITE,
   TOOL_FUNCTION_FIELD,
   isToolOwnedKind,
   valueIdentity,
 } from "@/lib/agent-grants"
 import type { ChangeOp, Decision } from "@/lib/changerequests"
-import { AGENT_KIND, FUNCTION_KIND } from "@/lib/core-kinds"
+import { AGENT_KIND, FUNCTION_KIND, KIND_KIND } from "@/lib/core-kinds"
 import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
@@ -33,6 +36,7 @@ import {
   systemSpecs,
   type PropSpec,
 } from "@/lib/record-schema"
+import { toolResultSummary } from "@/lib/tool-views"
 import { kindPatternWords, toolName } from "@/lib/tools"
 
 /** The `ask` host function, named with the other three in agent-grants. */
@@ -482,6 +486,20 @@ function kindsOf(args: Record<string, unknown>): string[] {
     : []
 }
 
+/** The kinds a vocabulary call's documents declare, by their last word. */
+function vocabularyKinds(documents: unknown): string[] {
+  if (!Array.isArray(documents)) return []
+  const out: string[] = []
+  for (const doc of documents) {
+    if (!doc || typeof doc !== "object") continue
+    const { kind, metadata } = doc as Record<string, unknown>
+    if (kind !== KIND_KIND) continue
+    const id = (metadata as Record<string, unknown> | undefined)?.id
+    if (typeof id === "string") out.push(id.slice(id.lastIndexOf("/") + 1))
+  }
+  return out
+}
+
 /** What a tool call did, in words, from the function behind its name.
  *
  * The transcript records the model-facing NAME only, so the caller resolves
@@ -527,7 +545,29 @@ export function toolSummary(
     }
     case HOST_FUNCTION_ASK:
       return "Asked you some questions"
+    case HOST_FUNCTION_WAIT:
+      return "Waited for work running in the background"
+    case HOST_FUNCTION_EDIT: {
+      const kind = typeof args.kind === "string" ? args.kind : ""
+      const what = kind ? lowerFirst(displayName(kind)) : "record"
+      if (args.op === "view") return `Read part of a ${what}`
+      const edits = Array.isArray(args.edits) ? args.edits.length : 0
+      return edits > 1
+        ? `Edited a ${what} in ${edits} places`
+        : `Edited a ${what}`
+    }
+    case HOST_FUNCTION_VOCABULARY: {
+      const named = vocabularyKinds(args.documents)
+      const what = named.length ? ` (${joinWords(named)})` : ""
+      return args.plan === true
+        ? `Checked a change to your collections${what}`
+        : `Changed your collections${what}`
+    }
   }
+  // A function tool whose answer has a shape the console knows (a list of
+  // links, a page) is said from that shape.
+  const shaped = opts.function ? toolResultSummary(call) : undefined
+  if (shaped) return shaped
   if (opts.description) return opts.description
   return `Used ${lowerFirst(toolName(opts.function ?? call.name))}`
 }

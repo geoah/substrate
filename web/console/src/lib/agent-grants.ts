@@ -33,6 +33,20 @@ export const HOST_FUNCTION_QUERY = `${CORE_PACKAGE}/query`
 export const HOST_FUNCTION_WRITE = `${CORE_PACKAGE}/write`
 export const HOST_FUNCTION_PROPOSE = `${CORE_PACKAGE}/propose`
 export const HOST_FUNCTION_ASK = `${CORE_PACKAGE}/ask`
+export const HOST_FUNCTION_WAIT = `${CORE_PACKAGE}/wait`
+export const HOST_FUNCTION_EDIT = `${CORE_PACKAGE}/edit`
+export const HOST_FUNCTION_VOCABULARY = `${CORE_PACKAGE}/vocabulary`
+
+/** Every host function: the tools whose body is the engine's own. */
+export const HOST_FUNCTIONS: readonly string[] = [
+  HOST_FUNCTION_QUERY,
+  HOST_FUNCTION_WRITE,
+  HOST_FUNCTION_PROPOSE,
+  HOST_FUNCTION_ASK,
+  HOST_FUNCTION_WAIT,
+  HOST_FUNCTION_EDIT,
+  HOST_FUNCTION_VOCABULARY,
+]
 
 /** The request kind `propose` lands, and the one an agent's write permission
  * must name before it may call the tool (`vocabulary.KindRecordPatchRequest`). */

@@ -41,6 +41,7 @@ import {
 import type { SubstrateRecord } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
 import { cn } from "@/lib/utils"
+import { ReplySources } from "@/components/agent/reply-sources"
 
 /** The substrate's own turn: a decision or an answer as one quiet line, or —
  * for a system row this reader cannot decode — the raw content, so nothing in
@@ -269,6 +270,9 @@ function AgentReply({
               <div>
                 {turn.content && (
                   <MessageText text={turn.content} mentions={turn.mentions} />
+                )}
+                {turn.content && turn.key !== liveKey && (
+                  <ReplySources text={turn.content} />
                 )}
                 {turn.key === liveKey && (
                   <span

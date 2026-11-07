@@ -26,6 +26,7 @@ import { ChangesList } from "@/components/agent/changes"
 import { InteractionCard } from "@/components/agent/interaction-card"
 import { MessageText } from "@/components/agent/message-text"
 import { ProposalCard } from "@/components/agent/proposal-card"
+import { ToolResultView } from "@/components/agent/tool-views"
 import { CodeBlock } from "@/components/code-block"
 import { KindPath } from "@/components/identity/kind-ref"
 import { RecordRef } from "@/components/identity/record-ref"
@@ -48,6 +49,8 @@ import {
 } from "@/lib/api/transcript"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { prettyJSON } from "@/lib/code"
+import { HOST_FUNCTIONS } from "@/lib/agent-grants"
+import { toolResult } from "@/lib/tool-views"
 import { cn } from "@/lib/utils"
 
 function Payload({ label, raw }: { label: string; raw: string }) {
@@ -183,13 +186,20 @@ export function ToolCallCard({
   const proposed = requestIdOf(call)
   // An ask's interaction renders as the form card, the same live-state rule.
   const asked = interactionIdOf(call)
+  // A function whose result has a shape the console knows draws it under
+  // the line, so its payload is not shown again as raw output. The host
+  // functions and sub-agents have details of their own.
+  const known =
+    resolved.function && !HOST_FUNCTIONS.includes(resolved.function)
+      ? toolResult(call)
+      : undefined
   // The request and the interaction render as their own cards, so their
   // stamps are not listed again.
   const details = toolDetails(
     call,
     resolved,
     [proposed, asked].filter((id): id is string => Boolean(id))
-  )
+  ).filter((detail) => !(known && detail.type === "output"))
   // A failed call that LANDED a request was not a failure: the policy held
   // the write for review, and the line says so instead of crying red.
   const held = failed && proposed !== undefined
@@ -269,6 +279,11 @@ export function ToolCallCard({
               )}
             </>
           )}
+        </div>
+      )}
+      {known && (
+        <div className="pl-1">
+          <ToolResultView result={known} />
         </div>
       )}
       {proposed && <ProposalCard id={proposed} />}
