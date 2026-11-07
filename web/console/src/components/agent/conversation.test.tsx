@@ -61,6 +61,7 @@ import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
 import { resetUnsent } from "@/lib/unsent-messages"
 import {
+  CONTINUE_MESSAGE,
   Conversation,
   RECONCILE_DELAY_MS,
   RELOAD_WAIT_MS,
@@ -398,6 +399,52 @@ describe("Conversation", () => {
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
     ).toBeTruthy()
+  })
+
+  it("says why the last turn didn't finish and continues it, leaving the draft alone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    const cut = runningThread("t-9")
+    cut.properties = {
+      status: "stopped",
+      reason: "stopped: the server shut down during the turn",
+    }
+    mount("t-9", { threadRecord: cut, initialDraft: "half a thought" })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(screen.getByText("Helper didn’t finish")).toBeTruthy()
+    expect(
+      screen.getByText("The server restarted while it was working.")
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(calls).toHaveLength(1)
+    expect(calls[0].thread).toBe("t-9")
+    expect(calls[0].message).toBe(CONTINUE_MESSAGE)
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "half a thought"
+    )
+    // The turn it started is running: the note is gone.
+    expect(screen.queryByText("Helper didn’t finish")).toBeNull()
+  })
+
+  it("says nothing about a turn that finished", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: [] }), { status: 200 })
+      )
+    )
+    const done = runningThread("t-10")
+    done.properties = { status: "ok" }
+    mount("t-10", { threadRecord: done })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull()
   })
 
   it("gives the message back when a turn is refused before it starts", async () => {

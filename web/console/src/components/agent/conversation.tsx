@@ -41,7 +41,13 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRoundIcon, SquareIcon } from "lucide-react"
+import {
+  CircleAlertIcon,
+  CirclePauseIcon,
+  KeyRoundIcon,
+  SquareIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
 import { AddKeyButton } from "@/components/agent/model-key-link"
@@ -62,6 +68,7 @@ import {
   threadSubject,
   threadTally,
 } from "@/lib/agent-chat"
+import { unfinishedTurn, type UnfinishedTurn } from "@/lib/agent-runs"
 import {
   attachThread,
   readThreadNow,
@@ -87,6 +94,7 @@ import {
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
+import { cn } from "@/lib/utils"
 import { CopyButton } from "@/components/identity/copy-button"
 import {
   addUnsent,
@@ -138,6 +146,72 @@ function KeylessCallout({ provider }: { provider: string }) {
         </span>
       </div>
       <AddKeyButton providerId={provider} />
+    </div>
+  )
+}
+
+/** The message Continue sends. The server resumes a stopped thread only
+ * when its owner writes again, so going on is a message like any other, and
+ * the transcript shows it. */
+export const CONTINUE_MESSAGE = "Continue where you left off."
+
+const UNFINISHED_TONES: Record<
+  UnfinishedTurn["tone"],
+  { box: string; icon: ReactNode }
+> = {
+  bad: {
+    box: "border-destructive/30 bg-bad-soft",
+    icon: <CircleAlertIcon className="size-4 shrink-0 text-destructive" />,
+  },
+  warn: {
+    box: "border-warning/30 bg-warn-soft",
+    icon: <TriangleAlertIcon className="size-4 shrink-0 text-warning" />,
+  },
+  quiet: {
+    box: "bg-background",
+    icon: <CirclePauseIcon className="size-4 shrink-0 text-faint" />,
+  },
+}
+
+/** A chat whose last turn ended before it finished: what happened, why, and
+ * a way to go on. */
+function UnfinishedNote({
+  turn,
+  onContinue,
+  blocked,
+}: {
+  turn: UnfinishedTurn
+  onContinue: () => void
+  /** Why Continue can't send now, as the composer says it. */
+  blocked?: string
+}) {
+  const tone = UNFINISHED_TONES[turn.tone]
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3.5 py-2.5 text-[13px]",
+        tone.box
+      )}
+    >
+      {tone.icon}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{turn.title}</span>
+        {turn.detail && (
+          <span className="[overflow-wrap:anywhere] text-muted-foreground">
+            {turn.detail}
+          </span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onContinue}
+        disabled={Boolean(blocked)}
+        title={blocked ?? `Sends “${CONTINUE_MESSAGE}”`}
+      >
+        Continue
+      </Button>
     </div>
   )
 }
@@ -701,7 +775,8 @@ export function Conversation({
     const message = text.trim()
     // `blockedReason` says why on the composer, and the text stays there.
     if (!message || blockedReason || !agentId || keylessProvider) return
-    onDraft("")
+    // Continue sends its own words and leaves what is being typed alone.
+    if (text === draft) onDraft("")
     const sentContext = context?.length ? context : undefined
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
@@ -841,6 +916,12 @@ export function Conversation({
       ? agent.properties.description
       : ""
   const name = agentId ? agentName(agentId) : "an agent"
+  // The thread's last turn, when it ended before it finished. Read off the
+  // stored thread, so a reload says it too, and only once nothing runs.
+  const unfinished =
+    current && threadRecord && !busy && !threadRunning && !background
+      ? unfinishedTurn(threadRecord, name)
+      : undefined
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -940,6 +1021,16 @@ export function Conversation({
             <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
               {name} couldn’t answer: {error}
             </div>
+          )}
+          {unfinished && (
+            <UnfinishedNote
+              turn={unfinished}
+              onContinue={() => send(CONTINUE_MESSAGE)}
+              blocked={
+                blockedReason ??
+                (keylessProvider ? "Add an API key first" : undefined)
+              }
+            />
           )}
           {outcomes.map((o) => (
             <OutcomeNote

@@ -22,6 +22,8 @@ import {
   runStats,
   runUnpriced,
   tokenWords,
+  unfinishedTone,
+  unfinishedTurn,
 } from "./agent-runs"
 import type { SubstrateRecord } from "@/lib/api/types"
 
@@ -209,6 +211,54 @@ describe("agent runs", () => {
       )
       expect(running.started.spendComplete).toBe(false)
     })
+  })
+
+  it("says why a chat's last turn didn't finish, in words, and nothing for one that did", () => {
+    const ended = (status: string, reason?: string) =>
+      rec(reason === undefined ? { status } : { status, reason })
+    expect(
+      unfinishedTurn(
+        ended("stopped", "stopped: the server shut down during the turn"),
+        "Moss"
+      )
+    ).toEqual({
+      tone: "warn",
+      title: "Moss didn’t finish",
+      detail: "The server restarted while it was working.",
+    })
+    expect(unfinishedTurn(ended("stopped", "stopped by api"), "Moss")).toEqual({
+      tone: "quiet",
+      title: "Moss was stopped before it finished",
+    })
+    expect(
+      unfinishedTurn(ended("overbudget", "max turns reached (8)"), "Moss")
+        ?.detail
+    ).toBe("It used all 8 of its turns.")
+    expect(
+      unfinishedTurn(ended("overbudget", "max tool calls reached (32)"), "Moss")
+        ?.detail
+    ).toBe("It used all 32 of its tool calls.")
+    expect(
+      unfinishedTurn(
+        ended("overbudget", "deadline exceeded after a last turn"),
+        "Moss"
+      )?.detail
+    ).toBe("It ran out of time.")
+    // A reason the console does not know is shown as the server wrote it.
+    expect(
+      unfinishedTurn(ended("overbudget", "a new cap (3)"), "Moss")?.detail
+    ).toBe("It reached a limit: a new cap (3)")
+    expect(
+      unfinishedTurn(ended("error", "llm: overloaded\nstack…"), "Moss")
+    ).toEqual({
+      tone: "bad",
+      title: "Moss ran into a problem and didn’t finish",
+      detail: "What failed: llm: overloaded",
+    })
+    for (const status of ["ok", "running"]) {
+      expect(unfinishedTurn(ended(status), "Moss")).toBeUndefined()
+      expect(unfinishedTone(ended(status))).toBeUndefined()
+    }
   })
 
   it("groups the runs that didn't finish by status and reason, most frequent first", () => {
