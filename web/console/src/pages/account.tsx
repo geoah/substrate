@@ -11,7 +11,7 @@
  * is the account. Signing a browser or a script out is the Signed in section's
  * job. */
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { CopyIcon } from "lucide-react"
@@ -74,8 +74,10 @@ async function copy(value: string) {
   }
 }
 
-/** The account rows: the repository name, the password, the second factor. */
-export function AccountRows() {
+/** The account rows: the repository name, then `afterName` (Settings puts
+ * Verify domain there, beside the mark it clears), the password and the
+ * second factor. */
+export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
   const repository = getRepository() ?? ""
   const { totpRequired } = useAuthPolicy()
   const [technical] = useTechnicalDetails()
@@ -101,6 +103,7 @@ export function AccountRows() {
           ) : undefined
         }
       />
+      {afterName}
       <SettingRow
         title="Password"
         description={`Changing it needs your current password${totpRequired ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}

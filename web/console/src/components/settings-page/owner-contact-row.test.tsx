@@ -75,6 +75,11 @@ describe("OwnerContactRow", () => {
       screen.getByRole("link", { name: "Change name" }).getAttribute("href")
     ).toBe("/settings/name")
     expect(screen.queryByText("Tell us your name")).toBeNull()
+    // Which contact is the reader's is explained and can be chosen here.
+    expect(
+      screen.getByText(/The card in your contacts that is you/)
+    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Choose another" })).toBeTruthy()
   })
 
   it("asks again where the setting names a deleted contact", async () => {

@@ -284,16 +284,6 @@ export function operatorServesAny(
   return (items ?? []).some((i) => i.source === "operator")
 }
 
-/** Whether the operator pays for a tool key right now: what puts the
- * allowance note on the Tools header. */
-export function operatorServesTools(
-  items: readonly OperatorDefault[] | undefined
-): boolean {
-  return (items ?? []).some(
-    (i) => i.slot === "function" && i.source === "operator"
-  )
-}
-
 // ── the allowance ───────────────────────────────────────────────────────────
 
 /** "$0.37". */

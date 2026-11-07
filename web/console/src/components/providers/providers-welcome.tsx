@@ -1,7 +1,8 @@
 /** The welcome at the top of Providers, shown where the deployment loaded an
  * operator defaults file (`operatorDefaults` in server.json) until the
- * reader dismisses it: what works now on the operator's keys, the accounts
- * that wait on the reader, and that any key can be their own. Registration
+ * reader dismisses it: what works now, the accounts that wait on the
+ * reader, and that any of it can be their own. It says what works, never who
+ * pays for it: a reader new to the substrate has no use for the keys. Registration
  * lands here on such a deployment. **Done** dismisses it for every browser,
  * because the fact lives on the console preference record. */
 
@@ -55,8 +56,9 @@ export function ProvidersWelcome({
 }) {
   const { works, connect } = welcomeFacts(items)
   const chat = works.includes("chat")
+  const one = works.length === 1
   const limit = allowance
-    ? `, up to ${centsWords(allowance.centsPerDay)} a day`
+    ? `, within a daily allowance of ${centsWords(allowance.centsPerDay)}`
     : ""
   return (
     <section
@@ -67,14 +69,15 @@ export function ProvidersWelcome({
         {words.named ? `Welcome to ${words.name}` : "Welcome"}
       </div>
       <h1 id="providers-welcome" className={cn(pageTitleClass("page"), "mt-1")}>
-        {chat ? "Your agents can start working now" : "What you can use here"}
+        {chat ? "Your agents are ready to go" : "Here’s what’s ready for you"}
       </h1>
-      <p className="mt-2 max-w-[64ch] text-muted-foreground">
+      <p className="mt-2 max-w-[100ch] text-muted-foreground">
         {works.length > 0
-          ? `${words.Name} pays for ${andList(works)}${limit}, so you can use them today. `
+          ? `${sentenceCase(andList(works))} ${one ? "is" : "are"} already set up, so you can try ${one ? "it" : "them"} right away${limit}. `
           : ""}
-        Your accounts, such as Google and WHOOP, wait on you to connect them.
-        Anywhere you add your own key, it is used instead of {words.possessive}.
+        Connect accounts like Google or WHOOP to bring in your email, calendar
+        and other data. If you’d rather use your own AI accounts, you can switch
+        at any time under AI models, further down this page.
       </p>
       <ol className="mt-4 grid gap-2 text-[13.5px] sm:grid-cols-3">
         {works.length > 0 && (
@@ -82,7 +85,7 @@ export function ProvidersWelcome({
             pill={<Pill tone="ok">On</Pill>}
             title={sentenceCase(andList(works))}
           >
-            Paid by {words.name}. Nothing to set up.
+            Ready now. Nothing to set up.
           </Step>
         )}
         <Step
@@ -94,8 +97,8 @@ export function ProvidersWelcome({
           }
         >
           {connect.length > 0
-            ? "One approval brings your data in."
-            : "Bring in mail, calendars and more, under Accounts you connect."}
+            ? "Sign in once, and your data comes in and stays up to date."
+            : "Bring in your email, calendar and more, under Accounts you connect."}
         </Step>
         <Step
           pill={
@@ -103,9 +106,10 @@ export function ProvidersWelcome({
               Optional
             </Pill>
           }
-          title="Your own keys"
+          title="Use your own AI accounts"
         >
-          Replace any of {words.possessive} keys under AI models.
+          Have an OpenAI, Anthropic or Gemini account? Add it under AI models,
+          and your agents use it instead.
         </Step>
       </ol>
       <div className="mt-4 flex flex-wrap gap-2">

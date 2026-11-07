@@ -401,8 +401,7 @@ export function ConsoleSettingsPage() {
       </SettingsSection>
       <SettingsSection title="Account">
         <OwnerContactRow />
-        <AccountRows />
-        <VerifyDomainRow />
+        <AccountRows afterName={<VerifyDomainRow />} />
       </SettingsSection>
       <SettingsSection title="Signed in">
         <ShellServerRow />

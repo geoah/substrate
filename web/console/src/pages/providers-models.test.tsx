@@ -1227,7 +1227,7 @@ describe("the allowance", () => {
     expect(screen.queryByRole("meter")).toBeNull()
   })
 
-  it("puts one line on the Tools header where a tool runs on the operator's key", async () => {
+  it("says on the tool's own row, not the Tools header, that it runs on the operator's key", async () => {
     catalog.providers = [
       provider("firecrawl", {
         kinds: [],
@@ -1249,9 +1249,9 @@ describe("the allowance", () => {
     renderPage()
     await modelCard("OpenAI")
     const tools = group("Tools for your agents")
-    expect(
-      within(tools).getByText("counts toward today’s allowance from Crane")
-    ).toBeTruthy()
+    // A tool on the reader's own account counts toward nothing, so the
+    // header names no allowance.
+    expect(within(tools).queryByText(/allowance/)).toBeNull()
     const firecrawl = providerCard("Firecrawl")
     expect(within(firecrawl).getByText("Using Crane’s key")).toBeTruthy()
     // Named by what it does, as the welcome names it.
@@ -1272,11 +1272,11 @@ describe("the welcome", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Your agents can start working now",
+        name: "Your agents are ready to go",
       })
     ).toBeTruthy()
     expect(
-      screen.getByText(/Crane pays for chat and search by meaning/)
+      screen.getByText(/^Chat and search by meaning are already set up/)
     ).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Done" }))
     expect(actions).toEqual([{ type: "welcome", dismissed: true }])
@@ -1286,7 +1286,7 @@ describe("the welcome", () => {
     ).toBeTruthy()
   })
 
-  it("names what the operator pays for, a tool by what it does, and the day's limit", async () => {
+  it("names what works, a tool by what it does, and the day's limit, never who pays", async () => {
     catalog.providers = [
       ...catalog.providers,
       provider("firecrawl", {
@@ -1318,15 +1318,18 @@ describe("the welcome", () => {
     )!
     expect(
       within(welcome).getByText(
-        "Crane pays for chat, search by meaning and web search, up to $2.00 a day, so you can use them today. Your accounts, such as Google and WHOOP, wait on you to connect them. Anywhere you add your own key, it is used instead of Crane’s."
+        "Chat, search by meaning and web search are already set up, so you can try them right away, within a daily allowance of $2.00. Connect accounts like Google or WHOOP to bring in your email, calendar and other data. If you’d rather use your own AI accounts, you can switch at any time under AI models, further down this page."
       )
     ).toBeTruthy()
+    expect(within(welcome).queryByText(/pays|Paid by/)).toBeNull()
     expect(
       within(welcome).getByText("Chat, search by meaning and web search")
     ).toBeTruthy()
     expect(within(welcome).queryByText(/Firecrawl/)).toBeNull()
     expect(
-      within(welcome).getByText("Replace any of Crane’s keys under AI models.")
+      within(welcome).getByText(
+        "Have an OpenAI, Anthropic or Gemini account? Add it under AI models, and your agents use it instead."
+      )
     ).toBeTruthy()
   })
 

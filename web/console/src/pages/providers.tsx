@@ -3,17 +3,18 @@
  *
  * - **Accounts you connect**: the shipped catalog's providers that bring
  *   data in, joined with what this repository holds of them and their
- *   accounts, one card each, opening the provider's page.
+ *   accounts, one row each, opening the provider's page.
  * - **Tools for your agents**: providers whose package declares no account
  *   kind and offers functions to agents.
  * - **AI models**: one card per `llm/provider` row, with its key form in
  *   place (components/providers/model-card.tsx).
  *
- * A card says what it gives you, in one pill whether it works (On, Set up,
+ * A row says what it gives you, in one pill whether it works (On, Set up,
  * Needs attention, Paused) or offers to add it, and, only where someone
  * other than the reader could supply a key or a sign-in, whose it is. The
- * operator's daily allowance sits on the AI models header and as one line
- * on the Tools header, never over the cards that bring data in. Where the
+ * operator's daily allowance sits on the AI models header, never over the
+ * providers that bring data in; a tool on the operator's key says so on its
+ * own row. Where the
  * deployment loaded an operator defaults file the page opens with a welcome
  * until the reader dismisses it.
  *
@@ -26,7 +27,7 @@ import { PublisherDetails } from "@/components/packages/publisher"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { SearchXIcon, TriangleAlertIcon } from "lucide-react"
+import { ChevronRightIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react"
 
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
@@ -41,7 +42,7 @@ import {
 } from "@/components/providers/bundle-actions"
 import { Pill, type PillTone } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
-import { AllowanceBar, AllowanceNote } from "@/components/providers/allowance"
+import { AllowanceBar } from "@/components/providers/allowance"
 import { AddModelCard, ModelCard } from "@/components/providers/model-card"
 import {
   ProviderLogo,
@@ -89,7 +90,6 @@ import {
   modelItem,
   modelName,
   operatorServesAny,
-  operatorServesTools,
   packageWhoseKey,
   searchFailure,
   searchLine,
@@ -103,7 +103,6 @@ import {
   offeredFunctionCount,
   providerGroup,
 } from "@/lib/providers"
-import { cn } from "@/lib/utils"
 import { packageDisplayName } from "@/lib/kind-names"
 import { providersRoute } from "@/router"
 
@@ -111,6 +110,10 @@ const DESCRIPTION =
   "Everything your substrate connects to: the accounts that bring your data in, the tools your agents use and the AI models they run on."
 
 const GRID = "grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5"
+
+/** The providers are a list, one full-width row each: a description and
+ * whose sign-in it uses need the width a card cannot give them. */
+const LIST = "divide-y overflow-hidden rounded-[10px] border bg-background"
 
 export function ProvidersPage() {
   const [technical] = useTechnicalDetails()
@@ -148,8 +151,8 @@ export function ProvidersPage() {
   const showWelcome =
     keys.offered && Boolean(keys.read) && !welcome.busy && !welcome.dismissed
 
-  const providerCard = (p: ProviderEntry) => (
-    <ProviderCard
+  const providerRow = (p: ProviderEntry) => (
+    <ProviderRow
       key={p.row.key}
       entry={p}
       chain={data.chains(p.row)}
@@ -201,9 +204,9 @@ export function ProvidersPage() {
             </EmptyContent>
           </Empty>
         ) : data.pending ? (
-          <div className={GRID}>
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-[118px] rounded-[10px]" />
+          <div className="flex flex-col gap-1.5">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-[68px] rounded-[10px]" />
             ))}
           </div>
         ) : groups.accounts.length === 0 ? (
@@ -211,7 +214,7 @@ export function ProvidersPage() {
             This substrate ships no providers that bring data in.
           </p>
         ) : (
-          <div className={GRID}>{groups.accounts.map(providerCard)}</div>
+          <ul className={LIST}>{groups.accounts.map(providerRow)}</ul>
         )}
       </section>
       {groups.tools.length > 0 && (
@@ -219,15 +222,9 @@ export function ProvidersPage() {
           <SectionHead
             id="tools"
             title="Tools for your agents"
-            hint={
-              operatorServesTools(items) ? (
-                <AllowanceNote words={words} />
-              ) : (
-                "services your agents call for you"
-              )
-            }
+            hint="services your agents can use for you"
           />
-          <div className={GRID}>{groups.tools.map(providerCard)}</div>
+          <ul className={LIST}>{groups.tools.map(providerRow)}</ul>
         </section>
       )}
       <ModelsGroup
@@ -361,7 +358,7 @@ const LINE_TONE: Record<ProviderEntry["standing"]["tone"], string> = {
   add: "text-faint",
 }
 
-function ProviderCard({
+function ProviderRow({
   entry,
   chain,
   technical,
@@ -379,64 +376,81 @@ function ProviderCard({
   const failed = installFailure(items, row.id)
   // A tool is described by what it does, in the welcome's words.
   const purpose = toolWords(row.id)
+  const publisher = row.catalog?.publisher
   return (
-    <div
+    <li
       data-slot="provider-card"
-      className="relative flex flex-col gap-2 rounded-[10px] border bg-background p-3.5 transition-colors hover:border-border-strong"
+      className="group relative flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-hover"
     >
-      <div className="flex items-center gap-2.5">
-        <ProviderLogo info={info} />
-        <Link
-          to="/providers/$authority/$pkg"
-          params={bundleParams(row.id)}
-          className="min-w-0 flex-1 truncate font-semibold outline-none after:absolute after:inset-0 after:rounded-[10px] focus-visible:after:ring-2 focus-visible:after:ring-ring/50"
-        >
-          {info.name}
-        </Link>
+      <ProviderLogo info={info} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <Link
+            to="/providers/$authority/$pkg"
+            params={bundleParams(row.id)}
+            className="font-semibold outline-none after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset"
+          >
+            {info.name}
+          </Link>
+          {publisher && !technical && (
+            <span className="text-[12px] [overflow-wrap:anywhere] text-faint">
+              by{" "}
+              {publisher.name
+                ? `${publisher.name} · ${publisher.authority}`
+                : publisher.authority}
+            </span>
+          )}
+        </div>
+        {(purpose || row.catalog?.description) && (
+          <p className="text-[13px] text-muted-foreground">
+            {purpose
+              ? `${sentenceCase(purpose)} for your agents.`
+              : firstSentence(row.catalog?.description)}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+          <span className={LINE_TONE[standing.tone]}>{standing.line}</span>
+          {entry.updateAvailable && (
+            <Pill tone="accent" dot={false}>
+              Update available
+            </Pill>
+          )}
+        </div>
+        {whose && <p className="text-[12.5px]">{whose.line}</p>}
+        {whose?.notice && (
+          <p className="-mt-0.5 text-[12px] text-faint">{whose.notice}</p>
+        )}
+        {failed !== undefined && (
+          <p className="text-[12.5px] text-destructive">
+            {words.Name} couldn’t add it for you
+            {failed ? `: ${failed}` : "."}
+          </p>
+        )}
+        {technical && publisher && (
+          <div className="relative z-10 mt-1 cursor-auto">
+            <PublisherDetails publisher={publisher} />
+          </div>
+        )}
+        {technical && <IdText value={row.id} />}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5 self-center">
         {standing.tone === "add" ? (
           <TakeButton
             row={row}
             chain={chain}
             name={info.name}
             label="Add"
-            className="relative z-10 h-6"
+            className="relative z-10 h-7"
           />
         ) : (
           <StandingPill standing={standing} />
         )}
+        <ChevronRightIcon
+          aria-hidden
+          className="size-4 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+        />
       </div>
-      {row.catalog?.publisher && (
-        <PublisherDetails publisher={row.catalog.publisher} />
-      )}
-      {(purpose || row.catalog?.description) && (
-        <p className="line-clamp-2 text-[12.5px] text-muted-foreground">
-          {purpose
-            ? `${sentenceCase(purpose)} for your agents.`
-            : firstSentence(row.catalog?.description)}
-        </p>
-      )}
-      {whose && <p className="text-[12.5px]">{whose.line}</p>}
-      {whose?.notice && (
-        <p className="-mt-1.5 text-[12px] text-faint">{whose.notice}</p>
-      )}
-      {failed !== undefined && (
-        <p className="text-[12.5px] text-destructive">
-          {words.Name} couldn’t add it for you
-          {failed ? `: ${failed}` : "."}
-        </p>
-      )}
-      <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className={cn("text-[12.5px]", LINE_TONE[standing.tone])}>
-          {standing.line}
-        </span>
-        {entry.updateAvailable && (
-          <Pill tone="accent" dot={false}>
-            Update available
-          </Pill>
-        )}
-      </div>
-      {technical && <IdText value={row.id} />}
-    </div>
+    </li>
   )
 }
 

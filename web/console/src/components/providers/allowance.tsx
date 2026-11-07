@@ -1,8 +1,9 @@
 /** The operator's daily allowance as the Providers page shows it: one bar on
  * the AI models header (used of the day's limit, split by slot, and when it
- * resets in the reader's own time), and one line on the Tools header. It is
- * never at the top of the page or over the cards that bring data in: it
- * belongs to what it pays for. */
+ * resets in the reader's own time). It is never at the top of the page or
+ * over the providers that bring data in: it belongs to what it pays for, and
+ * a tool on the operator's key says so on its own row, since a tool on the
+ * reader's own account (Slack, say) counts toward nothing. */
 
 import { useNow } from "@/hooks/use-now"
 import type { OperatorAllowance } from "@/lib/api/types"
@@ -106,14 +107,5 @@ export function AllowanceBar({
         resets. Anything on your own key keeps working and is not counted.
       </p>
     </div>
-  )
-}
-
-/** The Tools header's one line, where a tool runs on the operator's key. */
-export function AllowanceNote({ words }: { words: OperatorWords }) {
-  return (
-    <span data-slot="allowance-note">
-      counts toward today’s allowance from {words.name}
-    </span>
   )
 }
