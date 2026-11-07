@@ -3,8 +3,9 @@
  * under the id in the path. The page leads with what the app will be able to
  * do and what approving sets up on the server, in plain words
  * (docs/plans/app-setup.md), and the console's one Technical details switch
- * (decision 0131) adds every identifier behind them. The owner approves some
- * of the scopes for one lifetime, or denies the lot.
+ * (decision 0131) adds every identifier behind them: beside each scope and
+ * setup row, and the rest in one block under the answer. The owner approves
+ * some of the scopes for one lifetime, or denies the lot.
  *
  * A denial, and an approval with nothing to set up, carry the URL to go to
  * (the app's redirect URI with the code or with the refusal). An approval
@@ -28,7 +29,7 @@ import {
 } from "@tanstack/react-query"
 import { BoxesIcon, ChevronRightIcon } from "lucide-react"
 
-import { Fact, Problem, Warning } from "@/components/authorize/parts"
+import { Caution, Fact, Problem, Warning } from "@/components/authorize/parts"
 import {
   PublisherFacts,
   PublisherLines,
@@ -40,7 +41,6 @@ import { PackageChoices } from "@/components/authorize/package-choices"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { CopyButton } from "@/components/identity/copy-button"
-import { UnverifiedMark } from "@/components/identity/unverified-mark"
 import { ToggleSwitch } from "@/components/nav/toggle-switch"
 import { ShellServer } from "@/components/shell-server"
 import { Button } from "@/components/ui/button"
@@ -79,6 +79,7 @@ import {
   type AuthorizationSettingValue,
 } from "@/lib/api/types"
 import {
+  approvalHeading,
   asSentence,
   blockedWords,
   dayWords,
@@ -88,11 +89,10 @@ import {
   planChanges,
   progressWords,
   providerNeedWords,
-  reauthorizationHeading,
   webhookTriggers,
   type SetupLine,
 } from "@/lib/app-setup"
-import { appTitle as titleOf } from "@/lib/app-publisher"
+import { appSubject, appTitle as titleOf } from "@/lib/app-publisher"
 import {
   ASSISTANT_CAN,
   ASSISTANT_CANNOT,
@@ -283,28 +283,34 @@ function assistantNameWords(request: AuthorizationRequest): string {
   return app.name ? `“${app.name}”, the name it gives itself` : app.host
 }
 
-/** Everything the page showed before it had an everyday view: who claims
- * what, where the code goes and the repository, each with its warning, and
- * the access the app holds, or held until it ended; the header says when it
- * was approved. */
-function AppFacts({
+/** What the Technical details switch adds, in one block under the answer
+ * rather than between the facts the owner decides on: the client id, the
+ * publisher check, an unverified app's claims, where the code goes, the
+ * actor its changes carry, the access it holds or held, and the details as
+ * sent. The warnings stay above, in both views. A verified app's own claims
+ * are left out: its publisher's document speaks for it. */
+function TechnicalFacts({
   request,
   live,
+  actor,
 }: {
   request: AuthorizationRequest
   live: boolean
+  /** Its changes carry the app's own actor, which nothing above names. */
+  actor: boolean
 }) {
   const { app } = request
   return (
-    <>
-      {app.local && (
-        <Warning title="This app says it runs on this device">
-          Nothing about it can be verified, not even its name or where it runs.
-          Approve only if you started it yourself.
-        </Warning>
-      )}
+    <section aria-label="Technical details" className="flex flex-col gap-5">
+      <Fact label="Client id">
+        <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+          {app.clientId}
+        </p>
+      </Fact>
 
-      {(app.name || app.uri) && (
+      <PublisherFacts request={request} />
+
+      {!app.verified && (app.name || app.uri) && (
         <Fact label="The app says it is">
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
             {app.name && (
@@ -334,26 +340,23 @@ function AppFacts({
         </Fact>
       )}
 
-      <PublisherFacts request={request} />
-
       <Fact label="After you answer, you go to">
         <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
           {request.redirect.uri}
         </p>
-        {request.redirect.loopback && !app.local && (
-          <Warning title="A program on this device receives the access">
-            Nothing confirms that program is {app.host}. Approve only if you
-            started the app yourself.
-          </Warning>
-        )}
       </Fact>
 
-      <Fact label="Repository">
-        <p className="flex flex-wrap items-center gap-2 font-mono text-[13px] [overflow-wrap:anywhere]">
-          {request.repository}
-          <UnverifiedMark className="font-sans" />
-        </p>
-      </Fact>
+      {actor && (
+        <Fact label="Its changes appear as">
+          <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+            {app.actor}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Your history shows what this app changed under this name, never as
+            yours.
+          </p>
+        </Fact>
+      )}
 
       {request.previous && (
         <Fact label={live ? "The access it holds now" : "The access it held"}>
@@ -369,7 +372,9 @@ function AppFacts({
           </ul>
         </Fact>
       )}
-    </>
+
+      {request.details.length > 0 && <RawDetails request={request} />}
+    </section>
   )
 }
 
@@ -475,6 +480,7 @@ function Approval({
     .map((s) => s.scope)
 
   const fold = foldRequest(request)
+  const nothingNew = fold.live && fold.newAccess + fold.toDo === 0
   const full = request.scopes.some((s) => s.verb === "full")
   const { previous } = request
   const webhooks = webhookTriggers(request.setup)
@@ -557,7 +563,9 @@ function Approval({
     ? "Try again"
     : fold.toDo > 0
       ? "Approve and set up"
-      : "Approve"
+      : nothingNew
+        ? "Keep access"
+        : "Approve"
 
   function toggle(scope: string, checked: boolean) {
     const next = new Set(unchecked)
@@ -666,36 +674,18 @@ function Approval({
       </SetupRow>
     )
   }
-  const appTitle = titleOf(request)
-
   return (
     <Card>
       <CardHeader className="gap-1.5">
-        <p className="text-xs text-muted-foreground">
-          {mcp ? "An AI assistant" : "An app"}
-          {fold.reauth ? " you approved asks " : " wants to connect to "}
-          <span className="[overflow-wrap:anywhere] text-foreground">
-            {request.repository}
-          </span>
-          {fold.reauth && " again"}
-        </p>
-        <h1 className="font-heading text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
-          {fold.reauth
-            ? reauthorizationHeading(fold.newAccess, fold.toDo)
-            : appTitle}
-        </h1>
-        {fold.reauth && (
-          <p className="font-medium [overflow-wrap:anywhere]">{appTitle}</p>
-        )}
-        <PublisherLines request={request} />
-        {technical && (
-          <p className="text-xs text-muted-foreground">
-            <span>Client id </span>
-            <span className="font-mono [overflow-wrap:anywhere]">
-              {app.clientId}
-            </span>
+        <div className="flex flex-col gap-0.5">
+          <p className="font-medium [overflow-wrap:anywhere]">
+            {titleOf(request)}
           </p>
-        )}
+          <PublisherLines request={request} />
+        </div>
+        <h1 className="mt-2 font-heading text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
+          {approvalHeading(appSubject(request, mcp), request.repository, fold)}
+        </h1>
         {previous && (
           <p className="text-xs text-muted-foreground">
             {previousWords(previous, fold.live)}
@@ -728,13 +718,9 @@ function Approval({
             else’s. If you didn’t just connect this assistant yourself, deny it.
           </Warning>
         )}
-        {technical ? (
-          <AppFacts request={request} live={fold.live} />
-        ) : (
-          <AccessWarning request={request} />
-        )}
+        <AccessWarning request={request} />
 
-        {fold.live && fold.newAccess + fold.toDo === 0 && (
+        {nothingNew && (
           <p>
             It asks for nothing new: the access you approved before, for another
             stretch.
@@ -764,9 +750,14 @@ function Approval({
           </Fact>
         )}
 
+        {/* A renewal that asks for nothing new is a decision about exactly
+            this list, so it starts open. */}
         {!mcp && fold.allowed.length + fold.folded.length > 0 && (
           <section aria-label="Already allowed">
-            <Collapsible className="flex flex-col gap-2">
+            <Collapsible
+              defaultOpen={nothingNew}
+              className="flex flex-col gap-2"
+            >
               <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
                 <ChevronRightIcon
                   aria-hidden
@@ -803,31 +794,13 @@ function Approval({
             </p>
           </Fact>
         ) : (
-          fold.writes &&
-          (technical ? (
-            <Fact label="Its changes appear as">
-              <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
-                {app.actor}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Your history shows what this app changed under this name, never
-                as yours.
-              </p>
-              <AutomationWarning />
-            </Fact>
-          ) : (
-            <AutomationWarning />
-          ))
+          fold.writes && <AutomationCaution />
         )}
 
         {/* A blocked row holds the whole approval back, so nothing runs
             until it clears. */}
         {fold.toDo > 0 && !blocked && request.state === "pending" && (
           <p className="text-xs text-muted-foreground">{CONTINUES}</p>
-        )}
-
-        {technical && request.details.length > 0 && (
-          <RawDetails request={request} />
         )}
 
         <Fact label="Access lasts">
@@ -979,6 +952,17 @@ function Approval({
             </p>
           )}
         </div>
+
+        {technical && (
+          <>
+            <Separator />
+            <TechnicalFacts
+              request={request}
+              live={fold.live}
+              actor={!full && !mcp && fold.writes}
+            />
+          </>
+        )}
       </CardContent>
       <CardFooter className="justify-between gap-3">
         <span className="text-xs text-muted-foreground">
@@ -994,13 +978,13 @@ function Approval({
   )
 }
 
-function AutomationWarning() {
+function AutomationCaution() {
   return (
-    <Warning title="Your automations run on its changes">
-      Your triggers and mappings respond to its changes like any other. They may
-      run code you installed, call services that charge you, or change records
-      this app cannot reach itself.
-    </Warning>
+    <Caution title="Your automations run on its changes">
+      Your triggers and mappings respond to them like any other, and may run
+      code you installed, call services that charge you, or change records this
+      app cannot reach itself.
+    </Caution>
   )
 }
 

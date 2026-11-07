@@ -505,17 +505,22 @@ export function splitByPrevious(scopes: readonly AuthorizationScope[]): {
   }
 }
 
-/** A re-authorization's heading, by what changed since the token the app
- * holds: nothing (a renewal), more access, setup to run, or both. */
-export function reauthorizationHeading(
-  newAccess: number,
-  setupToDo: number
+/** The approval page's question: a first approval, a token that ended, or
+ * by what changed since the token the app still holds: nothing (a renewal),
+ * more access, setup to run, or both. `subject` is what the app is called
+ * (`appSubject`). */
+export function approvalHeading(
+  subject: string,
+  repository: string,
+  fold: Pick<RequestFold, "reauth" | "live" | "newAccess" | "toDo">
 ): string {
-  if (newAccess > 0 && setupToDo > 0)
-    return "Allow more access and update server setup"
-  if (newAccess > 0) return "Allow more access"
-  if (setupToDo > 0) return "Update server setup"
-  return "Renew access"
+  if (!fold.reauth) return `Connect ${subject} to ${repository}?`
+  if (!fold.live) return `Reconnect ${subject} to ${repository}?`
+  if (fold.newAccess > 0 && fold.toDo > 0)
+    return `Give ${subject} more access to ${repository} and update its setup?`
+  if (fold.newAccess > 0) return `Give ${subject} more access to ${repository}?`
+  if (fold.toDo > 0) return `Update what ${subject} set up on ${repository}?`
+  return `Keep ${subject} connected to ${repository}?`
 }
 
 /** One setup row where the page lists it. `grantHeld` is set on a webhook
