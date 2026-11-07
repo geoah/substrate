@@ -333,6 +333,9 @@ func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
 		"LOG_LEVEL": {
 			func(c *Config) { c.LogLevel = "trace" }, func(c *Config) { c.LogLevel = "warning" }, func(c *Config) { c.LogLevel = " info" },
 		},
+		"LOG_FORMAT": {
+			func(c *Config) { c.LogFormat = "logfmt" }, func(c *Config) { c.LogFormat = "jsonl" }, func(c *Config) { c.LogFormat = " json" },
+		},
 	}
 	for _, raw := range badURLs {
 		refused["SUBSTRATE_CONSOLE_URL"] = append(refused["SUBSTRATE_CONSOLE_URL"], func(c *Config) { c.ConsoleURL = raw })
@@ -360,6 +363,7 @@ func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
 		func(c *Config) { c.Port = "1" }, func(c *Config) { c.Port = "65535" },
 		func(c *Config) { c.LogLevel = "" }, func(c *Config) { c.LogLevel = "DEBUG" }, func(c *Config) { c.LogLevel = "Warn" },
 		func(c *Config) { c.LogLevel = "error" },
+		func(c *Config) { c.LogFormat = "" }, func(c *Config) { c.LogFormat = "JSON" }, func(c *Config) { c.LogFormat = "Text" },
 		func(c *Config) { c.ConsoleURL = "http://localhost:5173" },
 		func(c *Config) { c.ConsoleURL = "https://[::1]:8443" },
 		func(c *Config) { c.ConsoleURL = "https://substrate.example.com/console/" },
@@ -389,6 +393,40 @@ func TestParseLogLevel(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("ParseLogLevel(%q) = %v, %v; want %v", in, got, err, want)
 		}
+	}
+}
+
+// LOG_FORMAT reads case-insensitively, empty is the text default, and a
+// refusal names both accepted values and the default.
+func TestParseLogFormat(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"": LogFormatText, "text": LogFormatText, "Text": LogFormatText, "json": LogFormatJSON, "JSON": LogFormatJSON,
+	} {
+		got, err := ParseLogFormat(in)
+		if err != nil || got != want {
+			t.Errorf("ParseLogFormat(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	_, err := ParseLogFormat("logfmt")
+	if err == nil || err.Error() != `LOG_FORMAT is "logfmt": it is text or json (text is the default)` {
+		t.Errorf("ParseLogFormat(logfmt) err = %v", err)
+	}
+}
+
+// Unset is text, so a deployment that never names a format logs as it always
+// has. Setenv, so not parallel.
+func TestLogFormatDefaultsToText(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/substrate")
+	t.Setenv("SUBSTRATE_DATA_ROOT", t.TempDir())
+	t.Setenv("LOG_FORMAT", "")
+	_ = os.Unsetenv("LOG_FORMAT")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LogFormat != LogFormatText {
+		t.Errorf("LogFormat = %q, want text", c.LogFormat)
 	}
 }
 

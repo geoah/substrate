@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
@@ -113,7 +114,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	setupLogger(cfg.LogLevel)
+	setupLogger(cfg.LogLevel, cfg.LogFormat)
 	reportSandbox()
 	reportTrust()
 	reportEgressAllow()
@@ -755,11 +756,20 @@ func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time
 	}
 }
 
-// setupLogger sets the process logger at level. An unknown level logs at
-// info until Validate refuses it.
-func setupLogger(level string) {
+// setupLogger sets the process logger. An unknown level logs at info, and
+// an unknown format as text, until Validate refuses it.
+func setupLogger(level, format string) {
+	slog.SetDefault(slog.New(logHandler(os.Stderr, level, format)))
+}
+
+// logHandler writes to w at level in format.
+func logHandler(w io.Writer, level, format string) slog.Handler {
 	lvl, _ := config.ParseLogLevel(level)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
+	opts := &slog.HandlerOptions{Level: lvl}
+	if f, _ := config.ParseLogFormat(format); f == config.LogFormatJSON {
+		return slog.NewJSONHandler(w, opts)
+	}
+	return slog.NewTextHandler(w, opts)
 }
 
 // refreshPublishers serializes repositories so a publisher check never fans

@@ -437,6 +437,7 @@ server_start() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
+		"LOG_FORMAT=${LOG_FORMAT:-text}" \
 		${web[@]+"${web[@]}"} \
 		${egress[@]+"${egress[@]}"} \
 		${tick[@]+"${tick[@]}"} \
@@ -509,6 +510,7 @@ cmd_run() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
+		"LOG_FORMAT=${LOG_FORMAT:-text}" \
 		${web[@]+"${web[@]}"} \
 		${egress[@]+"${egress[@]}"} \
 		${tick[@]+"${tick[@]}"} \
