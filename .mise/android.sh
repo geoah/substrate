@@ -74,7 +74,7 @@ die() {
 }
 
 need_sdk() {
-  [[ -n ${ANDROID_HOME:-} && -d $ANDROID_HOME ]] || die "no Android SDK; set ANDROID_HOME, then run \`mise run android:sdk\`"
+  [[ -n ${ANDROID_HOME:-} && -d $ANDROID_HOME ]] || die "no Android SDK; set ANDROID_HOME (or \`mise use -g android-sdk@23.0\`), then run \`mise run android:sdk\`"
   [[ -d $ndk_home ]] || die "no NDK $ndk_version; run \`mise run android:sdk\`"
 }
 
@@ -161,7 +161,7 @@ sdkmanager_bin() {
       return
     }
   done
-  command -v sdkmanager || die "no sdkmanager under $ANDROID_HOME/cmdline-tools; install the Android command-line tools"
+  command -v sdkmanager || die "no sdkmanager under $ANDROID_HOME/cmdline-tools; install the Android command-line tools (\`mise use -g android-sdk@23.0\` sets ANDROID_HOME to them)"
 }
 
 # Where `swift sdk install` put the bundle: a Mac's folder, else
