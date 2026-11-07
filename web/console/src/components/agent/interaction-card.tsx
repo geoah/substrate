@@ -196,22 +196,27 @@ export function InteractionCard({ id }: { id: string }) {
                 <label
                   key={o.value}
                   className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-[13px]",
+                    "flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-[13px] leading-5",
                     pending && "hover:bg-hover",
                     !pending && chosen && "bg-ok-soft",
                     !pending && "cursor-default"
                   )}
                 >
-                  <input
-                    type={q.multi ? "checkbox" : "radio"}
-                    name={`${id}-${q.id}`}
-                    value={o.value}
-                    checked={chosen}
-                    disabled={!pending || submitting !== null}
-                    onChange={() => toggle(q, o.value)}
-                    className="mt-0.5"
-                  />
-                  <span className="[overflow-wrap:anywhere]">
+                  {/* A box one line tall: the control centres on the
+                      label's first line however the label wraps, with the
+                      browser's own margins on it removed. */}
+                  <span className="flex h-5 shrink-0 items-center">
+                    <input
+                      type={q.multi ? "checkbox" : "radio"}
+                      name={`${id}-${q.id}`}
+                      value={o.value}
+                      checked={chosen}
+                      disabled={!pending || submitting !== null}
+                      onChange={() => toggle(q, o.value)}
+                      className="m-0 size-3.5 cursor-pointer accent-primary disabled:cursor-default"
+                    />
+                  </span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
                     {o.label || o.value}
                     {o.description && (
                       <span className="text-muted-foreground">
