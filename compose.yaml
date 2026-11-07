@@ -165,6 +165,8 @@ services:
       # repository that writes none has no agents and no semantic search, and
       # hybrid search returns its lexical arm.
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # text or json. Set json when a collector reads this container's logs.
+      LOG_FORMAT: ${LOG_FORMAT:-text}
 
 volumes:
   substrate-db:

@@ -40,6 +40,9 @@ type Config struct {
 	InsecureAllowCleartext bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT" default:"false"`
 
 	LogLevel string `envconfig:"LOG_LEVEL" default:"info"`
+	// LogFormat is how each log line is written to stderr: text for a person
+	// reading a terminal, json for a collector that parses fields.
+	LogFormat string `envconfig:"LOG_FORMAT" default:"text"`
 	// WebDir is the built SPA served at /; empty disables static serving
 	// (dev mode, where Vite proxies the API).
 	WebDir string `envconfig:"WEB_DIR" default:""`
@@ -274,6 +277,9 @@ func (c Config) Validate() error {
 	if _, err := ParseLogLevel(c.LogLevel); err != nil {
 		return err
 	}
+	if _, err := ParseLogFormat(c.LogFormat); err != nil {
+		return err
+	}
 	if err := httpURL("SUBSTRATE_CONSOLE_URL", c.ConsoleURL, "https://substrate.example.com"); err != nil {
 		return err
 	}
@@ -356,6 +362,24 @@ func ParseLogLevel(level string) (slog.Level, error) {
 		return slog.LevelError, nil
 	}
 	return slog.LevelInfo, fmt.Errorf("LOG_LEVEL is %q: it is debug, info, warn or error (info is the default)", level)
+}
+
+// The formats LOG_FORMAT names.
+const (
+	LogFormatText = "text"
+	LogFormatJSON = "json"
+)
+
+// ParseLogFormat reads LOG_FORMAT: text or json, in any case. Empty is text,
+// the default.
+func ParseLogFormat(format string) (string, error) {
+	switch strings.ToLower(format) {
+	case "", LogFormatText:
+		return LogFormatText, nil
+	case LogFormatJSON:
+		return LogFormatJSON, nil
+	}
+	return LogFormatText, fmt.Errorf("LOG_FORMAT is %q: it is text or json (text is the default)", format)
 }
 
 // httpURL refuses a set value that is not an absolute http or https URL with
