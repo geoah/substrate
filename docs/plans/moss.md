@@ -227,8 +227,9 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/$agent
 
 ## What is left
 
-What Moss needs next, ranked against what the general assistants offer, is
-[its own plan](moss-capabilities.md).
+What Moss needs next is [the roadmap](moss-roadmap.md), which merges two
+reviews with the sessions; [the capabilities plan](moss-capabilities.md)
+keeps the survey of the general assistants.
 
 - **An eval.** The sessions are fourteen examples read by eye. A graded
   set run on every prompt change would hold what they show.

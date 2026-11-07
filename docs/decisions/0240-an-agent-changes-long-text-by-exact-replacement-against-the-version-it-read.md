@@ -75,5 +75,5 @@ each leaving the text as it was.
 
 ## More Information
 
-[docs/plans/moss-capabilities.md](../plans/moss-capabilities.md) places the workspace
+[docs/plans/moss-roadmap.md](../plans/moss-roadmap.md) places the workspace
 and the app-building tools after this.

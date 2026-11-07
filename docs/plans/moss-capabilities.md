@@ -1,6 +1,8 @@
 # Plan: what Moss needs next
 
-Status: proposed 2026-11-07. A plan, not a contract. It follows
+Status: proposed 2026-11-07, reordered by [the roadmap](moss-roadmap.md),
+which puts evals and the grant rules first and defers publishing and `html`
+documents. A plan, not a contract. It follows
 [Moss](moss.md) and its [recorded sessions](moss-sessions.md), and asks
 what the substrate must add so its assistant stands beside the general
 assistants people already use, while doing the one thing they cannot: keep
