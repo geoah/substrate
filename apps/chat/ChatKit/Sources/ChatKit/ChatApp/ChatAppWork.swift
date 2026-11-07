@@ -380,10 +380,13 @@ extension ChatApp {
         return (ChatAppStep.Threads(chats: chats.records, automated: automated), chats)
     }
 
-    static func agents(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws -> (agents: RecordPage, providers: RecordPage?) {
+    static func agents(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws -> (
+        agents: RecordPage, providers: RecordPage?, keys: ProviderKeys?
+    ) {
         async let agents = client.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
         async let providers: RecordPage? = plan.canReadProviders ? client.listAll(ListQuery(kinds: [Kinds.provider], first: 100)) : nil
-        return try await (agents, providers)
+        async let keys: ProviderKeys? = plan.readsOperator ? ProviderKeys.read(client) : .rows
+        return try await (agents, providers, keys)
     }
 
     /// The questions and suggestions waiting on the owner. An app's token
@@ -431,7 +434,8 @@ extension ChatApp {
                 + [page.head]
             head = heads.min().map { WatchCursor(seq: $0, generation: read.agents.generation) }
         }
-        return ChatAppStep.Refresh(agents: read.agents.records, providers: read.providers?.records, threads: threads, cards: cards, head: head)
+        return ChatAppStep.Refresh(
+            agents: read.agents.records, providers: read.providers?.records, keys: read.keys, threads: threads, cards: cards, head: head)
     }
 
     /// A batch of the watch's rows, read again: the list for a thread, the
@@ -457,6 +461,7 @@ extension ChatApp {
                 let read = try await agents(client, plan)
                 out.agents = read.agents.records
                 out.providers = read.providers?.records
+                out.keys = read.keys
             } catch {
                 out.failed.formUnion(batch.filter { $0.kind == Kinds.agent || $0.kind == Kinds.provider })
                 out.failure = Failure(error, server: client.server)

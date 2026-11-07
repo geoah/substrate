@@ -23,12 +23,15 @@ struct ChatSession: Codable, Equatable, Sendable {
     var identity: String { server.absoluteString.lowercased() + "|" + repository.lowercased() }
 
     var grants: Grants? { scopes.map(Grants.init) }
+    /// A password sign-in, or an app the owner approved `full` (decision
+    /// 0204): either reaches what the owner does.
+    var full: Bool { grants?.full ?? true }
     var canChat: Bool { grants?.talks ?? true }
     var canDecide: Bool { grants?.decidesAny ?? true }
     /// Only an exact scope reaches the provider rows: `llm` is internal.
     var canReadProviders: Bool { grants?.reads(Kinds.provider) ?? true }
-    /// An app never writes a provider's key: the console does.
-    var canWriteKeys: Bool { grants == nil }
+    /// A scoped app never writes a provider's key: the console does.
+    var canWriteKeys: Bool { full }
 
     /// A page of the console on this server: where the app sends the owner
     /// for what it may not do itself.

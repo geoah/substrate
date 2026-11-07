@@ -46,9 +46,10 @@ extension ChatApp {
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
-        case let .agentsRead(agents, providers):
+        case let .agentsRead(agents, providers, keys):
             next.agents = agents
             if let providers { next.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+            if let keys { next.keys = keys }
         case let .cardsRead(cards):
             apply(&next, cards: cards)
         case .readFailed:
@@ -154,6 +155,10 @@ extension ChatApp {
             next.asks.append(.setKey(provider: provider, key: key))
         case let .keySet(record):
             next.providers[record.id] = record
+            if case var .read(resolved) = next.keys {
+                resolved[record.id] = true
+                next.keys = .read(resolved)
+            }
             next.keySaved.raise(record.id)
         case let .keyFailed(failure): next.keyProblem = failure.words
 
@@ -287,6 +292,7 @@ extension ChatApp {
         if let cached = disk.state {
             state.agents = cached.agents
             state.providers = Dictionary(cached.providers.map { ($0.id, $0) }) { a, _ in a }
+            state.keys = cached.keys
             state.chats = cached.threads
             state.automated = cached.automated
             state.openings = cached.openings
@@ -376,6 +382,7 @@ extension ChatApp {
         state.refreshError = nil
         state.agents = refresh.agents
         if let providers = refresh.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+        if let keys = refresh.keys { state.keys = keys }
         apply(&state, threads: refresh.threads)
         apply(&state, cards: refresh.cards)
         // Everything the first read found is history: from here on, what
@@ -581,6 +588,7 @@ extension ChatApp {
         }
         if let agents = feed.agents { state.agents = agents }
         if let providers = feed.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+        if let keys = feed.keys { state.keys = keys }
         if let cards = feed.cards { apply(&state, cards: cards) }
         let landed = batch.subtracting(feed.failed).filter { !$0.id.isEmpty }
         if !landed.isEmpty, let disk = state.disk { state.asks.append(.markRefreshed(disk, landed.sorted { "\($0)" < "\($1)" })) }

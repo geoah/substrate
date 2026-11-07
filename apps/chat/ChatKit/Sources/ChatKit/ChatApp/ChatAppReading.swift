@@ -45,10 +45,17 @@ extension ChatAppState {
 
     func title(_ thread: ChatThread) -> String { thread.title(opening: openings[thread.id]) }
 
-    /// The provider an agent completes against, when it has no key.
+    /// The provider an agent completes against, when no key resolves for
+    /// it: neither its own nor the operator's.
     func keyless(_ agent: String?) -> Provider? {
         guard let provider = provider(of: agent) else { return nil }
-        return provider.hasKey ? nil : provider
+        return lacksKey(provider) ? provider : nil
+    }
+
+    /// Whether no key resolves for `provider`. Until the keys are read, no
+    /// row is said to lack one.
+    func lacksKey(_ provider: Provider) -> Bool {
+        keys.map { !$0.resolves(provider) } ?? false
     }
 
     /// The provider an agent runs on, where its row is read.
@@ -107,14 +114,14 @@ extension ChatAppState {
         ChatAppAsk.Plan(
             showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
             canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
-            namesThreads: session?.grants != nil)
+            readsOperator: session?.full ?? true, namesThreads: !(session?.full ?? true))
     }
 
     var threadIDs: [String] { (chats + automated).map(\.id) }
 
     var cached: CachedState {
         CachedState(
-            agents: agents, providers: providers.values.sorted { $0.id < $1.id }, threads: chats, automated: automated,
+            agents: agents, providers: providers.values.sorted { $0.id < $1.id }, keys: keys, threads: chats, automated: automated,
             openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
             baselined: baselined, lastAgent: lastAgent)
     }

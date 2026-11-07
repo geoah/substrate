@@ -109,13 +109,14 @@ one segment, encoded exactly once: an agent's id
 | Need | Request |
 | ---- | ------- |
 | Server check | `GET /.well-known/substrate/server.json` (`server.version`, `registration.totpRequired`) |
-| Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization; `scopes_supported` must list `agents:` and `decide:`) |
+| Sign-in metadata | `GET /.well-known/oauth-authorization-server` (RFC 8414; 404 on a server without app authorization; `scopes_supported` must list `full`) |
 | Sign in | the browser on `GET /oauth/authorize` (code, PKCE S256, `scope`, `state`), the redirect on `http://127.0.0.1:<port>/oauth/callback`, then `POST /oauth/token` (form) → `{access_token, scope, expires_in?, repository}` |
 | Sign out | `POST /oauth/revoke` (form `token`, `client_id` it was approved under, none where the session never kept one); kept and tried again at launch until it answers 200 |
 | Still set up | `POST /api/v1/authorizations/check` `{scope, details}` → `{scopes: {missing}, setup, expiresAt}`, on a server whose metadata lists detail types |
 | Sign in, older server | `POST /login` `{repository, password, totpCode?, label}` → 201 `{token: {id}, secret, repository}`; out with `DELETE /tokens/{id}` |
 | Agents | `{"kinds":["substrate.reamde.dev/core/agent"]}`, every page |
 | Providers | `{"kinds":["substrate.reamde.dev/llm/provider"]}`, every page |
+| Whose key | `GET /api/v1/operator/defaults` → `{items: [{id: "llm/<row>", source, readiness}]}`, read with full access alone; 404, 405 or 501 on a server older than it, where each row's own `apiKey` says |
 | Chats | `{"kinds":["…/llm/thread"],"properties":{"mode":{"eq":"chat"}}}`, `updatedAt:desc`, first 100 |
 | Automated runs (when shown) | same, `mode in [manual, call, record, schedule, webhook]`, first 50 |
 | Titles without a subject | `{"kinds":["…/llm/message"],"properties":{"role":{"eq":"user"},"thread":{"in":[ids]}}}`, `turn:asc,createdAt:asc`, first 500 |
@@ -406,8 +407,8 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Linked records** are pills everywhere (SubstrateKit's `RecordPill`): the
   kind's glyph and the record's name, the same as the console draws them. A
   tap opens the record read-only in a sheet, its own links pushing within
-  it. The app asks for `read:*` to read them; a kind out of the token's reach
-  is said so ("This app can't read people", and where to allow it), never
+  it. A session an earlier build kept with scopes reads what they reach; a
+  kind out of that token's reach is said so ("This app can't read people", and where to allow it), never
   shown as missing, since the server answers both alike.
 - **Record links in a reply** (`[Q4 budget](substrate://<kind>/<id>)`, or the
   older `ref:<kind>/<id>`) stay in the text, tinted, and a tap opens the
@@ -435,7 +436,9 @@ bubble is a tinted fill. The transcript softens under the composer with
   answer"), with the server's words beneath it under "The server said";
   refused and unknown-delivery cards;
   a reload failure with Try Again; "This chat was deleted".
-- **A provider without a key**: a callout, "Add an API key for OpenAI",
+- **A provider without a key**: when no key resolves for it, its own or one
+  the operator supplies (the operator read's `llm/<row>` item; before that
+  read answers, no row is said to lack one), a callout, "Add an API key for OpenAI",
   in a new chat above its openers and scrolling with them, else above the
   composer, with a sheet that names the provider's endpoint and, for
   a password sign-in, writes the key (an app token links to the provider's
@@ -511,17 +514,19 @@ redirect lands; in the system's Safari sheet (`ASWebAuthenticationSession`,
 sharing Safari's cookies) on iPhone and iPad. The owner chooses what the app
 may do and for how long; the app never sees the password.
 
-- **Scopes asked for**: `agents:*` (talk to the agents: chats, questions,
-  turns, renames), `decide:*` (apply or dismiss what they suggest),
-  `read:substrate.reamde.dev/llm/provider` (whether an agent has a key) and
-  `read:*` (open the records a chat links to). The owner may leave any out.
-  Without `agents:` the app says it cannot talk to the assistants and offers
-  Change Access; without `decide:` a suggestion card links to the
-  console; without the providers it shows no key callout; without `read:*` a
-  pill still names its record from the chat, and opening it says the app may
-  not read that kind.
-  An app never writes a provider's key: the callout links to the provider's
-  record in the console.
+- **Scope asked for**: `full` (decision 0204). A scoped token talks only to
+  an agent whose reads its grant covers, and no scope covers the core and
+  llm kinds, so the owner's assistant, which reads every kind, would be out
+  of reach; and only full access reads which keys the operator supplies.
+  A session an earlier build kept holds `agents:*`, `decide:*`, the provider
+  rows and `read:*`, or what the owner kept of them, and works with that:
+  without `agents:` the app says it cannot talk to the assistants and offers
+  Change Access; without `decide:` a suggestion card links to the console;
+  without the providers it shows no key callout; without `read:*` a pill
+  still names its record from the chat, and opening it says the app may not
+  read that kind. Its status check asks the owner to approve `full`.
+  A scoped app never writes a provider's key: the callout links to the
+  provider's record in the console.
 - **Client**: a released build's `client_id` is the URL of a client ID
   metadata document the release publishes beside itself
   (`<release folder>/client.json`), so the approval page names the host that
@@ -548,8 +553,8 @@ may do and for how long; the app never sees the password.
   keeps what its request asked for) is never asked about again.
 - **A server without app authorization** (no OAuth metadata) gets the
   password form, as before, so a deployment that predates it still works.
-  One whose metadata lacks `agents:` or `decide:` would refuse the request
-  with an error page, so it gets the kit's too-old screen instead.
+  One whose metadata lacks `full` would refuse the request with an error
+  page, so it gets the kit's too-old screen instead.
 
 ### Feel and access
 

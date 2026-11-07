@@ -76,6 +76,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]
+    /// Whose key each provider row runs on; nil until read, when no row is
+    /// said to lack one.
+    var keys: ProviderKeys?
     var chats: [Record] = []
     var automated: [Record] = []
     /// Threads read one at a time that no list read holds: an old chat, or

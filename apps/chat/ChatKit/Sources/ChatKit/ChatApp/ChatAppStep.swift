@@ -26,7 +26,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case refreshed(Refresh)
     case refreshFailed(Failure)
     case threadsRead(Threads)
-    case agentsRead(agents: [Record], providers: [Record]?)
+    case agentsRead(agents: [Record], providers: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)
     case readFailed(Failure)
     case openingsRead([String: String])
@@ -106,6 +106,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     struct Refresh: Codable, Equatable, Sendable {
         var agents: [Record]
         var providers: [Record]?
+        /// Whose key each provider row runs on; nil where that read failed.
+        var keys: ProviderKeys?
         var threads: Threads
         var cards: Cards
         /// Where the watch resumes so nothing written between the reads is
@@ -118,6 +120,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var threads: Threads?
         var agents: [Record]?
         var providers: [Record]?
+        var keys: ProviderKeys?
         var cards: Cards?
         var failed: Set<WatchKey>
         var failure: Failure?

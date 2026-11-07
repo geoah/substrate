@@ -52,7 +52,7 @@ extension ChatApp {
             conversations[key] = conversation(state, key, live)
         }
         var keys: [String: KeySheet] = [:]
-        for (id, record) in state.providers where !Provider(record: record).hasKey {
+        for (id, record) in state.providers where state.lacksKey(Provider(record: record)) {
             keys[id] = keySheet(state, Provider(record: record))
         }
         return ChatPresentation(

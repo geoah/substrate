@@ -3,13 +3,14 @@ import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 
-/// What Substrate Chat asks a substrate for (decisions 0194 and 0195), and
-/// nothing it sets up: `agents:*` talks to the agents (their chats, questions
-/// and turns), `decide:*` applies or dismisses what they suggest, the
-/// provider rows say whether an agent can answer at all, and `read:*` opens
-/// the records a chat links to. The owner may leave any of them out on the
-/// approval page; a pill the app may not read still names its record from
-/// the chat.
+/// What Substrate Chat asks a substrate for, and nothing it sets up: `full`
+/// (decision 0204). A scoped token talks only to an agent whose reads its
+/// grant covers, and no scope covers the core and llm kinds, so the owner's
+/// assistant, which reads every kind, is out of a scoped app's reach; and
+/// only a full-access token reads which provider keys the operator supplies
+/// (decision 0235). A session an earlier build kept with scopes still works
+/// with what it holds, and the status check asks the owner to approve
+/// `full`.
 public enum ChatManifest {
     public static let appName = "Substrate Chat"
     /// The Info.plist key a release stamps with the URL of its client ID
@@ -21,17 +22,17 @@ public enum ChatManifest {
     /// through its associated domain (`SUBSTRATE_CHAT_REDIRECT`).
     public static let redirectKey = "SubstrateChatRedirect"
 
-    public static let scopes = ["agents:*", "decide:*", "read:\(Kinds.provider)", "read:*"]
+    public static let scopes = [ScopeWords.full]
 
     /// What every build asked for before the request was kept in the
     /// session (`AppModel.asked`). Frozen: a scope added later is one such a
     /// session was never asked for.
     public static let earliestRequest = ["agents:*", "decide:*", "read:substrate.reamde.dev/llm/provider", "read:*"]
 
-    /// A server whose metadata lacks the agent verbs refuses this request
-    /// with an error page, so it is too old rather than a browser away; one
-    /// with no app authorization at all takes the password.
-    public static let requirement = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: ["agents", "decide"])
+    /// A server whose metadata lacks `full` refuses this request with an
+    /// error page, so it is too old rather than a browser away; one with no
+    /// app authorization at all takes the password.
+    public static let requirement = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: [ScopeWords.full])
 
     public static let manifest = AppManifest(
         appName: appName,
@@ -54,6 +55,6 @@ public enum ChatManifest {
     /// What the record views tell a reader the token may not read for:
     /// where access is granted. A password sign-in reaches everything.
     public static func deniedHint(_ grants: Grants?) -> String? {
-        grants != nil ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
+        grants?.full == false ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
     }
 }

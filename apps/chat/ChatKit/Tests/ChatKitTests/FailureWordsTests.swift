@@ -97,3 +97,49 @@ struct KeylessHeroTests {
         #expect(screen.composer.keyless?.title == "Add an API key for OpenAI")
     }
 }
+
+/// The operator's answer for the `openai` row (decision 0235).
+private func operatorRoute(source: String, readiness: String) -> ChatServer.Route {
+    let answer =
+        #"{"operator":{"name":"Example"},"items":[{"id":"llm/openai","slot":"llm","label":"OpenAI","target":"substrate.reamde.dev/llm/provider/openai","source":"\#(source)","operatorOffers":true,"readiness":"\#(readiness)"}]}"#
+    return .init(method: "GET", path: "/api/v1/operator/defaults", answer: .json(200, answer))
+}
+
+@Suite("A provider the operator keys", .timeLimit(.minutes(10)))
+struct OperatorKeyTests {
+    @Test func aRowWithoutAKeyOfItsOwnRunsOnTheOperatorsAndAsksForNone() async throws {
+        let rig = ChatRig([operatorRoute(source: "operator", readiness: "ready")] + keylessRoutes())
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        let screen = try #require(await rig.conversation(key))
+        #expect(screen.hero?.keyless == nil && screen.composer.keyless == nil)
+        #expect(await rig.harness.state.keys == .read(["openai": true]))
+    }
+
+    @Test func aRowNoKeyResolvesForStillAsksForOne() async throws {
+        let rig = ChatRig([operatorRoute(source: "none", readiness: "not-set-up")] + keylessRoutes())
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        #expect(try #require(await rig.conversation(key)).hero?.keyless?.title == "Add an API key for OpenAI")
+    }
+
+    /// An app an earlier build signed in holds scopes, and the operator read
+    /// refuses those: the row's own key says, as before.
+    @Test func aScopedTokenNeverAsksTheOperator() async throws {
+        let rig = ChatRig(
+            [operatorRoute(source: "operator", readiness: "ready")] + keylessRoutes(), scopes: ChatManifest.earliestRequest)
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        #expect(try #require(await rig.conversation(key)).hero?.keyless?.title == "Add an API key for OpenAI")
+        #expect(!rig.server.requests.contains { $0.contains("/operator/defaults") })
+    }
+
+    @Test func aFailedReadSaysNoRowLacksAKey() async throws {
+        let failing = ChatServer.Route(
+            method: "GET", path: "/api/v1/operator/defaults", answer: .json(500, #"{"error":{"code":"internal","message":"x"}}"#))
+        let rig = ChatRig([failing] + keylessRoutes())
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        #expect(try #require(await rig.conversation(key)).hero?.keyless == nil)
+    }
+}

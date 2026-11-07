@@ -15,10 +15,7 @@
   "publishes": [],
   "asks": [],
   "scopes": [
-    "agents:*",
-    "decide:*",
-    "read:substrate.reamde.dev/llm/provider",
-    "read:*"
+    "full"
   ],
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "accent": {

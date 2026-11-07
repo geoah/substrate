@@ -71,6 +71,8 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
         var canChat: Bool
         var canDecide: Bool
         var canReadProviders: Bool
+        /// Only a full-access token reads which keys the operator supplies.
+        var readsOperator: Bool
         /// An app's token lists the cards only under the threads it names.
         var namesThreads: Bool
     }
