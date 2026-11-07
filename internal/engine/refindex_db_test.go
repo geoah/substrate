@@ -80,6 +80,27 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 	return ds, target, pointer
 }
 
+// analyzedRefIndex adds a few hundred pointers at `a` and fresh statistics to
+// the fixture: on a handful of unanalyzed rows the planner prices a probe of
+// every source row through refs_pkey as cheapest whatever the predicate is,
+// so a plan assertion reads the planner's choice on realistic numbers.
+func analyzedRefIndex(t *testing.T, ds *dataset, pointer string) {
+	t.Helper()
+	ctx := context.Background()
+	for i := range 300 {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: pointer, ID: fid("bulk" + strconv.Itoa(i)), Properties: map[string]any{"target": fid("a")},
+		}); err != nil {
+			t.Fatalf("put bulk pointer %d: %v", i, err)
+		}
+	}
+	for _, table := range []string{"refs", "records"} {
+		if _, err := ds.svc.admin.ExecContext(ctx, `ANALYZE `+table); err != nil {
+			t.Fatalf("analyze %s: %v", table, err)
+		}
+	}
+}
+
 // explain renders the plan Postgres picks for a records predicate with seq
 // scans priced out, so a small table still shows which index the planner CAN
 // use: a predicate no index serves stays a (now very expensive) Seq Scan.
@@ -227,6 +248,7 @@ func TestTheReferencingArmWalksTheRefsIndex(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, target, pointer := refIndexDataset(t)
+	analyzedRefIndex(t, ds, pointer)
 	b := &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:       []string{pointer},
@@ -255,26 +277,12 @@ func TestTheReferencingArmWalksTheRefsIndex(t *testing.T) {
 
 // The list form stays on the same index: several targets of one kind are one
 // `dst = ANY` arm, targets of two kinds an OR of arms each naming dst_kind and
-// dst, and both plans walk refs_dst_idx. The fixture carries a few hundred
-// pointers at another target and fresh statistics, because on a handful of
-// unanalyzed rows the planner prices a probe of every source row through
-// refs_pkey as cheapest whatever the predicate is.
+// dst, and both plans walk refs_dst_idx.
 func TestTheReferencingListWalksTheRefsIndex(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, target, pointer := refIndexDataset(t)
-	for i := range 300 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: pointer, ID: fid("bulk" + strconv.Itoa(i)), Properties: map[string]any{"target": fid("a")},
-		}); err != nil {
-			t.Fatalf("put bulk pointer %d: %v", i, err)
-		}
-	}
-	for _, table := range []string{"refs", "records"} {
-		if _, err := ds.svc.admin.ExecContext(ctx, `ANALYZE `+table); err != nil {
-			t.Fatalf("analyze %s: %v", table, err)
-		}
-	}
+	analyzedRefIndex(t, ds, pointer)
 	for name, tc := range map[string]struct {
 		refs []string
 		arm  string
