@@ -213,8 +213,8 @@ rewrite whose `revision` is below the stored one; `metric` and `source`,
 what a reader takes from the metric and the source an observed value
 names; and `result`, a laboratory's result shapes beside
 a number. Core also
-ships five host functions as `function` records (`query`, `write`, `propose`,
-`ask`, `wait`), the built-ins an agent calls ([agents](agents.md)).
+ships six host functions as `function` records (`query`, `write`, `propose`,
+`ask`, `wait`, `vocabulary`), the built-ins an agent calls ([agents](agents.md)).
 
 ## substrate.reamde.dev/llm
 

@@ -394,3 +394,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
 | [0236](0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md) | An owner may delete their repository, and the name is freed | accepted |
 | [0237](0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md) | A second factor is the owner's choice, and sign-in asks for the code only of an account that has one | accepted |
+| [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | proposed |

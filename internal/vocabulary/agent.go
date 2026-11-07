@@ -37,6 +37,9 @@ const (
 	AgentToolWrite   = "write"
 	AgentToolAsk     = "ask"
 	AgentToolWait    = "wait"
+	// AgentToolVocabulary declares or changes kinds: a batch of declaration
+	// documents, every one held to the agent's writes.
+	AgentToolVocabulary = "vocabulary"
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
@@ -51,6 +54,8 @@ var agentBuiltinByIdentity = map[string]string{
 	HostFunctionWrite:   AgentToolWrite,
 	HostFunctionAsk:     AgentToolAsk,
 	HostFunctionWait:    AgentToolWait,
+
+	HostFunctionVocabulary: AgentToolVocabulary,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -402,10 +407,11 @@ var deletedAgentToolKeys = map[string]string{
 	"callable": "function — a tool entry names a function, and only a function",
 }
 
-// agentBuiltinIdentities lists the five host functions in the order the errors
+// agentBuiltinIdentities lists the six host functions in the order the errors
 // name them.
 var agentBuiltinIdentities = []string{
 	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk, HostFunctionWait,
+	HostFunctionVocabulary,
 }
 
 // buildPackageAgents parses one authority's agent documents — load.go's one-line
@@ -569,6 +575,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		case AgentToolWrite:
 			if len(a.Emit) == 0 {
 				l.errf("%s: data.tools: write needs data.permissions.writes, which names the kinds the agent may create or change", where)
+				return nil
+			}
+		case AgentToolVocabulary:
+			if !a.EmitAllows(CoreKind(DocKind)) {
+				l.errf("%s: data.tools: vocabulary needs %s in data.permissions.writes, which names the declaration kinds the agent may write", where, CoreKind(DocKind))
 				return nil
 			}
 		case AgentToolAsk:
