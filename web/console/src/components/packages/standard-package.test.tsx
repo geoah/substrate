@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
-/** A standard package's update, pause and removal live on its All data page
- * (decision record 0238): Providers lists no standard package, so the
+/** A standard collection's update, pause and removal live on its All data page
+ * (decision record 0238): Providers lists no standard collection, so the
  * update its publisher ships is offered here, or why it is blocked. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 
 import type { BundleUpgrade } from "@/lib/api/types"
@@ -91,4 +97,18 @@ it("offers no update where there is none", () => {
   mount(row())
   expect(screen.queryByRole("button", { name: "Update" })).toBeNull()
   expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy()
+})
+
+// The records in a standard collection are the owner's own, not copies an
+// account brought in, so Remove says they go with it.
+it("says Remove deletes the records in its collections, yours included", () => {
+  mount(row())
+  fireEvent.click(screen.getByRole("button", { name: /Remove/ }))
+  const dialog = screen.getByRole("dialog")
+  expect(
+    within(dialog).getByText(
+      /deletes the 40 records in Clinical package’s collections, yours included/
+    )
+  ).toBeTruthy()
+  expect(within(dialog).queryByText(/Your own records stay/)).toBeNull()
 })

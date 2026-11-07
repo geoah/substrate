@@ -695,7 +695,7 @@ func packagesTool() Tool {
 		Name:  "packages",
 		Title: "Packages and the catalog",
 		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. install takes a " +
-			"published package (a provider or a standard package) under the authority that publishes it; import copies a sample " +
+			"published package (a provider or a catalogue) under the authority that publishes it; import copies a sample " +
 			"under the owner's authority. status reads one " +
 			"installed package's state, or every one's without id. enable and disable switch one; bind points one of its inputs at a " +
 			"record. upgrades previews what this server would move in the shipped packages. Connecting a provider account " +

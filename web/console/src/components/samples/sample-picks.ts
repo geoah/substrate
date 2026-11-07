@@ -1,6 +1,6 @@
 /** Which samples each "Add …" entry offers, and what each one shows. "Add a
  * collection" offers a sample that declares at least one primary kind, and
- * the standard packages beside them (decision record 0238); "Add tools" one
+ * the standard collections beside them (decision record 0238); "Add tools" one
  * that ships functions; Agents one that ships agents. A sample can be all
  * three (notes brings a collection, its tools and the agents that use them).
  *
@@ -72,7 +72,7 @@ export function collectionSamples(
   return byName(out)
 }
 
-/** The standard packages (`health`, `labs`, `clinical`, an app's own
+/** The standard collections (`health`, `labs`, `clinical`, an app's own
  * package): published, no provider and no add-on, adding collections or
  * metrics (`isStandard`). One that adds metrics alone (`environment`) has no
  * members, and its row says what it is instead. */

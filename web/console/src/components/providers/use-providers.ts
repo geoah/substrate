@@ -202,20 +202,14 @@ export function useProviders() {
   }, [rows, statuses.data, kinds, accounts])
 
   // A provider is one the catalog says connects to an outside service
-  // (decision record 0238), or a bundle applied outside the catalog that
-  // declares an account kind: it has accounts to connect, so it is one
-  // whatever the catalog says. An add-on gets a provider's page too, and is
-  // listed on the page of the provider it extends, whether or not the
-  // catalog calls it a provider.
+  // (decision record 0238), or, held with no catalog entry or one whose
+  // publisher cannot be read, one whose stored declarations bring an account,
+  // as its status says. An add-on gets a provider's page too, and is listed
+  // on the page of the provider it extends.
   const providers = useMemo(() => {
     const viewOf = new Map(views.map((v) => [v.id, v]))
     return rows
-      .filter(
-        (r) =>
-          isProvider(r) ||
-          Boolean(addonOf(r)) ||
-          (!r.tier && r.status && viewOf.has(r.id))
-      )
+      .filter((r) => isProvider(r) || Boolean(addonOf(r)))
       .map((r) =>
         entryOf(
           units,
@@ -244,7 +238,7 @@ export function useProviders() {
     [providers]
   )
 
-  // Everything else this repository holds: standard packages, imported
+  // Everything else this repository holds: standard collections, imported
   // samples, the seeded llm package, anything applied directly.
   const others = useMemo(() => {
     const ids = new Set(providers.map((p) => p.row.id))

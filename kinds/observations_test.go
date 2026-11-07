@@ -19,7 +19,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 // The first-party catalogues the tree ships beside the seed (records 0192
@@ -43,7 +42,7 @@ var clinicalKinds = []string{
 
 func shippedCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}

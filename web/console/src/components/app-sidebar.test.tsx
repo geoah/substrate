@@ -503,13 +503,8 @@ describe("the Providers count", () => {
                 functions: 0,
                 kinds: 0,
                 liveRecords: 0,
+                provider: true,
               },
-            ],
-          })
-        if (url === "/api/v1/catalog")
-          return Response.json({
-            items: [
-              { id: "providers.substrate.reamde.dev/google", provider: true },
             ],
           })
         if (url.startsWith("/api/v1/records"))

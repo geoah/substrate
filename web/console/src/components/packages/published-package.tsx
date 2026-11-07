@@ -10,7 +10,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { SectionHead } from "@/components/identity/section-head"
 import { PackageUpdate } from "@/components/packages/standard-package"
-import { PauseBundleButton } from "@/components/providers/bundle-actions"
+import {
+  PauseBundleButton,
+  RemoveBundleButton,
+} from "@/components/providers/bundle-actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
@@ -23,13 +26,18 @@ import { packagesQueryOptions } from "@/lib/packages"
 export function PublishedPackageSection({
   publisher,
   packageId,
+  name,
   row,
 }: {
   /** The authority that publishes the package. */
   publisher: string
   /** `<authority>/<package>`. */
   packageId: string
-  /** The held row, for the update the publisher's next release offers. */
+  /** What the update and the removal call the package. */
+  name: string
+  /** The held row, for the update the publisher's next release offers and
+   * its removal: an app's package has no other home once Providers lists
+   * providers alone (decision record 0238). */
   row?: BundleRow
 }) {
   const client = useQueryClient()
@@ -63,7 +71,7 @@ export function PublishedPackageSection({
           over to edit its definitions yourself and stop receiving updates.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {row && <PackageUpdate row={row} name={publisher} />}
+          {row && <PackageUpdate row={row} name={name} />}
           {bundle.data && (
             <PauseBundleButton bundle={bundle.data} name={publisher} />
           )}
@@ -74,6 +82,14 @@ export function PublishedPackageSection({
           >
             Take over…
           </Button>
+          {row?.status && (
+            <RemoveBundleButton
+              bundle={row.status}
+              name={name}
+              owned
+              leaveTo="/data"
+            />
+          )}
         </div>
       </div>
       {confirming && (

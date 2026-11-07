@@ -21,7 +21,8 @@ import { shortDateTime } from "@/lib/format"
 import {
   accountKindOf,
   bundleRecordRows,
-  bundleSections,
+  isProvider,
+  packageRole,
   declaresProviderInterfaces,
   importFailureLines,
   installedKindRows,
@@ -282,7 +283,7 @@ describe("mergeBundles", () => {
           `${HOME}/tasks/${kinds[other as keyof typeof kinds]}`,
         ])
         expect(offered.upgrade).toBeUndefined()
-        expect(bundleSections(rows).samples).toHaveLength(2)
+        expect(rows.filter((r) => r.tier === "sample")).toHaveLength(2)
       }
     )
 
@@ -507,11 +508,21 @@ describe("mergeBundles", () => {
   })
 })
 
-describe("bundleSections", () => {
+describe("packageRole", () => {
   const rows = mergeBundles(
     [status({ id: "x.example.com/x", name: "x" })],
     [
-      catalog({ id: "providers.substrate.reamde.dev/google" }),
+      catalog({ id: "providers.substrate.reamde.dev/google", provider: true }),
+      catalog({
+        id: "providers.substrate.reamde.dev/slacklive",
+        provider: true,
+        addonFor: "providers.substrate.reamde.dev/slack",
+      }),
+      catalog({
+        id: "substrate.reamde.dev/clinical",
+        brings: ["collections"],
+      }),
+      catalog({ id: "apps.example/coach", brings: ["agents"] }),
       catalog({
         id: "samples.substrate.reamde.dev/tasks",
         name: "tasks",
@@ -522,14 +533,26 @@ describe("bundleSections", () => {
     ],
     "ada.example.com"
   )
+  const role = (id: string) => packageRole(rows.find((r) => r.id === id)!).short
 
-  it("splits the rows by tier and lists an untiered bundle on its own", () => {
-    const sections = bundleSections(rows)
-    expect(sections.published.map((r) => r.id)).toEqual([
-      "providers.substrate.reamde.dev/google",
-    ])
-    expect(sections.samples.map((r) => r.id)).toEqual(["ada.example.com/tasks"])
-    expect(sections.applied.map((r) => r.id)).toEqual(["x.example.com/x"])
+  // Decision record 0238: the tier says who keeps a package, and what it is
+  // for comes from the catalog, so a catalogue is no provider.
+  it("names each package by what it is for, not by its tier", () => {
+    expect(role("providers.substrate.reamde.dev/google")).toBe("Provider")
+    expect(role("providers.substrate.reamde.dev/slacklive")).toBe("Add-on")
+    expect(role("substrate.reamde.dev/clinical")).toBe("Standard collection")
+    expect(role("apps.example/coach")).toBe("Published")
+    expect(role("ada.example.com/tasks")).toBe("Sample")
+    expect(role("x.example.com/x")).toBe("Added by hand")
+  })
+
+  it("reads a held package with no catalog entry from its status", () => {
+    const [held] = mergeBundles(
+      [status({ id: "x.example.com/crm", name: "crm", provider: true })],
+      []
+    )
+    expect(isProvider(held)).toBe(true)
+    expect(packageRole(held).short).toBe("Provider")
   })
 })
 

@@ -333,8 +333,13 @@ export function PackagePage() {
   const publisher = catalog.data?.find(
     (item) => item.id === `${authority}/${pkg}`
   )?.publisher
-  const published = packages.data?.get(`${authority}/${pkg}`)?.publishedFrom
   const held = useHeldPackage(`${authority}/${pkg}`)
+  // From an authority document: the package row says so, and so does the
+  // catalog entry's publisher, which arrives with the held row, so the
+  // section never flips once the package rows load.
+  const published = Boolean(
+    packages.data?.get(`${authority}/${pkg}`)?.publishedFrom ?? publisher
+  )
   const functions = useQuery(functionsQueryOptions)
   const kinds = useMemo(
     () =>
@@ -404,13 +409,13 @@ export function PackagePage() {
             ? `Read-only copies, kept up to date by ${provider.name}.`
             : agent
               ? `What ${actorIdentity(agent).name} set up for you: the collections it keeps and the tools it works with.`
-              : undefined
+              : held?.catalog?.description
         }
       />
       <PageState
         pending={registry.isPending}
         error={registry.isError ? registry.error : null}
-        empty={!registry.isPending && !kinds.length && !tools.length}
+        empty={!registry.isPending && !kinds.length && !tools.length && !held}
       />
       {kinds.length > 0 && (
         <section>
@@ -443,6 +448,7 @@ export function PackagePage() {
           <PublishedPackageSection
             publisher={authority}
             packageId={`${authority}/${pkg}`}
+            name={packageTitle(authority, pkg)}
             row={held}
           />
         </section>

@@ -2059,6 +2059,12 @@ export interface BundleStatus {
    * shipped line. Absent on a sample, on a hand-applied closure and on a
    * provider installed before the stamp existed. */
   shippedVersion?: number
+  /** What the package is for (decision record 0238), joined in by the API:
+   * the catalog's answer where the binary ships it, else whether its stored
+   * declarations bring an account. The counts beside Providers read these
+   * rather than the catalog. */
+  provider?: boolean
+  addonFor?: string
 }
 
 /** What an uninstall answers. The bundle has no status afterwards, so the

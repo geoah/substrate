@@ -382,7 +382,7 @@ describe("Add a collection: Write it yourself", () => {
   })
 })
 
-// Decision record 0238: a standard package (`clinical`) is no provider, so
+// Decision record 0238: a standard collection (`clinical`) is no provider, so
 // it is added here, beside the samples, and a provider never is.
 describe("Add a collection: Standard collections", () => {
   afterEach(() => {
@@ -437,30 +437,37 @@ describe("Add a collection: Standard collections", () => {
     }),
   ]
 
-  it("offers the standard packages by what they add, and no provider", async () => {
+  it("offers the standard collections by what they add, and no provider", async () => {
+    navigate.mockReset()
+    const held = (pkg: string) => ({
+      id: `substrate.reamde.dev/${pkg}`,
+      name: pkg,
+      authority: "substrate.reamde.dev",
+      package: pkg,
+      installed: true,
+      enabled: true,
+      accounts: 0,
+      functions: 0,
+      kinds: 0,
+      liveRecords: 0,
+    })
+    let added = false
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: string) => {
+      vi.fn(async (input: string, init?: RequestInit) => {
         const url = new URL(String(input), "http://console.test")
+        if (init?.method === "POST" && url.pathname.endsWith("/install")) {
+          added = true
+          return new Response(JSON.stringify(held("clinical")))
+        }
         if (url.pathname === "/api/v1/catalog")
           return new Response(JSON.stringify({ items: catalog }))
         if (url.pathname === "/api/v1/substrate.reamde.dev/core/bundle/status")
           return new Response(
             JSON.stringify({
-              items: [
-                {
-                  id: "substrate.reamde.dev/environment",
-                  name: "environment",
-                  authority: "substrate.reamde.dev",
-                  package: "environment",
-                  installed: true,
-                  enabled: true,
-                  accounts: 0,
-                  functions: 0,
-                  kinds: 0,
-                  liveRecords: 0,
-                },
-              ],
+              items: added
+                ? [held("environment"), held("clinical")]
+                : [held("environment")],
             })
           )
         return new Response(JSON.stringify({ records: [], kinds: [] }))
@@ -479,5 +486,9 @@ describe("Add a collection: Standard collections", () => {
     expect(screen.getByText("Climate and energy metrics.")).toBeTruthy()
     expect(screen.getByText("Added")).toBeTruthy()
     expect(screen.queryByText("Google")).toBeNull()
+    // Adding one stays here, as a sample does: Providers is not its home.
+    fireEvent.click(screen.getByRole("button", { name: "Add" }))
+    await waitFor(() => expect(screen.getAllByText("Added")).toHaveLength(2))
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

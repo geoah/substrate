@@ -402,7 +402,7 @@ describe("ProvidersPage", () => {
   // Decision record 0238: `clinical` is no account to connect. The catalog
   // says what a package is for, and only its providers get a row here; an
   // add-on is listed on the page of the provider it extends.
-  it("lists no standard package and no add-on as a provider", async () => {
+  it("lists no standard collection and no add-on as a provider", async () => {
     const CLINICAL = bundle({
       id: "substrate.reamde.dev/clinical",
       name: "clinical",

@@ -52,18 +52,27 @@ a package is added and after.
   push, because an app's token never writes an account record.
 - **`addonFor`** is the provider a package extends: what its publisher's
   document names
-  ([0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md)),
-  else the first package it requires that is a provider, for a published
-  package that brings no account of its own. WHOOP requires `health` and is
-  no add-on.
+  ([0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md))
+  when the binary ships that as a provider, else the first package it
+  requires that is a provider, for a published package that brings no
+  account of its own. WHOOP requires `health` and is no add-on, and a
+  document naming a catalogue makes nothing an add-on, since nothing could
+  list it there; the approval still waits on the document's word.
+
+Each bundle status carries `provider` and `addonFor` too, joined in by the
+API: the catalog's answer where the binary ships the package, else whether
+the repository's stored declarations bring an account. A package from an
+authority document whose publisher cannot be read keeps its place the same
+way. The sidebar's and Home's counts read the statuses, because the
+catalog's previews are too dear for a read on every page.
 
 The console places packages by these. **Providers** lists providers only,
 and an add-on on the page of the provider it extends; its Tools group is a
 provider that brings tools and no account. **Add a collection** gains
 **Standard collections**: a published package that is neither, bringing
-collections or metrics. A standard package's update, pause and removal move
-to its package page in All data, and the sidebar's and Home's counts read
-the catalog the way the page does.
+collections or metrics. Every other held package's home is its package page
+in All data, with its update, pause and removal: **Added** links to it, and
+so does each package an app set up, under Settings › Apps.
 
 A console-only fix kept the word that invited the mistake and the guess made
 before installation. A third tier keyed the role on a tree, which a package
@@ -89,16 +98,23 @@ tier's name, and that a provider is what the providers tree ships) and 0233
   without changing a declaration.
 - Bad, because the internal word **catalogue** stays, one letter from
   **catalog**; only the console says standard collection.
+- Bad, because a status cannot read an authority document, so a package
+  from one counts beside Providers as its stored declarations say, and an
+  add-on that only its document names counts as a provider there while the
+  page lists it with the one it extends.
 
 ### Confirmation
 
 `TestCatalogSaysWhatEachPackageIsFor` and
 `TestPublishedPackageSaysWhatItIsFor` (`internal/catalog`) hold the reading
-over the shipped tree and a document's package. In the console,
-`providers.test.tsx` holds that a standard package and an add-on get no row
-on Providers, `provider.test.tsx` the add-ons on their provider's page,
+over the shipped tree and a document's package, and
+`TestBundleStatusesSayWhatEachPackageIsFor` (`internal/api`) the statuses.
+In the console, `providers.test.tsx` holds that a standard collection and an
+add-on get no row on Providers, `provider.test.tsx` the add-ons on their
+provider's page and the page of a package not yet added,
 `add-collection-dialog.test.tsx` and `sample-picks.test.ts` the standard
-collections, and `standard-package.test.tsx` the update on the package page.
+collections, and `standard-package.test.tsx` the update and removal on the
+package page.
 
 ## More Information
 

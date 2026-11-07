@@ -159,7 +159,7 @@ func installFirecrawlCopy(t *testing.T, ds *dataset, offered bool) string {
 // data records put beside them.
 func shippedDocuments(t *testing.T, pkg string) (declarations, data []map[string]any) {
 	t.Helper()
-	fsys := kinds.Bundles()
+	fsys := kinds.Served()
 	entries, err := fs.ReadDir(fsys, pkg)
 	if err != nil {
 		t.Fatal(err)

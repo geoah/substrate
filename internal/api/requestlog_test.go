@@ -13,8 +13,6 @@ import (
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 // logCapture is a slog handler that keeps every record, at every level, so a
@@ -309,7 +307,7 @@ func TestExportAbortLogsTheClientLeavingAtDebug(t *testing.T) {
 // not an ERROR line either, while a preview that fails on its own is one
 // naming the route.
 func TestCatalogPreviewCanceledByTheClientIsNotAnError(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

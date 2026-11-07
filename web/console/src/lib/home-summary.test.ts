@@ -22,6 +22,7 @@ function status(over: Partial<BundleStatus>): BundleStatus {
     functions: 4,
     kinds: 14,
     liveRecords: 0,
+    provider: true,
     ...over,
   }
 }
@@ -40,13 +41,25 @@ describe("providerState", () => {
 })
 
 describe("providersSummary", () => {
-  it("counts providers and leaves samples out", () => {
+  it("counts providers and leaves samples, standard collections and add-ons out", () => {
     const summary = providersSummary([
       status({ accounts: 1 }),
       status({
         id: "ada.example.com/tasks",
         authority: "ada.example.com",
         package: "tasks",
+        provider: false,
+      }),
+      status({
+        id: "substrate.reamde.dev/clinical",
+        authority: "substrate.reamde.dev",
+        package: "clinical",
+        provider: false,
+      }),
+      status({
+        id: "providers.substrate.reamde.dev/slacklive",
+        package: "slacklive",
+        addonFor: "providers.substrate.reamde.dev/slack",
       }),
     ])
     expect(summary).toEqual({ big: "1 in use", sub: "Google connected" })

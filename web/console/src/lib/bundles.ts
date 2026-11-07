@@ -11,7 +11,7 @@
  * SAMPLE is IMPORTED under this repository's own authority and is the
  * repository's to edit afterwards. What a package is FOR is the catalog's
  * second answer (decision record 0238): a provider, an add-on for one, or a
- * standard package that adds collections. Both are backend fields, never
+ * standard collection that adds collections. Both are backend fields, never
  * derived from an authority's shape here. A bundle owns exactly one PACKAGE
  * (decision 0047), and its id IS that package identity. */
 
@@ -158,41 +158,34 @@ export function mergeBundles(
   )
 }
 
-/** The Registry's sections: the published packages, the copyable ones, and
- * anything applied outside the shipped catalog, which has no tier to sit
- * under and so is listed on its own rather than guessed into one. */
-interface BundleSections {
-  published: BundleRow[]
-  samples: BundleRow[]
-  applied: BundleRow[]
-}
-
-export function bundleSections(rows: BundleRow[]): BundleSections {
-  return {
-    published: rows.filter((r) => r.tier === "published"),
-    samples: rows.filter((r) => r.tier === "sample"),
-    applied: rows.filter((r) => !r.tier),
-  }
-}
-
 // ── what a package is for (decision record 0238) ────────────────────────────
 
-/** A provider: the catalog says the package connects the substrate to an
- * outside service. Providers lists it, unless it is an add-on. */
-export function isProvider(row: Pick<BundleRow, "catalog">): boolean {
-  return Boolean(row.catalog?.provider)
+/** A provider: the package connects the substrate to an outside service, as
+ * its catalog entry says, or, held with no entry (applied by hand), as its
+ * status says from the declarations stored. Providers lists it, unless it
+ * is an add-on. */
+export function isProvider(
+  row: Pick<BundleRow, "catalog" | "status">
+): boolean {
+  return Boolean(row.catalog?.provider ?? row.status?.provider)
 }
 
 /** The provider an add-on extends: its page lists the add-on, and Providers
  * does not. */
-export function addonOf(row: Pick<BundleRow, "catalog">): string | undefined {
-  return row.catalog?.addonFor || undefined
+export function addonOf(
+  row: Pick<BundleRow, "catalog" | "status">
+): string | undefined {
+  return (
+    (row.catalog ? row.catalog.addonFor : row.status?.addonFor) || undefined
+  )
 }
 
-/** A standard package: published, neither a provider nor an add-on, and it
+/** A standard collection: published, neither a provider nor an add-on, and it
  * adds collections or metrics (`health`, `labs`, `clinical`, an app's own
  * package). Add a collection lists it beside the samples. */
-export function isStandard(row: Pick<BundleRow, "tier" | "catalog">): boolean {
+export function isStandard(
+  row: Pick<BundleRow, "tier" | "catalog" | "status">
+): boolean {
   const brings = row.catalog?.brings ?? []
   return (
     row.tier === "published" &&
@@ -200,6 +193,37 @@ export function isStandard(row: Pick<BundleRow, "tier" | "catalog">): boolean {
     !addonOf(row) &&
     (brings.includes("collections") || brings.includes("metrics"))
   )
+}
+
+/** A held package the Providers page lists as a provider of its own, read
+ * off its status alone: what the counts beside Providers count. */
+export function listedProvider(
+  status: Pick<BundleStatus, "provider" | "addonFor">
+): boolean {
+  return Boolean(status.provider && !status.addonFor)
+}
+
+/** What a package is, in the reader's words: `short` for a table cell,
+ * `long` for a page's line. One answer for every page, so a package reads
+ * the same wherever it is listed. */
+export function packageRole(
+  row: Pick<BundleRow, "tier" | "catalog" | "status">
+): {
+  short: string
+  long: string
+} {
+  if (row.tier === "sample")
+    return { short: "Sample", long: "A sample you added" }
+  if (addonOf(row)) return { short: "Add-on", long: "An add-on for a provider" }
+  if (isProvider(row)) return { short: "Provider", long: "A provider" }
+  if (isStandard(row))
+    return {
+      short: "Standard collection",
+      long: "A standard collection, kept up to date for you",
+    }
+  if (row.tier === "published")
+    return { short: "Published", long: "Kept up to date by its publisher" }
+  return { short: "Added by hand", long: "Added by hand" }
 }
 
 // ── upgrades: the shipped closure moved past the stored one ─────────────────

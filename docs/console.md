@@ -257,8 +257,13 @@ package (below) adds **Updates**: who keeps it up to date, **Update** when
 the catalog offers one (or why it is blocked), **Pause** and **Remove**,
 which a provider has on its own page
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md));
-a package an authority document publishes has its **Update** in the same
-section as **Take over…**.
+a package an authority document publishes has its **Update** and **Remove**
+in the same section as **Take over…**. That page is a held package's home
+even with no collection to list (a package of metrics, an app's agent):
+**Added** in Add a collection links to it, and so does each package an app
+set up, under [Settings](#settings) › **Apps**. **Remove** there says that
+it deletes the records in its collections, which are yours, where a
+provider's says it deletes the copies its accounts brought in.
 
 ### Add a collection
 
@@ -277,9 +282,11 @@ another page can link straight to it:
   the well-known catalogues (health, lab results, the medical record,
   environment) and a package an app's approval installed. Each is listed by
   the collections it adds, or by what it is where it adds metrics alone, with
-  **Add**, which installs it and first anything it requires. Its publisher
-  keeps its declarations, so you add the records and not the fields; the
-  dialog says so, and points at a sample for a collection you can change.
+  **Add**, which installs it and first anything it requires, and stays in
+  the dialog. Its publisher keeps its declarations, so you add the records
+  and not the fields; the dialog says so, and points at a sample for a
+  collection you can change. One already here reads **Added**, a link to
+  its package page.
 - **Start from a sample**: the shipped [samples](bundles-catalog.md) that
   declare at least one primary kind (tasks, people, notes and the rest), each
   by the collections it adds and with **Add**. A kind's
@@ -1181,7 +1188,9 @@ in, then remove its declarations. An upgrade the binary ships is offered as
 offered where the server would refuse it, with the guard lines that say what
 to migrate. The same page serves any other package the repository holds, such
 as an imported sample or a standard collection's package, without the setup
-steps and accounts.
+steps and accounts, and a package the catalog offers and the repository does
+not hold yet (the page an approval's **Open its page** opens): what it is,
+what adding it brings, and **Add**.
 
 The old addresses land here: `/registry`, `/connections` and `/services`
 open Providers,
@@ -1614,8 +1623,9 @@ how many values are pending.
   holding a token, newest first, each one **Sign out…** away. A session is a
   token record, and signing one out deletes it.
 - **Apps**: each app you approved through [app authorization](apps.md), with
-  its client id, the name it claims, its scopes, when you approved it and
-  when it expires, each **Revoke…** away. An assistant is listed under AI
+  its client id, the name it claims, its scopes, the packages it set up (each
+  a link to its package page, where it is updated, paused and removed), when
+  you approved it and when it expires, each **Revoke…** away. An assistant is listed under AI
   assistants instead.
 - **AI assistants** (`/settings/assistants`): this server's MCP address, how
   to connect Claude Code, Codex, Claude, Cursor or another client, what an

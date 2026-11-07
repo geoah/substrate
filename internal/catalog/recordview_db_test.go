@@ -197,7 +197,7 @@ func TestFirstPartyRecordViewsLandUnderTheirOwnPackages(t *testing.T) {
 // rewritten, because the installed views carry the shipped ids.
 func applyShippedViews(t *testing.T, ds substrate.Dataset, pkg string) {
 	t.Helper()
-	raw, err := fs.ReadFile(kinds.Bundles(), pkg+"/views.yaml")
+	raw, err := fs.ReadFile(kinds.Served(), pkg+"/views.yaml")
 	if err != nil {
 		t.Fatalf("read the shipped views: %v", err)
 	}

@@ -425,7 +425,7 @@ from, cannot be handed back, and without `--confirm` repeating the package
 it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
-first, then the catalog's providers and samples: whether this repository
+first, then the catalog's published packages and samples: whether this repository
 holds it, the version the binary ships and, where the server previewed an
 [upgrade](bundles.md#install-and-lifecycle), its motion (`16 -> 17`),
 `blocked` when a guard refuses it and, for core, `lands at restart` when it

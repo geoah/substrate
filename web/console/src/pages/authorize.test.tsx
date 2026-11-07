@@ -1585,7 +1585,7 @@ describe("AuthorizePage", () => {
         blocked: {
           reason: "upgrade-needs-review",
           problem:
-            "updating it would change records in a way its provider page asks you to confirm first",
+            "updating it would change records in a way its page in the console asks you to confirm first",
           fix: "/providers/applehealth",
         },
       }
@@ -1599,7 +1599,7 @@ describe("AuthorizePage", () => {
       // The server's one sentence, in both views, as a sentence.
       expect(
         within(row).getByText(
-          "Updating it would change records in a way its provider page asks you to confirm first."
+          "Updating it would change records in a way its page in the console asks you to confirm first."
         )
       ).toBeTruthy()
       expect(row.textContent).toContain("Needs a fix first")
@@ -2065,7 +2065,7 @@ describe("AuthorizePage", () => {
       blocked: {
         reason: "quarantined",
         problem:
-          "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
+          "Your copy of this package is quarantined, so approving cannot set it up. Its page in the console says why.",
         fix: "/providers/applehealth",
       },
     }

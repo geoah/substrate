@@ -4,7 +4,7 @@
  * - **Accounts you connect**: the packages the catalog calls providers that
  *   bring data in, joined with what this repository holds of them and their
  *   accounts, one row each, opening the provider's page. An add-on is listed
- *   on the page of the provider it extends, not here, and a standard package
+ *   on the page of the provider it extends, not here, and a standard collection
  *   (`health`, `clinical`) is no provider: Add a collection lists it.
  * - **Tools for your agents**: providers that bring tools and no account.
  * - **AI models**: one card per `llm/provider` row, with its key form in
@@ -20,7 +20,7 @@
  * until the reader dismisses it.
  *
  * Technical mode adds OTHER PACKAGES: every bundle this repository holds that
- * is not a provider (standard packages, imported samples, the seeded llm
+ * is not a provider (standard collections, imported samples, the seeded llm
  * package, anything applied directly), with its version, its state, its
  * update and its removal, so nothing the old Registry listed is out of
  * reach. */
@@ -78,6 +78,7 @@ import { bundleState, setupCount } from "@/lib/api/bundles"
 import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
 import {
   isProvider,
+  packageRole,
   upgradeAvailable,
   upgradeBlocked,
   blockerWords,
@@ -449,13 +450,6 @@ const STATE_WORDS: Record<
   quarantined: { word: "Failed to load", tone: "bad" },
 }
 
-function tierWord(row: BundleRow): string {
-  if (row.tier === "sample") return "Sample"
-  if (isProvider(row)) return "Provider"
-  if (row.tier === "published") return "Published"
-  return "Added by hand"
-}
-
 function OtherPackages({
   rows,
   chains,
@@ -475,7 +469,7 @@ function OtherPackages({
       <SectionHead
         id="other-packages"
         title="Other packages"
-        hint="Standard packages, samples you added, packages added by hand, and the substrate’s own."
+        hint="Standard collections, samples you added, packages added by hand, and the substrate’s own."
       />
       {pendingUpgrades.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">
@@ -563,7 +557,7 @@ function OtherPackageRow({
         )}
       </td>
       <td className="px-3 py-2.5 text-muted-foreground">
-        {tierWord(row)}
+        {packageRole(row).short}
         {status.origin && (
           <div>
             <IdText value={status.origin} />
@@ -620,7 +614,12 @@ function OtherPackageRow({
         {status.quarantined && row.catalog ? (
           <TakeButton row={row} chain={chain} name={name} label="Add again" />
         ) : (
-          <RemoveBundleButton bundle={status} name={name} variant="ghost" />
+          <RemoveBundleButton
+            bundle={status}
+            name={name}
+            variant="ghost"
+            owned={!isProvider(row)}
+          />
         )}
       </td>
     </tr>

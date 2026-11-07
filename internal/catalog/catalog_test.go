@@ -6,17 +6,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 // realCatalog loads the shipped example bundles from disk (the same tree
 // main.go embeds), so the parse is held against the real closures.
 func realCatalog(t *testing.T) *Catalog {
 	t.Helper()
-	c, err := Load(ProviderRoot(kinds.Providers()), PublishedRoot(kinds.Catalogues()), SampleRoot(samples.Samples()))
+	c, err := Load(Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -230,13 +229,29 @@ func TestPublishedPackageSaysWhatItIsFor(t *testing.T) {
 		t.Errorf("a closure with an account: provider %v, brings %v", connected.Provider, connected.Brings)
 	}
 
+	// The document names provider.example/base. Where the binary ships no such
+	// provider the console could list it under, the package is no add-on and
+	// keeps its own place; the approval still reads the document's word.
 	c, _ := publishedFixture(t, 1)
-	named, err := c.Resolve(context.Background(), "example.com/notes", 1)
+	unlisted, err := c.Resolve(context.Background(), "example.com/notes", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if named.AddonFor != "provider.example/base" {
-		t.Errorf("the document names provider.example/base; addonFor = %q", named.AddonFor)
+	if unlisted.AddonFor != "" || unlisted.Origin().AddonFor != "provider.example/base" {
+		t.Errorf("a named package the binary does not ship as a provider: addonFor %q, origin's %q", unlisted.AddonFor, unlisted.Origin().AddonFor)
+	}
+	shipped, err := LoadWithReader(c.reader, nil, ProviderRoot(fstest.MapFS{
+		"base/bundle.yaml": {Data: []byte(publishedClosure("provider.example/base", 1))},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := shipped.Resolve(context.Background(), "example.com/notes", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.AddonFor != "provider.example/base" {
+		t.Errorf("the document names a provider the binary ships; addonFor = %q", listed.AddonFor)
 	}
 }
 

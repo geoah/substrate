@@ -1,5 +1,5 @@
 /** A package its publisher keeps up to date, on its All data page (decision
- * record 0238): a standard package (`health`, `clinical`) is no provider, so
+ * record 0238): a standard collection (`health`, `clinical`) is no provider, so
  * Providers does not list it, and this is where its update, its pause and
  * its removal live. A package from an authority document keeps its own
  * section (published-package.tsx), which takes the update control from here. */
@@ -56,7 +56,12 @@ export function StandardPackageSection({
         <div className="flex flex-wrap items-center gap-2">
           <PackageUpdate row={row} name={name} />
           <PauseBundleButton bundle={status} name={name} />
-          <RemoveBundleButton bundle={status} name={name} />
+          <RemoveBundleButton
+            bundle={status}
+            name={name}
+            owned
+            leaveTo="/data"
+          />
         </div>
       </div>
     </section>

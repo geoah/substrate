@@ -78,8 +78,8 @@ func sample() *packageProblem {
 func quarantined(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockQuarantined, fix: ProviderPage(id),
-		itself:   "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
-		requirer: "Your copy of a package it needs first is quarantined, so approving cannot set it up. Its provider page says why.",
+		itself:   "Your copy of this package is quarantined, so approving cannot set it up. Its page in the console says why.",
+		requirer: "Your copy of a package it needs first is quarantined, so approving cannot set it up. Its page in the console says why.",
 	}
 }
 
@@ -102,16 +102,16 @@ func serverUpdate(shipped, need int64) *packageProblem {
 func upgradeRefused(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
-		itself:   "Updating this package is refused for now. Its provider page says why.",
-		requirer: "Updating a package it needs first is refused for now. Its provider page says why.",
+		itself:   "Updating this package is refused for now. Its page in the console says why.",
+		requirer: "Updating a package it needs first is refused for now. Its page in the console says why.",
 	}
 }
 
 func upgradeConfirm(id string) *packageProblem {
 	return &packageProblem{
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
-		itself:   "Updating this package would change records in a way its provider page asks you to confirm first.",
-		requirer: "Updating a package it needs first would change records in a way its provider page asks you to confirm first.",
+		itself:   "Updating this package would change records in a way its page in the console asks you to confirm first.",
+		requirer: "Updating a package it needs first would change records in a way its page in the console asks you to confirm first.",
 	}
 }
 

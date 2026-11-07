@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,12 +9,16 @@ import (
 	"text/template"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // getBundleStatuses lists every installed bundle's computed runtime state.
 func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	statuses, err := ds.BundleStatuses(r.Context())
+	if err == nil {
+		err = h.placeBundles(r.Context(), ds, statuses)
+	}
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
@@ -26,11 +31,58 @@ func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	st, err := ds.BundleStatus(r.Context(), pathParam(r, "id"))
+	one := []substrate.BundleStatus{st}
+	if err == nil {
+		err = h.placeBundles(r.Context(), ds, one)
+	}
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, st)
+	writeJSON(w, http.StatusOK, one[0])
+}
+
+// placeBundles joins what each package is for into its status (decision
+// record 0238): the catalog's answer where the binary ships it, which costs a
+// map lookup and no preview, else whether the repository's stored
+// declarations of it bind core's accountconfig. The registry is read only when
+// a package the binary does not ship needs it.
+func (h *handler) placeBundles(ctx context.Context, ds substrate.Dataset, statuses []substrate.BundleStatus) error {
+	var accounts map[string]bool
+	for i := range statuses {
+		st := &statuses[i]
+		if h.catalog != nil {
+			if b, ok := h.catalog.ByID(st.ID); ok {
+				st.Provider, st.AddonFor = b.Provider, b.AddonFor
+				continue
+			}
+		}
+		if accounts == nil {
+			var err error
+			if accounts, err = accountPackages(ctx, ds); err != nil {
+				return err
+			}
+		}
+		st.Provider = accounts[st.ID]
+	}
+	return nil
+}
+
+// accountPackages names the packages whose stored kinds bind core's
+// accountconfig trait: what makes a package from outside the binary a
+// provider (decision record 0238).
+func accountPackages(ctx context.Context, ds substrate.Dataset) (map[string]bool, error) {
+	kinds, err := ds.Kinds(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, k := range kinds {
+		if vocabulary.BindsTrait(k.Definition, vocabulary.TraitAccountConfigCore) {
+			out[k.Authority+"/"+k.Package] = true
+		}
+	}
+	return out, nil
 }
 
 // bundleLifecycleGate resolves the bundle's owning authority for a lifecycle

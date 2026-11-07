@@ -45,6 +45,8 @@ import (
 	"github.com/geoah/substrate/internal/authority"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
 )
 
 // Bundle is one installable catalog entry: the shipped closure and the wire
@@ -183,6 +185,26 @@ func (c *Catalog) addonFor(b *Bundle) string {
 	return ""
 }
 
+// documentAddonFor is the provider a package from an authority document
+// extends: what its document names, when the binary ships that as a provider,
+// else what addonFor reads off its requirements. A named package the console
+// cannot list it under (a catalogue, a provider from another document) makes
+// it no add-on at all, so it keeps the place its own role gives it; the
+// approval still reads the document's word for 0216's wait.
+func (c *Catalog) documentAddonFor(b *Bundle) string {
+	named := ""
+	if b.origin != nil {
+		named = b.origin.AddonFor
+	}
+	if named == "" {
+		return c.addonFor(b)
+	}
+	if dep, ok := c.byID[named]; ok && dep.Provider {
+		return named
+	}
+	return ""
+}
+
 // LoadWithReader adds document-published packages to the binary catalog.
 // seeded names the packages the binary seeds into every repository outside
 // the catalog (core, llm, console, observations): with the catalog's own
@@ -223,6 +245,14 @@ func ProviderRoot(fsys fs.FS) Root {
 // seed authority's catalogues), whose closures install under the authority
 // they name.
 func PublishedRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierPublished, FS: fsys} }
+
+// Shipped is the binary's three trees, each with the role its closures take
+// (decision records 0048 and 0238): the providers, the catalogues beside the
+// seed, and the samples. Load the shipped catalog through it: a tree passed
+// under the wrong root reads a catalogue as a provider, or the reverse.
+func Shipped() []Root {
+	return []Root{ProviderRoot(kinds.Providers()), PublishedRoot(kinds.Catalogues()), SampleRoot(samples.Samples())}
+}
 
 // SampleRoot is a tree of copyable packages (samples/), whose closures import
 // under the repository's own authority.
@@ -549,7 +579,7 @@ func (c *Catalog) installReviewed(ctx context.Context, actor substrate.Actor, id
 	return c.installResolved(ctx, b, ds, confirm, expect, closure)
 }
 
-// SeedInstall installs a provider the way Install does, for the operator's
+// SeedInstall installs a published package the way Install does, for the operator's
 // install list (the defaults file's `install:`). Like SeedImport it does not
 // require a human actor: it runs at registration and at a repository's open,
 // with no request behind it, and the changelog is attributed to the bundle as
@@ -617,13 +647,13 @@ func (c *Catalog) installResolved(ctx context.Context, b *Bundle, ds substrate.D
 	// `bundle:core`. The catalog is the source; the changelog is the truth, and
 	// nothing on the serving path reads the catalog again.
 	//
-	// A PROVIDER install says so: its packages land `source: published`, which
-	// is what closes them to the repository's token afterwards, and what
-	// promotes a provider an earlier install left `installed`. The TIER decides
+	// A PUBLISHED install says so: its packages land `source: published`,
+	// which is what closes them to the repository's token afterwards, and what
+	// promotes a package an earlier install left `installed`. The TIER decides
 	// it, so nothing here restates a list of ids. The same closure applied by
 	// hand (`substratectl apply -f` of these very files) carries no tier and
 	// stays the repository's own, which record 0047 sanctions and which is the
-	// only way to hold a provider's declarations open to editing.
+	// only way to hold a published package's declarations open to editing.
 	//
 	// A PROVIDER install records the shipped version it took
 	// (ShippedVersion): the package's stored version is the API's to move,
@@ -740,7 +770,7 @@ func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id
 	}
 
 	if b.Tier != substrate.TierSample {
-		return nil, nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
+		return nil, nil, fmt.Errorf("%w: %s is a published package, which installs under the authority that publishes it: use install, not import",
 			substrate.ErrValidation, b.ID)
 	}
 	return c.importSample(ctx, b, ds, confirm)
@@ -892,7 +922,8 @@ func (c *Catalog) installable(ctx context.Context, actor substrate.Actor, id str
 // install is the one admission both doors run: every shipped data document is
 // converted and validated BEFORE the schema apply, then the schema closure and
 // the delivery wiring commit as a single repository transaction. `opts` is
-// where the tier arrives: `Published` for a provider, zero for a sample.
+// where the tier arrives: `Published` for a published package, zero for a
+// sample.
 func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, vocabularyDocs, dataDocs []map[string]any, opts substrate.BundleInstall) error {
 	// Pre-admit every data document BEFORE the schema apply: a malformed
 	// delivery-wiring envelope fails here, before anything is touched, rather

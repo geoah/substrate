@@ -250,7 +250,7 @@ function collectionMember(k: string, registry: readonly KindInfo[]) {
   )
 }
 
-/** A standard package by the collections that will show up. */
+/** A standard collection by the collections that will show up. */
 function Standard() {
   return (
     <div className="flex flex-col gap-2.5">

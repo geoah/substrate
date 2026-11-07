@@ -1052,6 +1052,41 @@ describe("ProviderPage", () => {
     })
   })
 
+  // Decision record 0238: a catalogue is no provider. Before it is added
+  // its page (an approval's "Open its page", an old /registry address) says
+  // what adding it brings, with Add, rather than that nothing is here.
+  describe("a package the catalog offers and this repository does not hold", () => {
+    it("says what it is and what adding it brings, with Add", async () => {
+      params = { authority: "substrate.reamde.dev", pkg: "clinical" }
+      serve({
+        catalog: [
+          CATALOG,
+          {
+            ...CATALOG,
+            id: "substrate.reamde.dev/clinical",
+            name: "clinical",
+            authority: "substrate.reamde.dev",
+            package: "clinical",
+            description: "Your medical record as your care providers keep it.",
+            provider: false,
+            brings: ["collections"],
+            installed: false,
+          },
+        ],
+      })
+      renderPage(<ProviderPage />)
+      expect(
+        await screen.findByText("Clinical", { selector: "h1" })
+      ).toBeTruthy()
+      expect(screen.getByText("Not added")).toBeTruthy()
+      expect(
+        screen.getByText("A standard collection, kept up to date for you")
+      ).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Add" })).toBeTruthy()
+      expect(screen.queryByText("Nothing here")).toBeNull()
+    })
+  })
+
   describe("what it adds", () => {
     it("lists its collections with what they fill in of yours, and counts the rest", async () => {
       renderPage(<ProviderPage />)

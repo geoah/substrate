@@ -11,7 +11,7 @@
  * its own page at the same kind of address.
  *
  * The same address serves any other package this repository holds (a
- * standard package, an imported sample, the seeded llm package): the
+ * standard collection, an imported sample, the seeded llm package): the
  * Providers list links its Other packages here, so a package's settings,
  * update and removal have a home. Such a page has no set-up steps and no
  * accounts. */
@@ -83,10 +83,12 @@ import { bundleState } from "@/lib/api/bundles"
 import { settingRecordsQueryOptions } from "@/lib/api/settings"
 import type { BundleStatus, KindInfo } from "@/lib/api/types"
 import {
+  addonOf,
   isInputSetupCode,
   isProvider,
   isSettingSetupCode,
   missingChain,
+  packageRole,
   upgradeAvailable,
   upgradeBlocked,
   type BundleRow,
@@ -192,6 +194,11 @@ export function ProviderPage() {
 
   const entry = data.providers.find((p) => p.row.id === id)
   const row = entry?.row ?? data.rows.find((r) => r.id === id && r.status)
+  // A catalog entry the repository does not hold and no provider (a
+  // catalogue an approval is about to install, an old /registry address)
+  // reads as what adding it brings, with Add (decision record 0238).
+  const offered = row ? undefined : data.rows.find((r) => r.id === id)
+  if (offered) return <OfferedDoc row={offered} data={data} />
   if (!row) {
     return (
       <DocPage>
@@ -409,6 +416,50 @@ function ProviderDoc({
   )
 }
 
+/** A package the catalog offers and this repository does not hold: what it
+ * is, what adding it brings and what it needs first, with Add. */
+function OfferedDoc({ row, data }: { row: BundleRow; data: ProvidersData }) {
+  const name = packageDisplayName(row.package || row.name)
+  const chain = data.chains(row)
+  return (
+    <DocPage>
+      <PageHeader
+        glyph={
+          <span className="grid size-11 place-items-center rounded-[10px] border bg-panel text-muted-foreground">
+            <PackageIcon aria-hidden className="size-5" />
+          </span>
+        }
+        title={name}
+        meta={
+          <>
+            <Pill tone="neutral">Not added</Pill>
+            <span>{packageRole(row).long}</span>
+          </>
+        }
+        description={row.catalog?.description}
+        actions={<TakeButton row={row} chain={chain} name={name} label="Add" />}
+      />
+      {missingChain(chain).length > 0 && (
+        <p className="mt-6 text-[12.5px] text-muted-foreground">
+          Adding it also adds the{" "}
+          {missingChain(chain).length === 1 ? "package" : "packages"} it needs
+          first.
+        </p>
+      )}
+      <BringsIn
+        bundleId={row.id}
+        kinds={data.kinds}
+        catalog={row.catalog}
+        installed={false}
+        title="What it adds"
+      />
+      <OAuthHosts hosts={row.catalog?.oauthHosts} />
+      <ProviderTools catalog={row.catalog} installed={false} />
+      <Requirements chain={chain} />
+    </DocPage>
+  )
+}
+
 /** Any other package this repository holds, on the same address. */
 function PackageDoc({
   row,
@@ -450,15 +501,7 @@ function PackageDoc({
                   ? "Failed to load"
                   : "Paused"}
             </Pill>
-            <span>
-              {row.tier === "sample"
-                ? "A sample you added"
-                : isProvider(row)
-                  ? "A provider"
-                  : row.tier === "published"
-                    ? "A standard package, kept up to date for you"
-                    : "Added by hand"}
-            </span>
+            <span>{packageRole(row).long}</span>
             {technical && <IdText value={row.id} copy />}
             {technical && status.version !== undefined && (
               <span>version {status.version}</span>
@@ -556,7 +599,11 @@ function HeaderActions({
         <UpgradeButton row={row} name={name} onConfirmLoss={onConfirmLoss} />
       )}
       <PauseBundleButton bundle={status} name={name} />
-      <RemoveBundleButton bundle={status} name={name} />
+      <RemoveBundleButton
+        bundle={status}
+        name={name}
+        owned={!isProvider(row) && !addonOf(row)}
+      />
     </>
   )
 }

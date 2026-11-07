@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 
 	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
@@ -249,7 +248,7 @@ type setupEnv struct {
 
 func newSetupEnv(t *testing.T) *setupEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

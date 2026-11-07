@@ -193,9 +193,9 @@ it is refused until it is confirmed. --allow-data-loss reads the preview
 again, prints what goes, and confirms exactly that plan; a write that lands
 in between, or a plan that reads differently, is refused again.
 
-Published packages (the providers and the standard packages) take the other
-door, ` + "`substratectl install`" + `, and land under the authority that
-publishes them. Importing one is refused, naming it.`,
+Published packages (a provider, or a catalogue such as substrate.reamde.dev/labs)
+take the other door, ` + "`substratectl install`" + `, and land under the
+authority that publishes them. Importing one is refused, naming it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.takeBundle(cmd, args[0], "import", "imported", allowDataLoss)
@@ -214,7 +214,7 @@ func (a *app) installCommand() *cobra.Command {
 		Use:   "install <package>",
 		Short: "Install a published package under the authority that publishes it",
 		Long: `Install one of the PUBLISHED packages into this repository: a provider
-or a standard package.
+or a catalogue.
 
 A published package is one its publisher owns, so it lands exactly as
 published:

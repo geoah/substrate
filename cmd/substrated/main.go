@@ -36,7 +36,6 @@ import (
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 const (
@@ -174,7 +173,7 @@ func run() error {
 	}
 	resolver := domains.NewResolver(cfg.DNSResolver)
 	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs, Resolver: resolver})
-	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.Shipped()...)
 	if err != nil {
 		return err
 	}

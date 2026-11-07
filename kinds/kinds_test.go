@@ -65,16 +65,16 @@ func TestEveryManifestOnDiskIsEmbedded(t *testing.T) {
 	}
 }
 
-// Seed and Bundles partition the tree: every authority is a bundle authority,
+// Seed and Served partition the tree: every authority is a served authority,
 // the seed authority is in both, and inside it every package is in exactly
 // one half, the seeded ones by name and the catalogues by carrying a bundle
 // document (record 0192). A directory in neither would be shipped and unread.
-func TestSeedAndBundlesPartitionTheTree(t *testing.T) {
+func TestSeedAndServedPartitionTheTree(t *testing.T) {
 	seed := rootNames(t, kinds.Seed())
 	if len(seed) != 1 || seed[0] != kinds.SeedAuthority {
 		t.Fatalf("seed root = %v, want just %s", seed, kinds.SeedAuthority)
 	}
-	bundles := rootNames(t, kinds.Bundles())
+	bundles := rootNames(t, kinds.Served())
 	onDisk, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read the tree on disk: %v", err)
@@ -89,7 +89,7 @@ func TestSeedAndBundlesPartitionTheTree(t *testing.T) {
 		t.Errorf("bundles hold %d authorities, %d on disk", len(bundles), dirs)
 	}
 	seeded := packageNames(t, kinds.Seed(), kinds.SeedAuthority)
-	served := packageNames(t, kinds.Bundles(), kinds.SeedAuthority)
+	served := packageNames(t, kinds.Served(), kinds.SeedAuthority)
 	all := packageNames(t, kinds.All(), kinds.SeedAuthority)
 	want := map[string]bool{}
 	for _, p := range kinds.SeedPackages {
@@ -145,7 +145,7 @@ func TestBothViewsLoad(t *testing.T) {
 	if len(r.Packages()) == 0 || len(r.Kinds()) == 0 {
 		t.Fatalf("the seed registry is empty: %v", r.Packages())
 	}
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -467,7 +467,7 @@ func asMapping(v any) map[string]any {
 }
 
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // (decision record 0049): this is the install order in which they all land,
 // and the mapping set at the end is what they projected.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -602,7 +602,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // rewrites the samples authority alone.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
@@ -831,7 +831,7 @@ func rootNames(t *testing.T, fsys fs.FS) []string {
 // and pluralizes it ("Conversations", "Calendar series"), and a person calls
 // it something else; the label is what every client shows instead.
 func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}

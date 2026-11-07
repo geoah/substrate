@@ -1,8 +1,6 @@
 package catalog
 
 import (
-	"slices"
-
 	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -143,8 +141,7 @@ const kindMetric = vocabulary.PackageObservations + "/metric"
 func (b *Bundle) brings() []string {
 	has := map[string]bool{}
 	for _, k := range b.kinds {
-		traits := vocabulary.ReferentIDs(mslice(k.Definition, "traits"), vocabulary.CoreKind(vocabulary.DocTrait))
-		if slices.Contains(traits, vocabulary.TraitAccountConfigCore) {
+		if vocabulary.BindsTrait(k.Definition, vocabulary.TraitAccountConfigCore) {
 			has[substrate.BringsAccount] = true
 		}
 		if k.Purpose == "" || k.Purpose == vocabulary.PurposePrimary {

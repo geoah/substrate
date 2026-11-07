@@ -1087,6 +1087,8 @@ const bundleStatus: Shape<BundleStatus> = {
   originVersion: false,
   modified: false,
   shippedVersion: false,
+  provider: false,
+  addonFor: false,
 }
 
 const inputStatus: Shape<InputStatus> = {

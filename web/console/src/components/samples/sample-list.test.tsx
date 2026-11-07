@@ -23,6 +23,20 @@ import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
+  Link: ({
+    to,
+    params,
+    children,
+    ...rest
+  }: {
+    to: string
+    params?: Record<string, string>
+    children: React.ReactNode
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a data-to={to} data-params={JSON.stringify(params ?? {})} {...rest}>
+      {children}
+    </a>
+  ),
 }))
 
 import { collectionSamples } from "./sample-picks"
@@ -172,7 +186,14 @@ describe("SampleList", () => {
       for (const row of [mine, other]) {
         expect(within(row).getByText(`${HOME}/tasks/task`)).toBeTruthy()
       }
-      expect(within(mine).getByText("Added")).toBeTruthy()
+      // Added links to the copy's package page, where it is updated and
+      // removed (decision record 0238).
+      const added = within(mine).getByText("Added").closest("a")!
+      expect(added.dataset.to).toBe("/data/$authority/$pkg")
+      expect(JSON.parse(added.dataset.params!)).toEqual({
+        authority: HOME,
+        pkg: "tasks",
+      })
       expect(within(mine).queryByRole("button")).toBeNull()
       expect(within(other).queryByText("Added")).toBeNull()
       fireEvent.click(within(other).getByRole("button", { name: "Add" }))

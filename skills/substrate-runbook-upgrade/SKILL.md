@@ -219,7 +219,7 @@ Deploy
 
 After the deploy
 7. [operator] `repository verify` every repository (step 7)
-8. [user] Take the provider, then the sample upgrades `substratectl catalog` offers
+8. [user] Take the published, then the sample upgrades `substratectl catalog` offers
 9. [user] Client changes: <each change, with the file it touches>
 
 Skipped notes
@@ -405,7 +405,7 @@ takes no lease, so it is safe beside the running server.
 **User.**
 
 ```bash
-substratectl catalog                                         # seeded packages first, then providers and samples
+substratectl catalog                                         # seeded packages first, then published packages and samples
 substratectl get substrate.reamde.dev/core/package -o yaml   # look for quarantined: true
 substratectl trigger status
 substratectl sync status
@@ -436,8 +436,8 @@ substratectl sync status
 
 ## Step 8: Take the upgrades the catalog offers
 
-`substratectl catalog` lists each published package (a provider or a standard
-package such as `substrate.reamde.dev/health`, `published` in its TIER column)
+`substratectl catalog` lists each published package (a provider or a catalogue
+such as `substrate.reamde.dev/health`, `published` in its TIER column)
 or sample with a newer shipped version as a motion (`16 -> 17`). Read the
 conversion steps printed under the table before you take one. Take the
 published packages first, then the samples, because a sample's suggested

@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { llmProvidersQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
-import { catalogQueryOptions } from "@/lib/api/catalog"
+import { listedProvider } from "@/lib/bundles"
 import { discoveryQueryOptions, hasFeature } from "@/lib/api/discovery"
 import {
   OPERATOR_DEFAULTS_FEATURE,
@@ -103,11 +103,12 @@ export function useModelKeys(): ModelKeys {
 }
 
 /** What the Providers page shows as set up, counted: the installed provider
- * packages it lists (the catalog's providers, add-ons left to their
- * provider's page, decision record 0238) and the AI model rows whose key
- * resolves. Undefined until all are read, and while the operator's read has
- * not answered or failed (`error`): a count that guessed would disagree with
- * the page. */
+ * packages it lists (each status says whether it is a provider, add-ons left
+ * to their provider's page, decision record 0238) and the AI model rows
+ * whose key resolves. It reads the bundle statuses and never the catalog,
+ * whose previews are too dear for a count on every page. Undefined until
+ * both are read, and while a read has not answered or failed (`error`): a
+ * count that guessed would disagree with the page. */
 export function useProvidersInUse(): {
   count: number | undefined
   /** The installed provider packages. */
@@ -118,15 +119,11 @@ export function useProvidersInUse(): {
   error: Error | null
 } {
   const statuses = useQuery(bundleStatusesQueryOptions)
-  const catalog = useQuery(catalogQueryOptions)
   const keys = useModelKeys()
-  const packages = useMemo(() => {
-    if (!statuses.data || !catalog.data) return undefined
-    const listed = new Set(
-      catalog.data.filter((c) => c.provider && !c.addonFor).map((c) => c.id)
-    )
-    return statuses.data.filter((b) => listed.has(b.id))
-  }, [statuses.data, catalog.data])
+  const packages = useMemo(
+    () => statuses.data?.filter(listedProvider),
+    [statuses.data]
+  )
   const models = useMemo(
     () =>
       keys.rows && keys.read !== undefined
@@ -137,5 +134,10 @@ export function useProvidersInUse(): {
     [keys]
   )
   const count = packages && models ? packages.length + models.length : undefined
-  return { count, packages, models, error: keys.readError }
+  return {
+    count,
+    packages,
+    models,
+    error: keys.readError ?? statuses.error ?? null,
+  }
 }

@@ -148,6 +148,7 @@ function provider(
             functions: 0,
             kinds: 0,
             liveRecords: 0,
+            provider: true,
           }
         : undefined,
       catalog: {
@@ -309,13 +310,6 @@ beforeEach(() => {
         })
       if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
         return Response.json({ items: statuses })
-      // The counts read the catalog the page's stubbed hook stands in for.
-      if (url === "/api/v1/catalog")
-        return Response.json({
-          items: (catalog.providers as ProviderEntry[]).map(
-            (p) => p.row.catalog
-          ),
-        })
       if (url === "/api/v1/operator/defaults") {
         await holdDefaults
         if (answer === "network") throw new TypeError("Failed to fetch")
