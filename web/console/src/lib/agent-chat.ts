@@ -21,6 +21,7 @@ import {
   HOST_FUNCTION_VOCABULARY,
   HOST_FUNCTION_WAIT,
   HOST_FUNCTION_WRITE,
+  HOST_FUNCTIONS,
   TOOL_FUNCTION_FIELD,
   isToolOwnedKind,
   valueIdentity,
@@ -486,9 +487,18 @@ function kindsOf(args: Record<string, unknown>): string[] {
     : []
 }
 
-/** A noun with its indefinite article: "a book", "an author". */
+/** Words whose first letter misleads about their first sound: a vowel
+ * letter said as a "you" or "wun" ("a unit", "a user", "a URL", "a one-off"),
+ * and a silent h ("an hour"). The Chat app holds the same two lists. */
+const SAYS_A =
+  /^(uni|use|usu|uti|ure|uro|eu|ewe|one\b|once|url|uri\b|uuid|usb)/i
+const SAYS_AN = /^(hour|honest|honou?r|heir)/i
+
+/** A noun with its indefinite article: "a book", "an author", "a unit". */
 export function withArticle(noun: string): string {
-  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`
+  const an =
+    SAYS_AN.test(noun) || (/^[aeiou]/i.test(noun) && !SAYS_A.test(noun))
+  return `${an ? "an" : "a"} ${noun}`
 }
 
 /** The longest title a tool call's line quotes whole. */
@@ -630,7 +640,7 @@ export function toolSummary(
       else if (typeof args.kind === "string" && typeof args.id === "string")
         words = `Looked up ${withArticle(lowerFirst(displayName(args.kind)))}`
       else if (kinds.length)
-        words = `Looked through your ${joinWords(kinds.map((k) => displayPlural(k)))}`
+        words = `Looked through your ${joinWords(kinds.map((k) => lowerFirst(displayPlural(k))))}`
       const found = parseJSON(call.output).records
       if (Array.isArray(found) && call.ok !== false) {
         words +=
@@ -754,13 +764,7 @@ export function canChange(agent: SubstrateRecord): string {
   }
   // A function tool acts within its OWN grants, which this record does not
   // carry; the tool's page says what each may do.
-  const host = [
-    HOST_FUNCTION_QUERY,
-    HOST_FUNCTION_WRITE,
-    HOST_FUNCTION_PROPOSE,
-    HOST_FUNCTION_ASK,
-  ]
-  if (tools.some((fn) => !host.includes(fn))) {
+  if (tools.some((fn) => !HOST_FUNCTIONS.includes(fn))) {
     return "Nothing directly. Its tools can, each within what it’s allowed to do"
   }
   return "Nothing"
@@ -854,12 +858,9 @@ export function resolveTool(
   if (subagent) return { subagent }
   // An agent the console could not read still names the host functions by
   // their own local names, which is what an unaliased entry records.
-  const host = [
-    HOST_FUNCTION_QUERY,
-    HOST_FUNCTION_WRITE,
-    HOST_FUNCTION_PROPOSE,
-    HOST_FUNCTION_ASK,
-  ].find((fn) => fn.slice(fn.lastIndexOf("/") + 1) === name)
+  const host = HOST_FUNCTIONS.find(
+    (fn) => fn.slice(fn.lastIndexOf("/") + 1) === name
+  )
   return host && !agent ? { function: host } : {}
 }
 
@@ -1064,14 +1065,9 @@ export function toolDetails(
   }
 
   // A function tool answers `{output, effects}`; the output is what it
-  // returned, and the effects are already the stamps above.
-  const host = [
-    HOST_FUNCTION_QUERY,
-    HOST_FUNCTION_WRITE,
-    HOST_FUNCTION_PROPOSE,
-    HOST_FUNCTION_ASK,
-  ]
-  if (!host.includes(resolved.function ?? "")) {
+  // returned, and the effects are already the stamps above. A host function
+  // answers in its own shape, read above or by its own card.
+  if (!HOST_FUNCTIONS.includes(resolved.function ?? "")) {
     const returned = "output" in payload ? payload.output : undefined
     // A payload of no known shape is shown whole, unless what it named has
     // already been read out of it above.

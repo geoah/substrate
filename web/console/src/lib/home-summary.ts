@@ -1,11 +1,8 @@
 /** The lines Home's overview cards read, from the reads the other pages
  * already make. Pure, so the words are checked without a page. */
 
-import {
-  providerInfo,
-  PROVIDERS_AUTHORITY,
-  type ProviderInfo,
-} from "@/lib/actor-identity"
+import { providerInfo, type ProviderInfo } from "@/lib/actor-identity"
+import { listedProvider } from "@/lib/bundles"
 import type { BundleStatus, KindInfo } from "@/lib/api/types"
 import type { CollectionGroup } from "@/lib/collections"
 
@@ -34,13 +31,14 @@ export function providerState(b: BundleStatus): string {
 }
 
 /** Home's Providers card: what the Providers page shows as set up, counted
- * as the sidebar counts it (the installed provider packages and the AI models
- * whose key resolves), each provider's state and the models by name. */
+ * as the sidebar counts it (the installed packages each status says is a
+ * provider and no add-on, decision record 0238, and the AI models whose key
+ * resolves), each provider's state and the models by name. */
 export function providersSummary(
   statuses: BundleStatus[],
   models: string[] = []
 ): CardSummary {
-  const providers = statuses.filter((b) => b.authority === PROVIDERS_AUTHORITY)
+  const providers = statuses.filter(listedProvider)
   const count = providers.length + models.length
   if (!count) {
     return {

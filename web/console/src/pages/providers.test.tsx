@@ -88,7 +88,9 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     package: "x",
     description: "",
     version: 1,
-    tier: "provider",
+    tier: "published",
+    // The fixtures are providers unless they say otherwise.
+    provider: over.tier !== "sample",
     closure: EMPTY,
     installed: false,
     ...over,
@@ -395,6 +397,34 @@ describe("ProvidersPage", () => {
     await card("Google")
     expect(screen.getByText("Linear", { selector: "a" })).toBeTruthy()
     expect(screen.queryByText("People", { selector: "a" })).toBeNull()
+  })
+
+  // Decision record 0238: `clinical` is no account to connect. The catalog
+  // says what a package is for, and only its providers get a row here; an
+  // add-on is listed on the page of the provider it extends.
+  it("lists no standard collection and no add-on as a provider", async () => {
+    const CLINICAL = bundle({
+      id: "substrate.reamde.dev/clinical",
+      name: "clinical",
+      authority: "substrate.reamde.dev",
+      package: "clinical",
+      provider: false,
+      brings: ["collections"],
+    })
+    const SLACKLIVE = bundle({
+      id: "providers.substrate.reamde.dev/slacklive",
+      name: "slacklive",
+      authority: "providers.substrate.reamde.dev",
+      package: "slacklive",
+      addonFor: "providers.substrate.reamde.dev/slack",
+    })
+    serve({ catalog: [GOOGLE, CLINICAL, SLACKLIVE] })
+    renderPage(<ProvidersPage />)
+    await card("Google")
+    expect(screen.queryByText("Clinical", { selector: "a" })).toBeNull()
+    expect(
+      screen.queryByText("Slack live events", { selector: "a" })
+    ).toBeNull()
   })
 
   it("offers to add a provider that is not here, and links its page", async () => {

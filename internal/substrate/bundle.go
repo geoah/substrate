@@ -77,6 +77,13 @@ type BundleStatus struct {
 	// digest of the landed closure and the status recomputes it from the
 	// stored rows. False when Origin is empty.
 	Modified bool `json:"modified,omitempty"`
+	// Provider and AddonFor say what the package is for (decision record
+	// 0238), joined in by the API: the catalog's answer where the binary
+	// ships the package, else whether its stored declarations bring an
+	// account, and no add-on. The counts beside Providers read these, so
+	// they never wait on the catalog's previews.
+	Provider bool   `json:"provider,omitempty"`
+	AddonFor string `json:"addonFor,omitempty"`
 }
 
 // BundleCodeChange is the review evidence for one changed outside declaration.

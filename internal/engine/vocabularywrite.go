@@ -150,11 +150,6 @@ type vocabularyBatch struct {
 	// changes, when set, receives the batch's committed changelog entries:
 	// the agent vocabulary tool stamps them on its tool row, as `write` does.
 	changes *[]changeEntry
-	// declarationsOnly refuses a batch whose conversions would rewrite a
-	// live record (a rename, a backfill, a remap). An agent's grant names
-	// the declaration kinds it may write, not the records a declaration
-	// would convert, so that rewrite stays the owner's (decision 0239).
-	declarationsOnly bool
 }
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
@@ -172,14 +167,13 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 // caller's decisions: the confirmation a lossy plan needs (decision 0067),
 // and the origin a hand-rehomed sample claims (decision record 0070).
 func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply) ([]*substrate.Record, error) {
-	return ds.applyVocabularyDocuments(ctx, actor, raw, opts, nil, false)
+	return ds.applyVocabularyDocuments(ctx, actor, raw, opts, nil)
 }
 
 // applyVocabularyDocuments is ApplyVocabularyDocumentsWith handing the
-// batch's committed changelog entries to changes, when set, and refusing a
-// batch that would convert a live record when declarationsOnly says so: the
-// agent vocabulary tool's call sets both.
-func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply, changes *[]changeEntry, declarationsOnly bool) ([]*substrate.Record, error) {
+// batch's committed changelog entries to changes, when set: the agent
+// vocabulary tool stamps them on its tool row.
+func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply, changes *[]changeEntry) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
@@ -190,7 +184,7 @@ func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}
-	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes, declarationsOnly: declarationsOnly}
+	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes}
 	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
 		return nil, err
 	}
@@ -698,7 +692,11 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := admitConversion(plan, ds.svc.conversionCeiling, b.confirm, edited); err != nil {
 			return err
 		}
-		if b.declarationsOnly && plan.Work > 0 {
+		// An agent's grant names the declaration kinds it may write, not the
+		// records a declaration would convert, so that rewrite stays the
+		// owner's (decision 0239). Judged by the hand, not the door: an
+		// agent's vocabulary, write and edit tools all land here.
+		if strings.HasPrefix(string(t.actor), substrate.AgentActorPrefix) && plan.Work > 0 {
 			return fmt.Errorf("%w: this batch would rewrite %d live records to convert them (a rename, a backfill or a remap); an agent declares, and converting records is the owner's to apply",
 				substrate.ErrForbidden, plan.Work)
 		}

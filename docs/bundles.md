@@ -12,9 +12,17 @@ The catalog it comes from has **two doors**, one per tier
 
 | Word            | Means                                                                  |
 | --------------- | ---------------------------------------------------------------------- |
-| **provider**    | a package a publisher owns (`providers.substrate.reamde.dev/google`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
+| **published**   | a package a publisher owns (a provider such as `providers.substrate.reamde.dev/google`, a catalogue such as `substrate.reamde.dev/labs`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
 | **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left |
 | **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Accounts** on each provider's page |
+
+The tier says who keeps a package, never what it is for. Each catalog entry
+says that apart, read from its declarations
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
+`provider` (it connects the substrate to an outside service), `brings`
+(`account`, `tools`, `collections`, `metrics`, `agents`) and `addonFor` (the
+provider an add-on extends). Each bundle status carries `provider` and
+`addonFor` too, so a reader of the statuses alone can count the providers.
 
 ## What a bundle ships
 
@@ -205,7 +213,7 @@ changelog head and leaves the confirmation standing ([decision
 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
 a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
 **Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
-guard lines where something blocks; `substratectl install <provider>
+guard lines where something blocks; `substratectl install <package>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
@@ -287,8 +295,8 @@ every installed bundle under an `{items}` envelope and
 one: `{id, name, authority, package, installed, enabled, inputs, setup,
 accounts, functions, kinds, liveRecords, version}`, plus the quarantine pair
 when it applies and, on an imported sample, the `origin`, `originVersion` and
-`modified` its [stamp](#the-two-doors) carries. On a provider the catalog
-installed, `shippedVersion` is the shipped package version that install took,
+`modified` its [stamp](#the-two-doors) carries. On a published package the
+catalog installed, `shippedVersion` is the shipped package version that install took,
 which can sit below `version`: the API lands every change at stored+1, so an
 install over hand applies lands above the shipped number. `id` is the package the bundle
 owns, and `name` and `package` are both that package's own word.
@@ -315,13 +323,15 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the ten shipped ones are
-`providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper`, `/slack`, `/slacklive`, `/apple` and `/applehealth`. The
-tier is read from the tree the closure came from, never guessed from an OAuth
-block, from account kinds, or from the package's name: a token or webhook
-provider may declare no OAuth, and an account-shaped package is not
-necessarily one.
+A **provider** is a package that connects the substrate to an outside
+service: the shipped ones are every package under
+`providers.substrate.reamde.dev` (`google`, `github`, `linear`, `notion`,
+`whoop`, `beeper`, `slack`, `slacklive`, `apple`, `applehealth` and
+`firecrawl`), and a package from an authority document is one when it
+declares an account kind. For the shipped ones it is read from the tree the
+closure came from, never guessed from an OAuth block or from the package's
+name: a token or webhook provider may declare no OAuth, and Apple's devices
+push, so it declares no account kind at all.
 
 An OAuth provider (Google, GitHub, WHOOP) ships, on top of the usual closure,
 the pieces the substrate's OAuth facility recognizes by
@@ -801,8 +811,8 @@ The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the eleven **providers** under `kinds/providers.substrate.reamde.dev`, the
 four well-known **catalogues** under `kinds/substrate.reamde.dev`
-(`health`, `labs`, `environment` and `clinical`), which take the provider
-door, and the
+(`health`, `labs`, `environment` and `clinical`), which take the same install
+door and are no providers, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
 `readinglist` and `pebble`). A catalogue is a first-party package:
@@ -939,8 +949,9 @@ Rewrite the authority with `sed` first (`sed
 's/samples\.substrate\.reamde\.dev/alice.example.com/g'` for a repository
 named `alice.example.com`).
 
-`POST …/catalog/{id}/install` is the **provider** door. The closure lands
-verbatim, under the authority that publishes it, with the shipped version it
+`POST …/catalog/{id}/install` is the **published** door, for a provider and a
+catalogue alike. The closure lands verbatim, under the authority that
+publishes it, with the shipped version it
 took stamped as `shippedVersion` on the package row, and the version bump the
 publisher ships next is what the upgrade preview above offers.
 
@@ -972,15 +983,16 @@ reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
 `modified` covers declaration data only: labels, annotations and the data
 records a sample ships beside its closure do not flip it.
-The provider door stamps no origin (only its `shippedVersion`), and neither
+The install door stamps no origin (only its `shippedVersion`), and neither
 does a hand `apply -f` unless the request names an `origin`: `substratectl apply --as <authority>` sends
 the package the input was authored as when the input carries its package
 document (one package per run; an input carrying several is refused, since
 one request names one origin), and the server records the claim as the import door records its
 own, with a digest of what landed
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
-So a package with no `origin` is a provider, the repository's own from the
-start, or a copy imported before the stamp existed, which nothing reconstructs.
+So a package with no `origin` is a published package, the repository's own
+from the start, or a copy imported before the stamp existed, which nothing
+reconstructs.
 
 **The stamp is the sample's upgrade path.** The catalog previews a stamped
 copy against the shipped sample, rehomed, exactly as the provider preview
@@ -1003,7 +1015,7 @@ edited copy is refused the same way, and `apply --as --allow-data-loss`
 previews with the origin (`POST /api/v1/vocabulary/plan` takes `origin` too)
 and confirms.
 
-`import` on a provider id is refused naming `install`. `install` on a sample id
+`import` on a published id is refused naming `install`. `install` on a sample id
 admits the closure verbatim, under the placeholder authority, for a repository
 that wants the shipped vocabulary under the shipped authority; no provider
 names a sample package, so nothing else needs it. Its `requires:` keep the

@@ -359,7 +359,7 @@ func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testin
 	t.Parallel()
 	r := openObserved(t)
 	ctx := context.Background()
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		t.Fatalf("load the catalog: %v", err)
 	}

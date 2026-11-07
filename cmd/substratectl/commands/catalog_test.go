@@ -31,7 +31,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "providers.substrate.reamde.dev/google", Name: "google", Authority: "providers.substrate.reamde.dev",
-				Package: "google", Version: 4, Tier: substrate.TierProvider,
+				Package: "google", Version: 4, Tier: substrate.TierPublished,
 			},
 			Installed: true,
 			Upgrade: &substrate.BundleUpgrade{
@@ -42,7 +42,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "providers.substrate.reamde.dev/linear", Name: "linear", Authority: "providers.substrate.reamde.dev",
-				Package: "linear", Version: 2, Tier: substrate.TierProvider,
+				Package: "linear", Version: 2, Tier: substrate.TierPublished,
 			},
 			Installed: true,
 			Upgrade:   &substrate.BundleUpgrade{Available: true, From: 1, To: 2},
@@ -68,10 +68,10 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 	// the version the binary ships and the motion an upgrade would make.
 	for _, want := range []string{
 		"PACKAGE",
-		"substrate.reamde.dev/core               seed       true        17        16 -> 17, blocked",
-		"providers.substrate.reamde.dev/google   provider   true        4         3 -> 4, blocked",
-		"providers.substrate.reamde.dev/linear   provider   true        2         1 -> 2",
-		"samples.substrate.reamde.dev/tasks      sample     false       8",
+		"substrate.reamde.dev/core               seed        true        17        16 -> 17, blocked",
+		"providers.substrate.reamde.dev/google   published   true        4         3 -> 4, blocked",
+		"providers.substrate.reamde.dev/linear   published   true        2         1 -> 2",
+		"samples.substrate.reamde.dev/tasks      sample      false       8",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("catalog table lacks %q:\n%s", want, stdout)
@@ -223,7 +223,7 @@ func lossyGoogle() substrate.CatalogItem {
 	return substrate.CatalogItem{
 		CatalogBundle: substrate.CatalogBundle{
 			ID: googleProvider, Name: "google", Authority: "providers.substrate.reamde.dev",
-			Package: "google", Version: 4, Tier: substrate.TierProvider,
+			Package: "google", Version: 4, Tier: substrate.TierPublished,
 		},
 		Installed: true,
 		Upgrade: &substrate.BundleUpgrade{
@@ -373,7 +373,7 @@ func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	renderError(&rendered, err)
 	for _, want := range []string{
 		"error: the vocabulary change removes values from stored records and needs a confirmation",
-		"hint: re-run `substratectl install <provider> --allow-data-loss`",
+		"hint: re-run `substratectl install <package> --allow-data-loss`",
 	} {
 		if !strings.Contains(rendered.String(), want) {
 			t.Errorf("the refusal did not render %q:\n%s", want, rendered.String())

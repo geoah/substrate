@@ -122,7 +122,10 @@ describe("the shipped record views", () => {
     "%s draws every section and names shipped metrics and kinds",
     (_, record) => {
       const view = recordViewOf(record)
-      expect(view.sections.length).toBeGreaterThan(0)
+      // A view with no section of its own still shapes the sheet.
+      expect(
+        view.sections.length + view.fold.length + view.collapsed.length
+      ).toBeGreaterThan(0)
       const blocks = view.sections.flatMap((s) =>
         "block" in s ? [s.block] : []
       )

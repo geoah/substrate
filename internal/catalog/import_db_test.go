@@ -262,7 +262,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 		pending = append(pending, b)
 		for _, req := range b.Requires {
 			rb, ok := c.ByID(req)
-			if !ok || rb.Tier != substrate.TierProvider || installed[rb.ID] {
+			if !ok || rb.Tier != substrate.TierPublished || installed[rb.ID] {
 				continue
 			}
 			if _, _, err := c.Install(ctx, substrate.ActorAPI, rb.ID, ds); err != nil {

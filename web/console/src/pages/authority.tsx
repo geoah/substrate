@@ -15,6 +15,7 @@ import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 import { AgentCard } from "@/components/agent/agent-ref"
 import { PublisherDetails } from "@/components/packages/publisher"
 import { PublishedPackageSection } from "@/components/packages/published-package"
+import { StandardPackageSection } from "@/components/packages/standard-package"
 import { catalogQueryOptions } from "@/lib/api/catalog"
 
 import { CopyButton } from "@/components/identity/copy-button"
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useHeldPackage } from "@/hooks/use-held-package"
 import {
   PROVIDERS_AUTHORITY,
   actorIdentity,
@@ -45,6 +47,7 @@ import {
 } from "@/lib/actor-identity"
 import { functionsQueryOptions } from "@/lib/api/functions"
 import { splitKind } from "@/lib/api/http"
+import { isStandard } from "@/lib/bundles"
 import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -330,7 +333,13 @@ export function PackagePage() {
   const publisher = catalog.data?.find(
     (item) => item.id === `${authority}/${pkg}`
   )?.publisher
-  const published = packages.data?.get(`${authority}/${pkg}`)?.publishedFrom
+  const held = useHeldPackage(`${authority}/${pkg}`)
+  // From an authority document: the package row says so, and so does the
+  // catalog entry's publisher, which arrives with the held row, so the
+  // section never flips once the package rows load.
+  const published = Boolean(
+    packages.data?.get(`${authority}/${pkg}`)?.publishedFrom ?? publisher
+  )
   const functions = useQuery(functionsQueryOptions)
   const kinds = useMemo(
     () =>
@@ -400,13 +409,13 @@ export function PackagePage() {
             ? `Read-only copies, kept up to date by ${provider.name}.`
             : agent
               ? `What ${actorIdentity(agent).name} set up for you: the collections it keeps and the tools it works with.`
-              : undefined
+              : held?.catalog?.description
         }
       />
       <PageState
         pending={registry.isPending}
         error={registry.isError ? registry.error : null}
-        empty={!registry.isPending && !kinds.length && !tools.length}
+        empty={!registry.isPending && !kinds.length && !tools.length && !held}
       />
       {kinds.length > 0 && (
         <section>
@@ -427,12 +436,20 @@ export function PackagePage() {
           </ul>
         </section>
       )}
+      {held && !published && isStandard(held) && (
+        <StandardPackageSection
+          row={held}
+          name={packageTitle(authority, pkg)}
+        />
+      )}
       {published && (
         <section className="space-y-4">
           {publisher && <PublisherDetails publisher={publisher} />}
           <PublishedPackageSection
             publisher={authority}
             packageId={`${authority}/${pkg}`}
+            name={packageTitle(authority, pkg)}
+            row={held}
           />
         </section>
       )}

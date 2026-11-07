@@ -19,7 +19,8 @@ Landed on the branch, each with tests:
   an agent plans and applies a batch of declarations. After review it also
   refuses a batch that would convert a live record, and a `plan` that is
   not a boolean.
-- **A glob never reaches a declaration kind or a trigger.** An agent writes
+- **An agent's glob never reaches the machinery** (every `internal` kind:
+  declarations, triggers, threads, provider rows, settings). An agent writes
   one only where its own writes name it, through `vocabulary` or `write`.
   Moss's `*` keeps every record of the owner's and can neither reshape the
   vocabulary nor schedule code.
@@ -205,7 +206,7 @@ files cover "show it to someone" until an owner asks for more.
 
 | Agent | Tools | Writes (named) | Phase |
 | --- | --- | --- | --- |
-| `moss` | query, write, propose, ask, wait, edit, offered functions | `*`, which reaches no declaration and no trigger | now |
+| `moss` | query, write, propose, ask, wait, edit, offered functions | `*`, which reaches the owner's data and none of the machinery | now |
 | `architect` | query, vocabulary | `core/package`, `core/kind`, then the console views | now, 1 |
 | `librarian` | query, write, then propose | `*` | now, 1 |
 | `builder` | query, edit, run, propose | proposals of `core/function`, `core/trigger` | 2 |

@@ -2,9 +2,14 @@
 
 The catalog in the binary serves twenty-five bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fifteen in the provider tier (eleven providers and four well-known
-catalogues) and ten samples. This page covers the eleven providers and four
-of the samples; the catalogues (`health`, `labs`, `environment` and
+draws: fifteen in the published tier (eleven providers and four well-known
+catalogues) and ten samples. The tier says only who keeps a package; each
+entry also says whether it is a provider, what it brings and which provider
+an add-on extends
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)),
+so the console lists the providers on Providers and offers the catalogues as
+standard collections under Add a collection. This page covers the eleven
+providers and four of the samples; the catalogues (`health`, `labs`, `environment` and
 `clinical`, under `substrate.reamde.dev`,
 [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md),
 [0193](decisions/0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md))
@@ -77,16 +82,16 @@ thing, and the Records column counts them.
 
 | Bundle     | Tier     | Auth           | Kinds | Functions | Records | Agents |
 | ------------- | -------- | -------------- | ----- | --------- | ------- | ------ |
-| Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
-| GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
-| Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 3         | 10      | 0      |
-| Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
-| Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
-| Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
-| Apple         | Provider | Owner token    | 10    | 0         | 0       | 0      |
-| Apple Health  | Provider | Webhook key    | 10    | 2         | 2       | 0      |
-| Firecrawl     | Provider | API key        | 1     | 2         | 2       | 0      |
+| Google        | Published | OAuth          | 14    | 4         | 12      | 0      |
+| GitHub        | Published | OAuth          | 15    | 2         | 3       | 0      |
+| Linear        | Published | API key        | 13    | 1         | 3       | 0      |
+| WHOOP         | Published | OAuth          | 7     | 3         | 10      | 0      |
+| Notion        | Published | Internal token | 8     | 1         | 3       | 0      |
+| Beeper        | Published | Pasted token   | 9     | 2         | 3       | 0      |
+| Slack         | Published | User token     | 9     | 2         | 3       | 0      |
+| Apple         | Published | Owner token    | 10    | 0         | 0       | 0      |
+| Apple Health  | Published | Webhook key    | 10    | 2         | 2       | 0      |
+| Firecrawl     | Published | API key        | 1     | 2         | 2       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 3      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |

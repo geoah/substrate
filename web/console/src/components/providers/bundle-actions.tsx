@@ -56,12 +56,14 @@ import {
   type ShippedUpgrade,
 } from "@/lib/api/types"
 import {
+  addonOf,
   changeLines,
   confirmationOf,
   expectationOf,
   FAILED_PREVIEW_BLOCKER,
   holderFreeBlockers,
   importPlan,
+  isProvider,
   lossyStepLines,
   missingChain,
   needsConfirmation,
@@ -218,13 +220,15 @@ export function TakeButton({
                 plan.bundles.length === 2 ? "package" : "packages"
               } it needs are here.`,
       })
-      // A provider's set-up continues on its own page; a sample that landed
-      // with an empty required setting cannot run until it is filled in, so
-      // it goes to its form. The id is the LANDED one: a sample's is rehomed.
+      // A provider's (or an add-on's) set-up continues on its own page; a
+      // package that landed with an empty required setting cannot run until
+      // it is filled in, so it goes to its form. A standard collection and a
+      // sample stay where they were added (decision record 0238). The id is
+      // the LANDED one: a sample's is rehomed.
       const needsSettings = (landed.setup ?? []).some(
         (item) => item.code === "setting"
       )
-      if (row.tier !== "sample" || needsSettings) {
+      if (isProvider(row) || addonOf(row) || needsSettings) {
         void navigate({
           to: "/providers/$authority/$pkg",
           params: bundleParams(landed.id),
@@ -833,10 +837,18 @@ export function RemoveBundleButton({
   bundle,
   name,
   variant = "outline",
+  owned = false,
+  leaveTo = "/providers",
 }: {
   bundle: BundleStatus
   name: string
   variant?: "outline" | "ghost"
+  /** The records in its collections are the owner's own, not copies an
+   * account brought in (a standard collection, a sample, an app's package):
+   * the confirmation says they are deleted. */
+  owned?: boolean
+  /** Where the console goes once it is removed: the list it was reached from. */
+  leaveTo?: "/providers" | "/data"
 }) {
   const refresh = useLifecycleRefresh()
   const navigate = useNavigate()
@@ -862,7 +874,7 @@ export function RemoveBundleButton({
       setConfirming(false)
       toast.add({ type: "success", title: `${name} removed.` })
       refresh()
-      void navigate({ to: "/providers" })
+      void navigate({ to: leaveTo })
     },
     onError: (error) => {
       setConfirming(false)
@@ -900,10 +912,15 @@ export function RemoveBundleButton({
         <ConfirmDialog
           title={`Remove ${name}?`}
           consequence={
-            (records > 0
-              ? `This deletes the ${records.toLocaleString()} ${records === 1 ? "record" : "records"} ${name} brought in, its connected accounts among them, `
-              : "This deletes its connected accounts, if any, ") +
-            `and removes its collections and tools. Your own records stay, but whatever they linked to from ${name} points nowhere afterwards. This cannot be undone. To stop it for a while instead, pause it.`
+            owned
+              ? (records > 0
+                  ? `This deletes the ${records.toLocaleString()} ${records === 1 ? "record" : "records"} in ${name}’s collections, yours included, `
+                  : "This deletes any records in its collections, ") +
+                `and removes its collections and tools. Anything that linked to them points nowhere afterwards. This cannot be undone. To stop it for a while instead, pause it.`
+              : (records > 0
+                  ? `This deletes the ${records.toLocaleString()} ${records === 1 ? "record" : "records"} ${name} brought in, its connected accounts among them, `
+                  : "This deletes its connected accounts, if any, ") +
+                `and removes its collections and tools. Your own records stay, but whatever they linked to from ${name} points nowhere afterwards. This cannot be undone. To stop it for a while instead, pause it.`
           }
           confirm={`Remove ${name}`}
           destructive

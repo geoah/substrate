@@ -193,8 +193,9 @@ it is refused until it is confirmed. --allow-data-loss reads the preview
 again, prints what goes, and confirms exactly that plan; a write that lands
 in between, or a plan that reads differently, is refused again.
 
-Providers take the other door, ` + "`substratectl install`" + `, and land under
-the authority that publishes them. Importing a provider is refused, naming it.`,
+Published packages (a provider, or a catalogue such as substrate.reamde.dev/labs)
+take the other door, ` + "`substratectl install`" + `, and land under the
+authority that publishes them. Importing one is refused, naming it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.takeBundle(cmd, args[0], "import", "imported", allowDataLoss)
@@ -204,19 +205,22 @@ the authority that publishes them. Importing a provider is refused, naming it.`,
 	return cmd
 }
 
-// installCommand is the PROVIDER door: the closure lands verbatim, under the
+// installCommand is the PUBLISHED door: the closure lands verbatim, under the
 // authority that publishes it, and the publisher's next version bump is what
 // the console offers as an upgrade.
 func (a *app) installCommand() *cobra.Command {
 	var allowDataLoss bool
 	cmd := &cobra.Command{
-		Use:   "install <provider>",
-		Short: "Install a shipped provider under the authority that publishes it",
-		Long: `Install one of the shipped PROVIDER packages into this repository.
+		Use:   "install <package>",
+		Short: "Install a published package under the authority that publishes it",
+		Long: `Install one of the PUBLISHED packages into this repository: a provider
+or a catalogue.
 
-A provider is a package its publisher owns, so it lands exactly as published:
+A published package is one its publisher owns, so it lands exactly as
+published:
 
   substratectl install providers.substrate.reamde.dev/google
+  substratectl install substrate.reamde.dev/labs
 
 Its declarations are the publisher's afterwards (` + "`source: published`" + `),
 so this repository's token may not rewrite them, and each change the publisher
@@ -247,7 +251,7 @@ your own authority.`,
 type catalogRow struct {
 	ID string `json:"id"`
 	// Tier is the door the package takes: `seed` for the package registration
-	// writes and the binary upgrades at boot, `provider` and `sample` for the
+	// writes and the binary upgrades at boot, `published` and `sample` for the
 	// two catalog doors.
 	Tier      string `json:"tier"`
 	Installed bool   `json:"installed"`
@@ -264,9 +268,9 @@ const tierSeed = "seed"
 
 // catalogCommand lists every package the binary ships and where this repository
 // stands on each: the seeded core package from `GET /api/v1/vocabulary/upgrade`
-// and the catalog's providers and samples from `GET /api/v1/catalog`. It is the
-// one place the CLI prints an upgrade: a refused core boot upgrade and a
-// provider's blocked upgrade both reach a terminal here.
+// and the catalog's published packages and samples from `GET /api/v1/catalog`.
+// It is the one place the CLI prints an upgrade: a refused core boot upgrade
+// and a published package's blocked upgrade both reach a terminal here.
 func (a *app) catalogCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
@@ -277,7 +281,7 @@ stands on each.
 
   PACKAGE    the package identity
   TIER       seed (core, written at registration and upgraded at boot),
-             provider (installed under the authority that publishes it) or
+             published (installed under the authority that publishes it) or
              sample (imported under your own authority)
   INSTALLED  whether this repository holds it
   VERSION    the version the binary ships it at
@@ -289,8 +293,8 @@ A blocked upgrade prints its guard lines under the table. Each names a kind, a
 property and the count of live records still holding the old shape; the
 upgrade lands once those records are migrated or deleted. For core that is
 the boot upgrade, which runs at the server's next start and not before, so
-an admitted core upgrade reads "lands at restart" until then; for a provider
-it is ` + "`substratectl install <provider>`" + ` again, and for a sample
+an admitted core upgrade reads "lands at restart" until then; for a published
+package it is ` + "`substratectl install <package>`" + ` again, and for a sample
 ` + "`substratectl import <sample>`" + ` again, which replaces your copy.
 
 An upgrade that rewrites records prints its steps under the table too, each
@@ -420,7 +424,7 @@ func takeVerb(tier string) string {
 // motion and one blocker, so it reads "blocked" alone. The seeded package has
 // a third state a catalog tier does not: admitted with nothing to block it,
 // which still lands only when the server starts again, so it says so rather
-// than reading like a provider's one-command upgrade.
+// than reading like a published package's one-command upgrade.
 //
 // The motion is printed only when the upgrade is AVAILABLE. A repository ahead
 // of its binary (a rollback) previews core as not available with the stored

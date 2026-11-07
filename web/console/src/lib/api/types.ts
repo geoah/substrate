@@ -1834,11 +1834,19 @@ export interface ShippedUpgrade {
   upgrade: BundleUpgrade
 }
 
-/** Which of the two catalog doors a shipped closure takes (decision record
- * 0048). A `provider` INSTALLS under the authority that publishes it; a
- * `sample` IMPORTS under this repository's own authority and is the
- * repository's to edit afterwards. */
-export type CatalogTier = "provider" | "sample"
+/** Which of the two catalog doors a shipped closure takes (decision records
+ * 0048 and 0238). A `published` package INSTALLS under the authority that
+ * publishes it; a `sample` IMPORTS under this repository's own authority and
+ * is the repository's to edit afterwards. It says who keeps the
+ * declarations, never what the package is for: `provider`, `brings` and
+ * `addonFor` say that. */
+export type CatalogTier = "published" | "sample"
+
+/** What taking a closure gives a reader, read from its declarations
+ * (substrate.Brings*, decision record 0238): an account to connect, tools
+ * for agents, collections (primary kinds), metric records, agents. */
+export type CatalogBrings =
+  "account" | "tools" | "collections" | "metrics" | "agents"
 
 /** One bundle from the catalog embedded in the binary
  * (substrate.CatalogBundle). Held field-for-field by the wire golden, so
@@ -1865,9 +1873,18 @@ export interface CatalogBundle {
    * upgrade path, so its version is offered to nothing; an import records it
    * as the copy's `originVersion`. */
   version: number
-  /** `provider` or `sample`: which section the Registry lists it under and
-   * which door its button takes. */
+  /** `published` or `sample`: which door its button takes. */
   tier: CatalogTier
+  /** Whether it connects the substrate to an outside service: what the
+   * Providers page lists. Every closure the binary ships among its providers
+   * (Apple's devices push, so its closure declares no account), and any
+   * other published closure that brings an account. */
+  provider?: boolean
+  /** What taking it gives you, in a fixed order. */
+  brings?: CatalogBrings[]
+  /** The provider this package extends: it is listed on that provider's
+   * page, never as a provider of its own. */
+  addonFor?: string
   /** The declared inputs, input name keyed. A bundle with no needs omits it. */
   inputs?: Record<string, CatalogInput>
   /** The PACKAGES this closure declares against — the vocabulary its
@@ -2042,6 +2059,12 @@ export interface BundleStatus {
    * shipped line. Absent on a sample, on a hand-applied closure and on a
    * provider installed before the stamp existed. */
   shippedVersion?: number
+  /** What the package is for (decision record 0238), joined in by the API:
+   * the catalog's answer where the binary ships it, else whether its stored
+   * declarations bring an account. The counts beside Providers read these
+   * rather than the catalog. */
+  provider?: boolean
+  addonFor?: string
 }
 
 /** What an uninstall answers. The bundle has no status afterwards, so the

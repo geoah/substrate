@@ -30,7 +30,7 @@ type countingInstaller struct {
 
 func newCountingInstaller(t *testing.T) *countingInstaller {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		t.Fatalf("load the catalog: %v", err)
 	}

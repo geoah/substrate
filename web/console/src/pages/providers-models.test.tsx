@@ -30,6 +30,7 @@ import {
 } from "@/hooks/use-console-preferences"
 import { providerInfo } from "@/lib/actor-identity"
 import type {
+  CatalogBrings,
   OperatorDefault,
   OperatorDefaults,
   SubstrateRecord,
@@ -79,6 +80,8 @@ const catalog = vi.hoisted(() => ({ providers: [] as unknown[] }))
 vi.mock("@/components/providers/use-providers", () => ({
   useProviders: () => ({
     providers: catalog.providers,
+    listed: catalog.providers,
+    addonsOf: () => [],
     others: [],
     kinds: [],
     chains: () => [],
@@ -112,8 +115,16 @@ function provider(
     kinds?: string[]
     functions?: string[]
     description?: string
+    /** What the catalog says it brings; a closure of functions and no kinds
+     * brings tools, any other an account. */
+    brings?: CatalogBrings[]
   } = {}
 ): ProviderEntry {
+  const brings: CatalogBrings[] =
+    over.brings ??
+    (over.kinds?.length === 0 && over.functions?.length
+      ? ["tools"]
+      : ["account", "collections"])
   const id = `${PROV}/${pkg}`
   const installed = over.installed ?? false
   return {
@@ -124,7 +135,7 @@ function provider(
       authority: PROV,
       package: pkg,
       installed,
-      tier: "provider",
+      tier: "published",
       status: installed
         ? {
             id,
@@ -137,6 +148,7 @@ function provider(
             functions: 0,
             kinds: 0,
             liveRecords: 0,
+            provider: true,
           }
         : undefined,
       catalog: {
@@ -146,7 +158,9 @@ function provider(
         package: pkg,
         description: over.description ?? "",
         version: 1,
-        tier: "provider",
+        tier: "published",
+        provider: true,
+        brings,
         installed,
         closure: {
           kinds: over.kinds ?? [`${id}/account`],
@@ -394,13 +408,13 @@ describe("the groups", () => {
   it("lists accounts, then tools, then AI models", async () => {
     catalog.providers = [
       ...catalog.providers,
-      // Installed, no account kind, a function offered to agents.
+      // Installed: the catalog says it brings tools and no account.
       provider("firecrawl", {
         installed: true,
         kinds: [],
         functions: [`${PROV}/firecrawl/websearch`],
       }),
-      // Not installed: the closure declares no kinds and some functions.
+      // Not installed: the catalog says the same before it is added.
       provider("scraper", {
         kinds: [],
         functions: [`${PROV}/scraper/fetch`],
@@ -443,6 +457,7 @@ describe("the groups", () => {
         installed: true,
         accountKind: true,
         functions: [`${PROV}/slack/post`],
+        brings: ["account", "tools", "collections"],
       }),
     ]
     functions = [

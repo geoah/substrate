@@ -266,7 +266,7 @@ func TestTheApprovalPageShowsADocumentPublishedPackage(t *testing.T) {
 	v := e.view(id)
 	row := v.Setup[0]
 	if row.Action != substrate.SetupInstall || row.Blocked != nil || row.Package.Shipped != 3 || row.Package.Held != 0 ||
-		row.Package.Tier != substrate.TierProvider || row.Package.Description != "Strength sessions." {
+		row.Package.Tier != substrate.TierPublished || row.Package.Description != "Strength sessions." {
 		t.Fatalf("the published row = %+v %+v", row, row.Package)
 	}
 	if p := row.Package.Publisher; p == nil || p.Authority != dpAuthority || p.Name != "Example Publishing" || p.DocumentURL != dpDocURL || p.FromFile {

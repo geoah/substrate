@@ -26,7 +26,11 @@ function row(id: string, properties: Record<string, unknown> = {}) {
   } as unknown as SubstrateRecord
 }
 
-function status(authority: string, pkg: string) {
+function status(
+  authority: string,
+  pkg: string,
+  role: { provider?: boolean; addonFor?: string } = {}
+) {
   return {
     id: `${authority}/${pkg}`,
     name: pkg,
@@ -38,6 +42,7 @@ function status(authority: string, pkg: string) {
     functions: 0,
     kinds: 0,
     liveRecords: 0,
+    ...role,
   }
 }
 
@@ -83,9 +88,17 @@ beforeEach(() => {
       }
       if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
         return Response.json({
+          // What each package is for rides on its status: an add-on is
+          // listed on its provider's page and a standard collection is no
+          // provider, so neither counts.
           items: [
-            status(PROV, "google"),
-            status(PROV, "whoop"),
+            status(PROV, "google", { provider: true }),
+            status(PROV, "whoop", { provider: true }),
+            status(PROV, "slacklive", {
+              provider: true,
+              addonFor: `${PROV}/slack`,
+            }),
+            status("substrate.reamde.dev", "health"),
             status("ada.example.com", "tasks"),
           ],
         })

@@ -87,7 +87,7 @@ func TestApprovedInstallBindsEveryDependencyBeforeWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root.Tier, safe.Tier = substrate.TierProvider, substrate.TierProvider
+	root.Tier, safe.Tier = substrate.TierPublished, substrate.TierPublished
 	next.byID[root.ID], next.byID[safe.ID] = root, safe
 	current, err := next.Resolve(ctx, reviewed.ID, 0)
 	if err != nil {

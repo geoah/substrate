@@ -1,9 +1,12 @@
-/** The shipped samples one "Add …" entry offers, each by what it adds, with
- * **Add** (the providers' own door: the packages it needs land first) or
- * "Added". Updating a copy is its package page's job, not this list's. */
+/** The shipped samples (or standard collections) one "Add …" entry offers,
+ * each by what it adds, with **Add** (the providers' own door: the packages
+ * it needs land first) or "Added". A package that adds nothing the entry
+ * names says what it is instead. Updating one is its package page's job,
+ * not this list's. */
 
 import { useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { CheckIcon } from "lucide-react"
 
 import { IdText } from "@/components/identity/id-text"
@@ -26,6 +29,7 @@ import {
   type RequirementNode,
 } from "@/lib/bundles"
 import { packageDisplayName } from "@/lib/kind-names"
+import { bundleParams, firstSentence } from "@/lib/providers"
 import type { SamplePick } from "./sample-picks"
 
 export function SampleList({
@@ -88,7 +92,7 @@ export function SampleList({
   if (catalog.isError) {
     return (
       <p className="text-muted-foreground">
-        The samples didn’t load: {catalog.error.message}
+        The list didn’t load: {catalog.error.message}
       </p>
     )
   }
@@ -104,11 +108,13 @@ export function SampleList({
           chain={chains.get(sample.row.key) ?? []}
           showSource={shared.has(packageDisplayName(sample.row.name))}
         >
-          {sample.members.map((id) => (
-            <span key={id} className="inline-flex items-center gap-1.5">
-              {member(id, registry.data ?? [])}
-            </span>
-          ))}
+          {sample.members.length
+            ? sample.members.map((id) => (
+                <span key={id} className="inline-flex items-center gap-1.5">
+                  {member(id, registry.data ?? [])}
+                </span>
+              ))
+            : firstSentence(sample.row.catalog?.description)}
         </SampleRow>
       ))}
     </ul>
@@ -153,10 +159,17 @@ function SampleRow({
           )}
         </div>
         {row.installed ? (
-          <span className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-[12.5px] text-ok">
+          // Its package page is where an added package is updated, paused
+          // and removed: a standard collection has no other home outside
+          // Technical details (decision record 0238).
+          <Link
+            to="/data/$authority/$pkg"
+            params={bundleParams(row.id)}
+            className="inline-flex shrink-0 items-center gap-1 pt-0.5 text-[12.5px] text-ok underline-offset-2 hover:underline"
+          >
             <CheckIcon className="size-3.5" />
             Added
-          </span>
+          </Link>
         ) : (
           <TakeButton
             row={row}

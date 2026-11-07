@@ -188,12 +188,25 @@ export function ToolCallCard({
   const resolved = resolveTool(agent, call.name, call.callable)
   const subject = toolSubject(call, resolved)
   const client = useHasQueryClient()
+  // Held here: the card below switches component when its answer lands
+  // untitled, and a card the reader opened stays open across the switch.
+  const [open, setOpen] = useState(false)
   // The line names the one record the call worked on; an answer that did
   // not carry its heading (an edit, a delete) has it read, as a mark does.
   if (subject && !subject.title && client) {
-    return <TitledToolCall call={call} resolved={resolved} subject={subject} />
+    return (
+      <TitledToolCall
+        call={call}
+        resolved={resolved}
+        subject={subject}
+        open={open}
+        onOpen={setOpen}
+      />
+    )
   }
-  return <ToolCall call={call} resolved={resolved} />
+  return (
+    <ToolCall call={call} resolved={resolved} open={open} onOpen={setOpen} />
+  )
 }
 
 function TitledToolCall({
@@ -203,6 +216,8 @@ function TitledToolCall({
   call: ToolCallView
   resolved: ResolvedTool
   subject: ToolSubject
+  open: boolean
+  onOpen: (open: boolean) => void
 }) {
   const kinds = useQuery(kindsQueryOptions)
   // A kind the repository never declared refuses the batched read.
@@ -218,14 +233,17 @@ function ToolCall({
   call,
   resolved,
   title,
+  open,
+  onOpen,
 }: {
   call: ToolCallView
   resolved: ResolvedTool
   /** The heading of the one record the call worked on, read for it. */
   title?: string
+  open: boolean
+  onOpen: (open: boolean) => void
 }) {
   const [technical] = useTechnicalDetails()
-  const [open, setOpen] = useState(false)
   const summary = toolSummary(call, { ...resolved, title })
   // A background job still working reads as a running call: its handle is
   // not its result.
@@ -315,7 +333,7 @@ function ToolCall({
         <button
           type="button"
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => onOpen(!open)}
           className={cn(lineClass, "cursor-pointer hover:bg-hover")}
         >
           {line}

@@ -4,7 +4,7 @@
  * accounts, and the one state each provider's card wears. Both pages call
  * the same hook, so a card and its page cannot disagree. */
 
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { useLiveRecords } from "@/hooks/use-live-records"
@@ -27,8 +27,10 @@ import type { KindInfo, TriggerStatus } from "@/lib/api/types"
 import { TRIGGER_RUN_KIND } from "@/lib/core-kinds"
 import {
   accountKindOf,
+  addonOf,
   heldVersions,
   isInputSetupCode,
+  isProvider,
   mergeBundles,
   pendingShippedUpgrades,
   presentPackages,
@@ -195,22 +197,19 @@ export function useProviders() {
     [accountsRead.data, kinds]
   )
   const views = useMemo(() => {
-    const tier = new Set(
-      rows.filter((r) => r.tier === "provider").map((r) => r.id)
-    )
-    return providerViews(statuses.data ?? [], tier, kinds, accounts)
+    const listed = new Set(rows.filter(isProvider).map((r) => r.id))
+    return providerViews(statuses.data ?? [], listed, kinds, accounts)
   }, [rows, statuses.data, kinds, accounts])
 
-  // A provider is a catalog provider, or a bundle applied outside the
-  // catalog that declares an account kind: it has accounts to connect, so it
-  // is one whatever the catalog says.
+  // A provider is one the catalog says connects to an outside service
+  // (decision record 0238), or, held with no catalog entry or one whose
+  // publisher cannot be read, one whose stored declarations bring an account,
+  // as its status says. An add-on gets a provider's page too, and is listed
+  // on the page of the provider it extends.
   const providers = useMemo(() => {
     const viewOf = new Map(views.map((v) => [v.id, v]))
     return rows
-      .filter(
-        (r) =>
-          r.tier === "provider" || (!r.tier && r.status && viewOf.has(r.id))
-      )
+      .filter((r) => isProvider(r) || Boolean(addonOf(r)))
       .map((r) =>
         entryOf(
           units,
@@ -228,8 +227,19 @@ export function useProviders() {
       )
   }, [units, rows, views, kinds, triggerStatuses.data, now])
 
-  // Everything else this repository holds: imported samples, the seeded
-  // llm package, anything applied directly.
+  // The providers Providers lists, and each one's add-ons, which its page
+  // lists instead.
+  const listed = useMemo(
+    () => providers.filter((p) => !addonOf(p.row)),
+    [providers]
+  )
+  const addonsOf = useCallback(
+    (id: string) => providers.filter((p) => addonOf(p.row) === id),
+    [providers]
+  )
+
+  // Everything else this repository holds: standard collections, imported
+  // samples, the seeded llm package, anything applied directly.
   const others = useMemo(() => {
     const ids = new Set(providers.map((p) => p.row.id))
     return rows.filter((r) => r.status && !ids.has(r.id))
@@ -267,6 +277,8 @@ export function useProviders() {
     chains,
     accounts,
     providers,
+    listed,
+    addonsOf,
     others,
     pendingUpgrades,
     // The kind registry and the repository are waited on too: without them a

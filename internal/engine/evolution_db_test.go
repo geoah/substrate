@@ -311,6 +311,10 @@ func TestSchemaEvolutionTextAndMarkdownFlipFreely(t *testing.T) {
 	if err != nil || got.Properties["note"] != "# Heading\n\nA paragraph." {
 		t.Fatalf("the flipped value = %+v, %v", got, err)
 	}
+	// A flip is still held to what it adds beside: a pattern the live value
+	// does not match is refused as it would be on markdown alone.
+	props["note"] = map[string]any{"type": "text", "pattern": "^Note: "}
+	wantNarrowingGuard(t, evoApply(t, ds, props), `property "note" changes its pattern`, "1 live records")
 	props["note"] = map[string]any{"type": "string"}
 	wantNarrowingGuard(t, evoApply(t, ds, props),
 		`property "note" changes kind markdown → string`, "1 live records")

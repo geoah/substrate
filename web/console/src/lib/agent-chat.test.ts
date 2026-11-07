@@ -36,6 +36,7 @@ import {
   toolRoute,
   toolSummary,
   verdictWords,
+  withArticle,
 } from "./agent-chat"
 import type { ToolCallView } from "./api/transcript"
 import type { SubstrateRecord } from "./api/types"
@@ -390,7 +391,7 @@ describe("what a tool call did", () => {
         }),
         query
       )
-    ).toBe("Looked through your Tasks and Notes")
+    ).toBe("Looked through your tasks and notes")
     expect(
       toolSummary(
         call({ arguments: '{"kind":"ada.localhost/people/person","id":"g"}' }),
@@ -419,6 +420,31 @@ describe("what a tool call did", () => {
         query
       )
     ).toBe("Searched for “handover”, found “The handover”")
+  })
+
+  it("takes the article a word is said with, not the one its letter suggests", () => {
+    for (const noun of [
+      "unit",
+      "user",
+      "URL",
+      "utility",
+      "eucalyptus",
+      "one-off",
+      "book",
+    ]) {
+      expect(withArticle(noun)).toBe(`a ${noun}`)
+    }
+    for (const noun of [
+      "umbrella",
+      "update",
+      "upload",
+      "author",
+      "event",
+      "idea",
+      "hour",
+    ]) {
+      expect(withArticle(noun)).toBe(`an ${noun}`)
+    }
   })
 
   it("names the record a write or an edit worked on, and the fields it changed", () => {

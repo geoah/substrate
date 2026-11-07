@@ -1,11 +1,12 @@
 /** Providers (`/providers`): every outside service the substrate uses a key
- * or a sign-in for, in three groups (decision 0233):
+ * or a sign-in for, in three groups (decisions 0233 and 0238):
  *
- * - **Accounts you connect**: the shipped catalog's providers that bring
- *   data in, joined with what this repository holds of them and their
- *   accounts, one row each, opening the provider's page.
- * - **Tools for your agents**: providers whose package declares no account
- *   kind and offers functions to agents.
+ * - **Accounts you connect**: the packages the catalog calls providers that
+ *   bring data in, joined with what this repository holds of them and their
+ *   accounts, one row each, opening the provider's page. An add-on is listed
+ *   on the page of the provider it extends, not here, and a standard collection
+ *   (`health`, `clinical`) is no provider: Add a collection lists it.
+ * - **Tools for your agents**: providers that bring tools and no account.
  * - **AI models**: one card per `llm/provider` row, with its key form in
  *   place (components/providers/model-card.tsx).
  *
@@ -19,13 +20,13 @@
  * until the reader dismisses it.
  *
  * Technical mode adds OTHER PACKAGES: every bundle this repository holds that
- * is not a provider (imported samples, the seeded llm package, anything
- * applied directly), with its version, its state, its update and its
- * removal, so nothing the old Registry listed is out of reach. */
+ * is not a provider (standard collections, imported samples, the seeded llm
+ * package, anything applied directly), with its version, its state, its
+ * update and its removal, so nothing the old Registry listed is out of
+ * reach. */
 
 import { PublisherDetails } from "@/components/packages/publisher"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { ChevronRightIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react"
 
@@ -74,10 +75,10 @@ import {
 } from "@/hooks/use-console-preferences"
 import { useModelKeys, type ModelKeys } from "@/hooks/use-model-keys"
 import { bundleState, setupCount } from "@/lib/api/bundles"
-import { functionsQueryOptions } from "@/lib/api/functions"
 import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
 import {
-  accountKindOf,
+  isProvider,
+  packageRole,
   upgradeAvailable,
   upgradeBlocked,
   blockerWords,
@@ -97,12 +98,7 @@ import {
   toolWords,
   type OperatorWords,
 } from "@/lib/operator-defaults"
-import {
-  bundleParams,
-  firstSentence,
-  offeredFunctionCount,
-  providerGroup,
-} from "@/lib/providers"
+import { bundleParams, firstSentence, providerGroup } from "@/lib/providers"
 import { packageDisplayName } from "@/lib/kind-names"
 import { providersRoute } from "@/router"
 
@@ -121,7 +117,6 @@ export function ProvidersPage() {
   const { connected, error, model } = providersRoute.useSearch()
   const navigate = useNavigate()
   const keys = useModelKeys()
-  const functions = useQuery(functionsQueryOptions)
   const welcome = useWelcome()
   const items = keys.read?.items
   const words = keys.words
@@ -131,22 +126,11 @@ export function ProvidersPage() {
       accounts: [],
       tools: [],
     }
-    const records = functions.data ?? []
-    for (const entry of data.providers) {
-      const closure = entry.row.catalog?.closure
-      const group = providerGroup({
-        installed: Boolean(entry.row.status?.installed),
-        accountKind: Boolean(
-          entry.view?.accountKind ?? accountKindOf(data.kinds, entry.row.id)
-        ),
-        offeredFunctions: offeredFunctionCount(records, entry.row.id),
-        closureKinds: closure?.kinds?.length ?? 0,
-        closureFunctions: closure?.functions?.length ?? 0,
-      })
-      out[group].push(entry)
+    for (const entry of data.listed) {
+      out[providerGroup(entry.row.catalog?.brings)].push(entry)
     }
     return out
-  }, [data.providers, data.kinds, functions.data])
+  }, [data.listed])
 
   const showWelcome =
     keys.offered && Boolean(keys.read) && !welcome.busy && !welcome.dismissed
@@ -466,12 +450,6 @@ const STATE_WORDS: Record<
   quarantined: { word: "Failed to load", tone: "bad" },
 }
 
-function tierWord(row: BundleRow): string {
-  if (row.tier === "sample") return "Sample"
-  if (row.tier === "provider") return "Provider"
-  return "Added by hand"
-}
-
 function OtherPackages({
   rows,
   chains,
@@ -491,7 +469,7 @@ function OtherPackages({
       <SectionHead
         id="other-packages"
         title="Other packages"
-        hint="Samples you added, packages added by hand, and the substrate’s own."
+        hint="Standard collections, samples you added, packages added by hand, and the substrate’s own."
       />
       {pendingUpgrades.length > 0 && (
         <div className="mb-3 flex flex-col gap-2">
@@ -579,7 +557,7 @@ function OtherPackageRow({
         )}
       </td>
       <td className="px-3 py-2.5 text-muted-foreground">
-        {tierWord(row)}
+        {packageRole(row).short}
         {status.origin && (
           <div>
             <IdText value={status.origin} />
@@ -636,7 +614,12 @@ function OtherPackageRow({
         {status.quarantined && row.catalog ? (
           <TakeButton row={row} chain={chain} name={name} label="Add again" />
         ) : (
-          <RemoveBundleButton bundle={status} name={name} variant="ghost" />
+          <RemoveBundleButton
+            bundle={status}
+            name={name}
+            variant="ghost"
+            owned={!isProvider(row)}
+          />
         )}
       </td>
     </tr>
