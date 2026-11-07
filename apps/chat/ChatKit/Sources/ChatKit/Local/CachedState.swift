@@ -9,6 +9,9 @@ struct CachedState: Codable, Equatable, Sendable {
     var format = CachedState.format
     var agents: [Record] = []
     var providers: [Record] = []
+    /// Whose key each provider row runs on, as last read; absent from a file
+    /// an earlier build wrote.
+    var keys: ProviderKeys?
     var threads: [Record] = []
     var automated: [Record] = []
     var openings: [String: String] = [:]

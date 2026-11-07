@@ -926,9 +926,9 @@ is never sent again on its own.
 (`ChatManifest` in `chat/ChatKit/Sources/ChatKit/ChatManifest.swift`): the kit's connect screen checks
 the address's discovery document and OAuth metadata, and the system's
 sign-in sheet opens the server's own sign-in and approval page, where the
-owner chooses what the app may do (talk to the agents, `agents:*`; apply
-what they suggest, `decide:*`; read the provider rows; read the records a
-chat links to, `read:*`) and for how long. The redirect comes back to the
+owner approves full access (`full`, decision 0204: the owner's assistant
+reads every kind, and a scoped app may talk only to an agent whose reads
+its scopes cover) and for how long. The redirect comes back to the
 app's claimed https callback in a release, and to a loopback port the
 app listens on (RFC 8252) in a local build, and the code is
 exchanged with
@@ -941,10 +941,9 @@ document as `chat/client.json` (see
 stamps that URL into the build (`SubstrateChatClientID`); any other build
 signs in as the local app
 `http://127.0.0.1/substrate-chat`. A server whose metadata answers 404 gets
-the password form; one whose metadata does not list `agents:` and `decide:`
-(between decisions 0194 and 0195) would refuse the request with an error
-page, so it gets the kit's too-old screen instead, as does a release older
-than 0.114.0, the first to carry both. A build between releases (`dev`, or
+the password form; one whose metadata does not list `full` would refuse the
+request with an error page, so it gets the kit's too-old screen instead, as
+does a release older than 0.114.0, the first to carry it. A build between releases (`dev`, or
 `v0.113.0-143-g…`) is judged by its metadata alone.
 
 The session, either kind, is the kit's, kept where every build kept it (the

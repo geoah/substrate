@@ -12,7 +12,9 @@ import Testing
 import FoundationNetworking
 #endif
 
-private let agentVerbs = ["read:*", "write:*", "agents:*", "decide:*"]
+private let agentVerbs = ["read:*", "write:*", "agents:*", "decide:*", "full"]
+/// What every build before `full` asked for, and what a session it kept holds.
+private let scopedRequest = ChatManifest.earliestRequest
 
 /// A server that answers each path from a table, keeping every request.
 private final class Answers: HTTPTransport, @unchecked Sendable {
@@ -78,11 +80,11 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
         #expect(items["code_challenge"] == PKCE(verifier: "v").challenge)
         #expect(items["code_challenge_method"] == "S256")
         #expect(items["redirect_uri"] == "http://127.0.0.1:5000/oauth/callback")
-        #expect(items["scope"] == "agents:* decide:* read:substrate.reamde.dev/llm/provider read:*")
+        #expect(items["scope"] == "full")
         #expect(items["state"] == "st")
         // Chat sets nothing up, even on a server that would.
         #expect(items["authorization_details"] == nil)
-        #expect(url.absoluteString.contains("scope=agents%3A%2A%20decide%3A%2A"))
+        #expect(url.absoluteString.contains("scope=full"))
     }
 
     @Test func theCallbackIsCheckedBeforeItsCodeIsUsed() throws {
@@ -113,18 +115,18 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
         }
         #expect(door(metadata) == .app)
         #expect(door(metadata, version: "v0.114.0") == .app)
-        // App authorization that cannot reach the agents would refuse the
+        // App authorization that cannot grant full access would refuse the
         // request with an error page: the server is too old.
         #expect(door(AuthorizationServerMetadata(issuer: origin, scopesSupported: ["read:*", "write:*"])) == .tooOld)
-        #expect(door(AuthorizationServerMetadata(issuer: origin, scopesSupported: ["read:*", "write:*", "agents:*"])) == .tooOld)
-        // A release before the agent verbs is too old whatever it lists.
+        #expect(door(AuthorizationServerMetadata(issuer: origin, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"])) == .tooOld)
+        // A release before `full` is too old whatever it lists.
         #expect(door(metadata, version: "v0.113.0") == .tooOld)
         // None at all takes the password, as before.
         #expect(door(nil) == .password)
         #expect(door(nil, version: "v0.113.0") == .password)
     }
 
-    @Test func aProbedServerWithoutTheAgentVerbsIsTooOldAndOneWithoutAppsTakesThePassword() async throws {
+    @Test func aProbedServerWithoutFullAccessIsTooOldAndOneWithoutAppsTakesThePassword() async throws {
         let between = Answers([
             "/.well-known/substrate/server.json": (200, #"{"server":{"version":"v0.113.0-12-gabc1234"}}"#),
             "/.well-known/oauth-authorization-server": (200, metadataJSON(scopes: ["read:*", "write:*"])),
@@ -132,12 +134,12 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
         let probe = try await ServerProbe(transport: between).probe(origin, requirement: ChatManifest.requirement, app: ChatManifest.appName)
         #expect(ChatManifest.manifest.door(for: probe) == .tooOld)
         guard case let .tooOld(running, needed, missing) = probe.verdict else {
-            Issue.record("a server without the agent verbs passed")
+            Issue.record("a server without full access passed")
             return
         }
         #expect(running == "v0.113.0-12-gabc1234")
         #expect(needed == "0.114.0")
-        #expect(missing == ["let apps talk to your agents", "let apps apply what your agents suggest"])
+        #expect(missing == ["let apps sign in with full access"])
 
         let before = Answers([
             "/.well-known/substrate/server.json": (200, #"{"server":{"version":"v0.113.0"},"registration":{"totpRequired":false}}"#)
@@ -174,14 +176,14 @@ private struct LegacySession: Codable {
     private var app: LegacySession {
         LegacySession(
             server: origin, repository: "r.example.com", secret: "x", tokenID: "",
-            grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
+            grants: .init(scopes: scopedRequest), expiresAt: ends,
             revocation: URL(string: "https://s.example.com/oauth/revoke"))
     }
 
     @Test func anAppSessionAnEarlierBuildKeptStillReads() throws {
         let read = try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(app))
         #expect(read.isApp)
-        #expect(read.scopes == ChatManifest.scopes)
+        #expect(read.scopes == scopedRequest)
         #expect(read.grants?.talks == true)
         #expect(read.expiresAt == ends)
         #expect(read.revocation == app.revocation)
@@ -197,7 +199,7 @@ private struct LegacySession: Codable {
         // What this build keeps, an earlier one still reads: a rollback keeps
         // the sign-in.
         let back = try JSONDecoder().decode(LegacySession.self, from: JSONEncoder().encode(read))
-        #expect(back.grants?.scopes == ChatManifest.scopes)
+        #expect(back.grants?.scopes == scopedRequest)
         #expect(back.expiresAt == ends)
         #expect(back.tokenID == "")
     }
@@ -231,8 +233,12 @@ private struct LegacySession: Codable {
             try #require(ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: "r.example.com", scopes: scopes)))
         }
         let all = try session(ChatManifest.scopes)
-        #expect(all.canChat && all.canDecide && all.canReadProviders)
-        #expect(!all.canWriteKeys)
+        #expect(all.full && all.canChat && all.canDecide && all.canReadProviders && all.canWriteKeys)
+
+        // What an earlier build was approved for reaches no further than it.
+        let scoped = try session(scopedRequest)
+        #expect(scoped.canChat && scoped.canDecide && scoped.canReadProviders)
+        #expect(!scoped.full && !scoped.canWriteKeys)
 
         let chatOnly = try session(["agents:x.example.com/llm/helper"])
         #expect(chatOnly.canChat && !chatOnly.canDecide && !chatOnly.canReadProviders)
@@ -241,16 +247,18 @@ private struct LegacySession: Codable {
         #expect(try !session(["agents:*", "read:*", "read:substrate.reamde.dev/*"]).canReadProviders)
 
         let password = try session(nil)
-        #expect(password.canChat && password.canDecide && password.canReadProviders && password.canWriteKeys)
+        #expect(password.full && password.canChat && password.canDecide && password.canReadProviders && password.canWriteKeys)
     }
 
     @Test func aKindOutOfReachIsSaidSoWithWhereToAllowIt() {
         #expect(ChatManifest.deniedHint(Grants(["agents:*"])) == "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…")
         #expect(ChatManifest.deniedHint(nil) == nil)
+        #expect(ChatManifest.deniedHint(Grants(ChatManifest.scopes)) == nil)
     }
 
     @Test func theApprovedAccessReadsAsTheApprovalPageSaysIt() {
-        let words = Grants(ChatManifest.scopes).words
+        #expect(Grants(ChatManifest.scopes).words == [ScopeWords.fullSentence])
+        let words = Grants(scopedRequest).words
         #expect(words.count == 4)
         #expect(
             words[0].hasPrefix("Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat"))
@@ -268,40 +276,29 @@ private struct LegacySession: Codable {
             requestedScopes: requested)
     }
 
-    @Test func aScopeTheOwnerLeftOutIsNeverAskedAboutAgain() {
-        let kept = session(["agents:*", "decide:*"])
-        // The last approval asked for all four, and the owner kept two.
-        #expect(ChatManifest.manifest.check(for: kept).scope == "agents:* decide:*")
-        // A session from before the request was kept was asked for the same.
-        #expect(
-            ChatManifest.manifest.check(for: ChatManifest.asked(session(["agents:*", "decide:*"], requested: nil))).scope
-                == "agents:* decide:*")
-        // A scope the last approval never asked for is asked about.
-        #expect(
-            ChatManifest.manifest.check(for: session(["agents:*", "decide:*"], requested: ["agents:*", "decide:*"])).scope
-                == ChatManifest.scopes.joined(separator: " "))
-        // A review offers the left-out ones back.
-        #expect(
-            ChatManifest.manifest.review(nil, session: kept).filter(\.leftOut).map(\.words)
-                == [ScopeWords.sentence("read:\(Kinds.provider)"), ScopeWords.sentence("read:*")])
+    @Test func aSessionAnEarlierBuildWasApprovedForIsAskedForFullAccess() {
+        // No earlier request asked for `full`, so none left it out.
+        let kept = session(["agents:*", "decide:*"], requested: scopedRequest)
+        #expect(ChatManifest.manifest.check(for: kept).scope == "full")
+        #expect(ChatManifest.manifest.check(for: ChatManifest.asked(session(scopedRequest, requested: nil))).scope == "full")
+        #expect(ChatManifest.manifest.review(nil, session: kept).filter(\.leftOut).isEmpty)
     }
 
     @Test func theCheckAsksForWhatANewerBuildNeedsAndTheBannerSaysIt() async throws {
-        // The provider rows were asked for and left out; `read:*` is new.
-        let kept = session(["agents:*", "decide:*"], requested: ["agents:*", "decide:*", "read:\(Kinds.provider)"])
+        let kept = session(scopedRequest, requested: scopedRequest)
         let server = Answers([
             "/.well-known/substrate/server.json": (200, #"{"server":{"version":"dev"}}"#),
             "/.well-known/oauth-authorization-server": (200, metadataJSON(scopes: agentVerbs, details: AuthorizationDetail.Types.all)),
-            "/api/v1/authorizations/check": (200, #"{"scopes":{"missing":["read:*"]},"setup":[]}"#),
+            "/api/v1/authorizations/check": (200, #"{"scopes":{"missing":["full"]},"setup":[]}"#),
         ])
         let status = await AppStatusCheck(
             manifest: ChatManifest.manifest, session: kept,
             client: SubstrateClient(kept, transport: server)
         ).run()
-        #expect(status.issues == [.needsApproval(changes: [Change(kind: .scope, words: ScopeWords.sentence("read:*"))])])
+        #expect(status.issues == [.needsApproval(changes: [Change(kind: .scope, words: ScopeWords.sentence(ScopeWords.full))])])
         let check = try #require(server.requests.first { $0.url?.path == "/api/v1/authorizations/check" })
         let body = try JSONDecoder().decode(AuthorizationCheck.self, from: try #require(check.httpBody))
-        #expect(body.scope == "agents:* decide:* read:*")
+        #expect(body.scope == "full")
         #expect(body.details.isEmpty)
     }
 

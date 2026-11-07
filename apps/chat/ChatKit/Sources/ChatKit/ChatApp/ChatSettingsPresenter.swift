@@ -18,7 +18,9 @@ extension ChatApp {
                     agent.model.map { LabeledValue("Model", $0, verbatim: true) },
                 ].compactMap { $0 },
                 offered: state.preferences.offers(agent, defaults: defaults),
-                keyless: provider.flatMap { $0.hasKey ? nil : KeylessProvider(id: $0.id, name: $0.name, action: "No API key: Add") })
+                keyless: provider.flatMap {
+                    state.lacksKey($0) ? KeylessProvider(id: $0.id, name: $0.name, action: "No API key: Add") : nil
+                })
         }
         let assistants = AssistantsSection(
             title: "Assistants",
