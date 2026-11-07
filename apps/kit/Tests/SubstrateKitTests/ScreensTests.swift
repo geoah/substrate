@@ -113,7 +113,7 @@ struct ConnectScreenTests {
             hasPasswordDoor: passwordDoor, opensBrowser: opensBrowser, signIn: { _ in })
     }
 
-    @Test func anAddressIsCheckedThenTheServerFoundOffersTheBrowser() async throws {
+    @Test func anAddressIsCheckedThenTheServerFoundOpensItsSignIn() async throws {
         let harness = ControllerHarness(controller(), performsEffects: false)
         var presented = await harness.presentation
         #expect(presented.button == .init(title: "Continue", busy: false, enabled: false))
@@ -128,9 +128,49 @@ struct ConnectScreenTests {
         presented = await harness.presentation
         #expect(presented.door == .browser)
         #expect(presented.field.text == "ada.example.com")
-        #expect(presented.button?.title == "Sign In with Your Substrate")
+        #expect(presented.button == .init(title: "Signing In…", busy: true, enabled: false))
         #expect(presented.footer?.found == LabeledValue("Server found", "ada.example.com", verbatim: true))
         #expect(presented.footer?.repository == LabeledValue("Repository", "ada.example.com", verbatim: true))
+        #expect(harness.effects.last == .signIn(probe, shown: true))
+    }
+
+    /// The sign-ins the controller opened.
+    final class Opened: @unchecked Sendable {
+        private let lock = NSLock()
+        private var opened = 0
+        var count: Int { lock.withLock { opened } }
+        func add() { lock.withLock { opened += 1 } }
+    }
+
+    @Test func theServerFoundIsShownBeforeItsSignInOpens() async throws {
+        let opened = Opened()
+        let connect = ConnectController(
+            manifest: ScreenFixtures.manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            signIn: { _ in opened.add() })
+        let harness = ControllerHarness(connect, performsEffects: true)
+        await harness.send(.edit("ada.example.com"))
+        await harness.deliver(.located(probe))
+        try await harness.until { $0.clock.sleeping == 1 }
+        await harness.advance(by: ConnectController.foundShown / 2)
+        #expect(opened.count == 0)
+        await harness.advance(by: ConnectController.foundShown / 2)
+        try await harness.until { _ in opened.count == 1 }
+    }
+
+    @Test func aServerTheAppFallsBackForWaitsAtItsPasswordDoor() async throws {
+        var old = probe
+        old.metadata = nil
+        old.verdict = .tooOld(running: "v0.113.0", needed: nil, missing: ["give apps access of their own"])
+        var manifest = ScreenFixtures.manifest
+        manifest.passwordFallback = .withoutAppAuthorization
+        let connect = ConnectController(
+            manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            hasPasswordDoor: true, signIn: { _ in })
+        let harness = ControllerHarness(connect, performsEffects: false)
+        await harness.send(.edit("ada.example.com"))
+        await harness.deliver(.located(old))
+        #expect(await harness.presentation.door == .password)
+        #expect(harness.effects.isEmpty)
     }
 
     @Test func writingTheCheckedNameBackIsNotANewAddressButTypingIs() async throws {
@@ -171,17 +211,17 @@ struct ConnectScreenTests {
         await harness.send(.edit("ada.example.com"))
         await harness.send(.proceed)
         await harness.deliver(.located(probe))
-        await harness.send(.proceed)
         var presented = await harness.presentation
         #expect(presented.button?.title == "Waiting for Your Browser…")
         #expect(presented.cancel == "Cancel")
         #expect(presented.footer?.note.contains("open in your browser") == true)
-        #expect(harness.effects.last == .signIn(probe))
+        #expect(harness.effects.last == .signIn(probe, shown: true))
         await harness.send(.cancelSignIn)
         presented = await harness.presentation
         #expect(presented.button?.title == "Continue in Your Browser")
         #expect(harness.effects.last == .cancelSignIn)
         await harness.send(.proceed)
+        #expect(harness.effects.last == .signIn(probe))
         await harness.deliver(.signInFailed(problem: "The code was refused."))
         #expect(await harness.presentation.problem == ProblemPresentation(title: "Couldn't sign in", message: "The code was refused."))
     }
@@ -217,8 +257,7 @@ struct ConnectScreenTests {
         let harness = ControllerHarness(cancelled, performsEffects: true)
         await harness.send(.edit("ada.example.com"))
         await harness.runtime.deliver(.located(probe))
-        await harness.send(.proceed)
-        try await harness.until { await $0.runtime.counters.delivered == 1 }
+        try await harness.until(advancing: ConnectController.foundShown) { await $0.runtime.counters.delivered == 1 }
         let presented = await harness.presentation
         #expect(presented.problem == nil)
         #expect(presented.button?.title == "Sign In with Your Substrate")
@@ -232,8 +271,7 @@ struct ConnectScreenTests {
         let harness = ControllerHarness(expired, performsEffects: true)
         await harness.send(.edit("ada.example.com"))
         await harness.runtime.deliver(.located(probe))
-        await harness.send(.proceed)
-        try await harness.until { await $0.runtime.counters.delivered == 1 }
+        try await harness.until(advancing: ConnectController.foundShown) { await $0.runtime.counters.delivered == 1 }
         let presented = await harness.presentation
         #expect(presented.problem?.title == "Couldn't sign in")
         #expect(presented.problem?.message == "The sign-in waited too long for your browser. Start it again.")

@@ -10,14 +10,16 @@ import SubstrateRuntime
 /// against the server's discovery document and the app's requirement when
 /// the person presses Continue. A server found from a repository's name
 /// carries that name to the sign-in. A server that can give the app access
-/// of its own offers the browser sign-in; one the app falls back for shows
-/// the app's own password door; one too old says what it lacks. Without a
-/// password door, a server the app would fall back for is too old.
+/// of its own opens the browser sign-in by itself once the screen has shown
+/// what was found: finding the server is not a second press. One the app
+/// falls back for shows the app's own password door; one too old says what
+/// it lacks. Without a password door, a server the app would fall back for
+/// is too old.
 public struct ConnectController: Controller {
     public enum Command: Bridged, Equatable {
         case edit(String)
-        /// The screen's one button: Continue to find the server, then sign
-        /// in to it.
+        /// The screen's one button: Continue to find the server, then, where
+        /// a sign-in was closed or failed, sign in to it again.
         case proceed
         case cancelSignIn
         case changeServer
@@ -40,9 +42,14 @@ public struct ConnectController: Controller {
 
     public enum Effect: Equatable, Sendable {
         case locate(String)
-        case signIn(ServerProbe.Result)
+        /// `shown` holds the sign-in for `foundShown` first: the person sees
+        /// which server was found before the browser covers the screen.
+        case signIn(ServerProbe.Result, shown: Bool = false)
         case cancelSignIn
     }
+
+    /// How long the server found stays on screen before its sign-in opens.
+    public static let foundShown: TimeInterval = 0.8
 
     public typealias State = ConnectState
     public typealias Presentation = ConnectPresentation
@@ -127,7 +134,7 @@ public struct ConnectController: Controller {
             next.address = ConnectState.shown(result)
             next.addressRevision += 1
             next.retryable = false
-            next.phase = .found(result)
+            next.phase = door(for: result) == .app ? .signingIn(result) : .found(result)
         case let .locateFailed(problem, retryable):
             next.phase = .idle
             next.retryable = retryable
@@ -152,6 +159,8 @@ public struct ConnectController: Controller {
     public func effects(of event: Event, on state: ConnectState, presented presentation: ConnectPresentation) -> [Effect] {
         switch event {
         case let .checkStarted(address): [.locate(address)]
+        case .located:
+            if case let .signingIn(found) = state.phase { [.signIn(found, shown: true)] } else { [] }
         case .signInStarted: state.found.map { [.signIn($0)] } ?? []
         case .signInCancelled: [.cancelSignIn]
         default: []
@@ -181,10 +190,11 @@ public struct ConnectController: Controller {
                     return .locateFailed(problem: problem, retryable: error is ServerLocator.LookupFailed)
                 }
             }
-        case let .signIn(found):
-            let (signIn, app) = (signIn, manifest.appName)
+        case let .signIn(found, shown):
+            let (signIn, app, clock) = (signIn, manifest.appName, environment.clock)
             return .once {
                 do {
+                    if shown { try await clock.sleep(until: clock.now.addingTimeInterval(Self.foundShown)) }
                     try await signIn(found)
                     return .signedIn
                 } catch is SignInCancelled {
@@ -235,7 +245,7 @@ public struct ConnectController: Controller {
             case .idle: state.retryable ? "Try Again" : "Continue"
             case .checking: "Checking…"
             case .found: opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
-            case .signingIn: "Waiting for Your Browser…"
+            case .signingIn: opensBrowser ? "Waiting for Your Browser…" : "Signing In…"
             }
         let button =
             door == .password
