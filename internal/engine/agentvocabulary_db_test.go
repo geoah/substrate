@@ -17,13 +17,14 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// openMossDataset opens a repository with the LLM sample seeded and its
-// `anthropic` row, the one Moss and its helpers name, pointed at the fake on
-// the wire the fake speaks. It installs nothing else: the sample carries no
-// function body, so the suite runs where no sandbox can confine one.
+// openMossDataset opens a repository with the shipped assistant, its
+// `anthropic` row pointed at the fake on the wire the fake speaks, and one
+// kind of the owner's own with a long text to edit: `<repo>/scratch/pad`. It
+// installs no function body, so the suite runs where no sandbox can confine
+// one.
 func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
 	t.Helper()
-	ds := openInternalDataset(t, WithLLMSampleSeed(true))
+	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
 	ds.mu.Lock()
 	ds.skipThreadTitles = true
@@ -34,7 +35,21 @@ func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return ds, fake, testdb.Repository(t)
+	repo := testdb.Repository(t)
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(repo+"/scratch", 0),
+		vocabulary.KindManifest(repo+"/scratch", map[string]any{"singular": "pad"}, map[string]any{
+			"description":     "A practice pad: a name and a long note.",
+			"displayTemplate": "{name}",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": "what the pad is called"},
+				"note": map[string]any{"type": "text", "description": "the pad's text"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("declare the scratch pad: %v", err)
+	}
+	return ds, fake, repo
 }
 
 // mossModel is the model Moss and its architect name, so one script serves
@@ -183,7 +198,7 @@ func TestAgentVocabularyRefusesOutsideItsGrant(t *testing.T) {
 		want string
 	}{
 		{[]any{agentDoc}, "not in agent"},
-		{[]any{map[string]any{"kind": repo + "/llm/scratchpad", "metadata": map[string]any{"id": "x"}, "data": map[string]any{}}}, "not a declaration kind"},
+		{[]any{map[string]any{"kind": repo + "/scratch/pad", "metadata": map[string]any{"id": "x"}, "data": map[string]any{}}}, "not a declaration kind"},
 		{[]any{shipped}, "shipped package"},
 	}
 	turns := make([]fakeTurn, 0, len(cases)+1)

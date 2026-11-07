@@ -40,9 +40,9 @@
 #      and patches a one-line receipt back onto the instruction.
 #
 # The AGENT wants an `llm/provider` row at the id it names (`openai`), which
-# is what the llm sample ships: import that one too and fill in its key, or
-# the first agent run refuses at dispatch saying which row it wanted. The
-# function wants nothing at all. See docs/bundles-catalog.md.
+# every repository is seeded with, keyless: fill in its key, or the first
+# agent run refuses at dispatch saying which row it wanted. The function
+# wants nothing at all. See docs/bundles-catalog.md.
 #
 # This bundle declares NO inputs and no OAuth: the endpoint is open, and the
 # one optional credential (`source.webhook.key`) lives on the trigger record.
@@ -69,7 +69,9 @@ data:
   # saying what a record is to a person.
   # 13: the assistant creates a task without an id and the substrate mints
   #     it (decision record 0228).
-  version: 13
+  # 14: the description names the one sample it needs, tasks, and no longer
+  #     the llm sample, which nothing imports now.
+  version: 14
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -78,9 +80,9 @@ data:
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-
-    Voice capture from the Pebble Index 01 ring over one public webhook: every
-    capture is saved, and a press-and-hold becomes an instruction an agent
-    turns into tasks. Needs the tasks and llm samples.
+    Voice capture from the Pebble Index 01 ring over one public webhook: each
+    capture is saved, and a press-and-hold becomes tasks. Needs the tasks
+    sample.
   # The assistant writes tasks, so the tasks vocabulary has to be imported
   # first.
   requires:

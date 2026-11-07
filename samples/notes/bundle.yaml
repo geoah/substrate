@@ -9,9 +9,9 @@
 #   substratectl function call stats --input '{"text": "hello world"}'
 #
 # The AGENTS need one thing more: an `llm/provider` row at the id they name
-# (`openai`), which is what the llm sample ships. Import that one too and
-# fill in its key, or the first agent run refuses at dispatch saying which row
-# it wanted. See docs/bundles-catalog.md.
+# (`openai`), which every repository is seeded with, keyless: fill in its
+# key, or the first agent run refuses at dispatch saying which row it
+# wanted. See docs/bundles-catalog.md.
 #
 # What it demonstrates, in the order the loop hits it:
 #

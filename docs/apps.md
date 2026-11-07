@@ -899,11 +899,11 @@ named in full, and `~` may stand for its authority. How a kind binds it,
 `temporal(point: dueAt)` say, does not matter, only that it does.
 
 An agent's id is its authority, package and name,
-`ada.example.com/llm/substrate`.
+`ada.example.com/notes/notekeeper`.
 `~` in place of the authority is the repository's own authority, the one an
 imported sample lives under: `read:~/tasks/*` becomes
 `read:ada.example.com/tasks/*` on the approval page and in the token, and
-`agents:~/llm/*` the agents imported with the LLM sample. Some things no
+`agents:~/notes/*` the agents imported with the notes sample. Some things no
 scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,

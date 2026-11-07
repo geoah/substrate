@@ -510,8 +510,8 @@ passes the [policy door](#the-policy-door). Taking an offered function grants
 the agent nothing it did not hold. A judge takes no offered functions either:
 an agent with `toolsFrom` is refused as one, exactly as one with `tools:`.
 
-The llm sample's `substrate` agent takes `*`, and the notes sample's `stats`
-function is offered as `notes_stats`. The console lists an agent's offered
+The shipped assistant, `substrate.reamde.dev/assistant/moss`, takes `*`,
+and the notes sample's `stats` function is offered as `notes_stats`. The console lists an agent's offered
 tools on its page.
 
 ## The engine's guidance
@@ -532,8 +532,7 @@ The owner sees your tool calls and proposals as cards; do not repeat them as tex
 
 The block is static, so it stays inside a cached prompt prefix. An agent whose
 reply has a strict shape turns it off with `params.engineGuidance: false`, as
-the LLM sample's `substrateJudge` and `substrateSummarizer` and the notes
-sample's `titler` do. A run whose reply the engine parses (a policy judge's)
+the LLM sample's `substrateJudge` and the notes sample's `titler` do. A run whose reply the engine parses (a policy judge's)
 never gets it, whatever the agent says, and neither do the engine's own
 calls (thread titles, compaction summaries), which carry their own prompts.
 
@@ -619,9 +618,9 @@ read is not charged to `reads.budgets`; `first` and `maxBytes` bound it.
 standing facts: `text`, `active` (default `true`) and `source` (`owner`,
 `agent` or `import`, default `owner`). It is the one `primary` kind of the
 `llm` package, so its rows list and edit in the console like any record. The
-LLM sample's `substrate` assistant pins the active ones, ordered by id, and
-saves a fact the owner states about themselves by proposing an `llm/memory`
-create with `source: agent`, so a remembered fact is one the owner accepted.
+shipped assistant, Moss, pins the active ones, ordered by id, and saves a
+fact the owner states about themselves by proposing an `llm/memory` create
+with `source: agent`, so a remembered fact is one the owner accepted.
 
 ## Owner instructions
 
@@ -1297,16 +1296,16 @@ substrate cannot invent a key, so they land without one: dispatch refuses
 until the owner writes `apiKey`. An agent naming a row that is not there
 refuses at dispatch and says which row it wanted.
 
-Every shipped sample agent names `provider: openai`, so a fresh repository's
-demo agents run once that row is keyed. Those that carry `tools:` or
-`subagents:` name a `reasoningEffort` their model accepts on their own
-`params`: `low` for the LLM sample's `substrate` assistant, which plans
-several reads before it answers, and `minimal`, the weakest value `gpt-5`
-accepts, for the rest. The rows themselves set no reasoning default, because
-the accepted set belongs to the model and one row serves several. The LLM sample (**All data → Add a collection → Start from
-a sample**) is the same closure creation already imported, and it ships the
-same three rows so a later import onto a repository born before the seed
-still has them. Key one, or write another row yourself as the document
+The shipped assistant names `provider: anthropic`, so a fresh repository's
+Moss runs once that row is keyed; every shipped sample agent names
+`provider: openai`. Those that carry `tools:` or `subagents:` name a
+`reasoningEffort` their model accepts on their own `params`: `low` for Moss,
+`medium` for its architect, and `minimal`, the weakest value `gpt-5`
+accepts, for the sample's lessons. The rows themselves set no reasoning
+default, because the accepted set belongs to the model and one row serves
+several. The LLM sample (**All data → Add a collection → Start from a
+sample**) ships the same three rows, so an import onto a repository that
+deleted one brings it back. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
 behind a name, and the model is the agent's own word now.
 

@@ -77,8 +77,8 @@ unique per kind, never per repository.
    `summary`, `subject`), never `title`.
 
 5. **Know what a fresh repository holds.** Registration seeds the core
-   vocabulary, the `llm` package with three keyless provider rows, the
-   `console` and `observations` packages and the LLM sample. Every other
+   vocabulary, the `llm` package with three keyless provider rows, and the
+   `console`, `observations` and `assistant` packages. Every other
    kind arrives from the catalog: the owner takes a catalog package from the
    console (a provider from Providers, a sample from All data's Add a
    collection), with `substratectl install` or `substratectl import

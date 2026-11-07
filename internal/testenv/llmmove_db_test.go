@@ -108,9 +108,9 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	before := testenv.Start(t,
 		testenv.WithDSN(dsn), testenv.WithDataRoot(dataRoot), testenv.WithCredentialKey(key),
 		testenv.WithKindsDir(preMoveKindsDir), testenv.WithRepository("ada.example.com"),
-		// A pre-move binary shipped neither: both declare against
+		// A pre-move binary shipped no provider rows: they are of
 		// `llm/provider`, the very kind this tree has not moved yet.
-		testenv.WithEngineOptions(engine.WithLLMSampleSeed(false), engine.WithLLMProviderSeed(false)))
+		testenv.WithEngineOptions(engine.WithLLMProviderSeed(false)))
 	seeded := kindVersions(t, before)
 	for _, k := range movedLLMKinds {
 		if _, ok := seeded[corePkg+"/"+k.before]; !ok {

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/samples"
 )
 
 // defaultLLMProviders are the three vendor rows a repository is born with,
@@ -144,26 +142,4 @@ func (ds *dataset) ensureDefaultProviders(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// importLLMSample imports the shipped LLM example onto the repository's own
-// authority, the same admission a later Registry import would take. Tests
-// skip it (OpenForTest) so the suite does not pay a vocabulary apply on
-// every repository; production Open leaves it on.
-func (s *service) importLLMSample(ctx context.Context, ds *dataset) error {
-	if !s.seedLLMSample || s.readOnly {
-		return nil
-	}
-	cat, err := s.sampleCatalog()
-	if err != nil {
-		return err
-	}
-	return cat.SeedImport(ctx, ds, samples.LLM)
-}
-
-func (s *service) sampleCatalog() (*catalog.Catalog, error) {
-	s.sampleCatOnce.Do(func() {
-		s.sampleCat, s.sampleCatErr = catalog.Load(catalog.SampleRoot(samples.Samples()))
-	})
-	return s.sampleCat, s.sampleCatErr
 }

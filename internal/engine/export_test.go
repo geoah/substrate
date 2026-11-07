@@ -537,7 +537,6 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 	all := append(seed, []Option{
 		WithCredentialKey(TestCredentialKey),
 		WithTestTOTPClock(ClockOf(t).Now),
-		WithLLMSampleSeed(false),
 		WithLLMProviderSeed(false),
 		WithUnitSeed(false),
 		WithRecordSeed(false),

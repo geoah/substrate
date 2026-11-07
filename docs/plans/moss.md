@@ -197,9 +197,17 @@ Next steps the survey suggests:
 - **Instructions scoped to a kind**, read when the agent touches that kind,
   as a rule scoped to files is.
 
-The old `substrate` agent stays declared and `supporting`, so a thread
-started with it continues. Pruning it would leave every such thread naming an
-agent that is gone.
+### One assistant
+
+A repository ships with one assistant and nothing else to chat with. The
+LLM sample used to be imported at registration, with six demo agents beside
+it: `substrate`, the assistant before Moss, `substrateEcho` and
+`substrateSummarizer`, a delegation demo, and three decision-loop lessons.
+Moss replaces the first, its own helpers are the delegation example now, and
+nothing imports the sample any more: its three lessons and their scratchpad
+stay in the catalog for anyone learning how agents decide. A repository that
+imported the sample before keeps it until its owner removes it; its next
+upgrade drops the three agents that left.
 
 ## Examples
 
@@ -310,8 +318,7 @@ keeps the survey of the general assistants.
 - **The console's default.** The console lists primary agents first, so Moss
   leads; whether a new chat opens on Moss without a choice is the console's
   call and is not changed here.
-- **Retiring `substrate`.** Once no thread on a repository names it, it can
-  be pruned with the package's next version.
-- **Narrowing `*`.** Moss's own `write` still reaches every declaration kind,
-  the architect's included; the prompt keeps it off them. A grant that could
-  exclude the declaration kinds would make that a rule, not a request.
+- **Narrowing `*` further.** A glob no longer reaches a declaration, a
+  trigger or an instruction; any other kind an agent should not write by
+  glob joins that list the same way, as a rule rather than a request in a
+  prompt.

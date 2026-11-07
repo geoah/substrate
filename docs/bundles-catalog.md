@@ -87,7 +87,7 @@ thing, and the Records column counts them.
 | Apple         | Provider | Owner token    | 10    | 0         | 0       | 0      |
 | Apple Health  | Provider | Webhook key    | 10    | 2         | 2       | 0      |
 | Firecrawl     | Provider | API key        | 1     | 2         | 2       | 0      |
-| LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
+| LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 3      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
@@ -147,27 +147,12 @@ provider's own sync token gives them full-plus-incremental with no window.
 
 ## LLM (sample)
 
-Package `samples.substrate.reamde.dev/llm`. A new repository already holds
-this bundle, rehomed onto its own authority, and three keyless `llm/provider`
-rows (`openai`, `anthropic`, `gemini`). The demo agents name `openai`. Key
-that row and they run. A later import of this bundle onto a repository born
-before the seed writes the same three rows and the same agents. The owner's
-assistant, Moss, ships with the binary
-([builtin kinds](builtin-kinds.md#substratereamdedevassistant)).
+Package `samples.substrate.reamde.dev/llm`: the decision-loop lessons, three
+agents and the scratchpad they practise on. Nothing imports it for you; the
+owner's assistant, Moss, ships with the binary instead
+([builtin kinds](builtin-kinds.md#substratereamdedevassistant)). Its agents
+name the seeded `openai` row, so key that row and they run.
 
-- `substrate` is the assistant before Moss, `supporting` now and kept so
-  its threads continue, a general assistant: it reads the
-  whole graph through the `query` built-in, calls every function an
-  installed bundle [offers](agents.md#offered-functions) before composing
-  queries of its own, writes a change the owner asked for through `write`,
-  proposes a change it inferred as a `recordpatchrequest` the owner decides
-  on, and asks clarifying questions through the `ask` built-in. Its prompt is
-  what chooses between `write` and `propose`. It
-  [pins](agents.md#pinned-context) the owner's active
-  `substrate.reamde.dev/llm/memory` records and proposes a new one when the
-  owner states a lasting preference, runs at `reasoningEffort: low` with up
-  to 32 tool calls over 12 model turns, and stops starting runs once it has
-  spent USD 2 in a day (`budgets.spendCentsPerDay: 200`).
 - `substrateEditor` writes scratchpads directly through the `write` built-in,
   the demo for engine-stamped `changes` on a thread's tool rows.
 - `substrateArbiter` is a judge you point a trigger at: it accepts or rejects a
@@ -175,11 +160,8 @@ assistant, Moss, ships with the binary
 - `substrateJudge` is the tool-less verdict agent a
   [`recordpatchpolicy`](agents.md#the-policy-door) names under `judge:`, the
   policy layer's example.
-- `substrateEcho` and `substrateSummarizer` are the delegation demo, and the
-  summarizer is `hiddenFromChat`: off the chat list, callable only by other
-  agents.
 
-Importing it gives you three rows that refuse until you key them: `openai`
+Every repository holds three rows that refuse until you key them: `openai`
 on OpenAI's own wire, `anthropic` on Anthropic's, and `gemini` on Google's
 OpenAI-compatible endpoint. Keying one is an ordinary record write,
 and [registering a provider](agents.md#registering-a-provider) is where that

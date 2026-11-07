@@ -105,7 +105,7 @@ permissions:
   call:                            # which other functions its code may invoke
     - samples.substrate.reamde.dev/readinglist/setclass
   agents:                          # which agents its code may run
-    - samples.substrate.reamde.dev/llm/substrateSummarizer
+    - samples.substrate.reamde.dev/notes/titler
   network:                         # the hosts it may reach; any entry grants egress
     - api.example.com
   mutations:                       # the identity-changing operations: merge, split
@@ -1179,9 +1179,9 @@ agent's work.
 
 ```python
 def main(input, host):
-    out = host.agents.call("samples.substrate.reamde.dev/llm/substrateSummarizer",
-                           {"page": input["args"]["id"]})
-    return {"output": {"summary": out["reply"], "status": out["status"]}}
+    out = host.agents.call("samples.substrate.reamde.dev/notes/titler",
+                           {"text": input["args"]["text"]})
+    return {"output": {"title": out["reply"], "status": out["status"]}}
 ```
 
 ## Triggers

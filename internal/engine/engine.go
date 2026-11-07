@@ -33,7 +33,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/blobbytes"
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/oauthflow"
@@ -128,11 +127,6 @@ type options struct {
 	// writer on purpose. TESTS ONLY: a server has no such option, because
 	// being the second writer is the thing decision 0083 refuses.
 	skipWriterLease bool
-	// seedLLMSample imports the shipped LLM sample at repository creation.
-	// Default true; OpenForTest sets false so the suite does not pay a
-	// vocabulary apply on every repository.
-	seedLLMSample    bool
-	seedLLMSampleSet bool
 	// seedLLMProviders writes the three keyless vendor rows at creation and
 	// as an open catch-up. Default true; OpenForTest sets false so upgrade
 	// fixtures that count live llm/provider rows stay the rows they wrote.
@@ -414,14 +408,6 @@ func WithInsecureForeignPackages(on bool) Option {
 	return func(o *options) { o.foreignPackages = on }
 }
 
-// WithLLMSampleSeed controls whether CreateRepository imports the shipped
-// LLM sample (the demo agents and scratchpad) onto the repository's own
-// authority. Production Open defaults on. OpenForTest turns it off so the
-// suite does not pay a vocabulary apply on every repository.
-func WithLLMSampleSeed(on bool) Option {
-	return func(o *options) { o.seedLLMSample, o.seedLLMSampleSet = on, true }
-}
-
 // WithLLMProviderSeed controls whether CreateRepository and repository open
 // write the three keyless vendor rows (openai, anthropic, gemini). Production
 // Open defaults on. OpenForTest turns it off so fixtures that count live
@@ -638,8 +624,6 @@ type service struct {
 	// and on the test seam that opens a second writer on purpose.
 	lease *writerLease
 	log   *slog.Logger
-	// seedLLMSample imports the shipped LLM sample at repository creation.
-	seedLLMSample bool
 	// seedLLMProviders writes the three keyless vendor rows at creation
 	// and as an open catch-up.
 	seedLLMProviders bool
@@ -657,10 +641,7 @@ type service struct {
 	bulkSeed bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
-	unitGraphs    unitGraphCache
-	sampleCatOnce sync.Once
-	sampleCat     *catalog.Catalog
-	sampleCatErr  error
+	unitGraphs unitGraphCache
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -853,9 +834,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.laneWorkers < 0 || o.laneWorkers > TriggerDeliverySlots {
 		return nil, fmt.Errorf("substrate/engine: %d trigger lane workers: a lane runs at least 1 and at most the %d deliveries the whole process runs at once, and 0 is the default of %d (WithTriggerLaneWorkers)", o.laneWorkers, TriggerDeliverySlots, scheduleLaneWorkers)
 	}
-	if !o.seedLLMSampleSet {
-		o.seedLLMSample = true
-	}
 	if !o.seedLLMProvidersSet {
 		o.seedLLMProviders = true
 	}
@@ -931,7 +909,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		now:              o.now,
 		webhookNow:       o.webhookNow,
 		readOnly:         o.dirReadOnly,
-		seedLLMSample:    o.seedLLMSample,
 		seedLLMProviders: o.seedLLMProviders,
 		seedUnits:        o.seedUnits,
 		seedRecords:      o.seedRecords,
@@ -1742,10 +1719,6 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	}); err != nil {
 		seedDS.close()
 		return fail("seed", err)
-	}
-	if err := s.importLLMSample(ctx, seedDS); err != nil {
-		seedDS.close()
-		return fail("seed llm sample", err)
 	}
 	seedDS.close()
 

@@ -301,8 +301,8 @@ request.
 Three consequences an operator meets:
 
 - A fresh repository has three keyless provider rows (`openai`, `anthropic`,
-  `gemini`) and the LLM sample's demo agents, which name `openai`. They
-  refuse at dispatch until that row's `apiKey` is written.
+  `gemini`) and the shipped assistant, Moss, which names `anthropic`. It
+  refuses at dispatch until that row's `apiKey` is written.
   [Registering a provider](agents.md#registering-a-provider) is the write.
 - Hybrid search returns its lexical arm alone until one row declares
   `embedModel`, and the vectors it buys name that row and that model, so
