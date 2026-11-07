@@ -8,6 +8,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -302,6 +303,84 @@ func TestAShutdownSettlesADetachedTurnStopped(t *testing.T) {
 	// A chat after the shutdown began opens nothing.
 	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "late"}, nil); !errors.Is(err, substrate.ErrUnavailable) {
 		t.Fatalf("chat during shutdown = %v, want ErrUnavailable", err)
+	}
+}
+
+// A call the stop or the shutdown cut off says so, in its row and in its
+// toolFinished event, instead of the bare "context canceled" its dispatch
+// failed with.
+func TestACallAStopCutOffSaysWhyItHasNoResult(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		end    func(ds *dataset, thread string)
+		reason string
+		says   string
+	}{
+		{"a stop", func(ds *dataset, thread string) {
+			_, _ = ds.StopAgentTurn(context.Background(), substrate.ActorAPI, thread)
+		}, "stopped by api", "the turn was stopped before this call finished"},
+		{"the shutdown", func(ds *dataset, _ string) {
+			ds.svc.stopBackground(backgroundDrainTimeout)
+		}, reasonShutdown, "the server restarted before this call finished"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ds, fake, repo := openMossDataset(t)
+			fake.script(mossModel,
+				fakeTurn{calls: []fakeCall{{name: "query", args: `{"op":"list","kind":"` + repo + `/scratch/pad"}`}}},
+				fakeTurn{content: "never"},
+			)
+			log := newEventLog()
+			// The turn ends as the model's call is recorded, so the call
+			// dispatches on a context the end already canceled.
+			ended := make(chan struct{})
+			ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+				if props["toolCalls"] == nil {
+					return nil
+				}
+				thread := log.snapshot()[0].Thread
+				hub, err := ds.runningTurn(context.Background(), thread)
+				if err != nil {
+					return err
+				}
+				go func() {
+					tc.end(ds, thread)
+					close(ended)
+				}()
+				deadline := time.Now().Add(10 * time.Second)
+				for !hub.ended() {
+					if time.Now().After(deadline) {
+						return errors.New("the end never reached the turn")
+					}
+					time.Sleep(5 * time.Millisecond)
+				}
+				return nil
+			}
+			chatted := make(chan *substrate.AgentResult, 1)
+			go func() {
+				res, _ := ds.ChatAgent(context.Background(), substrate.ActorAPI, mossID, substrate.ChatInput{Message: "list my pads"}, log.emit)
+				chatted <- res
+			}()
+			res := <-chatted
+			<-ended
+			if res == nil || res.Status != threadStopped || res.Reason != tc.reason {
+				t.Fatalf("result = %+v, want stopped (%s)", res, tc.reason)
+			}
+			var row map[string]any
+			for _, m := range threadMessages(t, ds, res.Thread) {
+				if m["role"] == "tool" {
+					row = m
+				}
+			}
+			content, _ := row["content"].(string)
+			if row["ok"] != false || !strings.Contains(content, tc.says) || strings.Contains(content, "context canceled") {
+				t.Fatalf("tool row = %+v, want a failure that says %q", row, tc.says)
+			}
+			if ev := log.waitFor(t, substrate.AgentEventToolFinished); ev.Output != content {
+				t.Fatalf("toolFinished output = %q, want the row's %q", ev.Output, content)
+			}
+		})
 	}
 }
 

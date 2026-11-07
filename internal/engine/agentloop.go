@@ -71,6 +71,19 @@ func reasonStoppedBy(actor substrate.Actor) string {
 	return "stopped by " + string(actor)
 }
 
+// stoppedCall is the result of a call a stop or the shutdown cut off, in
+// place of the bare "context canceled" its dispatch failed with. The owner
+// reads it under the call, and the model reads it when the owner's next
+// message replays the thread, so it says what happened and that nothing came
+// back. The shutdown's says "restarted": whoever reads the row reads it from
+// a server that came back.
+func stoppedCall(reason string) string {
+	if reason == reasonShutdown {
+		return toolError("the server restarted before this call finished, so it returned nothing; run it again if it is still needed")
+	}
+	return toolError("the turn was stopped before this call finished, so it returned nothing")
+}
+
 // agentSettleTimeout bounds a detached turn's last writes, which run on a
 // context its stop and its shutdown do not cancel.
 const agentSettleTimeout = 30 * time.Second
