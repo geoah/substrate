@@ -240,7 +240,7 @@ The key is `function` because an entry admits nothing else: a sub-agent is named
 on `subagents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
-That is the only arm, because the five built-ins are
+That is the only arm, because the six built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
 ships — so an agent names one exactly as it names a bundle's function:
 
@@ -358,6 +358,24 @@ entry could name only a function.
   The run continues without one; the answer arrives in a later turn, when the
   user answers the interaction and the thread resumes, so the model must not
   poll for it.
+- **`substrate.reamde.dev/core/vocabulary`** declares or changes kinds: one
+  call is `{documents, plan}`, `documents` a list of declaration documents
+  (`{kind, metadata: {id}, data}`, the envelope `/vocabulary/apply` takes),
+  admitted together or not at all
+  ([0239](decisions/0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md)).
+  `plan: true` is the preview, `/vocabulary/plan`'s answer, and writes
+  nothing. It requires `permissions.writes` to name
+  `substrate.reamde.dev/core/kind` (a load error otherwise), and every
+  document's kind is held to the effective emit, so an agent whose writes
+  name `core/package` and `core/kind` can declare kinds and packages and no
+  agent, function, trigger or mapping. An apply passes the
+  [policy door](#the-policy-door) for each document as a `put` of its kind;
+  a `refuse` or a `gate` refuses the whole batch, because a declaration is
+  admission and no request holds one. The batch then meets every rule the
+  apply door's does: a shipped or published package refuses, a new package
+  lands only under the repository's own authority, which the tool's card
+  names, and a lossy plan refuses, since its confirmation is the owner's.
+  The apply's changelog entries are stamped on the tool row as `changes`.
 - **A function tool** runs through the same runner invoke a host call uses, its
   declared [arguments and returns](functions.md#arguments-and-returns) enforced,
   and its compiled argument schema is the card the model is shown. Its effects
@@ -410,7 +428,7 @@ the ones that cannot change what another reads at the same time. Those are
 `call` and no `agents` and whose declared `effect` is `read` (or absent, with
 no `network` grant), and a sub-agent whose effective emit is empty
 ([the emit ceiling](#sub-agents-budgets-and-the-emit-ceiling)). Every other
-call is ordered: `write`, `propose`, `ask`, a function that may write or call,
+call is ordered: `write`, `propose`, `ask`, `vocabulary`, a function that may write or call,
 and a sub-agent that may write. The response's calls split, in order, into
 stretches of the first sort and single ordered calls. A stretch runs up to
 `budgets.maxParallelTools` calls at once, and an ordered call starts once

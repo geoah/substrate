@@ -270,3 +270,37 @@ data:
       type: int
       description: how long to wait at most; the run's remaining time bounds
         it, and absent waits as long as that allows
+---
+# ---- vocabulary: declare or change kinds -------------------------------------
+# The apply door as a tool (decision record 0239): a batch of declaration
+# documents admitted whole or not at all, or previewed with `plan`. Every
+# document's kind is held to the calling agent's effective emit and passes the
+# policy door, and the batch then meets every guard the door's does: a
+# shipped or published package refuses, a new package lands only under the
+# repository's own authority, and a lossy batch waits for the owner.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/core/vocabulary
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Declare or change the owner's kinds: documents is a list of {kind, metadata:
+    {id}, data} declarations (kind substrate.reamde.dev/core/package or substrate.reamde.dev/core/kind,
+    among others), admitted together or not at all. plan true previews the
+    batch, writing nothing: what it would refuse (blockers) and the record
+    conversions it would run. Declare under the owner's authority. Prefer
+    adding to narrowing: a narrowing is refused while records hold the old
+    shape, and a lossy change is the owner's to confirm. The engine versions
+    what changes.
+  runtime: host
+  arguments:
+    - name: documents
+      type: json
+      required: true
+      description: 'the declaration documents, each {kind, metadata: {id},
+        data}; a kind document''s data holds authority, package, names, displayTemplate,
+        properties and the rest of its declaration'
+    - name: plan
+      type: bool
+      description: preview only; nothing is written

@@ -1891,6 +1891,11 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		if fn.Input != nil {
 			params = fn.Input
 		}
+		// The authority a new package must live under is the repository's,
+		// and nothing else the model sees names it.
+		if t.Builtin == vocabulary.AgentToolVocabulary {
+			description += " The owner's authority is " + l.ds.scope.Repository + "."
+		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)
 			if l.ag.Reads != nil {
@@ -2108,6 +2113,8 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchAsk(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolWait:
 		return l.dispatchWait(ctx, args)
+	case tool.builtin == vocabulary.AgentToolVocabulary:
+		return l.dispatchVocabulary(ctx, c, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:
