@@ -55,6 +55,6 @@ public enum ChatManifest {
     /// What the record views tell a reader the token may not read for:
     /// where access is granted. A password sign-in reaches everything.
     public static func deniedHint(_ grants: Grants?) -> String? {
-        grants.map({ !$0.full }) ?? false ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
+        grants?.full == false ? "Substrate Chat wasn't approved to read these. Allow it with Settings → Change Access…" : nil
     }
 }

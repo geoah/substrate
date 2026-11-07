@@ -26,11 +26,13 @@ enum ProviderKeys: Codable, Equatable, Sendable {
     /// a row with no key of its own may still be the operator's. A server
     /// older than the read answers 404, 405 or 501.
     static func read(_ client: SubstrateClient) async -> ProviderKeys? {
+        // Every field optional: an item this build cannot read is skipped,
+        // never the whole answer.
         struct Item: Decodable {
-            var id: String
-            var slot: String
-            var source: String
-            var readiness: String
+            var id: String?
+            var slot: String?
+            var source: String?
+            var readiness: String?
         }
         struct Answer: Decodable { var items: [Item]? }
         let older: Set<Int> = [404, 405, 501]
@@ -43,11 +45,14 @@ enum ProviderKeys: Codable, Equatable, Sendable {
         if older.contains(response.status) { return .rows }
         guard let answer = try? response.decode(Answer.self) else { return nil }
         var resolved: [String: Bool] = [:]
-        for item in answer.items ?? [] where item.slot == "llm" && item.id.hasPrefix("llm/") {
+        for item in answer.items ?? [] {
+            guard item.slot == "llm", let id = item.id, id.hasPrefix("llm/"), let source = item.source,
+                let readiness = item.readiness
+            else { continue }
             // As the console's Providers page reads it: a key that resolves
             // is On even while its calls fail; none, or a row the slot needs
             // gone, is not set up.
-            resolved[String(item.id.dropFirst("llm/".count))] = item.source != "none" && item.readiness != "not-set-up"
+            resolved[String(id.dropFirst("llm/".count))] = source != "none" && readiness != "not-set-up"
         }
         return .read(resolved)
     }
