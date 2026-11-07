@@ -380,9 +380,11 @@ bubble is a tinted fill. The transcript softens under the composer with
 - A row: the title (`subject`, else the opening line, else "New chat") and
   when, then the agent's name in its colour running into the start of the
   last reply ("Working…" while it runs), and a state: a dot when unread, a
-  question mark when a card waits on the owner, an exclamation when the
-  last turn ended in an error. No avatar and no pill: each took a column
-  and said no more than the name.
+  question mark when a card waits on the owner, and the console's mark in
+  words for a last turn that didn't finish: "Didn’t finish" (orange) for a
+  restart or a limit, "Stopped" (grey) for a stop, "Failed" (red) for an
+  error. No avatar and no agent pill: each took a column and said no more
+  than the name.
 - Automated runs are behind a toggle in the list's filter menu (off by
   default), with a glyph for what started each.
 - Search filters titles, previews and cached transcripts, and says it is
@@ -401,9 +403,19 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **Thinking**: "Thinking…" with a shimmer while the model reasons, then
   "Thought for 6 s", collapsed; tap to read.
 - **Tool calls**: one line per call in the console's words ("Searched for
-  “dentist”, found 3", "Saved a task", "Asked Researcher", "Edited a task in
-  2 places"), a spinner while it runs, a check or a cross when it settles;
+  “dentist”, found 3", "Changed the description of “Dune”", "Added “Dune”
+  to your books", "Asked Researcher", "Edited the body of “Garden” in 2
+  places"), a spinner while it runs, a check or a cross when it settles;
   tap for what it found or failed on, and the raw arguments and output. A
+  call that worked on one record names it in its line, quoted and cut at 60
+  characters: by the heading its answer carried, else the one the chat's
+  own lookups returned, else the one read for it (the kit's record
+  directory, which the pills read names through); without one, the kind
+  with its article ("Changed an author"). A failed call names none. One
+  that found or changed several records shows the first three as pills
+  under its line, open or not, and "and 2 more" shows the rest; the one
+  record a line names keeps its pill in the opened details (a write's, in
+  its panel). A
   call that runs in the background says "Working in the background" until
   its job ends, and its end is a line of its own ("Librarian finished in the
   background") that settles the call with what it returned. A write the
@@ -416,12 +428,15 @@ bubble is a tinted fill. The transcript softens under the composer with
   press's preview and the Mac's help), and one page read as one pill, each
   opening the page in the browser. The match is on the shape, never a
   provider's name, and only an `http` or `https` address is a link.
-- **Changes**: a call that wrote shows what it wrote, open, under its line: a
-  `write` as a panel ("Changed [Groceries]", each value it set), a function
-  or a sub-agent as the records it changed. All of it comes from the
-  transcript (the call's arguments and answer, the row's change stamps), so
-  it shows whatever the token may read; a record's name comes from what the
-  chat's own lookups returned.
+- **Changes**: a `write` shows what it wrote, open, under its line, as a
+  panel ("Changed [Groceries]", each value it set). A function's own
+  changes show under its line as pills after the verb ("Saved [a] [b]",
+  one run per verb), and so do several changes of any call; a host
+  function's or a sub-agent's one change is in its opened details, beside
+  what a sub-agent's chain wrote ("Wrote 3 records across task and note").
+  All of it comes from the transcript (the call's arguments and answer, the
+  row's change stamps), so it shows whatever the token may read; a record's
+  name comes from what the chat's own lookups returned.
 - **Linked records** are pills everywhere (SubstrateKit's `RecordPill`): the
   kind's glyph and the record's name, the same as the console draws them. A
   tap opens the record read-only in a sheet, its own links pushing within
@@ -453,11 +468,25 @@ bubble is a tinted fill. The transcript softens under the composer with
   them) or Dismissed (the values struck through). It is the transcript's:
   no read, so nothing to fail.
 - **Triggered openings**: "When <record> changed", not JSON.
+- **A last turn that didn't finish**: once nothing runs (no stream, no
+  attach, no handover waiting), a chat whose thread is `stopped`,
+  `overbudget` or `error` says so under the transcript in the console's
+  words, from the thread's stored status and the first line of its reason:
+  "Moss didn’t finish" with why ("The server restarted while it was
+  working.", "It ran out of time.", "It used all 8 of its turns."), "Moss
+  was stopped before it finished", or "Moss ran into a problem and didn’t
+  finish" with "What failed: …". Continue sends "Continue where you left
+  off." as the owner's own message, since the server resumes a stopped
+  thread only when its owner writes, and leaves a half-typed draft in the
+  composer; while a send cannot go it waits, with the composer's reason.
 - **Errors**: a failed run's card says what happened ("OpenAI refused the
   API key", "OpenAI is turning requests down", else "<Agent> couldn't
-  answer"), with the server's words beneath it under "The server said";
-  refused and unknown-delivery cards;
-  a reload failure with Try Again; "This chat was deleted".
+  answer"), with the server's words beneath it under "The server said".
+  Once the thread says the turn ended in an error, its notice (above) says
+  what failed, and the card stays beside it only where it names a refused
+  key or a rate limit, which the notice cannot. Refused and
+  unknown-delivery cards; a reload failure with Try Again; "This chat was
+  deleted".
 - **A provider without a key**: when no key resolves for it, its own or one
   the operator supplies (the operator read's `llm/<row>` item; before that
   read answers, no row is said to lack one), a callout, "Add an API key for OpenAI",
@@ -602,6 +631,7 @@ may do and for how long; the app never sees the password.
 | Send unknown | "Checking whether your message arrived…", then the outcome |
 | The stream drops | Nothing; the app attaches again with backoff |
 | The turn errors | A card in the transcript: what happened, then "The server said" and its words |
+| The last turn didn't finish | A notice under the transcript: what happened, why, and Continue; the list marks the chat |
 | Reload after a turn fails | The run stays shown; "The conversation didn't reload", Try Again |
 | A card's write fails | "That didn't go through: …"; a 409 re-reads and asks again |
 | The chat was deleted | "This chat was deleted"; the draft stays to copy |

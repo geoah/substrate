@@ -924,7 +924,10 @@ land in once the turn settles, so nothing blinks. A chat that is running when
 it is opened is attached to (`…/llm/thread/{id}/events`), a dropped stream is
 attached again with backoff, Stop posts `…/stop`, and a send the server
 refused, or whose delivery is unknown, says so with the message to copy and
-is never sent again on its own.
+is never sent again on its own. A chat whose last turn was stopped, ran out
+of a limit or failed says so under the transcript, and its Continue sends
+"Continue where you left off." as the owner's own message, since a stopped
+thread resumes only when its owner writes.
 
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest
