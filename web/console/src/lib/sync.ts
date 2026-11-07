@@ -468,14 +468,14 @@ export function providerConfigured(
  * yet. Bundles that are neither (a vocabulary sample) are not connections. */
 export function providerViews(
   statuses: BundleStatus[],
-  providerTierIds: Set<string>,
+  providerIds: Set<string>,
   kinds: KindInfo[],
   accounts: AccountView[]
 ): ProviderView[] {
   const accountKinds = kinds.filter((k) => kindHasTrait(k, "accountconfig"))
   const ids = new Set<string>()
   for (const k of accountKinds) ids.add(kindPackage(k))
-  for (const id of providerTierIds) ids.add(id)
+  for (const id of providerIds) ids.add(id)
   for (const a of accounts) ids.add(a.provider)
   const out: ProviderView[] = []
   for (const id of ids) {

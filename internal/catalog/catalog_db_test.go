@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
@@ -92,7 +91,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 
 func loadCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	c, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

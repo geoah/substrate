@@ -381,3 +381,114 @@ describe("Add a collection: Write it yourself", () => {
     expect(screen.getByRole("button", { name: `Copy ${command}` })).toBeTruthy()
   })
 })
+
+// Decision record 0238: a standard collection (`clinical`) is no provider, so
+// it is added here, beside the samples, and a provider never is.
+describe("Add a collection: Standard collections", () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  const closure = (kinds: string[] | null) => ({
+    kinds,
+    kindPurposes: {},
+    traits: null,
+    functions: null,
+    agents: null,
+    mappings: null,
+    triggers: null,
+    records: null,
+  })
+  const entry = (over: Record<string, unknown>) => ({
+    description: "",
+    version: 1,
+    tier: "published",
+    installed: false,
+    closure: closure(null),
+    ...over,
+  })
+  const catalog = [
+    entry({
+      id: "substrate.reamde.dev/clinical",
+      name: "clinical",
+      authority: "substrate.reamde.dev",
+      package: "clinical",
+      brings: ["collections"],
+      closure: closure(["substrate.reamde.dev/clinical/allergy"]),
+    }),
+    entry({
+      id: "substrate.reamde.dev/environment",
+      name: "environment",
+      authority: "substrate.reamde.dev",
+      package: "environment",
+      description: "Climate and energy metrics. For any home.",
+      brings: ["metrics"],
+      installed: true,
+    }),
+    entry({
+      id: "providers.substrate.reamde.dev/google",
+      name: "google",
+      authority: "providers.substrate.reamde.dev",
+      package: "google",
+      provider: true,
+      brings: ["account", "collections"],
+      closure: closure(["providers.substrate.reamde.dev/google/contact"]),
+    }),
+  ]
+
+  it("offers the standard collections by what they add, and no provider", async () => {
+    navigate.mockReset()
+    const held = (pkg: string) => ({
+      id: `substrate.reamde.dev/${pkg}`,
+      name: pkg,
+      authority: "substrate.reamde.dev",
+      package: pkg,
+      installed: true,
+      enabled: true,
+      accounts: 0,
+      functions: 0,
+      kinds: 0,
+      liveRecords: 0,
+    })
+    let added = false
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init?: RequestInit) => {
+        const url = new URL(String(input), "http://console.test")
+        if (init?.method === "POST" && url.pathname.endsWith("/install")) {
+          added = true
+          return new Response(JSON.stringify(held("clinical")))
+        }
+        if (url.pathname === "/api/v1/catalog")
+          return new Response(JSON.stringify({ items: catalog }))
+        if (url.pathname === "/api/v1/substrate.reamde.dev/core/bundle/status")
+          return new Response(
+            JSON.stringify({
+              items: added
+                ? [held("environment"), held("clinical")]
+                : [held("environment")],
+            })
+          )
+        return new Response(JSON.stringify({ records: [], kinds: [] }))
+      })
+    )
+    render(
+      <QueryClientProvider client={client()}>
+        <AddCollectionDialog way="standard" onWayChange={vi.fn()} />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText("Clinical")).toBeTruthy()
+    expect(screen.getByText("Allergies")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Add" })).toBeTruthy()
+    // Metrics alone: it says what it is, and it is here already.
+    expect(screen.getByText("Environment")).toBeTruthy()
+    expect(screen.getByText("Climate and energy metrics.")).toBeTruthy()
+    expect(screen.getByText("Added")).toBeTruthy()
+    expect(screen.queryByText("Google")).toBeNull()
+    // Adding one stays here, as a sample does: Providers is not its home.
+    fireEvent.click(screen.getByRole("button", { name: "Add" }))
+    await waitFor(() => expect(screen.getAllByText("Added")).toHaveLength(2))
+    expect(navigate).not.toHaveBeenCalled()
+  })
+})

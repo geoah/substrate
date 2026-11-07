@@ -28,6 +28,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 		for _, b := range h.catalog.Bundles() {
 			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b, home)))
 		}
+		var accounts map[string]bool
 		for _, id := range installed.ids {
 			if _, binary := h.catalog.ByID(id); binary {
 				continue
@@ -37,11 +38,20 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			if err != nil || row.Properties["publishedFrom"] == nil {
 				continue
 			}
-			b, err := h.catalog.ResolveFor(r.Context(), id, 0, ds)
-			if err != nil {
+			b, resolveErr := h.catalog.ResolveFor(r.Context(), id, 0, ds)
+			if resolveErr != nil {
+				// The closure is out of reach, so what the package is for is
+				// read off what the repository stores: a provider stays one
+				// while its publisher cannot be read (decision record 0238).
+				if accounts == nil {
+					if accounts, err = accountPackages(r.Context(), ds); err != nil {
+						writeSubstrateError(w, r, err)
+						return
+					}
+				}
 				st := installed.byID[id]
 				from, _ := row.Properties["publishedFrom"].(string)
-				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierProvider, Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{err.Error()}}})
+				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierPublished, Provider: accounts[id], Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{resolveErr.Error()}}})
 				continue
 			}
 			items = append(items, h.catalogItemFor(r, b, installed.byID[id]))
@@ -191,7 +201,7 @@ func (h *handler) postCatalogInstall(w http.ResponseWriter, r *http.Request) {
 
 // postCatalogImport is the SAMPLE door: the same admission over a closure
 // rehomed onto this repository's own authority first, so what lands is the
-// repository's own vocabulary. A PROVIDER id is refused here, naming install.
+// repository's own vocabulary. A PUBLISHED id is refused here, naming install.
 func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
 	h.takeCatalogBundle(w, r, (*catalog.Catalog).ImportConfirmed, true)
 }

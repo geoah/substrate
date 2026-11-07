@@ -239,7 +239,7 @@ func uncovered(t *testing.T, scopes []string, purposes map[string]string, reach 
 }
 
 func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
-	cat, err := Load(ProviderRoot(kinds.Bundles()))
+	cat, err := Load(ProviderRoot(kinds.Providers()), PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		t.Fatal(err)
 	}

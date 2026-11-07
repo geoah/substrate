@@ -1,20 +1,21 @@
 package catalog
 
 import (
+	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 // realCatalog loads the shipped example bundles from disk (the same tree
 // main.go embeds), so the parse is held against the real closures.
 func realCatalog(t *testing.T) *Catalog {
 	t.Helper()
-	c, err := Load(ProviderRoot(kinds.Bundles()), SampleRoot(samples.Samples()))
+	c, err := Load(Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -134,14 +135,15 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 }
 
 // The TIER is the tree a closure came from, never a guess from its authority
-// (decision record 0048): kinds/providers.substrate.reamde.dev is a provider,
-// samples/ is a sample. It decides which door a bundle takes, so a wrong
-// answer here sends a user to install what they should own.
+// (decision record 0048): kinds/ is published, samples/ is a sample. It
+// decides which door a bundle takes, so a wrong answer here sends a user to
+// install what they should own.
 func TestCatalogTierIsTheTreeTheClosureCameFrom(t *testing.T) {
 	c := realCatalog(t)
 	cases := map[string]string{
-		"providers.substrate.reamde.dev/google":    substrate.TierProvider,
-		"providers.substrate.reamde.dev/linear":    substrate.TierProvider,
+		"providers.substrate.reamde.dev/google":    substrate.TierPublished,
+		"providers.substrate.reamde.dev/linear":    substrate.TierPublished,
+		"substrate.reamde.dev/clinical":            substrate.TierPublished,
 		"samples.substrate.reamde.dev/readinglist": substrate.TierSample,
 		"samples.substrate.reamde.dev/tasks":       substrate.TierSample,
 	}
@@ -157,9 +159,99 @@ func TestCatalogTierIsTheTreeTheClosureCameFrom(t *testing.T) {
 	// Every shipped bundle carries one of the two: an entry with an empty
 	// tier is a closure no door serves.
 	for _, b := range c.Bundles() {
-		if b.Tier != substrate.TierProvider && b.Tier != substrate.TierSample {
-			t.Errorf("%s tier = %q, want provider or sample", b.ID, b.Tier)
+		if b.Tier != substrate.TierPublished && b.Tier != substrate.TierSample {
+			t.Errorf("%s tier = %q, want published or sample", b.ID, b.Tier)
 		}
+	}
+}
+
+// What a package is FOR is read from its declarations, apart from its tier
+// (decision record 0238): the console lists a provider on Providers, an
+// add-on with the provider it extends, and every other published package
+// with the collections. A catalogue listed as a provider is the bug this
+// record fixed: `clinical` read as an account to connect.
+func TestCatalogSaysWhatEachPackageIsFor(t *testing.T) {
+	c := realCatalog(t)
+	for _, tc := range []struct {
+		id       string
+		provider bool
+		brings   []string
+		addonFor string
+	}{
+		{id: "providers.substrate.reamde.dev/google", provider: true, brings: []string{substrate.BringsAccount, substrate.BringsCollections}},
+		// WHOOP requires health and is still no add-on: it has an account.
+		{id: "providers.substrate.reamde.dev/whoop", provider: true, brings: []string{substrate.BringsAccount, substrate.BringsCollections, substrate.BringsMetrics}},
+		{id: "providers.substrate.reamde.dev/firecrawl", provider: true, brings: []string{substrate.BringsTools}},
+		// Apple declares no account (its devices push) and is a provider
+		// because the binary ships it among its providers.
+		{id: "providers.substrate.reamde.dev/apple", provider: true, brings: []string{substrate.BringsCollections}},
+		{id: "providers.substrate.reamde.dev/slacklive", provider: true, addonFor: "providers.substrate.reamde.dev/slack"},
+		{id: "substrate.reamde.dev/clinical", brings: []string{substrate.BringsCollections}},
+		{id: "substrate.reamde.dev/health", brings: []string{substrate.BringsCollections, substrate.BringsMetrics}},
+		{id: "substrate.reamde.dev/environment", brings: []string{substrate.BringsMetrics}},
+		{id: "samples.substrate.reamde.dev/notes", brings: []string{substrate.BringsTools, substrate.BringsCollections, substrate.BringsAgents}},
+		{id: "samples.substrate.reamde.dev/llm", brings: []string{substrate.BringsAgents}},
+	} {
+		b, ok := c.ByID(tc.id)
+		if !ok {
+			t.Fatalf("bundle %q not in catalog", tc.id)
+		}
+		if b.Provider != tc.provider || b.AddonFor != tc.addonFor || !slices.Equal(b.Brings, tc.brings) {
+			t.Errorf("%s: provider %v, addonFor %q, brings %v; want %v, %q, %v",
+				tc.id, b.Provider, b.AddonFor, b.Brings, tc.provider, tc.addonFor, tc.brings)
+		}
+	}
+	for _, b := range c.Bundles() {
+		if b.Tier == substrate.TierSample && (b.Provider || b.AddonFor != "") {
+			t.Errorf("sample %s reads as a provider or an add-on", b.ID)
+		}
+	}
+}
+
+// A package from an authority document is a provider only when it brings an
+// account, and an add-on for the provider its publisher's document names,
+// else for the first provider it requires.
+func TestPublishedPackageSaysWhatItIsFor(t *testing.T) {
+	account := "---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: example.com/notes/account\ndata:\n  authority: example.com\n  package: notes\n  names:\n    singular: account\n  traits: [substrate.reamde.dev/core/accountconfig]\n  properties:\n    tokenRef:\n      type: secret\n    tokenStatus:\n      type: string\n    grantedScopes:\n      type: string\n"
+	plain, err := ParseClosure([]byte(publishedClosure("example.com/notes", 1)), "example.com/notes", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Provider || plain.Tier != substrate.TierPublished {
+		t.Errorf("a closure with no account: provider %v, tier %q", plain.Provider, plain.Tier)
+	}
+	withAccount := strings.Replace(publishedClosure("example.com/notes", 1), "installs: [example.com/notes/item]", "installs: [example.com/notes/item, example.com/notes/account]", 1) + account
+	connected, err := ParseClosure([]byte(withAccount), "example.com/notes", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !connected.Provider || !slices.Contains(connected.Brings, substrate.BringsAccount) {
+		t.Errorf("a closure with an account: provider %v, brings %v", connected.Provider, connected.Brings)
+	}
+
+	// The document names provider.example/base. Where the binary ships no such
+	// provider the console could list it under, the package is no add-on and
+	// keeps its own place; the approval still reads the document's word.
+	c, _ := publishedFixture(t, 1)
+	unlisted, err := c.Resolve(context.Background(), "example.com/notes", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unlisted.AddonFor != "" || unlisted.Origin().AddonFor != "provider.example/base" {
+		t.Errorf("a named package the binary does not ship as a provider: addonFor %q, origin's %q", unlisted.AddonFor, unlisted.Origin().AddonFor)
+	}
+	shipped, err := LoadWithReader(c.reader, nil, ProviderRoot(fstest.MapFS{
+		"base/bundle.yaml": {Data: []byte(publishedClosure("provider.example/base", 1))},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := shipped.Resolve(context.Background(), "example.com/notes", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.AddonFor != "provider.example/base" {
+		t.Errorf("the document names a provider the binary ships; addonFor = %q", listed.AddonFor)
 	}
 }
 

@@ -1010,6 +1010,9 @@ const catalogBundle: Shape<CatalogBundle> = {
   description: true,
   version: true,
   tier: true,
+  provider: false,
+  brings: false,
+  addonFor: false,
   inputs: false,
   requires: false,
   requiresAtLeast: false,
@@ -1084,6 +1087,8 @@ const bundleStatus: Shape<BundleStatus> = {
   originVersion: false,
   modified: false,
   shippedVersion: false,
+  provider: false,
+  addonFor: false,
 }
 
 const inputStatus: Shape<InputStatus> = {

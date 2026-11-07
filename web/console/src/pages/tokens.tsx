@@ -36,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { bundleParams } from "@/lib/providers"
 import {
   Table,
   TableBody,
@@ -614,9 +615,16 @@ export function AppTokenRows() {
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([pkg, floor]) => (
                           <li key={pkg} className="flex flex-col">
-                            <span className="font-mono [overflow-wrap:anywhere]">
+                            {/* Its page is where a package the app set up is
+                                updated, paused and removed (decision record
+                                0238). */}
+                            <Link
+                              to="/data/$authority/$pkg"
+                              params={bundleParams(pkg)}
+                              className="font-mono [overflow-wrap:anywhere] underline-offset-2 hover:underline"
+                            >
                               {pkg}
-                            </span>
+                            </Link>
                             <span className="text-muted-foreground">
                               version {floor} or later
                             </span>

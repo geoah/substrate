@@ -18,7 +18,8 @@
 //     set of sample packages a repository installs.
 //
 //   - InstallCatalogues installs the first-party catalogues (health, labs,
-//     environment) through the catalog's provider door (record 0192).
+//     environment) through the catalog's published door (records 0192 and
+//     0238).
 //
 // It imports substrate, vocabulary, the catalog, the embedded trees and the
 // unit seed, none of which imports the engine, so both engine and
@@ -73,12 +74,12 @@ func CataloguePackage(name string) string { return vocabulary.AuthorityPublisher
 
 // InstallCatalogues installs first-party catalogues by their bare name
 // ("health", "labs", "environment") the way a repository takes them: through
-// the catalog's provider door, published and verbatim, every first-party
+// the catalog's published door, verbatim, every first-party
 // package each requires installed first (record 0192). The shipped units
 // they and their requirements name are put first, because a test repository
 // holds only the units a test puts.
 func InstallCatalogues(ctx context.Context, ds substrate.Dataset, names ...string) error {
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		return fmt.Errorf("enginetest: load the catalog: %w", err)
 	}

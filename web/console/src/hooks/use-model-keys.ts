@@ -13,9 +13,9 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { llmProvidersQueryOptions } from "@/lib/api/agents"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
+import { listedProvider } from "@/lib/bundles"
 import { discoveryQueryOptions, hasFeature } from "@/lib/api/discovery"
 import {
   OPERATOR_DEFAULTS_FEATURE,
@@ -103,9 +103,12 @@ export function useModelKeys(): ModelKeys {
 }
 
 /** What the Providers page shows as set up, counted: the installed provider
- * packages and the AI model rows whose key resolves. Undefined until both
- * are read, and while the operator's read has not answered or failed
- * (`error`): a count that guessed would disagree with the page. */
+ * packages it lists (each status says whether it is a provider, add-ons left
+ * to their provider's page, decision record 0238) and the AI model rows
+ * whose key resolves. It reads the bundle statuses and never the catalog,
+ * whose previews are too dear for a count on every page. Undefined until
+ * both are read, and while a read has not answered or failed (`error`): a
+ * count that guessed would disagree with the page. */
 export function useProvidersInUse(): {
   count: number | undefined
   /** The installed provider packages. */
@@ -118,7 +121,7 @@ export function useProvidersInUse(): {
   const statuses = useQuery(bundleStatusesQueryOptions)
   const keys = useModelKeys()
   const packages = useMemo(
-    () => statuses.data?.filter((b) => b.authority === PROVIDERS_AUTHORITY),
+    () => statuses.data?.filter(listedProvider),
     [statuses.data]
   )
   const models = useMemo(
@@ -131,5 +134,10 @@ export function useProvidersInUse(): {
     [keys]
   )
   const count = packages && models ? packages.length + models.length : undefined
-  return { count, packages, models, error: keys.readError }
+  return {
+    count,
+    packages,
+    models,
+    error: keys.readError ?? statuses.error ?? null,
+  }
 }

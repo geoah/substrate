@@ -210,8 +210,9 @@ nesting and grouping, its columns, and the Search page's ranking choice.
 ## Home
 
 **Home** (`/`) is what the substrate holds and what just happened: the four
-cards (how many collections, the provider packages added plus the AI models
-with a key, the agents by name, how many tools and how many of them came from your
+cards (how many collections, the provider packages added that Providers
+lists, add-ons and standard collections left out, plus the AI models with a
+key, the agents by name, how many tools and how many of them came from your
 providers), up to nine **Collections**
 with their record counts and where each comes from ("Yours", "From Google",
 "Made by _agent_" where an agent declared its package; yours first, those
@@ -251,19 +252,41 @@ naming the agent that made it where one did, and
 **Made by** with that agent's card and a way to ask it. Who declared a
 package is the `package` row's `declaredBy`, stamped by the engine
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md));
-a package created before the stamp names no one.
+a package created before the stamp names no one. A standard collection's
+package (below) adds **Updates**: who keeps it up to date, **Update** when
+the catalog offers one (or why it is blocked), **Pause** and **Remove**,
+which a provider has on its own page
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md));
+a package an authority document publishes has its **Update** and **Remove**
+in the same section as **Take over…**. That page is a held package's home
+even with no collection to list (a package of metrics, an app's agent):
+**Added** in Add a collection links to it, and so does each package an app
+set up, under [Settings](#settings) › **Apps**. **Remove** there says that
+it deletes the records in its collections, which are yours, where a
+provider's says it deletes the copies its accounts brought in.
 
 ### Add a collection
 
-**Add a collection** offers three ways to start one, and `?add=agent`,
-`?add=sample` or `?add=yaml` opens it on that way, so another page can link
-straight to it:
+**Add a collection** offers four ways to start one, and `?add=agent`,
+`?add=standard`, `?add=sample` or `?add=yaml` opens it on that way, so
+another page can link straight to it:
 
 - **Ask an agent**: say what you want to keep, and the console opens
   [Agents](#agents) in a new chat with an agent that can set a collection up
   (its write grant covers `substrate.reamde.dev/core/kind` and it holds a
   tool that writes) and sends it as the first message. When no agent can,
   the dialog says so and offers a sample instead.
+- **Standard collections**: the published packages the catalog says are
+  neither a provider nor an add-on and add collections or metrics
+  ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
+  the well-known catalogues (health, lab results, the medical record,
+  environment) and a package an app's approval installed. Each is listed by
+  the collections it adds, or by what it is where it adds metrics alone, with
+  **Add**, which installs it and first anything it requires, and stays in
+  the dialog. Its publisher keeps its declarations, so you add the records
+  and not the fields; the dialog says so, and points at a sample for a
+  collection you can change. One already here reads **Added**, a link to
+  its package page.
 - **Start from a sample**: the shipped [samples](bundles-catalog.md) that
   declare at least one primary kind (tasks, people, notes and the rest), each
   by the collections it adds and with **Add**. A kind's
@@ -1008,17 +1031,21 @@ and one trigger's record page is the trigger.
 
 **Providers** (`/providers`) lists every outside service the substrate uses a
 key or a sign-in for, in three groups
-([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)):
+([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)).
+Which packages are providers is the catalog's to say, apart from its tier
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
+a standard collection such as health or the medical record is no provider
+and is added from [Add a collection](#add-a-collection), and an add-on such
+as Slack live events is listed on the page of the provider it extends.
 
-- **Accounts you connect**: the shipped catalog's
+- **Accounts you connect**: the catalog's
   [providers](bundles-catalog.md) that bring data in, joined with what this
   repository holds of them, one card each.
-- **Tools for your agents**: providers whose package declares no account
-  kind and offers functions to agents
-  ([0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)).
-  Before such a package is added, the catalog does not say which of its
-  functions are offered, so a package with no kinds and some functions
-  stands in. The group is shown only when it has a card.
+- **Tools for your agents**: providers that bring tools and no account, as
+  the catalog reads them from the closure
+  ([0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)),
+  so a package sits in the same group before it is added and after. The
+  group is shown only when it has a card.
 - **AI models**: one card per [`llm/provider`](agents.md#providers) row,
   the three seeded and any you made. A row whose label (or, with no label,
   id) is a well-known one is titled by the vendor's name (OpenAI, Anthropic,
@@ -1107,8 +1134,9 @@ the console's last response, so a browser clock running ahead cannot date it
 after the run that answers it.
 
 With Technical details on, **Other packages** lists every other bundle the
-repository holds (imported samples, the seeded `llm` and `console` packages,
-anything applied directly) with its version, state, update and removal, and
+repository holds (standard collections' packages, imported samples, the
+seeded `llm` and `console` packages, anything applied directly) with its
+version, state, update and removal, and
 states any pending upgrade of the seeded packages. The `llm` package is
 listed there too: its rows are the AI model cards, but the package itself is
 machinery.
@@ -1136,6 +1164,8 @@ back to it:
   it. When an approval returns, the notice says what it starts: the first
   sync on a new account, a sync on an account that synced before, nothing on
   a paused one.
+- **Add-ons**: the packages that extend it (Slack live events on Slack's
+  page), each opening its own page, with **Add** or where it stands.
 - **What it adds**: what it brings in (its primary kinds, each with what it
   is, how many records it holds, when it last synced and which of your own
   kinds its records fill in through a mapping, with the supporting kinds
@@ -1157,7 +1187,10 @@ in, then remove its declarations. An upgrade the binary ships is offered as
 **Update**, confirmed first where the preview is lossy, and stated instead of
 offered where the server would refuse it, with the guard lines that say what
 to migrate. The same page serves any other package the repository holds, such
-as an imported sample, without the setup steps and accounts.
+as an imported sample or a standard collection's package, without the setup
+steps and accounts, and a package the catalog offers and the repository does
+not hold yet (the page an approval's **Open its page** opens): what it is,
+what adding it brings, and **Add**.
 
 The old addresses land here: `/registry`, `/connections` and `/services`
 open Providers,
@@ -1180,8 +1213,8 @@ sidebar and ⌘K only where some kind binds core's
 never by a fixed authority, so a kind of your own that binds it is found
 beside the seeded `observations` kinds. Where nothing records
 measurements yet, or nothing has been measured, the page says so and offers
-**Add a sample** (All data's **Add a collection**, on its samples) and
-**Providers**. The rows come from one
+**Add a standard collection** (All data's **Add a collection**, on its
+standard collections, where health is) and **Providers**. The rows come from one
 aggregate latest read: `GET /api/v1/records` with
 `filter={"implements":"substrate.reamde.dev/core/observed"}` and
 `aggregate={"groupBy":["metric","source","about","channel","statistic"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
@@ -1590,8 +1623,9 @@ how many values are pending.
   holding a token, newest first, each one **Sign out…** away. A session is a
   token record, and signing one out deletes it.
 - **Apps**: each app you approved through [app authorization](apps.md), with
-  its client id, the name it claims, its scopes, when you approved it and
-  when it expires, each **Revoke…** away. An assistant is listed under AI
+  its client id, the name it claims, its scopes, the packages it set up (each
+  a link to its package page, where it is updated, paused and removed), when
+  you approved it and when it expires, each **Revoke…** away. An assistant is listed under AI
   assistants instead.
 - **AI assistants** (`/settings/assistants`): this server's MCP address, how
   to connect Claude Code, Codex, Claude, Cursor or another client, what an

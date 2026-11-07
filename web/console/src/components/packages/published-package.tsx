@@ -9,23 +9,36 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { SectionHead } from "@/components/identity/section-head"
-import { PauseBundleButton } from "@/components/providers/bundle-actions"
+import { PackageUpdate } from "@/components/packages/standard-package"
+import {
+  PauseBundleButton,
+  RemoveBundleButton,
+} from "@/components/providers/bundle-actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/toast"
 import { bundleStatusQueryOptions } from "@/lib/api/bundles"
 import { kindsQueryOptions, takeOverPackage } from "@/lib/api/kinds"
+import type { BundleRow } from "@/lib/bundles"
 import { packagesQueryOptions } from "@/lib/packages"
 
 export function PublishedPackageSection({
   publisher,
   packageId,
+  name,
+  row,
 }: {
   /** The authority that publishes the package. */
   publisher: string
   /** `<authority>/<package>`. */
   packageId: string
+  /** What the update and the removal call the package. */
+  name: string
+  /** The held row, for the update the publisher's next release offers and
+   * its removal: an app's package has no other home once Providers lists
+   * providers alone (decision record 0238). */
+  row?: BundleRow
 }) {
   const client = useQueryClient()
   const bundle = useQuery(bundleStatusQueryOptions(packageId))
@@ -57,7 +70,8 @@ export function PublishedPackageSection({
           collections’ definitions here. You can pause it and resume it. Take it
           over to edit its definitions yourself and stop receiving updates.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {row && <PackageUpdate row={row} name={name} />}
           {bundle.data && (
             <PauseBundleButton bundle={bundle.data} name={publisher} />
           )}
@@ -68,6 +82,14 @@ export function PublishedPackageSection({
           >
             Take over…
           </Button>
+          {row?.status && (
+            <RemoveBundleButton
+              bundle={row.status}
+              name={name}
+              owned
+              leaveTo="/data"
+            />
+          )}
         </div>
       </div>
       {confirming && (

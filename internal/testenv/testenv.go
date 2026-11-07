@@ -41,7 +41,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
 )
 
 // InviteCode is the one door into the substrate a test starts. It is a
@@ -224,7 +223,7 @@ func Start(t testing.TB, opts ...Option) *Env {
 		t.Fatalf("testenv: open engine: %v", err)
 	}
 
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		_ = svc.Close()
 		t.Fatalf("testenv: load catalog: %v", err)

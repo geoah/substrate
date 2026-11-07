@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authority"
@@ -42,11 +43,15 @@ var ErrNotPublished = errors.New("not published")
 func (b *Bundle) Origin() *Origin { return b.origin }
 
 // FromDocument is b as the authority document at origin published it: the
-// same closure, answering Origin. The document reader builds every version it
-// resolves this way, and a test of a reader of Origin builds one from a root.
+// same closure, answering Origin, and what it is for read as a document's
+// package is read (a provider only with an account, an add-on for what the
+// document names). A test of a reader of Origin builds one from a root; the
+// document reader checks the add-on against the providers it ships.
 func (b *Bundle) FromDocument(origin Origin) *Bundle {
 	cp := *b
 	cp.origin = &origin
+	cp.Provider = slices.Contains(cp.Brings, substrate.BringsAccount)
+	cp.AddonFor = origin.AddonFor
 	return &cp
 }
 
@@ -121,6 +126,7 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 			break
 		}
 	}
+	b.AddonFor = c.documentAddonFor(b)
 	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256}
 	return b, nil
 }
@@ -178,7 +184,8 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	if b.Version != version || version < 1 {
 		return nil, fmt.Errorf("closure version %d does not match listed version %d", b.Version, version)
 	}
-	b.Tier = substrate.TierProvider
+	b.Tier = substrate.TierPublished
+	b.Provider = slices.Contains(b.Brings, substrate.BringsAccount)
 	return b, nil
 }
 

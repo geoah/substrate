@@ -85,7 +85,7 @@ func openFirecrawlDataset(t *testing.T, cfg *operatordefaults.Config, opts ...Op
 
 func installShippedProvider(t *testing.T, ds *dataset, id string) {
 	t.Helper()
-	c, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()))
+	c, err := catalog.Load(catalog.ProviderRoot(kinds.Providers()), catalog.PublishedRoot(kinds.Catalogues()))
 	if err != nil {
 		t.Fatalf("load the catalog: %v", err)
 	}
@@ -159,7 +159,7 @@ func installFirecrawlCopy(t *testing.T, ds *dataset, offered bool) string {
 // data records put beside them.
 func shippedDocuments(t *testing.T, pkg string) (declarations, data []map[string]any) {
 	t.Helper()
-	fsys := kinds.Bundles()
+	fsys := kinds.Served()
 	entries, err := fs.ReadDir(fsys, pkg)
 	if err != nil {
 		t.Fatal(err)
