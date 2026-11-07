@@ -291,8 +291,8 @@ data:
     batch, writing nothing: what it would refuse (blockers) and the record
     conversions it would run. Declare under the owner's authority. Prefer
     adding to narrowing: a narrowing is refused while records hold the old
-    shape, and a lossy change is the owner's to confirm. The engine versions
-    what changes.
+    shape, and a lossy change waits for the owner. The engine versions what
+    changes.
   runtime: host
   arguments:
     - name: documents
