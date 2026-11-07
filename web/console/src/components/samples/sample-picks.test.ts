@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { callableSamples, collectionSamples } from "./sample-picks"
-import type { BundleClosure, CatalogItem, KindInfo } from "@/lib/api/types"
+import {
+  callableSamples,
+  collectionSamples,
+  standardCollections,
+} from "./sample-picks"
+import type {
+  BundleClosure,
+  CatalogBrings,
+  CatalogItem,
+  KindInfo,
+} from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
 
 const HOME = "ada.example.com"
@@ -135,7 +144,7 @@ describe("collectionSamples", () => {
   it("lists them by name, providers left out", () => {
     const provider: BundleRow = {
       ...sample("google", { kinds: ["providers.example/google/contact"] }),
-      tier: "provider",
+      tier: "published",
     }
     const out = collectionSamples(
       [
@@ -179,8 +188,98 @@ describe("callableSamples", () => {
   it("leaves providers out", () => {
     const provider: BundleRow = {
       ...sample("google", { functions: ["providers.example/google/sync"] }),
-      tier: "provider",
+      tier: "published",
     }
     expect(callableSamples([provider], "functions")).toEqual([])
+  })
+})
+
+/** A published package as the catalog serves it: what it is for comes with
+ * it (decision record 0238). */
+function published(
+  authority: string,
+  pkg: string,
+  over: {
+    kinds?: string[]
+    brings?: CatalogBrings[]
+    provider?: boolean
+    addonFor?: string
+  }
+): BundleRow {
+  const id = `${authority}/${pkg}`
+  const catalog = {
+    id,
+    name: pkg,
+    authority,
+    package: pkg,
+    description: `${pkg}: what it keeps. More prose.`,
+    version: 1,
+    tier: "published",
+    provider: over.provider,
+    brings: over.brings,
+    addonFor: over.addonFor,
+    installed: false,
+    closure: {
+      kinds: over.kinds ?? null,
+      traits: null,
+      functions: null,
+      agents: null,
+      mappings: null,
+      triggers: null,
+      records: null,
+    },
+  } as CatalogItem
+  return {
+    key: id,
+    id,
+    name: pkg,
+    authority,
+    package: pkg,
+    catalog,
+    installed: false,
+    tier: "published",
+    requires: [],
+  }
+}
+
+describe("standardCollections", () => {
+  const SEED = "substrate.reamde.dev"
+  const PROV = "providers.substrate.reamde.dev"
+  const rows = [
+    published(SEED, "clinical", {
+      kinds: [`${SEED}/clinical/allergy`, `${SEED}/clinical/patient`],
+      brings: ["collections"],
+    }),
+    published(SEED, "environment", { brings: ["metrics"] }),
+    published(PROV, "google", {
+      kinds: [`${PROV}/google/contact`],
+      brings: ["account", "collections"],
+      provider: true,
+    }),
+    published(PROV, "slacklive", {
+      brings: [],
+      provider: true,
+      addonFor: `${PROV}/slack`,
+    }),
+    published("apps.example", "coach", { brings: ["agents"] }),
+    sample("tasks", { kinds: [`${HOME}/tasks/task`] }),
+  ]
+
+  it("offers the published packages that are no provider and add collections or metrics", () => {
+    expect(standardCollections(rows, []).map((s) => s.row.package)).toEqual([
+      "clinical",
+      "environment",
+    ])
+  })
+
+  it("names each by its primary kinds, and one that adds metrics alone by none", () => {
+    const out = standardCollections(rows, [
+      kind(`${SEED}/clinical/allergy`, "primary"),
+      kind(`${SEED}/clinical/patient`, "supporting"),
+    ])
+    expect(out.map((s) => s.members)).toEqual([
+      [`${SEED}/clinical/allergy`],
+      [],
+    ])
   })
 })

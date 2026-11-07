@@ -36,6 +36,7 @@ it("takes a published package over only once its identity is typed", async () =>
       <PublishedPackageSection
         publisher="substrate.reamde.dev"
         packageId="substrate.reamde.dev/training"
+        name="Training package"
       />
     </QueryClientProvider>
   )

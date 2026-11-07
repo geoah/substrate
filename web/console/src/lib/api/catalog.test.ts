@@ -26,7 +26,7 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
     package: "google",
     description: "Connects a Google account.",
     version: 1,
-    tier: "provider",
+    tier: "published",
     inputs: {
       client: {
         kind: "providers.substrate.reamde.dev/google/config",

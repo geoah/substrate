@@ -6,6 +6,7 @@
 
 import type {
   BundleUpgradeHolder,
+  CatalogBrings,
   KindInfo,
   SetupItem,
   SubstrateRecord,
@@ -867,39 +868,13 @@ export function andList(items: string[]): string {
 /** Which group a catalog provider sits in on the Providers page. */
 export type ProviderGroup = "accounts" | "tools"
 
-export interface GroupFacts {
-  installed: boolean
-  /** The registry lists a kind of the package carrying the accountconfig
-   * trait (only knowable once it is installed). */
-  accountKind: boolean
-  /** The package's function records offering themselves to agents
-   * (decision 0198), once it is installed. */
-  offeredFunctions: number
-  /** What the catalog's closure declares, before it is installed. */
-  closureKinds: number
-  closureFunctions: number
-}
-
-/** **Tools for your agents** holds a provider whose package declares no
- * account kind and offers functions to agents; every other provider is an
- * account you connect. Before the package is installed the catalog does not
- * say which kinds carry the accountconfig trait or which functions are
- * offered, so its closure stands in: no kinds at all, and some functions. */
-export function providerGroup(f: GroupFacts): ProviderGroup {
-  if (f.installed)
-    return !f.accountKind && f.offeredFunctions > 0 ? "tools" : "accounts"
-  return f.closureKinds === 0 && f.closureFunctions > 0 ? "tools" : "accounts"
-}
-
-/** How many of a package's function records offer themselves to agents.
- * A function record's id is its reference, `<package>/<name>`. */
-export function offeredFunctionCount(
-  functions: readonly SubstrateRecord[],
-  pkg: string
-): number {
-  return functions.filter((f) => {
-    if (!f.id.startsWith(`${pkg}/`)) return false
-    const offer = f.properties.offer as { agents?: unknown } | undefined
-    return offer?.agents === true
-  }).length
+/** **Tools for your agents** holds a provider that brings tools and no
+ * account (decision records 0233 and 0238); every other provider is an
+ * account you connect. The catalog reads both from the closure, so a
+ * package sits in the same group before it is added and after. */
+export function providerGroup(
+  brings: readonly CatalogBrings[] | undefined
+): ProviderGroup {
+  const b = brings ?? []
+  return b.includes("tools") && !b.includes("account") ? "tools" : "accounts"
 }

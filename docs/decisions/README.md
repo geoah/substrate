@@ -394,6 +394,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
 | [0236](0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md) | An owner may delete their repository, and the name is freed | accepted |
 | [0237](0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md) | A second factor is the owner's choice, and sign-in asks for the code only of an account that has one | accepted |
+| [0238](0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md) | The catalog tier says who keeps a package, and what it is for is read from its declarations | accepted |
 | [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | proposed |
 | [0240](0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md) | An agent changes long text by exact replacement against the version it read | proposed |
 | [0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md) | The assistant ships with the binary, and the owner shapes it through instruction records | proposed |

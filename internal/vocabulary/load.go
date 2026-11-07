@@ -19,9 +19,10 @@ import (
 //
 //   - SourceBuiltin is the seed: the core package the binary writes into a new
 //     repository's changelog, and the boot upgrade that carries it forward;
-//   - SourcePublished is a PROVIDER package, installed from the catalog's
-//     provider tier. Its publisher ships its declarations and its migrations,
-//     so only a substrate path writes them (decision record 0048);
+//   - SourcePublished is a PUBLISHED package (a provider or a standard
+//     package), installed from the catalog's published tier. Its publisher
+//     ships its declarations and its migrations, so only a substrate path
+//     writes them (decision record 0048);
 //   - SourceInstalled is everything else: the kinds the repository declares
 //     itself and the sample packages it imported, all of them its own to
 //     change.

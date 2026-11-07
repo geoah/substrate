@@ -205,7 +205,7 @@ export function DataGrid<TData extends RowData>({
       tabIndex={0}
       data-slot="data-grid"
       className={cn(
-        "min-h-0 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
+        "@container min-h-0 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
         className
       )}
       style={{ scrollPaddingTop: HEADER_PX, scrollPaddingLeft: pinnedPx }}
@@ -354,11 +354,10 @@ export function DataGrid<TData extends RowData>({
             ) : (
               <tr>
                 <td colSpan={visible.length || 1} className="p-0">
-                  {/* The empty state sits in the viewport, not across a table
-                   * that may be wider than it. */}
-                  <div className="sticky left-0 w-[min(100%,640px)]">
-                    {empty}
-                  </div>
+                  {/* The empty state is centered in the viewport, not across a
+                   * table that may be wider than it: the scroll container is
+                   * the query container, so 100cqw is its visible width. */}
+                  <div className="sticky left-0 w-[100cqw]">{empty}</div>
                 </td>
               </tr>
             )}

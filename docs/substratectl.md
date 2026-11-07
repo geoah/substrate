@@ -425,7 +425,7 @@ from, cannot be handed back, and without `--confirm` repeating the package
 it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
-first, then the catalog's providers and samples: whether this repository
+first, then the catalog's published packages and samples: whether this repository
 holds it, the version the binary ships and, where the server previewed an
 [upgrade](bundles.md#install-and-lifecycle), its motion (`16 -> 17`),
 `blocked` when a guard refuses it and, for core, `lands at restart` when it
@@ -434,7 +434,7 @@ under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. So do the conversion steps an upgrade would run, each with the live
 records it rewrites; a step marked lossy removes values from the fold, and an
-upgrade with one runs only with `--allow-data-loss` on `install <provider>` or
+upgrade with one runs only with `--allow-data-loss` on `install <package>` or
 `import <sample>`, which reads the preview again, prints the steps and
 confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
 sample copy edited since it was imported reads `edited copy` in the column

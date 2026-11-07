@@ -280,7 +280,7 @@ func treeAtConsole(t *testing.T, fixture string) string {
 func cataloguesAtConsole(t *testing.T, fixture string) *catalog.Catalog {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, kinds.Bundles()); err != nil {
+	if err := os.CopyFS(dir, kinds.Served()); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(fixture, "health-views.yaml"))

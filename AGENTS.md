@@ -279,8 +279,9 @@ percent-encoded: `samples.substrate.reamde.dev%2Ftasks`). The console's All
 data → Add a collection → Start from a sample is the third door to the same
 admission, and it imports the requirements first. The import REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
-(record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
-other door, `…/install`, and lands under the authority that publishes it. A
+(record 0048). A PUBLISHED package (a provider such as
+`providers.substrate.reamde.dev/google`, or a catalogue) takes the other door,
+`…/install`, and lands under the authority that publishes it. A
 snippet that opens with `get <authority>/people/person` on a fresh substrate
 is wrong, and one that names a kind by a bare word is refused everywhere
 ([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
@@ -292,11 +293,18 @@ authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
 `health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
 `convertlab`; requires `health`), `…/environment` (`environment/*`
 metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
-`labs`, decision 0193). The catalog serves them through the provider door
-(`bin/substratectl install substrate.reamde.dev/labs`), they land published
-and never rehomed, and an install first installs every published package
-it requires, so installing `providers.substrate.reamde.dev/applehealth` or
-`…/whoop` (each shipping its own adapter) brings `health`. A metric id
+`labs`, decision 0193). The catalog serves them in the published tier, through
+the install door (`bin/substratectl install substrate.reamde.dev/labs`), they
+land published and never rehomed, and an install first installs every
+published package it requires, so installing
+`providers.substrate.reamde.dev/applehealth` or `…/whoop` (each shipping its
+own adapter) brings `health`. The tier says only who keeps a package: each
+catalog entry also says whether it is a PROVIDER (connects to an outside
+service: every package under `providers.substrate.reamde.dev`, and any other
+published one with an account kind), what it BRINGS, and which provider an
+ADD-ON extends, so a catalogue is no provider and the console offers it as a
+standard collection under Add a collection
+([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)). A metric id
 starts with the package that ships it (`health/heart_rate`,
 `labs/ldl_cholesterol`, `whoop/strain`); an owner's own metrics use another
 prefix.
@@ -344,7 +352,8 @@ words, and what each one replaced:
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
-| **provider**  | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it | integration |
+| **published** | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it; it says who keeps a package, never what it is for | provider (as a tier) |
+| **provider**  | a package that connects the substrate to an outside service, as the catalog says on its entry: every package under `providers.substrate.reamde.dev`, and any other published one with an account kind ([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)) | integration |
 | **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |

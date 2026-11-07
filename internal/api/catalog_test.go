@@ -12,9 +12,6 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
-
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -66,7 +63,7 @@ func (s *statusErrService) Authenticate(ctx context.Context, secret string) (sub
 // fails every status read.
 func newStatusErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -83,7 +80,7 @@ func newStatusErrEnv(t *testing.T) *testEnv {
 // newCatalogEnv is a testEnv whose handler ships the real example catalog.
 func newCatalogEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -145,7 +142,7 @@ func (s *upgradeErrService) Authenticate(ctx context.Context, secret string) (su
 
 func newUpgradeErrEnv(t *testing.T) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -275,7 +272,7 @@ func TestCatalogListCarriesTheTier(t *testing.T) {
 		} `json:"items"`
 	}](t, rec)
 	want := map[string]string{
-		googleBundleID: substrate.TierProvider,
+		googleBundleID: substrate.TierPublished,
 		rlBundleID:     substrate.TierSample,
 	}
 	seen := map[string]bool{}
@@ -441,7 +438,7 @@ func (s *heldService) Authenticate(ctx context.Context, secret string) (substrat
 // anything else (a provider) carries none, as a provider never does.
 func newHeldEnv(t *testing.T, id string) *testEnv {
 	t.Helper()
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -477,7 +474,7 @@ func newHeldEnvWithPlan(t *testing.T, cat *catalog.Catalog, id, origin string, p
 // `discardsEdits` true, and the hash the re-import's confirmation names. A
 // preview with nothing to offer, block or discard is dropped as before.
 func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -564,7 +561,7 @@ func (s *installerService) Authenticate(ctx context.Context, secret string) (sub
 // (decision 0067); a bare POST hands the door none, as it always did; and a
 // key the body does not declare is refused.
 func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -703,7 +700,7 @@ data:
       type: string
 `)},
 	}
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()), catalog.SampleRoot(other))
+	cat, err := catalog.Load(append(catalog.Shipped(), catalog.SampleRoot(other))...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -861,7 +858,7 @@ func (d previewCountingDataset) PlanBundleUpgrade(context.Context, []map[string]
 // count one preview between them, a write counts a fresh one, and another
 // repository behind the same catalog counts and is served its own.
 func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -966,7 +963,7 @@ func (d countedStatusesDataset) BundleStatuses(ctx context.Context) ([]substrate
 // asked for all of them once per provider entry, so the listing grew with the
 // data: about 30 s over a million live records.
 func TestCatalogReadsNeverCountLiveRecords(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}

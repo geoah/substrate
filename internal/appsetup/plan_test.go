@@ -10,9 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/kinds"
-	"github.com/geoah/substrate/samples"
-
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
@@ -421,7 +418,7 @@ func TestAWebhookIsTheAppsOnlyWhereItsPackageIsRequested(t *testing.T) {
 // WHOOP signs its deliveries with the owner's OAuth client secret: an app
 // cannot deliver to its webhook, and keying it would refuse WHOOP's own.
 func TestTheShippedSignedWebhookIsNeverAnApps(t *testing.T) {
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.Load(catalog.Shipped()...)
 	if err != nil {
 		t.Fatal(err)
 	}

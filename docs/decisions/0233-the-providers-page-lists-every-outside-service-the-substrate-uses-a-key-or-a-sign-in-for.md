@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-06
 decision-makers: George Antoniadis
+amended-by: 0238
 ---
 
 # 0233. The Providers page lists every outside service the substrate uses a key or a sign-in for

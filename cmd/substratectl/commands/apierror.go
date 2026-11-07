@@ -137,7 +137,7 @@ func lossyHint(path string) string {
 	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
 		return "re-run `substratectl import <sample> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, the edits the re-import replaces) and confirms exactly that plan"
 	}
-	return "re-run `substratectl install <provider> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
+	return "re-run `substratectl install <package> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
 }
 
 // guardHint branches on what was actually refused. A `guard` on a record

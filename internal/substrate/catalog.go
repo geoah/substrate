@@ -6,19 +6,37 @@ package substrate
 // this one, so this one cannot import it back. internal/catalog embeds
 // CatalogBundle and keeps the closure documents beside it, unexported.
 
-// The two catalog TIERS (decision record 0048). A closure's tier is decided by
-// the shipped tree it came from, never by its authority's shape:
+// The two catalog TIERS (decision records 0048 and 0238). A closure's tier is
+// decided by the shipped tree it came from, never by its authority's shape,
+// and it says who keeps the declarations, nothing about what they are for:
 //
-//   - TierProvider is a package a publisher owns (kinds/providers.…). It
-//     INSTALLS as a copy under the authority it names, and the publisher ships
-//     each change with a version bump the upgrade preview offers.
+//   - TierPublished is a package a publisher owns (kinds/, and every package
+//     an authority document publishes). It INSTALLS as a copy under the
+//     authority it names, and the publisher ships each change with a version
+//     bump the upgrade preview offers.
 //   - TierSample is a package the user copies (samples/). It IMPORTS under the
 //     repository's own authority and is the user's afterwards: writable through
 //     the API, and offered the shipped upgrade through the origin stamp its
 //     import left, taken by importing again (decision record 0070).
 const (
-	TierProvider = "provider"
-	TierSample   = "sample"
+	TierPublished = "published"
+	TierSample    = "sample"
+)
+
+// What a closure gives a reader, each read from what it declares (decision
+// record 0238), so it is known before the closure is taken.
+//
+//   - BringsAccount: a kind binds the core accountconfig trait.
+//   - BringsTools: a function offers itself to agents (decision record 0198).
+//   - BringsCollections: a kind whose purpose is primary.
+//   - BringsMetrics: a record of the observations package's metric kind.
+//   - BringsAgents: an agent.
+const (
+	BringsAccount     = "account"
+	BringsTools       = "tools"
+	BringsCollections = "collections"
+	BringsMetrics     = "metrics"
+	BringsAgents      = "agents"
 )
 
 // CatalogBundle is one installable catalog entry: the shipped closure's
@@ -48,9 +66,24 @@ type CatalogBundle struct {
 	// preview compares the two to say the shipped sample moved (decision
 	// record 0070).
 	Version int64 `json:"version"`
-	// Tier is "provider" or "sample": which of the two doors this closure
+	// Tier is "published" or "sample": which of the two doors this closure
 	// takes, and which of the two authorities it lands under.
 	Tier string `json:"tier"`
+	// Provider is whether the package connects the substrate to an outside
+	// service: every closure the binary ships under its providers tree, whose
+	// publisher put it there to say so (Apple's devices push, so its closure
+	// declares no account), and any other published closure that brings an
+	// account. Only these are listed as providers (decision record 0238).
+	Provider bool `json:"provider,omitempty"`
+	// Brings is what taking the closure gives a reader, in the order the
+	// Brings* constants list, read from its declarations and records.
+	Brings []string `json:"brings,omitempty"`
+	// AddonFor is the provider this package extends: the publisher's
+	// document names it, or else it is the first package `requires` lists
+	// that is a provider, for a published closure that brings no account of
+	// its own. An add-on is listed with the provider it extends, never on its
+	// own, whether or not it is a provider itself.
+	AddonFor string `json:"addonFor,omitempty"`
 	// Inputs are the bundle's declared configuration needs, verbatim from
 	// the manifest, keyed by input name. A bundle with no needs carries none,
 	// and the console previews nothing.

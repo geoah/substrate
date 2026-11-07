@@ -503,6 +503,7 @@ describe("the Providers count", () => {
                 functions: 0,
                 kinds: 0,
                 liveRecords: 0,
+                provider: true,
               },
             ],
           })

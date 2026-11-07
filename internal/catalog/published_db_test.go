@@ -1,6 +1,6 @@
 package catalog_test
 
-// A PROVIDER package is published: the catalog's provider tier installs its
+// A PROVIDER package is published: the catalog's published tier installs its
 // closure with `source: published`, the repository's own token may not write
 // its declarations afterwards, and everything else about it stays the user's:
 // the records of its kinds, and every bundle lifecycle verb (decision record
@@ -407,7 +407,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 		t.Fatalf("a hand-applied closure landed source %q, want %q", got, vocabulary.SourceInstalled)
 	}
 
-	// The same closure through the catalog's provider tier promotes it, package
+	// The same closure through the catalog's published tier promotes it, package
 	// row and declarations together. The promotion moves `source` alone, which
 	// is the engine's, so no declaration changed and every version stays
 	// (issue #643).

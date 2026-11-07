@@ -723,10 +723,12 @@ describe("the streams table", () => {
       await screen.findByText("Nothing here records measurements yet")
     ).toBeTruthy()
     expect(server.seen).toEqual([])
-    // Both ways it names are offered: a sample, and a provider.
-    const sample = screen.getByRole("link", { name: /Add a sample/ })
-    expect(sample.dataset.to).toBe("/data")
-    expect(JSON.parse(sample.dataset.search!)).toEqual({ add: "sample" })
+    // Both ways it names are offered: a standard collection, and a provider.
+    const standard = screen.getByRole("link", {
+      name: /Add a standard collection/,
+    })
+    expect(standard.dataset.to).toBe("/data")
+    expect(JSON.parse(standard.dataset.search!)).toEqual({ add: "standard" })
     expect(screen.getByRole("link", { name: /Providers/ }).dataset.to).toBe(
       "/providers"
     )
@@ -739,8 +741,9 @@ describe("the streams table", () => {
       expect(table.textContent).toContain("Nothing has been measured yet")
     )
     expect(
-      within(table).getByRole("link", { name: /Add a sample/ }).dataset.search
-    ).toBe(JSON.stringify({ add: "sample" }))
+      within(table).getByRole("link", { name: /Add a standard collection/ })
+        .dataset.search
+    ).toBe(JSON.stringify({ add: "standard" }))
     expect(within(table).getByRole("link", { name: /Providers/ })).toBeTruthy()
   })
 })
