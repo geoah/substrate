@@ -99,7 +99,15 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
     /// The pages a result of a known shape found or read, under the line
     /// whether or not it is open.
     public var sources: SourceList?
+    /// A sub-agent's own conversation, which its call ran in.
+    public var thread: ThreadLink?
     public var attachment: Attachment?
+}
+
+/// A thread to open in the app: "Open its conversation".
+public struct ThreadLink: Codable, Hashable, Sendable {
+    public var thread: String
+    public var label: String
 }
 
 /// Web pages as pills: what a search found, the page a call read, the pages

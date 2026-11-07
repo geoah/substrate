@@ -191,10 +191,23 @@ struct ReasoningView: View {
     }
 }
 
+/// Opens a thread in the window the action came from: a sub-agent's own
+/// conversation, from the call that ran it.
+struct OpenThreadAction {
+    let handler: @MainActor (String) -> Void
+
+    @MainActor func callAsFunction(_ thread: String) { handler(thread) }
+}
+
+extension EnvironmentValues {
+    @Entry var openThread: OpenThreadAction?
+}
+
 /// One tool call in the console's words, opening to what it found, changed
 /// or failed on; the pages a search found or a call read show under it,
 /// open or not.
 struct ToolCallRow: View {
+    @Environment(\.openThread) private var openThread
     let tool: ToolRowPresentation
     @State private var open = false
     @State private var raw = false
@@ -231,6 +244,11 @@ struct ToolCallRow: View {
             if open {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(tool.details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
+                    if let link = tool.thread, let openThread {
+                        Button(link.label, systemImage: "bubble.left.and.bubble.right") { openThread(link.thread) }
+                            .font(.footnote)
+                            .buttonStyle(.borderless)
+                    }
                     DisclosureGroup("Details", isExpanded: $raw) {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(tool.raw, id: \.self) { line in

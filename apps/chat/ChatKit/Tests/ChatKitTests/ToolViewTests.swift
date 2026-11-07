@@ -373,3 +373,58 @@ struct StreamedCalls {
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
     }
 }
+
+@Suite("What a run's end says of its reply", .timeLimit(.minutes(10)))
+struct RunEnds {
+    static let kind = "ada.example.com/tasks/task"
+    static let stream = [
+        #"{"kind":"thread","thread":"t1"}"#,
+        #"{"kind":"delta","text":"See [Q4](substrate://ada.example.com/tasks/task/q4) and [Ghost](substrate://ada.example.com/tasks/task/ghost).","turn":1}"#,
+        #"{"kind":"done","result":{"reply":"See them.","thread":"t1","status":"ok","turns":2,"mentions":[{"kind":"ada.example.com/tasks/task","id":"q4","text":"Q4"},{"kind":"ada.example.com/tasks/task","id":"ghost","text":"Ghost","missing":true},{"kind":"ada.example.com/tasks/task"}]}}"#,
+    ]
+
+    @Test func theDoneEventsMentionsReadTolerantly() {
+        let done = AgentEvent.parse(Self.stream[2])
+        #expect(
+            done?.result?.mentions == [
+                Mention(kind: Self.kind, id: "q4", text: "Q4"), Mention(kind: Self.kind, id: "ghost", text: "Ghost", missing: true),
+            ])
+        #expect(AgentEvent.parse(#"{"kind":"done","result":{"reply":"x","status":"ok"}}"#)?.result?.mentions == nil)
+    }
+
+    @Test func aRepliesLinksStandFromTheRunsEndBeforeItsRowsLand() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(Self.stream))])
+        try await rig.signIn()
+        // The handover's read waits, so the overlay is all there is.
+        rig.server.hold("/llm/thread/t1")
+        let key = try await rig.newChat()
+        try await rig.send(.draft("What's due?"), to: key)
+        try await rig.send(.send, to: key)
+        @Sendable func reply() async -> AssistantTurn? {
+            for turn in await rig.conversation(key)?.turns ?? [] {
+                if case let .assistant(assistant) = turn.body { return assistant }
+            }
+            return nil
+        }
+        try await rig.harness.until { _ in await reply()?.linked.isEmpty == false }
+        #expect(await rig.live(key)?.phase == .handingOver)
+        let held = try #require(await reply())
+        #expect(held.linked == [RecordReference(kind: Self.kind, id: "q4")])
+        #expect(held.missing == ["\(Self.kind)/ghost"])
+        rig.server.letGo("/llm/thread/t1")
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+    }
+
+    @Test func aSubAgentsCallLinksItsOwnConversation() {
+        let asked = ToolCall(
+            id: "c", name: "librarian", callable: "agent:substrate.reamde.dev:assistant:librarian", arguments: "{}",
+            output: #"{"reply":"Two notes.","thread":"child1","status":"ok"}"#, ok: true)
+        #expect(row(asked).thread == ThreadLink(thread: "child1", label: "Open its conversation"))
+        var stamped = asked
+        stamped.output = #"{"error":"budget"}"#
+        stamped.ok = false
+        stamped.subagentWrites = SubagentWrites(thread: "child2", records: 1, kinds: [], moreKinds: 0)
+        #expect(row(stamped).thread?.thread == "child2")
+        #expect(row(search()).thread == nil)
+    }
+}

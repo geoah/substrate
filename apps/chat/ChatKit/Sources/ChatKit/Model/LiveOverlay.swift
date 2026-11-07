@@ -71,6 +71,16 @@ struct LiveOverlay: Codable, Hashable, Sendable {
         closed = true
     }
 
+    /// The records the run's reply links, as its `done` event carries them:
+    /// they reach the reply before its row does, so from the run's end a
+    /// link to no record reads as its text and the rest stand under it.
+    mutating func mention(_ mentions: [Mention]?) {
+        guard let mentions, !mentions.isEmpty,
+            let reply = turns.lastIndex(where: { $0.role == .assistant && !$0.content.isEmpty })
+        else { return }
+        turns[reply].mentions = mentions
+    }
+
     /// Where the loop compacted mid-run. The event carries no summary text
     /// (the row does), and what follows opens a new assistant turn.
     mutating func pushCompacted(tokensBefore: Int?, covered: Int?, seq: Int) {

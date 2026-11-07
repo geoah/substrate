@@ -182,7 +182,8 @@ enum TurnPresenter {
         return ToolRowPresentation(
             id: id, status: status,
             statusLabel: status == .working ? "Working in the background" : status == .held ? "Waiting for you" : nil,
-            summary: toolSummary(call, resolved), details: details, raw: raw, sources: known.map(sources), attachment: attachment)
+            summary: toolSummary(call, resolved), details: details, raw: raw, sources: known.map(sources),
+            thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") }, attachment: attachment)
     }
 
     private static func pretty(_ text: String) -> String {

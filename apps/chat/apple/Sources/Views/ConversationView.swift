@@ -61,6 +61,7 @@ struct ConversationView: View {
             .padding(.top, 12)
             .padding(.bottom, 16)
             .environment(\.recordTitles, screen.titles)
+            .environment(\.openThread, OpenThreadAction { host.send(.show(thread: $0, scene: scene)) })
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }

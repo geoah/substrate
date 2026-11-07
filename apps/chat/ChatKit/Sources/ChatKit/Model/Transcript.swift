@@ -114,8 +114,10 @@ private func changes(of record: Record) -> [ChangeStamp]? {
     return out.isEmpty ? nil : out
 }
 
-private func mentions(of record: Record) -> [Mention]? {
-    guard let raw = record["mentions"]?.array else { return nil }
+/// The records a reply links, as its row or its run's result lists them;
+/// an entry without a kind and an id is no link.
+func mentions(_ raw: [JSONValue]?) -> [Mention]? {
+    guard let raw else { return nil }
     let out = raw.compactMap { item -> Mention? in
         guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
         return Mention(
@@ -201,7 +203,7 @@ func transcript(of messages: [Record]) -> [Turn] {
                     contextRecords: role == "user" ? contextRecords(of: record) : nil,
                     reasoning: reasoning,
                     reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
-                    mentions: role == "assistant" ? mentions(of: record) : nil,
+                    mentions: role == "assistant" ? mentions(record["mentions"]?.array) : nil,
                     createdAt: record.createdDate))
             for (i, call) in tools.enumerated() where !call.id.isEmpty {
                 pending[call.id] = (turns.count - 1, i)

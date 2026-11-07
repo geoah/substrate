@@ -176,6 +176,13 @@ func toolDetails(_ call: ToolCall, _ resolved: ResolvedTool, skip: Set<String> =
     return out
 }
 
+/// The thread a sub-agent call's chain ran in: the engine's stamp, else the
+/// reply's own word of it.
+func childThread(_ call: ToolCall, _ resolved: ResolvedTool) -> String? {
+    guard resolved.subagent != nil else { return nil }
+    return call.subagentWrites?.thread ?? (call.ok == true ? JSONValue.parse(call.output)?["thread"]?.text : nil)
+}
+
 /// A sub-agent chain's writes in one sentence.
 func wroteSentence(records: Int, kinds: [String], moreKinds: Int) -> String {
     if records == 0 { return "Wrote no records" }

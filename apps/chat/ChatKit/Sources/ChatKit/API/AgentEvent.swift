@@ -13,6 +13,9 @@ struct AgentResult: Codable, Hashable, Sendable {
     var completionTokens: Int = 0
     var totalTokens: Int = 0
     var costUSD: Double = 0
+    /// The records the reply links, as the engine read them when the run
+    /// settled: what its row will carry.
+    var mentions: [Mention]?
 
     init() {}
 
@@ -28,6 +31,7 @@ struct AgentResult: Codable, Hashable, Sendable {
         completionTokens = (try? c.decode(Int.self, forKey: .completionTokens)) ?? 0
         totalTokens = (try? c.decode(Int.self, forKey: .totalTokens)) ?? 0
         costUSD = (try? c.decode(Double.self, forKey: .costUSD)) ?? 0
+        mentions = ChatKit.mentions(try? c.decode([JSONValue].self, forKey: .mentions))
     }
 }
 

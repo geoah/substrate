@@ -205,6 +205,7 @@ extension Conversation {
             if event.kind == .done {
                 run.done = true
                 state.run = .send(run)
+                state.overlay.mention(event.result?.mentions)
                 return
             }
         case var .attach(run)?:
@@ -218,6 +219,7 @@ extension Conversation {
                 run.done = true
                 state.lastError = nil
                 state.run = .attach(run)
+                state.overlay.mention(event.result?.mentions)
                 return
             case .thread:
                 return
