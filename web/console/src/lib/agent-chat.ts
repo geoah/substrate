@@ -630,7 +630,7 @@ export function toolSummary(
       else if (typeof args.kind === "string" && typeof args.id === "string")
         words = `Looked up ${withArticle(lowerFirst(displayName(args.kind)))}`
       else if (kinds.length)
-        words = `Looked through your ${joinWords(kinds.map((k) => displayPlural(k)))}`
+        words = `Looked through your ${joinWords(kinds.map((k) => lowerFirst(displayPlural(k))))}`
       const found = parseJSON(call.output).records
       if (Array.isArray(found) && call.ok !== false) {
         words +=

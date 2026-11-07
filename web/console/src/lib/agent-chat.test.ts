@@ -390,7 +390,7 @@ describe("what a tool call did", () => {
         }),
         query
       )
-    ).toBe("Looked through your Tasks and Notes")
+    ).toBe("Looked through your tasks and notes")
     expect(
       toolSummary(
         call({ arguments: '{"kind":"ada.localhost/people/person","id":"g"}' }),
