@@ -146,7 +146,7 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	for _, d := range docs {
 		ref := mstr(d, "kind")
 		data := mmap(d, "data")
-		if isSchemaDoc(vocabulary.KindPackage(ref), vocabulary.KindName(ref)) {
+		if vocabulary.IsDeclarationRef(ref) {
 			declarations = append(declarations, d)
 			if mstr(data, "authority")+"/"+mstr(data, "package") != id {
 				return nil, fmt.Errorf("declaration %s is outside %s", docID(d), id)

@@ -786,14 +786,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		if fsys == nil {
 			fsys = os.DirFS(o.kindsDir)
 		}
-		r, err := vocabulary.LoadFS(fsys)
+		r, records, err := vocabulary.LoadShipped(fsys)
 		if err != nil {
 			return nil, err
 		}
-		reg = r
-		if shippedRecords, err = vocabulary.ShippedRecordsFS(fsys); err != nil {
-			return nil, err
-		}
+		reg, shippedRecords = r, records
 	default:
 		return nil, errors.New("substrate/engine: no schema source (WithKindsFS/WithKindsDir/WithRegistry)")
 	}

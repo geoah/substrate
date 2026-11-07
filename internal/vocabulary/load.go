@@ -44,27 +44,34 @@ var reCapBinding = regexp.MustCompile(`^((?:[a-z0-9][a-z0-9.-]*/[a-z][a-z0-9]*/)
 // trait is resolved, so files may reference each other in any order. A data
 // record shipped beside the declarations is left to ShippedRecordsFS.
 func LoadFS(fsys fs.FS) (*Registry, error) {
-	docs, _, err := readTree(fsys)
+	r, _, err := LoadShipped(fsys)
+	return r, err
+}
+
+// LoadShipped is LoadFS that also returns the data records beside the
+// declarations (ShippedRecordsFS), from one walk of the tree.
+func LoadShipped(fsys fs.FS) (*Registry, []ShippedRecord, error) {
+	docs, records, err := readTree(fsys)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(docs) == 0 {
-		return nil, fmt.Errorf("substrate/schema: no schema manifests found")
+		return nil, nil, fmt.Errorf("substrate/schema: no schema manifests found")
 	}
 	authorities, err := BuildPackages(docs, SourceBuiltin)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r := NewRegistry()
 	for _, g := range authorities {
 		if err := r.add(g); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if err := r.Finalize(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return r, nil
+	return r, records, nil
 }
 
 // LoadDir is LoadFS over a filesystem path.
