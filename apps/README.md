@@ -289,7 +289,9 @@ publishes again:
   (`SUBSTRATE_APPLE_TEAM_ID` and the bundle id) under `webcredentials` and
   under `applinks` for its own `/apps/<app>/callback`;
 - `/.well-known/substrate/authority.json`, the authority
-  (`SUBSTRATE_APPLE_SITE_AUTHORITY`, else the site's host), every app by its
+  (`SUBSTRATE_APPLE_SITE_AUTHORITY`, else the site's host), the publisher's
+  name the approval page shows (`SUBSTRATE_APPLE_SITE_NAME`, else the name
+  the live document carries, else the authority), every app by its
   client id with the packages it asks for, and under `packages` every
   published version of every package an app's app.json `publishes`
   (Workouts' `training` and `trainingcoach`, Tasks' `tasks`) with its
@@ -307,7 +309,9 @@ publishes again:
 - `/apps/<app>/client.json` for every app with a UI, whose redirects are
   each platform's callback, `https://<site host>/apps/<app>/callback` for
   Apple's and `/apps/<app>/android/callback` for Android's, and which names
-  the authority as `substrate_authority`.
+  the authority as `substrate_authority`, and whose `client_uri` is the
+  site's root, the index of every app's install page: a page on another
+  host is one the client id does not prove the app runs;
 
 A published version never changes: the task reads the live document first,
 after taking the lease, from the store it is written to and with the
