@@ -14,12 +14,15 @@ import {
 import { retryDelay, retryRead } from "@/lib/api/retry"
 import { returnAfterExpiry } from "@/lib/return-path"
 import { applySiteBranding, loadSite } from "@/lib/site"
+import { preventPinchZoom } from "@/lib/no-zoom"
 import { reloadOnStaleChunk } from "@/lib/stale-chunks"
 import { router } from "@/router"
 
 // A tab left open across a deploy asks for chunks the server no longer has;
 // one reload picks up the new build.
 reloadOnStaleChunk(window)
+
+preventPinchZoom(window)
 
 // The Apple app holds the sign-in; a token this page kept before it did is
 // revoked, not left live.

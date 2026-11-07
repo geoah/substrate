@@ -26,6 +26,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { UnitsProvider } from "@/components/units-provider"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useVisualViewportHeight } from "@/hooks/use-visual-viewport"
 import {
   actorIdentity,
   agentName,
@@ -465,6 +466,7 @@ function ShellBody() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const peek = useSidebarPeek()
   const announcement = usePageTitle(pathname)
+  useVisualViewportHeight()
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -497,7 +499,7 @@ function ShellBody() {
       <SectionBoundary name="The sidebar" resetKey={pathname}>
         <AppSidebar onSearch={() => setCommandOpen(true)} peek={peek} />
       </SectionBoundary>
-      <SidebarInset className="flex h-svh min-w-0 flex-col overflow-hidden">
+      <SidebarInset className="flex h-(--visual-viewport-height,100svh) min-w-0 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 px-3 md:px-4">
           <SidebarTrigger
             className="-ml-1 text-muted-foreground"
