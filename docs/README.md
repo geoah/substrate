@@ -26,6 +26,8 @@ API call that completes a task.
 
 - [Terms](terms.md) — one word per thing, and the dead words they replaced
 - [Getting started](getting-started.md) — register, log in, write a record
+- [Your own kinds, a function and an agent](walkthrough.md) — one file of
+  YAML from declaration to an agent that works on it
 - [Using a substrate from an agent](for-agents.md): what a program acting
   with a token reads first, how it reads and writes, and what it never does
 - [Connecting an assistant](mcp.md): Claude Code, Codex, Cursor or Claude
