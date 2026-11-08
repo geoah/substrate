@@ -133,6 +133,22 @@ export function stepFactsOf(
   }
 }
 
+/** Whether the sidebar and Home list a provider's collections: once its four
+ * steps are done, where its card on Providers stops saying "Almost there",
+ * or while any of them holds a record, so what it brought in stays in reach
+ * after it is disconnected. A set-up started and left is listed only on
+ * Providers and All data. `held` is undefined while it is being counted;
+ * the answer is undefined while either fact is unknown and could change it. */
+export function collectionsListed(
+  steps: SetupStep[] | undefined,
+  held: boolean | undefined
+): boolean | undefined {
+  if (held) return true
+  if (steps && !currentStep(steps)) return true
+  if (!steps || held === undefined) return undefined
+  return false
+}
+
 // ── the card's one state, and why ────────────────────────────────────────────
 
 export type ProviderTone = "on" | "setup" | "attention" | "paused" | "add"

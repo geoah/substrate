@@ -92,6 +92,28 @@ export function bundleTriggers(
   return statuses.filter((t) => t.callable.startsWith(`${bundleId}/`))
 }
 
+/** The four steps one provider stands at, and its account kind's switches.
+ * The Providers pages and the collections the sidebar and Home list both
+ * read this, so a provider those list is one its card calls set up. */
+export function providerSteps(
+  units: UnitReader,
+  bundleId: string,
+  installed: boolean,
+  view: ProviderView | undefined,
+  kinds: KindInfo[]
+): { steps: SetupStep[]; toggles: { name: string; label: string }[] } {
+  const accountKind = view?.accountKind ?? accountKindOf(kinds, bundleId)
+  const toggles = accountToggles(units, accountKind)
+  const steps = setupSteps(
+    stepFactsOf(
+      installed,
+      view,
+      toggles.map((t) => t.name)
+    )
+  )
+  return { steps, toggles }
+}
+
 function entryOf(
   units: UnitReader,
   row: BundleRow,
@@ -100,15 +122,13 @@ function entryOf(
   triggers: readonly TriggerStatus[],
   now: number
 ): ProviderEntry {
-  const accountKind = view?.accountKind ?? accountKindOf(kinds, row.id)
-  const toggles = accountToggles(units, accountKind)
   const installed = Boolean(row.status?.installed)
-  const steps = setupSteps(
-    stepFactsOf(
-      installed,
-      view,
-      toggles.map((t) => t.name)
-    )
+  const { steps, toggles } = providerSteps(
+    units,
+    row.id,
+    installed,
+    view,
+    kinds
   )
   // The four steps cover the credentials input; anything else the status
   // still lists (a required setting, another input) is set up on the page.
