@@ -865,7 +865,7 @@ describe("the models a card offers", () => {
     const gemini = await modelCard("Gemini")
     expect(await offers(gemini, /^2 models it offers$/)).toEqual([
       "Gemini 2.5 Flashgemini-2.5-flashPrice per 1M tokens$0.15 input · $0.60 outputContext window1M tokensPrice fromModel record",
-      "Gemini 2.5 Progemini-2.5-proPrice per 1M tokensNot pricedContext windowNot stated",
+      "Gemini 2.5 Progemini-2.5-proPrice per 1M tokensNot priced: a spend cap doesn’t count its runs, and an app’s approval doesn’t offer itContext windowNot stated",
     ])
   })
 

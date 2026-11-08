@@ -667,7 +667,7 @@ func (ds *dataset) rerunInterruptedAgentRun(ctx context.Context, triggerID strin
 	// function body that runs an agent meets the cap inside the body, as a
 	// dispatched delivery does.
 	if tr.Agent != nil {
-		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent, ""); err != nil {
 			if errors.Is(err, errSpendHeld) {
 				skipped(rerunOutcomeCapped)
 			} else {

@@ -335,15 +335,17 @@ func (p *embedProvider) operatorEmbed(ctx context.Context, texts []string) ([][]
 // --- holding a run before it starts --------------------------------------------
 
 // allowanceHold says why a root run of ag is held at the allowance, or ""
-// when it may run: the agent's provider row is operator-served and the day's
+// when it may run. threadID is the thread the run continues, "" for a new
+// one, since an agent on runsOn keeps a continued thread on its own row. It
+// holds where the row the run takes is operator-served and the day's
 // spend leaves less than one completion at the most the agent's requests may
 // write. A run admitted here can still meet a refusal at a later call whose
 // prompt does not fit, which fails that run with the same words.
-func (ds *dataset) allowanceHold(ctx context.Context, ag *vocabulary.Agent) (string, error) {
+func (ds *dataset) allowanceHold(ctx context.Context, ag *vocabulary.Agent, threadID string) (string, error) {
 	if ds.svc.operatorDefaults == nil {
 		return "", nil
 	}
-	id, model, err := ds.agentRowAndModel(ctx, ag)
+	id, model, err := ds.agentRowAndModel(ctx, ag, threadID)
 	if err != nil {
 		return "", err
 	}

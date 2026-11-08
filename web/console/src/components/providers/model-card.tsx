@@ -274,7 +274,9 @@ function Offer({
         <dl className={OFFER_FACTS}>
           <dt className="text-muted-foreground">Price per 1M tokens</dt>
           <dd className="min-w-0">
-            {offer.price ? priceWords(offer.price) : "Not priced"}
+            {offer.price
+              ? priceWords(offer.price)
+              : "Not priced: a spend cap doesn’t count its runs, and an app’s approval doesn’t offer it"}
           </dd>
           <dt className="text-muted-foreground">Context window</dt>
           <dd className="min-w-0">

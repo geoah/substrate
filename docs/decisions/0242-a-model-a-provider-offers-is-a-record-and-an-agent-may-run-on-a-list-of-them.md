@@ -79,6 +79,10 @@ narrowing.
   agent names `runsOn`. The seeded assistant moves to it in a later release,
   once a binary carrying it is everywhere, since a seeded package that does
   not load refuses the open.
+- Bad, because a binary older than this one reads prices only off the rows.
+  A repository registered under this one, or one whose owner removed a row's
+  entries, then has every model unpriced and windowless, and app approval
+  offers no row. Rolling back is the snapshot pair, not an image alone.
 
 ### Confirmation
 

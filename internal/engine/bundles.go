@@ -1085,14 +1085,21 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 		ag := g.Agents[an]
 		if len(ag.RunsOn) > 0 {
 			// The entry a new thread would take, probed as a provider is: an
-			// agent with no entry it can run on is a setup step.
+			// agent with no entry it can run on is a setup step, pointed at
+			// the row a key would open.
 			choice, err := ds.chooseRunsOn(ctx, ag, "")
-			if err != nil {
+			if errors.Is(err, substrate.ErrValidation) {
+				kind, record, rerr := ds.runsOnSetupTarget(ctx, ag)
+				if rerr != nil {
+					return st, rerr
+				}
 				st.Setup = append(st.Setup, substrate.SetupItem{
-					Code: substrate.SetupProvider, Kind: typeModel, Record: ag.RunsOn[0],
-					Message: err.Error(),
+					Code: substrate.SetupProvider, Kind: kind, Record: record, Message: err.Error(),
 				})
 				continue
+			}
+			if err != nil {
+				return st, err
 			}
 			if probed[choice.provider] {
 				continue

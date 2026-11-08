@@ -424,7 +424,7 @@ func TestOperatorHoldsARunAtTheLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text, err := ds.spendHold(ctx, ag); err != nil || text != "" {
+	if text, err := ds.spendHold(ctx, ag, ""); err != nil || text != "" {
 		t.Fatalf("hold under the limit = %q, %v", text, err)
 	}
 	// 0.99 of the 1 cent is held: a completion of 64 tokens at 5 USD per
@@ -433,7 +433,7 @@ func TestOperatorHoldsARunAtTheLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	const usedUp = "today's allowance from Example is used up; it resets at 00:00 UTC; add your own key to keep going"
-	text, err := ds.spendHold(ctx, ag)
+	text, err := ds.spendHold(ctx, ag, "")
 	if err != nil || text != usedUp {
 		t.Fatalf("hold at the limit = %q, %v", text, err)
 	}

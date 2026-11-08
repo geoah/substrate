@@ -198,14 +198,40 @@ struct RunsOnReadTests {
         #expect(try #require(await rig.conversation(key)).hero?.keyless == nil)
     }
 
+    /// The refusal a server older than the kind answers the records read
+    /// with: an undeclared filter kind is an unknown type.
     @Test func aServerOlderThanTheKindStillListsItsAgents() async throws {
         let older = ChatServer.Route(
             method: "GET", path: "/api/v1/records", query: "llm/model",
-            answer: .json(404, #"{"error":{"code":"not_found","message":"unknown kind substrate.reamde.dev/llm/model"}}"#))
+            answer: .json(
+                422,
+                #"{"error":{"code":"validation","message":"substrate: validation failed: unknown type \"substrate.reamde.dev/llm/model\""}}"#))
         let rig = ChatRig([older] + routes(providers: [anthropicKeyless, openaiKeyed]))
         try await rig.signIn()
         #expect(await rig.harness.state.agents.count == 1)
         #expect(await rig.harness.state.models == [:])
+    }
+
+    @Test func onlyThatRefusalReadsAsNoModels() {
+        #expect(
+            ChatApp.modelKindUnknown(
+                ServerError(
+                    status: 422, code: "validation",
+                    message: #"substrate: validation failed: unknown type "substrate.reamde.dev/llm/model""#)))
+        #expect(
+            !ChatApp.modelKindUnknown(
+                ServerError(status: 422, code: "validation", message: #"substrate: validation failed: unknown type "x.example.com/a/b""#)))
+        #expect(!ChatApp.modelKindUnknown(ServerError(status: 404, code: "not_found", message: "not found")))
+    }
+
+    /// The watch opens at the earliest head of the reads in one history, the
+    /// models' included, so a model written between the reads is not missed.
+    @Test func theWatchOpensAtTheModelsHeadWhenItIsTheEarliest() async throws {
+        let earlier = #"{"head":5,"generation":"g","records":["# + model(opus, row: "anthropic", model: "claude-opus-5-5") + "]}"
+        let rig = ChatRig(routes(providers: [anthropicKeyless, openaiKeyed], models: earlier))
+        try await rig.signIn()
+        try await rig.harness.until { _ in rig.server.count("/api/v1/changes") > 0 }
+        #expect(rig.server.requests.contains { $0.contains("/api/v1/changes") && $0.contains("from=5") })
     }
 
     @Test func theCacheKeepsThemAndAnEarlierFileHasNone() throws {

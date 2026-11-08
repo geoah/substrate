@@ -427,14 +427,22 @@ extension ChatApp {
         return try await (agents, providers, models, keys)
     }
 
-    /// The `llm/model` records. A server older than the kind answers 404: it
-    /// holds none, and no agent there runs on any.
+    /// The `llm/model` records. A server older than the kind refuses the
+    /// filter as an unknown type: it holds none, and no agent there runs on
+    /// any. Every other refusal stays one.
     static func models(_ client: SubstrateClient) async throws -> RecordPage {
         do {
             return try await client.listAll(ListQuery(kinds: [Kinds.model], first: 100))
-        } catch let error as ServerError where error.status == 404 {
+        } catch let error as ServerError where modelKindUnknown(error) {
             return RecordPage(records: [])
         }
+    }
+
+    /// Whether the server answered that it does not know the `llm/model`
+    /// kind: the records read refuses an undeclared filter kind with 422,
+    /// code `validation`, naming it as an unknown type.
+    static func modelKindUnknown(_ error: ServerError) -> Bool {
+        error.status == 422 && error.code == "validation" && error.message.contains("unknown type \"\(Kinds.model)\"")
     }
 
     /// The questions and suggestions waiting on the owner. An app's token
@@ -478,7 +486,8 @@ extension ChatApp {
         var head: WatchCursor?
         if !read.agents.generation.isEmpty {
             let heads =
-                [read.agents, read.providers].compactMap { $0 }.filter { $0.generation == read.agents.generation }.map(\.head)
+                [read.agents, read.providers, read.models].compactMap { $0 }.filter { $0.generation == read.agents.generation }
+                .map(\.head)
                 + [page.head]
             head = heads.min().map { WatchCursor(seq: $0, generation: read.agents.generation) }
         }

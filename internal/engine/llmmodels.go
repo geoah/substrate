@@ -76,8 +76,8 @@ func queryModelRecords(ctx context.Context, q dbx, where string, args ...any) ([
 	return out, rows.Err()
 }
 
-// priceFromRecords fills in what the row's own entries leave open: entries
-// names the models an entry priced. A record prices a model no entry names
+// priceFromRecords fills in what the row's own entries leave open, entries
+// being the models an entry priced. A record prices a model no entry names
 // and gives a window to an entry that states none. The write keeps one record
 // per row and model; a duplicate that predates it loses to the lower id.
 func (pc *providerConfig) priceFromRecords(records []modelRecord, entries map[string]bool) {
@@ -225,6 +225,24 @@ func (ds *dataset) runsOnEntry(ctx context.Context, id string) (agentChoice, str
 		reason = fmt.Sprintf("llm/model %q: %s", id, reason)
 	}
 	return choice, reason, err
+}
+
+// runsOnSetupTarget is what a setup step for an agent with no entry it can
+// run on points at: the row of its first entry whose record is live, which a
+// key would open, else that first entry itself.
+func (ds *dataset) runsOnSetupTarget(ctx context.Context, ag *vocabulary.Agent) (kind, id string, err error) {
+	for _, entry := range ag.RunsOn {
+		row, err := ds.loadRowDB(ctx, eref{Kind: typeModel, ID: entry})
+		if err != nil {
+			return "", "", err
+		}
+		if row != nil && row.DeletedAt == nil {
+			if rec := readModelRecord(row); rec.provider != "" {
+				return typeProvider, rec.provider, nil
+			}
+		}
+	}
+	return typeModel, ag.RunsOn[0], nil
 }
 
 // continuedRunsOn is the choice for a thread that already ran: the entry

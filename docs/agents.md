@@ -1368,7 +1368,9 @@ the refusal names each one and why.
 and the model it began on, and its history holds that model's reasoning,
 which the `anthropic` wire sends back unchanged, so it runs on that entry if
 the agent still lists it and it is available, and refuses otherwise: start a
-new thread to move to another model.
+new thread to move to another model. An agent on `provider` and `model` has
+no such rule: a continued thread runs on whatever model the agent names
+now, so changing it mid-thread sends one model's history to another.
 
 ```yaml
 runsOn:

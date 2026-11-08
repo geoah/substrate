@@ -7,8 +7,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/llm"
@@ -246,7 +249,7 @@ func TestRunsOnTakesTheFirstModelANewThreadCanRunOn(t *testing.T) {
 	if err != nil || pc.id != "openai" || model != "gpt-5" || pc.pricing["gpt-5"].inPer1M != 1.25 {
 		t.Fatalf("dispatch opened %v %q (%v)", pc, model, err)
 	}
-	if id, model, err := ds.agentRowAndModel(ctx, ag); err != nil || id != "openai" || model != "gpt-5" {
+	if id, model, err := ds.agentRowAndModel(ctx, ag, ""); err != nil || id != "openai" || model != "gpt-5" {
 		t.Fatalf("the hold and the diagnostics read %q %q (%v)", id, model, err)
 	}
 
@@ -262,7 +265,7 @@ func TestRunsOnTakesTheFirstModelANewThreadCanRunOn(t *testing.T) {
 			t.Fatalf("the refusal names each entry; %q is missing from: %v", want, err)
 		}
 	}
-	if id, _, err := ds.agentRowAndModel(ctx, ag); err != nil || id != "" {
+	if id, _, err := ds.agentRowAndModel(ctx, ag, ""); err != nil || id != "" {
 		t.Fatalf("an agent with nothing to run on is nobody's row: %q (%v)", id, err)
 	}
 }
@@ -361,5 +364,166 @@ func TestAnAgentMovesToRunsOnInOnePatch(t *testing.T) {
 		"provider": "anthropic", "model": "claude-opus-5-5",
 	}}); err == nil || !strings.Contains(err.Error(), "name exactly one of provider, providerInput and runsOn") {
 		t.Fatalf("provider beside runsOn: %v", err)
+	}
+}
+
+// A chat on runsOn, run end to end on the fake: the first turn stamps the
+// thread with the entry it took, a continued turn sends that model again
+// after the list changed, a new thread takes the new first entry, and a
+// continued turn whose model lost its key refuses instead of moving.
+func TestARunsOnThreadStaysOnItsModelAcrossTurns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openCoreDataset(t)
+	fake := newFakeLLM(t)
+	ds.mu.Lock()
+	ds.skipThreadTitles = true
+	ds.mu.Unlock()
+	for _, row := range []string{"first", "second"} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: typeProvider, ID: row,
+			Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + row},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	putModelRecord(t, ds, "first:m1", map[string]any{"provider": "first", "model": "m1"})
+	putModelRecord(t, ds, "second:m2", map[string]any{"provider": "second", "model": "m2"})
+	pkg := testdb.Repository(t) + "/crew"
+	id := pkg + "/talker"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.AgentManifest(pkg, "talker", map[string]any{
+			"description": "Talks.", "prompt": "Talk.", "runsOn": []any{"first:m1", "second:m2"},
+		}),
+	}); err != nil {
+		t.Fatalf("declare the agent: %v", err)
+	}
+	chat := func(thread, message string) (*substrate.AgentResult, error) {
+		return ds.ChatAgent(ctx, substrate.ActorAPI, id, substrate.ChatInput{Thread: thread, Message: message}, nil)
+	}
+
+	fake.script("m1", fakeTurn{content: "one"})
+	res, err := chat("", "hi")
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	thread, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: res.Thread})
+	if err != nil || thread == nil {
+		t.Fatalf("the thread: %v, %v", thread, err)
+	}
+	if row, model := vocabulary.ReferentID(thread.Props["provider"], typeProvider), thread.Props["model"]; row != "first" || model != "m1" {
+		t.Fatalf("the thread is stamped %q %v, want the entry it took", row, model)
+	}
+
+	mustPatchInternal(t, ds, kindAgent, id, map[string]any{"runsOn": []any{"second:m2", "first:m1"}})
+	// The allowance hold asks what the run takes: the thread's own row for
+	// a continued thread, the list's first for a new one.
+	ag, err := ds.registry().ResolveAgent(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row, model, err := ds.agentRowAndModel(ctx, ag, res.Thread); err != nil || row != "first" || model != "m1" {
+		t.Fatalf("the hold for the continued thread reads %q %q (%v)", row, model, err)
+	}
+	if row, _, err := ds.agentRowAndModel(ctx, ag, ""); err != nil || row != "second" {
+		t.Fatalf("the hold for a new thread reads %q (%v)", row, err)
+	}
+	fake.script("m1", fakeTurn{content: "two"})
+	if _, err := chat(res.Thread, "again"); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	if got := len(fake.requestsOf("m1")); got != 2 || len(fake.requestsOf("m2")) != 0 {
+		t.Fatalf("m1 sent %d times and m2 %d, want the continued thread on m1", got, len(fake.requestsOf("m2")))
+	}
+
+	fake.script("m2", fakeTurn{content: "three"})
+	if _, err := chat("", "a new one"); err != nil {
+		t.Fatalf("a new thread: %v", err)
+	}
+	if got := len(fake.requestsOf("m2")); got != 1 {
+		t.Fatalf("m2 sent %d times, want the new thread on the list's first entry", got)
+	}
+
+	mustPatchInternal(t, ds, typeProvider, "first", map[string]any{"apiKey": nil})
+	if _, err := chat(res.Thread, "once more"); err == nil || !strings.Contains(err.Error(), "cannot run now") {
+		t.Fatalf("a continued thread whose model lost its key: %v", err)
+	}
+	if got := len(fake.requestsOf("m2")); got != 1 {
+		t.Fatalf("m2 sent %d times: the continued thread moved to another model", got)
+	}
+}
+
+// A shipped price the binary corrects reaches a record only the seed wrote,
+// a rate it stops stating included, and the next open finds it current.
+func TestTheSeedRefreshesAShippedPriceAndDropsARateItNoLongerStates(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openModelsDataset(t)
+	shipped := slices.Clone(ds.svc.shippedRecords)
+	i := slices.IndexFunc(shipped, func(r vocabulary.ShippedRecord) bool {
+		return r.Kind == typeModel && r.ID == "anthropic:claude-opus-5-5"
+	})
+	if i < 0 {
+		t.Fatal("anthropic:claude-opus-5-5 is not shipped")
+	}
+	props := maps.Clone(shipped[i].Properties)
+	pricing := maps.Clone(props["pricing"].(map[string]any))
+	delete(pricing, "cacheReadPer1M")
+	pricing["inputPer1M"] = "3"
+	props["pricing"] = pricing
+	shipped[i].Properties = props
+	ds.svc.shippedRecords = shipped
+
+	if err := ds.ensureShippedRecords(ctx); err != nil {
+		t.Fatal(err)
+	}
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeModel, ID: "anthropic:claude-opus-5-5"})
+	if err != nil || row == nil {
+		t.Fatalf("the record: %v, %v", row, err)
+	}
+	got, _ := row.Props["pricing"].(map[string]any)
+	if _, stated := got["cacheReadPer1M"]; stated || got["inputPer1M"] != "3" {
+		t.Fatalf("pricing %v, want the corrected input rate and no read rate", got)
+	}
+	before := changelogHead(t, ds)
+	if err := ds.ensureShippedRecords(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if after := changelogHead(t, ds); after != before {
+		t.Fatalf("the open after the correction wrote %d entries", after-before)
+	}
+}
+
+// Two writes of one row and model at once: one lands, the other is refused.
+func TestTwoWritesOfOnePairLandOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openCoreDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "gw",
+		Properties: map[string]any{"wire": "openai", "baseURL": "https://gw.example.com/v1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() {
+			errs[i] = putModelRecordErr(ds, fmt.Sprintf("r%d", i), map[string]any{"provider": "gw", "model": "m"})
+		})
+	}
+	wg.Wait()
+	landed := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			landed++
+		case !errors.Is(err, substrate.ErrValidation):
+			t.Fatalf("a refusal that is not the pair's: %v", err)
+		}
+	}
+	if landed != 1 {
+		t.Fatalf("%d of the two writes landed (%v), want one", landed, errs)
 	}
 }

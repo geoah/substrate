@@ -3491,7 +3491,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 		if lt.Enabled && st.Error == "" {
 			switch {
 			case lt.Agent != nil:
-				st.Held, err = ds.spendHold(ctx, lt.Agent)
+				st.Held, err = ds.spendHold(ctx, lt.Agent, "")
 			case lt.Callable != nil:
 				st.Held, err = ds.functionAllowanceHold(ctx, lt.Callable)
 			}
@@ -3621,7 +3621,7 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 	// answered with nothing ran (a record or schedule walk) or a parked fire
 	// (a webhook's, whose loop would refuse after the claim).
 	if tr.Agent != nil {
-		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent, ""); err != nil {
 			return 0, err
 		}
 	}
@@ -3745,7 +3745,7 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	// refuses the retry and leaves the row exactly as it was, where a refusal
 	// from inside the loop would re-park it one attempt older.
 	if tr.Agent != nil {
-		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent, ""); err != nil {
 			return 0, err
 		}
 	}

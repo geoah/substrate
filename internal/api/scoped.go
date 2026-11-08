@@ -1211,7 +1211,8 @@ func (s *scopedDataset) OperatorDefaults(context.Context) (substrate.OperatorDef
 
 // ModelOffers answers from the provider rows and the model records together,
 // so a grant reads it only where it reads both kinds; elsewhere it answers
-// none, as a List of the rows it cannot read would.
+// none, as a List of the rows it cannot read would. App approval plans through
+// the owner's dataset, so this is a guard rather than a path a plan takes.
 func (s *scopedDataset) ModelOffers(ctx context.Context) (map[string][]string, error) {
 	for _, kind := range []string{vocabulary.LLMKind("provider"), vocabulary.LLMKind("model")} {
 		ok, err := s.reads(ctx, kind)

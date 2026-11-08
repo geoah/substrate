@@ -802,7 +802,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 	// the spend caps here, before a thread opens (spend.go): a sub-agent runs
 	// under its root's cap, which its caller was admitted against.
 	if root && !spendAdmitted(ctx, ag) {
-		if ctx, err = ds.refuseAtSpendCap(ctx, ag); err != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, ag, in.threadID); err != nil {
 			return nil, nil, err
 		}
 	}
