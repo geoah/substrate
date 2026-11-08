@@ -427,12 +427,15 @@ export function titleProperty(kind: KindInfo | undefined): string | undefined {
   if (typeof template !== "string" || !template.trim()) return "title"
   const m = template
     .trim()
-    .match(/^\{\s*([A-Za-z][A-Za-z0-9]*)\s*(?:\|[^{}]*)?\}$/)
-  const def = m ? rawProps(kind)[m[1]] : undefined
-  if (!m || !def) return undefined
-  const spec = specOf(m[1], def)
+    .match(/^\{\s*(\.?)([A-Za-z][A-Za-z0-9]*)\s*(?:\|[^{}]*)?\}$/)
+  // A bare `{snippet}` is always the engine's excerpt of the body, never a
+  // declared `snippet`, which is spelled `{.snippet}` (decision record 0246).
+  if (!m || (!m[1] && m[2] === "snippet")) return undefined
+  const def = rawProps(kind)[m[2]]
+  if (!def) return undefined
+  const spec = specOf(m[2], def)
   return spec.kind === "string" && !spec.repeated && !spec.keyed
-    ? m[1]
+    ? m[2]
     : undefined
 }
 

@@ -173,7 +173,7 @@ export function titleProperties(kind: KindInfo): string[] {
   const out = new Set<string>()
   for (const [, inner] of template.matchAll(/\{([^}]*)\}/g)) {
     for (const part of inner.split("|")) {
-      const name = part.trim().split(/[\s:]/)[0]
+      const name = templateProperty(part.trim().split(/[\s:]/)[0])
       if (name && name !== "title") out.add(name)
     }
   }
@@ -189,11 +189,20 @@ export function titleBacking(kind: KindInfo): string | undefined {
   const template = kind.definition?.displayTemplate
   if (typeof template !== "string") return undefined
   const slot = /^\s*\{([^{}]*)\}\s*$/.exec(template)
-  const first = slot?.[1].split("|")[0].trim()
+  const first = templateProperty(slot?.[1].split("|")[0].trim())
   if (!first || first === "title" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(first)) {
     return undefined
   }
   return first
+}
+
+/** The declared property a template alternative reads: `{.snippet}` names the
+ * kind's own `snippet`, while a bare `{snippet}` is the engine's excerpt of
+ * the body and names no property (decision record 0246). */
+function templateProperty(alt: string | undefined): string | undefined {
+  if (!alt) return undefined
+  if (alt.startsWith(".")) return alt.slice(1)
+  return alt === "snippet" ? undefined : alt
 }
 
 /** The columns with nothing in them on the loaded rows, among `ids`. */

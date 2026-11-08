@@ -129,6 +129,13 @@ describe("titleBacking", () => {
     ).toBe("displayName")
   })
 
+  it("is the declared property a leading dot names, and never a bare snippet", () => {
+    expect(titleBacking(kind({ displayTemplate: "{.snippet|snippet}" }))).toBe(
+      "snippet"
+    )
+    expect(titleBacking(kind({ displayTemplate: "{snippet}" }))).toBeUndefined()
+  })
+
   it("is none for a composed title, a path, or the title itself", () => {
     expect(
       titleBacking(kind({ displayTemplate: "{state} #{localName}" }))
@@ -153,6 +160,13 @@ describe("titleProperties", () => {
       "name",
     ])
     expect(titleProperties(kind({}))).toEqual([])
+  })
+
+  it("reads a leading dot as the declared property, and a bare snippet as none", () => {
+    expect(
+      titleProperties(kind({ displayTemplate: "{subject|.snippet|snippet}" }))
+    ).toEqual(["subject", "snippet"])
+    expect(titleProperties(kind({ displayTemplate: "{snippet}" }))).toEqual([])
   })
 })
 
