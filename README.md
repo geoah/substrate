@@ -1,474 +1,92 @@
 # substrate
 
-A self-hosted store for one person's digital life. Mail, calendar, messages,
-people, tasks, notes and media become typed **records** in one
-Postgres-backed **repository**, behind one API, on a machine you run. Apps
-and assistants read those records and write back through the same API,
-instead of every app keeping its own silo.
+A private home for everything one person keeps. The things only you track,
+like recipes, plants, the people you know and your notes and sketches, sit
+beside the ones that already live elsewhere, like mail, calendar, messages and
+health, all linked to each other. An assistant, Moss, knows its way around,
+and the apps you use read and write the same data instead of each keeping
+its own copy. It runs on a machine you choose.
 
-The source of truth is an append-only **changelog**: the records you read
-are computed by replaying it, so what you see cannot drift from what
-happened. Tokens, kind declarations, even the functions and agents that
-automate your data are records like any other.
+## For users
 
-It is, roughly, Kubernetes for your own data and the agents acting on it, and
-the borrowing is deliberate: the substrate is the API server, a kind is a
-declared type it validates every write against, and every app or agent is a
-controller that watches the ordered change feed and writes back through the
-same API. [docs/README.md](docs/README.md) draws the comparison out.
+- **Keep anything.** Say what you want to keep and what to note about it, and
+  the substrate makes room for it: a plant and when it was last watered, a
+  recipe and who taught it to you. Start from scratch, or from a ready-made
+  collection (tasks, people, calendars, reading, notes) and change it to fit.
+- **Everything connects.** A recipe points to the person who taught it, a
+  task to its project. Open anything and see what links to it.
+- **Moss, your assistant.** Every substrate ships with one. It answers from
+  your own records, looks up the world with sources, proposes new collections
+  and fills them in, and asks before it removes anything. Standing
+  instructions ("keep answers short") shape how it works, and each one is
+  yours to edit or switch off.
+- **Bring in what you have.** Google mail, calendar, contacts and Drive;
+  Slack, Beeper, Notion, GitHub and Linear; sleep, workouts and lab results
+  from Apple Health and WHOOP. Each lands as records you own and stays in
+  sync.
+- **Apps ask first.** An app, or an assistant such as Claude, Codex or Cursor
+  over [MCP](docs/mcp.md), gets in only once you approve it, and sees only
+  what you allowed. The Substrate apps for iPhone, iPad and Mac (Chat, Tasks,
+  Workouts, Sync and the console) are on
+  [reamde.dev/substrate](https://reamde.dev/substrate).
+- **Yours to keep.** Every change is kept, in order, so nothing is quietly
+  lost, and you can download everything, as one file, whenever you like.
 
-## Features
+To get one, have someone you trust host it for you, or run your own: the
+next section is all it takes.
 
-- **One user, one repository.** Registering creates a user and their one
-  repository, and everything they own lives in it. No roles and no sharing
-  to configure. Isolation between repositories is Postgres row level
-  security, not query-layer discipline.
-- **Apps without registration.** Any app can ask for access through an
-  OAuth 2.1 flow with no client registration: the owner approves the kinds it
-  may read or write, and the app gets a token that reaches only those
-  ([apps](docs/apps.md)).
-- **Kinds declared in YAML.** A kind names its properties, including the
-  references that point at other records; validation runs on every write, and a vocabulary evolves by integer
-  versions without breaking the records underneath it.
-- **One small write API.** Five mutations (`put`, `patch`, `delete`,
-  `merge`, `split`) over REST, and one records route that lists, ranks
-  (full-text and vector search), tails and aggregates them.
-- **Measured values.** A `quantity` is exact digits and a unit, and units
-  and their conversions are records each repository holds and extends.
-  Every kind that binds core's `observed` trait is indexed, and the records route's aggregate read reduces it into
-  time buckets: average heart rate per week, steps per local day across
-  travel, one source preferred over another. The seeded `observations`
-  package, the catalog's `health` and `labs` catalogues and the adapters the
-  WHOOP and Apple Health providers ship bring a wearable's data into one
-  model; Garmin and Google Fit are planned
-  ([docs/observations.md](docs/observations.md)).
-- **Bundles.** Vocabulary, functions and agents install and uninstall as one
-  unit. The catalog compiled into the binary ships sync for Google, GitHub,
-  Linear, Notion, Slack, Beeper and Whoop, so a mailbox or
-  a calendar becomes records you own rather than an API you rent, a receiver
-  for the Apple Health data the Health Auto Export app sends, and Firecrawl,
-  whose two tools let agents search and read the web.
-- **Functions and triggers.** A function is real Python code, stored
-  in your repository and run by the substrate; a trigger fires it when a
-  matching record changes, on a schedule, or when something POSTs to the
-  trigger's public webhook URL. Automation lives beside the data it manages,
-  installed and removed with its bundle.
-- **Agents.** An LLM loop over your records, with threads, tool calls and
-  budgets visible in the console. Providers are records in your repository:
-  the key is a secret-typed property, redacted on every read, and the server
-  process holds no LLM key of its own.
-- **One thing to run.** One server process and one Postgres; the web console
-  is built into the server image and served at `/`, and `substratectl` is
-  the CLI for everything else.
-
-## Quick start
+## For developers
 
 ```bash
 docker compose up --build
 ```
 
-Compose reuses an image it already has, so `--build` is what makes the image
-follow the tree. The published image, its tags and what a bind-mounted data
-directory needs are in
-[docs/operations.md](docs/operations.md#the-published-image).
+That is the whole thing: Postgres, the API and the web console at
+<http://localhost:8080>. Register with a name and a password; this local
+substrate asks for no invite code and no second factor. Put an Anthropic key
+on the `anthropic` provider (the console's Providers page) and Moss answers.
 
-That is the whole thing: Postgres, the API and the console at
-<http://localhost:8080>. Every setting has a working default; the first start
-mints a credential key and tells you to back it up. Register with a repository
-name and a password: this substrate asks for no invite code and no second factor,
-which is the right shape for a laptop and the two things to change before
-anyone else can reach it ([configuration](#configuration)).
+Under the console, everything is a typed **record** in one **repository**,
+computed from an append-only **changelog**. A **kind**, declared in YAML,
+validates every write; kinds, tokens, functions (Python the substrate runs
+on a trigger) and agents are records too. One REST API reads and writes all
+of it, an app gets a scoped token through an OAuth flow that needs no client
+registration, and `substratectl` is the CLI for the rest.
 
-## Declare your own kinds
+- [Your own kinds, a function and an agent](docs/walkthrough.md): one YAML
+  file, from declaration to an agent that works on it.
+- [Getting started](docs/getting-started.md), the [API](docs/api.md),
+  [apps](docs/apps.md), [MCP](docs/mcp.md) and the
+  [documentation index](docs/README.md).
+- [Operations](docs/operations.md): before anyone else can reach it, set
+  `SUBSTRATE_INVITE_CODE`, unset `SUBSTRATE_INSECURE_DISABLE_TOTP`, back up
+  `SUBSTRATE_CREDENTIAL_KEY` and `SUBSTRATE_DATA_ROOT`, and put TLS in front.
 
-From a checkout of this repo, against the substrate above. The CLI is built
-from the tree, so this path needs the [mise](https://mise.jdx.dev)
-toolchain: `mise install` once.
+### Upgrading
 
-```bash
-mise run build:cli
-
-# Asks for a repository name and a password (and, on a substrate that reads
-# them, the invite code and a TOTP code from the enrollment it prints), hands
-# you a recovery key, then stores the minted token as a context in
-# ~/.config/substratectl.
-bin/substratectl register --server http://localhost:8080
-```
-
-A fresh repository holds the core vocabulary, the `llm` package with three
-keyless provider rows, the `console` and `observations` packages and the LLM
-sample's agents, and nothing else. Teach it
-yours: kinds are declared in YAML in a package under an authority you name,
-and a declaration is itself a record write. One file declares a package and,
-in it, a project and a task, with typed properties, a state machine, and a
-reference between them:
-
-```yaml
-# chores.yaml
-kind: substrate.reamde.dev/core/package
-metadata:
-  id: geoah.me/chores
-data:
-  authority: geoah.me
-  package: chores
-  version: 1
----
-kind: substrate.reamde.dev/core/kind
-metadata:
-  id: geoah.me/chores/project
-data:
-  authority: geoah.me
-  package: chores
-  description: A group of tasks with one goal.
-  names:
-    singular: project
-  displayTemplate: "{name}"
-  properties:
-    name:
-      type: string
-      description: what the project is called
----
-kind: substrate.reamde.dev/core/kind
-metadata:
-  id: geoah.me/chores/task
-data:
-  authority: geoah.me
-  package: chores
-  description: One thing to do, grouped under a project.
-  names:
-    singular: task
-  displayTemplate: "{name}"
-  # dueAt is a column every record row carries, so it is bound from the
-  # temporal trait rather than declared: the point variant, renamed.
-  traits:
-    - "temporal(point: dueAt)"
-  properties:
-    name:
-      type: string
-      description: what to do
-    priority:
-      type: enum
-      description: how urgent it is
-      default: normal
-      values:
-        - normal
-        - urgent
-    status:
-      type: state
-      description: open until done
-      states:
-        - open
-        - done
-      initial: open
-      transitions:
-        - from: open
-          to: done
-          stamps:
-            completedAt: now
-        - from: done
-          to: open
-    completedAt:
-      type: datetime
-      description: when it was done, stamped by the transition
-    project:
-      type: reference
-      kind: geoah.me/chores/project
-      mustExist: true
-      description: the project this task groups under
-```
-
-Apply it, write records against it, and query them back. Every write is
-validated against the declaration, and a state moves only along its
-declared transitions. A record you create takes an id in the substrate's
-minted shape, a UUIDv7 in 26 Crockford characters: leave `metadata.id` out
-and the substrate mints one, or mint your own as below so the next commands
-can name the records:
-
-```bash
-bin/substratectl apply -f chores.yaml
-
-cat <<'EOF' | bin/substratectl apply -f -
-kind: geoah.me/chores/project
-metadata:
-  id: 01jcd8m0k3p7s2x9v4w6y1z5qa  # home
-data:
-  properties:
-    name: Home
----
-kind: geoah.me/chores/task
-metadata:
-  id: 01jcd8m0k3p7s2x9v4w6y1z5qb  # milk
-data:
-  properties:
-    name: Buy milk
-    dueAt: 2026-08-30T09:00:00Z
-    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
----
-kind: geoah.me/chores/task
-metadata:
-  id: 01jcd8m0k3p7s2x9v4w6y1z5qc  # plants
-data:
-  properties:
-    name: Water the plants
-    dueAt: 2026-08-29T09:00:00Z
-    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
-EOF
-
-bin/substratectl get geoah.me/chores/task
-bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb -o yaml   # the full envelope, apply-able
-bin/substratectl get geoah.me/chores/task --filter '{"properties":{"status":{"eq":"open"}}}'
-
-bin/substratectl patch geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb --state status=done  # stamps completedAt
-
-# Tail the changelog: from here on every write streams as one line, and the
-# opening line prints the sequence and generation a later run resumes from
-# (--from N --generation G).
-bin/substratectl watch
-```
-
-The same records answer on REST at `/api/v1/geoah.me/chores/task/{id}`, in a
-filtered list at `/api/v1/records`, and in full-text and semantic search on
-the same route: [docs/api.md](docs/api.md). [docs/getting-started.md](docs/getting-started.md)
-is the longer walkthrough.
-
-## Manage them with a function and an agent
-
-Automation is records too. Append two more documents to `chores.yaml`: a
-**function** (real code the substrate runs) and an **agent** (an LLM loop
-with tools), each scoped to exactly the kinds it may touch:
-
-```yaml
----
-kind: substrate.reamde.dev/core/function
-metadata:
-  id: geoah.me/chores/triage
-data:
-  authority: geoah.me
-  package: chores
-  description: Raise every open task past its due date to urgent.
-  runtime: python
-  permissions:
-    reads:
-      kinds:
-        - geoah.me/chores/task
-    writes:
-      - geoah.me/chores/task
-  source: |
-    from datetime import datetime, timezone
-
-    def main(input, host):
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        page = host.records.list(["geoah.me/chores/task"],
-                                 where={"status": {"eq": "open"}})
-        raised = 0
-        for task in page.get("records") or []:
-            props = task.get("properties") or {}
-            due = props.get("dueAt")
-            if due and due < now and props.get("priority") != "urgent":
-                host.effects.patch("geoah.me/chores/task", task["id"],
-                                   properties={"priority": "urgent"})
-                raised += 1
-        return {"output": {"raised": raised}}
----
-kind: substrate.reamde.dev/core/agent
-metadata:
-  id: geoah.me/chores/assistant
-data:
-  authority: geoah.me
-  package: chores
-  description: Reads and updates my projects and tasks on request.
-  prompt: |
-    You manage the user's projects and tasks. Read them with the query
-    tool; create, complete and reprioritize them with write. Keep
-    answers short.
-  provider: anthropic
-  model: claude-opus-5
-  tools:
-    - function: substrate.reamde.dev/core/query
-    - function: substrate.reamde.dev/core/write
-  budgets:
-    maxTurns: 8
-    maxToolCalls: 16
-  permissions:
-    reads:
-      kinds:
-        - geoah.me/chores/task
-        - geoah.me/chores/project
-    writes:
-      - geoah.me/chores/task
-      - geoah.me/chores/project
-```
-
-Apply the file again (re-applying a closure is how it evolves; the engine
-versions the changes itself), then run the function by hand. The plants task is
-open and past due, so it comes back urgent:
-
-```bash
-bin/substratectl apply -f chores.yaml
-bin/substratectl function call geoah.me/chores/triage
-bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qc -o yaml
-```
-
-What usually runs it is a **trigger**, an ordinary record binding a source
-(a record change, a schedule, or a webhook) to a callable:
-
-```bash
-cat <<'EOF' | bin/substratectl apply -f -
-kind: substrate.reamde.dev/core/trigger
-metadata:
-  id: chores-triage-daily
-data:
-  properties:
-    enabled: true
-    source:
-      schedule:
-        recurrence: "FREQ=DAILY"
-        timezone: Europe/London
-        startsAt: "2026-01-01T07:00:00Z"
-    callable: substrate.reamde.dev/core/function/geoah.me/chores/triage
-EOF
-```
-
-A `webhook` source instead makes the trigger a public endpoint,
-`POST /webhooks/<authority>/<trigger-id>`, and the callable receives the
-request (headers, query, body or parsed multipart parts, file parts stored
-as blobs) on its envelope. The endpoint is open unless the trigger sets
-`source.webhook.key`; GitHub-style signatures verify inside the function,
-which gets the raw body. The shipped `pebble` bundle
-([samples/pebble](samples/pebble)) is a worked example: a voice-recorder ring
-POSTs each capture to one URL, and a header decides whether it lands as a note
-or is handed to an agent.
-
-[docs/functions.md](docs/functions.md) is the whole contract: the host SDK,
-permissions, triggers, webhooks and the sandbox.
-
-## Give the agent a model
-
-The agent loop is core: the `agent` kind, its built-in tools and the
-console's chat all ship in the engine, which is why `assistant` needed
-nothing installed. The one thing a substrate cannot invent is an LLM
-provider key. Providers are `llm/provider` records, and registration seeded
-three keyless rows (`openai`, `anthropic`, `gemini`) beside Moss, the
-assistant every repository ships with, so the row `assistant` names already
-exists. A package the catalog serves is a **bundle**, the install unit: a
-closure like `chores.yaml`, installed and removed as one thing. The console
-adds them: a provider from its Providers page, a sample from All data's
-**Add a collection**.
-
-Put a key on the row `assistant` names. It is an ordinary record write, and
-`apiKey` is secret-typed, so it reads back redacted ever after:
-
-```bash
-cat <<'EOF' | bin/substratectl apply -f -
-kind: substrate.reamde.dev/llm/provider
-metadata:
-  id: anthropic
-data:
-  properties:
-    apiKey: sk-ant-...
-EOF
-```
-
-The console's Agents page can then chat with `assistant`, which reads your
-tasks and writes them back through the same API as everything else.
-[docs/agents.md](docs/agents.md) has the rest: wires, pricing, sub-agents,
-budgets. The same catalog carries the provider bundles (Google, GitHub,
-Linear, Notion, Slack, Beeper, Whoop, Apple Health) and
-vocabularies (tasks, people, calendar, messaging and more):
-[docs/bundles.md](docs/bundles.md) is the model,
-[docs/bundles-catalog.md](docs/bundles-catalog.md) what ships
-today.
-
-To connect one, your Google mail and calendar say, open it on the console's
-**Providers** page. Its page walks you through four steps: add it, give it
-sign-in details (an OAuth client you create with the provider; the page shows
-the callback URL to give it), connect your account and choose what to bring
-in, where *Create and connect* opens the provider for you to approve. The
-first sync starts when you come back.
-
-## Configuration
-
-Everything is an environment variable, and every one has a working default
-under `docker compose up`. Five matter before anyone else can reach your
-substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_DATA_ROOT` (the
-directory every repository's changelog, sealed store and blobs live under, and
-the thing you back up), `SUBSTRATE_INVITE_CODE` (unset, the register door
-reads no code and anyone who reaches the port may register; set, it admits
-only a request that presents it), `SUBSTRATE_INSECURE_DISABLE_TOTP` (the
-compose file sets it, so a password is the whole credential; unset it), and
-`SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps the key every
-secret is sealed under, and a server without it refuses to boot).
-The server speaks plain HTTP and listens on `127.0.0.1`; reaching it from
-another machine without a TLS terminator in front is unsupported, and the
-binary refuses any other address unless `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT`
-says a terminator or a loopback port mapping is what reaches it
-([TLS and the reverse proxy](docs/operations.md#tls-and-the-reverse-proxy)).
-[docs/operations.md](docs/operations.md) has the full table, blob stores and
-egress rules included.
-
-## Upgrading
-
-Do not upgrade by hand: have an agent follow the upgrade runbook,
-[skills/substrate-runbook-upgrade](skills/substrate-runbook-upgrade/SKILL.md).
-A new binary migrates the database and every repository it opens, and only
-a backup taken beforehand undoes that. Each release's section in
-[CHANGELOG.md](CHANGELOG.md) says what you must change before and after. The
-runbook reads the section of every
-release between yours and the target, writes a plan for you to approve,
-takes the backup, deploys, verifies, and then takes the provider and sample
-upgrades the catalog offers.
-
-In Claude Code:
+Do not upgrade by hand: have an agent follow the
+[upgrade runbook](skills/substrate-runbook-upgrade/SKILL.md). A new binary
+migrates the database and every repository it opens, and only a backup taken
+beforehand undoes that. The runbook reads every [CHANGELOG.md](CHANGELOG.md)
+section between your version and the target, writes a plan for you to
+approve, takes the backup, deploys and verifies. In Claude Code:
 
 ```
 /plugin marketplace add geoah/substrate
 /plugin install substrate-runbooks@substrate
 ```
 
-Then ask it to upgrade your substrate. Any other agent that reads `SKILL.md`
-skills can use the same directory: copy `skills/substrate-runbook-upgrade`
-into that agent's skills directory.
-
-## Development
-
-Toolchain is [mise](https://mise.jdx.dev): `mise install` once, then:
+### Working on this code
 
 ```bash
-mise run dev            # Postgres in a container + the server on :8080
-mise run dev:wipe       # drop this tree's database; the next start is fresh
-mise run console:dev    # the console on :5173, proxying the API and auth door to :8080
-mise run test           # the Go suite (Docker needed for the engine half)
+mise install            # once
+mise run dev            # Postgres in a container + the server from the tree on :8080
+mise run console:dev    # the console on :5173
+mise run test           # the Go suite
 mise run ci             # every CI job, locally
-mise tasks              # everything else
 ```
 
-`docker compose up --build` builds an image; `mise run dev` runs the binary from the
-tree, so a change is a restart rather than a rebuild. Registration is
-one-shot per user, so testing it twice means `mise run dev:wipe`. The container
-is shared by every checkout on the box and the database inside it is named
-after the tree, so a worktree is isolated by default.
-[docs/running-locally.md](docs/running-locally.md) has what those tasks set and
-where the local state lives.
-
-[AGENTS.md](AGENTS.md) is the working guide for anyone, person or agent,
-changing this code: the model in one paragraph, every task, and the house
-rules. [docs/testing.md](docs/testing.md) maps the test suites.
-
-## Where to read next
-
-| Where                                                | What                                                              |
-| ---------------------------------------------------- | ----------------------------------------------------------------- |
-| [docs/README.md](docs/README.md)                     | the documentation index; the pages build one running example      |
-| [docs/getting-started.md](docs/getting-started.md)   | register, log in, write a record                                  |
-| [docs/for-agents.md](docs/for-agents.md)             | how a program acting with a token reads, writes and recovers      |
-| [docs/data-model.md](docs/data-model.md)             | the repository, its changelog, records, kinds and the envelope    |
-| [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
-| [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
-| [docs/decisions](docs/decisions/README.md)           | the decision records: one short, dated page per choice            |
-| [kinds/](kinds), [samples/](samples)                 | the shipped vocabulary and the sample packages, as YAML           |
-| [skills/](skills)                                    | agent skills for running and building on a substrate              |
-| [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
-| [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
-| [Releases](https://github.com/geoah/substrate/releases) | every released version, with its changelog section as the body |
-| [CHANGELOG.md](CHANGELOG.md)                         | every release, newest first: breaks with their steps, then what was added and fixed |
-| [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |
+[AGENTS.md](AGENTS.md) is the working guide, for people and agents alike,
+[docs/testing.md](docs/testing.md) maps the suites,
+[docs/decisions](docs/decisions/README.md) holds one page per design choice,
+and [SECURITY.md](SECURITY.md) says how to report a vulnerability.
