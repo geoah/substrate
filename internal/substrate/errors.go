@@ -130,10 +130,12 @@ const ReasonKeyRefused = "key_refused"
 
 // ReasonStaleRevision is the ErrorPayload reason of a ValidationError whose
 // problems include a written `revision` below the stored one (decision 0162):
-// a newer write of the record landed first, so this one never lands whatever
-// else it fixes, and a client that queued it drops it rather than asking its
-// owner. A write that removes a stored revision is not stale and carries no
-// reason.
+// a newer write of the record landed first, so that write never lands
+// whatever else it fixes, and a client that queued it drops it rather than
+// asking its owner. It names no record, so a request that writes several (a
+// function call's effects, refused and rolled back whole) is not safe to drop
+// on it alone. A write that removes a stored revision is not stale and
+// carries no reason.
 const ReasonStaleRevision = "stale_revision"
 
 // ErrorEnvelope is the one body every refused request answers with.

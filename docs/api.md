@@ -2465,8 +2465,12 @@ and `stale_revision` on `validation`, a write whose `revision` is below the
 stored one, so a newer write of the record landed first and this one never
 lands ([observations](observations.md#the-rules-the-substrate-refuses)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
-falling revision, at `props.revision`; a write that removes a stored revision
-carries no reason. A client that does not know a reason acts on the code.
+falling revision, at `props.revision`, and says that one record write in the
+request was superseded: a client drops a queued write of one record on it,
+but a function call that applies several effects is refused whole when one of
+them is stale, and dropping that call drops the others too. A write that
+removes a stored revision carries no reason. A client that does not know a
+reason acts on the code.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

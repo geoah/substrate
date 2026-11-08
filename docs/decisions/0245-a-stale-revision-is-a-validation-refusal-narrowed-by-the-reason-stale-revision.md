@@ -43,8 +43,14 @@ answer a question about the whole refusal. Reading the record after the
 refusal costs a round trip and races the next write.
 
 The reason rides the whole refusal whenever one of its problems is a falling
-revision, other problems included: fixing the rest still leaves a write a
-newer one superseded, so dropping it is right. A write that removes a stored
+revision, other problems included. It says what happened, not what to do:
+one record write in the request was superseded. Where the request is that
+one record's write, as every write an outbox queues is, dropping it is right,
+because fixing the rest still leaves a write a newer one superseded. Where
+the request writes more than one record, it is not: a function call applies
+its effects in one transaction, so one stale effect refuses the call with
+this reason and rolls back every other effect with it, and a client that
+drops the call on the reason alone loses those. A write that removes a stored
 revision is not stale (no newer write landed; the writer dropped the value)
 and carries no reason, so it is parked as before. The engine decides it
 (`vocabulary.RevisionProblems` reports the case and the write path sets
@@ -63,6 +69,10 @@ the same path.
 - Bad, because the reason names the whole refusal, so a stale write that is
   also malformed is dropped rather than reported; the malformed half is
   never seen by the owner.
+- Bad, because the reason does not say which record was stale, so it is
+  safe to act on alone only for a request that writes one record; a client
+  queueing a function call reads the problem's path and its own effects
+  before it drops anything.
 - Bad, because the reason is set only where the revision is compared: a
   write its declaration or a required property refuses first never reaches
   the comparison, so it carries no reason even when its revision is stale,
@@ -75,7 +85,9 @@ the same path.
 patch; `TestRevisionProblemsReportOnlyAFallingRevisionStale` holds which
 cases are stale; `TestObservedWriteRefusesAFallingRevision` and
 `TestRevisedKindRefusesAFallingRevision` hold the engine setting it on both
-traits and leaving it off a removed revision.
+traits and leaving it off a removed revision;
+`TestARefusedStepNamesItsActionAndStep` holds an applet action keeping it
+when it names the step a refusal came from.
 
 ## More Information
 

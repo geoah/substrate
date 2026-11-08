@@ -399,9 +399,9 @@ whose problems name the property and the rule, such as
   never removed. A create, and a put onto a deleted record, start afresh. A
   kind that binds core's `revised` trait instead is held to this rule alone.
   The stale refusal carries the reason `stale_revision` beside its
-  `validation` code, so a client that queued the write drops it without
-  reading the message ([errors](api.md#errors)); a removed revision carries
-  none.
+  `validation` code, so a client that queued the record's write drops it
+  without reading the message ([errors](api.md#errors)); a removed revision
+  carries none.
 - A `comparator` on `value` (`<0.01`) is admitted only where the kind
   declares `comparator: true` on it, as for any quantity.
 - A value's magnitude is at most 1e280: a larger one is refused
