@@ -15,13 +15,14 @@ describe("SessionStore", () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.restoreAllMocks())
 
-  it("clears a session only while it is still the one kept", () => {
+  it("answers an ended session as none and writes nothing: a change under the lock clears it", () => {
     const store = new SessionStore("template")
-    store.save(session("new"))
-    store.clearIf("old")
-    expect(store.load()?.token).toBe("new")
-    store.clearIf("new")
+    store.save({ ...session("old"), expiresAt: 1000 })
+    const remove = vi.spyOn(Storage.prototype, "removeItem")
     expect(store.load()).toBeNull()
+    expect(store.current("old")).toBe(false)
+    expect(store.read()?.token).toBe("old")
+    expect(remove).not.toHaveBeenCalled()
   })
 
   it("hears another tab change the session", () => {

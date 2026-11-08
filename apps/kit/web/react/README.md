@@ -35,18 +35,22 @@ either (a background tab, a page back from the cache) looks again when it
 comes to the front, and until then its requests carry no token that is no
 longer the kept one, so the server refuses them and the tab ends.
 
-A sign-out keeps the token to revoke before it clears the session, so a
-revocation that meets no server leaves the token held by the queue rather
-than by nothing, then forgets what this browser kept for the repository
-(the outbox and the saved records) while it revokes. Forgetting that
-another tab still holds open is said on the connect screen. Where the
-browser will not keep the token, it is revoked before the session is
-cleared, and when the server cannot confirm that either, `signOut` rejects
-with `NotSignedOut` and the app stays signed in (Settings says so beside
-Sign Out). A tab that slept through another tab's sign-in signs out only
-its own token: the other session stands, the tab takes it up, and the
+A sign-out queues the token to revoke before it clears the session, then
+forgets what this browser kept for the repository (the outbox and the saved
+records); the revocation is sent in the background and tried again until
+the server confirms it. Forgetting that another tab still holds open is
+said on the connect screen. Where the browser will not keep the token to
+revoke (a full or private storage), nothing changes: `signOut` rejects with
+`NotSignedOut` and the app stays signed in (Settings says so beside Sign
+Out). A tab that slept through another tab's sign-in signs out only its
+own token: the other session stands, the tab takes it up, and the
 repository's data stays where it is that session's too. One sign-out runs
 at a time.
+
+A sign-in again opens as soon as the new session is kept, never waiting on
+the old token's revocation. One this browser cannot keep leaves the session
+before in place and says why. Every change of the session takes the lock
+the app's tabs share ([the session](../auth/README.md#the-session)).
 
 `SubstrateProvider` is the same without the screens, for an app with its
 own connect screen: its children read `useConnection()` (the `phase`,

@@ -6,15 +6,13 @@ export {
   webManifest,
 } from "./manifest"
 export type { AppManifest, AuthorizationDetail } from "./manifest"
-export { SessionStore, hasEnded, revoke } from "./session"
+export { hasEnded, revoke } from "./session"
 export type { Session } from "./session"
-export {
-  RevocationQueue,
-  unrevokedSentences,
-  unrevokedTitle,
-} from "./revocations"
-export { NotSignedOut, signOut } from "./signout"
-export type { SignOut } from "./signout"
+export { unrevokedSentences, unrevokedTitle } from "./revocations"
+export { NotSignedIn, NotSignedOut, SessionKeeper, revokeNow } from "./keeper"
+export type { Discarded, SessionKeeperOptions, SignOut } from "./keeper"
+export { sessionLocks, tabLocks } from "./locks"
+export type { SessionLocks } from "./locks"
 export {
   SignInError,
   beginSignIn,

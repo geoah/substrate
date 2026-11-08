@@ -45,15 +45,21 @@ const refused = (status: number, code: string, message: string) =>
 /** A substrate in memory behind `fetch`: records with versions, a write's
  * `ifVersion` held as the server holds it, a plain delete, the list read
  * (without a head, as an app token's is) a page at a time, the change
- * feed's ndjson watch, which stays open and carries each later write, and
- * token revocation, after which the token is refused. `offline` makes
- * every request fail as `fetch` does without a network. */
+ * feed's ndjson watch, which stays open and carries each later write, the
+ * sign-in's code exchange, and token revocation, after which the token is
+ * refused, as a request with none is. `offline` makes every request fail as `fetch` does without a
+ * network. */
 export class FakeSubstrate {
   readonly origin: string
   readonly records = new Map<string, SubstrateRecord>()
   readonly requests: SeenRequest[] = []
   /** The tokens revoked through `/oauth/revoke`. */
   readonly revoked = new Set<string>()
+  /** The tokens `/oauth/token` mints next, in order; then `tok-<n>`. */
+  readonly mint: string[] = []
+  /** The repository a minted token is for. */
+  repository = "ada.example.org"
+  private minted = 0
   offline = false
   generation = "g1"
   checkResult: AuthorizationCheckResult = { scopes: { missing: [] }, setup: [] }
@@ -208,6 +214,14 @@ export class FakeSubstrate {
       failure.times--
       return json(failure.status, failure.body, failure.headers)
     }
+    if (path === "/oauth/token" && method === "POST") {
+      const token = this.mint.shift() ?? `tok-${++this.minted}`
+      return json(200, {
+        access_token: token,
+        token_type: "Bearer",
+        repository: this.repository,
+      })
+    }
     if (path === "/oauth/revoke" && method === "POST") {
       const token = (body as { token?: string } | undefined)?.token
       if (token) this.revoked.add(token)
@@ -218,6 +232,8 @@ export class FakeSubstrate {
       ?.replace(/^Bearer /, "")
     if (bearer && this.revoked.has(bearer))
       return refused(401, "auth", "the token was revoked")
+    if (!bearer && path.startsWith("/api/"))
+      return refused(401, "auth", "no token")
     if (path === "/api/v1/changes") return this.watch(url, signal)
     if (path === "/api/v1/records" && method === "GET") return this.list(url)
     if (path === "/api/v1/authorizations/check" && method === "POST")
@@ -388,5 +404,83 @@ export async function until(
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
     await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+type LockCallback<T> = (lock: Lock | null) => T | PromiseLike<T>
+
+/** Web Locks in memory, for an environment without them (jsdom): one
+ * exclusive lock per name, granted in the order asked, `ifAvailable`
+ * answered with no lock while it is held. `hold` takes a name and keeps it
+ * until let go, so a test lines up two tabs' changes behind it and lets
+ * them run in the order it asked them; `granted` lists the names in the
+ * order each was granted; `install` puts it at `navigator.locks`. */
+export class FakeLocks {
+  /** The names granted, in order. */
+  readonly granted: string[] = []
+  private readonly held = new Set<string>()
+  private readonly waiting = new Map<string, (() => void)[]>()
+
+  request<T>(name: string, callback: LockCallback<T>): Promise<Awaited<T>>
+  request<T>(
+    name: string,
+    options: LockOptions,
+    callback: LockCallback<T>
+  ): Promise<Awaited<T>>
+  async request<T>(
+    name: string,
+    a: LockOptions | LockCallback<T>,
+    b?: LockCallback<T>
+  ): Promise<Awaited<T>> {
+    const options = typeof a === "function" ? {} : a
+    const callback = typeof a === "function" ? a : b!
+    if (options.ifAvailable && this.held.has(name)) return await callback(null)
+    const release = await this.take(name)
+    try {
+      return await callback({ name, mode: "exclusive" })
+    } finally {
+      release()
+    }
+  }
+
+  /** Takes `name` as a request would, and keeps it until the answer is
+   * called. */
+  async hold(name: string): Promise<() => void> {
+    return this.take(name)
+  }
+
+  /** How many requests wait for `name`. */
+  queued(name: string): number {
+    return this.waiting.get(name)?.length ?? 0
+  }
+
+  /** Puts these locks at `navigator.locks`; the answer takes them away. */
+  install(): () => void {
+    Object.defineProperty(navigator, "locks", {
+      value: this,
+      configurable: true,
+    })
+    return () => {
+      delete (navigator as { locks?: LockManager }).locks
+    }
+  }
+
+  private async take(name: string): Promise<() => void> {
+    if (this.held.has(name)) {
+      let list = this.waiting.get(name)
+      if (!list) this.waiting.set(name, (list = []))
+      await new Promise<void>((r) => list.push(r))
+    } else {
+      this.held.add(name)
+    }
+    this.granted.push(name)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const next = this.waiting.get(name)?.shift()
+      if (next) next()
+      else this.held.delete(name)
+    }
   }
 }

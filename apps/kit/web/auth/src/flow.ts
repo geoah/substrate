@@ -1,7 +1,8 @@
 import type { AuthorizationServerMetadata } from "@substrate/client"
+import { revokeNow, type Discarded } from "./keeper"
 import type { AppManifest, AuthorizationDetail } from "./manifest"
 import { makePKCE, randomToken } from "./pkce"
-import { revoke, type Session } from "./session"
+import type { Session } from "./session"
 
 /** What the page keeps across the navigation to the server's approval page
  * and back: in sessionStorage, so it never outlives the tab. */
@@ -135,10 +136,13 @@ interface TokenResponse {
 
 /** The redirect's query checked (the state this flow sent, the issuer it
  * began on, RFC 9207) and the code exchanged for a session. The query is
- * cleared from the address bar either way. */
+ * cleared from the address bar either way. A token minted for another
+ * repository than the one typed goes to `discard`, which revokes it at
+ * once unless given the kit's queue (`SessionKeeper.discard`). */
 export async function completeSignIn(
   manifest: AppManifest,
-  location: Location = window.location
+  location: Location = window.location,
+  discard: (session: Session) => Promise<Discarded> = revokeNow
 ): Promise<Session> {
   const q = new URLSearchParams(location.search)
   const raw = sessionStorage.getItem(pendingKey(manifest.id))
@@ -235,10 +239,14 @@ export async function completeSignIn(
     pending.repository &&
     normal(pending.repository) !== normal(session.repository)
   ) {
-    await revoke(session).catch(() => {})
+    const host = new URL(session.server).host
+    const live =
+      (await discard(session)) === "live"
+        ? ` ${host} didn't confirm revoking the access it gave to ${session.repository}: revoke it yourself in its Settings, under Apps.`
+        : ""
     throw new SignInError(
       "repository_mismatch",
-      `You signed in to ${session.repository}, not ${pending.repository}. Sign in to ${pending.repository}, or type ${session.repository} to connect it instead.`
+      `You signed in to ${session.repository}, not ${pending.repository}. Sign in to ${pending.repository}, or type ${session.repository} to connect it instead.${live}`
     )
   }
   return session

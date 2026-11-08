@@ -25,52 +25,42 @@ export function hasEnded(session: Session, now = Date.now()): boolean {
   return session.expiresAt !== undefined && session.expiresAt <= now
 }
 
-/** Sessions kept in this browser's storage, one per app: a web app's token
- * lives where its pages can read it, which is what a public client is. The
- * kept session is the one every tab of the app runs on: a sign-out or a
- * sign-in in one tab reaches the others through `watch`. */
+/** The session kept in this browser's storage, one per app: a web app's
+ * token lives where its pages can read it, which is what a public client
+ * is. The kept session is the one every tab of the app runs on: a sign-out
+ * or a sign-in in one tab reaches the others through `watch`. Its reads
+ * write nothing; `save` and `clear` are `SessionKeeper`'s, under the lock
+ * every tab's change of it takes. */
 export class SessionStore {
-  private readonly key: string
+  readonly key: string
 
   constructor(appID: string) {
     this.key = `substrate.session.${appID}`
   }
 
-  load(): Session | null {
+  /** The session kept, ended or not; null when none or unreadable. */
+  read(): Session | null {
     try {
       const raw = localStorage.getItem(this.key)
-      if (!raw) return null
-      const s = JSON.parse(raw) as Session
-      if (hasEnded(s)) {
-        localStorage.removeItem(this.key)
-        return null
-      }
-      return s
+      return raw ? (JSON.parse(raw) as Session) : null
     } catch {
       return null
     }
   }
 
+  /** The session kept, while its access has not ended. */
+  load(): Session | null {
+    const s = this.read()
+    return s && !hasEnded(s) ? s : null
+  }
+
+  /** Throws where the storage will not take it (full, or private). */
   save(session: Session): void {
     localStorage.setItem(this.key, JSON.stringify(session))
   }
 
   clear(): void {
-    try {
-      localStorage.removeItem(this.key)
-    } catch {
-      // a private window keeps nothing to clear
-    }
-  }
-
-  /** Clears the kept session only while it is still `token`'s, and answers
-   * the session kept after: none, or the one another tab signed in since,
-   * which a tab whose session ended never signs out. */
-  clearIf(token: string): Session | null {
-    const kept = this.load()
-    if (kept?.token !== token) return kept
-    this.clear()
-    return null
+    localStorage.removeItem(this.key)
   }
 
   /** Whether `token` is the session every tab runs on now. */

@@ -15,70 +15,33 @@ const session = (token: string, over: Partial<Session> = {}): Session => ({
 
 describe("RevocationQueue", () => {
   beforeEach(() => localStorage.clear())
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => vi.restoreAllMocks())
 
-  it("keeps a token the server did not confirm revoking, and tries again", async () => {
-    const queue = new RevocationQueue("template")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new TypeError("Failed to fetch")))
-    )
-    expect(await queue.revoke(session("a"))).toBe(false)
-    expect(queue.pending().map((s) => s.token)).toEqual(["a"])
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve(new Response("{}")))
-    )
-    expect(await queue.retry()).toEqual([])
-    expect(queue.pending()).toEqual([])
-  })
-
-  it("forgets a token that has ended without asking the server", async () => {
-    const queue = new RevocationQueue("template")
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new TypeError("offline")))
-    )
-    await queue.revoke(session("old", { expiresAt: 1000 }))
-    const fetch = vi.fn()
-    vi.stubGlobal("fetch", fetch)
-    expect(await queue.retry(2000)).toEqual([])
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it("counts only a 2xx as revoked: a 400 or a 401 leaves the token live", async () => {
-    const queue = new RevocationQueue("template")
-    for (const status of [400, 401]) {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() =>
-          Promise.resolve(
-            new Response('{"error":"invalid_client"}', { status })
-          )
-        )
-      )
-      expect(await queue.revoke(session("a"))).toBe(false)
-      expect(queue.pending().map((s) => s.token)).toEqual(["a"])
-    }
-  })
-
-  it("keeps a token before it is sent, so nothing else need hold it", async () => {
+  it("keeps a token once, and answers one kept already without writing", () => {
     const queue = new RevocationQueue("template")
     expect(queue.keep(session("a"))).toBe(true)
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError")
+    })
+    expect(queue.keep(session("a"))).toBe(true)
+    expect(queue.keep(session("b"))).toBe(false)
     expect(queue.pending().map((s) => s.token)).toEqual(["a"])
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve(new Response("{}")))
-    )
-    expect(await queue.send(session("a"))).toBe(true)
-    expect(queue.pending()).toEqual([])
+  })
+
+  it("forgets a token, and answers whether it is gone", () => {
+    const queue = new RevocationQueue("template")
+    queue.keep(session("a"))
+    queue.keep(session("b"))
+    expect(queue.drop(session("a"))).toBe(true)
+    expect(queue.drop(session("x"))).toBe(true)
+    expect(queue.pending().map((s) => s.token)).toEqual(["b"])
   })
 
   it("says each server and repository once", () => {
     expect(
       unrevokedSentences("Substrate Template", [session("a"), session("b")])
     ).toEqual([
-      "Substrate Template's earlier access to ada.example.org still works on substrate.example.com. It tries again each time it opens; you can also revoke it yourself in substrate.example.com's Settings, under Apps.",
+      "Substrate Template's earlier access to ada.example.org still works on substrate.example.com. It keeps trying to revoke it; you can also revoke it yourself in substrate.example.com's Settings, under Apps.",
     ])
   })
 })

@@ -1,12 +1,14 @@
-import { revoke, type Session } from "./session"
+import type { Session } from "./session"
 
 /** The tokens this browser stopped using that their servers have not
- * confirmed revoking yet, kept beside the session so a sign-out that met no
- * server is tried again at the next open (the kit's pending revocations).
- * A token is kept before it is revoked and forgotten once it is, so a
- * failed revocation never leaves a live token with nothing holding it. */
+ * confirmed revoking yet, kept beside the session (the kit's pending
+ * revocations). A token leaves the session only into this queue, and
+ * leaves the queue only once its server confirms revoking it, so a live
+ * token is always held by one of the two. Its writes are
+ * `SessionKeeper`'s, under the lock every tab's change of the session
+ * takes, which also sends what it keeps. */
 export class RevocationQueue {
-  private readonly key: string
+  readonly key: string
 
   constructor(appID: string) {
     this.key = `substrate.unrevoked.${appID}`
@@ -33,37 +35,20 @@ export class RevocationQueue {
     }
   }
 
-  /** Keeps the token to revoke, before anything else forgets it: a
-   * sign-out calls this before it clears the session, so the token is never
-   * held by nothing. Answers whether it was kept; where it was not, the
-   * session is its only copy until the server confirms revoking it. */
+  /** Keeps the token to revoke. Answers whether it is kept: already, or
+   * now; where it is not, whatever held it must go on holding it. */
   keep(session: Session): boolean {
-    const list = this.pending().filter((s) => s.token !== session.token)
+    const list = this.pending()
+    if (list.some((s) => s.token === session.token)) return true
     return this.write([...list, session])
   }
 
-  /** Forgets a kept token without revoking it: one kept for a change that
-   * did not happen, whose session still holds it. */
-  drop(session: Session): void {
-    this.write(this.pending().filter((s) => s.token !== session.token))
-  }
-
-  /** Revokes a token already kept, and forgets it once the server confirms.
-   * Answers whether it did; one it did not stays kept for `retry`. */
-  async send(session: Session): Promise<boolean> {
-    try {
-      await revoke(session)
-      this.drop(session)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  /** Keeps the token, then revokes it. */
-  async revoke(session: Session): Promise<boolean> {
-    this.keep(session)
-    return this.send(session)
+  /** Forgets a token: one its server confirmed revoking, one whose time is
+   * up, or one the kept session still holds. Answers whether it is gone. */
+  drop(session: Session): boolean {
+    const list = this.pending()
+    const left = list.filter((s) => s.token !== session.token)
+    return left.length === list.length || this.write(left)
   }
 
   /** Calls `fn` whenever another tab changes the tokens kept. */
@@ -73,25 +58,6 @@ export class RevocationQueue {
     }
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
-  }
-
-  /** Tries every kept token again and answers the ones still live. A
-   * token that has ended needs no revoking and is forgotten. */
-  async retry(now = Date.now()): Promise<Session[]> {
-    const left: Session[] = []
-    for (const session of this.pending()) {
-      if (session.expiresAt !== undefined && session.expiresAt <= now) {
-        this.drop(session)
-        continue
-      }
-      try {
-        await revoke(session)
-        this.drop(session)
-      } catch {
-        left.push(session)
-      }
-    }
-    return left
   }
 }
 
@@ -113,7 +79,7 @@ export function unrevokedSentences(
       s.repository.toLowerCase() === host.toLowerCase()
         ? ""
         : ` to ${s.repository}`
-    return `${appName}'s earlier access${repository} still works on ${host}. It tries again each time it opens; you can also revoke it yourself in ${host}'s Settings, under Apps.`
+    return `${appName}'s earlier access${repository} still works on ${host}. It keeps trying to revoke it; you can also revoke it yourself in ${host}'s Settings, under Apps.`
   })
 }
 

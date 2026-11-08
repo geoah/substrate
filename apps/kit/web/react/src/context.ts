@@ -22,12 +22,12 @@ export interface SubstrateContextValue {
   storage: RepositoryStorage
   /** What the app calls its records in a sentence, plural: "tasks". */
   kept: string
-  /** Revokes the app's access, forgets what this browser kept for the
-   * repository in every tab, and shows the connect screen; or, where
-   * another tab signed in since, revokes this tab's access alone and takes
-   * up that session. Rejects with `NotSignedOut`, still signed in, when the
-   * browser could not keep the token to revoke later and the server did
-   * not confirm revoking it now. */
+  /** Queues the app's access to revoke, forgets what this browser kept for
+   * the repository in every tab, and shows the connect screen; or, where
+   * another tab signed in since, queues this tab's access alone and takes
+   * up that session. The revocation is sent in the background. Rejects
+   * with `NotSignedOut`, still signed in, when the browser could not keep
+   * the token to revoke. */
   signOut: () => Promise<void>
   /** The server's sign-in and approval page again, for this repository: to
    * review more access, renew it, or sign in after it ended. */
