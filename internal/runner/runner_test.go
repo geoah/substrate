@@ -754,6 +754,59 @@ def main(input, host):
 	}
 }
 
+// slowGetBackend answers a get only after a pause.
+type slowGetBackend struct {
+	*fakeBackend
+	pause time.Duration
+}
+
+func (b slowGetBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	time.Sleep(b.pause)
+	return b.fakeBackend.Get(ctx, typ, id)
+}
+
+// lateTimer is a context whose deadline is the one it reports and whose Done
+// closes only when the test says: a deadline whose timer has not fired yet,
+// which is what a starved process sees for a moment after it passes.
+type lateTimer struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c lateTimer) Deadline() (time.Time, bool) { return c.deadline, true }
+
+// A host call that returns past the invocation's deadline ends it as timed
+// out even when the deadline's timer has not fired. Before, the child was
+// handed the reply, answered, and the late timer lost the select to it: a
+// body whose agent settled at their shared deadline then succeeded
+// (TestAgentRunSettlesAtTheCallersDeadline, 7 failures on main's coverage
+// job from 2026-10-10 to 2026-11-06).
+func TestAHostCallPastTheDeadlineEndsTheInvocation(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "late.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    host.get("g.test/widgets/widget", "w1")
+    return {"output": "late"}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"},
+	}
+	if err := r.Warm(context.Background(), spec); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	timer, fire := context.WithCancel(context.Background())
+	defer fire()
+	ctx := lateTimer{Context: timer, deadline: time.Now().Add(200 * time.Millisecond)}
+	backend := slowGetBackend{fakeBackend: widgetBackend(), pause: 400 * time.Millisecond}
+	res, err := r.Invoke(ctx, spec, testInput(), backend)
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("a body whose host call returned past its deadline: %+v, %v", res, err)
+	}
+}
+
 func TestTimeoutReapsProcessTree(t *testing.T) {
 	// Review W1 #6: killing the child kills its process GROUP, so a
 	// grandchild a body spawned dies with the timeout instead of leaking.
