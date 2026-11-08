@@ -53,6 +53,16 @@ struct FoldTests {
         // A patch of a record already gone makes no record.
         #expect(RecordFold.fold([:], [rename])[key] == nil)
     }
+
+    @Test func aCreateOverARecordTheServerHoldsWritesNothingOverIt() {
+        let key = RecordFold.key(noteKind, "n1")
+        // Its earlier try landed, its answer lost, and another device
+        // renamed it since.
+        let held = [key: note("n1", "Oat milk", version: 2)]
+        let create = RecordWrites(mint: { UUID() }).create(noteKind, "n1", properties: ["title": "Milk"]).entries
+        #expect(RecordFold.fold(held, create)[key] == held[key])
+        #expect(RecordFold.fold([:], create)[key]?.properties["title"] == "Milk")
+    }
 }
 
 @Suite("Linked records", .timeLimit(.minutes(10)))

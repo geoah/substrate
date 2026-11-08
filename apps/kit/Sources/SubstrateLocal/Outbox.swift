@@ -33,9 +33,10 @@ public actor Outbox {
         var entries: [OutboxEntry] = []
         /// The version each record was last written or read at.
         var versions: [String: Int] = [:]
-        /// The app's own guarded edits that landed, per record: the version
-        /// each one asserted and the version it made. An edit made on a
-        /// version the app itself then moved is sent at the end of that
+        /// The app's own writes that landed, per record: the version each
+        /// one asserted and the version it made, and for one that asserted
+        /// none, the version last seen where it made the next. An edit made
+        /// on a version the app itself then moved is sent at the end of that
         /// chain; anything another writer did breaks it, so the edit meets a
         /// conflict instead of writing over it.
         var chains: [String: [String: Int]] = [:]
@@ -53,6 +54,21 @@ public actor Outbox {
             entries = try c.decodeIfPresent([OutboxEntry].self, forKey: .entries) ?? []
             versions = try c.decodeIfPresent([String: Int].self, forKey: .versions) ?? [:]
             chains = try c.decodeIfPresent([String: [String: Int]].self, forKey: .chains) ?? [:]
+        }
+
+        /// How many of a record's own writes its chain keeps: an edit made
+        /// on a version older than those meets a conflict.
+        static let chainLimit = 32
+
+        /// Notes that one of the app's own writes moved the record from
+        /// `asserted` to `made`.
+        mutating func moved(_ key: String, from asserted: Int, to made: Int) {
+            var chain = chains[key] ?? [:]
+            chain[String(asserted)] = made
+            while chain.count > Self.chainLimit, let oldest = chain.keys.min(by: { (Int($0) ?? 0) < (Int($1) ?? 0) }) {
+                chain[oldest] = nil
+            }
+            chains[key] = chain
         }
 
         /// The version an edit made on `base` asserts: `base`, moved along
@@ -315,15 +331,16 @@ public actor Outbox {
     /// returns. The last write of the same record outside any batch, when it
     /// is a guarded edit or create still waiting (not on the wire, not
     /// parked), takes this one on top, so edits made offline go as one write
-    /// under the first one's version and a create not sent yet takes the
+    /// under the first one's version and a create never sent takes the
     /// edit into its body. Anything else (a parked conflict or refusal, a
-    /// Keep My Edit going without a version) is left alone, and the edit
-    /// queues behind it under its own version.
+    /// Keep My Edit going without a version, a create sent before, which
+    /// may have landed) is left alone, and the edit queues behind it under
+    /// its own version.
     public func edit(_ entry: OutboxEntry) throws {
         guard let patch = entry.properties, !patch.isEmpty else { return }
         try change { file in
             if let index = file.entries.lastIndex(where: { $0.batch == nil && $0.key == entry.key }),
-                file.entries[index].id != inFlight?.id, !file.entries[index].parked,
+                file.entries[index].id != inFlight?.id, !file.entries[index].parked, !file.entries[index].sent,
                 file.entries[index].baseVersion != nil, file.entries[index].method != .purge, file.entries[index].method != .delete
             {
                 var merged = file.entries[index].properties ?? JSONObject()
@@ -440,12 +457,22 @@ public actor Outbox {
         var refusal: String?
         while let entry = next(skipping: tried) {
             tried.insert(entry.id)
+            if entry.method == .put, entry.baseVersion != nil, entry.batch == nil, !entry.sent {
+                // Kept on disk before it goes: `edit` folds an edit into a
+                // create outside any batch that never went, and one folded
+                // into a create whose answer was lost would be counted as
+                // landed with it.
+                commit { file in
+                    guard let index = file.entries.firstIndex(where: { $0.id == entry.id }) else { return }
+                    file.entries[index].sent = true
+                }
+            }
             inFlight = entry
             let outcome: Result<Landed, any Error>
             do {
                 outcome = .success(try await send(entry, writer, run: run))
             } catch {
-                outcome = .failure(await overtaken(entry, error, writer))
+                outcome = .failure(await overtaken(entry, error, writer, run: run))
             }
             inFlight = nil
             guard run == generation else { return state }
@@ -459,7 +486,12 @@ public actor Outbox {
                         if let base = entry.baseVersion {
                             // A create asserted 0 itself; an edit, the end of the chain.
                             let asserted = entry.method == .put ? base : file.asserted(entry.key, from: base)
-                            file.chains[entry.key, default: [:]][String(asserted)] = made
+                            file.moved(entry.key, from: asserted, to: made)
+                        } else if let seen = file.versions[entry.key], made == seen + 1 {
+                            // Nothing else wrote the record between the
+                            // version last seen and this write, so an edit
+                            // made on that one goes on this one's.
+                            file.moved(entry.key, from: seen, to: made)
                         }
                         file.versions[entry.key] = landed.now ?? made
                     }
@@ -541,7 +573,7 @@ public actor Outbox {
             do {
                 return Landed(
                     try await writer.write("PUT", entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion ?? 0))
-            } catch let error as ServerError where error.status == 409 {
+            } catch let error as ServerError where error.status == 409 && error.code == "conflict" {
                 // The row there is this create's earlier try, its answer
                 // lost: the create landed. Sent again, its properties would
                 // land over whatever another device wrote since, so the row
@@ -597,8 +629,8 @@ public actor Outbox {
     /// and the read's own failure where it could not be read. The envelope
     /// says only `validation`, so the stored revision is read and compared,
     /// never the server's words.
-    private func overtaken(_ entry: OutboxEntry, _ error: any Error, _ writer: any RecordWriter) async -> any Error {
-        guard let server = error as? ServerError, server.code == "validation",
+    private func overtaken(_ entry: OutboxEntry, _ error: any Error, _ writer: any RecordWriter, run: Int) async -> any Error {
+        guard run == generation, let server = error as? ServerError, server.code == "validation",
             server.problemDetails.contains(where: { $0.path == "props.revision" }),
             let mine = entry.properties?["revision"]?.decimal
         else { return error }
