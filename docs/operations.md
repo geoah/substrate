@@ -698,7 +698,9 @@ the browser tab's icon (`.svg`, `.png`, `.ico`, `.webp`, `.gif`, `.jpg` or
 and the site's `name` into the console's HTML, so the tab shows them before
 any script runs, and answers `/favicon.ico` with the same file.
 `landing` is an HTML fragment the console renders at `/` for a visitor who is
-not signed in, in place of sending them straight to sign in. Without
+not signed in, in place of sending them straight to sign in. The console
+frames it with a bar carrying the brand and a sign-in link and nothing else,
+so the fragment carries its own link to `/register`. Without
 `SUBSTRATE_SITE_DIR` none of this exists: `/site/` is the console's like
 any other path and discovery carries no `site`.
 
