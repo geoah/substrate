@@ -995,6 +995,13 @@ func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, st
 	return resp, err
 }
 
+// pastDeadline reports whether ctx's deadline has passed, whether or not its
+// timer has fired yet.
+func pastDeadline(ctx context.Context) bool {
+	d, ok := ctx.Deadline()
+	return ok && !time.Now().Before(d)
+}
+
 // exchange is roundtrip's body, run under proc.mu.
 func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
 	// The sweep, Reconcile and a sibling roundtrip all kill under proc.mu, so
@@ -1063,6 +1070,16 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 					return nil, err
 				}
 				reply := state.serve(ctx, call)
+				// A call that returns past the deadline ends the invocation
+				// here, not at the next select: under load the deadline's
+				// timer can fire after the child has already answered, and
+				// a body would then finish late as a success. An agent the
+				// body runs settles at this same deadline, so its reply
+				// always comes back at or after it.
+				if pastDeadline(ctx) {
+					p.kill()
+					return nil, fmt.Errorf("runner: invocation exceeded %s", timeout)
+				}
 				reply["kind"] = frameKindReply
 				reply["reqId"] = f.ReqID
 				rawReply, err := json.Marshal(reply)
