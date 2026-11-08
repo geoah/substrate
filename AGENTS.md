@@ -242,13 +242,19 @@ and `observations` (measured values,
 [0241](docs/decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)),
 three keyless provider rows, and the shipped units.** The agent runtime's
 data kinds are the second seeded package, `substrate.reamde.dev/llm`
-(`provider`, `thread`, `message`, `interaction`, `memory`, the owner's
+(`provider`, `model`, one model a provider offers and what it costs,
+`thread`, `message`, `interaction`, `memory`, the owner's
 standing facts an agent pins, and `instruction`, the owner's standing
 direction to one agent), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
 the `agent` kind stays core's, because a manifest document is a record of a
 core kind whatever package it describes. Creation also writes three keyless
-`llm/provider` rows (`openai`, `anthropic`, `gemini`). The seeded assistant,
+`llm/provider` rows (`openai`, `anthropic`, `gemini`) and the `llm/model`
+records of the models they offer, which the record seed keeps current; a
+row's own deprecated `pricing` entry still wins for the model it names, and
+an agent may name `runsOn`, model records best first, instead of a provider
+and a model
+([0242](docs/decisions/0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md)). The seeded assistant,
 `substrate.reamde.dev/assistant/moss` with its `architect` and `librarian`,
 names `anthropic` and refuses at dispatch until that row's `apiKey` is
 written; the owner shapes it with `llm/instruction` records rather than

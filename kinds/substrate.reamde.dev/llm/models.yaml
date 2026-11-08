@@ -1,0 +1,160 @@
+# The models the three seeded provider rows offer, as llm/model records
+# (decision record 0242). They are records, not declarations: the record seed
+# (internal/engine/recordseed.go) writes them at registration, refreshes them
+# at every open, and leaves alone one the owner edited or deleted, and one
+# whose row and model another record already holds. A changed price here is
+# a changed `llm` package version, or no repository receives it.
+#
+# A reference is spelled as the engine stores it, `{ref: …}`, and a price as
+# a canonical decimal, so the seed reads a seeded row as already holding
+# what ships. The prices are the ones the seeded rows carried before this
+# file existed, so a repository's spend counts the same.
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: openai:gpt-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/openai
+    model: gpt-5
+    label: GPT-5
+    pricing:
+      inputPer1M: "1.25"
+      outputPer1M: "10"
+    contextWindow: 400000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: openai:gpt-5-mini
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/openai
+    model: gpt-5-mini
+    label: GPT-5 mini
+    pricing:
+      inputPer1M: "0.25"
+      outputPer1M: "2"
+    contextWindow: 400000
+---
+# Anthropic's list prices. Opus 5.5 reads from its cache at a twentieth of its
+# input rate, not the default tenth, so its read rate is stated.
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-opus-5-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-opus-5-5
+    label: Claude Opus 5.5
+    pricing:
+      inputPer1M: "4"
+      outputPer1M: "20"
+      cacheReadPer1M: "0.20"
+    contextWindow: 200000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-opus-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-opus-5
+    label: Claude Opus 5
+    pricing:
+      inputPer1M: "5"
+      outputPer1M: "25"
+    contextWindow: 200000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-sonnet-5-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-sonnet-5-5
+    label: Claude Sonnet 5.5
+    pricing:
+      inputPer1M: "2"
+      outputPer1M: "10"
+      cacheReadPer1M: "0.20"
+    contextWindow: 200000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-sonnet-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-sonnet-5
+    label: Claude Sonnet 5
+    pricing:
+      inputPer1M: "2"
+      outputPer1M: "10"
+      cacheReadPer1M: "0.20"
+    contextWindow: 200000
+---
+# Haiku 5.5's prices hold up to 100K prompt tokens and are five times higher
+# past it, so its window is 100000: compaction keeps a thread under the tier,
+# though one tool-heavy turn can still cross it.
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-haiku-5-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-haiku-5-5
+    label: Claude Haiku 5.5
+    pricing:
+      inputPer1M: "0.10"
+      outputPer1M: "0.50"
+      cacheReadPer1M: "0.01"
+    contextWindow: 100000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: anthropic:claude-haiku-4-5
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/anthropic
+    model: claude-haiku-4-5
+    label: Claude Haiku 4.5
+    pricing:
+      inputPer1M: "1"
+      outputPer1M: "5"
+      cacheReadPer1M: "0.10"
+    contextWindow: 200000
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: gemini:gemini-2.5-pro
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/gemini
+    model: gemini-2.5-pro
+    label: Gemini 2.5 Pro
+    pricing:
+      inputPer1M: "1.25"
+      outputPer1M: "10"
+    contextWindow: 1048576
+---
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: gemini:gemini-2.5-flash
+data:
+  properties:
+    provider:
+      ref: substrate.reamde.dev/llm/provider/gemini
+    model: gemini-2.5-flash
+    label: Gemini 2.5 Flash
+    pricing:
+      inputPer1M: "0.15"
+      outputPer1M: "0.60"
+    contextWindow: 1048576

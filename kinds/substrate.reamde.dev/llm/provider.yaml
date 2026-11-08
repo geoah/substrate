@@ -15,7 +15,10 @@
 # endpoint of its own to leave baseURL empty against.
 #
 # An agent references a row by id (`provider: openai`) and names its model as
-# a plain string, so re-pointing every agent on `openai` is one patch here.
+# a plain string, or runs on llm/model records that reference a row
+# (`runsOn`); either way re-pointing every agent on `openai` is one patch
+# here. The models a row offers, with their prices, are those records
+# (decision record 0242).
 #
 # Embeddings resolve the same way, without an agent to name the row: the ONE
 # row that declares `embedModel` is the repository's embeddings provider, and
@@ -27,11 +30,13 @@ data:
   authority: substrate.reamde.dev
   package: llm
   description: >-
-    One place completions are bought: the wire an adapter speaks, the endpoint,
-    the key that reaches it, and what its models cost. An agent names a provider
-    and a model, so re-pointing every agent on a provider is one patch to
-    this row.
-  version: 15
+    One place completions are bought: the wire an adapter speaks, the endpoint
+    and the key that reaches it. The models it offers, and what they cost,
+    are the llm/model records that reference it, so re-pointing every agent
+    on a provider is one patch to this row.
+  # 16: `pricing` is deprecated; a model's price is an llm/model record
+  # (decision record 0242).
+  version: 16
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -82,9 +87,9 @@ data:
         it makes this the repository's embeddings provider, and only one row
         may name one
     # The model a chat thread's title is asked of (decision record 0170). It
-    # sits on the row because the row already prices and windows its models by
-    # id, so a small model named here is priced like any other; absent, a
-    # thread is titled by the model it ran.
+    # sits on the row because the row's models are priced and windowed by id,
+    # so a small model named here is priced like any other; absent, a thread
+    # is titled by the model it ran.
     titleModel:
       type: string
       description: the model id on this row that titles chat threads; absent
@@ -170,17 +175,24 @@ data:
             the system message and the last message with Anthropic's cache_control,
             for a gateway such as LiteLLM that passes them to an Anthropic
             model
-    # data-driven cost estimation: USD per 1M tokens per model id. The cost
-    # stamp prices the uncached prompt at inputPer1M, cache reads at
+    # DEPRECATED (decision record 0242): a model's price is an llm/model
+    # record now, and the seeded rows no longer carry this. An entry here
+    # still prices its model exactly as before and WINS over a record for the
+    # same model, so a price an owner set here stands; a model no entry names
+    # takes its record's price. An entry with no window takes the record's.
+    #
+    # The cost stamp prices the uncached prompt at inputPer1M, cache reads at
     # cacheReadPer1M, cache writes at cacheWritePer1M and the completion at
-    # outputPer1M (decision record 0181). A model absent from the table means
-    # the thread's costUSD stays 0 and only the token tally is authoritative.
-    # One row per model, keyed by the id AS SENT; a later row for the same
+    # outputPer1M (decision record 0181). A model priced nowhere means the
+    # thread's costUSD stays 0 and only the token tally is authoritative. One
+    # entry per model, keyed by the id AS SENT; a later entry for the same
     # model wins, so the table stays a table.
     pricing:
       type: object
       repeated: true
-      description: approximate USD per 1M tokens, one row per model
+      deprecated: true
+      description: approximate USD per 1M tokens, one entry per model; the
+        llm/model records that reference this row are where prices go now
       fields:
         model:
           type: string

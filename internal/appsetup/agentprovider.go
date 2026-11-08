@@ -54,10 +54,17 @@ func (p *planner) providerInputs(ctx context.Context, row *substrate.Authorizati
 		}
 		q.After = page.Cursor
 	}
+	// What each row can run priced, as dispatch reads it: the operator's
+	// list for a row it serves, else the row's own entries and its
+	// llm/model records (decision 0242).
+	offers, err := p.ds.ModelOffers(ctx)
+	if err != nil {
+		return err
+	}
 	needsBinding := false
 	for i := range row.Package.ProviderInputs {
 		input := &row.Package.ProviderInputs[i]
-		input.Options = providerOptions(input.Agents, providers)
+		input.Options = providerOptions(input.Agents, providers, offers)
 		if len(input.Options) == 0 {
 			row.Blocked = block(substrate.BlockNoModel, fmt.Sprintf("No AI provider prices the models for %s input %s.", input.Package, input.Input), "/data/substrate.reamde.dev/llm/provider")
 		}
@@ -86,17 +93,10 @@ func (p *planner) providerInputs(ctx context.Context, row *substrate.Authorizati
 	return nil
 }
 
-func providerOptions(agents []substrate.AuthorizationProviderAgent, providers []*substrate.Record) []substrate.AuthorizationProviderOption {
+func providerOptions(agents []substrate.AuthorizationProviderAgent, providers []*substrate.Record, offers map[string][]string) []substrate.AuthorizationProviderOption {
 	out := []substrate.AuthorizationProviderOption{}
 	for _, row := range providers {
-		var priced []string
-		entries, _ := row.Properties["pricing"].([]any)
-		for _, raw := range entries {
-			entry, _ := raw.(map[string]any)
-			if model, ok := entry["model"].(string); ok {
-				priced = append(priced, model)
-			}
-		}
+		priced := offers[row.ID]
 		option := substrate.AuthorizationProviderOption{ID: row.ID, Label: row.Title, Models: map[string]string{}}
 		if option.Label == "" {
 			option.Label = row.ID

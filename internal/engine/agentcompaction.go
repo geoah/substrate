@@ -730,7 +730,7 @@ func compactionTranscript(msgs []llm.Message, speakers []string) string {
 // coexist.
 func (l *agentLoop) compactionWindow() (window, reserve, keep int, ok bool) {
 	c := l.ag.Compaction
-	window = l.provider.pricing[l.model].contextWindow
+	window = l.provider.contextWindow(l.model)
 	if !c.Enabled || window <= 0 || c.ReserveTokens >= window {
 		return 0, 0, 0, false
 	}

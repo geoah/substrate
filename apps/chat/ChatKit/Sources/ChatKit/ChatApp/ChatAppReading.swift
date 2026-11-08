@@ -45,11 +45,24 @@ extension ChatAppState {
 
     func title(_ thread: ChatThread) -> String { thread.title(opening: openings[thread.id]) }
 
-    /// The provider an agent completes against, when no key resolves for
-    /// it: neither its own nor the operator's.
-    func keyless(_ agent: String?) -> Provider? {
-        guard let provider = provider(of: agent) else { return nil }
-        return lacksKey(provider) ? provider : nil
+    /// The provider whose key a conversation's next turn waits on, where
+    /// none lets it run: an agent that names its provider, that row when no
+    /// key resolves for it. An agent on `runsOn`: in a new chat (`thread`
+    /// nil), the row a key would open where no entry can run; in a continued
+    /// one, the row its thread is stamped with where that cannot run.
+    func keyless(_ agent: String?, thread: String? = nil) -> Provider? {
+        guard let agent = self.agent(agent) else { return nil }
+        guard let ids = agent.runsOn else {
+            guard let provider = provider(of: agent.id) else { return nil }
+            return lacksKey(provider) ? provider : nil
+        }
+        let row: String?
+        if let thread {
+            row = self.thread(thread).flatMap { continued(ids, thread: $0).refusal?.keyable }
+        } else {
+            row = runsOn(ids).keyProvider
+        }
+        return row.flatMap { providers[$0] }.map(Provider.init(record:))
     }
 
     /// Whether no key resolves for `provider`. Until the keys are read, no
@@ -58,10 +71,72 @@ extension ChatAppState {
         keys.map { !$0.resolves(provider) } ?? false
     }
 
-    /// The provider an agent runs on, where its row is read.
-    func provider(of agent: String?) -> Provider? {
-        guard let id = self.agent(agent)?.providerID, let record = providers[id] else { return nil }
+    /// The provider an agent runs on, where its row is read: the row it
+    /// names, or for an agent on `runsOn` the row of the entry a new chat
+    /// takes, and in a continued chat the row its thread is stamped with.
+    func provider(of agent: String?, thread: String? = nil) -> Provider? {
+        guard let agent = self.agent(agent) else { return nil }
+        let id =
+            if agent.runsOn != nil, let thread {
+                self.thread(thread).flatMap { referent($0.record["provider"], pin: Kinds.provider) }
+            } else {
+                providerID(of: agent)
+            }
+        guard let id, let record = providers[id] else { return nil }
         return Provider(record: record)
+    }
+
+    /// The row a new chat with an agent runs on, by id: the one it names, or
+    /// the row of the entry a new chat takes.
+    func providerID(of agent: Agent) -> String? {
+        guard let ids = agent.runsOn else { return agent.providerID }
+        return runsOn(ids).shown?.model?.providerID
+    }
+
+    /// The model id a new chat with an agent sends: its own, or the one of
+    /// the entry a new chat takes.
+    func model(of agent: Agent) -> String? {
+        guard let ids = agent.runsOn else { return agent.model }
+        return runsOn(ids).shown?.model?.model
+    }
+
+    // MARK: What an agent on runsOn runs on
+
+    /// Whether a call for `model` on the row `id` can be sent now (the
+    /// server's `modelAvailable`). Until the keys are read, or where the
+    /// session may not read the rows, it cannot be told.
+    func availability(_ id: String, model: String) -> Availability {
+        guard let keys, session?.canReadProviders ?? true else { return .unknown }
+        guard let record = providers[id] else { return .no(.noProvider(id)) }
+        return keys.availability(Provider(record: record), model: model)
+    }
+
+    /// What a new chat with an agent on `runsOn` runs on (the server's
+    /// `chooseRunsOn`).
+    func runsOn(_ ids: [String]) -> RunsOnChoice {
+        RunsOnChoice(
+            entries: ids.map { id in
+                guard let models else { return RunsOnEntry(id: id, availability: .unknown) }
+                guard let record = models[id] else { return RunsOnEntry(id: id, availability: .no(.noRecord)) }
+                let model = ModelRecord(record: record)
+                return RunsOnEntry(id: id, model: model, availability: availability(model.providerID, model: model.model))
+            })
+    }
+
+    /// What a continued chat runs on (the server's `continuedRunsOn`): the
+    /// entry naming the row and model its thread is stamped with. One the
+    /// agent no longer names is refused, whatever the others offer, with no
+    /// row a key would open.
+    func continued(_ ids: [String], thread: ChatThread) -> Availability {
+        guard let models else { return .unknown }
+        let row = referent(thread.record["provider"], pin: Kinds.provider) ?? ""
+        let model = thread.record["model"]?.string ?? ""
+        for id in ids {
+            guard let record = models[id] else { continue }
+            let entry = ModelRecord(record: record)
+            if entry.providerID == row, entry.model == model { return availability(row, model: model) }
+        }
+        return Availability(available: false)
     }
 
     func unread(_ thread: ChatThread) -> Bool {
@@ -114,14 +189,16 @@ extension ChatAppState {
         ChatAppAsk.Plan(
             showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
             canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
-            readsOperator: session?.full ?? true, namesThreads: !(session?.full ?? true))
+            canReadModels: session?.canReadModels ?? true, readsOperator: session?.full ?? true,
+            namesThreads: !(session?.full ?? true))
     }
 
     var threadIDs: [String] { (chats + automated).map(\.id) }
 
     var cached: CachedState {
         CachedState(
-            agents: agents, providers: providers.values.sorted { $0.id < $1.id }, keys: keys, threads: chats, automated: automated,
+            agents: agents, providers: providers.values.sorted { $0.id < $1.id },
+            models: models.map { $0.values.sorted { $0.id < $1.id } }, keys: keys, threads: chats, automated: automated,
             openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
             baselined: baselined, lastAgent: lastAgent, memories: guidance.read ? guidance.memories : nil,
             instructions: guidance.read ? guidance.instructions : nil)

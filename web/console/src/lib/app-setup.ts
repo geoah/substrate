@@ -400,7 +400,7 @@ export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
     case "quarantined":
     case "declared-by-owner":
     case "upgrade-needs-review":
-    case "no-model": // a provider's pricing, on the providers page it links to
+    case "no-model": // the models a provider offers, on the page it links to
     case "needs-setting": // an add-on's settings, on its page (decision 0216)
       return "console"
     case "reaches-past-scopes":

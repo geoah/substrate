@@ -11,14 +11,37 @@ enum ProviderKeys: Codable, Equatable, Sendable {
     /// Each row's own `apiKey` says.
     case rows
     /// Whether a key resolves, by row id. A row the read names no item for
-    /// is told by its own `apiKey`.
+    /// is told by its own `apiKey`. What a build before `served` kept.
     case read([String: Bool])
+    /// The read, and the models the operator's key serves on each row it
+    /// keys (decision record 0242): an agent on `runsOn` takes a model on
+    /// such a row only where the list holds it.
+    case served([String: Bool], models: [String: [String]])
 
     /// Whether `provider`'s key resolves.
     func resolves(_ provider: Provider) -> Bool {
         switch self {
         case .rows: provider.hasKey
-        case let .read(resolved): resolved[provider.id] ?? provider.hasKey
+        case let .read(resolved), let .served(resolved, _): resolved[provider.id] ?? provider.hasKey
+        }
+    }
+
+    /// Whether a call for `model` on `provider` can be sent (the server's
+    /// `modelAvailable`): the row's own key, or the operator's where it serves
+    /// the row and lists the model. Readiness is never asked: a key the
+    /// vendor refused still resolves.
+    func availability(_ provider: Provider, model: String) -> Availability {
+        if provider.hasKey { return .yes }
+        switch self {
+        case .rows:
+            return .no(.noKey(provider.id))
+        case let .read(resolved):
+            // An earlier build's read: the operator serves the row, and
+            // which models it held no list of.
+            return resolved[provider.id] == true ? .unknown : .no(.noKey(provider.id))
+        case let .served(_, models):
+            guard let served = models[provider.id] else { return .no(.noKey(provider.id)) }
+            return served.contains(model) ? .yes : .no(.notServed(provider.id, served: served))
         }
     }
 
@@ -33,6 +56,7 @@ enum ProviderKeys: Codable, Equatable, Sendable {
             var slot: String?
             var source: String?
             var readiness: String?
+            var models: [String]?
         }
         struct Answer: Decodable { var items: [Item]? }
         let older: Set<Int> = [404, 405, 501]
@@ -45,15 +69,18 @@ enum ProviderKeys: Codable, Equatable, Sendable {
         if older.contains(response.status) { return .rows }
         guard let answer = try? response.decode(Answer.self) else { return nil }
         var resolved: [String: Bool] = [:]
+        var served: [String: [String]] = [:]
         for item in answer.items ?? [] {
             guard item.slot == "llm", let id = item.id, id.hasPrefix("llm/"), let source = item.source,
                 let readiness = item.readiness
             else { continue }
+            let row = String(id.dropFirst("llm/".count))
             // As the console's Providers page reads it: a key that resolves
             // is On even while its calls fail; none, or a row the slot needs
             // gone, is not set up.
-            resolved[String(id.dropFirst("llm/".count))] = source != "none" && readiness != "not-set-up"
+            resolved[row] = source != "none" && readiness != "not-set-up"
+            if source == "operator" { served[row] = item.models ?? [] }
         }
-        return .read(resolved)
+        return .served(resolved, models: served)
     }
 }

@@ -12,6 +12,9 @@ enum Kinds {
     static let kind = "\(core)/kind"
     static let request = "\(core)/recordpatchrequest"
     static let provider = "\(llm)/provider"
+    /// One model a provider row offers; an agent's `runsOn` names these
+    /// (decision record 0242).
+    static let model = "\(llm)/model"
     static let thread = "\(llm)/thread"
     static let message = "\(llm)/message"
     static let interaction = "\(llm)/interaction"

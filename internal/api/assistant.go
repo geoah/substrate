@@ -516,3 +516,9 @@ func (a *assistantDataset) StatBlob(ctx context.Context, digest string) (*substr
 func (a *assistantDataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefaults, error) {
 	return a.inner.OperatorDefaults(ctx)
 }
+
+// ModelOffers names model ids per row and carries no key, so the assistant
+// reads it as the owner does.
+func (a *assistantDataset) ModelOffers(ctx context.Context) (map[string][]string, error) {
+	return a.inner.ModelOffers(ctx)
+}

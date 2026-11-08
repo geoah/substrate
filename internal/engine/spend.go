@@ -460,15 +460,16 @@ func (ds *dataset) spendOf(ctx context.Context, ag *vocabulary.Agent) (agentUSD,
 }
 
 // spendHold says why a root run of ag is held, or "" when it may run: the
-// person's caps (personSpendHold), then the allowance where the agent's
-// provider row is operator-served (operatorspend.go allowanceHold), whose text
-// opens with allowancePrefix.
-func (ds *dataset) spendHold(ctx context.Context, ag *vocabulary.Agent) (string, error) {
+// person's caps (personSpendHold), then the allowance where the provider row
+// the run takes is operator-served (operatorspend.go allowanceHold), whose
+// text opens with allowancePrefix. threadID is the thread the run continues,
+// "" for a new one.
+func (ds *dataset) spendHold(ctx context.Context, ag *vocabulary.Agent, threadID string) (string, error) {
 	text, err := ds.personSpendHold(ctx, ag)
 	if err != nil || text != "" {
 		return text, err
 	}
-	return ds.allowanceHold(ctx, ag)
+	return ds.allowanceHold(ctx, ag, threadID)
 }
 
 // personSpendHold says why a root run of ag is held at the person's own caps,
@@ -525,9 +526,9 @@ func spendRefusal(text string) error {
 // a chat, a direct call, a hand's run, wake or retry. It reads the
 // repository cap again, so a cap raised a moment ago admits the run. It
 // answers the context the run goes on with, marked admitted, or the refusal.
-func (ds *dataset) refuseAtSpendCap(ctx context.Context, ag *vocabulary.Agent) (context.Context, error) {
+func (ds *dataset) refuseAtSpendCap(ctx context.Context, ag *vocabulary.Agent, threadID string) (context.Context, error) {
 	ds.spend.expireCap()
-	text, err := ds.spendHold(ctx, ag)
+	text, err := ds.spendHold(ctx, ag, threadID)
 	if err != nil {
 		return ctx, err
 	}
@@ -552,7 +553,7 @@ func (ds *dataset) holdDelivery(ctx context.Context, tr *trigger) (context.Conte
 	var err error
 	switch {
 	case tr.Agent != nil:
-		text, err = ds.spendHold(ctx, tr.Agent)
+		text, err = ds.spendHold(ctx, tr.Agent, "")
 	case tr.Callable != nil:
 		text, err = ds.functionAllowanceHold(ctx, tr.Callable)
 	default:

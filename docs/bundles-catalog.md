@@ -168,9 +168,11 @@ name the seeded `openai` row, so key that row and they run.
 
 Every repository holds three rows that refuse until you key them: `openai`
 on OpenAI's own wire, `anthropic` on Anthropic's, and `gemini` on Google's
-OpenAI-compatible endpoint. Keying one is an ordinary record write,
-and [registering a provider](agents.md#registering-a-provider) is where that
-write, the wires and the pricing table are described.
+OpenAI-compatible endpoint, with the models each offers as `llm/model`
+records. Keying one is an ordinary record write, and
+[registering a provider](agents.md#registering-a-provider) is where that
+write and the wires are described; [models](agents.md#models) is where the
+prices are.
 
 ## Notes (sample)
 

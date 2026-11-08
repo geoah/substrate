@@ -1,12 +1,13 @@
 # The agent runtime's data, as its own seeded package. `core` is what exists
 # because the substrate exists — the repository, tokens, the vocabulary's own
 # meta-model, the delivery plumbing. The agent loop is a SUBSYSTEM on top of
-# that: a `provider` says where completions are bought, a `thread` is one
-# invocation (there is no agent-run kind — the thread IS the run), a `message`
-# is one turn of it, and an `interaction` is one batch of questions the agent
-# asked its owner. A repository that never runs an agent still holds these
-# kinds, because the binary seeds every package it ships. Core declares against
-# them in exactly three places: the `agent` kind's `provider` reference,
+# that: a `provider` says where completions are bought, a `model` is one model
+# a provider offers and what it costs, a `thread` is one invocation (there is
+# no agent-run kind — the thread IS the run), a `message` is one turn of it,
+# and an `interaction` is one batch of questions the agent asked its owner. A
+# repository that never runs an agent still holds these kinds, because the
+# binary seeds every package it ships. Core declares against them in exactly
+# four places: the `agent` kind's `provider` and `runsOn` references,
 # `recordpatchrequest`'s `thread`, and the `ask` built-in's write permission.
 #
 # The `agent` kind itself stays in core: it is a MANIFEST document kind
@@ -31,7 +32,10 @@ data:
   # a maturity statement, not a routing key: no envelope carries a version.
   # version 3: the `instruction` kind, the owner's standing instructions to
   # one agent, read into its system prompt (decision record 0241).
-  version: 3
+  # version 4: the `model` kind and the shipped models (models.yaml), each
+  # model a provider offers as a record agents run on (decision record 0242).
+  # Every later change to a shipped model bumps this again.
+  version: 4
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

@@ -270,7 +270,8 @@ public struct ChatApp: LinkedApp {
             let agent = facts?.agent ?? entry.agent ?? entry.seed.agent
             let held = entry.thread.flatMap { state.transcripts[$0] }
             out[key] = Conversation(
-                key: key, seed: entry.seed, facts: facts, online: state.online, keyless: state.keyless(agent)?.name,
+                key: key, seed: entry.seed, facts: facts, online: state.online,
+                keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing)
         }

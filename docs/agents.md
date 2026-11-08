@@ -77,14 +77,18 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`provider`** (required unless `providerInput` is named): a `substrate.reamde.dev/llm/provider` record id — **where**
+- **`provider`** (required unless `providerInput` or `runsOn` is named): a `substrate.reamde.dev/llm/provider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
 - **`model`** (required beside `provider`): the model id sent on every completion, a plain string
   the provider's endpoint understands — a gateway's alias
   (`anthropic/claude-opus-5`) on a row pointed at that gateway, the bare
-  `claude-opus-5` on an `anthropic`-wire row.
-  The substrate keeps no model table: re-pointing an agent at a cheaper model
-  is one word here.
+  `claude-opus-5` on an `anthropic`-wire row. Re-pointing an agent at a
+  cheaper model is one word here.
+- **`runsOn`**, instead of `provider` and `model`: one to eight
+  [model records](#models), best first, each naming its row and its model
+  id. They are preferences, not retries: a new thread runs on the first one
+  available before anything is sent, and a thread that already ran stays on
+  the model it began on ([runs on](#runs-on)).
 - optional **`params`**: `{temperature, maxTokens, reasoningEffort,
   reasoningSummary}` for this
   agent's calls, merged over the provider row's `defaults`. The set is closed,
@@ -151,8 +155,9 @@ data:
 - optional **`compaction:`** bounds a thread's replayed history:
   `enabled` (default `true`), `reserveTokens` (default 16384, max 1000000)
   and `keepRecentTokens` (default 20000, max 1000000)
-  ([threads](#threads-messages-and-cost)). It acts only on a model whose
-  provider `pricing` entry declares `contextWindow`. `replayTools` (`all`,
+  ([threads](#threads-messages-and-cost)). It acts only on a model with a
+  context window: its [model record](#models)'s `contextWindow`, or its
+  provider row's own `pricing` entry's. `replayTools` (`all`,
   the default, or `none`) says whether a continued thread replays its
   earlier tool calls and results or only the prose around them, and holds
   with or without a window
@@ -1033,8 +1038,9 @@ a thread's `messages` and its `subagentThreads`.
 shared tally, so the root thread's numbers include every descendant while a
 child thread carries only its own. The same tally collects every committed
 dispatch entry on the chain, which is what a sub-agent call's
-`subagentWrites` counts. Pricing is data on the provider row, keyed
-by model id, never a table in code. The loop terminates on the final tool-free
+`subagentWrites` counts. Pricing is data, each [model](#models)'s record or
+an entry its provider row still carries, never a table in code. The loop
+terminates on the final tool-free
 reply, any budget, or its deadline; over-budget is a settled outcome (thread
 `overbudget` with a reason), never a park.
 
@@ -1166,14 +1172,14 @@ the runs going at that moment spend before they finish.
 
 An `llm/provider` row is one place completions are bought, as pure data:
 `label`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
-(request params the agent's own `params` merge over), `pricing`,
-`titleModel`, and `cache`.
+(request params the agent's own `params` merge over), `titleModel`, `cache`,
+and the deprecated `pricing`. The models it offers are
+[model records](#models).
 
 **`titleModel` names the model that titles chat threads** on this row
 ([threads](#threads-messages-and-cost)). Absent, a thread is titled by the
-model it ran. Name a small model here and give it a `pricing` entry, so the
-title call is cheap and priced; it takes the row's `defaults.reasoningEffort`,
-not the agent's.
+model it ran. Name a small model the row prices, so the title call is cheap
+and priced; it takes the row's `defaults.reasoningEffort`, not the agent's.
 
 **`wire` is a protocol, not a company** — `openai`, `anthropic`, or `azure`,
 the three wires an adapter speaks. OpenRouter, LiteLLM, Together, Groq and a
@@ -1184,31 +1190,10 @@ deployment `baseURL` spelled out. New code is only ever needed for a new wire,
 and a model that speaks none of these three wraps as a function tool, never as
 the transport.
 
-`pricing` is a table, one row per model, keyed by the model id **as sent** —
-because one provider row serves many models: `claude-opus-5` on an
-`anthropic`-wire row, the gateway's alias (`anthropic/claude-opus-5`) on a row
-that speaks to a gateway. A model absent from the table leaves the thread's
-`costUSD` at 0 and the token tally authoritative. An entry's optional
-`contextWindow` is the model's context window in tokens; a model without one
-never [compacts](#threads-messages-and-cost). A new repository's seeded rows
-carry it for their models.
-
-A thread's `costUSD` is, per 1M tokens, the uncached prompt times
-`inputPer1M`, cache reads times `cacheReadPer1M`, cache writes times
-`cacheWritePer1M`, and the completion times `outputPer1M`
-([decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
-Both cache rates are optional: absent, a read costs a tenth of `inputPer1M`
-and a write 1.25 times it, Anthropic's list ratios for a 5-minute cache, or
-twice it on a call that asked for a 1-hour cache (see `cache` below). A
-model whose ratio differs states its rate: Claude Opus 5.5 reads at a
-twentieth of its input price, and OpenAI
-reads at 0.25x on gpt-4.1 and o3 and 0.5x on gpt-4o and bills no write
-(state `cacheWritePer1M: "0"` there). A stated `"0"` is a free cache.
-
-```yaml
-pricing:
-  - {model: claude-opus-5-5, inputPer1M: "4", outputPer1M: "20", cacheReadPer1M: "0.20", contextWindow: 200000}
-```
+**`pricing` is deprecated**: a model's price is its [model record](#models).
+An entry the row still carries prices its model exactly as it always has,
+keyed by the model id as sent, and wins over a record for the same model,
+so a price set on a row stands. A new repository's seeded rows carry none.
 
 **`cache` asks the endpoint to keep a run's prompt prefix** between the
 calls of one run: the tool cards, the system prompt and the conversation so
@@ -1294,10 +1279,11 @@ replacement is bought, on the box and never over HTTP
 ([there is no LLM configuration](operations.md#there-is-no-llm-configuration)).
 
 **Creation seeds three keyless provider rows** — `openai`, `anthropic` and
-`gemini`. A row is where the wire, the endpoint and the key live, and a
-substrate cannot invent a key, so they land without one: dispatch refuses
-until the owner writes `apiKey`. An agent naming a row that is not there
-refuses at dispatch and says which row it wanted.
+`gemini` — and the [models](#models) they offer. A row is where the wire, the
+endpoint and the key live, and a substrate cannot invent a key, so they land
+without one: dispatch refuses until the owner writes `apiKey`. An agent
+naming a row that is not there refuses at dispatch and says which row it
+wanted.
 
 The shipped assistant names `provider: anthropic`, so a fresh repository's
 Moss runs once that row is keyed; every shipped sample agent names
@@ -1311,6 +1297,90 @@ sample**) ships the same three rows, so an import onto a repository that
 deleted one brings it back. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
 behind a name, and the model is the agent's own word now.
+
+### Models
+
+**The models a row offers are `substrate.reamde.dev/llm/model` records**
+([decision 0242](decisions/0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md)):
+`provider` (the row), `model` (the id **as sent**: `claude-opus-5` on an
+`anthropic`-wire row, the gateway's alias `anthropic/claude-opus-5` on a row
+that speaks to a gateway), `label`, `pricing` (USD per 1M tokens) and
+`contextWindow`. A row has one record per model: a second refuses at the
+write. The id is free, and nothing reads a row or a model out of it.
+
+A new repository holds the models its seeded rows offer
+(`kinds/substrate.reamde.dev/llm/models.yaml`, ids like
+`anthropic:claude-opus-5-5`), and every open brings them up to date with the
+binary unless the owner edited or deleted one, or wrote their own record for
+the same row and model. A record prices its model only when its `pricing`
+states both `inputPer1M` and `outputPer1M`; one without prices still gives
+the model its window. A row's own `pricing` entry wins for the model it
+names, and gives the window where it states one. A model priced nowhere
+leaves the thread's `costUSD` at 0 and the token tally authoritative, and a
+model with no window never [compacts](#threads-messages-and-cost). A row the
+operator serves reads neither: the operator's file lists and prices its
+models ([operator defaults](operations.md#operator-defaults)).
+
+A thread's `costUSD` is, per 1M tokens, the uncached prompt times
+`inputPer1M`, cache reads times `cacheReadPer1M`, cache writes times
+`cacheWritePer1M`, and the completion times `outputPer1M`
+([decision 0181](decisions/0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md)).
+Both cache rates are optional: absent, a read costs a tenth of `inputPer1M`
+and a write 1.25 times it, Anthropic's list ratios for a 5-minute cache, or
+twice it on a call that asked for a 1-hour cache (see `cache` above). A
+model whose ratio differs states its rate: Claude Opus 5.5 reads at a
+twentieth of its input price, and OpenAI reads at 0.25x on gpt-4.1 and o3
+and 0.5x on gpt-4o and bills no write (state `cacheWritePer1M: "0"` there).
+A stated write rate also stands for a 1-hour cache, and a stated `"0"` is a
+free cache.
+
+```yaml
+kind: substrate.reamde.dev/llm/model
+metadata:
+  id: litellm:claude-opus-5-5
+data:
+  properties:
+    provider: litellm
+    model: anthropic/claude-opus-5-5
+    label: Claude Opus 5.5 through LiteLLM
+    pricing:
+      inputPer1M: "4"
+      outputPer1M: "20"
+      cacheReadPer1M: "0.20"
+    contextWindow: 200000
+```
+
+The kind is internal: an agent's `*` grant never writes it, because prices
+are what a spend cap counts. An agent granted it by name, and the owner's and
+apps' tokens, can.
+
+### Runs on
+
+**An agent on `runsOn` names model records, best first**, and a new thread
+runs on the first one available before anything is sent: its record and its
+row are live, and the row has a key of its own, or the operator serves the
+row and lists the model. Those are the only reasons an entry is passed
+over. A vendor's answer, a key the vendor refused, an allowance or spend
+cap, and a failed read stop the run instead, and when no entry is available
+the refusal names each one and why.
+
+**A thread that already ran stays on its model.** It is stamped with the row
+and the model it began on, and its history holds that model's reasoning,
+which the `anthropic` wire sends back unchanged, so it runs on that entry if
+the agent still lists it and it is available, and refuses otherwise: start a
+new thread to move to another model. An agent on `provider` and `model` has
+no such rule: a continued thread runs on whatever model the agent names
+now, so changing it mid-thread sends one model's history to another.
+
+```yaml
+runsOn:
+  - anthropic:claude-opus-5-5
+  - anthropic:claude-sonnet-5-5
+```
+
+A bare id is completed with the kind, as `provider: anthropic` is. The
+allowance hold, the operator's diagnostics and app approval read the same
+choice dispatch makes.
 
 ### Registering a provider
 

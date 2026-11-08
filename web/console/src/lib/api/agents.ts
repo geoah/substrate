@@ -26,7 +26,8 @@ import {
   request,
 } from "./http"
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type SubstrateRecord } from "./types"
+import { ApiError, type Page, type SubstrateRecord } from "./types"
+import { LLM_MODEL_KIND } from "@/lib/core-kinds"
 
 /** The agent rows — declared agents, one per `substrate.reamde.dev/core/agent` record. */
 export function agentsQueryOptions() {
@@ -183,6 +184,55 @@ export function llmProvidersQueryOptions() {
     package: LLM_PACKAGE_NAME,
     name: "provider",
     first: 100,
+  })
+}
+
+/** Whether the server answered that it does not know the llm/model kind. The
+ * records read refuses an undeclared filter kind as a validation error naming
+ * it (422, code `validation`, `unknown type "<kind>"`), which is what a
+ * server older than the kind answers; any other refusal is a real one. */
+export function modelKindUnknown(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 422 &&
+    error.code === "validation" &&
+    error.message.includes(`unknown type "${LLM_MODEL_KIND}"`)
+  )
+}
+
+/** The llm/model records: what each provider row offers and prices, and
+ * what an agent's `runsOn` names (decision record 0242). Every page is read:
+ * a record past the first would read as missing and move a runsOn choice the
+ * engine does not move. `enabled` holds the read until a surface needs it. A
+ * server older than the kind holds no model records, and its rows price from
+ * their own entries alone, so its refusal reads as no records. */
+export function llmModelsQueryOptions(enabled = true) {
+  const params: ListParams = {
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "model",
+    first: 500,
+  }
+  return queryOptions({
+    ...recordsQueryOptions(params),
+    queryFn: async ({ signal }): Promise<Page> => {
+      try {
+        const first = await fetchRecordsPage(params, signal)
+        const records = [...first.records]
+        let after = first.cursor
+        while (after) {
+          const page = await fetchRecordsPage({ ...params, after }, signal)
+          records.push(...page.records)
+          after = page.cursor
+        }
+        return { records, head: first.head, generation: first.generation }
+      } catch (error) {
+        if (modelKindUnknown(error))
+          return { records: [], head: 0, generation: "" }
+        throw error
+      }
+    },
+    enabled,
   })
 }
 

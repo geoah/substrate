@@ -11,9 +11,19 @@ func (l *loader) parseAgentProvider(where string, data map[string]any, a *Agent)
 	a.ProviderInput = strings.TrimSpace(mstr(data, "providerInput"))
 	_, provider := data["provider"]
 	_, input := data["providerInput"]
-	if provider == input || (provider && a.Provider == "") || (input && a.ProviderInput == "") {
-		l.errf("%s: data.provider is required unless providerInput is named; name exactly one of provider and providerInput", where)
+	_, runsOn := data["runsOn"]
+	named := 0
+	for _, says := range []bool{provider, input, runsOn} {
+		if says {
+			named++
+		}
+	}
+	if named != 1 || (provider && a.Provider == "") || (input && a.ProviderInput == "") {
+		l.errf("%s: data.provider is required unless providerInput or runsOn is named; name exactly one of provider, providerInput and runsOn", where)
 		return false
+	}
+	if runsOn {
+		return l.parseAgentRunsOn(where, data, a)
 	}
 	if provider {
 		if !ValidID(a.Provider) {
@@ -47,6 +57,46 @@ func (l *loader) parseAgentProvider(where string, data map[string]any, a *Agent)
 			return false
 		}
 		a.Models = append(a.Models, model)
+	}
+	return true
+}
+
+// parseAgentRunsOn reads `runsOn`: one to eight llm/model records, best first.
+// Each record names its own row and model id, so neither `model` nor
+// `models` may stand beside it.
+func (l *loader) parseAgentRunsOn(where string, data map[string]any, a *Agent) bool {
+	for _, key := range []string{"model", "models"} {
+		if _, ok := data[key]; ok {
+			l.errf("%s: data.%s does not belong beside runsOn: each llm/model record names its own model", where, key)
+			return false
+		}
+	}
+	entries, ok := data["runsOn"].([]any)
+	if !ok || len(entries) < 1 || len(entries) > 8 {
+		l.errf("%s: data.runsOn needs one to eight llm/model records", where)
+		return false
+	}
+	pin := LLMKind("model")
+	seen := map[string]bool{}
+	for _, value := range entries {
+		// A stored or authored `{ref: …}` names its kind; a bare id takes the pin.
+		if path := referentPath(value); path != "" {
+			if _, isRef := value.(map[string]any); isRef && !strings.HasPrefix(path, pin+"/") {
+				l.errf("%s: data.runsOn: %q is not a record of %s", where, path, pin)
+				return false
+			}
+		}
+		id := ReferentID(value, pin)
+		if !ValidID(id) {
+			l.errf("%s: data.runsOn: %v is not a record id of %s", where, value, pin)
+			return false
+		}
+		if seen[id] {
+			l.errf("%s: data.runsOn names %q twice", where, id)
+			return false
+		}
+		seen[id] = true
+		a.RunsOn = append(a.RunsOn, id)
 	}
 	return true
 }

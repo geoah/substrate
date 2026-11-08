@@ -14,11 +14,9 @@ import (
 
 func TestProviderOptionsAndChoices(t *testing.T) {
 	agents := []substrate.AuthorizationProviderAgent{{Agent: "coach.example.com/coach/run", Models: []string{"a", "b"}, SpendCentsPerDay: 100}}
-	providers := []*substrate.Record{
-		{ID: "fits", Title: "My AI", Properties: map[string]any{"pricing": []any{map[string]any{"model": "gateway/a"}}}},
-		{ID: "wrong", Properties: map[string]any{"pricing": []any{map[string]any{"model": "unknown"}}}},
-	}
-	options := providerOptions(agents, providers)
+	providers := []*substrate.Record{{ID: "fits", Title: "My AI"}, {ID: "wrong"}}
+	offers := map[string][]string{"fits": {"gateway/a"}, "wrong": {"unknown"}}
+	options := providerOptions(agents, providers, offers)
 	if len(options) != 1 || options[0].ID != "fits" || options[0].Models[agents[0].Agent] != "gateway/a" {
 		t.Fatalf("%+v", options)
 	}
@@ -44,6 +42,22 @@ type providerDataset struct {
 
 func (d *providerDataset) List(context.Context, substrate.Query) (*substrate.Page, error) {
 	return &substrate.Page{Records: d.providers}, nil
+}
+
+// ModelOffers names what each row's own entries price, the engine's answer
+// for a row no llm/model record describes.
+func (d *providerDataset) ModelOffers(context.Context) (map[string][]string, error) {
+	out := map[string][]string{}
+	for _, row := range d.providers {
+		entries, _ := row.Properties["pricing"].([]any)
+		for _, raw := range entries {
+			entry, _ := raw.(map[string]any)
+			if model, ok := entry["model"].(string); ok {
+				out[row.ID] = append(out[row.ID], model)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (d *providerDataset) BindBundleInput(_ context.Context, pkg, input, record string) error {

@@ -1251,6 +1251,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			return nil, err
 		}
 	}
+	// One llm/model record per row and model, held here for every write that
+	// leaves the record live (llmmodels.go).
+	if sp.ty.Identity == typeModel {
+		if err := t.admitModelRow(sp.id, row.Props); err != nil {
+			return nil, err
+		}
+	}
 
 	// Policy rows are admitted at write time for the same reason triggers are:
 	// the merged result must be a rule the door can act on. An actionless rule,

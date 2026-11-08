@@ -1,0 +1,89 @@
+# One model one llm/provider row offers: the id its API takes, what it costs
+# and how much it reads at once (decision record 0242). The row is where
+# completions are bought and this record is one thing bought there, so a
+# picker lists a row's models and an agent's `runsOn` names them by
+# reference.
+#
+# ONE RECORD PER ROW AND MODEL. A second live record naming the same
+# `provider` and `model` refuses at every write (admitModelRow), the way a
+# second row claiming `embedModel` does: a price is a fact about one model on
+# one endpoint, and two records could answer it twice. The id is free. The
+# shipped records (models.yaml) are `<row id>:<model>`, and nothing splits an
+# id to find either half: row ids and model ids may both hold a colon. An id
+# that keeps a gateway model id's slash is spelled `%2F` in a REST path, as a
+# declaration's id is.
+#
+# A record prices its model only with both base rates, which `pricing`
+# requires when it is written. The row's own deprecated `pricing` entry for
+# the same model wins over this record, so a price an owner set there
+# stands; the window resolves on its own, the entry's first. A row the
+# operator serves (decision 0235) reads neither: the operator's file prices
+# its models.
+#
+# INTERNAL, so an agent's wildcard grant never writes it: prices are what a
+# spend cap counts. An agent granted this kind by name, and the owner's and
+# apps' tokens, may.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/model
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    One model an AI provider offers: the id its API takes, what it costs per
+    million tokens and how much it reads at once. An agent runs on these,
+    best first.
+  purpose: internal
+  names:
+    singular: model
+  displayTemplate: "{label|model}"
+  properties:
+    provider:
+      type: reference
+      kind: substrate.reamde.dev/llm/provider
+      required: true
+      description: the provider row that offers this model
+    model:
+      type: string
+      required: true
+      description: the model id as this provider's API takes it; a gateway's
+        prefixed id (anthropic/claude-opus-5-5) is written as the gateway
+        takes it
+    label:
+      type: string
+      description: the model's name as people read it
+    # The fields and their defaults are the row's `pricing` entry's, read by
+    # the same function (pricingRow), so a price means the same thing in
+    # either place. Absent cache rates take the default ratios; a stated
+    # write rate also stands for a one-hour cache.
+    pricing:
+      type: object
+      description: what the model costs on this row, in USD per 1M tokens;
+        without it the model runs unpriced
+      fields:
+        inputPer1M:
+          type: decimal
+          min: 0
+          required: true
+          description: USD per 1M input tokens
+        outputPer1M:
+          type: decimal
+          min: 0
+          required: true
+          description: USD per 1M output tokens
+        cacheReadPer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M prompt tokens served from the provider's
+            cache; absent means a tenth of inputPer1M
+        cacheWritePer1M:
+          type: decimal
+          min: 0
+          description: USD per 1M prompt tokens written to the provider's
+            cache; absent means 1.25 times inputPer1M, or twice it for a call
+            that asked for a one-hour cache
+    contextWindow:
+      type: int
+      min: 1
+      description: the model's context window in tokens; a thread on a model
+        without one never compacts

@@ -1,6 +1,7 @@
 package vocabulary_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -347,6 +348,29 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
 `, "data.model is required"},
+		{"runsOn beside provider", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  runsOn: [anthropic:claude-opus-5-5]
+`, "name exactly one of provider, providerInput and runsOn"},
+		{"model beside runsOn", `  description: d
+  prompt: p
+  runsOn: [anthropic:claude-opus-5-5]
+  model: claude-opus-5
+`, "data.model does not belong beside runsOn"},
+		{"empty runsOn", `  description: d
+  prompt: p
+  runsOn: []
+`, "data.runsOn needs one to eight llm/model records"},
+		{"runsOn names a model twice", `  description: d
+  prompt: p
+  runsOn: [anthropic:claude-opus-5-5, anthropic:claude-opus-5-5]
+`, `data.runsOn names "anthropic:claude-opus-5-5" twice`},
+		{"runsOn names a provider row", `  description: d
+  prompt: p
+  runsOn: [{ref: substrate.reamde.dev/llm/provider/anthropic}]
+`, "is not a record of substrate.reamde.dev/llm/model"},
 		{"unknown param", `  description: d
   prompt: p
   provider: default
@@ -607,5 +631,26 @@ func TestAgentMaxParallelToolsIsBounded(t *testing.T) {
 		if _, err := loadAgAuthority(t, agAuthority(agent(bad))); err == nil || !strings.Contains(err.Error(), "maxParallelTools") {
 			t.Errorf("%s: loaded, or refused without naming the key: %v", bad, err)
 		}
+	}
+}
+
+// runsOn is the third way to say what an agent runs on: llm/model records,
+// best first, either spelled bare (the pin completes the kind) or as stored.
+func TestAgentRunsOn(t *testing.T) {
+	r, err := loadAgAuthority(t, agAuthority(`  description: d
+  prompt: p
+  runsOn:
+    - anthropic:claude-opus-5-5
+    - {ref: substrate.reamde.dev/llm/model/openai:gpt-5}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"anthropic:claude-opus-5-5", "openai:gpt-5"}; !slices.Equal(ag.RunsOn, want) || ag.Provider != "" || ag.Model != "" {
+		t.Fatalf("runsOn %v, provider %q, model %q; want %v and neither", ag.RunsOn, ag.Provider, ag.Model, want)
 	}
 }

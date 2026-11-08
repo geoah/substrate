@@ -437,7 +437,7 @@ func TestAnUnpricedModelSpendsNothingAgainstACap(t *testing.T) {
 		t.Fatal(err)
 	}
 	ds.spend.expire()
-	if held, err := ds.spendHold(ctx, ag); err != nil || held != "" {
+	if held, err := ds.spendHold(ctx, ag, ""); err != nil || held != "" {
 		t.Fatalf("an unpriced agent reads held %q (%v)", held, err)
 	}
 }
@@ -879,7 +879,7 @@ func TestASpendCapCountsALostLeaseSettleUntilTheThreadFinishes(t *testing.T) {
 	if got := spentOf(t, ds, "open", true); got != 200 {
 		t.Errorf("spend two minutes on, the newer claim still running = %d cents, want 200", got)
 	}
-	if held, err := ds.spendHold(context.Background(), ag); err != nil || held == "" {
+	if held, err := ds.spendHold(context.Background(), ag, ""); err != nil || held == "" {
 		t.Errorf("the repository cap of 150 cents: hold %q (%v), want held", held, err)
 	}
 	if _, err := b.run(cb); err != nil {

@@ -46,9 +46,10 @@ extension ChatApp {
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
-        case let .agentsRead(agents, providers, keys):
+        case let .agentsRead(agents, providers, models, keys):
             next.agents = agents
             if let providers { next.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+            if let models { next.models = Self.byID(models) }
             if let keys { next.keys = keys }
         case let .cardsRead(cards):
             apply(&next, cards: cards)
@@ -155,9 +156,14 @@ extension ChatApp {
             next.asks.append(.setKey(provider: provider, key: key))
         case let .keySet(record):
             next.providers[record.id] = record
-            if case var .read(resolved) = next.keys {
+            switch next.keys {
+            case var .read(resolved):
                 resolved[record.id] = true
                 next.keys = .read(resolved)
+            case .served(var resolved, let models):
+                resolved[record.id] = true
+                next.keys = .served(resolved, models: models)
+            case .rows, nil: break
             }
             next.keySaved.raise(record.id)
         case let .keyFailed(failure): next.keyProblem = failure.words
@@ -294,6 +300,7 @@ extension ChatApp {
         if let cached = disk.state {
             state.agents = cached.agents
             state.providers = Dictionary(cached.providers.map { ($0.id, $0) }) { a, _ in a }
+            state.models = cached.models.map(Self.byID)
             state.keys = cached.keys
             state.chats = cached.threads
             state.automated = cached.automated
@@ -389,6 +396,7 @@ extension ChatApp {
         state.refreshError = nil
         state.agents = refresh.agents
         if let providers = refresh.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+        if let models = refresh.models { state.models = Self.byID(models) }
         if let keys = refresh.keys { state.keys = keys }
         apply(&state, threads: refresh.threads)
         apply(&state, cards: refresh.cards)
@@ -403,7 +411,7 @@ extension ChatApp {
     private func watch(_ state: inout State, head: WatchCursor? = nil) {
         guard let disk = state.disk, state.online, state.appActive || !pausesWhenAway else { return }
         state.watching = true
-        state.asks.append(.watch(disk, head: head))
+        state.asks.append(.watch(disk, head: head, kinds: ChatApp.watched(state.plan)))
     }
 
     /// After a list: the opening lines it lacks, then the chats to read
@@ -595,6 +603,7 @@ extension ChatApp {
         }
         if let agents = feed.agents { state.agents = agents }
         if let providers = feed.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
+        if let models = feed.models { state.models = Self.byID(models) }
         if let keys = feed.keys { state.keys = keys }
         if let cards = feed.cards { apply(&state, cards: cards) }
         let landed = batch.subtracting(feed.failed).filter { !$0.id.isEmpty }
@@ -742,6 +751,11 @@ extension ChatApp {
         default:
             return
         }
+    }
+
+    /// The live records of a read, by id: a deleted one names no model.
+    static func byID(_ records: [Record]) -> [String: Record] {
+        Dictionary(records.filter { $0.deletedAt == nil }.map { ($0.id, $0) }) { a, _ in a }
     }
 }
 

@@ -172,7 +172,8 @@ extension ChatApp {
         // the same words: the card stays beside it only where it names a
         // cause the notice cannot, a refused key or a rate limit.
         if let failure, unfinished?.tone != .bad || TurnFailureWords.cause(failure) != .other {
-            status.append(TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent)?.name))
+            status.append(
+                TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent, thread: live.thread)?.name))
         }
         if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
@@ -185,7 +186,7 @@ extension ChatApp {
         if state.preferences.technicalDetails, let row {
             technical = [LabeledValue("Thread", "\(Kinds.thread)/\(row.id)", verbatim: true)] + row.tally
         }
-        let keyless = state.keyless(live.agent)
+        let keyless = state.keyless(live.agent, thread: live.thread)
         let callout = keyless.map {
             KeylessCallout(
                 provider: $0.id, title: "Add an API key for \($0.name)",

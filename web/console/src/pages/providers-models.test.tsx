@@ -5,7 +5,8 @@
  * operator's allowance on the AI models header and as a line on the Tools
  * header, the welcome where the deployment loaded an operator defaults file,
  * a typed key kept nowhere once sent, a failed operator read that never says
- * Set up, and the counts beside Providers that agree with the page. The operator read is answered by a mocked fetch; the catalog's
+ * Set up, the models each card offers and what they cost (decision record
+ * 0242), and the counts beside Providers that agree with the page. The operator read is answered by a mocked fetch; the catalog's
  * providers come from a stubbed `useProviders`. The site is named "Crane"
  * so every operator word is seen to come from `operator.name`. The suite
  * runs in Europe/Athens (UTC+2 in November). */
@@ -105,6 +106,7 @@ import { ProvidersPage } from "./providers"
 
 const PROV = "providers.substrate.reamde.dev"
 const LLM_PROVIDER = "substrate.reamde.dev/llm/provider"
+const LLM_MODEL = "substrate.reamde.dev/llm/model"
 
 /** A catalog provider as the page's hook hands it over. */
 function provider(
@@ -242,6 +244,8 @@ const RESETS_AT = "2026-11-07T00:00:00Z"
 let features: string[] = []
 let answer: OperatorDefaults | { status: number } | "network" = { items: [] }
 let rows: SubstrateRecord[] = []
+/** The llm/model records. */
+let models: SubstrateRecord[] = []
 /** The installed packages the bundle status read lists. */
 let statuses: unknown[] = []
 /** Runs as a write reaches the server, before it answers. */
@@ -268,6 +272,7 @@ beforeEach(() => {
     items: [OPENAI, ANTHROPIC_NONE, GEMINI_OWN],
   }
   rows = [row("openai"), row("anthropic"), row("gemini", { apiKey: "••••" })]
+  models = []
   functions = []
   catalog.providers = [
     provider("google", {
@@ -322,6 +327,7 @@ beforeEach(() => {
       }
       const kinds = kindsOf(url)
       if (kinds.includes(LLM_PROVIDER)) return Response.json({ records: rows })
+      if (kinds.includes(LLM_MODEL)) return Response.json({ records: models })
       if (kinds.includes("substrate.reamde.dev/core/function"))
         return Response.json({ records: functions })
       return Response.json({ records: [], items: [] })
@@ -806,6 +812,146 @@ describe("an AI model card", () => {
     expect(
       within(await modelCard("OpenAI")).getByText(
         "Using this server’s key, for gpt-5 and gpt-5-mini."
+      )
+    ).toBeTruthy()
+  })
+})
+
+function model(
+  id: string,
+  rowId: string,
+  modelId: string,
+  properties: Record<string, unknown> = {}
+) {
+  return {
+    id,
+    kind: LLM_MODEL,
+    version: 1,
+    properties: {
+      provider: { ref: `${LLM_PROVIDER}/${rowId}` },
+      model: modelId,
+      ...properties,
+    },
+  } as unknown as SubstrateRecord
+}
+
+/** The models a card lists, opened from under their count. */
+async function offers(card: HTMLElement, count: RegExp) {
+  fireEvent.click(await within(card).findByRole("button", { name: count }))
+  return within(card)
+    .getAllByText((_, el) => el?.getAttribute("data-slot") === "model-offer")
+    .map((el) => el.textContent)
+}
+
+describe("the models a card offers", () => {
+  beforeEach(() => {
+    models = [
+      model("g:flash", "gemini", "gemini-2.5-flash", {
+        label: "Gemini 2.5 Flash",
+        pricing: { inputPer1M: "0.15", outputPer1M: "0.60" },
+        contextWindow: 1048576,
+      }),
+      model("g:pro", "gemini", "gemini-2.5-pro", { label: "Gemini 2.5 Pro" }),
+      model("o:gpt-5", "openai", "gpt-5", {
+        label: "GPT-5",
+        pricing: { inputPer1M: "1.25", outputPer1M: "10" },
+        contextWindow: 400000,
+      }),
+    ]
+  })
+
+  it("lists each with its price, its window and where the price comes from", async () => {
+    renderPage()
+    const gemini = await modelCard("Gemini")
+    expect(await offers(gemini, /^2 models it offers$/)).toEqual([
+      "Gemini 2.5 Flashgemini-2.5-flashPrice per 1M tokens$0.15 input · $0.60 outputContext window1M tokensPrice fromModel record",
+      "Gemini 2.5 Progemini-2.5-proPrice per 1M tokensNot priced: a spend cap doesn’t count its runs, and an app’s approval doesn’t offer itContext windowNot stated",
+    ])
+  })
+
+  it("lists only the operator's models on a row it serves, without its prices", async () => {
+    rows = [
+      row("openai", {
+        pricing: [{ model: "gpt-4o", inputPer1M: "1", outputPer1M: "1" }],
+      }),
+      row("anthropic"),
+      row("gemini", { apiKey: "••••" }),
+    ]
+    renderPage()
+    const openai = await modelCard("OpenAI")
+    expect(await offers(openai, /^2 models on Crane’s key$/)).toEqual([
+      "GPT-5gpt-5",
+      "gpt-5-mini",
+    ])
+    expect(within(openai).getByText("Crane sets what they cost.")).toBeTruthy()
+  })
+
+  it("lets the row's own price win, and drops it for the record's in one PATCH", async () => {
+    rows = [
+      row("openai"),
+      row("anthropic"),
+      row("gemini", {
+        apiKey: "••••",
+        pricing: [
+          {
+            model: "gemini-2.5-flash",
+            inputPer1M: "0.30",
+            outputPer1M: "2.50",
+            contextWindow: 32000,
+          },
+          { model: "gemini-1.5", inputPer1M: "1", outputPer1M: "2" },
+        ],
+      }),
+    ]
+    renderPage()
+    const gemini = await modelCard("Gemini")
+    const listed = await offers(gemini, /^3 models it offers$/)
+    expect(listed[0]).toBe(
+      "gemini-1.5Price per 1M tokens$1 input · $2 outputContext windowNot statedPrice fromThis row’s own price list"
+    )
+    expect(listed[1]).toContain(
+      "Price per 1M tokens$0.30 input · $2.50 outputContext window32k tokensPrice fromThis row’s own price list"
+    )
+    expect(listed[1]).toContain(
+      "Its model record says $0.15 input · $0.60 output; this row’s own price list wins over it."
+    )
+    fireEvent.click(
+      within(gemini).getByRole("button", {
+        name: "Use the model record’s price",
+      })
+    )
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog).getByText(
+        "This removes gemini-2.5-flash from Gemini’s own price list. Its runs are then priced by its model record: $0.15 input · $0.60 output per 1M tokens."
+      )
+    ).toBeTruthy()
+    expect(writes).toHaveLength(0)
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Use the model record’s price",
+      })
+    )
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0]).toEqual({
+      method: "PATCH",
+      url: `/api/v1/${LLM_PROVIDER}/gemini`,
+      body: {
+        properties: {
+          pricing: [{ model: "gemini-1.5", inputPer1M: "1", outputPer1M: "2" }],
+        },
+        ifVersion: 3,
+      },
+    })
+  })
+
+  it("says a row no record names offers no model yet", async () => {
+    models = []
+    renderPage()
+    const gemini = await modelCard("Gemini")
+    expect(
+      await within(gemini).findByText(
+        "It offers no model yet: no model record names it."
       )
     ).toBeTruthy()
   })

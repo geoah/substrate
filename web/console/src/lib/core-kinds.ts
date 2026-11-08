@@ -61,6 +61,10 @@ export const MEMORY_KIND = `${LLM_PACKAGE}/memory`
 /** The owner's standing instructions to one agent (decision record 0241). */
 export const INSTRUCTION_KIND = `${LLM_PACKAGE}/instruction`
 
+/** One model an llm/provider row offers, with its price and window; an
+ * agent's `runsOn` names these (decision record 0242). */
+export const LLM_MODEL_KIND = `${LLM_PACKAGE}/model`
+
 /** The kinds of a machinery package whose records are the owner's own data:
  * listed under the purpose they declare, in a group of their own, and theirs
  * in every origin. The server's `vocabulary.SeededOwnerData` is this list. */
