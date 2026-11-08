@@ -2337,8 +2337,12 @@ applet reads and writes what that token may. The wire is
 | `POST …/applets/applet/{id}/act` | `{state, shown?, action: {name, context, sourceComponentId, userMessage}, confirmed?}` | the frame after the action |
 | `POST …/applets/applet/{id}/preview` | `{applet?, screen?, params?, ui?}` | the check's problems and one screen's outline; writes nothing |
 
-A frame is `{applet, state, shown, messages, notice?, confirm?,
-confirmLabel?, confirmDanger?}`: `messages` are A2UI v1.0
+The three run the `a2ui` runtime, the one there is: an applet names its
+`runtime`, required and with no default
+([0244](decisions/0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md)),
+and a write naming another is refused. A frame is `{applet, state, shown,
+messages, notice?, confirm?, confirmLabel?, confirmDanger?}`, its `applet`
+header carrying the `runtime`: `messages` are A2UI v1.0
 agent-to-renderer messages (`createSurface` when the screen or the applet's
 version changes, else `updateDataModel` of `/data`, `/counts`, `/params`,
 `/applet`, and of `/ui` only when an action changed it), and `applet` names the

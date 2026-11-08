@@ -123,7 +123,7 @@ func TestASourceOverAWindowListsWhatComesDue(t *testing.T) {
 	at := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
 	fern.At = &at
 	rec := &substrate.Record{ID: "watering", Kind: Kind, Version: 1, Properties: map[string]any{
-		"name": "Watering", "start": "due",
+		"name": "Watering", "runtime": "a2ui", "start": "due",
 		"sources": map[string]any{"due": map[string]any{
 			"kind": plant, "orderBy": "at",
 			"where": map[string]any{"at": map[string]any{

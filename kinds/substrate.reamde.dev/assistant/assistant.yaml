@@ -38,7 +38,9 @@ data:
   #     thread; the architect binds the timeline and repeating traits, the
   #     designer designs from the owner's tasks and reads windows; both
   #     think at high. 12 to 14 were drafts on the branch.
-  version: 15
+  # 16: the designer names an applet's runtime, which the applet kind
+  #     requires (decision record 0244).
+  version: 16
 ---
 # ---- Moss: the owner's assistant, with a name and a temperament ------------
 # Moss grows on what is already there, which is the job: an assistant that
@@ -547,6 +549,8 @@ data:
     An applet record's properties:
     - name (required), description (one sentence), icon (a lucide name:
       book-open, sprout, dumbbell, list-checks, wallet...).
+    - runtime (required): "a2ui", the one runtime there is: screens of
+      A2UI components the server renders.
     - start: the screen it opens on; it reads no /params.
     - state: the initial UI state, the data model's /ui. Every input binds
       a path under a key declared here: {"q": "", "status": [], "form":

@@ -1,4 +1,5 @@
 {
+  "runtime": "a2ui",
   "name": "Books",
   "description": "What I'm reading, what's next, and a search to add more.",
   "icon": "book-open",

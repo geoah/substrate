@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-08
 decision-makers: George Antoniadis
+amended-by: 0244
 ---
 
 # 0243. An applet is A2UI screens the server runs, seeded in every repository, and the console gives applets a place

@@ -15,7 +15,10 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: applets
-  version: 1
+  # 2: an applet names its runtime, the renderer that draws its screens,
+  #    and a2ui is the one this binary runs (decision record 0244);
+  #    repository migration 4 names it on the applets written before.
+  version: 2
 ---
 # The applet. `internal`, so an agent's glob never reaches it: Moss's designer
 # names it in its writes, and every write of one is checked by the engine
@@ -25,6 +28,12 @@ data:
 # `json` for the four structured properties: a screen is a flat list of
 # A2UI components whose props are the catalog's, nested deeper than a
 # declared field reaches, and the check reads them whole.
+#
+# Two halves: the data (state, sources, actions), which the server runs
+# whatever draws the screens, and the view (start, screens), which belongs
+# to the runtime. `runtime` is required and has no default, so an applet
+# says what draws it and a runtime added later is a new value, never a
+# guess about records written before it.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/applets/applet
@@ -43,6 +52,14 @@ data:
       type: string
       required: true
       description: the applet's name, as its launcher and title bar show it
+    runtime:
+      type: enum
+      required: true
+      values:
+        - value: a2ui
+          label: A2UI
+      description: what draws the applet's screens; a2ui is screens of A2UI
+        v1.0 components the server renders
     description:
       type: text
       description: one sentence on what the applet is for
@@ -67,10 +84,9 @@ data:
         params}'
     screens:
       type: json
-      required: true
-      description: 'the screens, by name: each {title, sources, refreshOn,
-        init, components}, the components an A2UI v1.0 basic catalog list
-        with one root'
+      description: 'the a2ui runtime''s screens, by name: each {title, sources,
+        refreshOn, init, components}, the components an A2UI v1.0 basic catalog
+        list with one root'
 ---
 # ---- preview: see what an applet draws -----------------------------------------
 # The designer's eyes (docs/plans/applets.md): one screen of a stored applet,

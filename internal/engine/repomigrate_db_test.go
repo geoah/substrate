@@ -171,7 +171,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	// bare and recorded it, as every fresh repository's first open does. A
 	// repository from before the migration existed has no such row, so the
 	// ledger is cleared to stand for one.
-	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records"}) {
+	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records", 4: "name_applet_runtimes"}) {
 		t.Fatalf("a fresh repository's first open recorded %v", got)
 	}
 	rmClearLedger(t, dsn, repo)
@@ -185,7 +185,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a repository holding bare stored names did not open: %v", err)
 	}
-	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records"}) {
+	if got := rmLedger(t, raw); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records", 4: "name_applet_runtimes"}) {
 		t.Fatalf("ledger = %v", got)
 	}
 	migrated := changelogHead(t, raw)
@@ -238,7 +238,7 @@ func TestRepositoryMigrationQualifiesStoredBareNames(t *testing.T) {
 	if head := changelogHead(t, raw); head != migrated {
 		t.Fatalf("the second open appended: head %d, was %d", head, migrated)
 	}
-	if got := rmLedger(t, raw); len(got) != 3 {
+	if got := rmLedger(t, raw); len(got) != 4 {
 		t.Fatalf("ledger after the second open = %v", got)
 	}
 	// A rebuild replays the plant and then the migration's writes, and the
@@ -358,7 +358,7 @@ func TestAReadOnlyOpenRefusesARepositoryWithAPendingMigration(t *testing.T) {
 	if _, err := svc2.Dataset(ctx, repo); err != nil {
 		t.Fatalf("the writer's open after the refusal: %v", err)
 	}
-	if got := rmLedger(t, raw); len(got) != 3 {
+	if got := rmLedger(t, raw); len(got) != 4 {
 		t.Fatalf("the writer's open left the ledger %v, want every migration", got)
 	}
 }
@@ -435,7 +435,7 @@ func TestRepositoryMigrationRunsOnAnImportedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the imported repository did not open: %v", err)
 	}
-	if got := rmLedger(t, raw2); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records"}) {
+	if got := rmLedger(t, raw2); !reflect.DeepEqual(got, map[int]string{1: "qualify_bare_declaration_names", 2: "qualify_bare_selector_kinds", 3: "name_units_by_unit_records", 4: "name_applet_runtimes"}) {
 		t.Fatalf("ledger after the first open = %v", got)
 	}
 	beta, err := ds2.KindByRef(ctx, rmBeta)

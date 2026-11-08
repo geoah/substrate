@@ -273,7 +273,7 @@ assistant make over the owner's records.
 
 | Kind  | What it is |
 | ----- | ---------- |
-| `applet` | One applet: `name`, `description`, `icon`, `start`, and four `json` properties, `state` (the initial UI state), `sources` (the reads that fill the data model), `actions` (the steps a button runs) and `screens` (each a list of [A2UI](https://a2ui.org) v1.0 components). `internal`, so an agent writes one only where its writes name the kind. Every write is checked against the A2UI catalog and the repository's kinds and functions, one problem per path. |
+| `applet` | One applet: `name`, `runtime` (required, `a2ui` today: what draws its screens, decision 0244), `description`, `icon`, `start`, and four `json` properties, `state` (the initial UI state), `sources` (the reads that fill the data model), `actions` (the steps a button runs) and `screens` (each a list of [A2UI](https://a2ui.org) v1.0 components). `internal`, so an agent writes one only where its writes name the kind. Every write is checked against the A2UI catalog and the repository's kinds and functions, one problem per path. |
 
 It also ships the `preview` host function: one screen of an applet rendered
 against the owner's records as an outline, with every binding that resolved

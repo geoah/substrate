@@ -1,8 +1,9 @@
 // Package applet is the runtime of the substrate's applets
 // (docs/plans/applets.md): a record of substrate.reamde.dev/applets/applet whose
-// screens are A2UI v1.0 components, rendered into A2UI messages against the
-// repository and acted on by running its actions' steps as ordinary reads
-// and writes.
+// runtime names what draws its screens. The a2ui runtime, the one this
+// package runs, draws A2UI v1.0 components, rendered into A2UI messages
+// against the repository and acted on by running its actions' steps as
+// ordinary reads and writes.
 //
 // The package is a function of the record, the state the renderer sends and
 // a Data the caller hands it. The API hands it the request's dataset, so an
@@ -27,6 +28,14 @@ const Kind = "substrate.reamde.dev/applets/applet"
 // SurfaceID is the one surface an applet draws: a screen change replaces it.
 const SurfaceID = "applet"
 
+// RuntimeA2UI is the runtime whose screens are A2UI components the server
+// renders, and runtimes every runtime this binary runs. An applet names its
+// own, with no default: a runtime added later is a new value, never a guess
+// about what an applet written before it meant (decision record 0244).
+const RuntimeA2UI = "a2ui"
+
+var runtimes = []string{RuntimeA2UI}
+
 // defaultFirst is how many records a list source reads when it names no
 // first, and maxFirst the most it may name: the records route's own cap.
 const (
@@ -40,6 +49,7 @@ type Def struct {
 	ID          string
 	Version     int64
 	Name        string
+	Runtime     string
 	Description string
 	Icon        string
 	Start       string
@@ -134,6 +144,7 @@ func Parse(rec *substrate.Record) (*Def, []string) {
 		ID:          rec.ID,
 		Version:     rec.Version,
 		Name:        p.str(props, "name"),
+		Runtime:     p.str(props, "runtime"),
 		Description: p.str(props, "description"),
 		Icon:        p.str(props, "icon"),
 		Start:       p.str(props, "start"),
@@ -156,6 +167,15 @@ func Parse(rec *substrate.Record) (*Def, []string) {
 	}
 	for name, v := range p.obj(props, "actions") {
 		d.Actions[name] = p.action("actions."+name, v)
+	}
+	switch {
+	case d.Runtime == "":
+		p.add("runtime", "is required: what draws the applet's screens, one of "+strings.Join(runtimes, ", "))
+	case !slices.Contains(runtimes, d.Runtime):
+		// A runtime this binary does not run has a view it cannot read, so
+		// its screens are not parsed as a2ui's.
+		p.add("runtime", fmt.Sprintf("%q is not a runtime this server runs: one of %s", d.Runtime, strings.Join(runtimes, ", ")))
+		return d, p.problems
 	}
 	screens := p.obj(props, "screens")
 	if len(screens) == 0 {

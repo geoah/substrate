@@ -240,6 +240,14 @@ func TestCheckNamesEachMistakeByPath(t *testing.T) {
 		want   string
 	}{
 		{
+			"no runtime", func(p map[string]any) { delete(p, "runtime") },
+			`props.runtime: is required: what draws the applet's screens, one of a2ui`,
+		},
+		{
+			"a runtime this server does not run", func(p map[string]any) { p["runtime"] = "react" },
+			`props.runtime: "react" is not a runtime this server runs: one of a2ui`,
+		},
+		{
 			"a hyphen in an id", func(p map[string]any) { component(p, "library", "count")["id"] = "book-count" },
 			`props.screens.library.components[6].id: "book-count" is not an A2UI id`,
 		},

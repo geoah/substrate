@@ -28,8 +28,9 @@ func putPeopleApplet(t *testing.T, env *testEnv) {
 
 func peopleApplet() map[string]any {
 	return map[string]any{
-		"name":  "People",
-		"state": map[string]any{"name": ""},
+		"name":    "People",
+		"runtime": "a2ui",
+		"state":   map[string]any{"name": ""},
 		"sources": map[string]any{
 			"people": map[string]any{"kind": personKind},
 		},

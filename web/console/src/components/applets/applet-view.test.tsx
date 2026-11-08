@@ -116,6 +116,7 @@ function library(books = BOOKS, over: Partial<AppletFrame> = {}): AppletFrame {
     applet: {
       id: "books",
       name: "Books",
+      runtime: "a2ui",
       icon: "book-open",
       version: 3,
       title: "Library",
@@ -134,6 +135,7 @@ function book(): AppletFrame {
     applet: {
       id: "books",
       name: "Books",
+      runtime: "a2ui",
       version: 3,
       title: "Dune",
       start: "library",

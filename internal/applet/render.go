@@ -242,7 +242,7 @@ func (rt *Runtime) frame(ctx context.Context, d *Def, st substrate.AppletState, 
 	}
 	return &substrate.AppletFrame{
 		Applet: substrate.AppletHeader{
-			ID: d.ID, Name: d.Name, Description: d.Description, Icon: d.Icon, Version: d.Version,
+			ID: d.ID, Name: d.Name, Runtime: d.Runtime, Description: d.Description, Icon: d.Icon, Version: d.Version,
 			Title: title, Start: d.Start, Watch: watch, RefreshOn: screen.RefreshOn,
 			Destructive: d.destructive(),
 		},
