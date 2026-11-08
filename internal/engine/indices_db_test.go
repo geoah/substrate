@@ -236,6 +236,12 @@ func TestAnIndexRebuildDoesNotStallAnotherRepositorysWrite(t *testing.T) {
 // reader keeps its concurrent build waiting, ends the build's session with
 // fn (pg_cancel_backend or pg_terminate_backend) once it waits, and returns
 // the apply's result channel and the reader's release.
+//
+// The build waits on the reader only after its first transaction committed
+// the INVALID scratch index, so the scratch index existing is part of what
+// is waited for. A build that waits without it waits on its table lock, held
+// by an autovacuum or autoanalyze of records, and ending it there leaves no
+// scratch index for the caller to find.
 func failTheBuild(t *testing.T, ds *dataset, db *sql.DB, fn string) (<-chan error, func()) {
 	t.Helper()
 	release := holdRecords(t, db, false)
@@ -244,8 +250,13 @@ func failTheBuild(t *testing.T, ds *dataset, db *sql.DB, fn string) (<-chan erro
 		_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, meterVocabulary("email"))
 		applied <- err
 	}()
+	scratch := "idx_" + derivedID(meterKind, "0") + "_new"
 	waitFor(t, "the concurrent build to wait on the held reader", func() bool {
-		return sessionsWaiting(t, db, "CREATE INDEX CONCURRENTLY%") > 0
+		var made bool
+		if err := db.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, scratch).Scan(&made); err != nil {
+			t.Fatal(err)
+		}
+		return made && sessionsWaiting(t, db, "CREATE INDEX CONCURRENTLY%") > 0
 	})
 	if _, err := db.Exec(`
 		SELECT ` + fn + `(pid) FROM pg_stat_activity
