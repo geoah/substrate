@@ -77,7 +77,10 @@ func TestToolConcurrentSafeHoldsWritersInOrder(t *testing.T) {
 // reads together never pass the budget; a share given back is there for the
 // next call; and the calls budget is spent in call order.
 func TestPrepareCallSharesTheReadBudget(t *testing.T) {
+	ds := &dataset{watch: newBroadcaster()}
+	t.Cleanup(ds.watch.close)
 	l := &agentLoop{
+		ds:     ds,
 		ag:     &vocabulary.Agent{Reads: &vocabulary.FunctionReads{Kinds: []string{"crew.test.dev/crew/widget"}, Calls: 3, Rows: 100}},
 		byName: map[string]agentTool{"query": {builtin: vocabulary.AgentToolQuery}},
 	}
@@ -109,7 +112,10 @@ func TestPrepareCallSharesTheReadBudget(t *testing.T) {
 // A call the loop cannot run is settled before it launches, with the error
 // the model reads.
 func TestPrepareCallSettlesWhatCannotRun(t *testing.T) {
+	ds := &dataset{watch: newBroadcaster()}
+	t.Cleanup(ds.watch.close)
 	l := &agentLoop{
+		ds:     ds,
 		ag:     &vocabulary.Agent{},
 		byName: map[string]agentTool{"query": {builtin: vocabulary.AgentToolQuery}},
 	}
