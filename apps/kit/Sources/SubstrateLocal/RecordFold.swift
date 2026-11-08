@@ -20,13 +20,18 @@ public enum RecordFold {
 
     /// One write over a record: a put or a patch merges (a patch's null
     /// clears), a delete removes. A put over nothing is a record not sent
-    /// yet, at version 0; a patch over nothing is of a record already gone.
+    /// yet, at version 0; a create (a put with a base version) over a record
+    /// held is its own earlier try, whose answer was lost, and writes
+    /// nothing over it, as the server's 409 does; a patch over nothing is of
+    /// a record already gone.
     public static func apply(_ entry: OutboxEntry, to record: Record?) -> Record? {
         switch entry.method {
         case .purge, .delete:
             return nil
         case .patch where record == nil:
             return nil
+        case .put where entry.baseVersion != nil && record != nil:
+            return record
         case .put, .patch:
             var next = record ?? Record(id: entry.recordID, kind: entry.kind, properties: [:], version: 0)
             for (name, value) in entry.properties ?? JSONObject() {

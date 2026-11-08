@@ -600,6 +600,88 @@ struct OutboxCreateTests {
         #expect(parked.first?.conflict == true)
     }
 
+    @Test func aCreateRefusedWithAnotherCodeWaitsUnread() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, #"{"error":{"code":"parked","message":"the retried delivery failed again"}}"#)
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        _ = await outbox.flush(writer(server))
+        #expect(server.methodsAndPaths == ["PUT \(notePath)"])
+        #expect(await outbox.entries.count == 1)
+        #expect(await outbox.landed.isEmpty)
+    }
+
+    @Test func anEditAfterACreateWentQueuesBehindItAndGoesOnTheVersionTheCreateMade() async throws {
+        // Workouts' routine create: outside any batch, where an edit joins a
+        // create that never went.
+        let create = OutboxEntry(
+            method: .put, kind: noteKind, recordID: "day-1", properties: ["name": "Copy"], guarded: true, baseVersion: 0)
+        let gone = ScriptedServer()
+        gone.on { _ in (-1, "") }
+        let outbox = try openOutbox()
+        try await outbox.enqueue([create])
+        guard case .offline = await outbox.flush(writer(gone)) else {
+            Issue.record("not offline")
+            return
+        }
+        // The create may have landed with its answer lost: the rename is
+        // not folded into it.
+        try await outbox.edit(edit("day-1", ["name": "Mine"], base: 0))
+        #expect(await outbox.entries.map(\.method) == [.put, .patch])
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, taken)
+        server.answer("GET", notePath, 200, held("Copy", version: 1))
+        server.on { sent in
+            guard sent.method == "PATCH" else { return nil }
+            return ifVersion(sent) == .number(1) ? (200, answered(2)) : (409, taken)
+        }
+        #expect(await outbox.flush(writer(server)) == .sent)
+        guard case let .object(body)? = server.sent.last?.body, case let .object(properties)? = body["properties"] else {
+            Issue.record("no patch")
+            return
+        }
+        #expect(properties["name"] == "Mine")
+    }
+
+    @Test func anEditAfterTheDevicesOwnChangeOfACreateGoesOnThatChange() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 200, answered(1))
+        server.on { sent in
+            guard sent.method == "PATCH" else { return nil }
+            let version = ifVersion(sent)
+            return version == nil ? (200, answered(2)) : version == .number(2) ? (200, answered(3)) : (409, taken)
+        }
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        try await outbox.enqueue(writes.change(noteKind, "day-1", properties: ["position": 2], version: nil).entries)
+        try await outbox.enqueue(writes.edit(noteKind, "day-1", properties: ["notes": "2 l"], seen: nil).entries)
+        #expect(await outbox.flush(writer(server)) == .sent)
+        #expect(server.sent.last.flatMap(ifVersion) == .number(2))
+        #expect(await outbox.version(of: noteKind, "day-1") == 3)
+    }
+
+    @Test func anEditOfACreateAnotherDeviceChangedStillParksAfterTheDevicesOwnChange() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 200, answered(1))
+        server.on { sent in
+            guard sent.method == "PATCH" else { return nil }
+            return ifVersion(sent) == nil ? (200, answered(3)) : (409, taken)
+        }
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        #expect(await outbox.flush(writer(server)) == .sent)
+        // Another device renamed it, and this one read that.
+        try await outbox.saw([RecordFold.key(noteKind, "day-1"): 2])
+        try await outbox.enqueue(writes.change(noteKind, "day-1", properties: ["position": 2], version: nil).entries)
+        try await outbox.enqueue(writes.edit(noteKind, "day-1", properties: ["name": "Whole milk"], seen: nil).entries)
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        #expect(server.sent.last.flatMap(ifVersion) == .number(1))
+        #expect(await outbox.parked.first?.conflict == true)
+    }
+
     @Test func aCreateWhoseRowWasDeletedSinceCountsAsLandedAndItsEditParksOnThe404() async throws {
         let server = ScriptedServer()
         server.answer("PUT", notePath, 409, taken)

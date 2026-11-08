@@ -39,6 +39,9 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     public var baseVersion: Int?
     /// Parked because the record changed on the server since `baseVersion`.
     public var conflict = false
+    /// A create that went on the wire: its answer may have been lost with
+    /// the create landed, so no edit joins it any more.
+    public var sent = false
 
     public init(
         id: UUID = UUID(), method: Method, kind: String, recordID: String, properties: JSONObject? = nil,
@@ -58,7 +61,7 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     public var key: String { "\(kind)/\(recordID)" }
 
     enum CodingKeys: String, CodingKey {
-        case id, method, kind, recordID, properties, guarded, batch, attempts, lastError, parked, baseVersion, conflict
+        case id, method, kind, recordID, properties, guarded, batch, attempts, lastError, parked, baseVersion, conflict, sent
         /// What Workouts' outbox calls the batch, read and written so a
         /// build of it from before the kit's outbox reads the file back.
         case session
@@ -83,6 +86,7 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         parked = try c.decodeIfPresent(Bool.self, forKey: .parked) ?? (lastError != nil)
         baseVersion = try c.decodeIfPresent(Int.self, forKey: .baseVersion)
         conflict = try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false
+        sent = try c.decodeIfPresent(Bool.self, forKey: .sent) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -100,5 +104,6 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         try c.encode(parked, forKey: .parked)
         try c.encodeIfPresent(baseVersion, forKey: .baseVersion)
         try c.encode(conflict, forKey: .conflict)
+        if sent { try c.encode(sent, forKey: .sent) }
     }
 }
