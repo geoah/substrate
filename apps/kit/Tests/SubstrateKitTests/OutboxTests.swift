@@ -49,6 +49,18 @@ private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
     OutboxEntry(method: .patch, kind: noteKind, recordID: id, properties: patch, guarded: true, baseVersion: base)
 }
 
+private func stored(_ kind: String, _ id: String, _ properties: String, version: Int) -> String {
+    #"{"id":"\#(id)","kind":"\#(kind)","properties":\#(properties),"version":\#(version)}"#
+}
+
+/// A create's `ifVersion: 0` met a row.
+private let taken = #"{"error":{"code":"conflict","message":"version conflict: ifVersion 0, stored 2"}}"#
+
+private func ifVersion(_ sent: ScriptedServer.Sent) -> JSONValue? {
+    guard case let .object(body)? = sent.body else { return nil }
+    return body["ifVersion"]
+}
+
 @Suite("The outbox", .timeLimit(.minutes(10)))
 struct OutboxTests {
     @Test func aConflictOnAGuardedPatchReadsTheRecordAndSendsTheChangeAgainOnTop() async throws {
@@ -441,27 +453,6 @@ struct OutboxEditTests {
         #expect(await outbox.entries.count == 2)
     }
 
-    @Test func aCreateAtAnIdTakenMeanwhileIsParkedNeverMergedInto() async throws {
-        let server = ScriptedServer()
-        server.answer("PUT", notePath, 409, #"{"error":{"code":"conflict","message":"exists"}}"#)
-        let outbox = try openOutbox()
-        try await outbox.enqueue([
-            OutboxEntry(
-                method: .put, kind: noteKind, recordID: "day-1", properties: ["name": .string("Copy")],
-                guarded: true, baseVersion: 0)
-        ])
-        guard case let .refused(words) = await outbox.flush(writer(server)) else {
-            Issue.record("not refused")
-            return
-        }
-        #expect(words.contains("\u{201C}day-1\u{201D}"))
-        guard case let .object(body)? = server.sent.first?.body else {
-            Issue.record("no body")
-            return
-        }
-        #expect(body["ifVersion"] == .number(0))
-    }
-
     @Test func aPurgeOutsideAnyBatchIsWithdrawnUntilItGoes() async throws {
         let outbox = try openOutbox()
         try await outbox.edit(edit("day-1", ["name": .string("One")], base: 4))
@@ -470,6 +461,117 @@ struct OutboxEditTests {
         #expect(await outbox.waitingDeletes == ["\(noteKind)/day-1"])
         try await outbox.withdrawDelete(noteKind, "day-1")
         #expect(await outbox.entries.isEmpty)
+    }
+}
+
+/// A create is sent once: a retry whose earlier try landed, its answer lost,
+/// meets the row and reads it, so whatever another device wrote since stands,
+/// and an edit queued on the create goes on the version the create made.
+@Suite("Creates in the outbox", .timeLimit(.minutes(10)))
+struct OutboxCreateTests {
+    let notePath = path(noteKind, "day-1")
+    let writes = RecordWrites(mint: { UUID() })
+
+    /// The note as the server holds it.
+    func held(_ name: String, version: Int) -> String {
+        stored(noteKind, "day-1", #"{"name":"\#(name)"}"#, version: version)
+    }
+
+    @Test func aCreateCreatesOnlyAndAnEditOfARecordNotSentYetIsOnVersionZero() {
+        let create = writes.create(noteKind, "day-1", properties: ["name": "Milk"])
+        let edit = writes.edit(noteKind, "day-1", properties: ["notes": "2 l"], seen: nil)
+        #expect(create.entries.map(\.baseVersion) == [0])
+        #expect(edit.entries.map(\.baseVersion) == [0])
+    }
+
+    @Test func aCreateWhoseEarlierTryLandedCountsAsLandedAndIsNeverSentAgain() async throws {
+        // The earlier try landed and its answer was lost; another device
+        // renamed the note since.
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, taken)
+        server.answer("GET", notePath, 200, held("Oat milk", version: 2))
+        let outbox = try openOutbox()
+        let create = writes.create(noteKind, "day-1", properties: ["name": "Milk"])
+        try await outbox.enqueue(create.entries)
+        #expect(await outbox.flush(writer(server)) == .sent)
+        #expect(server.methodsAndPaths == ["PUT \(notePath)", "GET \(notePath)"])
+        #expect(server.sent.first.flatMap(ifVersion) == .number(0))
+        #expect(await outbox.entries.isEmpty)
+        #expect(await outbox.landed == Set(create.entries.map(\.id)))
+        #expect(await outbox.version(of: noteKind, "day-1") == 2)
+    }
+
+    @Test func anEditQueuedOnACreateGoesOnTheVersionTheCreateAnswered() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 200, answered(1))
+        server.on { sent in
+            guard sent.method == "PATCH" else { return nil }
+            return ifVersion(sent) == .number(1) ? (200, answered(2)) : (409, taken)
+        }
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        try await outbox.enqueue(writes.edit(noteKind, "day-1", properties: ["notes": "2 l"], seen: nil).entries)
+        #expect(await outbox.flush(writer(server)) == .sent)
+        #expect(server.methodsAndPaths == ["PUT \(notePath)", "PATCH \(notePath)"])
+        #expect(await outbox.version(of: noteKind, "day-1") == 2)
+    }
+
+    @Test func anEditQueuedOnACreateWhoseEarlierTryLandedGoesOnTheVersionTheCreateMade() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, taken)
+        server.answer("GET", notePath, 200, held("Milk", version: 1))
+        server.on { sent in
+            guard sent.method == "PATCH" else { return nil }
+            return ifVersion(sent) == .number(1) ? (200, answered(2)) : (409, taken)
+        }
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        try await outbox.enqueue(writes.edit(noteKind, "day-1", properties: ["notes": "2 l"], seen: nil).entries)
+        #expect(await outbox.flush(writer(server)) == .sent)
+        #expect(server.methodsAndPaths == ["PUT \(notePath)", "GET \(notePath)", "PATCH \(notePath)"])
+        #expect(await outbox.version(of: noteKind, "day-1") == 2)
+    }
+
+    @Test func anEditQueuedOnACreateParksWhereAnotherDeviceMovedTheRecordBeforeTheRetry() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, taken)
+        server.answer("GET", notePath, 200, held("Oat milk", version: 2))
+        server.answer("PATCH", notePath, 409, #"{"error":{"code":"conflict","message":"version conflict: ifVersion 1, stored 2"}}"#)
+        let outbox = try openOutbox()
+        try await outbox.enqueue(writes.create(noteKind, "day-1", properties: ["name": "Milk"]).entries)
+        let edit = writes.edit(noteKind, "day-1", properties: ["name": "Whole milk"], seen: nil)
+        try await outbox.enqueue(edit.entries)
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        #expect(server.methodsAndPaths == ["PUT \(notePath)", "GET \(notePath)", "PATCH \(notePath)"])
+        #expect(server.sent.last.flatMap(ifVersion) == .number(1))
+        let parked = await outbox.parked
+        #expect(parked.map(\.id) == edit.entries.map(\.id))
+        #expect(parked.first?.conflict == true)
+    }
+
+    @Test func aCreateWhoseRowWasDeletedSinceCountsAsLandedAndItsEditParksOnThe404() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", notePath, 409, taken)
+        server.answer("GET", notePath, 404, #"{"error":{"code":"not_found","message":"record day-1"}}"#)
+        server.answer(
+            "PATCH", notePath, 404, #"{"error":{"code":"not_found","message":"record day-1 is deleted; a put restores it"}}"#)
+        let outbox = try openOutbox()
+        let create = writes.create(noteKind, "day-1", properties: ["name": "Milk"])
+        try await outbox.enqueue(create.entries)
+        let edit = writes.edit(noteKind, "day-1", properties: ["notes": "2 l"], seen: nil)
+        try await outbox.enqueue(edit.entries)
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        #expect(server.methodsAndPaths == ["PUT \(notePath)", "GET \(notePath)", "PATCH \(notePath)"])
+        #expect(await outbox.landed == Set(create.entries.map(\.id)))
+        let parked = await outbox.parked
+        #expect(parked.map(\.id) == edit.entries.map(\.id))
+        #expect(parked.first?.conflict == false)
     }
 }
 

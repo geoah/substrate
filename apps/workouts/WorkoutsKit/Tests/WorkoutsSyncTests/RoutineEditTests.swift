@@ -363,26 +363,24 @@ struct RoutineEditTests {
         #expect(await outbox.entries.count == 1)
     }
 
-    @Test("a duplicate is created only where nothing is: ifVersion 0, and a refusal is parked, not merged")
+    @Test("a duplicate is created only where nothing is: ifVersion 0, and a 409 is its own earlier try, read and never merged into")
     func createOnly() async throws {
         let server = ScriptedServer()
         let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine)
-        server.answer(
-            "PUT", "/api/v1/substrate.reamde.dev/training/routine/\(copy.routine.id.rawValue)", 409,
-            #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        let path = "/api/v1/substrate.reamde.dev/training/routine/\(copy.routine.id.rawValue)"
+        server.answer("PUT", path, 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        server.answer("GET", path, 200, record(2))
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
-        guard case .refused = await outbox.flush(api(server)) else {
-            Issue.record("not refused")
-            return
-        }
+        #expect(await outbox.flush(api(server)) == .sent)
         guard case let .object(body)? = server.sent.first?.body else {
             Issue.record("no body")
             return
         }
         #expect(body["ifVersion"] == .number(0))
-        let parked = try #require(await outbox.parked.first)
-        #expect(!parked.conflict)
+        #expect(server.methodsAndPaths == ["PUT \(path)", "GET \(path)"])
+        #expect(await outbox.entries.isEmpty)
+        #expect(await outbox.version(of: codec.kinds.routine, copy.routine.id.rawValue) == 2)
 
         // Created: the next edit of it asserts the version the create made.
         let fresh = ScriptedServer()

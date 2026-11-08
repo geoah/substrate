@@ -37,8 +37,10 @@ is the kit's ([its README](../kit/README.md)):
   offline shows at once and stays shown until its record is read again, and
   only a write the outbox says landed is shown as landed. Every write goes
   through the outbox (`TaskWrites`, over the kit's `RecordWrites`): a create
-  as a PUT every retry lands on the same row, a change as a guarded patch, an
-  edit on the version the owner saw, and a plain `DELETE`, no purge. It plans
+  as a PUT with `ifVersion: 0`, which a retry whose earlier try landed counts
+  as landed and never writes again, a change as a guarded patch, an edit on
+  the version the owner saw (a task not sent yet at the version its create
+  made), and a plain `DELETE`, no purge. It plans
   the reminders this device shows (`Reminders`, made current through the
   kit's `Notifications.reconcile`), keeps a reminder's tap until its task's
   record is there (`TasksState.tapped`), and keeps the settings in the

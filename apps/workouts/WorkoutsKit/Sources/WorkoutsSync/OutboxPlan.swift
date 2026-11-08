@@ -84,9 +84,11 @@ public enum OutboxPlan {
             baseVersion: baseVersion ?? 0)
     }
 
-    /// A new routine (a duplicate), written whole at an id nothing holds:
-    /// `ifVersion: 0`, so a routine another writer made at the same id since
-    /// is refused, never merged into.
+    /// A new routine (a duplicate, or one an import derived the id of),
+    /// written whole at an id nothing holds: `ifVersion: 0`, so it never
+    /// merges into a routine there. The one there is its own earlier try,
+    /// its answer lost, or the same import's on another phone, and the
+    /// create counts as landed.
     public static func routineCreated(_ routine: Routine, codec: RecordCodec) -> OutboxEntry {
         let record = codec.encode(routine)
         return OutboxEntry(
