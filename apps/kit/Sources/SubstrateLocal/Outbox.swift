@@ -441,7 +441,7 @@ public actor Outbox {
         while let entry = next(skipping: tried) {
             tried.insert(entry.id)
             inFlight = entry
-            let outcome: Result<Int?, any Error>
+            let outcome: Result<Landed, any Error>
             do {
                 outcome = .success(try await send(entry, writer, run: run))
             } catch {
@@ -450,18 +450,18 @@ public actor Outbox {
             inFlight = nil
             guard run == generation else { return state }
             switch outcome {
-            case let .success(version):
-                commit(replayable: entry.method == .put && entry.baseVersion == nil) { file in
+            case let .success(landed):
+                commit(replayable: entry.method == .put) { file in
                     if entry.method == .purge || entry.method == .delete {
                         file.versions[entry.key] = nil
                         file.chains[entry.key] = nil
-                    } else if let version {
+                    } else if let made = landed.made {
                         if let base = entry.baseVersion {
                             // A create asserted 0 itself; an edit, the end of the chain.
                             let asserted = entry.method == .put ? base : file.asserted(entry.key, from: base)
-                            file.chains[entry.key, default: [:]][String(asserted)] = version
+                            file.chains[entry.key, default: [:]][String(asserted)] = made
                         }
-                        file.versions[entry.key] = version
+                        file.versions[entry.key] = landed.now ?? made
                     }
                     file.entries.removeAll { $0.id == entry.id }
                 }
@@ -515,37 +515,61 @@ public actor Outbox {
         return nil
     }
 
-    /// One write, answering the record's new version. The versions it reads
+    /// The version the server creates every record at.
+    private static let createdVersion = 1
+
+    /// What a write that landed leaves: the version it made, which the chain
+    /// moves a later edit's base along, and the version the record is at
+    /// now where that is another, read since.
+    private struct Landed {
+        var made: Int?
+        var now: Int?
+
+        init(_ made: Int?, now: Int? = nil) {
+            self.made = made
+            self.now = now
+        }
+    }
+
+    /// One write, answering what it left on the server. The versions it reads
     /// on the way are kept only while the run is current.
-    private func send(_ entry: OutboxEntry, _ writer: any RecordWriter, run: Int) async throws -> Int? {
+    private func send(_ entry: OutboxEntry, _ writer: any RecordWriter, run: Int) async throws -> Landed {
         let properties = entry.properties ?? JSONObject()
         switch entry.method {
         case .put where entry.baseVersion != nil:
-            // A create at an id the device chose: refused if one is there.
+            // A create at an id the device chose, refused if one is there.
             do {
-                return try await writer.write("PUT", entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion ?? 0)
+                return Landed(
+                    try await writer.write("PUT", entry.kind, entry.recordID, properties: properties, ifVersion: entry.baseVersion ?? 0))
             } catch let error as ServerError where error.status == 409 {
-                throw CreateRefused(kind: entry.kind, id: entry.recordID)
+                // The row there is this create's earlier try, its answer
+                // lost: the create landed. Sent again, its properties would
+                // land over whatever another device wrote since, so the row
+                // is read instead. The create made the version every record
+                // is created at, so an edit queued on it is sent on that one
+                // and parks if the record moved since. A row deleted since
+                // leaves the record's later writes to park on its 404.
+                return Landed(Self.createdVersion, now: try await writer.version(entry.kind, entry.recordID))
             }
         case .put:
-            return try await writer.write("PUT", entry.kind, entry.recordID, properties: properties, ifVersion: nil)
+            return Landed(try await writer.write("PUT", entry.kind, entry.recordID, properties: properties, ifVersion: nil))
         case .patch where entry.baseVersion != nil:
             // The owner's edit, on what they saw: never merged over.
             let version = file.asserted(entry.key, from: entry.baseVersion ?? 0)
             do {
-                return try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version)
+                return Landed(try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version))
             } catch let error as ServerError where error.status == 409 {
                 throw EditConflict(kind: entry.kind, id: entry.recordID, server: error.text)
             }
         case .patch:
             do {
                 let version = entry.guarded ? try await knownVersion(entry, writer, run: run) : nil
-                return try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version)
+                return Landed(try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version))
             } catch let error as ServerError where error.status == 409 && entry.guarded {
                 // Somebody wrote it since: read it, and send the change again
                 // on top, once.
                 let version = try await writer.version(entry.kind, entry.recordID)
-                return try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version)
+                return Landed(try await writer.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version))
             }
         case .purge:
             do {
@@ -553,14 +577,14 @@ public actor Outbox {
             } catch let error as ServerError where error.status == 409 {
                 try await writer.purge(entry.kind, entry.recordID, ifVersion: nil)
             }
-            return nil
+            return Landed(nil)
         case .delete:
             do {
                 try await writer.delete(entry.kind, entry.recordID, ifVersion: entry.guarded ? file.versions[entry.key] : nil)
             } catch let error as ServerError where error.status == 409 {
                 try await writer.delete(entry.kind, entry.recordID, ifVersion: nil)
             }
-            return nil
+            return Landed(nil)
         }
     }
 
@@ -638,10 +662,10 @@ public actor Outbox {
     /// `saveProblem`; at worst a write is sent again after a relaunch, which
     /// every write here survives.
     ///
-    /// A landed write that is safe to send again (a PUT that merges, not a
-    /// create that asserts nothing is there) is saved at most once a second
-    /// and when the flush ends: every save rewrites the whole queue, and an
-    /// import queues thousands of them.
+    /// A landed write that is safe to send again (a PUT, which merges or,
+    /// as a create, meets its own row and reads it) is saved at most once a
+    /// second and when the flush ends: every save rewrites the whole queue,
+    /// and an import queues thousands of them.
     private func commit(replayable: Bool = false, _ edit: (inout File) -> Void) {
         edit(&file)
         let now = ContinuousClock.now

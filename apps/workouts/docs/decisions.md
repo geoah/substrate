@@ -605,12 +605,13 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   routine since (the outbox keeps, per routine, the version each of its edits asserted and the
   one it made). Another writer's change, and a Keep My Edit sent without a version, break that
   chain, so a later edit made on the older routine meets a conflict instead of writing over it.
-  Nothing the edit did not change is sent. A duplicate is a `PUT` of the whole routine at a slug
-  of its name with `ifVersion: 0`, so a routine saved at that id meanwhile is refused and
-  parked, never merged into. Edits made offline wait in the outbox and go as one write under the
-  first one's version, but never join a parked write; the cached catalogue shows them at once,
-  and a catalogue read lays waiting writes (asked before and after the read) over the server's
-  routines until they land.
+  Nothing the edit did not change is sent. A duplicate is a `PUT` of the whole routine at an
+  id minted on the phone with `ifVersion: 0`, so it never merges into a routine there: a `409`
+  is its own earlier try, whose answer was lost, and the duplicate counts as landed and is
+  never sent again (the kit's outbox, 2026-11-08). Edits made offline wait in the outbox and
+  go as one write under the first one's version, but never join a parked write; the cached
+  catalogue shows them at once, and a catalogue read lays waiting writes (asked before and
+  after the read) over the server's routines until they land.
 - **A conflict is the owner's choice, never a merge:** a `409` parks the edit (`conflict`) with
   no re-read. The preview says the routine changed on the server since the edit began (the
   coach or another device) and offers **Keep My Edit** (sent again without `ifVersion`: what

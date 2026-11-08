@@ -209,18 +209,13 @@ struct LiveServerTests {
         #expect(await outbox.flush(api) == .sent)
         let duplicated = try #require(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue))
         #expect(try codec.decodeRoutine(duplicated).slots == copy.routine.slots)
-        // A second copy at the same id (made from a stale catalogue) is
-        // refused by the server and parked, never merged into the first.
-        var clash = copy.routine
-        clash.name = "A clashing copy"
-        try await outbox.enqueue([OutboxPlan.routineCreated(clash, codec: codec)])
-        guard case .refused = await outbox.flush(api) else {
-            Issue.record("a clashing create landed")
-            return
-        }
-        let refusedCreate = try #require(await outbox.parked.first { !$0.conflict })
-        #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
-        try await outbox.discard(refusedCreate.id)
+        // Sent again, its answer lost, after another phone renamed it: the
+        // server's 409 counts the copy as landed, and the rename stands.
+        try await ownerAPI.write("PATCH", codec.kinds.routine, copy.routine.id.rawValue, properties: ["name": .string("Renamed on another phone")])
+        try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
+        #expect(await outbox.flush(api) == .sent)
+        #expect(await outbox.entries.isEmpty)
+        #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == .string("Renamed on another phone"))
         print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
         let split = SampleRoutine.exerciseID("bulgarian-split-squat-dumbbell")
         let pushdown = SampleRoutine.exerciseID("triceps-pushdown")

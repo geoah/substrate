@@ -40,16 +40,6 @@ public struct EditConflict: LocalizedError, Sendable {
     }
 }
 
-/// A create met a record already at its id: parked, never merged into.
-public struct CreateRefused: LocalizedError, Sendable {
-    public let kind: String
-    public let id: String
-
-    public var errorDescription: String? {
-        "Another \(kindDisplayName(kind).lowercased()) was saved as \u{201C}\(id)\u{201D} meanwhile, so this one was not written. Discard it and try again."
-    }
-}
-
 /// What a write waiting for the server will set, merged in queue order:
 /// what a read of the record lays over the server's answer until it lands.
 public struct WaitingWrite: Sendable, Hashable {
