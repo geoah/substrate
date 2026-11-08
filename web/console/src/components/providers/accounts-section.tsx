@@ -17,6 +17,7 @@ import { ToneText } from "@/components/providers/provider-marks"
 import { PauseButton, SyncNowButton } from "@/components/sync/sync-panel"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useNow } from "@/hooks/use-now"
+import { scrollIntoPage } from "@/hooks/use-page-scroll"
 import {
   syncStatusesQueryOptions,
   triggerRecordsQueryOptions,
@@ -137,7 +138,7 @@ function AccountRow({
 }) {
   const ref = useRef<HTMLTableRowElement>(null)
   useEffect(() => {
-    if (highlighted) ref.current?.scrollIntoView?.({ block: "center" })
+    if (highlighted) scrollIntoPage(ref.current, { block: "center" })
   }, [highlighted])
   // A waited-on request turns into "hasn’t started" after a quarter hour;
   // the minute tick shows that without waiting for the next refetch.

@@ -17,6 +17,27 @@ function entryKey(location: ParsedLocation): string {
   return location.state.__TSR_key ?? location.href
 }
 
+/** The offsets kept for back and forward: a filter or a tab replaces its
+ * entry under a new key, so the oldest are dropped rather than kept forever. */
+const KEPT = 100
+
+/** Whether the page that is opening scrolled to an element of its own
+ * (`scrollIntoPage`): the router reports a render after the page's effects
+ * ran, so a reset there would undo it. Cleared as each navigation starts. */
+let placed = false
+
+/** Scroll a page's own element into view from the effect that runs as the
+ * page opens (a highlighted model, an account named in the address), and keep
+ * the shell from moving the page back to the top or the offset it restores. */
+export function scrollIntoPage(
+  el: Element | null | undefined,
+  options?: ScrollIntoViewOptions
+) {
+  if (!el?.scrollIntoView) return
+  placed = true
+  el.scrollIntoView(options)
+}
+
 export function usePageScroll(ref: RefObject<HTMLElement | null>) {
   const router = useRouter()
   useEffect(() => {
@@ -24,13 +45,17 @@ export function usePageScroll(ref: RefObject<HTMLElement | null>) {
     // Before the next page draws, while the container still holds the one
     // the reader is leaving: after, its offset may be clamped to the new one.
     const offBefore = router.subscribe("onBeforeNavigate", (event) => {
+      placed = false
       const el = ref.current
-      if (el && event.fromLocation)
-        left.set(entryKey(event.fromLocation), el.scrollTop)
+      if (!el || !event.fromLocation) return
+      const key = entryKey(event.fromLocation)
+      left.delete(key)
+      left.set(key, el.scrollTop)
+      if (left.size > KEPT) left.delete(left.keys().next().value!)
     })
     const offRendered = router.subscribe("onRendered", (event) => {
       const el = ref.current
-      if (!el || !event.pathChanged || event.toLocation.hash) return
+      if (!el || placed || !event.pathChanged || event.toLocation.hash) return
       el.scrollTop = left.get(entryKey(event.toLocation)) ?? 0
     })
     return () => {

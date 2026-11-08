@@ -13,10 +13,10 @@ import {
   RouterProvider,
 } from "@tanstack/react-router"
 import { act, cleanup, render, screen } from "@testing-library/react"
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { usePageScroll } from "./use-page-scroll"
+import { scrollIntoPage, usePageScroll } from "./use-page-scroll"
 
 function Shell() {
   const ref = useRef<HTMLDivElement>(null)
@@ -28,18 +28,38 @@ function Shell() {
   )
 }
 
+/** A page that scrolls to an element of its own as it opens, the way a
+ * provider's page brings a highlighted model into view. */
+function Highlighted() {
+  const ref = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.scrollIntoView = () => {
+      el.closest<HTMLElement>("[data-testid=page]")!.scrollTop = 250
+    }
+    scrollIntoPage(el, { block: "center" })
+  }, [])
+  return <h1 ref={ref}>/providers</h1>
+}
+
 async function open(href: string) {
   const root = createRootRoute({ component: Shell })
   const router = createRouter({
-    routeTree: root.addChildren(
-      ["/home", "/history", "/settings"].map((path) =>
+    routeTree: root.addChildren([
+      ...["/home", "/history", "/settings"].map((path) =>
         createRoute({
           getParentRoute: () => root,
           path,
           component: () => <h1>{path}</h1>,
         })
-      )
-    ),
+      ),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/providers",
+        component: Highlighted,
+      }),
+    ]),
     history: createMemoryHistory({ initialEntries: [href] }),
   })
   render(
@@ -102,6 +122,17 @@ describe("usePageScroll", () => {
     expect(page.scrollTop).toBe(300)
     await back()
     expect(page.scrollTop).toBe(900)
+  })
+
+  it("keeps the place a page that opens scrolls itself to", async () => {
+    const { page, go } = await open("/home")
+    page.scrollTop = 900
+    await go("/providers", { search: { model: "anthropic" } })
+    expect(screen.getByRole("heading").textContent).toBe("/providers")
+    expect(page.scrollTop).toBe(250)
+
+    await go("/history")
+    expect(page.scrollTop).toBe(0)
   })
 
   it("leaves an address with a hash to whoever scrolls to its element", async () => {
