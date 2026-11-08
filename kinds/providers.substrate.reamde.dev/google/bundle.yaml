@@ -287,7 +287,12 @@ data:
   # 45: the account declares `oauthClient`, the client its grant was
   # issued to, which the OAuth facility writes at connect and checks before
   # a refresh. ADDITIVE.
-  version: 45
+  #
+  # 46: `gmailthread` titles itself by its members' subject, then their
+  # snippet, then its thread id, and `gmailmessage` by its subject, then the
+  # opening of its body. Templates only: a stored row takes the new title
+  # when the sync next writes it.
+  version: 46
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -7135,6 +7140,13 @@ data:
 # subject of its newest message, one `referencing` read away. `temporal` goes
 # with them — a Thread carries no instant of its own, which is also why no
 # sweep may filter these rows by a window.
+#
+# THE TITLE READS THROUGH `messages`, so it needs no property of its own: the
+# subject of the first member that has one (the API's order, oldest first),
+# else the first member's snippet, else the thread id, which is all a thin row
+# has. A title renders when the row is written, and the authoritative read is
+# staged after the members it names, so it reads them as this batch left
+# them.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailthread
@@ -7149,7 +7161,7 @@ data:
     could not read is written thin: its account and its threadId alone.
   names:
     singular: gmailthread
-  displayTemplate: "{threadId}"
+  displayTemplate: "{messages[].subject|messages[].snippet|threadId}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
@@ -7261,6 +7273,12 @@ data:
 # property is written null (which deletes). Everything decoded from `payload`
 # follows the payload: a response with no `payload` writes NOTHING derived
 # from one, so a thinner read can never erase a fuller row.
+#
+# THE TITLE is the subject, else `{snippet}`. That token is the DERIVED
+# snippet, the opening of `body`, and never the `snippet` property: a template
+# token of that name renders the derived one on every kind. A member row
+# written from `threads.get` alone has neither, and renders no title until a
+# read of the message itself lands.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailmessage
@@ -7278,7 +7296,7 @@ data:
     singular: gmailmessage
   traits:
     - substrate.reamde.dev/core/temporal(point)
-  displayTemplate: "{subject}"
+  displayTemplate: "{subject|snippet}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
