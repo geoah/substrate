@@ -315,8 +315,9 @@ Settings. What each answer does:
 | 409 or 412         | an earlier try landed and its answer was lost: the row is read and laid over, as landed | the record is read again and the change sent once more on top; a second one holds it for the next send | parked as a conflict: Keep My Edit, or Use Theirs | held for the next send |
 | 404                | parked                                                                                  | parked: not on the substrate any more                                                                  | parked                                            | done: already gone     |
 
-For every write, a 422 is parked, unless it is a stale delivery (the stored
-revision is past the one the write carries), which is dropped; a 401 stops
+For every write, a 422 is parked, unless it is a stale delivery (the reason
+`stale_revision`, or from an older server the stored revision past the one
+the write carries), which is dropped; a 401 stops
 the send as signed out, and a 403 for a scope the token lacks as needing
 approval, nothing lost; any other 403 is parked; a 429, a 5xx and no network
 stop the send, which is tried again with backoff (a fifth of jitter, and the

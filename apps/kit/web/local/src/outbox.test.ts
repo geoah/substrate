@@ -352,6 +352,34 @@ describe("the outbox", () => {
       await until(() => o.getSnapshot().parked.length === 1)
     })
 
+    it("is dropped on the reason stale_revision, without reading the record", async () => {
+      // The stored revision is lower: only the reason can drop this write.
+      fake.seed(kind, "a1", { revision: 2 })
+      fake.fail({ method: "PATCH" }, 422, {
+        error: { ...refusal.error, reason: "stale_revision" },
+      })
+      const o = open()
+      await o.write(RecordWrites.change(kind, "a1", { revision: 3 }))
+      await until(settled(o))
+      expect(o.getSnapshot()).toMatchObject({ waiting: 0, parked: [] })
+      // A change reads its version before it sends; nothing is read after
+      // the refusal to compare revisions.
+      const methods = fake.requests
+        .filter((r) => r.path.endsWith("/a1"))
+        .map((r) => r.method)
+      expect(methods.slice(methods.indexOf("PATCH") + 1)).toEqual([])
+    })
+
+    it("is parked on any other reason, whatever the stored revision", async () => {
+      fake.seed(kind, "a1", { revision: 4 })
+      fake.fail({ method: "PATCH" }, 422, {
+        error: { ...refusal.error, reason: "quota" },
+      })
+      const o = open()
+      await o.write(RecordWrites.change(kind, "a1", { revision: 3 }))
+      await until(() => o.getSnapshot().parked.length === 1)
+    })
+
     it("is parked on the server's words alone", async () => {
       fake.seed(kind, "a1", { revision: 4 })
       fake.fail({ method: "PATCH" }, 422, {

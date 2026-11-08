@@ -18,6 +18,10 @@ export class SubstrateError extends Error {
   /** A 403 whose `WWW-Authenticate` names `insufficient_scope`: the token
    * lacks a scope the request needs, which only a new approval gives. */
   readonly insufficientScope: boolean
+  /** The envelope's machine-readable reason beside `code`, where the server
+   * gives one: `stale_revision` (a newer write of the record landed first),
+   * `quota`, `key_refused`, `observed_rederiving`. */
+  readonly reason?: string
 
   constructor(
     code: string,
@@ -25,7 +29,11 @@ export class SubstrateError extends Error {
     status: number,
     problems: string[] = [],
     details: ProblemDetail[] = [],
-    extra: { retryAfter?: number; insufficientScope?: boolean } = {}
+    extra: {
+      retryAfter?: number
+      insufficientScope?: boolean
+      reason?: string
+    } = {}
   ) {
     super(message)
     this.name = "SubstrateError"
@@ -35,6 +43,7 @@ export class SubstrateError extends Error {
     this.problemDetails = details
     this.retryAfter = extra.retryAfter
     this.insufficientScope = extra.insufficientScope ?? false
+    this.reason = extra.reason
   }
 
   /** The words a screen shows: the message and any problems it lists. */
@@ -79,6 +88,7 @@ export async function failure(res: Response): Promise<SubstrateError> {
       error?:
         | {
             code?: string
+            reason?: string
             message?: string
             problems?: string[]
             problemDetails?: ProblemDetail[]
@@ -94,7 +104,7 @@ export async function failure(res: Response): Promise<SubstrateError> {
         res.status,
         e.problems ?? [],
         e.problemDetails ?? [],
-        extra
+        { ...extra, reason: e.reason || undefined }
       )
     }
     if (typeof body.error === "string") {

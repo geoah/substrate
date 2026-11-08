@@ -57,9 +57,11 @@ event and the page coming to the front send at once. A 401 stops it as
 `signedOut`, a missing scope as `needsApproval`, and nothing is lost. A
 refusal of the write itself (a validation error, a record gone) parks it
 with the server's words and holds back that record's later writes, never
-another's, until the owner retries or discards it. A 422 at
-`props.revision` is dropped when the stored record holds a later revision
-than the write carries: a newer delivery landed first. One tab sends at a
+another's, until the owner retries or discards it. A 422 with the reason
+`stale_revision` is dropped: a newer delivery of the record landed first.
+From a server before that reason, a 422 at `props.revision` is dropped when
+the stored record, read again, holds a later revision than the write
+carries. One tab sends at a
 time (Web Locks) and every tab hears the others' changes
 (BroadcastChannel); a tab reads and writes the kept queue in the order it
 asks, so a read another tab's change starts never puts back a write that

@@ -734,8 +734,10 @@ export class Outbox {
 
   /** Whether a refusal is the record holding a later revision than the
    * write carries: a newer delivery of an observation landed first (decision
-   * 0162). The envelope says only `validation`, so the stored revision is
-   * read and compared, never the server's words. */
+   * 0162). The server says so with the reason `stale_revision`; every write
+   * here is one record's, so the reason is about this one. A server from
+   * before the reason sends none, and then the stored revision is read and
+   * compared, never the server's words. */
   private async overtaken(
     entry: OutboxEntry,
     error: unknown,
@@ -743,6 +745,7 @@ export class Outbox {
   ): Promise<boolean> {
     if (!(error instanceof SubstrateError) || error.code !== "validation")
       return false
+    if (error.reason !== undefined) return error.reason === "stale_revision"
     if (!error.problemDetails.some((d) => d.path === "props.revision"))
       return false
     const mine = revisionOf(entry.properties)
