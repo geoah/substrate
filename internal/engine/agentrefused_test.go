@@ -38,10 +38,14 @@ func TestQueryFailureMarksOnlyARefusedInputInvalid(t *testing.T) {
 
 // An exact repeat of a read this run refused for its input is answered from
 // the refusal without spending the read budget, whatever order the model
-// wrote the arguments in. Another call, a refusal the same call may outlive,
-// and a run that may have written since all read again.
+// wrote the arguments in, and through the message rows the run writes
+// between turns. Another call, a refusal the same call may outlive, and any
+// other write since all read again.
 func TestPrepareCallAnswersAnExactRepeatOfARefusedRead(t *testing.T) {
+	ds := &dataset{watch: newBroadcaster()}
+	t.Cleanup(ds.watch.close)
 	l := &agentLoop{
+		ds:     ds,
 		ag:     &vocabulary.Agent{Reads: &vocabulary.FunctionReads{Kinds: []string{"crew.test.dev/crew/widget"}, Calls: 10, Rows: 100}},
 		byName: map[string]agentTool{"query": {builtin: vocabulary.AgentToolQuery}},
 	}
@@ -85,9 +89,17 @@ func TestPrepareCallAnswersAnExactRepeatOfARefusedRead(t *testing.T) {
 		t.Fatalf("a timed-out read was answered from memory: %s", c.out)
 	}
 
-	l.forgetRefusals()
+	// The run's own message row moves the head and keeps the refusal.
+	l.noteOwnRow(substrate.PutInput{Kind: typeMessage, ID: "m-1"}, []changeEntry{{seq: 1, kind: typeMessage, id: "m-1"}})
+	ds.watch.signal(1)
+	if c := call(grouped); !c.settled {
+		t.Fatal("the run's own message row voided the refusal")
+	}
+	// Any other write voids it: a sync's, a background job's, the run's own
+	// write tool's.
+	ds.watch.signal(2)
 	if c := call(grouped); c.settled {
-		t.Fatalf("a refusal outlived a call that may have written: %s", c.out)
+		t.Fatalf("a refusal outlived a write: %s", c.out)
 	}
 }
 

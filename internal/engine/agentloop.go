@@ -767,11 +767,14 @@ type agentLoop struct {
 	readRows     int
 	readReserved int
 	// refusedReads holds this run's `query` calls refused for their input,
-	// keyed by their arguments, so an exact repeat is answered without
-	// reading (agentrefused.go). refusedMu guards it: calls record from their
-	// own goroutines while the launcher prepares the next.
+	// keyed by their arguments, each with the changelog position it was
+	// refused at, and ownSeqs the seqs of the message rows this run wrote,
+	// so an exact repeat is answered without reading while nothing else was
+	// written (agentrefused.go). refusedMu guards both: calls record from
+	// their own goroutines while the launcher prepares the next.
 	refusedMu    sync.Mutex
-	refusedReads map[string]string
+	refusedReads map[string]refusedRead
+	ownSeqs      []int64
 
 	// hub is in.hub: a detached chat turn's fan-out, nil on every other
 	// entry. partial is the current completion's streamed text, kept so a
@@ -1875,11 +1878,17 @@ func (l *agentLoop) holdsLease(row *erow) bool {
 }
 
 func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substrate.PutInput) error {
-	return l.ds.inTx(ctx, actor, false, func(t *txn) error {
+	var written []changeEntry
+	err := l.ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
+		t.changeSink = &written
 		_, err := t.put(in)
 		return err
 	})
+	if err == nil {
+		l.noteOwnRow(in, written)
+	}
+	return err
 }
 
 // --- tools ---------------------------------------------------------------------
@@ -1996,21 +2005,26 @@ func toolError(msg string) string {
 }
 
 // invalidCallNote rides a refusal of a call's own input. Without it a model
-// read the refusal as a hiccup and sent the identical call again.
-const invalidCallNote = "this call is invalid: sending it again unchanged fails the same way. " +
+// read the refusal as a hiccup and sent the identical call again. It claims
+// no more than holds for a refusal that depends on what is stored, such as a
+// metric that does not exist yet.
+const invalidCallNote = "this call was refused for its input: sent again unchanged, with nothing written meanwhile, it fails the same way. " +
 	"Change what the error names, or answer from what you have"
 
-// toolInvalid is a refusal of the call's input: the same call fails the same
-// way until the input changes, and `invalid` says so to the model and to the
-// loop, which answers an exact repeat without running it (agentrefused.go).
+// toolInvalid is a refusal of the call's input against the repository as it
+// stands: the same call fails the same way until the input changes or a write
+// changes what it names, and `invalid` says so to the model and to the loop,
+// which answers an exact repeat without running it while nothing else was
+// written (agentrefused.go).
 func toolInvalid(msg string) string {
 	out, _ := json.Marshal(map[string]any{"error": msg, "invalid": true, "note": invalidCallNote})
 	return string(out)
 }
 
 // queryFailure is a read the engine refused: invalid where the engine judged
-// the input, a plain error where it failed or cannot answer yet, which the
-// same call may outlive.
+// the input, which may be against what is stored (a metric that names no
+// record), and a plain error where it failed or cannot answer yet, which the
+// same call may outlive with nothing written.
 func queryFailure(err error) string {
 	if errors.Is(err, substrate.ErrValidation) {
 		return toolInvalid(err.Error())
@@ -2164,10 +2178,6 @@ func formatBytes(n int) string {
 // the LLM transport itself fails the loop.
 func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 	tool, args := c.tool, c.args
-	if !l.toolConcurrentSafe(c.call.Name) {
-		// It runs alone in its span, so no read is being prepared beside it.
-		l.forgetRefusals()
-	}
 	switch {
 	case tool.builtin == vocabulary.AgentToolQuery:
 		return l.dispatchQuery(ctx, c, args)

@@ -10,8 +10,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// shelfPackage holds the clerk, an agent with query and write over one kind
-// and no function body, so these tests run where no body can be confined.
+// shelfPackage holds the clerk, an agent with query and write over one kind,
+// which also reads the seeded observations, and no function body, so these
+// tests run where no body can be confined.
 const shelfPackage = "shelf.test.dev/shelf"
 
 // openShelfDataset declares the shelf and points the clerk's provider row at
@@ -46,7 +47,7 @@ func openShelfDataset(t *testing.T) (*dataset, *fakeLLM) {
 				map[string]any{"function": vocabulary.HostFunctionWrite},
 			},
 			"permissions": map[string]any{
-				"reads":  map[string]any{"kinds": []any{widget}},
+				"reads":  map[string]any{"kinds": []any{widget, obsPackage + "/*"}},
 				"writes": []any{widget},
 			},
 		}),
@@ -74,8 +75,9 @@ func toolRowsByTurn(t *testing.T, ds *dataset, threadID string) []map[string]any
 // the aggregate read to group by kind, which the read no longer takes, and
 // sent the identical call again on the next turn: two failures, both shown
 // to the owner. The refusal now says the call is invalid, the repeat is
-// answered from it without reading, and a write in between lets the same
-// call read again, since what a read refuses can depend on what is written.
+// answered from it without reading through the message rows the run wrote
+// between the two, and the run's own write in between lets the same call
+// read again, since what a read refuses can depend on what is written.
 func TestAgentDoesNotRunARefusedReadAgain(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -132,6 +134,69 @@ func TestAgentDoesNotRunARefusedReadAgain(t *testing.T) {
 	}
 	if after := refusal(3); after["repeated"] != nil || after["invalid"] != true {
 		t.Fatalf("after a write the call did not read again: %v", after)
+	}
+}
+
+// A REFUSAL THAT DEPENDS ON WHAT IS STORED LIFTS ONCE IT IS WRITTEN. A read
+// naming a metric no record holds is refused for its input, and the repeat
+// with nothing written since is answered from that refusal. A write outside
+// the run, as a background job or a sync makes one, then creates the metric
+// while the model is still deciding: the identical call reads again and
+// answers, where a refusal kept until the run wrote would have answered the
+// stale error.
+func TestAgentReadsARefusedCallAgainAfterAWriteOutsideTheRun(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openShelfDataset(t)
+	metric := obsPackage + "/metric"
+	ref := metric + "/" + fid("bolts")
+	latest := toolArgs(t, map[string]any{
+		"aggregate": map[string]any{"metric": map[string]any{"ref": ref}, "latest": true},
+	})
+	arrived, release := make(chan struct{}), make(chan struct{})
+	fake.script("clerk",
+		fakeTurn{calls: []fakeCall{{"query", latest}}},
+		fakeTurn{calls: []fakeCall{{"query", latest}}},
+		fakeTurn{calls: []fakeCall{{"query", latest}}, arrived: arrived, release: release},
+		fakeTurn{content: "nothing measured yet"},
+	)
+	written := make(chan error, 1)
+	go func() {
+		defer close(release)
+		<-arrived
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
+		})
+		written <- err
+	}()
+	res, err := ds.CallAgent(ctx, shelfPackage+"/clerk", "how many bolts do I have")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if err := <-written; err != nil {
+		t.Fatalf("create the metric outside the run: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("result: %+v", res)
+	}
+	tools := toolRowsByTurn(t, ds, res.Thread)
+	if len(tools) != 3 {
+		t.Fatalf("%d tool rows, want 3: %v", len(tools), tools)
+	}
+	content := func(i int) map[string]any {
+		t.Helper()
+		s, _ := tools[i]["content"].(string)
+		return toolResult(t, s)
+	}
+	first := content(0)
+	if msg, _ := first["error"].(string); tools[0]["ok"] != false || !strings.Contains(msg, "names no metric") || first["invalid"] != true {
+		t.Fatalf("the read of a missing metric was not refused as invalid: %v", first)
+	}
+	if repeat := content(1); tools[1]["ok"] != false || repeat["repeated"] != true || repeat["error"] != first["error"] {
+		t.Fatalf("with nothing written, the repeat was not answered from the refusal: %v", repeat)
+	}
+	if after := content(2); tools[2]["ok"] != true || after["error"] != nil || after["repeated"] != nil {
+		t.Fatalf("after the metric was written outside the run, the call did not read again: %v", after)
 	}
 }
 
