@@ -1211,7 +1211,9 @@ func scalarString(v any) string {
 const snippetRunes = 80
 
 // snippetOf is the first snippetRunes characters of the longest text-family
-// property.
+// property. A declared `body` is one, and the row keeps it in its own column
+// rather than in Props, so it is read where it is stored, as titleResolver.Prop
+// reads it.
 func snippetOf(ty *vocabulary.Kind, row *erow) string {
 	best := ""
 	for _, name := range ty.PropOrder {
@@ -1219,7 +1221,11 @@ func snippetOf(ty *vocabulary.Kind, row *erow) string {
 		if !vocabulary.IsLongText(p.Datatype) || p.Sensitive() {
 			continue
 		}
-		s := scalarString(row.Props[name])
+		v := row.Props[name]
+		if name == substrate.PropBody {
+			v = hotValue(row, name)
+		}
+		s := scalarString(v)
 		if len(s) > len(best) {
 			best = s
 		}
