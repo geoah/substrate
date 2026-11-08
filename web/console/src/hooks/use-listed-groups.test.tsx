@@ -258,6 +258,14 @@ describe("useListedGroups", () => {
     await listed("Tasks, From GitHub")
   })
 
+  it("reads no accounts where no kind brings one, as on a new repository", async () => {
+    const kinds = KINDS.filter((k) => k.identity !== `${GITHUB}/account`)
+    const client = renderListed([unfinished()], undefined, { kinds })
+    await listed("Tasks")
+    await waitFor(() => expect(client.isFetching()).toBe(0))
+    expect(asked.filter((u) => u.includes("implements"))).toEqual([])
+  })
+
   it("lists every group where the accounts could not be read", async () => {
     accountsFail = true
     renderListed([unfinished()], undefined)

@@ -20,6 +20,7 @@ import type { CollectionGroup } from "@/lib/collections"
 import { kindPackage } from "@/lib/definition"
 import { collectionsListed, currentStep, type SetupStep } from "@/lib/providers"
 import { accountViewOf, providerViews } from "@/lib/sync"
+import { kindHasTrait } from "@/lib/traits"
 
 /** A provider group holds one package's kinds: the bundle's id. */
 function bundleOf(g: CollectionGroup): string {
@@ -35,7 +36,6 @@ export function useListedGroups(
   const units = useUnits()
   const registry = useQuery(kindsQueryOptions)
   const statuses = useQuery(bundleStatusesQueryOptions)
-  const accountsRead = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
 
   // A package published outside the providers authority is a provider when
   // its status says its declarations bring an account (decision record 0238),
@@ -50,11 +50,22 @@ export function useListedGroups(
       ),
     [groups, statuses.data]
   )
+  // The server refuses a trait read no kind implements, so a repository with
+  // no account kind reads no accounts: it has none.
+  const accountKinds = useMemo(
+    () => registry.data?.some((k) => kindHasTrait(k, "accountconfig")) ?? false,
+    [registry.data]
+  )
+  const accountsRead = useQuery({
+    ...traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT),
+    enabled: accountKinds && providers.length > 0,
+  })
   const steps = useMemo(() => {
-    if (!statuses.data || !accountsRead.data) return undefined
-    const kinds = registry.data ?? []
+    if (!registry.data || !statuses.data) return undefined
+    if (accountKinds && !accountsRead.data) return undefined
+    const kinds = registry.data
     const ids = new Set(providers.map(bundleOf))
-    const accounts = accountsRead.data.records.map((r) =>
+    const accounts = (accountsRead.data?.records ?? []).map((r) =>
       accountViewOf(r, kinds)
     )
     const views = providerViews(statuses.data, ids, kinds, accounts)
@@ -67,7 +78,14 @@ export function useListedGroups(
       out.set(id, providerSteps(units, id, installed, view, kinds).steps)
     }
     return out
-  }, [units, registry.data, statuses.data, accountsRead.data, providers])
+  }, [
+    units,
+    registry.data,
+    statuses.data,
+    accountKinds,
+    accountsRead.data,
+    providers,
+  ])
 
   const liveRecords = (g: CollectionGroup) =>
     statuses.data?.find((b) => b.id === bundleOf(g))?.liveRecords
