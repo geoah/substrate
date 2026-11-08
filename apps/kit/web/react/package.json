@@ -21,7 +21,7 @@
   },
   "types": "./src/index.ts",
   "scripts": {
-    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json && cp src/theme.css dist/theme.css",
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json && node ../dts.mjs && cp src/theme.css dist/theme.css",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

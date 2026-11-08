@@ -53,16 +53,51 @@ publish)
 	provenance="--provenance=false"
 	if [ "${PROVENANCE:-}" = "true" ]; then provenance="--provenance"; fi
 	shopt -s nullglob
+	manifests="$(mktemp -d)"
+	i=0
 	for tgz in "$dir"/*.tgz; do
-		manifest="$(tar -xzOf "$tgz" package/package.json)"
-		name="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).name)' "$manifest")"
-		version="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).version)' "$manifest")"
+		tar -xzOf "$tgz" package/package.json >"$manifests/$i.json"
+		printf '%s' "$tgz" >"$manifests/$i.path"
+		i=$((i + 1))
+	done
+	# Each package after the kit packages it depends on: npm takes a version
+	# whose dependency it does not hold yet, and that version stays
+	# uninstallable until the dependency follows, which a failed run may
+	# never do. One name, version and tarball per line.
+	order="$(node -e '
+		const fs = require("node:fs"), path = require("node:path")
+		const dir = process.argv[1]
+		const pkgs = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => {
+			const m = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"))
+			return {
+				name: m.name,
+				version: m.version,
+				needs: Object.keys({ ...m.dependencies, ...m.peerDependencies }),
+				tgz: fs.readFileSync(path.join(dir, f.replace(/json$/, "path")), "utf8"),
+			}
+		})
+		const names = new Set(pkgs.map((p) => p.name))
+		const done = new Set()
+		const out = []
+		while (out.length < pkgs.length) {
+			const next = pkgs.find(
+				(p) => !done.has(p.name) && p.needs.every((d) => !names.has(d) || done.has(d))
+			)
+			if (!next) throw new Error("the kit packages depend on each other in a cycle")
+			done.add(next.name)
+			out.push([next.name, next.version, next.tgz].join("\t"))
+		}
+		process.stdout.write(out.join("\n"))
+	' "$manifests")"
+	rm -rf "$manifests"
+	while IFS=$'\t' read -r name version tgz; do
+		[ -n "$name" ] || continue
 		if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
 			echo "webkit: $name@$version is already on npm" >&2
 			continue
 		fi
 		npm publish "$tgz" --access public "$provenance"
-	done
+	done <<<"$order"
 	;;
 *)
 	echo "usage: webkit.sh pack <dir> | publish <dir>" >&2
