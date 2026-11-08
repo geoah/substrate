@@ -416,6 +416,17 @@ func aggregateTimeout(ctx context.Context, tx *sql.Tx) error {
 	return err
 }
 
+// checkAggregate refuses what the read refuses from the query alone, before
+// it reads anything stored: the agent's query tool keeps such a refusal for
+// the run, since no write can lift it (agentrefused.go).
+func checkAggregate(q substrate.AggregateQuery) error {
+	q, _, err := recordedLocalDates(q)
+	if err == nil {
+		_, err = planAggregate(q)
+	}
+	return err
+}
+
 // planAggregate checks the body's shape and parses it. Nothing here reads the
 // repository: what the selected streams admit is checked once they are
 // selected.

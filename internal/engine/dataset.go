@@ -1149,18 +1149,6 @@ func (t *txn) exec(sqlText string, args ...any) (sql.Result, error) {
 
 // --- watch ---
 
-// signaledHead is the highest seq a commit in this process has signaled,
-// and the history generation it belongs to. inTx signals after the commit
-// published its registry and before the write returns, so every write whose
-// caller saw it finish has moved it; it reads no table, and starts at zero
-// when the dataset opens.
-func (ds *dataset) signaledHead() substrate.ChangelogHead {
-	ds.watch.mu.Lock()
-	seq := ds.watch.last
-	ds.watch.mu.Unlock()
-	return substrate.ChangelogHead{Seq: seq, Generation: ds.historyGeneration()}
-}
-
 type broadcaster struct {
 	mu     sync.Mutex
 	subs   map[chan int64]struct{}

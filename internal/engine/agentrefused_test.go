@@ -1,13 +1,13 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/llm"
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -21,31 +21,65 @@ func toolResult(t *testing.T, out string) map[string]any {
 	return m
 }
 
-// A read the engine refused for its input says the same call fails the same
-// way; one it failed, or cannot answer yet, says nothing of the kind, since
-// the same call may outlive it.
-func TestQueryFailureMarksOnlyARefusedInputInvalid(t *testing.T) {
-	refused := toolResult(t, queryFailure(&substrate.ValidationError{Problems: []string{"aggregate.groupBy[0]: groupBy kind was removed"}}))
-	if refused["invalid"] != true || refused["note"] != invalidCallNote {
-		t.Fatalf("a refused input: %v", refused)
+// A query call refused for its arguments alone is refused before anything
+// stored is read, and says the same call fails the same way. A call whose
+// answer depends on the repository passes the arguments' check, whatever it
+// names: only the read can tell a metric or a kind that is not there yet.
+func TestParseQueryCallRefusesOnlyWhatTheArgumentsSay(t *testing.T) {
+	const widget = "crew.test.dev/crew/widget"
+	scope := queryScope{kinds: []string{widget, "substrate.reamde.dev/observations/*"}, rows: 100, requireKinds: true}
+	window := map[string]any{"gte": "2026-01-01T00:00:00Z", "lt": "2026-02-01T00:00:00Z"}
+	for name, x := range map[string]struct {
+		args map[string]any
+		want string
+	}{
+		"a kind group": {map[string]any{"kind": widget, "aggregate": map[string]any{
+			"property": map[string]any{"name": "name"}, "range": window, "reducers": []any{"sum"}, "groupBy": []any{"kind"},
+		}}, "groupBy kind was removed"},
+		"an unknown reducer": {map[string]any{"kind": widget, "aggregate": map[string]any{
+			"property": map[string]any{"name": "name"}, "range": window, "reducers": []any{"bogus"},
+		}}, `"bogus" is not a reducer`},
+		"a malformed filter":      {map[string]any{"filter": map[string]any{"at": map[string]any{"gte": "2026-01-01"}}}, "filter takes"},
+		"count beside a ranking":  {map[string]any{"kind": widget, "q": "bolt", "count": true}, "count is not supported with q"},
+		"a malformed order":       {map[string]any{"kind": widget, "orderBy": 7}, "orderBy is a list of {property, desc}"},
+		"a get without a kind":    {map[string]any{"id": "w-1"}, "get needs a kind"},
+		"a search naming no kind": {map[string]any{"q": "bolt"}, "q needs filter.kinds"},
+	} {
+		_, msg := parseQueryCall(scope, x.args)
+		if !strings.Contains(msg, x.want) {
+			t.Errorf("%s: parseQueryCall refused %q, want %q", name, msg, x.want)
+			continue
+		}
+		// A dataset with nothing behind it: the refusal is answered before
+		// anything is read.
+		out, ok, rows := (&dataset{}).runQueryTool(context.Background(), scope, x.args)
+		if got := toolResult(t, out); ok || rows != 0 || got["invalid"] != true || got["note"] != invalidCallNote {
+			t.Errorf("%s: %s, want an invalid refusal", name, out)
+		}
 	}
-	for _, err := range []error{substrate.ErrObservedRederiving, errors.New("connection reset"), fmt.Errorf("%w: busy", substrate.ErrUnavailable)} {
-		if got := toolResult(t, queryFailure(err)); got["invalid"] != nil || got["note"] != nil {
-			t.Errorf("%v answered as an invalid call: %v", err, got)
+	for name, args := range map[string]map[string]any{
+		"a metric no record holds": {"aggregate": map[string]any{
+			"metric": map[string]any{"ref": "substrate.reamde.dev/observations/metric/bolts"}, "latest": true,
+		}},
+		"a kind nobody declared":       {"kind": "crew.test.dev/crew/gadget", "first": 1, "count": true},
+		"a kind outside the allowlist": {"kind": "substrate.reamde.dev/core/token", "first": 1},
+		"a record that is not there":   {"kind": widget, "id": "w-404"},
+	} {
+		if call, msg := parseQueryCall(scope, args); msg != "" {
+			t.Errorf("%s: refused by its arguments alone: %s", name, msg)
+		} else if call.agg == nil && call.id == "" && len(call.q.Filter.Kinds) != 1 {
+			t.Errorf("%s: the kind shorthand was not folded into the filter: %+v", name, call.q.Filter)
 		}
 	}
 }
 
-// An exact repeat of a read this run refused for its input is answered from
-// the refusal without spending the read budget, whatever order the model
-// wrote the arguments in, and through the message rows the run writes
-// between turns. Another call, a refusal the same call may outlive, and any
-// other write since all read again.
+// An exact repeat of a read this run refused for its arguments alone is
+// answered from the refusal without spending the read budget, whatever order
+// the model wrote the arguments in. Another call reads, and so does the
+// repeat of a call refused for anything else: a refusal of what is stored,
+// or a timeout, is never kept.
 func TestPrepareCallAnswersAnExactRepeatOfARefusedRead(t *testing.T) {
-	ds := &dataset{watch: newBroadcaster()}
-	t.Cleanup(ds.watch.close)
 	l := &agentLoop{
-		ds:     ds,
 		ag:     &vocabulary.Agent{Reads: &vocabulary.FunctionReads{Kinds: []string{"crew.test.dev/crew/widget"}, Calls: 10, Rows: 100}},
 		byName: map[string]agentTool{"query": {builtin: vocabulary.AgentToolQuery}},
 	}
@@ -82,24 +116,17 @@ func TestPrepareCallAnswersAnExactRepeatOfARefusedRead(t *testing.T) {
 		t.Fatalf("a changed call was answered from the refusal: %s", other.out)
 	}
 
-	const slow = `{"kind":"crew.test.dev/crew/widget","q":"bolt"}`
-	timedOut := call(slow)
-	l.noteRefusal(timedOut, toolError(fmt.Sprintf(toolTimeoutMessage, 30)))
-	if c := call(slow); c.settled {
-		t.Fatalf("a timed-out read was answered from memory: %s", c.out)
-	}
-
-	// The run's own message row moves the head and keeps the refusal.
-	l.noteOwnRow(substrate.PutInput{Kind: typeMessage, ID: "m-1"}, []changeEntry{{seq: 1, kind: typeMessage, id: "m-1"}})
-	ds.watch.signal(1)
-	if c := call(grouped); !c.settled {
-		t.Fatal("the run's own message row voided the refusal")
-	}
-	// Any other write voids it: a sync's, a background job's, the run's own
-	// write tool's.
-	ds.watch.signal(2)
-	if c := call(grouped); c.settled {
-		t.Fatalf("a refusal outlived a write: %s", c.out)
+	for name, x := range map[string]struct{ args, out string }{
+		"a metric no record holds": {
+			`{"aggregate":{"metric":{"ref":"substrate.reamde.dev/observations/metric/bolts"},"latest":true}}`,
+			toolError("substrate: validation failed: [aggregate.metric.ref: substrate.reamde.dev/observations/metric/bolts names no metric]"),
+		},
+		"a timed-out read": {`{"kind":"crew.test.dev/crew/widget","q":"bolt"}`, toolError(fmt.Sprintf(toolTimeoutMessage, 30))},
+	} {
+		l.noteRefusal(call(x.args), x.out)
+		if c := call(x.args); c.settled {
+			t.Errorf("%s was answered from memory: %s", name, c.out)
+		}
 	}
 }
 

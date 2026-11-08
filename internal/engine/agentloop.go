@@ -766,15 +766,12 @@ type agentLoop struct {
 	readMu       sync.Mutex
 	readRows     int
 	readReserved int
-	// refusedReads holds this run's `query` calls refused for their input,
-	// keyed by their arguments, each with the changelog position it was
-	// refused at, and ownSeqs the seqs of the message rows this run wrote,
-	// so an exact repeat is answered without reading while nothing else was
-	// written (agentrefused.go). refusedMu guards both: calls record from
-	// their own goroutines while the launcher prepares the next.
+	// refusedReads holds the errors of this run's `query` calls refused for
+	// their arguments alone, keyed by those arguments, so an exact repeat is
+	// answered without reading (agentrefused.go). refusedMu guards it: calls
+	// record from their own goroutines while the launcher prepares the next.
 	refusedMu    sync.Mutex
-	refusedReads map[string]refusedRead
-	ownSeqs      []int64
+	refusedReads map[string]string
 
 	// hub is in.hub: a detached chat turn's fan-out, nil on every other
 	// entry. partial is the current completion's streamed text, kept so a
@@ -1878,17 +1875,11 @@ func (l *agentLoop) holdsLease(row *erow) bool {
 }
 
 func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substrate.PutInput) error {
-	var written []changeEntry
-	err := l.ds.inTx(ctx, actor, false, func(t *txn) error {
+	return l.ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
-		t.changeSink = &written
 		_, err := t.put(in)
 		return err
 	})
-	if err == nil {
-		l.noteOwnRow(in, written)
-	}
-	return err
 }
 
 // --- tools ---------------------------------------------------------------------
@@ -2004,32 +1995,19 @@ func toolError(msg string) string {
 	return string(out)
 }
 
-// invalidCallNote rides a refusal of a call's own input. Without it a model
-// read the refusal as a hiccup and sent the identical call again. It claims
-// no more than holds for a refusal that depends on what is stored, such as a
-// metric that does not exist yet.
-const invalidCallNote = "this call was refused for its input: sent again unchanged, with nothing written meanwhile, it fails the same way. " +
+// invalidCallNote rides a refusal of a call's arguments alone. Without it a
+// model read the refusal as a hiccup and sent the identical call again.
+const invalidCallNote = "this call was refused for its arguments alone, before anything stored was read: sent again unchanged, it fails the same way whatever the repository holds. " +
 	"Change what the error names, or answer from what you have"
 
-// toolInvalid is a refusal of the call's input against the repository as it
-// stands: the same call fails the same way until the input changes or a write
-// changes what it names, and `invalid` says so to the model and to the loop,
-// which answers an exact repeat without running it while nothing else was
-// written (agentrefused.go).
+// toolInvalid is a refusal parseQueryCall answered from the call's arguments
+// alone, before anything stored was read: no write can lift it, and
+// `invalid` says so to the model and to the loop, which answers an exact
+// repeat without running it (agentrefused.go). A refusal of anything stored
+// is a plain toolError.
 func toolInvalid(msg string) string {
 	out, _ := json.Marshal(map[string]any{"error": msg, "invalid": true, "note": invalidCallNote})
 	return string(out)
-}
-
-// queryFailure is a read the engine refused: invalid where the engine judged
-// the input, which may be against what is stored (a metric that names no
-// record), and a plain error where it failed or cannot answer yet, which the
-// same call may outlive with nothing written.
-func queryFailure(err error) string {
-	if errors.Is(err, substrate.ErrValidation) {
-		return toolInvalid(err.Error())
-	}
-	return toolError(err.Error())
 }
 
 func toolJSON(v any) string {
@@ -2327,40 +2305,34 @@ func (ds *dataset) scopeKinds(scope queryScope) []string {
 // The allowlist holds every arm: a list that names no kinds lists the
 // allowlist, a kind outside it is refused by name, and an expanded referent
 // of a kind outside it is dropped from `included`.
+//
+// parseQueryCall checks the arguments first, and only its refusals are
+// invalid: every refusal after it reads the repository or the budget, and a
+// write or the next call can lift it.
 func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
-	if argSet(args["aggregate"]) {
-		// The aggregate read takes none of the other arms' arguments, refused
-		// by name as the records route refuses them (decision 0161), so a
-		// model never reads an answer to a question it did not ask.
-		for _, name := range aggregateRefuses {
-			if argSet(args[name]) {
-				return toolInvalid(name + " is refused beside aggregate: the aggregate read takes filter, kind and downsample beside it"), false, 0
-			}
-		}
-		return ds.runAggregateTool(ctx, scope, args)
+	call, msg := parseQueryCall(scope, args)
+	if msg != "" {
+		return toolInvalid(msg), false, 0
 	}
-	if argSet(args["downsample"]) {
-		return toolInvalid("downsample cuts an aggregate read's range into columns; send it beside aggregate"), false, 0
+	if call.agg != nil {
+		return ds.runAggregateTool(ctx, scope, *call.agg)
 	}
-	if id, _ := args["id"].(string); id != "" {
+	if call.id != "" {
 		// A get names the FULL identity: type + id. The type is
 		// checked against the allowlist BEFORE the read, and a disallowed or
 		// unknown type answers exactly like an absent id — never an oracle.
-		typ, _ := args["kind"].(string)
-		if typ == "" {
-			return toolInvalid("get needs a kind — records are addressed by (kind, id)"), false, 0
-		}
+		typ := call.kind
 		if !scope.allows(typ) {
 			if ty, err := ds.resolveType(typ); err != nil || !scope.allows(ty.Identity) {
 				return toolJSON(map[string]any{"record": nil}), true, 1
 			}
 		}
-		e, err := ds.Get(ctx, typ, id)
+		e, err := ds.Get(ctx, typ, call.id)
 		if errors.Is(err, substrate.ErrNotFound) || errors.Is(err, substrate.ErrValidation) {
 			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
 		if err != nil {
-			return queryFailure(err), false, 1
+			return toolError(err.Error()), false, 1
 		}
 		if !scope.allows(e.Kind) {
 			// The uniform absence answer: a disallowed get is never an
@@ -2371,56 +2343,23 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		e.PropertyMeta = scope.meta(e.PropertyMeta)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
-	q := substrate.Query{First: listDefaultFirst}
-	// The SAME strict decode the REST route uses. A plain Unmarshal dropped a
-	// key it did not know, so a model that guessed the shape — `{"at":
-	// {"gte": …}}` instead of `{"properties": {"at": …}}` — got the whole
-	// collection back as if it had asked for it, and answered from it. A
-	// refusal naming the keys is the only honest answer.
-	if msg := decodeFilterArgument(args, &q.Filter); msg != "" {
-		return toolInvalid(msg), false, 0
-	}
-	if first, ok := anyFloat(args["first"]); ok && int(first) > 0 {
-		q.First = int(first)
-	}
-	if text, _ := args["q"].(string); text != "" {
-		// The ranked arm is the route's: `q`, `mode`, `first` and
-		// `filter.kinds` alone, every other filter arm refused by name, since
-		// both ranking arms cap candidates before hydration and a predicate
-		// applied afterwards would not produce the filtered top-k.
-		if arm := rankedFilterArm(q.Filter); arm != "" {
-			return toolInvalid("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone"), false, 0
-		}
-		if argSet(args["count"]) {
-			return toolInvalid("count is not supported with q: a ranking has no set to count; list with filter.search and count instead"), false, 0
-		}
-		if scope.requireKinds {
-			// The direct call keeps reading `q` without the shorthand.
-			if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
-				q.Filter.Kinds = []string{ident}
-			}
-			if len(q.Filter.Kinds) == 0 {
-				return toolInvalid(errSearchNeedsKinds("q")), false, 0
-			}
-		}
-		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows), Purposes: q.Filter.Purposes}
+	q := call.q
+	if call.text != "" {
+		in := substrate.SearchInput{Q: call.text, K: min(q.First, scope.rows), Purposes: q.Filter.Purposes, Mode: call.mode}
 		if len(q.Filter.Kinds) == 0 && len(in.Purposes) == 0 {
-			// Only the direct call reaches here (an agent named a kind above).
+			// Only the direct call reaches here (an agent named a kind).
 			// A search that names nothing skips machinery, as the console's
 			// everyday search does (record 0136); naming a kind or a purpose
 			// reaches it.
 			in.Purposes = []string{vocabulary.PurposePrimary, vocabulary.PurposeSupporting}
 		}
-		if m, _ := args["mode"].(string); m != "" {
-			in.Mode = substrate.SearchMode(m)
-		}
 		for _, ident := range q.Filter.Kinds {
 			ty, err := ds.resolveType(ident)
 			if err != nil {
-				return queryFailure(err), false, 0
+				return toolError(err.Error()), false, 0
 			}
 			if !scope.allows(ty.Identity) {
-				return toolInvalid(ident + " is not in the reads allowlist"), false, 0
+				return toolError(ident + " is not in the reads allowlist"), false, 0
 			}
 			in.Kinds = append(in.Kinds, ty.Identity)
 		}
@@ -2429,16 +2368,9 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		}
 		res, err := ds.Search(ctx, in)
 		if err != nil {
-			return queryFailure(err), false, 0
+			return toolError(err.Error()), false, 0
 		}
 		return toolJSON(substrate.Ranked(res)), true, len(res.Hits)
-	}
-	// `kind` is the one-kind shorthand for filter.kinds.
-	if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
-		q.Filter.Kinds = []string{ident}
-	}
-	if scope.requireKinds && len(q.Filter.Kinds) == 0 && q.Filter.Search != "" {
-		return toolInvalid(errSearchNeedsKinds("filter.search")), false, 0
 	}
 	if len(q.Filter.Kinds) == 0 {
 		// The allowlist IS the list when the call names no kinds: nil for a
@@ -2448,34 +2380,20 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 	for i, ident := range q.Filter.Kinds {
 		ty, err := ds.resolveType(ident)
 		if err != nil {
-			return queryFailure(err), false, 0
+			return toolError(err.Error()), false, 0
 		}
 		if !scope.allows(ty.Identity) {
-			return toolInvalid(ident + " is not in the reads allowlist"), false, 0
+			return toolError(ident + " is not in the reads allowlist"), false, 0
 		}
 		q.Filter.Kinds[i] = ty.Identity
 	}
 	if msg := ds.allowReferencing(scope, "filter.referencing", q.Filter.Referencing); msg != "" {
-		return toolInvalid(msg), false, 0
-	}
-	buf, err := jsonArgument(args, "orderBy")
-	if err == nil && buf != nil {
-		err = strictjson.DecodeBytes(buf, &q.OrderBy, false)
-	}
-	if err != nil {
-		return toolInvalid(fmt.Sprintf("orderBy: %v. orderBy is a list of {property, desc}", err)), false, 0
+		return toolError(msg), false, 0
 	}
 	q.First = min(q.First, scope.rows)
-	q.After, _ = args["after"].(string)
-	q.Count = argSet(args["count"])
-	if names, _ := args["expand"].([]any); len(names) > 0 {
-		for _, n := range names {
-			q.Expand = append(q.Expand, fmt.Sprint(n))
-		}
-	}
 	page, err := ds.readList(ctx, q)
 	if err != nil {
-		return queryFailure(err), false, 0
+		return toolError(err.Error()), false, 0
 	}
 	for path, e := range page.Included {
 		if !scope.allows(e.Kind) {
@@ -2491,6 +2409,115 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			rows, scope.rows)), false, 0
 	}
 	return toolJSON(page), true, rows
+}
+
+// queryCall is one `query` call's arguments as parseQueryCall decoded them.
+type queryCall struct {
+	// id and kind are a get's record.
+	id, kind string
+	// text is a ranked read's `q`, and mode its mode.
+	text string
+	mode substrate.SearchMode
+	// q is a ranked read's or a list's filter and page, with `kind` folded
+	// into the filter's kinds where the arm takes the shorthand.
+	q substrate.Query
+	// agg is an aggregate read, nil on every other arm.
+	agg *substrate.AggregateQuery
+}
+
+// parseQueryCall decodes a `query` call's arguments and answers what they
+// refuse alone, or "". It is no method of the dataset, so it reads nothing
+// stored: a call it refuses is refused the same way whatever the repository
+// holds, which is what lets the loop answer an exact repeat from the refusal.
+// What it reads beside the arguments is the scope's allowlist being set and
+// requireKinds, both fixed for an agent's run. A kind, metric or record that
+// is not there, a kind outside the allowlist, the rows left and a read that
+// fails are the run stage's to refuse.
+func parseQueryCall(scope queryScope, args map[string]any) (queryCall, string) {
+	if argSet(args["aggregate"]) {
+		// The aggregate read takes none of the other arms' arguments, refused
+		// by name as the records route refuses them (decision 0161), so a
+		// model never reads an answer to a question it did not ask.
+		for _, name := range aggregateRefuses {
+			if argSet(args[name]) {
+				return queryCall{}, name + " is refused beside aggregate: the aggregate read takes filter, kind and downsample beside it"
+			}
+		}
+		return parseAggregateCall(scope, args)
+	}
+	if argSet(args["downsample"]) {
+		return queryCall{}, "downsample cuts an aggregate read's range into columns; send it beside aggregate"
+	}
+	call := queryCall{}
+	call.kind, _ = args["kind"].(string)
+	if id, _ := args["id"].(string); id != "" {
+		if call.kind == "" {
+			return queryCall{}, "get needs a kind — records are addressed by (kind, id)"
+		}
+		call.id = id
+		return call, ""
+	}
+	q := substrate.Query{First: listDefaultFirst}
+	// The SAME strict decode the REST route uses. A plain Unmarshal dropped a
+	// key it did not know, so a model that guessed the shape — `{"at":
+	// {"gte": …}}` instead of `{"properties": {"at": …}}` — got the whole
+	// collection back as if it had asked for it, and answered from it. A
+	// refusal naming the keys is the only honest answer.
+	if msg := decodeFilterArgument(args, &q.Filter); msg != "" {
+		return queryCall{}, msg
+	}
+	if first, ok := anyFloat(args["first"]); ok && int(first) > 0 {
+		q.First = int(first)
+	}
+	if text, _ := args["q"].(string); text != "" {
+		// The ranked arm is the route's: `q`, `mode`, `first` and
+		// `filter.kinds` alone, every other filter arm refused by name, since
+		// both ranking arms cap candidates before hydration and a predicate
+		// applied afterwards would not produce the filtered top-k.
+		if arm := rankedFilterArm(q.Filter); arm != "" {
+			return queryCall{}, "filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone"
+		}
+		if argSet(args["count"]) {
+			return queryCall{}, "count is not supported with q: a ranking has no set to count; list with filter.search and count instead"
+		}
+		if scope.requireKinds {
+			// The direct call keeps reading `q` without the shorthand.
+			if call.kind != "" && len(q.Filter.Kinds) == 0 {
+				q.Filter.Kinds = []string{call.kind}
+			}
+			if len(q.Filter.Kinds) == 0 {
+				return queryCall{}, errSearchNeedsKinds("q")
+			}
+		}
+		call.text, call.q = text, q
+		if m, _ := args["mode"].(string); m != "" {
+			call.mode = substrate.SearchMode(m)
+		}
+		return call, ""
+	}
+	// `kind` is the one-kind shorthand for filter.kinds.
+	if call.kind != "" && len(q.Filter.Kinds) == 0 {
+		q.Filter.Kinds = []string{call.kind}
+	}
+	if scope.requireKinds && len(q.Filter.Kinds) == 0 && q.Filter.Search != "" {
+		return queryCall{}, errSearchNeedsKinds("filter.search")
+	}
+	buf, err := jsonArgument(args, "orderBy")
+	if err == nil && buf != nil {
+		err = strictjson.DecodeBytes(buf, &q.OrderBy, false)
+	}
+	if err != nil {
+		return queryCall{}, fmt.Sprintf("orderBy: %v. orderBy is a list of {property, desc}", err)
+	}
+	q.After, _ = args["after"].(string)
+	q.Count = argSet(args["count"])
+	if names, _ := args["expand"].([]any); len(names) > 0 {
+		for _, n := range names {
+			q.Expand = append(q.Expand, fmt.Sprint(n))
+		}
+	}
+	call.q = q
+	return call, ""
 }
 
 // aggregateRefuses are the query tool's arguments the aggregate read takes
@@ -2587,28 +2614,22 @@ func (ds *dataset) allowKind(scope queryScope, kind string) string {
 	return ""
 }
 
-// runAggregateTool is the query tool's aggregate read: the records route's
-// `aggregate` parameter as an argument, with `filter` and `downsample` beside
-// it. Every kind it reads is held to the allowlist as a list's are: the
-// filter's kinds and reverse-read targets, a records bucket's, and the kind
-// of every metric it names, whose record the read looks up. A filter naming
-// no kinds reads the allowlist's observed kinds, as a list naming none lists
-// the grant: record 0172 requires kinds of a text search alone, and a metric
-// read refuses filter.search while a property read and a records bucket name
-// their kinds. Its budget is lowered to the rows left before it runs, and its
-// rows count against the row budget.
-func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
+// parseAggregateCall is parseQueryCall's aggregate arm: the records route's
+// `aggregate` parameter as an argument, with `filter`, `kind` and
+// `downsample` beside it, and the body checked by the read's own plan
+// (checkAggregate), which reads nothing stored either.
+func parseAggregateCall(scope queryScope, args map[string]any) (queryCall, string) {
 	q := substrate.AggregateQuery{Aggregate: &substrate.Aggregate{}}
 	buf, err := jsonArgument(args, "aggregate")
 	if err == nil {
 		err = strictjson.DecodeBytes(buf, q.Aggregate, false)
 	}
 	if err != nil {
-		return toolInvalid(fmt.Sprintf("aggregate: %v. aggregate takes %s",
-			err, strings.Join(strictjson.Keys(substrate.Aggregate{}), ", "))), false, 0
+		return queryCall{}, fmt.Sprintf("aggregate: %v. aggregate takes %s",
+			err, strings.Join(strictjson.Keys(substrate.Aggregate{}), ", "))
 	}
 	if msg := decodeFilterArgument(args, &q.Filter); msg != "" {
-		return toolInvalid(msg), false, 0
+		return queryCall{}, msg
 	}
 	if argSet(args["downsample"]) {
 		buf, err := jsonArgument(args, "downsample")
@@ -2617,13 +2638,38 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 			err = strictjson.DecodeBytes(buf, q.Downsample, false)
 		}
 		if err != nil {
-			return toolInvalid(fmt.Sprintf("downsample: %v. downsample takes %s",
-				err, strings.Join(strictjson.Keys(substrate.Downsample{}), ", "))), false, 0
+			return queryCall{}, fmt.Sprintf("downsample: %v. downsample takes %s",
+				err, strings.Join(strictjson.Keys(substrate.Downsample{}), ", "))
 		}
 	}
 	if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
 		q.Filter.Kinds = []string{ident}
 	}
+	if len(q.Filter.Kinds) == 0 && q.Aggregate.Property != nil {
+		return queryCall{}, "filter.kinds: a property read names the kinds whose property it reduces, in filter.kinds or kind"
+	}
+	if b := q.Aggregate.Bucket; b != nil && b.Records != nil && len(b.Records.Filter.Kinds) == 0 && scope.kinds != nil {
+		return queryCall{}, "aggregate.bucket.records.filter: name the kinds whose records are the buckets"
+	}
+	// The run stage fills the kinds a read names none of and lowers the
+	// budget to the rows left, and the plan reads neither the kinds nor a
+	// budget it lowers, so its verdict here is the read's.
+	if err := checkAggregate(q); err != nil {
+		return queryCall{}, err.Error()
+	}
+	return queryCall{agg: &q}, ""
+}
+
+// runAggregateTool is the query tool's aggregate read, parsed by
+// parseAggregateCall. Every kind it reads is held to the allowlist as a
+// list's are: the filter's kinds and reverse-read targets, a records
+// bucket's, and the kind of every metric it names, whose record the read
+// looks up. A filter naming no kinds reads the allowlist's observed kinds, as
+// a list naming none lists the grant: record 0172 requires kinds of a text
+// search alone, and a metric read refuses filter.search while a property read
+// and a records bucket name their kinds. Its budget is lowered to the rows
+// left before it runs, and its rows count against the row budget.
+func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, q substrate.AggregateQuery) (string, bool, int) {
 	check := func(kinds []string) ([]string, string) {
 		for i, ident := range kinds {
 			ty, err := ds.resolveType(ident)
@@ -2638,9 +2684,6 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 		return kinds, ""
 	}
 	if len(q.Filter.Kinds) == 0 {
-		if q.Aggregate.Property != nil {
-			return toolInvalid("filter.kinds: a property read names the kinds whose property it reduces, in filter.kinds or kind"), false, 0
-		}
 		// The allowlist's observed kinds, where a read names none: a metric
 		// read reaches no kind the agent may not read.
 		for _, ident := range ds.scopeKinds(scope) {
@@ -2651,51 +2694,48 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 		if scope.kinds == nil {
 			q.Filter.Kinds = nil
 		} else if len(q.Filter.Kinds) == 0 {
-			return toolInvalid("aggregate: no kind in the reads allowlist binds " + vocabulary.TraitObservedCore +
+			return toolError("aggregate: no kind in the reads allowlist binds " + vocabulary.TraitObservedCore +
 				", so a metric read has nothing to reduce; a property read names its kinds in filter.kinds"), false, 0
 		}
 	}
 	var msg string
 	if q.Filter.Kinds, msg = check(q.Filter.Kinds); msg != "" {
-		return toolInvalid(msg), false, 0
+		return toolError(msg), false, 0
 	}
 	if b := q.Aggregate.Bucket; b != nil && b.Records != nil {
-		if len(b.Records.Filter.Kinds) == 0 && scope.kinds != nil {
-			return toolInvalid("aggregate.bucket.records.filter: name the kinds whose records are the buckets"), false, 0
-		}
 		if b.Records.Filter.Kinds, msg = check(b.Records.Filter.Kinds); msg != "" {
-			return toolInvalid(msg), false, 0
+			return toolError(msg), false, 0
 		}
 	}
 	named, err := q.RecordsNamed()
 	if err != nil {
-		return queryFailure(err), false, 0
+		return toolError(err.Error()), false, 0
 	}
 	for _, n := range named {
 		kind, _, ok := vocabulary.SplitRecordPath(n.Path)
 		switch {
 		case !ok && n.At != "aggregate.metric.ref" && !strings.HasPrefix(n.At, "aggregate.metrics["):
-			return toolInvalid(n.At + ": " + strconv.Quote(n.Path) + " is not a record path \"<kind>/<id>\""), false, 0
+			return toolError(n.At + ": " + strconv.Quote(n.Path) + " is not a record path \"<kind>/<id>\""), false, 0
 		case !ok || scope.kinds == nil:
 			// A malformed metric ref is the read's to refuse by name.
 		default:
 			if msg := ds.allowKind(scope, kind); msg != "" {
-				return toolInvalid(msg), false, 0
+				return toolError(msg), false, 0
 			}
 		}
 	}
 	if scope.kinds != nil {
 		for _, pin := range ds.rankingSourceKinds(q) {
 			if pin == "" {
-				return toolInvalid("aggregate.sources: with no order, the read ranks the sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order"), false, 0
+				return toolError("aggregate.sources: with no order, the read ranks the sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order"), false, 0
 			}
 			if msg := ds.allowKind(scope, pin); msg != "" {
-				return toolInvalid(msg + ": with no aggregate.sources.order the read ranks the sources by their records' priorities; name the order, or read with that kind granted"), false, 0
+				return toolError(msg + ": with no aggregate.sources.order the read ranks the sources by their records' priorities; name the order, or read with that kind granted"), false, 0
 			}
 		}
 		for _, kind := range ds.sourceLinkKinds(q) {
 			if msg := ds.allowKind(scope, kind); msg != "" {
-				return toolInvalid(msg + ": under the priority policy the read takes which sources are one device from these records; read with that kind granted, or under the separate policy"), false, 0
+				return toolError(msg + ": under the priority policy the read takes which sources are one device from these records; read with that kind granted, or under the separate policy"), false, 0
 			}
 		}
 	}
@@ -2709,7 +2749,7 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 			scope.rows, strings.Join(lowered, " and "), scope.rows)), false, 0
 	}
 	if err != nil {
-		return queryFailure(err), false, 0
+		return toolError(err.Error()), false, 0
 	}
 	if len(res.Rows) > scope.rows {
 		return toolError(fmt.Sprintf("the aggregate answers %d rows against a budget of %d; widen the bucket or narrow the range",

@@ -32,10 +32,6 @@ type toolRun struct {
 	// readShare is the rows a `query` call holds of the read budget while it
 	// runs.
 	readShare int
-	// readAt is where the changelog stood before a `query` call ran: a
-	// refusal it answers holds while nothing but this run's messages is
-	// written past it (agentrefused.go).
-	readAt substrate.ChangelogHead
 
 	out string
 	ok  bool
@@ -249,9 +245,6 @@ func (l *agentLoop) prepareCall(c *toolRun, pending int) {
 	if tool.builtin != vocabulary.AgentToolQuery {
 		return
 	}
-	// Before the read runs, so a write that lands while it reads is past the
-	// position its refusal is kept at.
-	c.readAt = l.ds.signaledHead()
 	if prior := l.priorRefusal(c); prior != "" {
 		settle(prior)
 		return

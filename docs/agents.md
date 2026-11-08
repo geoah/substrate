@@ -311,21 +311,19 @@ entry could name only a function.
   override that claims a slot, whatever its kind, so an override outside the
   allowlist removes its slot (decision 0111). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
-  A refusal of the call's own input against the repository as it stands (a
-  key the grammar does not take, a kind outside the allowlist, a group the
-  aggregate read does not have, a metric no record holds) answers
-  `{error, invalid: true, note}`, the note saying the same call fails the
-  same way while nothing is written; a failure the call may outlive with
-  nothing written (a timeout, an index still being re-derived, a share of
-  the row budget) carries neither. The loop keeps each invalid refusal for
-  the run with the changelog head it read before the call ran, and answers
-  an exact repeat of the call, whatever order its arguments come in, with
-  `repeated: true` and without reading or spending the read budget, while
-  every entry past that head is a message row the run wrote itself. Any
-  other write voids it, whoever made it (the run's own `write`, a
-  sub-agent, a background job, another run, a sync): an apply can lift the
-  refusal of a kind that did not exist, and a metric record the refusal of
-  a read that named it.
+  A refusal the engine makes from the call's arguments alone, before it
+  reads anything stored (a key the grammar does not take, a malformed
+  filter or order, an argument beside an arm that refuses it, a group or a
+  reducer the aggregate read does not have), answers `{error, invalid:
+  true, note}`, the note saying the same call fails the same way whatever
+  the repository holds. The loop keeps each such refusal for the run and
+  answers an exact repeat of the call, whatever order its arguments come
+  in, with `repeated: true`, without reading or spending the read budget:
+  no write lifts it. Every other refusal is a plain `{error}` and is never
+  kept, since a write or a later call may lift it (a kind, metric or record
+  that is not there, a kind outside the allowlist, the row budget, a
+  timeout, an index still being re-derived), so the identical call reads
+  again.
 
   An agent holding `query` gets a **kinds list** in its system prompt,
   after its own `prompt`: the `primary` and `supporting` kinds its

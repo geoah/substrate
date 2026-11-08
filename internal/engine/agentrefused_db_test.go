@@ -74,10 +74,10 @@ func toolRowsByTurn(t *testing.T, ds *dataset, threadID string) []map[string]any
 // A MODEL THAT RESENT A REFUSED READ IS NOT READ FOR AGAIN. An assistant asked
 // the aggregate read to group by kind, which the read no longer takes, and
 // sent the identical call again on the next turn: two failures, both shown
-// to the owner. The refusal now says the call is invalid, the repeat is
-// answered from it without reading through the message rows the run wrote
-// between the two, and the run's own write in between lets the same call
-// read again, since what a read refuses can depend on what is written.
+// to the owner. The read refuses that group from its arguments alone, before
+// it reads anything stored, so the refusal says the call is invalid, and
+// every exact repeat in the run is answered from it without reading, a write
+// in between included: no write lifts it.
 func TestAgentDoesNotRunARefusedReadAgain(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -125,26 +125,25 @@ func TestAgentDoesNotRunARefusedReadAgain(t *testing.T) {
 	if first["repeated"] != nil {
 		t.Fatalf("the first refusal reads as a repeat: %v", first)
 	}
-	repeat := refusal(1)
-	if repeat["repeated"] != true || repeat["error"] != first["error"] || repeat["note"] != repeatedCallNote {
-		t.Fatalf("the repeat was not answered from the refusal: %v", repeat)
-	}
 	if tools[2]["ok"] != true {
 		t.Fatalf("the write failed: %v", tools[2]["content"])
 	}
-	if after := refusal(3); after["repeated"] != nil || after["invalid"] != true {
-		t.Fatalf("after a write the call did not read again: %v", after)
+	for _, i := range []int{1, 3} {
+		if repeat := refusal(i); repeat["repeated"] != true || repeat["error"] != first["error"] || repeat["note"] != repeatedCallNote {
+			t.Fatalf("tool row %d was not answered from the refusal: %v", i, repeat)
+		}
 	}
 }
 
-// A REFUSAL THAT DEPENDS ON WHAT IS STORED LIFTS ONCE IT IS WRITTEN. A read
-// naming a metric no record holds is refused for its input, and the repeat
-// with nothing written since is answered from that refusal. A write outside
-// the run, as a background job or a sync makes one, then creates the metric
-// while the model is still deciding: the identical call reads again and
-// answers, where a refusal kept until the run wrote would have answered the
-// stale error.
-func TestAgentReadsARefusedCallAgainAfterAWriteOutsideTheRun(t *testing.T) {
+// A REFUSAL OF WHAT IS STORED IS NEVER KEPT. A read naming a metric no record
+// holds is refused once the read looks the metric up, so the refusal is a
+// plain error that claims nothing of a repeat, and the identical call reads
+// again each time. A write outside the run, as a background job or a sync
+// makes one, then creates the metric while the model decides its next call,
+// and its signal is held until that call has answered: the call reads the
+// committed metric and answers, where a refusal kept until a signal would
+// have answered the stale error.
+func TestAgentReadsARefusalOfWhatIsStoredAgain(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openShelfDataset(t)
@@ -153,23 +152,49 @@ func TestAgentReadsARefusedCallAgainAfterAWriteOutsideTheRun(t *testing.T) {
 	latest := toolArgs(t, map[string]any{
 		"aggregate": map[string]any{"metric": map[string]any{"ref": ref}, "latest": true},
 	})
-	arrived, release := make(chan struct{}), make(chan struct{})
+	deciding, decided, answered := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	fake.script("clerk",
 		fakeTurn{calls: []fakeCall{{"query", latest}}},
 		fakeTurn{calls: []fakeCall{{"query", latest}}},
-		fakeTurn{calls: []fakeCall{{"query", latest}}, arrived: arrived, release: release},
-		fakeTurn{content: "nothing measured yet"},
+		fakeTurn{calls: []fakeCall{{"query", latest}}, arrived: deciding, release: decided},
+		fakeTurn{content: "nothing measured yet", arrived: answered},
 	)
+	// The run asks for its last turn only once the third call answered, and
+	// a run that never gets there must not hold the write forever.
+	ran := make(chan struct{})
+	committed := make(chan struct{})
+	ds.mu.Lock()
+	ds.beforeSignal = func(tx *txn) {
+		for _, e := range tx.entries {
+			if e.kind != metric || e.id != fid("bolts") {
+				continue
+			}
+			close(committed)
+			select {
+			case <-answered:
+			case <-ran:
+			}
+		}
+	}
+	ds.mu.Unlock()
 	written := make(chan error, 1)
 	go func() {
-		defer close(release)
-		<-arrived
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
-		})
-		written <- err
+		defer close(decided)
+		<-deciding
+		go func() {
+			_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+				Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
+			})
+			written <- err
+		}()
+		select {
+		case <-committed:
+		case err := <-written:
+			written <- err
+		}
 	}()
 	res, err := ds.CallAgent(ctx, shelfPackage+"/clerk", "how many bolts do I have")
+	close(ran)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -188,15 +213,17 @@ func TestAgentReadsARefusedCallAgainAfterAWriteOutsideTheRun(t *testing.T) {
 		s, _ := tools[i]["content"].(string)
 		return toolResult(t, s)
 	}
-	first := content(0)
-	if msg, _ := first["error"].(string); tools[0]["ok"] != false || !strings.Contains(msg, "names no metric") || first["invalid"] != true {
-		t.Fatalf("the read of a missing metric was not refused as invalid: %v", first)
+	for _, i := range []int{0, 1} {
+		got := content(i)
+		if msg, _ := got["error"].(string); tools[i]["ok"] != false || !strings.Contains(msg, "names no metric") {
+			t.Fatalf("tool row %d: the read of a missing metric was not refused: %v", i, got)
+		}
+		if got["invalid"] != nil || got["note"] != nil || got["repeated"] != nil {
+			t.Fatalf("tool row %d: a refusal of what is stored was answered as one of the arguments: %v", i, got)
+		}
 	}
-	if repeat := content(1); tools[1]["ok"] != false || repeat["repeated"] != true || repeat["error"] != first["error"] {
-		t.Fatalf("with nothing written, the repeat was not answered from the refusal: %v", repeat)
-	}
-	if after := content(2); tools[2]["ok"] != true || after["error"] != nil || after["repeated"] != nil {
-		t.Fatalf("after the metric was written outside the run, the call did not read again: %v", after)
+	if after := content(2); tools[2]["ok"] != true || after["error"] != nil {
+		t.Fatalf("once the metric was committed, the call did not read it: %v", after)
 	}
 }
 
