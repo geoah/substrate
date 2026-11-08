@@ -1,0 +1,84 @@
+/* The kit's design tokens, the web side of the Apple apps' look: grouped
+ * backgrounds, inset cards, the system's label and separator tones, and one
+ * accent per app (its app.json `accent`), which an app sets on :root as
+ * --sx-accent and --sx-accent-text. Import after tailwindcss. */
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui,
+    "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --color-accent: var(--sx-accent);
+  --color-accent-text: var(--sx-accent-text);
+  --color-canvas: var(--sx-canvas);
+  --color-grouped: var(--sx-grouped);
+  --color-card: var(--sx-card);
+  --color-sidebar: var(--sx-sidebar);
+  --color-label: var(--sx-label);
+  --color-secondary: var(--sx-secondary);
+  --color-tertiary: var(--sx-tertiary);
+  --color-separator: var(--sx-separator);
+  --color-fill: var(--sx-fill);
+  --color-selected: var(--sx-selected);
+  --color-danger: var(--sx-red);
+  --color-warn: var(--sx-orange);
+  --color-caution: var(--sx-yellow);
+  --color-ok: var(--sx-green);
+}
+
+:root {
+  color-scheme: light dark;
+  --sx-accent: #d92c58;
+  --sx-accent-text: #c7114a;
+  --sx-canvas: #ffffff;
+  --sx-grouped: #f2f2f7;
+  --sx-card: #ffffff;
+  --sx-sidebar: #f2f2f7;
+  --sx-label: #000000;
+  --sx-secondary: rgb(60 60 67 / 0.6);
+  --sx-tertiary: rgb(60 60 67 / 0.3);
+  --sx-separator: rgb(60 60 67 / 0.29);
+  --sx-fill: rgb(120 120 128 / 0.12);
+  --sx-selected: rgb(120 120 128 / 0.2);
+  --sx-red: #ff3b30;
+  --sx-orange: #ff9500;
+  --sx-yellow: #ffcc00;
+  --sx-green: #34c759;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sx-canvas: #000000;
+    --sx-grouped: #000000;
+    --sx-card: #1c1c1e;
+    --sx-sidebar: #1c1c1e;
+    --sx-label: #ffffff;
+    --sx-secondary: rgb(235 235 245 / 0.6);
+    --sx-tertiary: rgb(235 235 245 / 0.3);
+    --sx-separator: rgb(84 84 88 / 0.65);
+    --sx-fill: rgb(118 118 128 / 0.24);
+    --sx-selected: rgb(118 118 128 / 0.32);
+    --sx-red: #ff453a;
+    --sx-orange: #ff9f0a;
+    --sx-yellow: #ffd60a;
+    --sx-green: #30d158;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-grouped font-sans text-label antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "substrate-apps-web",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @substrate/tasks-web dev",
+    "build": "pnpm --filter @substrate/tasks-web build",
+    "typecheck": "pnpm --filter @substrate/tasks-web typecheck",
+    "fmt": "prettier --write \"kit/web/*/src/**\" \"tasks/web/src/**\" \"tasks/web/*.{ts,json,html}\"",
+    "fmt:check": "prettier --check \"kit/web/*/src/**\" \"tasks/web/src/**\" \"tasks/web/*.{ts,json,html}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10",
+    "prettier-plugin-tailwindcss": "^0.8.1"
+  }
+}

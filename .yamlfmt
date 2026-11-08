@@ -46,3 +46,4 @@ exclude:
   # Tracked, so .gitignore says nothing about it: the package manager's
   # format, not ours.
   - "web/console/pnpm-lock.yaml"
+  - "apps/pnpm-lock.yaml"

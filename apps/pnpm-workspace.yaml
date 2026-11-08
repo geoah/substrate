@@ -1,0 +1,5 @@
+# The web apps and the web kit they share: each app's `web/` folder beside
+# its Apple and Android ones, and the kit's packages under kit/web/.
+packages:
+  - kit/web/*
+  - "*/web"
