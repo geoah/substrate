@@ -332,7 +332,8 @@ export function SubstrateProvider({
     }
   }, [statusModel, session, manifest.name, endSession])
   const checkStatus = useCallback(
-    (force = false) => statusModel?.refresh(force) ?? Promise.resolve(),
+    (force = false) =>
+      statusModel ? statusModel.refresh(force) : Promise.resolve(),
     [statusModel]
   )
 

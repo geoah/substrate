@@ -17,6 +17,14 @@ export interface RequestOptions {
 /** One substrate, as one signed-in app sees it: its origin and the bearer
  * token the approval minted. Every call carries the token itself; the server
  * sets no cookie, which is what lets it answer CORS with a wildcard. */
+/** `text` without its trailing slashes. A loop, not `/\/+$/`: that pattern
+ * backtracks quadratically on a long run of slashes not at the end. */
+function trimSlashes(text: string): string {
+  let end = text.length
+  while (end > 0 && text[end - 1] === "/") end--
+  return text.slice(0, end)
+}
+
 export class SubstrateClient {
   readonly server: string
   readonly token: string | undefined
@@ -24,7 +32,7 @@ export class SubstrateClient {
   onUnauthorized?: () => void
 
   constructor(server: string, token?: string) {
-    this.server = server.replace(/\/+$/, "")
+    this.server = trimSlashes(server)
     this.token = token
   }
 
