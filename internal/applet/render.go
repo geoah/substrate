@@ -560,7 +560,8 @@ func (rt *Runtime) Act(ctx context.Context, actor substrate.Actor, rec *substrat
 }
 
 // stepError names the step a refusal came from, keeping a validation
-// error's problems for the renderer to show by path.
+// error's problems for the renderer to show by path, and its reason, which
+// the API answers with.
 func stepError(action string, i int, op string, err error) error {
 	var ve *substrate.ValidationError
 	if errors.As(err, &ve) {
@@ -568,10 +569,11 @@ func stepError(action string, i int, op string, err error) error {
 		for j, p := range ve.Problems {
 			problems[j] = fmt.Sprintf("actions.%s[%d] (%s): %s", action, i, op, p)
 		}
+		named := &substrate.ValidationError{Problems: problems, Reason: ve.Reason}
 		if errors.Is(err, errNoRecord) {
-			return noRecord{&substrate.ValidationError{Problems: problems}}
+			return noRecord{named}
 		}
-		return &substrate.ValidationError{Problems: problems}
+		return named
 	}
 	return fmt.Errorf("actions.%s[%d] (%s): %w", action, i, op, err)
 }
