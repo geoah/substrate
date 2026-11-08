@@ -16,19 +16,19 @@ its own copy. It runs on a machine you choose.
 - **Everything connects.** A recipe points to the person who taught it, a
   task to its project. Open anything and see what links to it.
 - **Moss, your assistant.** Every substrate ships with one. It answers from
-  your own records, looks up the world with sources, proposes new collections
-  and fills them in, and asks before it removes anything. Standing
-  instructions ("keep answers short") shape how it works, and each one is
-  yours to edit or switch off.
+  your own records, sets up new collections and fills them in, searches the
+  web with sources once a web-search provider is connected, and asks before
+  it removes anything. Standing instructions ("keep answers short") shape how
+  it works, and each one is yours to edit or switch off.
 - **Bring in what you have.** Google mail, calendar, contacts and Drive;
-  Slack, Beeper, Notion, GitHub and Linear; sleep, workouts and lab results
+  Slack, Beeper, Notion, GitHub and Linear; sleep, workouts and heart rate
   from Apple Health and WHOOP. Each lands as records you own and stays in
-  sync.
-- **Apps ask first.** An app, or an assistant such as Claude, Codex or Cursor
-  over [MCP](docs/mcp.md), gets in only once you approve it, and sees only
-  what you allowed. The Substrate apps for iPhone, iPad and Mac (Chat, Tasks,
-  Workouts, Sync and the console) are on
-  [reamde.dev/substrate](https://reamde.dev/substrate).
+  sync. Lab reports and their results have a collection of their own.
+- **Apps ask first.** An app gets in only once you approve it, and sees only
+  what you allowed. An assistant such as Claude, Codex or Cursor connects
+  over [MCP](docs/mcp.md) the same way, and you revoke it in Settings. The
+  Substrate apps for iPhone, iPad and Mac (Chat, Tasks, Workouts, Sync and
+  the console) are on [reamde.dev/substrate](https://reamde.dev/substrate).
 - **Yours to keep.** Every change is kept, in order, so nothing is quietly
   lost, and you can download everything, as one file, whenever you like.
 
@@ -59,7 +59,9 @@ registration, and `substratectl` is the CLI for the rest.
   [apps](docs/apps.md), [MCP](docs/mcp.md) and the
   [documentation index](docs/README.md).
 - [Operations](docs/operations.md): before anyone else can reach it, set
-  `SUBSTRATE_INVITE_CODE`, unset `SUBSTRATE_INSECURE_DISABLE_TOTP`, back up
+  `SUBSTRATE_INVITE_CODE`, set `SUBSTRATE_INSECURE_DISABLE_TOTP=false` (the
+  compose file defaults it to `true`; a binary run directly asks for the
+  second factor when it is unset), back up
   `SUBSTRATE_CREDENTIAL_KEY` and `SUBSTRATE_DATA_ROOT`, and put TLS in front.
 
 ### Upgrading

@@ -21,10 +21,16 @@ mise run build:cli
 bin/substratectl register --server http://localhost:8080
 ```
 
+The examples below are written for a repository named `geoah.me`. A
+repository declares new packages only under its own authority, which is the
+name you registered (a bare label is completed under the server's host), so
+register as `geoah.me` or replace every `geoah.me` below with yours.
+
 A fresh repository holds the core vocabulary, the `llm` package with three
 keyless provider rows, the `console` and `observations` packages, the
 `assistant` package (Moss) and the shipped units, and none of your own kinds.
-Teach it yours: kinds are declared in YAML in a package under an authority you name,
+Teach it yours: kinds are declared in YAML in a package under your repository's
+authority,
 and a declaration is itself a record write. One file declares a package and,
 in it, a project and a task, with typed properties, a state machine, and a
 reference between them:
@@ -67,7 +73,7 @@ data:
   # dueAt is a column every record row carries, so it is bound from the
   # temporal trait rather than declared: the point variant, renamed.
   traits:
-    - "temporal(point: dueAt)"
+    - "substrate.reamde.dev/core/temporal(point: dueAt)"
   properties:
     name:
       type: string
@@ -270,10 +276,10 @@ permissions, triggers, webhooks and the sandbox.
 
 ## Give the agent a model
 
-The agent loop is core: the `agent` kind, its built-in tools and the
+The agent loop is core: the `substrate.reamde.dev/core/agent` kind, its built-in tools and the
 console's chat all ship in the engine, which is why `assistant` needed
 nothing installed. The one thing a substrate cannot invent is an LLM
-provider key. Providers are `llm/provider` records, and registration seeded
+provider key. Providers are `substrate.reamde.dev/llm/provider` records, and registration seeded
 three keyless rows (`openai`, `anthropic`, `gemini`) beside Moss, the
 assistant every repository ships with, so the row `assistant` names already
 exists. A package the catalog serves is a **bundle**, the install unit: a
