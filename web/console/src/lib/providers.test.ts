@@ -7,6 +7,7 @@ import {
   bundleParams,
   choiceSentence,
   chosenCount,
+  collectionsListed,
   connectionWords,
   currentStep,
   enumLabel,
@@ -134,6 +135,44 @@ describe("setupSteps", () => {
         accounts: [{ connected: true, chosen: undefined }],
       })
     ).toEqual(["add:done", "credentials:done", "account:done", "choose:done"])
+  })
+})
+
+describe("collectionsListed", () => {
+  const unfinished = setupSteps(FACTS)
+  const connected = setupSteps({
+    ...FACTS,
+    configured: true,
+    accounts: [{ connected: true, chosen: 1 }],
+  })
+
+  it("leaves out a provider added and left before an account connected", () => {
+    expect(collectionsListed(unfinished, false)).toBe(false)
+    expect(
+      collectionsListed(
+        setupSteps({
+          ...FACTS,
+          configured: true,
+          accounts: [{ connected: false, chosen: 2 }],
+        }),
+        false
+      )
+    ).toBe(false)
+  })
+
+  it("lists a connected provider whose collections are still empty", () => {
+    expect(collectionsListed(connected, false)).toBe(true)
+    expect(collectionsListed(connected, undefined)).toBe(true)
+  })
+
+  it("lists a provider that is not connected while its collections hold records", () => {
+    expect(collectionsListed(unfinished, true)).toBe(true)
+    expect(collectionsListed(undefined, true)).toBe(true)
+  })
+
+  it("does not say while what decides it is unread", () => {
+    expect(collectionsListed(unfinished, undefined)).toBeUndefined()
+    expect(collectionsListed(undefined, false)).toBeUndefined()
   })
 })
 

@@ -25,6 +25,7 @@ import { SectionHead } from "@/components/identity/section-head"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
+import { useListedGroups } from "@/hooks/use-listed-groups"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { glanceCountQueryOptions } from "@/lib/api/records"
 import { repositoryQueryOptions } from "@/lib/api/repository"
@@ -33,7 +34,8 @@ import { collectionGroups } from "@/lib/collections"
 import { homeSections } from "@/lib/home-summary"
 
 /** The collections Home shows before "All data" takes over: yours first,
- * then what providers bring in, each group under its own heading. */
+ * then what providers bring in, each group under its own heading; a
+ * provider's once it is set up or holds a record (`useListedGroups`). */
 const SHOWN_COLLECTIONS = 9
 const SHOWN_YOURS = 6
 /** The newest changes Home shows, as sentences. */
@@ -69,6 +71,7 @@ export function HomePage() {
         : undefined,
     [registry.data, repository.data]
   )
+  const listed = useListedGroups(groups)
   const yourKinds = (groups ?? [])
     .filter((g) => g.type === "package")
     .flatMap((g) => g.primary)
@@ -83,7 +86,7 @@ export function HomePage() {
     yourKinds.map((k, i) => [k.identity, (counts[i]?.data?.value ?? 0) > 0])
   )
   const sections = homeSections(
-    groups ?? [],
+    listed ?? [],
     (k) => heldBy.get(k.identity) ?? false,
     SHOWN_COLLECTIONS,
     SHOWN_YOURS

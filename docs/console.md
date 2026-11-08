@@ -91,7 +91,13 @@ same sections:
   are read and written by other apps and providers too
   ([0211](decisions/0211-the-console-groups-collections-by-package.md)).
 - **From _Provider_**: one section per provider (**From Google**, **From
-  GitHub**), holding the copies that provider keeps up to date.
+  GitHub**), holding the copies that provider keeps up to date. The sidebar
+  and Home list it once the provider's four set-up steps on
+  [Providers](#providers) are done, or while any of its collections holds a
+  record, so a set-up started and left adds no empty collections there and
+  what a disconnected provider brought in stays listed. All data, ⌘K, the
+  provider's own page and the sidebar with Technical details on list it
+  either way.
 - **Contacts** and **Assistant**: the kinds of the substrate's machinery
   packages that hold your own data (`core/contact`, `llm/memory` and
   `llm/instruction`,

@@ -7,10 +7,12 @@
  * switch. The repository's name appears once: a second chip for it is a
  * second door to the same menu.
  *
- * Everyday mode lists each group's primary collections by display plural.
- * Technical mode lists each group's authority / package tree with each
- * kind's own name, can show the supporting and internal kinds too, and adds
- * the substrate's own machinery as a last group. */
+ * Everyday mode lists each group's primary collections by display plural,
+ * and a provider's only once it is set up or holds a record, so a set-up
+ * started and left adds no empty entries. Technical mode lists each group's
+ * authority / package tree with each kind's own name, can show the
+ * supporting and internal kinds too, and adds the substrate's own machinery
+ * as a last group; it lists every provider. */
 
 import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -79,6 +81,7 @@ import {
   useSidebarPreferences,
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
+import { useListedGroups } from "@/hooks/use-listed-groups"
 import { useProvidersInUse } from "@/hooks/use-model-keys"
 import { logout } from "@/lib/api/auth"
 import { splitKind } from "@/lib/api/http"
@@ -387,6 +390,7 @@ function CollectionGroups() {
       ),
     [registry.data, repository.data]
   )
+  const listed = useListedGroups(groups)
 
   if (registry.isPending) {
     return (
@@ -413,7 +417,7 @@ function CollectionGroups() {
   }
   return (
     <>
-      {groups
+      {(technical ? groups : (listed ?? []))
         .filter((g) =>
           technical ? true : g.type !== "system" && g.primary.length > 0
         )
