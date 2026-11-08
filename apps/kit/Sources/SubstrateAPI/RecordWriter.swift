@@ -7,7 +7,7 @@ import FoundationNetworking
 
 /// The record calls an outbox sends its writes through: a put or a patch
 /// with the properties as the app spelled them (key order and decimal
-/// digits kept), the version of a live record, and a purge. The client is
+/// digits kept), a live record and its version, and a purge. The client is
 /// one; an app whose writes need another spelling brings its own.
 public protocol RecordWriter: Sendable {
     /// A PUT merges, a PATCH merges and clears what it sets to null; with
@@ -16,6 +16,8 @@ public protocol RecordWriter: Sendable {
     func write(_ method: String, _ kind: String, _ id: String, properties: JSONObject, ifVersion: Int?) async throws -> Int
     /// The live record's version, nil when there is none.
     func version(_ kind: String, _ id: String) async throws -> Int?
+    /// The live record as the server holds it, nil when there is none.
+    func stored(_ kind: String, _ id: String) async throws -> Record?
     /// Deletes and purges the record at once, so a create replayed later
     /// starts afresh.
     func purge(_ kind: String, _ id: String, ifVersion: Int?) async throws
@@ -38,6 +40,10 @@ extension SubstrateClient: RecordWriter {
 
     public func version(_ kind: String, _ id: String) async throws -> Int? {
         try await record(kind, id)?.version
+    }
+
+    public func stored(_ kind: String, _ id: String) async throws -> Record? {
+        try await record(kind, id)
     }
 
     public func purge(_ kind: String, _ id: String, ifVersion: Int?) async throws {

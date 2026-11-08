@@ -203,11 +203,12 @@ on the server and on the phone.
    raising `revision`;
 4. the Health link, `healthKitWorkout` under `ifVersion`, a revision higher.
 
-A `409` reads the record and sends the patch again on top. A `422` naming a
-revision below the stored one means a newer write landed: the entry is
-dropped. No network, a busy server or a refused token stop the run with
-nothing lost; any other refusal (a `404` for a session purged on the server,
-a validation error) parks the write with the server's words, holds back the
+A `409` reads the record and sends the patch again on top. A `422` at the
+entry's `revision` reads the record: one holding a later revision means a
+newer write landed, and the entry is dropped; otherwise it is parked. No
+network, a busy server or a refused token stop the run with nothing lost;
+any other refusal (a `404` for a session purged on the server, a validation
+error) parks the write with the server's words, holds back the
 rest of its session, and lists it in Settings with Retry and Discard. Each
 entry is found by its id after every network call, so a delete, a discard or
 a sign-out while a write is in flight never removes the wrong one; a purge

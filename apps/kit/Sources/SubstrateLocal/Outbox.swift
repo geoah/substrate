@@ -445,7 +445,7 @@ public actor Outbox {
             do {
                 outcome = .success(try await send(entry, writer, run: run))
             } catch {
-                outcome = .failure(error)
+                outcome = .failure(await overtaken(entry, error, writer))
             }
             inFlight = nil
             guard run == generation else { return state }
@@ -588,6 +588,29 @@ public actor Outbox {
         }
     }
 
+    /// A write the record has moved past: a newer delivery of it landed
+    /// first, and this one is stale.
+    private struct Overtaken: Error {}
+
+    /// The failure a run classifies: a refusal at the write's `revision` is
+    /// `Overtaken` where the stored record holds a later one (decision 0162),
+    /// and the read's own failure where it could not be read. The envelope
+    /// says only `validation`, so the stored revision is read and compared,
+    /// never the server's words.
+    private func overtaken(_ entry: OutboxEntry, _ error: any Error, _ writer: any RecordWriter) async -> any Error {
+        guard let server = error as? ServerError, server.code == "validation",
+            server.problemDetails.contains(where: { $0.path == "props.revision" }),
+            let mine = entry.properties?["revision"]?.decimal
+        else { return error }
+        do {
+            guard let stored = try await writer.stored(entry.kind, entry.recordID)?.properties["revision"]?.decimal, stored > mine
+            else { return error }
+            return Overtaken()
+        } catch {
+            return error
+        }
+    }
+
     private func knownVersion(_ entry: OutboxEntry, _ writer: any RecordWriter, run: Int) async throws -> Int? {
         if let known = file.versions[entry.key] { return known }
         guard let version = try await writer.version(entry.kind, entry.recordID) else {
@@ -613,6 +636,8 @@ public actor Outbox {
     /// What a failed write means for the run.
     static func classify(_ error: any Error) -> Verdict {
         switch error {
+        case is Overtaken:
+            return .drop
         case is SessionExpired:
             return .stop(.signedOut)
         case is InsufficientScope:
@@ -620,8 +645,6 @@ public actor Outbox {
         case let conflict as EditConflict:
             return .conflict(conflict.localizedDescription)
         case let server as ServerError:
-            // A newer write of the record landed first: this one is stale.
-            if server.status == 422, server.text.contains("below the stored revision") { return .drop }
             if server.status == 429 || server.status >= 500 { return .stop(.offline(server.text)) }
             // Moved again since the read: it waits for the next run.
             if server.status == 409 { return .hold(server.text) }

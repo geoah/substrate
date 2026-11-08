@@ -49,6 +49,13 @@ private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
     OutboxEntry(method: .patch, kind: noteKind, recordID: id, properties: patch, guarded: true, baseVersion: base)
 }
 
+/// A write refused at its `revision`, as the server words a stale delivery.
+private let staleRevision = #"""
+    {"error":{"code":"validation","message":"substrate: validation failed",\#
+    "problems":["props.revision: 3 is below the stored revision 4; a rewrite never lowers it, so this is a stale delivery"],\#
+    "problemDetails":[{"path":"props.revision","message":"3 is below the stored revision 4; a rewrite never lowers it, so this is a stale delivery"}]}}
+    """#
+
 private func stored(_ kind: String, _ id: String, _ properties: String, version: Int) -> String {
     #"{"id":"\#(id)","kind":"\#(kind)","properties":\#(properties),"version":\#(version)}"#
 }
@@ -88,16 +95,57 @@ struct OutboxTests {
         #expect(await outbox.version(of: entryKind, "s1") == 6)
     }
 
-    @Test func aRevisionBelowTheStoredOneIsANewerWriteLandedFirstAndIsDropped() async throws {
+    @Test func aRefusalAtTheRevisionWhereTheStoredRecordHoldsALaterOneIsANewerWriteLandedFirstAndIsDropped() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", path(entryKind, "a"), 422, staleRevision)
+        server.answer("GET", path(entryKind, "a"), 200, stored(entryKind, "a", #"{"revision":4}"#, version: 7))
+        let outbox = try openOutbox()
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s", properties: ["revision": 3])])
+        #expect(await outbox.flush(writer(server)) == .sent)
+        #expect(server.methodsAndPaths == ["PUT \(path(entryKind, "a"))", "GET \(path(entryKind, "a"))"])
+        #expect(await outbox.entries.isEmpty)
+        #expect(await outbox.landed.isEmpty)
+    }
+
+    @Test func aRefusalAtTheRevisionWhereTheStoredRecordHoldsNoLaterOneIsParked() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", path(entryKind, "a"), 422, staleRevision)
+        server.answer("GET", path(entryKind, "a"), 200, stored(entryKind, "a", #"{"revision":3}"#, version: 7))
+        let outbox = try openOutbox()
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s", properties: ["revision": 3])])
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        #expect(await outbox.parked.map(\.recordID) == ["a"])
+    }
+
+    @Test func aRefusalNamingTheRevisionInItsWordsAloneIsParkedUnread() async throws {
         let server = ScriptedServer()
         server.answer(
             "PUT", path(entryKind, "a"), 422,
-            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#
-        )
+            #"{"error":{"code":"validation","message":"revision 3 is below the stored revision 4"}}"#)
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s")])
-        #expect(await outbox.flush(writer(server)) == .sent)
-        #expect(await outbox.entries.isEmpty)
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s", properties: ["revision": 3])])
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        #expect(server.methodsAndPaths == ["PUT \(path(entryKind, "a"))"])
+        #expect(await outbox.parked.map(\.recordID) == ["a"])
+    }
+
+    @Test func aRefusalAtTheRevisionWhoseRecordCannotBeReadWaitsForTheNetwork() async throws {
+        let server = ScriptedServer()
+        server.answer("PUT", path(entryKind, "a"), 422, staleRevision)
+        server.answer("GET", path(entryKind, "a"), -1, "")
+        let outbox = try openOutbox()
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s", properties: ["revision": 3])])
+        guard case .offline = await outbox.flush(writer(server)) else {
+            Issue.record("not offline")
+            return
+        }
+        #expect(await outbox.entries.map(\.parked) == [false])
     }
 
     @Test func withoutTheNetworkNothingIsLostAndTheQueueSurvivesARelaunch() async throws {

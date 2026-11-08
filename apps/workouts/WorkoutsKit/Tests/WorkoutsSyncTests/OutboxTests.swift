@@ -111,15 +111,20 @@ struct OutboxTests {
             ])
     }
 
-    @Test("a revision below the stored one is a newer write landed first: dropped")
+    @Test("a refusal at the revision where the stored record holds a later one is a newer write landed first: dropped")
     func staleRevision() async throws {
         let server = ScriptedServer()
         server.answer(
-            "PUT", "/api/v1/substrate.reamde.dev/training/set/a", 422,
-            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#
+            "PUT", "/api/v1/substrate.reamde.dev/training/session/a", 422,
+            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"],"problemDetails":[{"path":"props.revision","message":"1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"}]}}"#
         )
+        server.answer(
+            "GET", "/api/v1/substrate.reamde.dev/training/session/a", 200,
+            #"{"id":"a","kind":"substrate.reamde.dev/training/session","properties":{"revision":2},"version":4}"#)
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
-        try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
+        try await outbox.enqueue([
+            OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "a", properties: ["revision": 1], session: "a")
+        ])
         #expect(await outbox.flush(api(server)) == .sent)
         #expect(await outbox.entries.isEmpty)
     }
