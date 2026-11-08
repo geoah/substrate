@@ -44,7 +44,13 @@ struct MarkdownView: View {
             \.openURL,
             OpenURLAction { url in
                 guard let reference = linkedRecord(url) else {
-                    openURL(url)
+                    if let path = consolePath(url) {
+                        if let server = SessionStore.chat.load()?.server, let page = ServerAddress.page(server, path: path) {
+                            openURL(page)
+                        }
+                    } else {
+                        openURL(url)
+                    }
                     return .handled
                 }
                 openRecord?(reference)
@@ -58,8 +64,17 @@ extension EnvironmentValues {
     @Entry var missingRecords: Set<String> = []
 }
 
-/// Inline Markdown as text, with links limited to http, https, mailto and
-/// record links, each that leaves the app marked; memoized, since every
+/// A console page a reply links by its path alone (`[Books](/applets/books)`,
+/// as the console's own chat draws it): it opens on the signed-in server.
+func consolePath(_ url: URL) -> String? {
+    guard url.scheme == nil, url.host == nil else { return nil }
+    let path = url.relativeString
+    guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("\\") else { return nil }
+    return path
+}
+
+/// Inline Markdown as text, with links limited to http, https, mailto,
+/// console paths and record links, each that leaves the app marked; memoized, since every
 /// visible paragraph asks again on each redraw.
 @MainActor
 func inline(_ text: String, missing: Set<String> = []) -> Text {
@@ -129,7 +144,7 @@ func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString 
                     out[run.range].link = URL(string: "substrate://" + record.path)
                     out[run.range].backgroundColor = Color.accentColor.opacity(0.12)
                 }
-            } else if !["http", "https", "mailto"].contains(link.scheme?.lowercased() ?? "") {
+            } else if consolePath(link) == nil, !["http", "https", "mailto"].contains(link.scheme?.lowercased() ?? "") {
                 out[run.range].link = nil
             }
         }

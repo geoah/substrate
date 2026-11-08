@@ -40,7 +40,7 @@ request waits for both through the required `apps gate` check.
 The console only ever asks for same-origin paths, because the server serves
 it at `/` with the API beside it. The shell keeps that true:
 `ConsoleSchemeHandler` serves the bundled build at `substrate://console/` and
-forwards the substrate's own paths (`/api/`, `/.well-known/`, `/healthz`, and
+forwards the substrate's own paths (`/api/`, `/.well-known/`, `/site/`, `/healthz`, and
 the auth door at the root when the request is not a navigation) to the chosen
 server with `URLSession`, chunk by chunk, so the changefeed and an agent's turn
 stream as they do in a browser. The server needs no CORS and the console no

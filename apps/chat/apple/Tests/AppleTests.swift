@@ -91,6 +91,14 @@ private struct LegacySession: Codable {
         #expect(words == ["F1", "↗", "BBC", "↗", " and Q4 and bold one", "↗", "."])
         #expect(!inlinePieces(parseInline("Only [Q4](substrate://\(kind)/q4).")).contains(.leaves))
     }
+
+    @Test func aConsolePathStaysALinkThatLeavesTheAppAndAHostlessOneIsText() {
+        let out = parseInline("[Books](/applets/books) and [Away](//evil.example.com/x) and [Rel](applets/books)")
+        #expect(out.runs.compactMap(\.link).map(\.relativeString) == ["/applets/books"])
+        #expect(inlinePieces(parseInline("Open [Books](/applets/books).")).contains(.leaves))
+        #expect(consolePath(URL(string: "/applets/books")!) == "/applets/books")
+        #expect(consolePath(URL(string: "https://ada.example.com/applets/books")!) == nil)
+    }
 }
 
 #if os(macOS)

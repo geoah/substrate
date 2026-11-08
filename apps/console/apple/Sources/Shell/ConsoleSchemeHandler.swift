@@ -57,12 +57,13 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
         live.removeValue(forKey: ObjectIdentifier(task))?.cancel()
     }
 
-    /// The paths the server answers rather than the console. The auth door
+    /// The paths the server answers rather than the console: `/site/` is the
+    /// deployment's own (its logo on the sign-in page). The auth door
     /// sits at the root beside the console's own `/login` and `/register`
     /// pages: a navigation asks those for HTML and gets the console, a call
     /// asks for JSON and reaches the door.
     nonisolated static func isSubstratePath(_ path: String, accept: String?) -> Bool {
-        for prefix in ["/api/", "/.well-known/"] where path.hasPrefix(prefix) { return true }
+        for prefix in ["/api/", "/.well-known/", "/site/"] where path.hasPrefix(prefix) { return true }
         if path == "/healthz" { return true }
         let door = ["/login", "/register", "/password", "/totp", "/tokens"]
         if door.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
