@@ -155,9 +155,10 @@ func titlesBy(t *testing.T, ds substrate.Dataset, kind, key string) map[string]s
 // TestGoogleGmailRowsAreTitledByWhatTheMailSays: a thread was titled by its
 // Gmail thread id, a hex string that named nothing a reader recognizes,
 // wherever a record label appears. A thread is titled by the subject of its
-// first member that has one, else by its first member's snippet, else, while
-// it is thin, by its id; a message by its subject, else by the opening of its
-// body.
+// first member that has one, else by its first member's Gmail snippet, else,
+// while it is thin, by its id; a message by its subject, else by its Gmail
+// snippet, else by the opening of its body. Where a fixture has both, its
+// snippet lacks the body's final period, so a title says which one it read.
 func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 	requirePython(t)
 	t.Parallel()
@@ -167,7 +168,7 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 		historyID: "9000",
 		// m-2a is older than the delta: its thread embeds it, and nothing
 		// reads it whole.
-		delta: []string{"m-1a", "m-1b", "m-2b", "m-3"},
+		delta: []string{"m-1a", "m-1b", "m-2b", "m-3", "m-4a", "m-4b"},
 		mail: map[string]map[string]any{
 			"m-1a": gmailMail("m-1a", "t-1", "Numbers attached", "Numbers attached.",
 				[2]string{"Subject", "Quarterly plan"}, [2]string{"From", "ada@example.com"}),
@@ -179,9 +180,18 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 				[2]string{"From", "grace@example.com"}),
 			"m-3": gmailMail("m-3", "t-3", "Noon?", "Noon?",
 				[2]string{"Subject", "Lunch"}, [2]string{"From", "ada@example.com"}),
+			// Read whole, and Gmail's preview is all it says: no Subject
+			// header and no text part.
+			"m-4a": gmailMail("m-4a", "t-4", "Photos from the trip", "",
+				[2]string{"From", "grace@example.com"}),
+			// No Subject header and no preview: the body is what is left.
+			"m-4b": gmailMail("m-4b", "t-4", "", "Only the body says anything.",
+				[2]string{"From", "ada@example.com"}),
 		},
 		// t-3 is not here: its read answers 404 and the row stays thin.
-		threads: map[string][]string{"t-1": {"m-1a", "m-1b"}, "t-2": {"m-2a", "m-2b"}},
+		threads: map[string][]string{
+			"t-1": {"m-1a", "m-1b"}, "t-2": {"m-2a", "m-2b"}, "t-4": {"m-4a", "m-4b"},
+		},
 	}
 	syncThreadedGmail(t, ds, fake)
 
@@ -190,6 +200,7 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 		"t-1": "Quarterly plan",
 		"t-2": "The opening of an older note",
 		"t-3": "t-3",
+		"t-4": "Photos from the trip",
 	} {
 		if got, ok := threads[tid]; !ok || got != want {
 			t.Errorf("thread %s is titled %q (mirrored %v), want %q", tid, got, ok, want)
@@ -199,10 +210,13 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 	for mid, want := range map[string]string{
 		"m-1a": "Quarterly plan",
 		"m-1b": "Re: Quarterly plan",
-		"m-2b": "A reply with no subject line.",
+		"m-2b": "A reply with no subject line",
 		"m-3":  "Lunch",
-		// Embedded by its thread and never read: no subject and no body yet.
-		"m-2a": "",
+		// Embedded by its thread and never read: no subject and no body yet,
+		// and the preview the thread carried for it.
+		"m-2a": "The opening of an older note",
+		"m-4a": "Photos from the trip",
+		"m-4b": "Only the body says anything.",
 	} {
 		if got, ok := messages[mid]; !ok || got != want {
 			t.Errorf("message %s is titled %q (mirrored %v), want %q", mid, got, ok, want)

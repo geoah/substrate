@@ -297,7 +297,12 @@ data:
   # `reply+…@reply.github.com`) gets no `emailaddress` row, and the header
   # entry naming it no `address`, so core mints no contact per thread. Rows
   # and contacts an earlier version wrote for one are left as they are.
-  version: 47
+  #
+  # 48: `gmailmessage` titles itself by its subject, then its Gmail
+  # `snippet` property (`{.snippet}`), then the opening of its body, so a
+  # member row `threads.get` alone wrote is titled by its preview. Template
+  # only.
+  version: 48
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -7148,10 +7153,11 @@ data:
 #
 # THE TITLE READS THROUGH `messages`, so it needs no property of its own: the
 # subject of the first member that has one (the API's order, oldest first),
-# else the first member's snippet, else the thread id, which is all a thin row
-# has. A title renders when the row is written, and the authoritative read is
-# staged after the members it names, so it reads them as this batch left
-# them.
+# else the first member's Gmail `snippet`, else the thread id, which is all a
+# thin row has. A hop reads the member's DECLARED `snippet`, the property a
+# message titles itself by after its subject, and never the derived token. A
+# title renders when the row is written, and the authoritative read is staged
+# after the members it names, so it reads them as this batch left them.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailthread
@@ -7279,11 +7285,11 @@ data:
 # follows the payload: a response with no `payload` writes NOTHING derived
 # from one, so a thinner read can never erase a fuller row.
 #
-# THE TITLE is the subject, else `{snippet}`. That token is the DERIVED
-# snippet, the opening of `body`, and never the `snippet` property: a template
-# token of that name renders the derived one on every kind. A member row
-# written from `threads.get` alone has neither, and renders no title until a
-# read of the message itself lands.
+# THE TITLE is the subject, else Gmail's `snippet` property, else the opening
+# of `body`. The bare `{snippet}` token is the DERIVED excerpt on every kind,
+# so the property is spelled `{.snippet}`. A member row written from
+# `threads.get` alone has no subject and no body, and its preview is what
+# names it until a read of the message itself lands.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailmessage
@@ -7301,7 +7307,7 @@ data:
     singular: gmailmessage
   traits:
     - substrate.reamde.dev/core/temporal(point)
-  displayTemplate: "{subject|snippet}"
+  displayTemplate: "{subject|.snippet|snippet}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
