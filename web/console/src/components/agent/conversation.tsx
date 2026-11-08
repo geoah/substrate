@@ -75,6 +75,7 @@ import {
   readThreadNow,
   stopThread,
   streamChat,
+  THREAD_LISTS_KEY,
   threadMessagesQueryOptions,
   transcriptOrder,
   type AgentEvent,
@@ -504,6 +505,10 @@ export function Conversation({
         if (ev.thread && ev.thread !== current) {
           setMinted(ev.thread)
           onThread(ev.thread)
+          // The server commits the thread, running, and the message that
+          // opened it before this event, so the chat lists show it now
+          // rather than at the settle.
+          void client.invalidateQueries({ queryKey: THREAD_LISTS_KEY })
         }
         break
       case "reasoning":

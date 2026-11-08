@@ -29,6 +29,7 @@ import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useAgentRuns } from "@/hooks/use-agent-runs"
+import { useLiveRecords } from "@/hooks/use-live-records"
 import {
   agentPurpose,
   chatCapable,
@@ -42,9 +43,10 @@ import {
   conversationsQueryOptions,
   openingMessagesQueryOptions,
   policiesForAgent,
+  THREAD_LISTS_KEY,
   writePoliciesQueryOptions,
 } from "@/lib/api/agents"
-import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
+import { CORE_AUTHORITY, LLM_PACKAGE, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
 
 /** A media query as state, for the two column breakpoints. */
@@ -117,6 +119,13 @@ export function AgentsPage() {
     () => conversations.data?.records ?? [],
     [conversations.data]
   )
+  // A listed chat stays marked Working until its thread row is read again,
+  // and the open conversation re-reads only at its own run's settle: without
+  // this watch, a chat still running behind another one settles unseen.
+  const anyRunning = threads.some((t) => t.properties.status === "running")
+  useLiveRecords(anyRunning ? [`${LLM_PACKAGE}/thread`] : [], [
+    [...THREAD_LISTS_KEY],
+  ])
   const threadIds = useMemo(() => threads.map((t) => t.id), [threads])
   const openings = useQuery(openingMessagesQueryOptions(threadIds))
   const openingByThread = useMemo(

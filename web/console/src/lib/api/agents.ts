@@ -21,6 +21,7 @@ import {
   corePath,
   CORE_AUTHORITY,
   CORE_PACKAGE_NAME,
+  LLM_PACKAGE,
   LLM_PACKAGE_NAME,
   envelopeError,
   request,
@@ -79,6 +80,12 @@ export const CONVERSATION_MODES = [
 
 /** How many conversations the chat list reads. */
 export const CHAT_LIST_WINDOW = 100
+
+/** The key every list of threads starts with: the chat list, the newest
+ * chat, an agent's runs. A partial key, so invalidating it reaches each of
+ * them whatever its filter and window, and no transcript, which lists
+ * messages. */
+export const THREAD_LISTS_KEY = ["records", [`${LLM_PACKAGE}/thread`]] as const
 
 /** Every agent's conversations, most recently active first: the chat list.
  * Ordered by `updatedAt`, which every settle moves, so a continued chat
