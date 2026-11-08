@@ -1,86 +1,124 @@
+import { BarButton, Field, Section, SelectRow, Sheet } from "@substrate/react"
+import { CircleAlert } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import {
-  BarButton,
-  Field,
-  Section,
-  SelectRow,
-  Sheet,
-  ToggleRow,
-} from "@substrate/react"
-import { useState } from "react"
-import { draftOf, type TaskDraft } from "./actions"
+  draftOf,
+  dueKinds,
+  useTaskActions,
+  type DueKind,
+  type TaskDraft,
+} from "./actions"
 import {
+  atTime,
   civilDay,
-  dayDate,
+  fieldLabel,
+  inboxTitle,
   priorities,
   type Priority,
   type TaskItem,
   type TaskList,
 } from "./model"
+import type { EditorSeed } from "./state"
 
 const noList = "__none__"
 
-function timeOf(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-}
+const pad = (n: number) => String(n).padStart(2, "0")
 
-/** One task's form, or a new one's, under the labels its own screen uses.
- * Save writes only what changed, on the version it opened. */
+/** One task's form, or a new one's (TaskEditor). It keeps the task as it
+ * was when it opened, and Save patches the fields the owner changed on
+ * that version, so a change made elsewhere meanwhile is never written
+ * over. It stays open with the draft until the write is kept; a write that
+ * was not is said here, and Save becomes Retry. */
 export function TaskEditor(props: {
-  open: boolean
+  seed: EditorSeed
   task?: TaskItem
-  initial?: Partial<TaskDraft>
   lists: TaskList[]
-  today: string
   onClose: () => void
-  onSave: (draft: TaskDraft) => Promise<boolean>
 }) {
+  const actions = useTaskActions()
+  const [seen] = useState(() =>
+    props.seed.kind === "task" ? props.task : undefined
+  )
   const [draft, setDraft] = useState<TaskDraft>(() =>
-    props.task
-      ? draftOf(props.task)
+    seen
+      ? draftOf(seen)
       : {
           name: "",
-          description: "",
-          url: "",
+          notes: "",
+          link: "",
+          list: props.seed.kind === "new" ? props.seed.list : undefined,
+          dueKind: props.seed.kind === "new" && props.seed.day ? "day" : "none",
+          day: props.seed.kind === "new" ? props.seed.day : undefined,
           priority: "none",
-          ...props.initial,
         }
   )
-  const [saving, setSaving] = useState(false)
-  const set = (patch: Partial<TaskDraft>) =>
-    setDraft((d) => ({ ...d, ...patch }))
+  const [touched, setTouched] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [notKept, setNotKept] = useState<string>()
 
-  const hasDue = !!draft.due
-  const hasTime = !!draft.due?.at
+  // A task deleted while it was being edited closes its editor.
+  const gone = props.seed.kind === "task" && !props.task
+  const close = useRef(props.onClose)
+  close.current = props.onClose
+  useEffect(() => {
+    if (gone) close.current()
+  }, [gone])
+
+  const set = (patch: Partial<TaskDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }))
+    setTouched(true)
+  }
+
+  const named = draft.name.trim() !== ""
+  const save = async () => {
+    if (!named || sending) return
+    setSending(true)
+    let words: string | undefined
+    const kept = await actions.save(seen, draft, (w) => (words = w))
+    setSending(false)
+    if (kept) props.onClose()
+    else setNotKept(words ?? "Your server did not take it. Try again.")
+  }
+
+  const setDueKind = (kind: DueKind) => {
+    const today = civilDay(new Date())
+    const day = draft.day ?? today
+    if (kind === "none") set({ dueKind: "none" })
+    else if (kind === "day") set({ dueKind: "day", day })
+    else {
+      // A moment on the day chosen: the hour reminders come at.
+      const at = draft.at ?? atTime(day, 9, 0)
+      set({ dueKind: "time", day: civilDay(at), at })
+    }
+  }
+
   const setDay = (day: string) => {
     if (!day) return
-    const at = draft.due?.at
-    set({ due: { day, at: at ? at2(day, timeOf(at)) : undefined } })
+    if (draft.dueKind === "time" && draft.at)
+      set({ day, at: atTime(day, draft.at.getHours(), draft.at.getMinutes()) })
+    else set({ day })
   }
+
   const setTime = (time: string) => {
-    if (!draft.due || !time) return
-    set({ due: { day: draft.due.day, at: at2(draft.due.day, time) } })
+    const [h, m] = time.split(":").map(Number)
+    if (!draft.day || Number.isNaN(h) || Number.isNaN(m)) return
+    set({ at: atTime(draft.day, h, m) })
   }
 
-  const save = async () => {
-    if (!draft.name.trim()) return
-    setSaving(true)
-    const ok = await props.onSave(draft)
-    setSaving(false)
-    if (ok) props.onClose()
-  }
-
+  const label = notKept ? "Retry" : seen ? "Save" : "Add"
   return (
     <Sheet
-      open={props.open}
+      open
       onClose={props.onClose}
-      title={props.task ? "Edit Task" : "New Task"}
+      title={seen ? "Edit Task" : "New Task"}
       actions={
         <BarButton
           prominent
           onClick={save}
-          disabled={saving || !draft.name.trim()}
+          disabled={!named || sending}
+          title={`${label} (⌘↵)`}
         >
-          {props.task ? "Save" : "Add"}
+          {label}
         </BarButton>
       }
     >
@@ -89,101 +127,104 @@ export function TaskEditor(props: {
           e.preventDefault()
           void save()
         }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            void save()
+          }
+        }}
       >
-        <Section>
+        {notKept && (
+          <div
+            role="alert"
+            className="mb-5 flex gap-3 rounded-[10px] bg-card px-4 py-3"
+          >
+            <CircleAlert className="mt-0.5 size-5 shrink-0 text-danger" />
+            <div className="min-w-0">
+              <p className="text-[17px] font-semibold">A change was not kept</p>
+              <p className="text-[15px] text-secondary">{notKept}</p>
+            </div>
+          </div>
+        )}
+        <Section
+          footer={
+            touched && !named ? (
+              <span className="text-danger">A task needs a name.</span>
+            ) : undefined
+          }
+        >
           <Field
-            label="Title"
+            label={fieldLabel.name}
             value={draft.name}
             onChange={(name) => set({ name })}
-            autoFocus={!props.task}
+            placeholder="What to do"
+            autoFocus={!seen}
           />
           <Field
-            label="Notes"
-            value={draft.description}
-            onChange={(description) => set({ description })}
+            label={fieldLabel.notes}
+            value={draft.notes}
+            onChange={(notes) => set({ notes })}
+            placeholder="Details"
             multiline
           />
           <Field
-            label="Link"
-            value={draft.url}
-            onChange={(url) => set({ url })}
+            label={fieldLabel.link}
+            value={draft.link}
+            onChange={(link) => set({ link })}
             type="url"
-            placeholder="https://"
+            placeholder="https://example.com"
           />
         </Section>
         <Section>
           <SelectRow
-            label="List"
+            label={fieldLabel.list}
             value={draft.list ?? noList}
             options={[
-              { value: noList, label: "No List" },
+              { value: noList, label: inboxTitle },
               ...props.lists.map((l) => ({ value: l.id, label: l.name })),
             ]}
             onChange={(v) => set({ list: v === noList ? undefined : v })}
           />
+          <SelectRow<DueKind>
+            label={fieldLabel.due}
+            value={draft.dueKind}
+            options={dueKinds}
+            onChange={setDueKind}
+          />
+          {draft.dueKind !== "none" && draft.day && (
+            <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-1.5">
+              <span className="text-[17px]">
+                {draft.dueKind === "day" ? "Day" : "Day and Time"}
+              </span>
+              <span className="ml-auto flex gap-2">
+                <input
+                  type="date"
+                  aria-label="Day"
+                  className="rounded-lg bg-fill px-2.5 py-1.5 text-[17px] text-label outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  value={draft.day}
+                  onChange={(e) => setDay(e.target.value)}
+                />
+                {draft.dueKind === "time" && draft.at && (
+                  <input
+                    type="time"
+                    aria-label="Time"
+                    className="rounded-lg bg-fill px-2.5 py-1.5 text-[17px] text-label outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    value={`${pad(draft.at.getHours())}:${pad(draft.at.getMinutes())}`}
+                    onChange={(e) => setTime(e.target.value)}
+                  />
+                )}
+              </span>
+            </div>
+          )}
           <SelectRow<Priority>
-            label="Priority"
+            label={fieldLabel.priority}
             value={draft.priority}
             options={priorities}
             onChange={(priority) => set({ priority })}
           />
         </Section>
-        <Section>
-          <ToggleRow
-            label="Due Date"
-            checked={hasDue}
-            onChange={(on) =>
-              set({ due: on ? { day: props.today } : undefined })
-            }
-          />
-          {hasDue && (
-            <label className="flex min-h-11 items-center gap-3 px-4 py-1.5">
-              <span className="text-[17px]">Day</span>
-              <input
-                type="date"
-                className="ml-auto rounded-lg bg-fill px-2 py-1 text-[17px] text-label outline-none"
-                value={draft.due!.day}
-                onChange={(e) => setDay(e.target.value)}
-              />
-            </label>
-          )}
-          {hasDue && (
-            <ToggleRow
-              label="Time"
-              checked={hasTime}
-              onChange={(on) =>
-                set({
-                  due: {
-                    day: draft.due!.day,
-                    at: on ? at2(draft.due!.day, "09:00") : undefined,
-                  },
-                })
-              }
-            />
-          )}
-          {hasTime && (
-            <label className="flex min-h-11 items-center gap-3 px-4 py-1.5">
-              <span className="text-[17px]">At</span>
-              <input
-                type="time"
-                className="ml-auto rounded-lg bg-fill px-2 py-1 text-[17px] text-label outline-none"
-                value={timeOf(draft.due!.at!)}
-                onChange={(e) => setTime(e.target.value)}
-              />
-            </label>
-          )}
-        </Section>
         <button type="submit" hidden />
       </form>
     </Sheet>
   )
-}
-
-/** A moment on this device's clock: a day and a time of day. */
-function at2(day: string, time: string): Date {
-  const d = dayDate(day)
-  const [h, m] = time.split(":").map(Number)
-  d.setHours(h, m, 0, 0)
-  // Rounds a day that a clock change skips onto the day it names.
-  return civilDay(d) === day ? d : dayDate(day)
 }

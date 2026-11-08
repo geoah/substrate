@@ -1,161 +1,172 @@
 import {
   ActionRow,
   BarButton,
-  Confirm,
   NavBar,
   Row,
   Section,
   SelectRow,
+  cx,
 } from "@substrate/react"
-import { useState } from "react"
-import { useTaskActions } from "./actions"
+import { Link2 } from "lucide-react"
+import { useCompleting, useTaskActions } from "./actions"
+import { Markdown, safeURL } from "./markdown"
 import {
-  dueLong,
   dueWords,
+  fieldLabel,
+  fullWords,
+  inboxTitle,
   priorities,
-  statusLabel,
+  statusWords,
+  taskTitle,
   type Priority,
   type TaskItem,
   type TaskList,
 } from "./model"
-import { TaskEditor } from "./TaskEditor"
+import { StatusMark } from "./TaskRow"
 
 const noList = "__none__"
 
-const toneClass = {
-  quiet: "text-secondary",
-  soon: "text-warn",
-  overdue: "text-danger",
-} as const
-
-/** The open task: its facts under the labels the editor uses, its list and
- * priority as the choices that change them, and what can be done to it. */
+/** The open task: its name beside its round mark, then each fact once under
+ * the label the editor uses, the list and the priority as the choices that
+ * change them where they stand, the notes and the link as sections of
+ * their own, then what can be done to it, Delete apart. Edit is the bar's. */
 export function TaskDetail(props: {
   task: TaskItem
   lists: TaskList[]
   now: Date
-  today: string
   onBack?: () => void
-  onDeleted: () => void
 }) {
-  const { task } = props
+  const { task: t, now } = props
   const actions = useTaskActions()
-  const [editing, setEditing] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const due = task.due ? dueWords(task.due, props.now) : undefined
+  const completing = useCompleting()
+  const pending = completing.get(t.id)
+  const due = t.due ? dueWords(t.due, now) : undefined
+  const title = taskTitle(t)
+  const open = t.status === "open"
+  const link = t.url ? safeURL(t.url) : undefined
+  const toggle =
+    pending !== undefined ? "Undo" : open ? "Mark as Done" : "Reopen"
 
   return (
     <div className="mx-auto w-full max-w-2xl pb-32">
       <NavBar
-        title={task.name}
         onBack={props.onBack}
-        actions={<BarButton onClick={() => setEditing(true)}>Edit</BarButton>}
+        actions={
+          <BarButton onClick={() => actions.edit(t.id)} title="Edit (E)">
+            Edit
+          </BarButton>
+        }
       />
-      <div className="px-4 pt-4">
+      <div className="px-4 pt-2">
         <Section>
-          <div className="px-4 py-3 text-[22px] leading-snug font-bold break-words">
-            {task.name}
+          <div className="flex items-center gap-2 py-1.5 pr-1.5 pl-4">
+            <h1
+              className={cx(
+                "min-w-0 flex-1 text-[22px] leading-snug font-semibold break-words select-text",
+                open && pending === undefined ? "text-label" : "text-secondary",
+                (t.status === "abandoned" || pending !== undefined) &&
+                  "line-through"
+              )}
+            >
+              {title}
+            </h1>
+            <StatusMark
+              status={t.status}
+              pending={pending}
+              label={toggle}
+              onToggle={() =>
+                open && pending === undefined
+                  ? actions.complete(t.id)
+                  : actions.reopen(t.id)
+              }
+            />
           </div>
         </Section>
         <Section>
           <Row
-            label="Status"
-            value={statusLabel[task.status]}
-            valueClassName="text-label"
-          />
-          <SelectRow
-            label="List"
-            value={task.list ?? noList}
-            options={[
-              { value: noList, label: "No List" },
-              ...props.lists.map((l) => ({ value: l.id, label: l.name })),
-            ]}
-            onChange={(v) =>
-              void actions.move(task, v === noList ? undefined : v)
+            label={fieldLabel.status}
+            value={
+              pending !== undefined
+                ? "Done, tap Undo to keep it open"
+                : statusWords[t.status]
             }
           />
-          {task.due && (
-            <Row
-              label="Due"
-              value={dueLong(task.due)}
-              valueClassName={
-                task.status === "open" && due ? toneClass[due.tone] : undefined
-              }
-            />
-          )}
-          <SelectRow<Priority>
-            label="Priority"
-            value={task.priority}
-            options={priorities}
-            onChange={(p) => void actions.setPriority(task, p)}
+          <SelectRow
+            label={fieldLabel.list}
+            value={t.list ?? noList}
+            options={[
+              { value: noList, label: inboxTitle },
+              ...props.lists.map((l) => ({ value: l.id, label: l.name })),
+            ]}
+            onChange={(v) => actions.move(t.id, v === noList ? undefined : v)}
           />
-          {task.description && (
+          <Row
+            label={fieldLabel.due}
+            value={t.due ? fullWords(t.due) : "No due date"}
+            valueClassName={
+              due?.tone === "overdue" && open ? "text-danger!" : "text-label!"
+            }
+          />
+          <SelectRow<Priority>
+            label={fieldLabel.priority}
+            value={t.priority}
+            options={priorities}
+            onChange={(p) => actions.setPriority(t.id, p)}
+          />
+          {t.status === "done" && t.completedAt && (
             <Row
-              label="Notes"
-              value={
-                <span className="whitespace-pre-wrap">{task.description}</span>
-              }
-              valueClassName="text-label"
-            />
-          )}
-          {task.url && (
-            <Row
-              label="Link"
-              value={
-                <a
-                  href={task.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="break-all text-accent-text"
-                >
-                  {task.url}
-                </a>
-              }
+              label={fieldLabel.completed}
+              value={fullWords({ day: "", at: t.completedAt })}
+              valueClassName="text-label!"
             />
           )}
         </Section>
+        {t.description && (
+          <Section header={fieldLabel.notes}>
+            <div className="px-4 py-3 text-[17px] leading-relaxed select-text">
+              <Markdown text={t.description} />
+            </div>
+          </Section>
+        )}
+        {t.url && (
+          <Section header={fieldLabel.link}>
+            {link ? (
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-[17px] text-accent-text"
+              >
+                <Link2 className="size-5 shrink-0" />
+                <span className="line-clamp-2 break-all">{t.url}</span>
+              </a>
+            ) : (
+              <p className="px-4 py-2.5 text-[17px] break-all">{t.url}</p>
+            )}
+          </Section>
+        )}
         <Section>
-          {task.status === "open" ? (
+          {pending !== undefined ? (
+            <ActionRow onClick={() => actions.reopen(t.id)}>Undo</ActionRow>
+          ) : open ? (
             <>
-              <ActionRow onClick={() => void actions.complete(task)}>
+              <ActionRow onClick={() => actions.complete(t.id)}>
                 Mark as Done
               </ActionRow>
-              <ActionRow onClick={() => void actions.abandon(task)}>
+              <ActionRow onClick={() => actions.abandon(t.id)}>
                 Won't Do
               </ActionRow>
             </>
           ) : (
-            <ActionRow onClick={() => void actions.reopen(task)}>
-              Reopen
-            </ActionRow>
+            <ActionRow onClick={() => actions.reopen(t.id)}>Reopen</ActionRow>
           )}
-          <ActionRow destructive onClick={() => setDeleting(true)}>
+        </Section>
+        <Section>
+          <ActionRow destructive onClick={() => actions.deleteTask(t.id)}>
             Delete Task
           </ActionRow>
         </Section>
       </div>
-      {editing && (
-        <TaskEditor
-          open
-          task={task}
-          lists={props.lists}
-          today={props.today}
-          onClose={() => setEditing(false)}
-          onSave={async (d) => !!(await actions.save(task, d))}
-        />
-      )}
-      <Confirm
-        open={deleting}
-        title={`Delete “${task.name}”?`}
-        message="It's deleted on every device."
-        confirm="Delete"
-        onCancel={() => setDeleting(false)}
-        onConfirm={() => {
-          setDeleting(false)
-          void actions.remove(task)
-          props.onDeleted()
-        }}
-      />
     </div>
   )
 }
