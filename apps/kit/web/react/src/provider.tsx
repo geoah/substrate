@@ -354,9 +354,10 @@ export function SubstrateProvider({
   }, [session, manifest, toast])
 
   // In this order: the token is kept to revoke before the session that
-  // holds it is cleared, so it is never held by nothing; clearing it
-  // signs out every tab, whose requests stop carrying it; then what this
-  // browser kept for the repository is forgotten, and the token revoked.
+  // holds it is cleared, so it is never held by nothing; clearing it signs
+  // out every tab, whose requests stop carrying it; then what this browser
+  // kept for the repository is forgotten while the token is revoked, and
+  // the screen names it only if the server did not confirm.
   const signOut = useCallback(async () => {
     const s = session
     const l = link
@@ -364,21 +365,16 @@ export function SubstrateProvider({
     store.clear()
     setSession(null)
     setProblem(null)
-    setUnrevoked(revocations.pending())
-    if (l) {
-      try {
-        await l.forget()
-      } catch (e) {
+    await Promise.all([
+      l?.forget().catch((e: unknown) =>
         setProblem({
           title: "Signed out, but not everything was forgotten",
           message: describe(e),
         })
-      }
-    }
-    if (s) {
-      await revocations.send(s)
-      setUnrevoked(revocations.pending())
-    }
+      ),
+      s && revocations.send(s),
+    ])
+    setUnrevoked(revocations.pending())
   }, [session, link, store, revocations])
 
   const value = useMemo<SubstrateContextValue | null>(

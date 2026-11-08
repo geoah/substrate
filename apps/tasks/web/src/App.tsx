@@ -1,9 +1,8 @@
-import { TabItem, cx, useListed, useMediaQuery } from "@substrate/react"
+import { Alert, TabItem, cx, useListed, useMediaQuery } from "@substrate/react"
 import { CircleCheck, ListChecks, Plus, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useTaskActions } from "./actions"
 import { ListsMenu } from "./ListsMenu"
-import { Alert } from "./Menu"
 import { Task, type Selection } from "./model"
 import { deleteListQuestion, needsYouBadge } from "./present"
 import { useReminders } from "./reminders"
@@ -283,6 +282,7 @@ function Overlays({ wide }: { wide: boolean }) {
       )}
       {question && (
         <Alert
+          open
           title={question.title}
           message={question.message}
           onCancel={() => deletingListStore.set(undefined)}
@@ -319,6 +319,7 @@ function ListNaming(props: {
   }
   return (
     <Alert
+      open
       title={props.id ? "Rename List" : "New List"}
       message="A task list's name, such as Groceries or Home."
       onCancel={props.onClose}
@@ -339,7 +340,7 @@ function ListNaming(props: {
         }}
       >
         <input
-          autoFocus
+          data-autofocus
           aria-label="Name"
           placeholder="Name"
           value={name}
