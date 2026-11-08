@@ -543,6 +543,13 @@ describe("through the preference record", () => {
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: "Escape",
     })
+    // Closed, not closing: its checkboxes are labelled with the column names,
+    // and a dialog opened next is found by a label it shares with one.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: `Move ${label} ${direction}` })
+      ).toBeNull()
+    )
   }
 
   it("saves the view to the record, and picking it again restores filter, sort and columns", async () => {
@@ -806,6 +813,48 @@ describe("through the preference record", () => {
     act(() => page.moveTo({ ...TEAM_ROUTE, name: "crew" }))
     await waitFor(() => expect(pressedTabs()).toEqual(["Crew unsized"]))
     expect(page.url().getAll("filter")).toEqual(["size~exists~false"])
+  })
+
+  it("opens the next collection on its own default once its views are read", async () => {
+    // Team ships no views; Crew's are read only when the page draws it.
+    shippedViewRecords = [
+      shipped(
+        "crew-unsized",
+        {
+          name: "Crew unsized",
+          where: { size: { exists: false } },
+          default: true,
+        },
+        CREW
+      ),
+    ]
+    const page = await renderPage("")
+    await waitFor(() => expect(pressedTabs()).toEqual(["All"]))
+
+    act(() => page.moveTo({ ...TEAM_ROUTE, name: "crew" }))
+    await waitFor(() => expect(pressedTabs()).toEqual(["Crew unsized"]))
+    expect(page.url().getAll("filter")).toEqual(["size~exists~false"])
+  })
+
+  it("opens the next collection unfiltered, not on the default of the one it left", async () => {
+    // Team opened on its default and the reader moved to All; Crew ships no
+    // views and its read has not answered when the page draws it.
+    shippedViewRecords = [
+      shipped("team-unsized", {
+        name: "Unsized",
+        where: { size: { exists: false } },
+        default: true,
+      }),
+    ]
+    const page = await renderPage("")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Unsized"]))
+    await press("All")
+    await waitFor(() => expect(pressedTabs()).toEqual(["All"]))
+
+    act(() => page.moveTo({ ...TEAM_ROUTE, name: "crew" }))
+    await waitFor(() => expect(tabNames()).toEqual(["All"]))
+    expect(page.url().getAll("filter")).toEqual([])
+    expect(pressedTabs()).toEqual(["All"])
   })
 
   it("says a shipped view did not change on its own collection only", async () => {
