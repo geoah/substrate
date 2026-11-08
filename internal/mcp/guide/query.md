@@ -50,7 +50,7 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 
 - `orderBy`: a list of `{"property", "desc"}`. A declared property, `at`, `endsAt`, `dueAt`, `createdAt` or `updatedAt`, camelCase. Absent, a list is newest first (`createdAt` descending).
 - `expand`: reference property names a selected kind declares; their targets come back once each under `included`, keyed `"<kind>/<id>"`. One hop.
-- `count: true` adds `count`, the size of the whole filtered set, whatever page you are on. `first: 1` with it reads the number alone.
+- `count: true` adds `count`, the size of the whole filtered set, whatever page you are on. `first: 1` with it answers the count alongside at most one record.
 
 ## Ranked search
 
