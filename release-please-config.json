@@ -19,6 +19,15 @@
   "pull-request-header": "Merging this pull request releases everything on `main` as the version in the title. It is regenerated after every merge; the checklist is in `docs/releasing.md`.",
   "pull-request-footer": "Opened by release-please from the conventional commits since the last tag. Fix a wrong line by editing the merged pull request it came from (`BEGIN_COMMIT_OVERRIDE`, see `docs/releasing.md`), not this one.",
   "packages": {
-    ".": {}
+    ".": {
+      "extra-files": [
+        { "type": "json", "path": "apps/kit/web/client/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/kit/web/auth/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/kit/web/local/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/kit/web/react/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/kit/web/vite/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "apps/kit/web/testing/package.json", "jsonpath": "$.version" }
+      ]
+    }
   }
 }

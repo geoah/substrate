@@ -9,16 +9,19 @@
 # can run the same thing on a laptop with `mise run release:snapshot` (which
 # builds everything and publishes nothing).
 #
-# Five jobs, so that no code from a package registry runs on a runner that
+# Seven jobs, so that no code from a package registry runs on a runner that
 # holds a write credential. Steps of one job share the disk and the process
 # table, so a step that runs pnpm or vite can rewrite what a later step runs
 # with the token. `console` and `smoke` run pnpm, vite and headless Chrome
 # with a read-only token; `release` and `major` hold the write token and run
 # goreleaser, docker and the scripts in this tree, installing only the tools
 # they name (mise-action hands its token to the installs it starts); `attest`
-# alone may sign. No job restores a tool from the Actions cache (`cache:
-# false`, `cache-image: false`): any job on main, pnpm's install scripts
-# included, can write a cache entry under a key a release would read.
+# alone may sign. `web-kit` packs the web kit's npm packages with a
+# read-only token, and `npm` publishes the tarballs through npm's trusted
+# publishing, running nothing from a registry. No job restores a tool from
+# the Actions cache (`cache: false`, `cache-image: false`): any job on main,
+# pnpm's install scripts included, can write a cache entry under a key a
+# release would read.
 #
 # release-please.yml CALLS this workflow after it tags a merged release pull
 # request, and that call is the ONLY door: there is no dispatch and no
@@ -352,3 +355,79 @@ jobs:
           subject-name: ghcr.io/geoah/substrate
           subject-digest: ${{ needs.release.outputs.digest }}
           push-to-registry: false
+
+  # The web kit's npm packages (apps/kit/web), packed on a runner whose
+  # token only reads: pnpm's install scripts and Vite run here, and `npm`
+  # publishes the tarballs without running any of it. A package still marked
+  # private is not packed, so nothing is published until the kit is opened.
+  web-kit:
+    name: pack the web kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      packed: ${{ steps.pack.outputs.packed }}
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_key_prefix: mise-v2
+          install_args: node pnpm
+          cache: false
+      - id: pack
+        run: |
+          set -euo pipefail
+          mise run apps:web:pack
+          echo "packed=$(find build/npm -name '*.tgz' | wc -l | tr -d ' ')" >>"$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.pack.outputs.packed != '0'
+        with:
+          name: web-kit
+          path: build/npm
+          if-no-files-found: error
+          overwrite: true
+
+  # The tarballs `web-kit` packed, published with npm's trusted publishing:
+  # the registry trades this run's OIDC token for a one-time credential, so
+  # no npm token is stored anywhere. After `release`, whose first step is
+  # the gate on the tagged commit's green ci run. A re-run skips each
+  # version npm already holds. Provenance names the commit the run started
+  # from, so, as `attest` does, it is made only when that is the tag's.
+  npm:
+    name: publish the web kit to npm
+    needs: [web-kit, release]
+    if: needs.web-kit.outputs.packed != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_key_prefix: mise-v2
+          install_args: node
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-kit
+          path: ${{ runner.temp }}/npm
+      - run: .mise/webkit.sh publish "$RUNNER_TEMP/npm"
+        env:
+          PROVENANCE: ${{ github.sha == inputs.sha }}

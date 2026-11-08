@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @substrate/tasks-web dev",
     "build": "pnpm --filter \"./*/web\" build",
+    "build:kit": "pnpm --filter \"./kit/web/*\" build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "lint": "eslint .",
@@ -25,6 +26,7 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.6",
     "vitest": "^5.1.0"
   }
 }

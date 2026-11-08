@@ -798,6 +798,12 @@ dir = "web/console"
 depends = ["console:install"]
 run = "pnpm dev"
 
+[tasks."apps:web:pack"]
+description = "Build the web kit's npm packages and pack the publishable ones -> build/npm"
+# What release.yml's `web kit` job uploads and its `npm` job publishes, with
+# no credential involved: run it to see exactly what npm would receive.
+run = ".mise/webkit.sh pack build/npm"
+
 [tasks."console:build"]
 description = "Type-check and build the console -> web/console/dist"
 # The type-check is `console:typecheck`, run once as a dependency, and this
@@ -1385,11 +1391,13 @@ description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
 [tasks."ci:apps:web"]
-description = "CI job `apps web`: the web kit's and the web apps' tests, lint, types, format and build"
+description = "CI job `apps web`: the web kit's and the web apps' tests, lint, types, format and builds"
 # The workspace rooted at apps/ (apps/pnpm-workspace.yaml): the kit's
 # packages under apps/kit/web and each app's web/ folder. It runs on every
 # push, as `console` does: a path-gated job is held only through a gate job
-# that reads the changes answer, and the five cost about a minute.
+# that reads the changes answer, and the six cost about a minute.
+# `build:kit` is the npm build release.yml packs, so a package that would
+# not build for npm fails here and not on a release.
 dir = "apps"
 run = [
   "pnpm install --frozen-lockfile",
@@ -1398,6 +1406,7 @@ run = [
   "pnpm typecheck",
   "pnpm fmt:check",
   "pnpm build",
+  "pnpm build:kit",
 ]
 
 [tasks."ci:image"]
