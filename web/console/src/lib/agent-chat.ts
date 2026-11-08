@@ -802,13 +802,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   ollama: "Ollama",
 }
 
-/** The llm provider row an agent completes against, by id. */
-export function agentProviderId(agent: SubstrateRecord): string | undefined {
-  const held = readReference(agent.properties.provider)?.path
-  if (!held) return undefined
-  return held.slice(held.lastIndexOf("/") + 1)
-}
-
 /** A provider row's name from its id alone, where the row is not at hand:
  * the vendor's spelling for a well-known id, else the id capitalised. */
 export function providerName(id: string): string {

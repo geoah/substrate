@@ -34,7 +34,9 @@ data:
   package: llm
   # 32: the assistant (`substrate`) and the delegation pair (`substrateEcho`,
   # `substrateSummarizer`) left; Moss, shipped, replaces them.
-  version: 32
+  # 33: the provider rows carry no prices; the seeded llm/model records do
+  # (decision record 0242).
+  version: 33
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:

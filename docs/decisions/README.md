@@ -398,3 +398,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | proposed |
 | [0240](0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md) | An agent changes long text by exact replacement against the version it read | proposed |
 | [0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md) | The assistant ships with the binary, and the owner shapes it through instruction records | proposed |
+| [0242](0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md) | A model a provider offers is a record, and an agent may run on a list of them | proposed |

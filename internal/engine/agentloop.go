@@ -344,6 +344,9 @@ type providerConfig struct {
 	// pricing is USD per 1M tokens keyed by model id; a model absent from the
 	// table costs 0 and only the token tally is authoritative.
 	pricing map[string]modelPrice
+	// windows are the context windows of models an llm/model record
+	// describes without pricing them (llmmodels.go contextWindow).
+	windows map[string]int
 	// titleModel is the model chat threads are titled by; empty means each
 	// thread's own (agenttitle.go).
 	titleModel string
@@ -503,13 +506,23 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		pc.cfg.CacheKey, _ = cache["key"].(bool)
 		pc.cfg.CacheBreakpoints, _ = cache["breakpoints"].(bool)
 	}
+	// The row's own entries price first, as they did before llm/model
+	// records existed; the records price what no entry names (decision
+	// record 0242).
+	entries := map[string]bool{}
 	for _, entry := range objectRows(row.Props["pricing"]) {
 		model, _ := entry["model"].(string)
 		if model == "" {
 			continue
 		}
 		pc.pricing[model] = pricingRow(entry)
+		entries[model] = true
 	}
+	records, err := modelRecordsOf(ctx, ds.db, id)
+	if err != nil {
+		return nil, err
+	}
+	pc.priceFromRecords(records, entries)
 
 	// What each wire needs from a row is internal/llm's own fact (llm.Wire.Policy);
 	// what the engine owns is the host-gateway pairing and the wording.
@@ -802,7 +815,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 			ds.svc.invocationEnded()
 		}
 	}()
-	provider, model, err := ds.resolveAgentProvider(ctx, ag)
+	provider, model, err := ds.resolveAgentProvider(ctx, ag, in.threadID)
 	if err != nil {
 		return nil, nil, err
 	}

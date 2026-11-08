@@ -28,9 +28,8 @@ import { ThreadList } from "@/components/agent/thread-list"
 import { AddSampleDialog } from "@/components/samples/add-sample-dialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
-import { useModelKeys } from "@/hooks/use-model-keys"
+import { useAgentRuns } from "@/hooks/use-agent-runs"
 import {
-  agentProviderId,
   agentPurpose,
   chatCapable,
   chatRows,
@@ -47,7 +46,6 @@ import {
 } from "@/lib/api/agents"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
-import { modelName } from "@/lib/operator-defaults"
 
 /** A media query as state, for the two column breakpoints. */
 function useMedia(query: string): boolean {
@@ -98,10 +96,10 @@ export function AgentsPage() {
 
   const agents = useQuery(agentsQueryOptions())
   const conversations = useQuery(conversationsQueryOptions())
-  const keys = useModelKeys()
   const policies = useQuery(writePoliciesQueryOptions())
 
   const allAgents = useMemo(() => agents.data?.records ?? [], [agents.data])
+  const runs = useAgentRuns(allAgents)
   // Primary agents first: a new chat defaults to the first of them, and the
   // picker offers them before the helpers.
   const talkable = useMemo(
@@ -151,9 +149,9 @@ export function AgentsPage() {
   const agentId = threadId ? threadAgent : search.agent || defaultAgent
   const agent = allAgents.find((a) => a.id === agentId)
 
-  const providerId = agent ? agentProviderId(agent) : undefined
-  const providerRow = keys.rows?.find((p) => p.id === providerId)
-  const hasKey = keys.resolves(providerId)
+  // An agent on `runsOn` continues a thread on the row and model the thread
+  // is stamped with, and starts a new one on the first entry that can run.
+  const nextTurn = agent ? runs.next(agent, threadRecord, threadId) : undefined
   const agentPolicies =
     agent && policies.data
       ? policiesForAgent(agent.id, policies.data.records)
@@ -223,12 +221,7 @@ export function AgentsPage() {
     />
   )
   const panel = agent ? (
-    <AgentPanel
-      agent={agent}
-      hasKey={hasKey}
-      providerLabel={providerRow ? modelName(providerRow) : undefined}
-      policies={agentPolicies}
-    />
+    <AgentPanel agent={agent} policies={agentPolicies} />
   ) : (
     <p className="p-4 text-[13px] text-muted-foreground">
       {agents.isPending ? "Loading the agent…" : "No agent is selected."}
@@ -271,7 +264,9 @@ export function AgentsPage() {
           onDraft={setDraft}
           pickable={talkable.map((a) => a.id)}
           onPickAgent={(next) => void setSearch({ agent: next, prompt: null })}
-          keylessProvider={hasKey === false ? providerId : undefined}
+          keylessProvider={
+            nextTurn?.canRun === false ? nextTurn.keyRow : undefined
+          }
           // Sent once the agent and the provider rows are read, so a keyless
           // provider holds the question instead of sending it into a
           // refusal. Waiting for a known key would hold it forever where the
@@ -283,7 +278,7 @@ export function AgentsPage() {
             !threadId &&
             Boolean(search.prompt) &&
             Boolean(agent) &&
-            !keys.pending
+            !runs.pending
           }
           onAutoSent={() =>
             void setSearch({ send: null }, { history: "replace" })

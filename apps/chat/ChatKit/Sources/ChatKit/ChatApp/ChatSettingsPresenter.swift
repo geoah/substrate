@@ -11,17 +11,18 @@ extension ChatApp {
         let chat = all.filter(\.chatCapable).sorted { $0.name < $1.name }
         let background = all.filter { !$0.chatCapable }.sorted { $0.name < $1.name }
         let rows = chat.map { agent -> AssistantRow in
-            let provider = agent.providerID.flatMap { state.providers[$0] }.map(Provider.init(record:))
+            // What a new chat runs on: an agent on `runsOn` reads as the
+            // entry one would take (decision record 0242).
+            let providerID = state.providerID(of: agent)
+            let provider = providerID.flatMap { state.providers[$0] }.map(Provider.init(record:))
             return AssistantRow(
                 id: agent.id, name: agent.name, description: agent.description,
                 runsOn: [
-                    (provider?.name ?? agent.providerID.map(providerName)).map { LabeledValue("Provider", $0) },
-                    agent.model.map { LabeledValue("Model", $0, verbatim: true) },
+                    (provider?.name ?? providerID.map(providerName)).map { LabeledValue("Provider", $0) },
+                    state.model(of: agent).map { LabeledValue("Model", $0, verbatim: true) },
                 ].compactMap { $0 },
                 offered: state.preferences.offers(agent, defaults: defaults),
-                keyless: provider.flatMap {
-                    state.lacksKey($0) ? KeylessProvider(id: $0.id, name: $0.name, action: "No API key: Add") : nil
-                })
+                keyless: state.keyless(agent.id).map { KeylessProvider(id: $0.id, name: $0.name, action: "No API key: Add") })
         }
         let assistants = AssistantsSection(
             title: "Assistants",

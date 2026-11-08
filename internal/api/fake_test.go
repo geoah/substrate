@@ -1627,3 +1627,24 @@ func (d *fakeDataset) OperatorDefaults(context.Context) (substrate.OperatorDefau
 	}
 	return *d.operatorDefaults, nil
 }
+
+// ModelOffers names what each stored llm/provider row's own entries price,
+// which is the engine's answer for a row no llm/model record describes.
+func (d *fakeDataset) ModelOffers(context.Context) (map[string][]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := map[string][]string{}
+	for _, rec := range d.records {
+		if rec.Kind != vocabulary.LLMKind("provider") || rec.DeletedAt != nil {
+			continue
+		}
+		entries, _ := rec.Properties["pricing"].([]any)
+		for _, raw := range entries {
+			entry, _ := raw.(map[string]any)
+			if model, ok := entry["model"].(string); ok {
+				out[rec.ID] = append(out[rec.ID], model)
+			}
+		}
+	}
+	return out, nil
+}

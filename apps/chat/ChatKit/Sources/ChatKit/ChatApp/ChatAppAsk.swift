@@ -33,7 +33,7 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case read(thread: String, first: Int, epoch: Int, version: Int)
     case prefetch(Lease, [Prefetch])
     case fetchThread(String)
-    case watch(Lease, head: WatchCursor?)
+    case watch(Lease, head: WatchCursor?, kinds: [String])
     case feedWait(seconds: Double)
     case applyFeed(Plan, Set<ChatAppState.WatchKey>, threads: [String])
     case markRefreshed(Lease, [ChatAppState.WatchKey])
@@ -76,6 +76,7 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
         var canChat: Bool
         var canDecide: Bool
         var canReadProviders: Bool
+        var canReadModels: Bool
         /// Only a full-access token reads which keys the operator supplies.
         var readsOperator: Bool
         /// An app's token lists the cards only under the threads it names.

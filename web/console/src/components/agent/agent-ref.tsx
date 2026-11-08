@@ -11,16 +11,12 @@ import {
   IdentityCard,
   IdentityHoverCard,
 } from "@/components/identity/identity-hover-card"
-import {
-  agentName,
-  agentProviderId,
-  canChange,
-  canSee,
-  providerName,
-} from "@/lib/agent-chat"
+import { useAgentRuns } from "@/hooks/use-agent-runs"
+import { agentName, canChange, canSee } from "@/lib/agent-chat"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { rowName } from "@/lib/llm-models"
 import { cn } from "@/lib/utils"
 
 /** The card itself, reading the agent record only once it opens, unless the
@@ -39,14 +35,16 @@ export function AgentCard({
     enabled: open && !agent,
   })
   const record = agent ?? read.data
-  const model =
-    typeof record?.properties.model === "string" ? record.properties.model : ""
-  const provider = record ? agentProviderId(record) : undefined
+  const runs = useAgentRuns([record])
+  const on = record ? runs.of(record) : undefined
   const description =
     typeof record?.properties.description === "string"
       ? record.properties.description
       : undefined
-  const sub = [model, provider && providerName(provider)]
+  const sub = [
+    on?.label ?? on?.model,
+    on?.row && rowName(runs.keys.rows, on.row),
+  ]
     .filter(Boolean)
     .join(" · ")
   return (

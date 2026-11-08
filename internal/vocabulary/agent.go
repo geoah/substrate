@@ -191,6 +191,10 @@ type Agent struct {
 	// Model is WHAT the loop asks that provider for, sent verbatim on every
 	// completion.
 	Model string
+	// RunsOn is the third way to say both at once: llm/model record ids,
+	// best first, each naming its row and its model id (decision record
+	// 0242). Like Provider it resolves at dispatch, never at load.
+	RunsOn []string
 	// Params are this agent's request knobs (temperature, maxTokens,
 	// reasoningEffort); the provider row's defaults sit under them at dispatch.
 	Params map[string]any
@@ -361,7 +365,7 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
 var agentDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "prompt": true,
-	"provider": true, "model": true, "providerInput": true, "models": true, "params": true,
+	"provider": true, "model": true, "providerInput": true, "models": true, "runsOn": true, "params": true,
 	"tools": true, "toolsFrom": true, "subagents": true, "budgets": true, "permissions": true,
 	"hiddenFromChat": true, "resume": true, "purpose": true, "compaction": true,
 	"context": true,

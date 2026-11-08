@@ -313,6 +313,14 @@ type Dataset interface {
 	// file Operator is nil, every item's source is own or none, and no item
 	// says the operator offers it.
 	OperatorDefaults(ctx context.Context) (OperatorDefaults, error)
+
+	// --- the models each row offers (decision 0242) ---
+	// ModelOffers answers, for each live llm/provider row, the model ids it
+	// can run priced: the operator's list where the operator serves the row,
+	// else the models its own pricing entries name and its llm/model records
+	// price. App approval offers a provider input only a row that prices a
+	// model of each of its agents.
+	ModelOffers(ctx context.Context) (map[string][]string, error)
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

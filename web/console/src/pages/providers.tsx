@@ -8,7 +8,7 @@
  *   (`health`, `clinical`) is no provider: Add a collection lists it.
  * - **Tools for your agents**: providers that bring tools and no account.
  * - **AI models**: one card per `llm/provider` row, with its key form in
- *   place (components/providers/model-card.tsx).
+ *   place and the models it offers (components/providers/model-card.tsx).
  *
  * A row says what it gives you, in one pill whether it works (On, Set up,
  * Needs attention, Paused) or offers to add it, and, only where someone
@@ -27,6 +27,7 @@
 
 import { PublisherDetails } from "@/components/packages/publisher"
 import { useCallback, useMemo, useState, type ReactNode } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { ChevronRightIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react"
 
@@ -74,6 +75,7 @@ import {
   useWelcome,
 } from "@/hooks/use-console-preferences"
 import { useModelKeys, type ModelKeys } from "@/hooks/use-model-keys"
+import { llmModelsQueryOptions } from "@/lib/api/agents"
 import { bundleState, setupCount } from "@/lib/api/bundles"
 import type { OperatorDefault, SubstrateRecord } from "@/lib/api/types"
 import {
@@ -85,6 +87,7 @@ import {
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
+import { rowOffers, servedModels } from "@/lib/llm-models"
 import { LLM_PROVIDER_SEED } from "@/lib/llm-provider-seed"
 import {
   installFailure,
@@ -257,6 +260,7 @@ function ModelsGroup({
   focused?: string
 }) {
   const allowance = keys.read?.operator?.allowance
+  const models = useQuery(llmModelsQueryOptions())
   const rows = keys.rows ? modelOrder(keys.rows) : undefined
   const removed = rows
     ? Object.keys(LLM_PROVIDER_SEED).filter(
@@ -294,18 +298,29 @@ function ModelsGroup({
   } else {
     body = (
       <div className={GRID}>
-        {rows.map((row) => (
-          <ModelCard
-            key={row.id}
-            row={row}
-            modelKey={keys.keyOf(row)}
-            words={words}
-            search={searchLine(items, row.id, words)}
-            searchFailed={searchFailure(items, row.id)}
-            technical={technical}
-            focused={focused === row.id}
-          />
-        ))}
+        {rows.map((row) => {
+          const key = keys.keyOf(row)
+          return (
+            <ModelCard
+              key={row.id}
+              row={row}
+              modelKey={key}
+              // A row with no key of its own may be the operator's, whose
+              // list is all it offers: until that is known, no list.
+              offers={
+                models.data && key.source !== undefined
+                  ? rowOffers(row, models.data.records, servedModels(key))
+                  : undefined
+              }
+              offersError={models.error?.message}
+              words={words}
+              search={searchLine(items, row.id, words)}
+              searchFailed={searchFailure(items, row.id)}
+              technical={technical}
+              focused={focused === row.id}
+            />
+          )
+        })}
         {removed.map((id) => (
           <AddModelCard
             key={id}

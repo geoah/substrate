@@ -10,8 +10,12 @@ import SubstrateRuntime
 extension ChatApp {
     /// The refresh job the app declares to the system.
     public static let refreshJob = "dev.reamde.substrate.chat.refresh"
-    /// The kinds the watch follows.
-    static let watched = [Kinds.thread, Kinds.message, Kinds.agent, Kinds.provider, Kinds.interaction, Kinds.request]
+    /// The kinds the watch follows: the model records only where the plan
+    /// reads them, since the watch refuses a kind the token cannot read.
+    static func watched(_ plan: ChatAppAsk.Plan) -> [String] {
+        [Kinds.thread, Kinds.message, Kinds.agent, Kinds.provider, Kinds.interaction, Kinds.request]
+            + (plan.canReadModels ? [Kinds.model] : [])
+    }
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let source = environment.client
@@ -165,13 +169,13 @@ extension ChatApp {
                     return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
                 }
             }
-        case let .watch(lease, head):
+        case let .watch(lease, head, kinds):
             return .sequence {
                 Self.relay { yield in
                     guard let client = await source.current(), let cache = storage.records(lease) else { return }
                     if let head { await cache.listed(RecordPage(records: [], head: head.seq, generation: head.generation), kinds: []) }
                     var fresh = await cache.cursor == nil
-                    let follower = WatchFollower(client: client, kinds: Self.watched, app: ChatManifest.appName) { wait in
+                    let follower = WatchFollower(client: client, kinds: kinds, app: ChatManifest.appName) { wait in
                         let parts = wait.components
                         try await clock.sleep(until: clock.now.addingTimeInterval(Double(parts.seconds) + Double(parts.attoseconds) / 1e18))
                     }
@@ -414,12 +418,23 @@ extension ChatApp {
     }
 
     static func agents(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws -> (
-        agents: RecordPage, providers: RecordPage?, keys: ProviderKeys?
+        agents: RecordPage, providers: RecordPage?, models: RecordPage?, keys: ProviderKeys?
     ) {
         async let agents = client.listAll(ListQuery(kinds: [Kinds.agent], first: 200, orderBy: "createdAt:desc"))
         async let providers: RecordPage? = plan.canReadProviders ? client.listAll(ListQuery(kinds: [Kinds.provider], first: 100)) : nil
+        async let models: RecordPage? = plan.canReadModels ? Self.models(client) : nil
         async let keys: ProviderKeys? = plan.readsOperator ? ProviderKeys.read(client) : .rows
-        return try await (agents, providers, keys)
+        return try await (agents, providers, models, keys)
+    }
+
+    /// The `llm/model` records. A server older than the kind answers 404: it
+    /// holds none, and no agent there runs on any.
+    static func models(_ client: SubstrateClient) async throws -> RecordPage {
+        do {
+            return try await client.listAll(ListQuery(kinds: [Kinds.model], first: 100))
+        } catch let error as ServerError where error.status == 404 {
+            return RecordPage(records: [])
+        }
     }
 
     /// The questions and suggestions waiting on the owner. An app's token
@@ -468,7 +483,8 @@ extension ChatApp {
             head = heads.min().map { WatchCursor(seq: $0, generation: read.agents.generation) }
         }
         return ChatAppStep.Refresh(
-            agents: read.agents.records, providers: read.providers?.records, keys: read.keys, threads: threads, cards: cards, head: head)
+            agents: read.agents.records, providers: read.providers?.records, models: read.models?.records, keys: read.keys,
+            threads: threads, cards: cards, head: head)
     }
 
     /// A batch of the watch's rows, read again: the list for a thread, the
@@ -489,14 +505,16 @@ extension ChatApp {
                 out.failure = Failure(error, server: client.server)
             }
         }
-        if kinds.contains(Kinds.agent) || kinds.contains(Kinds.provider) {
+        let agentKinds: Set<String> = [Kinds.agent, Kinds.provider, Kinds.model]
+        if !kinds.isDisjoint(with: agentKinds) {
             do {
                 let read = try await agents(client, plan)
                 out.agents = read.agents.records
                 out.providers = read.providers?.records
+                out.models = read.models?.records
                 out.keys = read.keys
             } catch {
-                out.failed.formUnion(batch.filter { $0.kind == Kinds.agent || $0.kind == Kinds.provider })
+                out.failed.formUnion(batch.filter { agentKinds.contains($0.kind) })
                 out.failure = Failure(error, server: client.server)
             }
         }

@@ -30,6 +30,10 @@ struct ChatSession: Codable, Equatable, Sendable {
     var canDecide: Bool { grants?.decidesAny ?? true }
     /// Only an exact scope reaches the provider rows: `llm` is internal.
     var canReadProviders: Bool { grants?.reads(Kinds.provider) ?? true }
+    /// The same holds for the model records, which no build asked a scope
+    /// for: a scoped session never reads them, and never watches them, since
+    /// the watch refuses a kind the token cannot read.
+    var canReadModels: Bool { grants?.reads(Kinds.model) ?? true }
     /// A scoped app never writes a provider's key: the console does.
     var canWriteKeys: Bool { full }
 

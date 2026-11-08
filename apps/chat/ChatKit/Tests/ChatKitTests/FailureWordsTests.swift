@@ -113,7 +113,7 @@ struct OperatorKeyTests {
         let key = try await rig.newChat()
         let screen = try #require(await rig.conversation(key))
         #expect(screen.hero?.keyless == nil && screen.composer.keyless == nil)
-        #expect(await rig.harness.state.keys == .read(["openai": true]))
+        #expect(await rig.harness.state.keys == .served(["openai": true], models: ["openai": []]))
     }
 
     @Test func aRowNoKeyResolvesForStillAsksForOne() async throws {

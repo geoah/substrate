@@ -26,7 +26,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case refreshed(Refresh)
     case refreshFailed(Failure)
     case threadsRead(Threads)
-    case agentsRead(agents: [Record], providers: [Record]?, keys: ProviderKeys?)
+    case agentsRead(agents: [Record], providers: [Record]?, models: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)
     case readFailed(Failure)
     case openingsRead([String: String])
@@ -119,6 +119,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     struct Refresh: Codable, Equatable, Sendable {
         var agents: [Record]
         var providers: [Record]?
+        /// The `llm/model` records; nil where the session may not read them.
+        var models: [Record]?
         /// Whose key each provider row runs on; nil where that read failed.
         var keys: ProviderKeys?
         var threads: Threads
@@ -133,6 +135,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var threads: Threads?
         var agents: [Record]?
         var providers: [Record]?
+        var models: [Record]?
         var keys: ProviderKeys?
         var cards: Cards?
         var failed: Set<WatchKey>

@@ -64,6 +64,13 @@ func (t *txn) seedShippedRecord(rec vocabulary.ShippedRecord) error {
 	if err != nil || held {
 		return err
 	}
+	if rec.Kind == typeModel {
+		// The owner's own record for this row and model stands in for the
+		// shipped one, which the write would refuse (admitModelRow).
+		if other, err := modelPairHolder(t.ctx, t.tx, rec.ID, rec.Properties); err != nil || other != "" {
+			return err
+		}
+	}
 	if _, err := t.put(substrate.PutInput{Kind: rec.Kind, ID: rec.ID, Properties: rec.Properties}); err != nil {
 		return fmt.Errorf("substrate/engine: seed %s %s: %w", rec.Kind, rec.ID, err)
 	}
@@ -107,7 +114,8 @@ func (ds *dataset) ensureShippedRecords(ctx context.Context) error {
 
 // shippedRecordOwed reports whether the seed would write rec, as
 // seedShippedRecord decides it again under the lock: the stored row is
-// absent, deleted or stale, and only the shipping hands ever wrote it.
+// absent, deleted or stale, only the shipping hands ever wrote it, and, for
+// a shipped model, no other record holds its row and model.
 func (ds *dataset) shippedRecordOwed(ctx context.Context, rec vocabulary.ShippedRecord) (bool, error) {
 	row, err := ds.loadRowDB(ctx, shippedRecordRef(rec))
 	if err != nil || shippedRowCurrent(row, rec) {
@@ -116,7 +124,14 @@ func (ds *dataset) shippedRecordOwed(ctx context.Context, rec vocabulary.Shipped
 	var held bool
 	err = ds.db.QueryRowContext(ctx, anotherHandWroteSQL,
 		rec.ID, rec.Kind, shippedHands(substrate.ActorSeed)).Scan(&held)
-	return !held && err == nil, err
+	if err != nil || held {
+		return false, err
+	}
+	if rec.Kind == typeModel {
+		other, err := modelPairHolder(ctx, ds.db, rec.ID, rec.Properties)
+		return other == "" && err == nil, err
+	}
+	return true, nil
 }
 
 // shippedRowCurrent reports whether a stored row already holds what rec

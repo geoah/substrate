@@ -40,7 +40,7 @@ func TestAgentProviderInputResolution(t *testing.T) {
 	}
 	check := func(id, model string) {
 		t.Helper()
-		p, m, err := ds.resolveAgentProvider(ctx, ag)
+		p, m, err := ds.resolveAgentProvider(ctx, ag, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func TestAgentProviderInputResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	put("chosen", "wrong")
-	if _, _, err := ds.resolveAgentProvider(ctx, ag); err == nil || !strings.Contains(err.Error(), "chosen") || !strings.Contains(err.Error(), "preferred") {
+	if _, _, err := ds.resolveAgentProvider(ctx, ag, ""); err == nil || !strings.Contains(err.Error(), "chosen") || !strings.Contains(err.Error(), "preferred") {
 		t.Fatalf("refusal: %v", err)
 	}
 }

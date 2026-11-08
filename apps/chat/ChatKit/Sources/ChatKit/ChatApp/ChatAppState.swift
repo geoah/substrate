@@ -117,6 +117,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]
+    /// The live `llm/model` records, by id; nil until read, or where the
+    /// session may not read them, when no `runsOn` entry is said to fail.
+    var models: [String: Record]?
     /// Whose key each provider row runs on; nil until read, when no row is
     /// said to lack one.
     var keys: ProviderKeys?

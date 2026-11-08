@@ -115,6 +115,7 @@ const WORDS = new Set([
   "metric",
   "milestone",
   "mind",
+  "model",
   "note",
   "notification",
   "oauth",

@@ -1,5 +1,5 @@
 /** One agent (`/agents/$id`): what it is and runs on (the provider and the
- * model, changed together here), what it is allowed to see and change
+ * model changed together, or its list of models, best first), what it is allowed to see and change
  * (edited here, by collection), the limits one run runs under, the rules its
  * changes go through (the ones "Always allow this" wrote, each revocable),
  * and its runs: what they spent over the last day, week and month, the ones
@@ -41,15 +41,13 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useModelKeys } from "@/hooks/use-model-keys"
+import { useAgentRuns } from "@/hooks/use-agent-runs"
 import {
   agentName,
   agentOfferedTools,
-  agentProviderId,
   agentSubagents,
   agentTools,
   agentToolsFrom,
-  providerName,
   toolRoute,
 } from "@/lib/agent-chat"
 import { standingAllows } from "@/lib/agent-rules"
@@ -100,7 +98,7 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { AGENT_KIND } from "@/lib/core-kinds"
-import { modelName } from "@/lib/operator-defaults"
+import { rowName } from "@/lib/llm-models"
 import { propertyLabel } from "@/lib/grid-values"
 import { propSpecsByName, type PropSpec } from "@/lib/record-schema"
 import { agoWords, toolName } from "@/lib/tools"
@@ -126,7 +124,7 @@ export function AgentPage() {
   )
   const runs = useQuery(agentRunsQueryOptions(id))
   const policies = useQuery(writePoliciesQueryOptions())
-  const keys = useModelKeys()
+  const runsRead = useAgentRuns([agent.data])
   const registry = useQuery(kindsQueryOptions)
   const functions = useQuery({
     ...functionsQueryOptions,
@@ -160,12 +158,8 @@ export function AgentPage() {
 
   const record = agent.data
   const name = agentName(id)
-  const model =
-    typeof record.properties.model === "string" ? record.properties.model : ""
-  const provider = agentProviderId(record)
-  const providerRow = keys.rows?.find((p) => p.id === provider)
-  const providerLabel = providerRow ? modelName(providerRow) : undefined
-  const keyless = keys.resolves(provider) === false
+  const on = runsRead.of(record)
+  const nameOf = (rowId: string) => rowName(runsRead.keys.rows, rowId)
   const description =
     typeof record.properties.description === "string"
       ? record.properties.description
@@ -193,7 +187,7 @@ export function AgentPage() {
         glyph={<AgentMark id={id} size="lg" />}
         meta={
           <span className="text-muted-foreground">
-            {[model, provider && (providerLabel ?? providerName(provider))]
+            {[on.label ?? on.model, on.row && nameOf(on.row)]
               .filter(Boolean)
               .join(" · ") || "Agent"}
             {hidden && " · Works for other agents"}
@@ -244,19 +238,32 @@ export function AgentPage() {
         )}
       </PageHeader>
 
-      {keyless && provider && (
+      {on.canRun === false && (on.keyRow || on.runsOn) && (
         <div
           role="note"
           className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-warning/30 bg-warn-soft px-3.5 py-2.5 text-[13px]"
         >
-          <span className="min-w-0 flex-1">
-            <span className="font-medium">{name} can’t run yet.</span>{" "}
-            <span className="text-muted-foreground">
-              It runs on {providerLabel ?? providerName(provider)}, which has no
-              API key.
+          {on.runsOn ? (
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">
+                {name} can’t start a new chat yet.
+              </span>{" "}
+              <span className="text-muted-foreground">
+                None of the models it runs on can run now; each says why under
+                What it runs on.
+              </span>
             </span>
-          </span>
-          <AddKeyButton providerId={provider} name={providerLabel} />
+          ) : (
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">{name} can’t run yet.</span>{" "}
+              <span className="text-muted-foreground">
+                It runs on {nameOf(on.keyRow ?? "")}, which has no API key.
+              </span>
+            </span>
+          )}
+          {on.keyRow && (
+            <AddKeyButton providerId={on.keyRow} name={nameOf(on.keyRow)} />
+          )}
         </div>
       )}
 
@@ -265,7 +272,11 @@ export function AgentPage() {
 
       <SectionHead
         title="What it runs on"
-        hint="a model id belongs to one provider"
+        hint={
+          on.runsOn
+            ? "best first: a new chat takes the first that can run"
+            : "a model id belongs to one provider"
+        }
       />
       <RunsOn agent={record} />
 
@@ -782,7 +793,7 @@ function Spend({
       <div className="mt-2 flex flex-col gap-0.5 text-[12.5px] text-faint">
         <p>
           Cost is what each run recorded. A run records no cost for tokens on a
-          model its provider row has no price for.
+          model nothing priced: Providers lists each model’s price.
         </p>
         {started && (
           <p>

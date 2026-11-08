@@ -26,7 +26,7 @@ import {
   request,
 } from "./http"
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type SubstrateRecord } from "./types"
+import { ApiError, type Page, type SubstrateRecord } from "./types"
 
 /** The agent rows — declared agents, one per `substrate.reamde.dev/core/agent` record. */
 export function agentsQueryOptions() {
@@ -183,6 +183,34 @@ export function llmProvidersQueryOptions() {
     package: LLM_PACKAGE_NAME,
     name: "provider",
     first: 100,
+  })
+}
+
+/** The llm/model records: what each provider row offers and prices, and
+ * what an agent's `runsOn` names (decision record 0242). One page at the
+ * wire's cap, because a record past it would read as missing. `enabled` holds
+ * the read until a surface needs it. A server older than the kind answers
+ * 404: it holds no model records, and its rows price from their own entries
+ * alone, so that reads as an empty page. */
+export function llmModelsQueryOptions(enabled = true) {
+  const params: ListParams = {
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "model",
+    first: 500,
+  }
+  return queryOptions({
+    ...recordsQueryOptions(params),
+    queryFn: async ({ signal }): Promise<Page> => {
+      try {
+        return await fetchRecordsPage(params, signal)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404)
+          return { records: [], head: 0, generation: "" }
+        throw error
+      }
+    },
+    enabled,
   })
 }
 

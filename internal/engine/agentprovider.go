@@ -10,7 +10,26 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-func (ds *dataset) resolveAgentProvider(ctx context.Context, ag *vocabulary.Agent) (*providerConfig, string, error) {
+// resolveAgentProvider opens the row a run of ag completes against and names
+// the model it sends. threadID is the thread the run continues, "" for a new
+// one: an agent on runsOn keeps a continued thread on its own model.
+func (ds *dataset) resolveAgentProvider(ctx context.Context, ag *vocabulary.Agent, threadID string) (*providerConfig, string, error) {
+	if len(ag.RunsOn) > 0 {
+		choice, err := ds.chooseRunsOn(ctx, ag, threadID)
+		if err != nil {
+			return nil, "", err
+		}
+		provider, err := ds.resolveProvider(ctx, choice.provider)
+		if err != nil {
+			return nil, "", err
+		}
+		// Chosen against the operator's list already; held again against
+		// the transport just opened, which a key written since may have moved.
+		if err := ds.checkOperatorModel(provider, "agent "+ag.Identity(), choice.model); err != nil {
+			return nil, "", err
+		}
+		return provider, choice.model, nil
+	}
 	id := ag.Provider
 	if ag.ProviderInput != "" {
 		b, ok := ds.registry().BundleOf(ag.Package)

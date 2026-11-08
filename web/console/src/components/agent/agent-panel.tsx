@@ -1,8 +1,9 @@
 /** About this agent: who it is, what it runs on, what it can see and change
  * (edited here, by collection, as on its page), which tools it reaches for,
- * and the way to edit it. Everything is read off the agent record, its llm
- * provider row and the write policies that name it; technical mode adds the
- * references and the declaration itself. */
+ * and the way to edit it. Everything is read off the agent record, the llm
+ * provider rows and model records it runs on (lib/llm-models.ts) and the
+ * write policies that name it; technical mode adds the references and the
+ * declaration itself. */
 
 import { Link } from "@tanstack/react-router"
 import { BotIcon, GaugeIcon, PencilIcon, WrenchIcon } from "lucide-react"
@@ -14,18 +15,19 @@ import { AddKeyButton, RunsOnLine } from "@/components/agent/model-key-link"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { IdText } from "@/components/identity/id-text"
 import { Button } from "@/components/ui/button"
+import { useAgentRuns } from "@/hooks/use-agent-runs"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   agentName,
-  agentProviderId,
   agentSubagents,
   agentTools,
-  providerName,
   toolRoute,
 } from "@/lib/agent-chat"
 import { standingAllows } from "@/lib/agent-rules"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, LLM_PACKAGE } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
+import { LLM_MODEL_KIND } from "@/lib/core-kinds"
+import { rowName } from "@/lib/llm-models"
 import { toolName } from "@/lib/tools"
 
 function Section({
@@ -62,22 +64,16 @@ function policyWords(policy: SubstrateRecord): string {
 
 export function AgentPanel({
   agent,
-  hasKey,
-  providerLabel,
   policies,
 }: {
   agent: SubstrateRecord
-  /** Whether its provider row's key resolves; undefined while unknown. */
-  hasKey?: boolean
-  /** The provider row's name as its Providers card shows it. */
-  providerLabel?: string
   /** The write policies that speak for this agent. */
   policies: SubstrateRecord[]
 }) {
   const [technical] = useTechnicalDetails()
-  const model =
-    typeof agent.properties.model === "string" ? agent.properties.model : ""
-  const provider = agentProviderId(agent)
+  const read = useAgentRuns([agent])
+  const runs = read.of(agent)
+  const nameOf = (rowId: string) => rowName(read.keys.rows, rowId)
   const description =
     typeof agent.properties.description === "string"
       ? agent.properties.description
@@ -95,23 +91,27 @@ export function AgentPanel({
             <div className="font-semibold">{agentName(agent.id)}</div>
             <div className="text-[12.5px] text-muted-foreground">
               <RunsOnLine
-                providerId={provider}
-                name={providerLabel}
-                model={model || undefined}
+                providerId={runs.row}
+                name={runs.row ? nameOf(runs.row) : undefined}
+                model={runs.label ?? runs.model}
               />
             </div>
           </div>
         </div>
-        {hasKey === false && provider && (
+        {runs.canRun === false && (runs.keyRow || runs.runsOn) && (
           <div className="flex flex-col items-start gap-1.5">
             <p className="text-[12.5px] text-warning">
-              No API key for {providerLabel ?? providerName(provider)} yet.
+              {runs.runsOn
+                ? "None of the models it runs on can run yet."
+                : `No API key for ${nameOf(runs.keyRow ?? "")} yet.`}
             </p>
-            <AddKeyButton
-              providerId={provider}
-              name={providerLabel}
-              size="xs"
-            />
+            {runs.keyRow && (
+              <AddKeyButton
+                providerId={runs.keyRow}
+                name={nameOf(runs.keyRow)}
+                size="xs"
+              />
+            )}
           </div>
         )}
         {description && (
@@ -185,16 +185,27 @@ export function AgentPanel({
             <IdText
               value={`${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/agent/${agent.id}`}
             />
-            {model && (
+            {runs.runsOn && (
               <>
-                <span className="text-faint">Model</span>
-                <IdText value={model} />
+                <span className="text-faint">Runs on</span>
+                {runs.runsOn.entries.map((entry) => (
+                  <IdText
+                    key={entry.id}
+                    value={`${LLM_MODEL_KIND}/${entry.id}`}
+                  />
+                ))}
               </>
             )}
-            {provider && (
+            {runs.model && (
+              <>
+                <span className="text-faint">Model</span>
+                <IdText value={runs.model} />
+              </>
+            )}
+            {runs.row && (
               <>
                 <span className="text-faint">Provider</span>
-                <IdText value={`${LLM_PACKAGE}/provider/${provider}`} />
+                <IdText value={`${LLM_PACKAGE}/provider/${runs.row}`} />
               </>
             )}
             <span className="text-faint">Write policies</span>

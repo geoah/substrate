@@ -343,7 +343,7 @@ func (ds *dataset) allowanceHold(ctx context.Context, ag *vocabulary.Agent) (str
 	if ds.svc.operatorDefaults == nil {
 		return "", nil
 	}
-	id, err := ds.agentProviderID(ctx, ag)
+	id, model, err := ds.agentRowAndModel(ctx, ag)
 	if err != nil {
 		return "", err
 	}
@@ -352,8 +352,7 @@ func (ds *dataset) allowanceHold(ctx context.Context, ag *vocabulary.Agent) (str
 		return "", err
 	}
 	pc := operatorProviderConfig(entry)
-	model := ag.Model
-	if ag.ProviderInput != "" || model == "" {
+	if model == "" {
 		model = vocabulary.PreferredAgentModel(ag.Models, entry.ModelIDs())
 	}
 	params, err := mergeParams(entry.ID, entry.Defaults, ag.Params)

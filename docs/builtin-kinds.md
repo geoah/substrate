@@ -223,14 +223,15 @@ ships seven host functions as `function` records (`query`, `write`,
 The second package the binary seeds: the agent runtime's own data, out of core
 so core is not everything (decision record
 [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
-is seeded exactly as core is, so a fresh repository holds these five kinds
-without importing anything, and one created before `memory` receives it at its
-next open. **Agents are alpha**, so all five are a preview, unfrozen at v1 and
-not part of the frozen core:
+is seeded exactly as core is, so a fresh repository holds these kinds without
+importing anything, and one created before a kind existed receives it at its
+next open. **Agents are alpha**, so all of them are a preview, unfrozen at v1
+and not part of the frozen core:
 
 | Kind          | What it is                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| `provider`    | One place completions are bought: `label`, `wire` (enum), `baseURL`, `apiKey`, `embedModel`, `headers` and `pricing` (repeated objects), `defaults` (object). |
+| `provider`    | One place completions are bought: `label`, `wire` (enum), `baseURL`, `apiKey`, `embedModel`, `headers` (repeated objects), `defaults` (object), and the deprecated `pricing`. The models it offers are `model` records. |
+| `model`       | One model a provider offers: `provider` (a reference to the row), `model` (the id its API takes), `label`, `pricing` (USD per 1M tokens) and `contextWindow`. One record per row and model; the seed ships the models of the three seeded rows, and an agent's `runsOn` names these ([agents](agents.md#models), decision record [0242](decisions/0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md)). |
 | `thread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `message`     | One turn in a thread, with its tool-call audit.                                                  |
 | `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |

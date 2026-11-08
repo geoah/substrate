@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // operatorDefaultsAnswer is the canned engine answer the handler tests read
@@ -73,6 +74,24 @@ func TestScopedDatasetRefusesOperatorDefaults(t *testing.T) {
 	ds := newScopedDataset(newFakeDataset(fakeRepository), scope.Grant{}, substrate.Actor("app:example.com"))
 	if _, err := ds.OperatorDefaults(t.Context()); err == nil {
 		t.Fatal("the scoped dataset answered the operator defaults read")
+	}
+}
+
+// A grant that reads neither the provider rows nor the model records is
+// offered no models: what each row prices is read off both kinds.
+func TestScopedDatasetOffersNoModelsWithoutBothKinds(t *testing.T) {
+	inner := newFakeDataset(fakeRepository)
+	inner.records["openai"] = &substrate.Record{
+		Kind: vocabulary.LLMKind("provider"), ID: "openai",
+		Properties: map[string]any{"pricing": []any{map[string]any{"model": "gpt-5"}}},
+	}
+	if offers, err := inner.ModelOffers(t.Context()); err != nil || len(offers["openai"]) != 1 {
+		t.Fatalf("the owner's dataset offers %v (%v)", offers, err)
+	}
+	ds := newScopedDataset(inner, scope.Grant{}, substrate.Actor("app:example.com"))
+	offers, err := ds.ModelOffers(t.Context())
+	if err != nil || len(offers) != 0 {
+		t.Fatalf("offers %v (%v), want none", offers, err)
 	}
 }
 

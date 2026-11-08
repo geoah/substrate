@@ -44,9 +44,13 @@ struct Agent: Hashable, Sendable, Identifiable {
     var id: String { record.id }
     var name: String { agentName(record.id) }
     var description: String? { record["description"]?.text }
-    /// The `llm/provider` row it completes against, by id.
+    /// The `llm/provider` row it names, by id. An agent on `runsOn` names
+    /// none: the state's `provider(of:)` says what it runs on.
     var providerID: String? { record["provider"]?.referenceID }
     var model: String? { record["model"]?.text }
+    /// The `llm/model` records it runs on, best first (decision record
+    /// 0242); nil for an agent that says what it runs on another way.
+    var runsOn: [String]? { record["runsOn"]?.array?.compactMap { referent($0, pin: Kinds.model) } }
     /// Callable only by other agents: the chat API refuses it.
     var chatCapable: Bool { record["hiddenFromChat"]?.bool != true }
     var purpose: Purpose {

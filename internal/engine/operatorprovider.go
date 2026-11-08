@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -149,19 +150,38 @@ func (ds *dataset) operatorProviderRow(ctx context.Context, id string) (*operato
 }
 
 // agentProviderID is the provider row an agent's run resolves: its own
-// `provider`, or the row its bundle input binds.
+// `provider`, the row its bundle input binds, or the row of the runsOn entry
+// a new thread would take.
 func (ds *dataset) agentProviderID(ctx context.Context, ag *vocabulary.Agent) (string, error) {
+	id, _, err := ds.agentRowAndModel(ctx, ag)
+	return id, err
+}
+
+// agentRowAndModel is agentProviderID with the model a new thread would send,
+// where the declaration decides it before the row opens: provider + model's
+// model, or the chosen runsOn entry's. A providerInput agent answers no
+// model, since it chooses one against the row's prices. It opens no secret,
+// so a dispatcher pass can ask it of every trigger.
+func (ds *dataset) agentRowAndModel(ctx context.Context, ag *vocabulary.Agent) (string, string, error) {
+	if len(ag.RunsOn) > 0 {
+		choice, err := ds.chooseRunsOn(ctx, ag, "")
+		if errors.Is(err, substrate.ErrValidation) {
+			// Dispatch refuses it with its own words; nothing is operator-paid.
+			return "", "", nil
+		}
+		return choice.provider, choice.model, err
+	}
 	if ag.ProviderInput == "" {
-		return ag.Provider, nil
+		return ag.Provider, ag.Model, nil
 	}
 	b, ok := ds.registry().BundleOf(ag.Package)
 	if !ok {
-		return "", nil
+		return "", "", nil
 	}
 	input, err := ds.resolveBundleInput(ctx, b, ag.ProviderInput)
 	if err != nil || input.Row == nil {
 		// Dispatch refuses it with its own words; nothing is operator-paid.
-		return "", nil
+		return "", "", nil
 	}
-	return input.Row.ID, nil
+	return input.Row.ID, "", nil
 }

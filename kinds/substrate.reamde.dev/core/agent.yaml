@@ -20,7 +20,9 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 32
+  # 33: `runsOn`, the llm/model records an agent runs on, best first
+  # (decision record 0242).
+  version: 33
   purpose: internal
   names:
     singular: agent
@@ -78,6 +80,20 @@ data:
       type: string
       repeated: true
       description: one to eight model ids, best first, for providerInput
+    # The third way to say what an agent runs on, beside provider + model and
+    # providerInput + models (decision record 0242): the llm/model records
+    # themselves, each naming its row. They are PREFERENCES, not retries: a
+    # new thread runs on the first one available before anything is sent (a
+    # live record on a live row with a key, or a row the operator serves and
+    # whose list holds the model), and a continued thread stays on the model
+    # it began on. The pin completes a bare id as `provider` does.
+    runsOn:
+      type: reference
+      kind: substrate.reamde.dev/llm/model
+      repeated: true
+      description: one to eight models this agent runs on, best first; a new
+        thread takes the first one available, and a continued thread keeps
+        its own
     params:
       type: object
       description: this agent's request knobs; the provider row's defaults

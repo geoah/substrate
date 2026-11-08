@@ -33,7 +33,8 @@ public struct AssistantRow: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var name: String
     public var description: String?
-    /// What it runs on: "Provider" and "Model", where the agent names them.
+    /// What it runs on: "Provider" and "Model", where the agent names them,
+    /// or those of the model a new chat takes, for an agent on `runsOn`.
     public var runsOn: [LabeledValue]
     public var offered: Bool
     /// The provider without a key, by id and name.
