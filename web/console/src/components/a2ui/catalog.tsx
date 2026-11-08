@@ -896,8 +896,18 @@ export function DateTimeInput({ def, ctx, root }: NodeProps) {
         aria-invalid={shown.length > 0 || undefined}
         className="pointer-coarse:h-10"
         onBlur={bound.touch}
-        onChange={(e) => bound.set(e.target.value)}
+        onChange={(e) => bound.set(instantValue(e.target.value, mode))}
       />
     </Field>
   )
+}
+
+/** What a date-time input writes to the model: the browser's local
+ * `YYYY-MM-DDTHH:MM` as the instant it names, in UTC, since a record's
+ * datetime takes a zoned instant and inputValue reads one back. A date or
+ * a time alone is written as typed. */
+function instantValue(value: string, mode: DateMode): string {
+  if (mode !== "datetime-local" || !value) return value
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value : d.toISOString()
 }

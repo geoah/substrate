@@ -272,6 +272,42 @@ describe("an A2UI surface", () => {
     expect(store.surface("applet")!.dataModel.ui).toMatchObject({ qty: "1." })
   })
 
+  it("writes a date and time as the instant it names, and a date as typed", () => {
+    const { store } = mount(
+      [
+        { id: "root", component: "Column", children: ["at", "day"] },
+        {
+          id: "at",
+          component: "DateTimeInput",
+          label: "Watered at",
+          enableDate: true,
+          enableTime: true,
+          value: { "@path": "/ui/at" },
+        },
+        {
+          id: "day",
+          component: "DateTimeInput",
+          label: "Watered on",
+          enableDate: true,
+          value: { "@path": "/ui/day" },
+        },
+      ],
+      { ui: { at: "", day: "" } }
+    )
+    const at = screen.getByLabelText("Watered at")
+    fireEvent.change(at, { target: { value: "2026-11-05T09:00" } })
+    fireEvent.change(screen.getByLabelText("Watered on"), {
+      target: { value: "2026-11-05" },
+    })
+    // A record's datetime takes a zoned instant; the input shows it back in
+    // the reader's own time.
+    expect(store.surface("applet")!.dataModel.ui).toEqual({
+      at: new Date("2026-11-05T09:00").toISOString(),
+      day: "2026-11-05",
+    })
+    expect((at as HTMLInputElement).value).toBe("2026-11-05T09:00")
+  })
+
   it("opens only a web address from a button", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null)
     const { onProblem } = mount(

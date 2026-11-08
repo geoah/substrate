@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A binding in a source or an action is one of three objects:
@@ -170,7 +172,9 @@ func addDays(value, days any) (any, error) {
 	if d, err := time.Parse(time.DateOnly, s); err == nil {
 		return d.AddDate(0, 0, n).Format(time.DateOnly), nil
 	}
-	t, err := time.Parse(time.RFC3339Nano, s)
+	// The forms a record's datetime takes on a write, so a value an input
+	// or a record holds moves as it would be stored.
+	t, err := substrate.ParseInstant(s)
 	if err != nil {
 		return nil, fmt.Errorf("addDays: value is a date (2026-07-01) or an instant (2026-07-01T09:00:00Z), got %q", s)
 	}
