@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.121.0](https://github.com/geoah/substrate/compare/v0.120.0...v0.121.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **agents:** an agent whose permissions.writes grants a glob (`*`, `<authority>/*` or `<authority>/<package>/*`) no longer writes through it declarations, triggers, `substrate.reamde.dev/llm/instruction` records or the records of `internal` kinds (threads, messages, provider rows, settings, requests and the rest of the substrate's machinery), and a function the agent runs is held to the same. An agent's declaration write that would convert live records is refused; the owner applies it. An agent meant to write one of those kinds names it in its permissions.writes, for example `substrate.reamde.dev/core/setting`, and its declaration is applied again. Rolling the binary back restores the old reach.
+* **catalog:** `GET /api/v1/catalog`, `GET /api/v1/catalog/{id}` and the packages of an authorization plan answer `"tier": "published"` where they answered `"tier": "provider"`. A client that compares the tier compares against `published`, and one that needs to tell a provider from a catalogue reads the new `provider` field. The server needs nothing, and `substratectl catalog` prints `published` in its TIER column. Nothing stored changes, so a rollback answers `provider` again.
+
+### Added
+
+* **agents:** ship Moss, the owner's assistant, and let the owner shape it through instruction records ([#1257](https://github.com/geoah/substrate/issues/1257)) ([71b9560](https://github.com/geoah/substrate/commit/71b9560c106ad7e97b8492591b78c51b3a22ca11))
+* applets, A2UI screens the substrate serves, built by Moss's designer ([#1261](https://github.com/geoah/substrate/issues/1261)) ([d79e44c](https://github.com/geoah/substrate/commit/d79e44c322b1c718fbbc03409164a4608808f196))
+* **applets:** an applet names its runtime, and a2ui is the one the server runs ([#1269](https://github.com/geoah/substrate/issues/1269)) ([1f69fd5](https://github.com/geoah/substrate/commit/1f69fd5e360e39b4a14c56e623cde193bb57e65a))
+* **apps:** bring Substrate Chat up to the console's agent chat ([#1260](https://github.com/geoah/substrate/issues/1260)) ([df8fb58](https://github.com/geoah/substrate/commit/df8fb58209108ec4aeab88808c34edc8156d1022))
+* **apps:** open the browser sign-in once the server is found ([39305fa](https://github.com/geoah/substrate/commit/39305fa5a983b2ad9703c482818bcf2d3c3550c6))
+* **auth:** let an owner skip the second factor at registration, and ask for a code only of an account that has one ([ab9ba5a](https://github.com/geoah/substrate/commit/ab9ba5a839ab047e2ed1c670bcde2489e26b039a))
+* **catalog:** say what each package is for, so a catalogue is a standard collection and no account ([#1256](https://github.com/geoah/substrate/issues/1256)) ([7732e56](https://github.com/geoah/substrate/commit/7732e566cacf5218a7931e3f20958dc60e7b7064))
+* **console:** ask an app's approval as one question and name its publisher on one line ([f786db6](https://github.com/geoah/substrate/commit/f786db64f5cd8ecb74773beab1aa93471c64de0a))
+* **console:** list providers as rows, plainer welcome, and choose your own contact ([0845fb1](https://github.com/geoah/substrate/commit/0845fb16655fc646d13384f342b96a30c1414de5))
+* **console:** make the recovery key in the browser, so a password manager saves it with the login ([ab9ba5a](https://github.com/geoah/substrate/commit/ab9ba5a839ab047e2ed1c670bcde2489e26b039a))
+* **console:** mark Applets alpha and Agents, Observations and Providers beta ([#1268](https://github.com/geoah/substrate/issues/1268)) ([ebf2011](https://github.com/geoah/substrate/commit/ebf201178d012454ac4bf96733ea359232993dcf))
+* **console:** ship a collection's saved views as records ([#1211](https://github.com/geoah/substrate/issues/1211)) ([9241530](https://github.com/geoah/substrate/commit/924153020fddd4a3d07195918a09f4f8fc618bc6))
+* **llm:** make each provider's models records, and let an agent run on a list of them ([#1263](https://github.com/geoah/substrate/issues/1263)) ([2d355ca](https://github.com/geoah/substrate/commit/2d355caabbb061a47609e63f12fc2989703cef26))
+* **mcp:** orient an assistant with an overview, a guide by topic, resources and prompts ([#1271](https://github.com/geoah/substrate/issues/1271)) ([647265d](https://github.com/geoah/substrate/commit/647265dc2d2ef58bac063c15e6b41b73be5494bb))
+* Moss's builders ask before they build, and applets show what comes due ([#1266](https://github.com/geoah/substrate/issues/1266)) ([ba1e814](https://github.com/geoah/substrate/commit/ba1e8141567e392d68df1b0e6aea2858c91c52db))
+* **server:** write the log as JSON when LOG_FORMAT is json ([#1247](https://github.com/geoah/substrate/issues/1247)) ([aa6e141](https://github.com/geoah/substrate/commit/aa6e141c5e9739df977156115eb141d2d986eda8))
+
+
+### Fixed
+
+* **apps:** link each app's client_uri to the site and name the publisher from SUBSTRATE_APPLE_SITE_NAME ([98100f4](https://github.com/geoah/substrate/commit/98100f4fbb4ebe436521139dd9834388dbba3d81))
+* **apps:** open a reply's console links from Chat, and forward /site/ in the Console app ([#1270](https://github.com/geoah/substrate/issues/1270)) ([0bb2052](https://github.com/geoah/substrate/commit/0bb2052c545d5b18784e1067c1619fd9b74cf0ff))
+* **apps:** sign Chat in with full access and read whose key each provider runs on ([#1251](https://github.com/geoah/substrate/issues/1251)) ([215740e](https://github.com/geoah/substrate/commit/215740ee5e4379c166bbdc237068bb40e500e341))
+* **console:** center a table's empty state in the visible grid ([#1259](https://github.com/geoah/substrate/issues/1259)) ([66c08c3](https://github.com/geoah/substrate/commit/66c08c35c8a4950e00e6a619f4c54ba994011900))
+* **console:** drop the landing bar's register button, which the landing already carries ([c42a871](https://github.com/geoah/substrate/commit/c42a8713fa73508327668d6004af9eaebfb81d9f))
+* **console:** keep the shell in view under the iPad form bar, and stop zoom and overscroll ([e135f4d](https://github.com/geoah/substrate/commit/e135f4df266b4102df9b3a5bc9db1e9969aa89d2))
+* **console:** mint ink ids without crypto.randomUUID, so the console loads over plain http ([#1258](https://github.com/geoah/substrate/issues/1258)) ([043165e](https://github.com/geoah/substrate/commit/043165e3d9108f27f57520d69901122e64b594a8))
+* **logging:** quote every binary's lines from its first act and hold a log message constant ([#1249](https://github.com/geoah/substrate/issues/1249)) ([7c16bb3](https://github.com/geoah/substrate/commit/7c16bb38826fa61325f682086dbc4824c3efd765))
+
 ## [0.120.0](https://github.com/geoah/substrate/compare/v0.119.0...v0.120.0) (2026-11-06)
 
 
