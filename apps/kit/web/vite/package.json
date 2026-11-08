@@ -1,0 +1,25 @@
+{
+  "name": "@substrate/vite",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A Substrate web app's build: where it is served, its client metadata document and its web manifest.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "peerDependencies": {
+    "vite": "^8"
+  },
+  "devDependencies": {
+    "@types/node": "^26",
+    "vite": "^8"
+  }
+}

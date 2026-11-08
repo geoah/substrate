@@ -89,7 +89,10 @@ function Shell({
     isCallback(manifest) ? null : store.load()
   )
   const [completing, setCompleting] = useState(() => isCallback(manifest))
-  const [problem, setProblem] = useState<string | null>(null)
+  const [problem, setProblem] = useState<{
+    title: string
+    message: string
+  } | null>(null)
   const [unrevoked, setUnrevoked] = useState<Session[]>(() =>
     revocations.pending()
   )
@@ -99,9 +102,9 @@ function Shell({
     (words: string) => {
       store.clear()
       setSession(null)
-      setProblem(words)
+      setProblem({ title: `${manifest.name}'s access ended`, message: words })
     },
-    [store]
+    [store, manifest.name]
   )
 
   // The server's redirect back. A sign-in again that fails leaves the
@@ -125,7 +128,7 @@ function Shell({
           setSession(previous)
           toast(describe(e), "error")
         } else {
-          setProblem(describe(e))
+          setProblem({ title: "Couldn't sign in", message: describe(e) })
         }
       })
       .finally(() => setCompleting(false))
@@ -202,14 +205,11 @@ function Shell({
     const wait = session.expiresAt - Date.now()
     if (wait > 2_147_483_647) return
     const t = setTimeout(
-      () =>
-        endSession(
-          `${manifest.name}'s access ended: the time you approved it for is up. Sign in again.`
-        ),
+      () => endSession("The time you approved it for is up. Sign in again."),
       Math.max(0, wait)
     )
     return () => clearTimeout(t)
-  }, [session, manifest.name, endSession])
+  }, [session, endSession])
 
   // The app's standing with its server: at sign-in, and again when the page
   // comes back to the front, at most once per interval.

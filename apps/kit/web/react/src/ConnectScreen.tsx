@@ -40,7 +40,9 @@ export function ConnectScreen(props: {
   manifest: AppManifest
   tagline?: string
   icon?: ReactNode
-  problem?: string | null
+  /** A problem from before this screen: words alone are a sign-in that
+   * came back refused; a title says what else it is. */
+  problem?: string | { title: string; message: string } | null
   /** Tokens a sign-out could not revoke, said under the form. */
   unrevoked?: Session[]
   onSignIn: (located: LocatedServer) => Promise<void>
@@ -54,7 +56,14 @@ export function ConnectScreen(props: {
     }
   })
   const [phase, setPhase] = useState<Phase>({ type: "idle" })
-  const [problem, setProblem] = useState<string | null>(props.problem ?? null)
+  const [problem, setProblem] = useState<{
+    title: string
+    message: string
+  } | null>(() =>
+    typeof props.problem === "string"
+      ? { title: "Couldn't sign in", message: props.problem }
+      : (props.problem ?? null)
+  )
   const input = useRef<HTMLInputElement>(null)
   const fieldID = useId()
   const noteID = useId()
@@ -78,7 +87,10 @@ export function ConnectScreen(props: {
       if (e instanceof ServerTooOld) {
         setPhase({ type: "tooOld", error: e })
       } else {
-        setProblem(describe(e))
+        setProblem({
+          title: "Couldn't reach that server",
+          message: describe(e),
+        })
         setPhase({ type: "idle", retryable: true })
       }
     }
@@ -90,7 +102,7 @@ export function ConnectScreen(props: {
     try {
       await props.onSignIn(located)
     } catch (e) {
-      setProblem(describe(e))
+      setProblem({ title: "Couldn't sign in", message: describe(e) })
       setPhase({ type: "found", located })
     }
   }
@@ -202,12 +214,8 @@ export function ConnectScreen(props: {
                 <div className="overflow-hidden rounded-xl bg-card">
                   <ProblemBox
                     role="alert"
-                    title={
-                      located
-                        ? "Couldn't sign in"
-                        : "Couldn't reach that server"
-                    }
-                    message={problem}
+                    title={problem.title}
+                    message={problem.message}
                   />
                 </div>
               )}

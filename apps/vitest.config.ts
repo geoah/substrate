@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     include: [
       "kit/web/*/src/**/*.test.{ts,tsx}",
-      "template/web/src/**/*.test.{ts,tsx}",
+      "*/web/src/**/*.test.{ts,tsx}",
     ],
     environment: "jsdom",
     setupFiles: ["kit/web/testing/setup.ts"],

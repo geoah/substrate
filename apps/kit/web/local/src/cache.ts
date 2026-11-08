@@ -26,12 +26,20 @@ export class RecordCache {
   private metaDirty = false
   private timer?: ReturnType<typeof setTimeout>
   private saving: Promise<void> = Promise.resolve()
+  private listeners = new Set<() => void>()
   /** Why the last save failed, until one succeeds. */
   saveProblem?: string
 
   constructor(storage: RepositoryStorage, delay = 150) {
     this.storage = storage
     this.delay = delay
+  }
+
+  /** Calls `fn` after each save lands, or fails: what a reader of the
+   * storage's size reads again on. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
   }
 
   /** What the device kept of `kinds`. A record of a kind the app no longer
@@ -131,6 +139,7 @@ export class RecordCache {
     this.metaDirty = false
     await this.saving
     await this.storage.clearRecords()
+    for (const fn of this.listeners) fn()
   }
 
   private schedule(): void {
@@ -169,6 +178,7 @@ export class RecordCache {
       } catch (e) {
         this.saveProblem = e instanceof Error ? e.message : String(e)
       }
+      for (const fn of this.listeners) fn()
     })
     return this.saving
   }

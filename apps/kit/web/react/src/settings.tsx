@@ -8,7 +8,7 @@ import { displayServerVersion } from "@substrate/client"
 import type { OutboxEntry } from "@substrate/local"
 import { useEffect, useState, type ReactNode } from "react"
 import { useSubstrate } from "./context"
-import { useLinkStatus, useLive, useOutbox } from "./hooks"
+import { useLinkStatus, useOutbox } from "./hooks"
 import { formatMoment } from "./status"
 import { useToast } from "./toast"
 import {
@@ -313,19 +313,23 @@ export function byteWords(bytes: number): string {
 export function StorageSection() {
   const { storage, cache, linked } = useSubstrate()
   const summary = useOutbox()
-  const live = useLive()
   const [usage, setUsage] = useState<{ outbox: number; records: number }>()
   const [asking, setAsking] = useState(false)
+  // Read again whenever the outbox's queue or a cache save moves.
   useEffect(() => {
     let current = true
-    void storage
-      .usage()
-      .then((u) => current && setUsage(u))
-      .catch(() => {})
+    const read = () =>
+      void storage
+        .usage()
+        .then((u) => current && setUsage(u))
+        .catch(() => {})
+    read()
+    const unsubscribe = cache.subscribe(read)
     return () => {
       current = false
+      unsubscribe()
     }
-  }, [storage, summary.revision, live.revision])
+  }, [storage, cache, summary.entries])
   const footer = [
     "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
     storage.persistent ? "" : (storage.problem ?? ""),

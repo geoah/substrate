@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "@substrate/react/theme.css";
+@source "../../../kit/web/react/src";
+
+/* The template's accent, app.json's `accent`. */
+:root {
+  --sx-accent: #5f6b7a;
+  --sx-accent-text: #5f6b7a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sx-accent: #a7b1be;
+    --sx-accent-text: #a7b1be;
+  }
+}
