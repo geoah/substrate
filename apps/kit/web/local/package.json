@@ -1,0 +1,24 @@
+{
+  "name": "@substrate/local",
+  "private": true,
+  "version": "0.1.0",
+  "description": "What a Substrate web app keeps in the browser: the outbox, the record cache and the linked records. No framework.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@substrate/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@substrate/testing": "workspace:*"
+  }
+}

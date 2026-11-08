@@ -6,7 +6,9 @@ and Tasks on Android too; and the template `mise run apps:new` copies, a
 whole app that nothing releases ([A new app](#a-new-app)). Each is a folder
 here named by its [app.json](#an-apps-appjson), six in all, beside the kit
 they share ([kit/](kit/README.md)) and the two build roots, `xcode/` and
-`gradle/`.
+`gradle/`. Tasks is on the web too ([tasks/web](tasks/web/README.md)), on the
+web kit ([kit/web](kit/web/README.md)) in the pnpm workspace rooted here
+(`package.json`, `pnpm-workspace.yaml`).
 
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that

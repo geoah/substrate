@@ -1,8 +1,8 @@
 # Substrate Tasks
 
 A to-do list kept in the owner's substrate: tasks with a due day or a due
-time and a priority, in task lists the owner orders, on iPhone, iPad, Mac
-and Android. It is the first app built
+time and a priority, in task lists the owner orders, on iPhone, iPad, Mac,
+Android and the web. It is the first app built
 on the kit from its first line ([docs/plans/app-kit.md](../../docs/plans/app-kit.md),
 §10): every screen is a presentation TasksKit makes, and each platform's UI
 draws it and sends commands, nothing else.
@@ -15,6 +15,7 @@ draws it and sends commands, nothing else.
 | `apple/Sources/` | the app target: its scenes, its menu commands and the updater |
 | `apple/UI/` | `SubstrateTasksUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
 | `apple/Tests/` | the views drawn from TasksKit's fixtures, on the Mac |
+| `web/` | the web app, in React on the web kit, for a phone, a tablet and a desktop browser ([its README](web/README.md)) |
 | `android/` | the Android app: the Gradle module `:tasks`, its Compose UI, its bridge configuration and generated Kotlin, and its gallery test over `fixtures/tasks.json` |
 | `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Needs you, the lists, a list, one with its done tasks and its options, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
 

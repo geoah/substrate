@@ -27,6 +27,7 @@ rules:
 ignore: |
   node_modules/
   web/console/pnpm-lock.yaml
+  apps/pnpm-lock.yaml
   web/console/dist/
   apps/xcode/build/
   /build/

@@ -1,0 +1,30 @@
+{
+  "name": "@substrate/tasks-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "typecheck": "tsc -p .",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@substrate/auth": "workspace:*",
+    "@substrate/client": "workspace:*",
+    "@substrate/react": "workspace:*",
+    "lucide-react": "^1.49.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@substrate/vite": "workspace:*",
+    "@tailwindcss/vite": "^4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "tailwindcss": "^4",
+    "typescript": "~6",
+    "vite": "^8"
+  }
+}

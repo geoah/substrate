@@ -1,0 +1,24 @@
+{
+  "name": "@substrate/auth",
+  "private": true,
+  "version": "0.2.0",
+  "description": "An app's sign-in to a Substrate: OAuth 2.1 with PKCE and package details, the session, its status and its revocation. No framework.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@substrate/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@substrate/testing": "workspace:*"
+  }
+}

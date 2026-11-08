@@ -1384,6 +1384,22 @@ depends = [
 description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
+[tasks."ci:apps:web"]
+description = "CI job `apps web`: the web kit's and the web apps' tests, lint, types, format and build"
+# The workspace rooted at apps/ (apps/pnpm-workspace.yaml): the kit's
+# packages under apps/kit/web and each app's web/ folder. It runs on every
+# push, as `console` does: a path-gated job is held only through a gate job
+# that reads the changes answer, and the five cost about a minute.
+dir = "apps"
+run = [
+  "pnpm install --frozen-lockfile",
+  "pnpm test",
+  "pnpm lint",
+  "pnpm typecheck",
+  "pnpm fmt:check",
+  "pnpm build",
+]
+
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
 # Build, then boot. The build alone passed for a release image that could not
@@ -1424,6 +1440,7 @@ depends = [
   "ci:audit:image",
   "ci:console",
   "ci:console:test",
+  "ci:apps:web",
   "ci:image",
 ]
 
