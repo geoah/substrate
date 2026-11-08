@@ -1,0 +1,59 @@
+# TEMPORARY, removed before merge: the engine package unsharded under atomic
+# coverage, the old `coverage` job's conditions, to show whether
+# TestAScratchIndexADeadBuildLeftIsDroppedBeforeTheNextBuild holds there with
+# the fix (`fixed`) and fails without it (`control`, the test file of
+# d79e44c32).
+name: coverage probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe ${{ matrix.variant }} ${{ matrix.n }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: fixed
+            n: 1
+          - variant: fixed
+            n: 2
+          - variant: control
+            n: 1
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: .mise/cipostgres.sh start
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_key_prefix: mise-v2
+          cache_save: false
+          install_args: go
+      - if: matrix.variant == 'control'
+        run: |
+          git fetch --no-tags --depth=1 origin d79e44c322b1c718fbbc03409164a4608808f196 || git fetch --no-tags origin main
+          git show FETCH_HEAD:internal/engine/indices_db_test.go >internal/engine/indices_db_test.go
+          git diff --stat
+      - run: .mise/cipostgres.sh wait
+      - run: |
+          rc=0
+          mise exec -- go test -count=1 -p 1 -timeout 40m -skip '^TestLive' \
+            -covermode=atomic -coverpkg=github.com/geoah/substrate/... \
+            -coverprofile=probe.out ./internal/engine/ >probe.log 2>&1 || rc=$?
+          grep -E -A3 -- '^--- FAIL' probe.log || true
+          grep -E '^(ok|FAIL)' probe.log || true
+          exit "$rc"
