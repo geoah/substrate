@@ -1,3 +1,7 @@
+import type {
+  AuthorizationCheck,
+  AuthorizationCheckResult,
+} from "./authorizations"
 import { SubstrateError, failure } from "./errors"
 import type { ListQuery, RecordPage, SubstrateRecord } from "./records"
 
@@ -131,10 +135,12 @@ export class SubstrateClient {
     kind: string,
     id: string,
     properties: Record<string, unknown>,
-    ifVersion?: number
+    ifVersion?: number,
+    signal?: AbortSignal
   ): Promise<SubstrateRecord> {
     return this.json("PUT", SubstrateClient.recordPath(kind, id), {
       body: { properties, ifVersion },
+      signal,
     })
   }
 
@@ -143,17 +149,32 @@ export class SubstrateClient {
     kind: string,
     id: string,
     properties: Record<string, unknown>,
-    ifVersion?: number
+    ifVersion?: number,
+    signal?: AbortSignal
   ): Promise<SubstrateRecord> {
     return this.json("PATCH", SubstrateClient.recordPath(kind, id), {
       body: { properties, ifVersion },
+      signal,
     })
   }
 
-  /** Deletes a record; one already gone is not an error. */
-  async delete(kind: string, id: string): Promise<void> {
+  /** Deletes a record, restorably; one already gone is not an error. */
+  async delete(kind: string, id: string, signal?: AbortSignal): Promise<void> {
     await this.send("DELETE", SubstrateClient.recordPath(kind, id), {
       accept: [404],
+      signal,
+    })
+  }
+
+  /** `POST /api/v1/authorizations/check`: what the token lacks of the
+   * request the app would send now. */
+  checkAuthorization(
+    check: AuthorizationCheck,
+    signal?: AbortSignal
+  ): Promise<AuthorizationCheckResult> {
+    return this.json("POST", "api/v1/authorizations/check", {
+      body: check,
+      signal,
     })
   }
 }

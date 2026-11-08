@@ -3,6 +3,12 @@
  * ServerLocator). A browser has no DNS, so the record is read over DNS over
  * HTTPS. */
 
+import {
+  judgeServer,
+  type ServerRequirement,
+  type ServerVerdict,
+} from "./version"
+
 export interface AuthorizationServerMetadata {
   issuer: string
   authorization_endpoint: string
@@ -32,6 +38,23 @@ export class NotASubstrate extends Error {
   constructor(message: string) {
     super(message)
     this.name = "NotASubstrate"
+  }
+}
+
+/** A substrate that cannot do what the app needs yet: the owner's server
+ * needs an update, which only whoever runs it can do. */
+export class ServerTooOld extends Error {
+  readonly server: string
+  readonly verdict: Extract<ServerVerdict, { compatible: false }>
+
+  constructor(
+    server: string,
+    verdict: Extract<ServerVerdict, { compatible: false }>
+  ) {
+    super(`${new URL(server).host} needs an update`)
+    this.name = "ServerTooOld"
+    this.server = server
+    this.verdict = verdict
   }
 }
 
@@ -91,12 +114,16 @@ async function getJSON<T>(
   }
 }
 
-/** Probes one origin: its OAuth metadata, on its own origin, and its server
- * document. */
-export async function probe(
+/** What one origin serves at its discovery documents, each absent where it
+ * did not answer as one: the server document, and the OAuth metadata only
+ * a server with app authorization serves. */
+export async function inspectServer(
   origin: string,
   signal?: AbortSignal
-): Promise<LocatedServer> {
+): Promise<{
+  document?: ServerDocument
+  metadata?: AuthorizationServerMetadata
+}> {
   const [metadata, document] = await Promise.all([
     getJSON<AuthorizationServerMetadata>(
       `${origin}/.well-known/oauth-authorization-server`,
@@ -107,33 +134,63 @@ export async function probe(
       signal
     ),
   ])
-  if (
-    !metadata ||
-    !document ||
-    !metadata.authorization_endpoint ||
-    !metadata.token_endpoint
-  ) {
-    throw new NotASubstrate(
-      `${new URL(origin).host} is not a Substrate server.`
-    )
-  }
-  for (const endpoint of [
-    metadata.issuer,
-    metadata.authorization_endpoint,
-    metadata.token_endpoint,
-  ]) {
-    if (new URL(endpoint).origin !== origin) {
-      throw new NotASubstrate(
-        `${new URL(origin).host} names its sign-in on another server (${endpoint}).`
-      )
+  return { document, metadata }
+}
+
+/** Probes one origin: its OAuth metadata, on its own origin, and its server
+ * document. With a `requirement`, a substrate that cannot meet it throws
+ * `ServerTooOld` with what it cannot do; without one, a substrate with no
+ * app authorization is refused in a sentence. */
+export async function probe(
+  origin: string,
+  signal?: AbortSignal,
+  requirement?: ServerRequirement
+): Promise<LocatedServer> {
+  const { document, metadata } = await inspectServer(origin, signal)
+  const host = new URL(origin).host
+  if (!document || !Array.isArray(document.features))
+    throw new NotASubstrate(`${host} is not a Substrate server.`)
+  const usable = !!metadata?.authorization_endpoint && !!metadata.token_endpoint
+  if (usable) {
+    for (const endpoint of [
+      metadata.issuer,
+      metadata.authorization_endpoint,
+      metadata.token_endpoint,
+    ]) {
+      if (new URL(endpoint).origin !== origin) {
+        throw new NotASubstrate(
+          `${host} names its sign-in on another server (${endpoint}).`
+        )
+      }
     }
   }
-  if (!document.features?.some((f) => f.name === "apps")) {
+  if (requirement) {
+    const verdict = judgeServer(
+      requirement,
+      document.server?.version,
+      usable ? metadata : undefined
+    )
+    if (!verdict.compatible) throw new ServerTooOld(origin, verdict)
+  }
+  if (!usable || !document.features.some((f) => f.name === "apps")) {
     throw new NotASubstrate(
-      `${new URL(origin).host} is a Substrate server too old for apps: it needs an update first.`
+      `${host} is a Substrate server too old for apps: it needs an update first.`
     )
   }
   return { server: origin, metadata, document }
+}
+
+/** The server a `_substrate` TXT record's text names, or undefined when it
+ * is not a substrate record. The text may arrive quoted, as several
+ * strings. */
+export function parseSubstrateTXT(data: string): string | undefined {
+  const text = data.trim().replace(/^"|"$/g, "").replace(/"\s*"/g, "")
+  const fields = text.split(/\s+/)
+  if (fields[0] !== "v=substrate1") return undefined
+  const server = fields
+    .find((f) => f.startsWith("server="))
+    ?.slice("server=".length)
+  return server ? originOf(server) : undefined
 }
 
 /** The server a repository's `_substrate` TXT record names. */
@@ -155,14 +212,8 @@ export async function recordServer(
   }
   for (const answer of body.Answer ?? []) {
     if (answer.type !== 16) continue
-    // TXT data arrives quoted, possibly as several strings: join them.
-    const text = answer.data.replace(/^"|"$/g, "").replace(/"\s*"/g, "")
-    const fields = text.split(/\s+/)
-    if (fields[0] !== "v=substrate1") continue
-    const server = fields
-      .find((f) => f.startsWith("server="))
-      ?.slice("server=".length)
-    if (server) return originOf(server)
+    const server = parseSubstrateTXT(answer.data)
+    if (server) return server
   }
   return undefined
 }
@@ -172,7 +223,8 @@ export async function recordServer(
  * parent domain. */
 export async function locate(
   typed: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  requirement?: ServerRequirement
 ): Promise<LocatedServer> {
   const origin = originOf(typed)
   if (!origin)
@@ -180,25 +232,32 @@ export async function locate(
       "That is not a server address or a repository name."
     )
   try {
-    return await probe(origin, signal)
+    return await probe(origin, signal, requirement)
   } catch (e) {
     if (!(e instanceof NotASubstrate)) throw e
     const name = repositoryName(typed)
     if (!name) throw e
     const fromRecord = await recordServer(name, signal)
     if (fromRecord)
-      return { ...(await probe(fromRecord, signal)), repository: name }
+      return {
+        ...(await probe(fromRecord, signal, requirement)),
+        repository: name,
+      }
     const doc = await getJSON<{ server?: string }>(
       `https://${name}/.well-known/substrate/repository.json`,
       signal
     )
     const fromDoc = doc?.server ? originOf(doc.server) : undefined
-    if (fromDoc) return { ...(await probe(fromDoc, signal)), repository: name }
+    if (fromDoc)
+      return {
+        ...(await probe(fromDoc, signal, requirement)),
+        repository: name,
+      }
     const parent = name.split(".").slice(1).join(".")
     if (parent.includes(".")) {
       try {
         return {
-          ...(await probe(`https://${parent}`, signal)),
+          ...(await probe(`https://${parent}`, signal, requirement)),
           repository: name,
         }
       } catch (pe) {

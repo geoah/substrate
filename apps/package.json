@@ -5,13 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @substrate/tasks-web dev",
-    "build": "pnpm --filter @substrate/tasks-web build",
-    "typecheck": "pnpm --filter @substrate/tasks-web typecheck",
-    "fmt": "prettier --write \"kit/web/*/src/**\" \"tasks/web/src/**\" \"tasks/web/*.{ts,json,html}\"",
-    "fmt:check": "prettier --check \"kit/web/*/src/**\" \"tasks/web/src/**\" \"tasks/web/*.{ts,json,html}\""
+    "build": "pnpm --filter \"./*/web\" build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "fmt": "prettier --write \"kit/web/**/*.{ts,tsx,css,json,md}\" \"*/web/src/**\" \"*/web/*.{ts,json,html,md}\" \"*.{js,ts,json}\"",
+    "fmt:check": "prettier --check \"kit/web/**/*.{ts,tsx,css,json,md}\" \"*/web/src/**\" \"*/web/*.{ts,json,html,md}\" \"*.{js,ts,json}\""
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "fake-indexeddb": "^6.2.8",
+    "globals": "^17.14.0",
+    "jsdom": "^30.1.3",
     "prettier": "^3.9.10",
-    "prettier-plugin-tailwindcss": "^0.8.1"
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
   }
 }

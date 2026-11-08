@@ -43,6 +43,25 @@ export function stringProp(
   return typeof v === "string" && v !== "" ? v : undefined
 }
 
+export function numberProp(
+  r: SubstrateRecord,
+  key: string
+): number | undefined {
+  const v = r.properties[key]
+  if (typeof v === "number") return v
+  if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v)))
+    return Number(v)
+  return undefined
+}
+
+export function booleanProp(
+  r: SubstrateRecord,
+  key: string
+): boolean | undefined {
+  const v = r.properties[key]
+  return typeof v === "boolean" ? v : undefined
+}
+
 export interface RecordReference {
   kind: string
   id: string

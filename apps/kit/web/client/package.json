@@ -1,8 +1,18 @@
 {
   "name": "@substrate/client",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "The Substrate REST API from a browser: records, the change feed, discovery, ids and positions. No framework.",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p ." }
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
 }

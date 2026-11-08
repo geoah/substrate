@@ -11,6 +11,8 @@ interface Pending {
   server: string
   repository?: string
   metadata: AuthorizationServerMetadata
+  /** The scopes asked for, which the session keeps beside those given. */
+  scopes?: string[]
   startedAt: number
 }
 
@@ -34,6 +36,8 @@ export async function beginSignIn(opts: {
   server: string
   metadata: AuthorizationServerMetadata
   repository?: string
+  /** Where the page goes: the approval page, in this tab. */
+  navigate?: (url: string) => void
 }): Promise<void> {
   const { manifest, metadata } = opts
   const types = metadata.authorization_details_types_supported ?? []
@@ -51,6 +55,7 @@ export async function beginSignIn(opts: {
     server: opts.server,
     repository: opts.repository,
     metadata,
+    scopes: manifest.scopes,
     startedAt: Date.now(),
   }
   sessionStorage.setItem(pendingKey(manifest.id), JSON.stringify(pending))
@@ -69,7 +74,9 @@ export async function beginSignIn(opts: {
   if (manifest.details.length)
     params.push(["authorization_details", JSON.stringify(manifest.details)])
   for (const [k, v] of params) u.searchParams.set(k, v)
-  window.location.assign(u.toString())
+  const navigate =
+    opts.navigate ?? ((url: string) => window.location.assign(url))
+  navigate(u.toString())
 }
 
 /** Whether this page load is the server's redirect back. */
@@ -182,6 +189,7 @@ export async function completeSignIn(
     token: body.access_token,
     tokenID: body.token_id || undefined,
     scopes: (body.scope ?? "").split(" ").filter(Boolean),
+    requestedScopes: pending.scopes,
     expiresAt: body.expires_in
       ? Date.now() + body.expires_in * 1000
       : undefined,

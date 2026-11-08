@@ -7,13 +7,22 @@ export interface Session {
   repository: string
   token: string
   tokenID?: string
+  /** The scopes the approval gave. */
   scopes: string[]
+  /** The scopes the request asked for: what the approval left out of them
+   * is the owner's choice, never a reason to ask again. */
+  requestedScopes?: string[]
   /** Epoch ms; absent when the owner approved it until they revoke it. */
   expiresAt?: number
   clientID: string
   revocationEndpoint?: string
   details: AuthorizationDetail[]
   signedInAt: number
+}
+
+/** Whether the approved access has ended by `now`. */
+export function hasEnded(session: Session, now = Date.now()): boolean {
+  return session.expiresAt !== undefined && session.expiresAt <= now
 }
 
 /** Sessions kept in this browser's storage, one per app: a web app's token
@@ -30,7 +39,7 @@ export class SessionStore {
       const raw = localStorage.getItem(this.key)
       if (!raw) return null
       const s = JSON.parse(raw) as Session
-      if (s.expiresAt && s.expiresAt <= Date.now()) {
+      if (hasEnded(s)) {
         localStorage.removeItem(this.key)
         return null
       }
@@ -45,7 +54,11 @@ export class SessionStore {
   }
 
   clear(): void {
-    localStorage.removeItem(this.key)
+    try {
+      localStorage.removeItem(this.key)
+    } catch {
+      // a private window keeps nothing to clear
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, ChevronsUpDown, X } from "lucide-react"
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from "react"
+import { useId, type ButtonHTMLAttributes, type ReactNode } from "react"
+import { useDialog } from "./dialog"
 
 /** The kit's screen pieces in the Apple apps' grouped style: inset cards of
  * rows, labels left and values right, the same labels in read and edit. */
@@ -52,7 +53,7 @@ export function Row(props: {
         {props.value}
       </span>
       {props.chevron && (
-        <ChevronRight className="size-4 shrink-0 text-tertiary" />
+        <ChevronRight className="size-4 shrink-0 text-tertiary" aria-hidden />
       )}
     </>
   )
@@ -86,7 +87,7 @@ export function SelectRow<T extends string>(props: {
       <span className="shrink-0 text-[17px]">{props.label}</span>
       <span className="ml-auto flex min-w-0 items-center gap-1 text-[17px] text-secondary">
         <span className="truncate">{current}</span>
-        <ChevronsUpDown className="size-4 shrink-0" />
+        <ChevronsUpDown className="size-4 shrink-0" aria-hidden />
       </span>
       <select
         className="absolute inset-0 cursor-pointer opacity-0"
@@ -139,13 +140,13 @@ export function Toggle(props: {
       aria-label={props.label}
       onClick={() => props.onChange(!props.checked)}
       className={cx(
-        "relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors",
+        "relative h-[31px] w-[51px] shrink-0 rounded-full motion-safe:transition-colors",
         props.checked ? "bg-ok" : "bg-fill"
       )}
     >
       <span
         className={cx(
-          "absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow transition-transform",
+          "absolute top-[2px] left-[2px] size-[27px] rounded-full bg-white shadow motion-safe:transition-transform",
           props.checked && "translate-x-5"
         )}
       />
@@ -209,7 +210,7 @@ export function NavBar(props: {
             onClick={props.onBack}
             aria-label={props.backLabel ?? "Back"}
           >
-            <ChevronLeft className="size-6" />
+            <ChevronLeft className="size-6" aria-hidden />
           </BarButton>
         )}
       </div>
@@ -244,7 +245,9 @@ export function LargeTitle({
   )
 }
 
-/** A modal: a sheet from the bottom on a phone, a centred card wider. */
+/** A modal: a sheet from the bottom on a phone, a centred card wider. It
+ * takes focus when it opens and gives it back when it closes, keeps Tab
+ * inside it, and closes on Escape. */
 export function Sheet(props: {
   open: boolean
   onClose: () => void
@@ -252,33 +255,34 @@ export function Sheet(props: {
   children: ReactNode
   actions?: ReactNode
 }) {
-  useEffect(() => {
-    if (!props.open) return
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose()
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [props.open, props.onClose])
+  const ref = useDialog(props.open, props.onClose)
+  const titleID = useId()
   if (!props.open) return null
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal
-    >
-      <button
-        type="button"
-        aria-label="Close"
-        className="absolute inset-0 cursor-default bg-black/35"
+    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]"
         onClick={props.onClose}
       />
-      <div className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[14px] bg-grouped shadow-2xl sm:max-w-lg sm:rounded-[14px]">
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleID}
+        tabIndex={-1}
+        className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[14px] bg-grouped shadow-2xl outline-none motion-safe:animate-[sx-rise_200ms_ease-out] sm:max-w-lg sm:rounded-[14px]"
+      >
         <div className="flex h-14 shrink-0 items-center gap-2 px-4">
           <BarButton onClick={props.onClose} aria-label="Cancel">
-            <X className="size-5" />
+            <X className="size-5" aria-hidden />
           </BarButton>
-          <div className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold">
+          <h2
+            id={titleID}
+            className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold"
+          >
             {props.title}
-          </div>
+          </h2>
           <div className="flex min-w-11 justify-end">{props.actions}</div>
         </div>
         <div className="overflow-y-auto px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -289,7 +293,8 @@ export function Sheet(props: {
   )
 }
 
-/** A question before something that cannot be undone. */
+/** A question before something that cannot be undone. Focus starts on
+ * Cancel, the answer that changes nothing. */
 export function Confirm(props: {
   open: boolean
   title: string
@@ -297,23 +302,42 @@ export function Confirm(props: {
   confirm: string
   onConfirm: () => void
   onCancel: () => void
+  /** Whether confirming gives something up: shown in red. */
+  destructive?: boolean
 }) {
+  const ref = useDialog(props.open, props.onCancel)
+  const titleID = useId()
+  const messageID = useId()
   if (!props.open) return null
+  const destructive = props.destructive ?? true
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      role="alertdialog"
-      aria-modal
-    >
-      <div className="absolute inset-0 bg-black/35" onClick={props.onCancel} />
-      <div className="relative w-full max-w-[300px] overflow-hidden rounded-[14px] bg-card/95 text-center shadow-2xl backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]"
+        onClick={props.onCancel}
+      />
+      <div
+        ref={ref}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleID}
+        aria-describedby={messageID}
+        tabIndex={-1}
+        className="relative w-full max-w-[300px] overflow-hidden rounded-[14px] bg-card/95 text-center shadow-2xl backdrop-blur-xl outline-none motion-safe:animate-[sx-pop_150ms_ease-out]"
+      >
         <div className="px-4 pt-5 pb-4">
-          <h2 className="text-[17px] font-semibold">{props.title}</h2>
-          <p className="mt-1 text-[13px]">{props.message}</p>
+          <h2 id={titleID} className="text-[17px] font-semibold">
+            {props.title}
+          </h2>
+          <div id={messageID} className="mt-1 text-[13px]">
+            {props.message}
+          </div>
         </div>
         <div className="grid grid-cols-2 border-t border-separator">
           <button
             type="button"
+            data-autofocus
             className="h-11 border-r border-separator text-[17px] text-accent-text"
             onClick={props.onCancel}
           >
@@ -321,7 +345,10 @@ export function Confirm(props: {
           </button>
           <button
             type="button"
-            className="h-11 text-[17px] font-semibold text-danger"
+            className={cx(
+              "h-11 text-[17px] font-semibold",
+              destructive ? "text-danger" : "text-accent-text"
+            )}
             onClick={props.onConfirm}
           >
             {props.confirm}
@@ -441,7 +468,7 @@ export function LinkStatus(props: { status: string; words?: string }) {
   if (props.status === "live") return null
   const text =
     props.status === "loading"
-      ? "Loading…"
+      ? (props.words ?? "Loading…")
       : (props.words ??
         (props.status === "reconnecting"
           ? "Reconnecting…"
@@ -452,6 +479,101 @@ export function LinkStatus(props: { status: string; words?: string }) {
       role="status"
     >
       {text}
+    </div>
+  )
+}
+
+const tones = {
+  positive: "text-ok",
+  informative: "text-accent-text",
+  caution: "text-warn",
+  critical: "text-danger",
+  quiet: "text-secondary",
+} as const
+
+export type Tone = keyof typeof tones
+
+/** A problem in words: what it is, why, and what fixes it, on a card. */
+export function ProblemBox(props: {
+  title: string
+  message?: ReactNode
+  tone?: Tone
+  action?: { title: string; onClick: () => void; disabled?: boolean }
+  secondary?: { title: string; onClick: () => void; disabled?: boolean }
+  children?: ReactNode
+  /** `alert` for one the owner must hear at once; `status` otherwise. */
+  role?: "alert" | "status"
+}) {
+  return (
+    <div role={props.role ?? "status"} className="px-4 py-3">
+      <p
+        className={cx(
+          "text-[15px] font-semibold",
+          tones[props.tone ?? "critical"]
+        )}
+      >
+        {props.title}
+      </p>
+      {props.message && (
+        <div className="mt-1 text-[15px] break-words text-label">
+          {props.message}
+        </div>
+      )}
+      {props.children}
+      {(props.action || props.secondary) && (
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+          {props.action && (
+            <button
+              type="button"
+              disabled={props.action.disabled}
+              onClick={props.action.onClick}
+              className="min-h-11 text-[15px] font-semibold text-accent-text disabled:opacity-40"
+            >
+              {props.action.title}
+            </button>
+          )}
+          {props.secondary && (
+            <button
+              type="button"
+              disabled={props.secondary.disabled}
+              onClick={props.secondary.onClick}
+              className="min-h-11 text-[15px] text-accent-text disabled:opacity-40"
+            >
+              {props.secondary.title}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A line of words of their own in a section: a status or a warning, its
+ * tone in its colour and a dot beside it. */
+export function NoteRow(props: { children: ReactNode; tone?: Tone }) {
+  return (
+    <div className="flex min-h-11 items-start gap-3 px-4 py-2.5">
+      <span
+        aria-hidden
+        className={cx(
+          "mt-[7px] size-2.5 shrink-0 rounded-full bg-current",
+          tones[props.tone ?? "quiet"]
+        )}
+      />
+      <span className="min-w-0 text-[17px] break-words">{props.children}</span>
+    </div>
+  )
+}
+
+/** A label with a value a person copies, such as a kind's reference or a
+ * record's id: the value below the label, wrapped rather than cut. */
+export function VerbatimRow(props: { label: ReactNode; value: string }) {
+  return (
+    <div className="px-4 py-2.5">
+      <div className="text-[13px] text-secondary">{props.label}</div>
+      <div className="font-mono text-[15px] break-all select-all">
+        {props.value}
+      </div>
     </div>
   )
 }

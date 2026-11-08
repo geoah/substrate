@@ -1,15 +1,6 @@
-/** One entry of an app's `authorization_details` (RFC 9396): a package the
- * app needs at a version or later, installed or upgraded on approval. */
-export interface AuthorizationDetail {
-  type: "package" | "account" | "webhook"
-  package?: string
-  version?: number
-  kind?: string
-  id?: string
-  properties?: Record<string, unknown>
-  trigger?: string
-  url?: string
-}
+import type { AuthorizationDetail, ServerRequirement } from "@substrate/client"
+
+export type { AuthorizationDetail }
 
 export function packageDetail(
   id: string,
@@ -30,6 +21,12 @@ export interface AppManifest {
   scopes: string[]
   details: AuthorizationDetail[]
   softwareVersion: string
+  /** The server the app needs. Absent, it is read from the scopes and the
+   * details (`requirementOf`). */
+  requirement?: ServerRequirement
+  /** What a person calls each package the app asks for, by id: "Tasks".
+   * Absent, a package is called by the last segment of its id. */
+  packageNames?: Record<string, string>
 }
 
 /** The manifest of an app served from `base` on this page's origin: its
@@ -38,10 +35,30 @@ export interface AppManifest {
 export function webManifest(
   input: Omit<AppManifest, "clientID" | "redirectURI"> & { base?: string }
 ): AppManifest {
-  const base = new URL(input.base ?? "./", window.location.href)
+  const { base: at, ...rest } = input
+  const base = new URL(at ?? "./", window.location.href)
   return {
-    ...input,
+    ...rest,
     clientID: new URL("client.json", base).toString(),
     redirectURI: base.toString(),
   }
+}
+
+/** The server an app needs: what its manifest names, else every scope verb
+ * it asks for and every detail type it sends. */
+export function requirementOf(manifest: AppManifest): ServerRequirement {
+  if (manifest.requirement) return manifest.requirement
+  return {
+    scopeVerbs: [...new Set(manifest.scopes.map((s) => s.split(":")[0]))],
+    detailTypes: [...new Set(manifest.details.map((d) => d.type))],
+  }
+}
+
+/** A package by what a person calls it: "Tasks" for
+ * `substrate.reamde.dev/tasks`, unless the manifest names it. */
+export function packageName(manifest: AppManifest, id: string): string {
+  const named = manifest.packageNames?.[id]
+  if (named) return named
+  const last = id.split("/").at(-1) ?? id
+  return last.charAt(0).toUpperCase() + last.slice(1)
 }

@@ -1,101 +1,154 @@
-import { describe, type SubstrateRecord } from "@substrate/client"
+import {
+  describe,
+  uuidv7,
+  type Kind,
+  type SubstrateRecord,
+} from "@substrate/client"
+import { RecordWrites, applyEntry, type LocalWrite } from "@substrate/local"
 import { useMemo } from "react"
-import { useSubstrate } from "./SubstrateApp"
+import { useSubstrate } from "./context"
 import { useToast } from "./toast"
 
+export interface WriteOptions {
+  /** Takes the words when the browser could not keep the write, in place
+   * of the toast: a form says them beside its fields and keeps its draft. */
+  onNotKept?: (words: string) => void
+}
+
 export interface Writes {
-  /** Creates a record under an id the device chose: a PUT every retry lands
-   * on the same row. */
+  /** Creates a record under an id the device chose: a PUT with
+   * `ifVersion: 0` every retry lands on the same row. */
   create: (
     kind: string,
     id: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
+    opts?: WriteOptions
   ) => Promise<SubstrateRecord | null>
   /** Merges properties into a record (null clears one); a state moves only
-   * here. `ifVersion` holds the write to the version the owner saw. */
+   * here. With `ifVersion`, an edit on the version the owner saw: a change
+   * made elsewhere meanwhile parks it as a conflict. Without, a change
+   * made in passing, sent on top of what the device last saw. */
   patch: (
     kind: string,
     id: string,
     properties: Record<string, unknown>,
-    ifVersion?: number
+    ifVersion?: number,
+    opts?: WriteOptions
   ) => Promise<SubstrateRecord | null>
-  /** A plain DELETE, no purge. */
-  remove: (kind: string, id: string) => Promise<boolean>
+  /** A plain DELETE, no purge, which replaces the record's waiting writes. */
+  remove: (kind: string, id: string, opts?: WriteOptions) => Promise<boolean>
 }
 
-function merged(
-  record: SubstrateRecord,
-  properties: Record<string, unknown>
-): SubstrateRecord {
-  const next = { ...record.properties }
-  for (const [k, v] of Object.entries(properties)) {
-    if (v === null) delete next[k]
-    else next[k] = v
-  }
-  return { ...record, properties: next }
-}
-
-/** The app's writes: each shown at once, replaced by what the server
- * answers, and undone with the server's words when it is refused. */
+/** The app's writes, each kept in the outbox before it resolves and shown
+ * at once: the record as the owner now sees it, or null (false for a
+ * remove) when the browser could not keep it. The server's answer comes
+ * later: a write it refuses is parked for the owner (`useParkedWrites`),
+ * and one the network holds back is sent when it can be. */
 export function useWrites(): Writes {
-  const { client, collection } = useSubstrate()
+  const { outbox, linked } = useSubstrate()
   const toast = useToast()
-  return useMemo<Writes>(
-    () => ({
-      async create(kind, id, properties) {
+  return useMemo<Writes>(() => {
+    const keep = async (
+      write: LocalWrite,
+      opts: WriteOptions | undefined
+    ): Promise<boolean> => {
+      try {
+        await outbox.write(write)
+        return true
+      } catch (e) {
+        const words = describe(e)
+        if (opts?.onNotKept) opts.onNotKept(words)
+        else toast(words, "error")
+        return false
+      }
+    }
+    const shown = (write: LocalWrite, before: SubstrateRecord | undefined) =>
+      write.entries.reduce<SubstrateRecord | undefined>(
+        (r, e) => applyEntry(e, r),
+        before
+      ) ?? null
+    return {
+      async create(kind, id, properties, opts) {
+        const write = RecordWrites.create(kind, id, properties)
+        return (await keep(write, opts)) ? shown(write, undefined) : null
+      },
+      async patch(kind, id, properties, ifVersion, opts) {
+        const before = linked.get(kind, id)
+        const write =
+          ifVersion === undefined
+            ? RecordWrites.change(kind, id, properties)
+            : RecordWrites.edit(kind, id, properties, ifVersion)
+        if (!write.entries.length) return before ?? null
+        if (!(await keep(write, opts))) return null
+        // A record outside the app's kinds is not shown: answer what was
+        // written, so a kept write never reads as one refused.
         const now = new Date().toISOString()
-        const undo = collection.apply(kind, id, {
+        return (
+          shown(write, before) ?? {
+            id,
+            kind,
+            properties: { ...properties },
+            version: ifVersion ?? 0,
+            createdAt: now,
+            updatedAt: now,
+          }
+        )
+      },
+      async remove(kind, id, opts) {
+        return keep(RecordWrites.delete(kind, id), opts)
+      },
+    }
+  }, [outbox, linked, toast])
+}
+
+/** One kind's writes, typed by its declaration: a create from the app's
+ * draft under a new id, a change, an edit and a delete. */
+export interface KindWrites<D> {
+  /** Answers the new record's id, or null when it was not kept. */
+  create: (draft: D, opts?: WriteOptions) => Promise<string | null>
+  change: (
+    id: string,
+    properties: Record<string, unknown>,
+    opts?: WriteOptions
+  ) => Promise<boolean>
+  edit: (
+    id: string,
+    properties: Record<string, unknown>,
+    seenVersion: number,
+    opts?: WriteOptions
+  ) => Promise<boolean>
+  remove: (id: string, opts?: WriteOptions) => Promise<boolean>
+}
+
+export function useKindWrites<T, D>(kind: Kind<T, D>): KindWrites<D> {
+  const writes = useWrites()
+  return useMemo<KindWrites<D>>(
+    () => ({
+      async create(draft, opts) {
+        const id = uuidv7()
+        const r = await writes.create(kind.kind, id, kind.write(draft), opts)
+        return r ? id : null
+      },
+      async change(id, properties, opts) {
+        return !!(await writes.patch(
+          kind.kind,
           id,
-          kind,
           properties,
-          version: 0,
-          createdAt: now,
-          updatedAt: now,
-        })
-        try {
-          const r = await client.put(kind, id, properties, 0)
-          collection.landed(r)
-          return r
-        } catch (e) {
-          undo()
-          toast(describe(e), "error")
-          return null
-        }
+          undefined,
+          opts
+        ))
       },
-      async patch(kind, id, properties, ifVersion) {
-        const here = collection.get(kind, id)
-        const undo = here
-          ? collection.apply(kind, id, merged(here, properties))
-          : () => {}
-        try {
-          const r = await client.patch(kind, id, properties, ifVersion)
-          collection.landed(r)
-          return r
-        } catch (e) {
-          undo()
-          const conflict = (e as { conflict?: boolean }).conflict
-          toast(
-            conflict
-              ? "It changed on another device meanwhile. Look again and retry."
-              : describe(e),
-            "error"
-          )
-          if (conflict) void collection.refresh(kind, id)
-          return null
-        }
+      async edit(id, properties, seenVersion, opts) {
+        return !!(await writes.patch(
+          kind.kind,
+          id,
+          properties,
+          seenVersion,
+          opts
+        ))
       },
-      async remove(kind, id) {
-        const undo = collection.apply(kind, id, null)
-        try {
-          await client.delete(kind, id)
-          return true
-        } catch (e) {
-          undo()
-          toast(describe(e), "error")
-          return false
-        }
-      },
+      remove: (id, opts) => writes.remove(kind.kind, id, opts),
     }),
-    [client, collection, toast]
+    [writes, kind]
   )
 }
