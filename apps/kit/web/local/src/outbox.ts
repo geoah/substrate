@@ -452,7 +452,10 @@ export class Outbox {
       this.flushing = false
       this.emit()
     }
-    if (this.revision !== revision && this.state.type === "sent") this.soon()
+    // Writes queued during the run go now, unless the run stopped for the
+    // network or the token, whose own trigger sends them.
+    const ran = this.state.type === "sent" || this.state.type === "refused"
+    if (this.revision !== revision && ran) this.soon()
     return this.state
   }
 

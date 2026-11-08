@@ -283,6 +283,22 @@ describe("the outbox", () => {
     expect(fake.writes().sort()).toEqual([`PUT ${kind}/a1`, `PUT ${kind}/b2`])
   })
 
+  it("sends a write queued during a run that parks another", async () => {
+    fake.fail({ method: "PUT", path: /\/a1$/ }, 422, {
+      error: { code: "validation", message: "name is required" },
+    })
+    const o = open()
+    let queued = false
+    o.subscribe(() => {
+      if (queued || !o.getSnapshot().flushing) return
+      queued = true
+      void o.write(RecordWrites.create(kind, "b2", { name: "Eggs" }))
+    })
+    await o.write(RecordWrites.create(kind, "a1", {}))
+    await until(() => !!fake.live(kind, "b2"), 2000, "the write queued mid-run")
+    expect(o.getSnapshot().parked).toHaveLength(1)
+  })
+
   it("refuses a write it could not keep, and says why", async () => {
     const failing = new MemoryStorage()
     failing.updateOutbox = () => Promise.reject(new Error("QuotaExceededError"))
