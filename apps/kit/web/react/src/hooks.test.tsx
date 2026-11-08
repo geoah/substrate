@@ -9,7 +9,12 @@ import { FakeSubstrate, until } from "@substrate/testing"
 import { act, cleanup, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SubstrateContext, type SubstrateContextValue } from "./context"
-import { useLinkedStatus, useRecord, useRecords } from "./hooks"
+import {
+  useLinkedStatus,
+  useRecord,
+  useRecords,
+  type RecordRead,
+} from "./hooks"
 
 const Item = defineKind("substrate.reamde.dev/template/item", {
   read: (r) => ({ id: r.id, name: stringProp(r, "name") ?? "" }),
@@ -160,5 +165,80 @@ describe("the record hooks", () => {
     expect(reads.indexOf("gone:loading")).toBeLessThan(
       reads.indexOf("gone:absent")
     )
+  })
+
+  it("finds again a record it read absent once the history changes, past the new list's limit", async () => {
+    for (const id of ["a", "b", "c"]) fake.seed(Item.kind, id, { name: id })
+    linked = new LinkedRecords({
+      client: new SubstrateClient(fake.origin, "tok"),
+      kinds: [Item.kind],
+      outbox,
+      connectivity: steadyConnectivity,
+      limit: 2,
+      follow: { pauses: [5] },
+    })
+    const reads: string[] = []
+    function One(props: { id: string }) {
+      const read = useRecord(Item, props.id)
+      reads.push(`${props.id}:${read.state}`)
+      return null
+    }
+    linked.start()
+    await act(() => until(() => linked.statusSnapshot().status === "live"))
+    render(
+      <Provider>
+        <One id="z" />
+      </Provider>
+    )
+    await act(() => until(() => reads.at(-1) === "z:absent"))
+
+    // Away, z is made and the history moves on.
+    fake.offline = true
+    fake.dropWatches()
+    await act(() =>
+      until(() => linked.statusSnapshot().status === "reconnecting")
+    )
+    fake.seed(Item.kind, "z", { name: "z" })
+    fake.compact()
+    fake.offline = false
+    await act(() => until(() => reads.at(-1) === "z:present"))
+    expect(linked.statusSnapshot().limitReached).toBe(2)
+  })
+
+  it("says a read failed and reads it again on Try Again, the watch open throughout", async () => {
+    for (const id of ["a", "b", "c"]) fake.seed(Item.kind, id, { name: id })
+    linked = new LinkedRecords({
+      client: new SubstrateClient(fake.origin, "tok"),
+      kinds: [Item.kind],
+      outbox,
+      connectivity: steadyConnectivity,
+      limit: 2,
+      readRetryDelays: [],
+    })
+    const reads: RecordRead<{ id: string; name: string }>[] = []
+    const read = () => reads.at(-1)
+    function One() {
+      reads.push(useRecord(Item, "c"))
+      return null
+    }
+    linked.start()
+    await act(() => until(() => linked.statusSnapshot().status === "live"))
+    fake.fail({ method: "GET", path: /\/c$/ }, 503)
+    render(
+      <Provider>
+        <One />
+      </Provider>
+    )
+    await act(() => until(() => read()?.state === "failed"))
+    expect(read()).toMatchObject({
+      words: expect.stringContaining("Try again soon") as string,
+    })
+    act(() => {
+      const failed = read()
+      if (failed?.state === "failed") failed.retry()
+    })
+    await act(() => until(() => read()?.state === "present"))
+    expect(read()?.value?.name).toBe("c")
+    expect(fake.openWatches).toBe(1)
   })
 })

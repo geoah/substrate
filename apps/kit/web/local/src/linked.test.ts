@@ -73,6 +73,7 @@ function link(
     kinds?: string[]
     connectivity?: Connectivity
     limit?: number
+    readRetryDelays?: number[]
   } = {}
 ): LinkedRecords {
   const linked = new LinkedRecords({
@@ -513,5 +514,118 @@ describe("the linked records", () => {
       "the change"
     )
     expect(linked.statusSnapshot().status).toBe("live")
+  })
+
+  it("forgets a record read absent when the history changes, and finds it past the list's limit", async () => {
+    for (const id of ["a1", "a2", "a3"]) fake.seed(kind, id, { name: id })
+    const linked = link({ limit: 2 })
+    await until(() => linked.statusSnapshot().status === "live")
+    linked.resolve(kind, "z")
+    await until(() => linked.isAbsent(kind, "z"), 2000, "z read absent")
+
+    // Away, z is made and the history moves on.
+    fake.offline = true
+    fake.dropWatches()
+    await until(() => linked.statusSnapshot().status === "reconnecting")
+    fake.seed(kind, "z", { name: "z" })
+    fake.compact()
+    const heard = vi.fn()
+    linked.subscribe(heard)
+    fake.offline = false
+    await until(
+      () =>
+        !linked.isAbsent(kind, "z") &&
+        linked.statusSnapshot().status === "live",
+      2000,
+      "the relist"
+    )
+    expect(heard).toHaveBeenCalled()
+    // z is past the new list's limit, so a screen showing it asks again.
+    expect(linked.statusSnapshot().limitReached).toBe(2)
+    expect(linked.recordSnapshot(kind, "z")).toBeUndefined()
+    linked.resolve(kind, "z")
+    await until(
+      () => linked.recordSnapshot(kind, "z")?.properties.name === "z",
+      2000,
+      "z found"
+    )
+  })
+
+  it("keeps no record absent that its kind's whole list already says is", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    const linked = link()
+    await until(() => linked.statusSnapshot().status === "live")
+    await fake.fetch(`${fake.origin}/api/v1/${kind}/a1`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer tok" },
+    })
+    await until(() => !linked.recordSnapshot(kind, "a1"), 2000, "the delete")
+    expect(linked.isAbsent(kind, "a1")).toBe(true)
+    // Peeked at: what the list says is not kept twice.
+    expect(
+      (linked as unknown as { absentKeys: Set<string> }).absentKeys.size
+    ).toBe(0)
+  })
+
+  it("reads again by itself a record whose read failed, while the watch stays open", async () => {
+    for (const id of ["a1", "a2", "a3"]) fake.seed(kind, id, { name: id })
+    const linked = link({ limit: 2, readRetryDelays: [20] })
+    await until(() => linked.statusSnapshot().status === "live")
+    fake.fail({ method: "GET", path: /\/a3$/ }, 503)
+    linked.resolve(kind, "a3")
+    await until(() => !!linked.readError(kind, "a3"), 2000, "the failure")
+    expect(linked.isAbsent(kind, "a3")).toBe(false)
+    await until(
+      () => linked.recordSnapshot(kind, "a3")?.properties.name === "a3",
+      2000,
+      "the read again"
+    )
+    expect(linked.readError(kind, "a3")).toBeUndefined()
+    expect(fake.openWatches).toBe(1)
+    expect(linked.statusSnapshot().status).toBe("live")
+  })
+
+  it("stops reading a failed record by itself after its tries, and reads it when asked", async () => {
+    for (const id of ["a1", "a2", "a3"]) fake.seed(kind, id, { name: id })
+    const linked = link({ limit: 2, readRetryDelays: [10] })
+    await until(() => linked.statusSnapshot().status === "live")
+    fake.fail({ method: "GET", path: /\/a3$/ }, 503, undefined, {}, 2)
+    linked.resolve(kind, "a3")
+    const reads = () =>
+      fake.requests.filter((r) => r.path.endsWith("/a3")).length
+    await until(() => reads() === 2, 2000, "the try again")
+    await tick(60)
+    expect(reads()).toBe(2)
+    expect(linked.readError(kind, "a3")).toContain("Try again soon")
+    linked.retryRead(kind, "a3")
+    expect(linked.readError(kind, "a3")).toBeUndefined()
+    await until(() => !!linked.recordSnapshot(kind, "a3"), 2000, "the read")
+  })
+
+  it("counts only the records of kinds cut off at the limit when it opens from what it kept", async () => {
+    const at = (k: string, id: string) => ({
+      id,
+      kind: k,
+      properties: {},
+      version: 1,
+      createdAt: "2026-11-01T10:00:00Z",
+      updatedAt: "2026-11-01T10:00:00Z",
+    })
+    await storage.writeRecords({
+      replaceKinds: [kind, note],
+      put: [at(kind, "a1"), at(kind, "a2"), at(note, "n1"), at(note, "n2")],
+      remove: [],
+      cursor: { seq: 4, generation: fake.generation },
+      kinds: [kind, note],
+      partial: [kind],
+      stale: [],
+    })
+    fake.offline = true
+    const linked = link({
+      cache: new RecordCache(storage, 0),
+      kinds: [kind, note],
+    })
+    await until(() => linked.statusSnapshot().cached, 2000, "the kept records")
+    expect(linked.statusSnapshot().limitReached).toBe(2)
   })
 })

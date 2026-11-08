@@ -69,10 +69,17 @@ export interface LinkedRecordsOptions {
   /** The most records a read takes. */
   limit?: number
   follow?: FollowOptions
+  /** The waits before a record whose read failed is read again by itself,
+   * in ms: one per try, then none until something else reads it. */
+  readRetryDelays?: readonly number[]
 }
 
 const signedOutWords = "Your access to this server ended. Sign in again."
 const noRecords: ReadonlyMap<string, SubstrateRecord> = new Map()
+const defaultReadRetryDelays = [1_000, 3_000, 10_000, 30_000]
+/** The most records kept known absent; the oldest go first, and one asked
+ * for again is read again. */
+const absentLimit = 1_000
 
 /** `kind/id` split after the kind's three segments: an id may hold a
  * slash, a kind never more than two. */
@@ -188,9 +195,17 @@ export class LinkedRecords {
   private refold = new Set<string>()
   /** How much of each kind was read: whole, or up to the read's limit. */
   private coverage = new Map<string, "whole" | "partial">()
-  /** Records read and not found, or removed, since: absent though their
-   * kind was read only in part. */
+  /** Records read and not found, or removed, since, in a kind not read
+   * whole: absent though not listed. Forgotten when their history or their
+   * kind's list is replaced, and past `absentLimit`. */
   private absentKeys = new Set<string>()
+  /** Records whose last read failed, by `kind/id`: why, how many tries
+   * running, and the next. */
+  private readErrors = new Map<
+    string,
+    { words: string; tries: number; timer?: ReturnType<typeof setTimeout> }
+  >()
+  private readonly readRetryDelays: readonly number[]
   /** Records a screen asked for that a partial read may have cut off,
    * read by themselves until each is found or known absent. */
   private wanted = new Set<string>()
@@ -241,6 +256,7 @@ export class LinkedRecords {
     this.kept = opts.kept ?? "records"
     this.limit = opts.limit ?? 10_000
     this.followOptions = opts.follow
+    this.readRetryDelays = opts.readRetryDelays ?? defaultReadRetryDelays
     this.takeQueue()
     this.statusShot = this.makeStatus()
   }
@@ -300,6 +316,20 @@ export class LinkedRecords {
     const partial = this.coverage.get(kind) === "partial"
     if (partial && this.abort && !this.inflight.has(key))
       void this.refresh(kind, id, this.watch?.signal)
+  }
+
+  /** Why a record's last read failed, while it is not read yet: it is read
+   * again by itself a few times, after a wait that grows. */
+  readError = (kind: string, id: string): string | undefined =>
+    this.readErrors.get(recordKey(kind, id))?.words
+
+  /** Reads a record again now, as a screen's Try Again asks: its failure
+   * is forgotten while it is read, and its tries start again. */
+  retryRead = (kind: string, id: string): void => {
+    if (!this.kinds.includes(kind)) return
+    const key = recordKey(kind, id)
+    this.clearReadError(key)
+    if (this.abort) void this.refresh(kind, id, this.watch?.signal)
   }
 
   statusSnapshot = (): LinkedStatusSnapshot => {
@@ -496,6 +526,9 @@ export class LinkedRecords {
     this.listing = 0
     clearTimeout(this.listRetry)
     this.listRetry = undefined
+    for (const e of this.readErrors.values()) clearTimeout(e.timer)
+    if (this.readErrors.size) this.emit()
+    this.readErrors.clear()
     for (const u of this.unsubscribers) u()
     this.unsubscribers = []
   }
@@ -504,6 +537,7 @@ export class LinkedRecords {
   async reload(): Promise<void> {
     this.cursor = undefined
     this.cache?.relist()
+    this.forgetAbsent()
     if (this.abort) this.connect()
     else this.start()
     return Promise.resolve()
@@ -522,7 +556,11 @@ export class LinkedRecords {
         }
         for (const r of kept.records) byKind.get(r.kind)?.set(r.id, r)
         for (const [kind, ids] of byKind) this.server.replace(kind, ids)
-        if (kept.partial?.length) this.limitReached = kept.records.length
+        const partial = kept.partial ?? []
+        if (partial.length)
+          this.limitReached = kept.records.filter((r) =>
+            partial.includes(r.kind)
+          ).length
         this.cursor = kept.cursor
         this.cached = kept.records.length > 0 || !!kept.cursor
         this.emit()
@@ -587,6 +625,7 @@ export class LinkedRecords {
         case "relist":
           this.cursor = undefined
           this.cache?.relist()
+          this.forgetAbsent()
           this.connect()
           break
         case "interrupted":
@@ -669,6 +708,7 @@ export class LinkedRecords {
         this.server.replace(kind, ids)
         this.coverage.set(kind, whole ? "whole" : "partial")
       }
+      this.forgetAbsent()
       this.limitReached = whole ? undefined : page.records.length
       this.cached = false
       this.cache?.listed(page.records, this.kinds, bookmark, whole)
@@ -734,8 +774,58 @@ export class LinkedRecords {
     this.inflight.delete(key)
     this.landedAt.delete(key)
     this.wanted.delete(key)
-    this.absentKeys.add(key)
+    this.clearReadError(key)
+    this.noteAbsent(key)
     this.server.delete(key)
+  }
+
+  /** A record known absent, where its kind's list does not say so. */
+  private noteAbsent(key: string): void {
+    this.absentKeys.delete(key)
+    if (this.coverage.get(splitKey(key)[0]) === "whole") return
+    this.absentKeys.add(key)
+    if (this.absentKeys.size > absentLimit)
+      for (const oldest of this.absentKeys) {
+        this.absentKeys.delete(oldest)
+        break
+      }
+  }
+
+  /** Forgets every record read absent: a history or a list that replaced
+   * the one it was read against may hold it. A screen still waiting on one
+   * hears it and asks again (`resolve`). */
+  private forgetAbsent(): void {
+    if (!this.absentKeys.size) return
+    this.absentKeys.clear()
+    this.emit()
+  }
+
+  private clearReadError(key: string): void {
+    const was = this.readErrors.get(key)
+    if (!was) return
+    clearTimeout(was.timer)
+    this.readErrors.delete(key)
+    this.emit()
+  }
+
+  /** A read that failed: said to a screen waiting on the record, and read
+   * again by itself after each of `readRetryDelays`; then when the watch
+   * opens again, a row names it, or a screen asks. */
+  private readFailed(key: string, words: string): void {
+    const was = this.readErrors.get(key)
+    clearTimeout(was?.timer)
+    const tries = (was?.tries ?? 0) + 1
+    const wait = this.readRetryDelays[tries - 1]
+    const timer =
+      wait === undefined
+        ? undefined
+        : setTimeout(() => {
+            const [kind, id] = splitKey(key)
+            if (this.abort && !this.inflight.has(key))
+              void this.refresh(kind, id, this.watch?.signal)
+          }, wait)
+    this.readErrors.set(key, { words, tries, timer })
+    this.emit()
   }
 
   /** Reads one record again, as the feed named it. An answer a removal,
@@ -750,6 +840,7 @@ export class LinkedRecords {
       const record = await this.client.record(kind, id, signal)
       if (this.inflight.get(key) !== ticket || signal?.aborted) return
       this.inflight.delete(key)
+      this.clearReadError(key)
       const before = Math.max(this.listedAt, this.landedAt.get(key) ?? 0)
       if (!record && ticket <= before) return
       this.wanted.delete(key)
@@ -762,17 +853,20 @@ export class LinkedRecords {
         this.absentKeys.delete(key)
         this.server.set(key, next)
       } else {
-        this.absentKeys.add(key)
+        this.noteAbsent(key)
         // A read that found none moves nothing a reader holds but
         // `isAbsent`, which every listener reads again.
         if (!this.server.delete(key)) this.emit()
       }
       this.cache?.refreshed(key, next)
     } catch (e) {
-      if (this.inflight.get(key) === ticket) this.inflight.delete(key)
+      const current = this.inflight.get(key) === ticket
+      if (current) this.inflight.delete(key)
+      if (signal?.aborted) return
       if (e instanceof SubstrateError && e.status === 401)
-        this.setStatus("signedOut", signedOutWords)
-      // Otherwise it stays stale: read again when the watch opens again.
+        return this.setStatus("signedOut", signedOutWords)
+      // Read again by itself a few times, and when the watch opens again.
+      if (current) this.readFailed(key, describe(e))
     }
   }
 

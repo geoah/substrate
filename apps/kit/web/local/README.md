@@ -85,7 +85,12 @@ stops with more left reads its kinds **in part**: `limitReached` says how
 many it read, `hasListed` stays false, and the cache keeps the kinds as
 read in part, so a reload does not take them for whole. A record not among
 them is not known absent until `resolve(kind, id)` reads it by itself,
-which `useRecord` does.
+which `useRecord` does. What such a read found absent is forgotten when the
+history changes (a new generation, a relist) or a list replaces the kinds,
+and every listener hears it, so a screen still showing the record asks
+again. A read that fails says why (`readError`) and is tried again by
+itself a few times, after a growing wait (`readRetryDelays`), then when the
+watch opens again or a screen asks (`retryRead`).
 
 The outbox's waiting writes are laid over the records (`foldRecords`), a
 parked one not, so a change made offline shows at once and stays shown
@@ -100,6 +105,7 @@ record redraws only what reads it:
 | `writeState(kind, id)`     | `"pending"`, `"parked"` (a refused write, holding back the rest) or undefined           |
 | `hasListed(kind)`          | whether the kind's records are known whole, listed or kept, so one missing is absent    |
 | `isAbsent(kind, id)`       | whether a record not shown is known absent: its kind whole, or it read and not found    |
+| `readError(kind, id)`      | why a record's last read failed, until it is read                                       |
 | `statusSnapshot()`         | the status, its words, `cached`, `limitReached`, and the pending and parked counts      |
 
 `subscribe` hears every change once per turn. `getSnapshot()` is every

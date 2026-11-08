@@ -52,10 +52,12 @@ export function useRecords<T, D>(kind: Kind<T, D>): readonly T[] {
 }
 
 /** One record as a screen draws it: still being read, not in the
- * repository, or its value. */
+ * repository, its read failed (why, and `retry` to read it now; it is also
+ * read again by itself a few times), or its value. */
 export type RecordRead<T> =
   | { state: "loading"; value?: undefined }
   | { state: "absent"; value?: undefined }
+  | { state: "failed"; value?: undefined; words: string; retry: () => void }
   | { state: "present"; value: T }
 
 const loading: RecordRead<never> = { state: "loading" }
@@ -64,7 +66,8 @@ const absentRead: RecordRead<never> = { state: "absent" }
 /** One record of a kind, read as the app's own value. `loading` until it is
  * known absent: its kind read whole, or, where the kind's read stopped at
  * its limit, the record read by itself. A link to a record opened before
- * the read finishes waits rather than saying it is gone. */
+ * the read finishes waits rather than saying it is gone, and a read that
+ * failed says so (`failed`) rather than waiting for ever. */
 export function useRecord<T, D>(
   kind: Kind<T, D>,
   id: string | undefined
@@ -77,14 +80,24 @@ export function useRecord<T, D>(
     linked.subscribe,
     () => !id || linked.isAbsent(kind.kind, id)
   )
+  const failed = useSyncExternalStore(linked.subscribe, () =>
+    id ? linked.readError(kind.kind, id) : undefined
+  )
   const unresolved = !!id && !record && !absent
   useEffect(() => {
     if (unresolved) linked.resolve(kind.kind, id)
   }, [linked, kind.kind, id, unresolved])
-  return useMemo(() => {
+  return useMemo((): RecordRead<T> => {
     if (record) return { state: "present", value: readThrough(kind, record) }
-    return absent ? absentRead : loading
-  }, [record, absent, kind])
+    if (absent) return absentRead
+    if (failed && id)
+      return {
+        state: "failed",
+        words: failed,
+        retry: () => linked.retryRead(kind.kind, id),
+      }
+    return loading
+  }, [record, absent, failed, kind, id, linked])
 }
 
 /** Whether a kind's records were read whole from the server, or kept here

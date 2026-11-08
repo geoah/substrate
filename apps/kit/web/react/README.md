@@ -61,19 +61,19 @@ that were not kept.
 
 ## Hooks
 
-| Hook                                 | Answers                                                                                                                                               |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `useRecords(Item)`                   | every record of a kind, read through its codec: the same array until a record of that kind changes, each value the same until its record does         |
-| `useRecord(Item, id)`                | one record: `{ state: "loading" }` until it is known absent, `{ state: "absent" }`, or `{ state: "present", value }`; past a read's limit, read alone |
-| `useListed(Item)`                    | whether a kind's records were read whole, or kept from such a read: "none yet" against "none"                                                         |
-| `useWriteState(Item, id)`            | `pending` while a record's write waits to be sent, `parked` while one was refused and waits for the owner                                             |
-| `useKindWrites(Item)`                | `create(draft)`, `change(id, draft)`, `edit(id, draft, seenVersion)`, `remove(id)`, each draft written through the kind's codec                       |
-| `useWrites()`                        | the same writes by kind reference and properties, for a kind the app does not declare                                                                 |
-| `useLinkedStatus()`                  | how the reading stands (loading, live, reconnecting and why), and how many records wait or were refused; a new object only when one of these changes  |
-| `useOutbox()` / `useParkedWrites()`  | the outbox's summary, and the writes refused                                                                                                          |
-| `useStatusSentence()`                | where the app stands, in Settings' one sentence                                                                                                       |
-| `useAppStatus()`                     | the last status check, and `refresh`                                                                                                                  |
-| `useConnection()` / `useSubstrate()` | the connection, signed in or not; the open repository (manifest, session, client, linked records, outbox, `signInAgain`, `signOut`)                   |
+| Hook                                 | Answers                                                                                                                                                                                                                                            |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useRecords(Item)`                   | every record of a kind, read through its codec: the same array until a record of that kind changes, each value the same until its record does                                                                                                      |
+| `useRecord(Item, id)`                | one record: `{ state: "loading" }` until it is known absent, `{ state: "absent" }`, `{ state: "failed", words, retry }` when its read failed (read again by itself a few times), or `{ state: "present", value }`; past a read's limit, read alone |
+| `useListed(Item)`                    | whether a kind's records were read whole, or kept from such a read: "none yet" against "none"                                                                                                                                                      |
+| `useWriteState(Item, id)`            | `pending` while a record's write waits to be sent, `parked` while one was refused and waits for the owner                                                                                                                                          |
+| `useKindWrites(Item)`                | `create(draft)`, `change(id, draft)`, `edit(id, draft, seenVersion)`, `remove(id)`, each draft written through the kind's codec                                                                                                                    |
+| `useWrites()`                        | the same writes by kind reference and properties, for a kind the app does not declare                                                                                                                                                              |
+| `useLinkedStatus()`                  | how the reading stands (loading, live, reconnecting and why), and how many records wait or were refused; a new object only when one of these changes                                                                                               |
+| `useOutbox()` / `useParkedWrites()`  | the outbox's summary, and the writes refused                                                                                                                                                                                                       |
+| `useStatusSentence()`                | where the app stands, in Settings' one sentence                                                                                                                                                                                                    |
+| `useAppStatus()`                     | the last status check, and `refresh`                                                                                                                                                                                                               |
+| `useConnection()` / `useSubstrate()` | the connection, signed in or not; the open repository (manifest, session, client, linked records, outbox, `signInAgain`, `signOut`)                                                                                                                |
 
 A change draws only the components that read it: a record of one kind
 leaves the readers of another alone, and the connection, the app status and

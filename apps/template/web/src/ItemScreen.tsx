@@ -37,6 +37,14 @@ export function ItemScreen(props: { id: string; onBack: () => void }) {
           <div className="flex justify-center py-16 text-secondary">
             <Spinner />
           </div>
+        ) : read.state === "failed" ? (
+          <div className="px-4 py-8">
+            <ProblemBox
+              title="Couldn't read this item"
+              message={read.words}
+              action={{ title: "Try Again", onClick: read.retry }}
+            />
+          </div>
         ) : (
           <p className="px-4 py-16 text-center text-[17px] text-secondary">
             This item is not in your repository.
