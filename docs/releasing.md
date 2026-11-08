@@ -80,6 +80,20 @@ is automated on purpose: it is the QA step.
    later; `gh release view vX.Y.Z` shows the artifacts once `release.yml`
    finishes. Then upgrade the deployment through the runbook
    ([Upgrading](../README.md#upgrading)).
+7. **Send the apps to TestFlight.** No workflow does. From a Mac with the
+   App Store Connect key and the site's settings in its environment
+   ([TestFlight](../apps/README.md#testflight)), once the tag exists:
+
+   ```bash
+   git fetch --tags
+   git worktree add ../substrate-vX.Y.Z vX.Y.Z
+   cd ../substrate-vX.Y.Z && mise run apps:testflight stable
+   ```
+
+   A clean checkout of the tag, because `apps:testflight` refuses a changed
+   tree and stamps the build with the commit it runs from. An app it
+   refuses (no App Store Connect record yet) is named before anything
+   builds.
 
 A pull request merged to `main` while the release pull request is open is
 fine: the next run regenerates the release pull request with the new line.
@@ -177,14 +191,20 @@ the run summary says so, and `gh attestation verify` fails on that release.
 
 ## Setup and recovery
 
-The workflow authenticates with `RELEASE_PLEASE_TOKEN`, a fine-grained
-personal access token scoped to this repository with read and write on
-contents and pull requests. Not the workflow's own token: a pull request
-opened or pushed with `GITHUB_TOKEN` starts no workflow run, so the release
-pull request would never get the checks the ruleset requires. The token has
-no bypass on the ruleset; `main` still moves only through a pull request
-that passed them. The two `autorelease:` labels are in `.github/labels.yml`,
-which the labels sync holds the repository to.
+The workflow authenticates as a GitHub App, through a token
+`actions/create-github-app-token` mints for each run from the app's private
+key, narrowed to read and write on contents and pull requests: contents to
+push the release branch, create the tag and create the release, pull
+requests to open, edit and label the release pull request. Not the
+workflow's own token: a pull request opened or pushed with `GITHUB_TOKEN`
+starts no workflow run, so the release pull request would never get the
+checks the ruleset requires. An app's does. Not a personal access token
+either, which is what it was until v0.121.0: a person's token expires, and
+it keeps whatever permissions it was last edited to, so on 2026-11-08 one
+that still read pull requests was refused the release. The app has no bypass
+on the ruleset; `main` still moves only through a pull request that passed
+them. The two `autorelease:` labels are in `.github/labels.yml`, which the
+labels sync holds the repository to.
 
 `mise run repo:settings`, run by an admin and never by CI, applies what the
 tree holds about the repository itself: the ruleset, the merge buttons,
@@ -193,16 +213,40 @@ that cannot approve a pull request, actions pinned by commit SHA, and the
 `release` and `llm-live` environments, each deploying from `main` alone.
 `mise run repo:settings -- --dry-run` prints each call.
 
-The `release-please` job runs in the `release` environment. A job in an
-environment reads the environment's secrets and the repository's, and the
-environment's win, so moving `RELEASE_PLEASE_TOKEN` into it takes two steps
-and no release-please run in between misses the token:
+The `release-please` job runs in the `release` environment and reads the
+app from it. Setting the app up, once, as the repository's owner:
 
-1. Add `RELEASE_PLEASE_TOKEN` as a secret of the `release` environment
-   (Settings, Environments, `release`, or `gh secret set
-   RELEASE_PLEASE_TOKEN --env release`).
-2. Delete the repository secret `RELEASE_PLEASE_TOKEN`. Until then, a
-   workflow on any branch of this repository can read it.
+1. **Make the app.** Settings → Developer settings → GitHub Apps → New
+   GitHub App. Any name; the homepage is the repository's URL. Under
+   Webhook, clear Active. Under Repository permissions, Contents: Read and
+   write, and Pull requests: Read and write (Metadata: Read-only comes with
+   them); nothing else. Installable only on this account. Create it.
+2. **Take its client id and a key.** On the app's page, copy the Client ID,
+   and under Private keys, Generate a private key, which downloads a `.pem`.
+3. **Install it on this repository alone.** Install App → this account →
+   Only select repositories → this one.
+4. **Hand both to the `release` environment**, then delete the `.pem`:
+
+   ```bash
+   gh variable set RELEASE_PLEASE_APP_CLIENT_ID --env release --body '<client id>'
+   gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY --env release <path/to/key.pem
+   rm path/to/key.pem
+   ```
+
+5. **Retire the personal access token.** `gh secret delete
+   RELEASE_PLEASE_TOKEN` (a repository secret, which a workflow on any
+   branch could read), then delete the token itself under Settings →
+   Developer settings → Personal access tokens.
+6. **Check it.** `gh workflow run release-please.yml --ref main` refreshes
+   the open release pull request, or opens it, with the app's token; the run
+   fails at its first step while either half is missing. A release pull
+   request already tagged is left alone.
+
+Rotating the key is steps 2 and 4 with a new key, then deleting the old one
+on the app's page. A run GitHub refuses as "Resource not accessible" asks
+for a permission the app lacks: edit the app's permissions (step 1), then
+accept the change under the installation's settings, which GitHub asks for
+before it applies.
 
 A run that never happened (a dropped `push` or `workflow_run` event) or died
 is replayed with a `workflow_dispatch` of `release-please`; it refreshes an
