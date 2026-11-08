@@ -464,13 +464,16 @@ mise, workflows, ruleset = sys.argv[1:4]
 tasks = tomllib.load(open(mise, "rb"))["tasks"]
 ci = set(tasks["ci"]["depends"])
 # The tasks `ci` runs inside another: ci:coverage's two runs are the short
-# suite and every database package unsharded, the drill included.
+# suite and every database package unsharded, the drill included, and it
+# merges their profiles as the `coverage` job merges the test jobs'.
 covered = {
     "ci:go": "ci:coverage",
     "ci:engine": "ci:coverage",
     "ci:db:catalog": "ci:coverage",
+    "ci:db:providertest": "ci:coverage",
     "ci:db:rest": "ci:coverage",
     "ci:drill": "ci:coverage",
+    "ci:coverage:merge": "ci:coverage",
 }
 # Never in `ci`: it buys completions.
 excluded = {"ci:llm"}
@@ -916,7 +919,7 @@ pg() {
 # Ready: the container is what the jobs' DSN names, on a tmpfs, and the
 # probe is over TCP.
 pg ready 0 FAKE_READY_AFTER=1
-grep -qxF 'run -d --name substrate-ci-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=substrate --tmpfs /var/lib/postgresql/data:rw,size=3g pgvector/pgvector:pg16' "$tmp/pg.log" ||
+grep -qxF 'run -d --name substrate-ci-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=substrate --tmpfs /var/lib/postgresql/data:rw,size=3g pgvector/pgvector:pg16 -c max_connections=500' "$tmp/pg.log" ||
   flag "cipostgres ready: docker run was not the container the jobs' DSN names: $(cat "$tmp/pg.log")"
 grep -qxF 'exec substrate-ci-postgres pg_isready -q -h 127.0.0.1 -U postgres -d substrate' "$tmp/pg.log" ||
   flag "cipostgres ready: the probe was not pg_isready over TCP: $(cat "$tmp/pg.log")"

@@ -24,6 +24,9 @@
 # runs under -timeout 12m instead: its job has 15 minutes, and a hang must die
 # by Go's timeout, which prints every goroutine, not by the runner's, which
 # prints nothing. SKIP adds names to the skip pattern.
+# SUBSTRATE_TEST_COVERPROFILE writes the run's coverage profile there, with
+# the flags `test:coverage` uses: the CI jobs each keep one, and the
+# `coverage` job merges them (.mise/covermerge.sh).
 #
 #   mise run test:db:engine                          # the whole engine package
 #   SHARD=3 SHARDS=12 mise run test:db:engine        # one twelfth of it
@@ -40,9 +43,14 @@ shard="${SHARD:-1}"
 skip='^TestLive'
 [ -n "${SKIP:-}" ] && skip="${skip}|${SKIP}"
 label="test:db:$(basename "$pkg")"
+cover=()
+if [ -n "${SUBSTRATE_TEST_COVERPROFILE:-}" ]; then
+  cover=(-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile="$SUBSTRATE_TEST_COVERPROFILE")
+fi
 
 # This script runs ./$pkg/ while `test:db` runs ./$pkg/..., so a subpackage
-# that grew a test suite would run on main's coverage job and never on a PR.
+# that grew a test suite would run under `test:db` on a laptop and never in
+# CI.
 # Refuse it here, where the cut is, rather than let it happen.
 # internal/engine/unitseed is cut: its tests read the embedded seed files and
 # no database, so the short suite runs them on every PR.
@@ -56,7 +64,7 @@ if [ -n "$subpackages" ]; then
 fi
 
 if [ "$shards" -eq 1 ]; then
-  exec go test -count=1 -skip "$skip" -timeout 30m "./${pkg}/"
+  exec go test -count=1 -skip "$skip" -timeout 30m ${cover[@]+"${cover[@]}"} "./${pkg}/"
 fi
 
 # The names come from the source, not from `go test -list`: listing compiles
@@ -69,6 +77,6 @@ names="$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*\(' "$pkg"/*_test.go |
 mine="$(printf '%s\n' "$names" | SHARD="$shard" SHARDS="$shards" .mise/shardselect.sh)"
 total="$(printf '%s\n' "$names" | grep -c .)"
 count="$(printf '%s\n' "$mine" | grep -c .)"
-run="^($(printf '%s\n' "$mine" | paste -sd '|'))\$"
+run="^($(printf '%s\n' "$mine" | paste -sd '|' -))\$"
 echo "${label}: shard ${shard}/${shards}, ${count} of ${total} tests"
-exec go test -count=1 -skip "$skip" -timeout 12m -run "$run" "./${pkg}/"
+exec go test -count=1 -skip "$skip" -timeout 12m -run "$run" ${cover[@]+"${cover[@]}"} "./${pkg}/"

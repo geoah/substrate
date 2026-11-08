@@ -12,9 +12,15 @@
 #
 # The container is what the jobs' SUBSTRATE_TEST_DATABASE_URL names:
 # postgres:postgres on localhost:5432, database substrate, its data
-# directory on a tmpfs. It keeps the image's stock settings,
-# max_connections 100 included; testdb turns the durability off with ALTER
-# SYSTEM because the jobs set SUBSTRATE_TEST_DATABASE_DISPOSABLE.
+# directory on a tmpfs. It keeps the image's stock settings but one:
+# max_connections is 500, what testdb gives the container it starts on a
+# laptop. One engine process may hold 28 connections (docs/operations.md),
+# the suite runs four tests at once on this runner and several of them open
+# two or more processes, so the stock 100 was reachable, and a run that
+# reached it failed whichever test connected next with "sorry, too many
+# clients already" (the coverage job, 2026-11-07 and 2026-11-08). testdb
+# turns the durability off with ALTER SYSTEM because the jobs set
+# SUBSTRATE_TEST_DATABASE_DISPOSABLE.
 #
 # `wait` probes over TCP (-h 127.0.0.1). The image's entrypoint first runs a
 # temporary server for its init scripts that listens on the unix socket only,
@@ -67,7 +73,8 @@ start() {
     status=0
     docker run -d --name "$1" -p 5432:5432 \
       -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=substrate \
-      --tmpfs /var/lib/postgresql/data:rw,size=3g "$2" || status=$?
+      --tmpfs /var/lib/postgresql/data:rw,size=3g "$2" \
+      -c max_connections=500 || status=$?
     echo "$status" >"$3/status.tmp" && mv "$3/status.tmp" "$3/status"
   ' cipostgres "$name" "$image" "$dir" >"$dir/run.log" 2>&1 </dev/null &
   echo "cipostgres: pulling and starting ${image} as ${name} in the background"
