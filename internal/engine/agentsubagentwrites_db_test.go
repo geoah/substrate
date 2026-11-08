@@ -30,7 +30,14 @@ var (
 func provisionRollupAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	ds, fake := openAgentDataset(t)
+	// Not openAgentDataset: the chain needs neither the crew's function
+	// bodies nor its rows, and a host that cannot confine a body (macOS)
+	// refuses to install them.
+	ds := openInternalDataset(t)
+	fake := newFakeLLM(t)
+	ds.mu.Lock()
+	ds.skipThreadTitles = true
+	ds.mu.Unlock()
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "rollupllm",
 		Properties: map[string]any{

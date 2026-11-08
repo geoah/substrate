@@ -9,16 +9,25 @@ import (
 	"time"
 )
 
-// A binding in a source or an action is one of two objects, each with that
-// one key: {"@path": "/ui/..."} reads the server-side model (/ui, /params,
-// and in an action /context, the tapped button's context, and /results/<as>,
-// what an earlier step answered), and {"@now": "date"|"datetime"} is today
-// or this instant in UTC. Components use A2UI's own {"@path"} against the
-// renderer's data model, which the server never reads.
+// A binding in a source or an action is one of three objects:
+// {"@path": "/ui/..."} reads the server-side model (/ui, /params, and in an
+// action /context, the tapped button's context, and /results/<as>, what an
+// earlier step answered), {"@now": "date"|"datetime"} is today or this
+// instant in UTC, and {"@call": <fn>, "args": {...}} is one of the server's
+// functions. Components use A2UI's own {"@path"} against the renderer's data
+// model, which the server never reads.
 const (
 	bindPath = "@path"
 	bindNow  = "@now"
 	bindCall = "@call"
+)
+
+// The functions a source or an action may call: A2UI's formatString, and
+// addDays, which A2UI's catalog lacks and a schedule needs (a window read
+// bounded "the next 30 days", a due date "a week after watering").
+const (
+	fnFormatString = "formatString"
+	fnAddDays      = "addDays"
 )
 
 // serverRoots are the roots a source's binding may read, and actionRoots an
@@ -122,16 +131,63 @@ func (r *resolver) present(props map[string]any) map[string]any {
 // formatString, so a notice or a confirmation can name what it is about.
 func (r *resolver) call(m map[string]any) (any, error) {
 	name, _ := m[bindCall].(string)
-	if name != "formatString" {
-		return nil, fmt.Errorf("a source or an action calls formatString alone, got %q", name)
-	}
 	args, _ := m["args"].(map[string]any)
-	tmpl, err := r.resolve(args["value"])
-	if err != nil {
-		return nil, err
+	switch name {
+	case fnFormatString:
+		tmpl, err := r.resolve(args["value"])
+		if err != nil {
+			return nil, err
+		}
+		s, _ := tmpl.(string)
+		return interpolate(s, func(path string) (any, bool) { return pointerGet(r.model, path) }), nil
+	case fnAddDays:
+		value, err := r.resolve(args["value"])
+		if err != nil {
+			return nil, err
+		}
+		days, err := r.resolve(args["days"])
+		if err != nil {
+			return nil, err
+		}
+		return addDays(value, days)
 	}
-	s, _ := tmpl.(string)
-	return interpolate(s, func(path string) (any, bool) { return pointerGet(r.model, path) }), nil
+	return nil, fmt.Errorf("a source or an action calls formatString or addDays, got %q", name)
+}
+
+// addDays moves a date or an instant by whole days, answering the shape it
+// was given: a date stays a date, an instant becomes one in UTC. A value
+// that resolves to nothing answers nothing, so a filter on it is dropped
+// like any empty condition.
+func addDays(value, days any) (any, error) {
+	s, _ := value.(string)
+	if s == "" {
+		return nil, nil
+	}
+	n, ok := wholeDays(days)
+	if !ok {
+		return nil, fmt.Errorf("addDays: days is a whole number, got %v", days)
+	}
+	if d, err := time.Parse(time.DateOnly, s); err == nil {
+		return d.AddDate(0, 0, n).Format(time.DateOnly), nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return nil, fmt.Errorf("addDays: value is a date (2026-07-01) or an instant (2026-07-01T09:00:00Z), got %q", s)
+	}
+	return t.AddDate(0, 0, n).UTC().Format(time.RFC3339), nil
+}
+
+// wholeDays reads a day count: a number, or the digits a TextField holds.
+func wholeDays(v any) (int, bool) {
+	if s, isText := v.(string); isText {
+		n, err := strconv.Atoi(strings.TrimSpace(s))
+		return n, err == nil
+	}
+	f, ok := number(v)
+	if !ok || f != float64(int(f)) {
+		return 0, false
+	}
+	return int(f), true
 }
 
 // placeholder is one `${...}` of a formatString value; `\${` escapes it.

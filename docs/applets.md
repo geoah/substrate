@@ -15,9 +15,13 @@ and [the applets plan](plans/applets.md).
 Ask Moss: "make me an app for my books, where I can filter by status, search,
 and add books by searching online". Moss has its architect make the
 collection when you lack one, and hands the applet to its designer, which
-writes it, checks every screen and tells Moss the link. It takes a minute or
-so, in the background. To change one, say what to change ("show the author's
-name in the list", "add a notes box"), and the designer revises it.
+writes it, checks every screen and tells Moss the link. It takes a few
+minutes, in the background. When your request leaves open something that
+changes what gets built (what you will mostly do with it, how often a plant
+needs water), the architect or the designer asks first, Moss puts the
+questions to you, and the same builder carries on with your answers. To
+change an applet, say what to change ("show the author's name in the list",
+"add a notes box"), and the designer revises it.
 
 An assistant connected over [MCP](mcp.md) builds applets too: its `applets`
 tool serves the guide to the format and previews a screen, and it writes the
@@ -33,8 +37,12 @@ work: the address holds the screen and the record it is about.
 ## What an applet can and cannot do
 
 It can list, search and filter records, show one, create, change and delete
-them, call a function you have (a book search), and move between screens. It
-reaches nothing your own access does not.
+them, call a function you have (a book search), and move between screens. On
+a collection with a schedule it shows what is due and what is overdue: a
+plant watered a few days after the last time has its next date moved on when
+you mark it done, and a bill due on the 1st has its dates worked out by the
+substrate from a repeat rule. It reaches nothing your own access
+does not.
 
 It cannot run code of its own, reach a site except through a function you
 installed, or show a part of a screen only when a value is set (A2UI v1.0 has

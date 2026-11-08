@@ -154,6 +154,20 @@ func (f *fakeData) Delete(_ context.Context, _ substrate.Actor, typ, id string, 
 
 // KindByRef answers the library's kinds as the API's kind reads do, the
 // status enum with a label on two of its values.
+func (f *fakeData) Window(_ context.Context, q substrate.WindowQuery) (*substrate.WindowPage, error) {
+	page := &substrate.WindowPage{}
+	for _, r := range f.of(q.Filter.Kinds[0]) {
+		if _, repeats := r.Properties["recurrence"]; repeats {
+			page.Series = append(page.Series, r)
+		}
+	}
+	return page, nil
+}
+
+func (f *fakeData) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
+	return nil, nil
+}
+
 func (f *fakeData) KindByRef(_ context.Context, ref string) (substrate.KindInfo, error) {
 	k, ok := library[ref]
 	if !ok {

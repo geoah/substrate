@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Schema is what Check reads of the repository: the kinds, their properties,
@@ -147,6 +149,15 @@ func (c *checker) source(path string, s *Source) {
 			c.prop(fmt.Sprintf("%s.orderBy[%d]", path, i), s.Kind, k, o.Property)
 		}
 	}
+	if window, _ := s.Where[substrate.PropAt].(map[string]any); window != nil {
+		_, from := window["gte"]
+		_, after := window["gt"]
+		_, to := window["lt"]
+		_, through := window["lte"]
+		if (from || after) && (to || through) && (len(s.OrderBy) > 1 || len(s.OrderBy) == 1 && s.OrderBy[0].Property != substrate.PropAt) {
+			c.add(path+".orderBy", `a source that bounds at on both ends is a window read, ordered by "at" or "at:desc" alone`)
+		}
+	}
 	for i, name := range s.Expand {
 		at := fmt.Sprintf("%s.expand[%d]", path, i)
 		if !known {
@@ -179,11 +190,17 @@ func (c *checker) serverValue(path string, v any, roots []string) {
 				c.add(path, `@now is "date" or "datetime"`)
 			}
 		case bindCall:
-			if name, _ := arg.(string); name != "formatString" {
-				c.add(path, fmt.Sprintf("a source or an action calls formatString alone, not %q", name))
+			name, _ := arg.(string)
+			args, _ := v.(map[string]any)["args"].(map[string]any)
+			switch name {
+			case fnFormatString:
+			case fnAddDays:
+				c.addDaysArgs(path, args, roots)
+				return
+			default:
+				c.add(path, fmt.Sprintf("a source or an action calls formatString or addDays, not %q", name))
 				return
 			}
-			args, _ := v.(map[string]any)["args"].(map[string]any)
 			value, has := args["value"]
 			if !has {
 				c.add(path+".args.value", "is required by formatString")
@@ -220,6 +237,27 @@ func (c *checker) serverValue(path string, v any, roots []string) {
 		for i, e := range x {
 			c.serverValue(fmt.Sprintf("%s[%d]", path, i), e, roots)
 		}
+	}
+}
+
+// addDaysArgs checks addDays's two arguments: each a binding or a literal
+// the function reads (a date or an instant, a whole number of days).
+func (c *checker) addDaysArgs(path string, args map[string]any, roots []string) {
+	value, has := args["value"]
+	if !has {
+		c.add(path+".args.value", "is required by addDays: the date or instant to move")
+	} else if _, _, isBinding := binding(value); isBinding {
+		c.serverValue(path+".args.value", value, roots)
+	} else if _, err := addDays(value, 0); err != nil || value == nil {
+		c.add(path+".args.value", "is a date (2026-07-01), an instant (2026-07-01T09:00:00Z) or a binding to one")
+	}
+	days, has := args["days"]
+	if !has {
+		c.add(path+".args.days", "is required by addDays: how many days to move, negative to go back")
+	} else if _, _, isBinding := binding(days); isBinding {
+		c.serverValue(path+".args.days", days, roots)
+	} else if _, ok := wholeDays(days); !ok {
+		c.add(path+".args.days", "is a whole number of days or a binding to one")
 	}
 }
 

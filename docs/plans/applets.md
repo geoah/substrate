@@ -233,9 +233,22 @@ In sources and actions, never in components, a binding is A2UI's own
 | `/results/<as>/...` | what an earlier step named with `as` answered | actions |
 
 `{"@now": "date"}` or `{"@now": "datetime"}` is today or this instant (UTC),
-and `{"@call": "formatString", "args": {"value": "Added ${/context/title}"}}`
-fills a notice or a question. Anything else is a literal; objects and lists
-resolve inside.
+`{"@call": "formatString", "args": {"value": "Added ${/context/title}"}}`
+fills a notice or a question, and `{"@call": "addDays", "args": {"value":
+<a date or an instant>, "days": <a whole number>}}` moves a date (a date stays
+a date) for a window's far end or a due date. A2UI's catalog has no date
+arithmetic, so it is the server's alone, never a component's. Anything else
+is a literal; objects and lists resolve inside.
+
+A source whose `where` bounds `at` on both ends over a kind on the timeline
+is the [window read](../api.md#the-window-read): a repeating record's
+occurrences inside the window arrive beside the stored rows, each with
+`computed: true` and `series {id, ref}`, the repeating record a step reads
+or opens; the occurrence itself is never written. Something done again
+some days after the last time is no calendar rule but a `dueAt` the done
+button moves on with `addDays`, and its due list is a source over `dueAt`
+bounded above alone, so what is overdue stays on it. A kind's timeline columns (`at`, `endsAt`, `dueAt`) come from
+its `temporal` binding, not its properties, and the check accepts them.
 
 ### `actions`
 

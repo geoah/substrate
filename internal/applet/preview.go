@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -122,5 +123,42 @@ func ShapeOf(info substrate.KindInfo) KindShape {
 		}
 		shape.Props[name] = ps
 	}
+	traits, _ := info.Definition["traits"].([]any)
+	for _, t := range traits {
+		binding, _ := t.(string)
+		for _, slot := range temporalSlots(binding) {
+			if _, declared := shape.Props[slot]; !declared {
+				shape.Props[slot] = PropShape{Type: "datetime"}
+			}
+		}
+	}
 	return shape
+}
+
+// temporalTrait is the core trait whose binding puts a kind on the timeline.
+const temporalTrait = "substrate.reamde.dev/core/temporal"
+
+// temporalSlots reads the timeline columns one trait binding gives a kind,
+// spelled "<trait>(<variant>[: <column>, ...])": a point's at, a range's at
+// and endsAt, and any column the binding moves one onto
+// (temporal(point: dueAt)). A kind declares none of them as a property, so
+// without these an applet could neither filter a window nor order by it.
+// at stays among them whatever the binding moves: a window read bounds at
+// on every timeline kind.
+func temporalSlots(binding string) []string {
+	ident, rest, _ := strings.Cut(binding, "(")
+	if strings.TrimSpace(ident) != temporalTrait {
+		return nil
+	}
+	variant, cols, _ := strings.Cut(strings.TrimSuffix(strings.TrimSpace(rest), ")"), ":")
+	slots := []string{substrate.PropAt}
+	if strings.TrimSpace(variant) == "range" {
+		slots = append(slots, substrate.PropEndsAt)
+	}
+	for _, col := range strings.Split(cols, ",") {
+		if col = strings.TrimSpace(col); col != "" && !slices.Contains(slots, col) {
+			slots = append(slots, col)
+		}
+	}
+	return slots
 }

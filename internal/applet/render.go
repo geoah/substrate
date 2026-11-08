@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/window"
 )
 
 // Data is what the runtime reaches of a repository. A substrate.Dataset is
@@ -25,6 +26,9 @@ type Data interface {
 	// KindByRef answers a kind's declaration, which the runtime reads for
 	// the display values it puts beside a record's properties.
 	KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error)
+	// A source bounding at on both ends is the window read every surface
+	// answers (decision 0111), computed occurrences and all.
+	window.Reader
 }
 
 // Runtime renders and acts. Now is the clock `@now` reads.
@@ -333,8 +337,27 @@ func (rt *Runtime) query(ctx context.Context, r *resolver, src *Source) (*substr
 		return nil, single, err
 	}
 	q.Filter.Properties = conds
-	page, err := rt.Data.List(ctx, q)
+	page, err := rt.list(ctx, q)
 	return page, single, err
+}
+
+// list is a source's read: the window read when the filter bounds at on both
+// ends, so a repeating record's occurrences are on the page, and the plain
+// list otherwise.
+func (rt *Runtime) list(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	from, to, bounded, err := window.Bounds(q.Filter)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	if !bounded {
+		return rt.Data.List(ctx, q)
+	}
+	page, err := window.Read(ctx, rt.Data, q, from, to)
+	var qerr window.QueryError
+	if errors.As(err, &qerr) {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, qerr)
+	}
+	return page, err
 }
 
 // conditions resolves a where into the filter grammar, dropping each
@@ -394,7 +417,7 @@ func recordData(rec *substrate.Record, included map[string]*substrate.Record, ex
 	if title == "" {
 		title, _ = rec.Properties["title"].(string)
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id":         rec.ID,
 		"kind":       rec.Kind,
 		"ref":        rec.Kind + "/" + rec.ID,
@@ -402,6 +425,16 @@ func recordData(rec *substrate.Record, included map[string]*substrate.Record, ex
 		"version":    rec.Version,
 		"properties": props,
 	}
+	// An occurrence a window read computed from a repeating record is no
+	// record a step can write: it names the series, which a step patches
+	// (moving the schedule) or reads.
+	if rec.Computed {
+		out["computed"] = true
+		if series, ok := window.SeriesOf(rec.ID); ok {
+			out["series"] = map[string]any{"id": series, "ref": rec.Kind + "/" + series}
+		}
+	}
+	return out
 }
 
 func expandValue(v any, included map[string]*substrate.Record) any {
