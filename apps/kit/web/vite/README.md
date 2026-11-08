@@ -6,6 +6,7 @@ A Substrate web app's build, one plugin:
 import { substrateSite } from "@substrate/vite"
 
 export default defineConfig({
+  root: import.meta.dirname,
   plugins: [
     react(),
     tailwindcss(),
@@ -24,5 +25,6 @@ the tree. With it, the build's base is that URL's path and it writes
 client id (`<url>client.json`, one redirect `<url>`). Without it, the build
 is served at `/` and signs in as a local app from a loopback address. Either
 way it writes `manifest.webmanifest` from `app.json`, defines
-`__APP_VERSION__` (`SUBSTRATE_WEB_VERSION`, else the web package's version)
-and serves `pnpm dev` on 127.0.0.1.
+`__APP_VERSION__` (`SUBSTRATE_WEB_VERSION`, else the version in the Vite
+root's `package.json`, the app's web package, whichever directory the build
+runs from) and serves `pnpm dev` on 127.0.0.1.

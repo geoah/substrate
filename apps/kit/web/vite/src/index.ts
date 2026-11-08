@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import type { Plugin } from "vite"
 
 /** What a build needs from the app's app.json. */
@@ -14,7 +15,7 @@ export interface SiteOptions {
   /** The name under the icon on a home screen: "Tasks". */
   shortName: string
   /** The build's version: `SUBSTRATE_WEB_VERSION`, else this, else the
-   * web package's own. */
+   * version in the package.json of the Vite root, the app's web package. */
   version?: string
   /** The icons in `public/`, as the web manifest lists them. */
   icon?: string
@@ -51,6 +52,16 @@ export function clientDocument(url: string, name: string, logo: string) {
   }
 }
 
+/** The version in the package.json at `root`. */
+export function packageVersion(root: string): string {
+  const own = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    version?: unknown
+  }
+  if (typeof own.version !== "string")
+    throw new Error(`${join(root, "package.json")} names no version.`)
+  return own.version
+}
+
 /** A Substrate web app's build: its base from `SUBSTRATE_WEB_URL`,
  * `__APP_VERSION__` defined, and the client metadata document and web
  * manifest written for the URL it is served at. */
@@ -62,12 +73,11 @@ export function substrateSite(opts: SiteOptions): Plugin {
   const favicon = opts.favicon ?? "favicon.png"
   return {
     name: "substrate-site",
-    config(_, env) {
-      const own = new URL("package.json", `file://${process.cwd()}/`)
+    config(user, env) {
       const version =
         process.env.SUBSTRATE_WEB_VERSION ??
         opts.version ??
-        (JSON.parse(readFileSync(own, "utf8")) as { version: string }).version
+        packageVersion(resolve(user.root ?? "."))
       return {
         base: url ? new URL(url).pathname : "/",
         define: { __APP_VERSION__: JSON.stringify(version) },
