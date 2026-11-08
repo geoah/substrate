@@ -28,8 +28,7 @@
 #             .mise/android.sh installs, the catalog's NDK against the one it
 #             installs, the compile SDK and build tools against its package
 #             list, the JDK against the catalog's jvm; the Gradle wrapper
-#             names its distribution's checksum; the `apps linux` CI job
-#             installs that Swift for the apps' Swift format check
+#             names its distribution's checksum
 #   gradle    the dependency verification metadata against the locks: every
 #             locked module listed with a sha256 for each of its files,
 #             metadata files verified, nothing trusted unchecked, and aapt2
@@ -355,16 +354,6 @@ if [ -f "$catalog" ] && [ -f "$android_sh" ]; then
     flag "${android_sh} installs the Swift SDK for Android without a sha256 checksum"
   grep -q '^distributionSha256Sum=[0-9a-f]\{64\}$' apps/gradle/gradle/wrapper/gradle-wrapper.properties ||
     flag "the Gradle wrapper names no distributionSha256Sum; a changed distribution would run unchecked"
-  # CI installs only the tools a job names (ci.yml turns mise's task
-  # auto-install off), so the `apps linux` job, which runs fmt:swift:check,
-  # names this Swift, or the check runs whatever Swift the runner image
-  # carries, and with it another swift-format.
-  ci=.github/workflows/ci.yml
-  apps_install="$(awk '/^  apps-linux:$/ { inside = 1; next } /^  [a-z][a-z-]*:$/ { inside = 0 } inside && /install_args:/ { sub(/.*install_args: */, ""); print }' "$ci" 2>/dev/null)"
-  case " ${apps_install} " in
-  *" swift@${task_swift} "*) ;;
-  *) flag "the apps linux job in ${ci} does not install swift@${task_swift}, so fmt:swift:check runs the runner's own" ;;
-  esac
 fi
 
 # --- the Gradle dependency verification, against the locks -------------

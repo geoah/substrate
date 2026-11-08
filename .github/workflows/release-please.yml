@@ -21,12 +21,21 @@
 # the tagged commit's own ci run again before it builds, because a green run
 # for a later commit is what brought us here.
 #
-# The token is a fine-grained personal access token (contents and pull
-# requests, read and write, on this repository alone), stored as
-# RELEASE_PLEASE_TOKEN. Not GITHUB_TOKEN: a pull request opened or pushed with
-# the workflow token starts no workflow run of its own, so the release pull
-# request would never get the checks the ruleset requires and could never be
-# merged. The token has no bypass on the ruleset: main still moves only
+# The token is a GitHub App's installation token, minted for each run by
+# actions/create-github-app-token from the app's private key: contents and
+# pull requests, read and write, on this repository alone. The app's client
+# id is the `release` environment's RELEASE_PLEASE_APP_CLIENT_ID variable and
+# its key that environment's RELEASE_PLEASE_APP_PRIVATE_KEY secret
+# (docs/releasing.md has the setup). Not GITHUB_TOKEN: a pull request opened
+# or pushed with the workflow token starts no workflow run of its own, so the
+# release pull request would never get the checks the ruleset requires and
+# could never be merged; an app's token does start them. Not a personal
+# access token: one belongs to a person, expires, and keeps whatever
+# permissions somebody last edited it to, which is how v0.121.0's release
+# was refused on 2026-11-08 by a token that could still read pull requests.
+# An app's permissions change only when the app is edited and its
+# installation accepts the change, its key does not expire, and each token
+# lives an hour. The app has no bypass on the ruleset: main still moves only
 # through a pull request that passed the checks.
 name: release-please
 
@@ -73,9 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Deploys from main alone (`mise run repo:settings`), so a workflow on
-    # another branch cannot read the environment's RELEASE_PLEASE_TOKEN. A
-    # repository secret of the same name is still read while it exists
-    # (docs/releasing.md has the move).
+    # another branch cannot read the environment's app key.
     environment: release
     permissions:
       contents: read
@@ -87,12 +94,13 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
-      - name: require RELEASE_PLEASE_TOKEN
+      - name: require the release app
         env:
-          TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          CLIENT_ID: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          KEY: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "RELEASE_PLEASE_TOKEN is not set; see the comment at the top of this workflow" >&2
+          if [ -z "$CLIENT_ID" ] || [ -z "$KEY" ]; then
+            echo "the release environment has no RELEASE_PLEASE_APP_CLIENT_ID variable or RELEASE_PLEASE_APP_PRIVATE_KEY secret; see the comment at the top of this workflow" >&2
             exit 1
           fi
       # For the gate's script. Nothing in this job pushes with git, so the
@@ -110,11 +118,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
         run: .mise/releasegate.sh
+      # Narrowed to the two permissions release-please uses, whatever else
+      # the app is ever granted; revoked when the job ends.
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           skip-github-release: ${{ steps.gate.outputs.hold }}
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: main
@@ -137,19 +154,6 @@ jobs:
       id-token: write
       attestations: write
     uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
-      sha: ${{ needs.release-please.outputs.sha }}
-
-  # The release's iPhone and iPad apps to TestFlight, beside the release and
-  # apart from it: a refused upload leaves the CLI and the image published.
-  testflight:
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/testflight.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
       sha: ${{ needs.release-please.outputs.sha }}

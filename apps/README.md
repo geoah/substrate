@@ -28,13 +28,15 @@ from `xcode/project.yml`, which includes each app's `apple/targets.yml`, and
 is never committed. Signing is Xcode's automatic signing
 for the team `xcode/project.yml` names; the builds use the Apple Development identity and the
 account signed in to Xcode, which `-allowProvisioningUpdates` registers the
-app id and the device profile with. CI builds no Apple app: its `apps linux`
-job builds and tests the kit and every app's core on Linux, then the core of
-an app `apps:new` makes, after the Swift format check. CI builds nothing
-for Android while no app ships there ([Android](#android)); the SwiftUI side
-is a Mac's, through the `apple:test:*` tasks. The job runs on a change to
-what it builds, and a pull request waits for it through the required `apps
-gate` check.
+app id and the device profile with. CI builds, tests and formats no app;
+the one apps check a pull request waits for is `lint:apps`, in the `lint`
+job. A change to the apps runs the rest on a laptop before its pull
+request: `mise run apps:test:linux` builds and tests the kit and every
+app's core on Linux in the swift container, `mise run apps:new:check` does
+the same for the core of an app `apps:new` makes, `mise run
+fmt:swift:check` is the Swift format check ([Formatting](#formatting)), and
+the SwiftUI side is a Mac's, through the `apple:test:*` tasks. Android's are
+a laptop's too ([Android](#android)).
 
 ## How the console runs in it
 
@@ -489,11 +491,21 @@ builds anything it reads the site's association file and each app's
 `mise run apps:site` (or a release) first. It has no dry run;
 `apps:release`'s dry run builds the same apps unsigned.
 
-Every release sends its apps too: after release-please tags a release,
-`.github/workflows/testflight.yml` runs `apps:testflight stable` from the
-tagged commit on a macOS runner, with the key and the site from the
-`testflight` environment (the workflow's header names each). A pre-release
-goes from a Mac.
+A release's apps go from a Mac, by hand, once release-please has tagged it:
+`apps:testflight stable` from a clean checkout of the tag, with the
+environment above.
+
+```bash
+git worktree add ../substrate-vX.Y.Z vX.Y.Z
+cd ../substrate-vX.Y.Z && mise run apps:testflight stable
+```
+
+No workflow sends them. `testflight.yml` did, from the release workflow on
+a hosted macOS runner, until 2026-11-08, and failed on every release: the
+runner's Swift was older than a package's tools version, it could not
+resolve the packages, and mise's download of `asc` was refused by GitHub's
+API. A pre-release goes the same way, `apps:testflight` from any clean
+commit.
 
 The App Store Connect key provisions and uploads; it needs the Admin role,
 as above. It signs nothing itself: an API key may not use the team's
@@ -503,11 +515,9 @@ Distribution certificate from the keychain and, for the app and every
 extension in its archive, an App Store profile the API makes (or reuses,
 named `<bundle id> App Store <certificate id>`) and installs where Xcode
 reads profiles (`appstoreconnect.swift profiles`). The machine that runs it
-needs that certificate's identity in its keychain: kept with the release's
-secrets as a `.p12`, and imported by the CI job into a keychain of its own,
-beside a team Apple Development certificate: the archive is signed for
-development before the export signs it again, and a fresh runner has no
-development identity of its own. A TestFlight build is made from a clean
+needs that certificate's identity in its keychain, beside a team Apple
+Development identity: the archive is signed for development before the
+export signs it again. A TestFlight build is made from a clean
 tree only, since every tester the group gives it to receives it at once.
 App Store Connect refuses a build number it already
 has, and the build number is the UTC time, so a rerun builds again rather
@@ -1091,11 +1101,10 @@ the template's own targets, so the project shows its scheme,
 and draws its views on the Mac. `apps:new` refuses a result that still
 names the template anywhere but a kind's `displayTemplate`.
 `mise run apps:new:check` runs `apps:new example` into a scratch copy of
-`apps/`: the result's core built and tested in the swift container, which
-CI's `apps linux` job runs, and on a Mac the result's project generated, its
-app built and its views drawn, which CI (Linux) cannot, so an author
-changing the template runs it, with `apple:test:template`, before the pull
-request. A change to the template is a change to every app made from then
+`apps/`: the result's core built and tested in the swift container, and on
+a Mac the result's project generated, its app built and its views drawn.
+No CI job runs it, so an author changing the template runs it, with
+`apple:test:template`, before the pull request. A change to the template is a change to every app made from then
 on; an app already made keeps what it copied.
 
 The template has a look of its own, grey (`#5F6B7A`, dark `#A7B1BE`) and
@@ -1133,8 +1142,9 @@ fixture's two side by side.
 and `mise run fmt:check` fails on what it would change, printing the diff;
 `fmt:swift`, `fmt:kotlin` and their `:check`s are one language each, all
 four through `.mise/appsfmt.sh`. The check is the writer run over a copy, so
-the two cannot disagree. The CI job `apps linux` runs the Swift check; no
-CI job runs the Kotlin one while no app ships for Android.
+the two cannot disagree. No CI job runs either, since none installs the
+Swift or the JDK they pin: an author changing the apps runs `fmt:check`
+before the pull request.
 
 - **Swift**: swift-format, configured once in `.swift-format` here, from the
   open-source Swift 6.4.2 the `android:*` tasks pin rather than Xcode's, whose

@@ -315,7 +315,7 @@ observations would ask every user for a new scope.
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
 then runs both suites on the Mac (CI runs the check in the `lint` job, and
-both suites on Linux in the `apps linux` job; no workflow builds the Apple
+`mise run apps:test:linux` runs both suites on Linux; no workflow builds the
 app): WorkoutsCore's (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
