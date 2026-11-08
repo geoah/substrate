@@ -122,11 +122,13 @@ owner="$("${compose[@]}" exec -T substrate stat -c %u /var/lib/substrate/reposit
   fail "the entrypoint minted no credential key into /keys"
 
 # The uv on PATH, the one the runner execs, must be the release the
-# Dockerfile pins, and static. The upstream release is static-pie: musl's ldd
-# lists only the loader, with no `=>` line. Alpine's package links
-# libc.musl, libgcc_s and libbz2, and names itself `alpine-linux-musl` in
-# its version string. ldd failing is a failure here, not a pass, because a
-# check that cannot run proves nothing.
+# Dockerfile pins, and static. The upstream amd64 release is static-pie:
+# musl's ldd lists only the loader, with no `=>` line. The arm64 one is plain
+# static, and musl's ldd refuses it, exit 1, with "Not a valid dynamic
+# program", which is that same answer. Alpine's package links libc.musl,
+# libgcc_s and libbz2, and names itself `alpine-linux-musl` in its version
+# string. Any other ldd failure is a failure here, not a pass, because a check
+# that cannot run proves nothing.
 uv_pin="$(sed -n 's/^ARG UV_VERSION=\([^[:space:]]*\).*/\1/p' Dockerfile | head -1)"
 [ -n "$uv_pin" ] || fail "the Dockerfile declares no ARG UV_VERSION= to hold the image's uv to"
 uv_path="$("${compose[@]}" exec -T substrate sh -c 'command -v uv')" ||
@@ -138,8 +140,12 @@ case "$uv_version" in
 "uv ${uv_pin}" | "uv ${uv_pin} "*) ;;
 *) fail "${uv_path} reports ${uv_version}, but the Dockerfile pins UV_VERSION ${uv_pin}" ;;
 esac
-uv_libs="$("${compose[@]}" exec -T substrate ldd "$uv_path" 2>&1)" ||
-  fail "ldd could not read ${uv_path}: ${uv_libs}"
+if ! uv_libs="$("${compose[@]}" exec -T substrate ldd "$uv_path" 2>&1)"; then
+  case "$uv_libs" in
+  *"Not a valid dynamic program"*) ;;
+  *) fail "ldd could not read ${uv_path}: ${uv_libs}" ;;
+  esac
+fi
 case "$uv_libs" in
 *"=>"*) fail "${uv_path} links shared libraries, so it is not the static upstream release: ${uv_libs}" ;;
 esac
