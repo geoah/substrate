@@ -2,8 +2,9 @@
 /** A chat marked Working in the list is watched until it settles: the chats
  * column follows the thread rows while one of its chats runs, from the list's
  * own head, so a chat that settles between the list read and the stream
- * opening loses the mark too; nothing is watched when none runs. The watch is
- * the real hook over a fake server, not a stand-in. */
+ * opening loses the mark too, and so does one that settles while the page
+ * recovers from a head the server no longer holds; nothing is watched when
+ * none runs. The watch is the real hook over a fake server, not a stand-in. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
@@ -32,19 +33,34 @@ import { AgentsPage } from "./agents"
 
 const THREAD = "substrate.reamde.dev/llm/thread"
 
-/** The fake server: one chat, the changelog head, and what lands after the
- * first list read answered. */
+/** The fake server: one chat, the changelog head, the open streams, and
+ * what lands after a list read answered. */
 let server: {
   status: string
   head: number
   rows: { seq: number; status: string }[]
-  afterFirstList?: () => void
+  afterList?: (n: number) => void
   lists: number
+  /** Refuse every resume position, as a restored repository does. */
+  lost?: boolean
+  /** Fix a stream's head this many ms after its request, as a request that
+   * reaches the server late does. */
+  watchDelay?: number
   watches: {
     from: string | null
     generation: string | null
     signal: AbortSignal
   }[]
+  streams: { start: number; push: (seq: number) => void }[]
+}
+
+/** A chat's settle: committed at the next seq and sent to every open stream
+ * past whose head it lands. */
+function settle() {
+  server.status = "ok"
+  server.head++
+  server.rows.push({ seq: server.head, status: "ok" })
+  for (const s of server.streams) if (server.head > s.start) s.push(server.head)
 }
 
 function thread(status: string) {
@@ -64,21 +80,18 @@ function thread(status: string) {
 }
 
 /** A watch stream as the server answers one: the bookmark, then every row
- * past `from` (or none, when the stream starts at the head), open until the
- * client stops it. */
+ * past `from` (or none, when the stream starts at the head), then every row
+ * that lands while it is open, until the client stops it. */
 function watchStream(from: number | null, signal: AbortSignal): Response {
   const enc = new TextEncoder()
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const start = from ?? server.head
-      controller.enqueue(
-        enc.encode(JSON.stringify({ bookmark: start, generation: "g" }) + "\n")
-      )
-      for (const row of server.rows.filter((r) => r.seq > start))
+      const push = (seq: number) =>
         controller.enqueue(
           enc.encode(
             JSON.stringify({
-              seq: row.seq,
+              seq,
               ts: "2026-11-08T10:01:00Z",
               actor: "agent:substrate.reamde.dev:core:helper",
               op: "patch",
@@ -87,9 +100,16 @@ function watchStream(from: number | null, signal: AbortSignal): Response {
             }) + "\n"
           )
         )
-      signal.addEventListener("abort", () =>
-        controller.error(new DOMException("stopped", "AbortError"))
+      controller.enqueue(
+        enc.encode(JSON.stringify({ bookmark: start, generation: "g" }) + "\n")
       )
+      for (const row of server.rows.filter((r) => r.seq > start)) push(row.seq)
+      const stream = { start, push }
+      server.streams.push(stream)
+      signal.addEventListener("abort", () => {
+        server.streams = server.streams.filter((s) => s !== stream)
+        controller.error(new DOMException("stopped", "AbortError"))
+      })
     },
   })
   return new Response(body, {
@@ -99,7 +119,14 @@ function watchStream(from: number | null, signal: AbortSignal): Response {
 }
 
 beforeEach(() => {
-  server = { status: "running", head: 1, rows: [], lists: 0, watches: [] }
+  server = {
+    status: "running",
+    head: 1,
+    rows: [],
+    lists: 0,
+    watches: [],
+    streams: [],
+  }
   vi.stubGlobal(
     "matchMedia",
     (query: string) =>
@@ -122,6 +149,15 @@ beforeEach(() => {
           signal,
         })
         const from = u.searchParams.get("from")
+        if (from !== null && server.lost)
+          return new Response(
+            JSON.stringify({
+              error: { code: "compacted", message: "history replaced" },
+            }),
+            { status: 410 }
+          )
+        if (from === null && server.watchDelay)
+          await new Promise((r) => setTimeout(r, server.watchDelay))
         return watchStream(from === null ? null : Number(from), signal)
       }
       const filter = u.searchParams.get("filter")
@@ -133,7 +169,7 @@ beforeEach(() => {
           generation: "g",
         }
         server.lists++
-        if (server.lists === 1) server.afterFirstList?.()
+        server.afterList?.(server.lists)
         return new Response(JSON.stringify(page), { status: 200 })
       }
       return new Response(JSON.stringify({ records: [] }), { status: 200 })
@@ -163,10 +199,8 @@ describe("AgentsPage chat list", () => {
   it("hears a chat that settles after the list read and before the watch opens", async () => {
     // The chat settles at seq 2, once the list answered at head 1: the
     // stream opens later, at a head that is already past the settle.
-    server.afterFirstList = () => {
-      server.status = "ok"
-      server.head = 2
-      server.rows.push({ seq: 2, status: "ok" })
+    server.afterList = (n) => {
+      if (n === 1) settle()
     }
     renderPage()
     expect(await screen.findByText("t-1: running")).toBeTruthy()
@@ -176,6 +210,28 @@ describe("AgentsPage chat list", () => {
     expect(server.watches[0]).toMatchObject({ from: "1", generation: "g" })
     // Settled, so nothing runs and the watch stops.
     await waitFor(() => expect(server.watches[0].signal.aborted).toBe(true))
+  })
+
+  it("hears a chat that settles while the page recovers from a head the server no longer holds", async () => {
+    // The list's head is refused, so the page lists again and follows from
+    // the server's head. The chat settles right after that second list
+    // answered, and a stream request reaches the server later than a list
+    // read does: a stream opened beside the read would start past the
+    // settle and leave the chat Working.
+    server.lost = true
+    server.watchDelay = 30
+    server.afterList = (n) => {
+      if (n === 2) settle()
+    }
+    renderPage()
+    expect(await screen.findByText("t-1: running")).toBeTruthy()
+    expect(
+      await screen.findByText("t-1: ok", {}, { timeout: 3000 })
+    ).toBeTruthy()
+    expect(server.watches[0]).toMatchObject({ from: "1", generation: "g" })
+    expect(server.watches[1]).toMatchObject({ from: null })
+    // Settled, so nothing runs and no stream is left open.
+    await waitFor(() => expect(server.streams).toEqual([]))
   })
 
   it("watches nothing when no listed chat runs", async () => {

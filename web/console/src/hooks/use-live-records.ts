@@ -7,11 +7,7 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryKey } from "@tanstack/react-query"
 
-import {
-  watchChanges,
-  type WatchHandle,
-  type WatchStatus,
-} from "@/lib/api/changes"
+import { watchChanges, type WatchStatus } from "@/lib/api/changes"
 
 /** A sync writes many rows in one breath: one re-read covers them all. The
  * batch flushes `wait` ms after the LAST item, and never later than
@@ -86,26 +82,39 @@ export function useLiveRecords(
         void queryClient.invalidateQueries({ queryKey: key })
     }
     const batcher = createChangeBatcher<true>(reread)
-    let handle: WatchHandle
-    const open = (start?: LiveFrom) => {
+    const filter = { kinds: JSON.parse(kindsKey) as string[] }
+    const onRow = () => batcher.push(true)
+    let stopped = false
+    const start = fromRef.current
+    let handle = watchChanges({
+      from: start?.head,
+      generation: start?.generation,
+      filter,
+      onRow,
+      onStatus,
+      onCompacted: start ? () => recover() : undefined,
+    })
+    // A position the server no longer holds (a restored repository): follow
+    // from the head, and re-read once that stream is live. The server fixes
+    // a stream's head before it answers, so a read sent after misses nothing,
+    // where one sent beside the stream could answer first and leave a row
+    // committed between the two unheard.
+    function recover() {
+      if (stopped) return
+      let relisted = false
       handle = watchChanges({
-        from: start?.head,
-        generation: start?.generation,
-        filter: { kinds: JSON.parse(kindsKey) as string[] },
-        onRow: () => batcher.push(true),
-        onStatus,
-        // A position the server no longer holds (a restored repository):
-        // re-read now and follow from the head.
-        onCompacted: start
-          ? () => {
-              reread()
-              open()
-            }
-          : undefined,
+        filter,
+        onRow,
+        onStatus: (status, detail) => {
+          onStatus?.(status, detail)
+          if (status !== "live" || stopped || relisted) return
+          relisted = true
+          reread()
+        },
       })
     }
-    open(fromRef.current)
     return () => {
+      stopped = true
       batcher.cancel()
       handle.stop()
     }

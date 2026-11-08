@@ -16,6 +16,7 @@ const watch = vi.hoisted(() => ({
     generation?: string
     filter?: { kinds?: string[] }
     onRow: (row: ChangeRow) => void
+    onStatus?: (status: string, detail?: string) => void
     onCompacted?: () => void
     stopped: boolean
   }[],
@@ -27,6 +28,7 @@ vi.mock("@/lib/api/changes", () => ({
     generation?: string
     filter?: { kinds?: string[] }
     onRow: (row: ChangeRow) => void
+    onStatus?: (status: string, detail?: string) => void
     onCompacted?: () => void
   }) => {
     const call = { ...opts, stopped: false }
@@ -278,15 +280,41 @@ describe("useLiveRecords", () => {
     expect(watch.calls).toHaveLength(1)
   })
 
-  it("re-reads and follows from the head when its position is gone", () => {
+  it("follows from the head when its position is gone, and re-reads once that stream is live", () => {
     const { invalidate } = setup({ head: 7, generation: "old" })
     act(() => watch.calls[0].onCompacted?.())
-    expect(invalidate).toHaveBeenCalledExactlyOnceWith({
-      queryKey: ["records"],
-    })
     expect(watch.calls).toHaveLength(2)
     expect(watch.calls[1].from).toBeUndefined()
     expect(watch.calls[1].onCompacted).toBeUndefined()
+    // A read sent before the stream's head is fixed could answer first.
+    act(() => watch.calls[1].onStatus?.("connecting"))
+    expect(invalidate).not.toHaveBeenCalled()
+    act(() => watch.calls[1].onStatus?.("live"))
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({
+      queryKey: ["records"],
+    })
+    // A reconnect resumes from the stream's own cursor: nothing to re-read.
+    act(() => {
+      watch.calls[1].onStatus?.("retrying")
+      watch.calls[1].onStatus?.("live")
+    })
+    expect(invalidate).toHaveBeenCalledOnce()
+  })
+
+  it("leaves nothing open and re-reads nothing once unmounted mid-recovery", () => {
+    const { invalidate, hook } = setup({ head: 7, generation: "old" })
+    act(() => watch.calls[0].onCompacted?.())
+    hook.unmount()
+    expect(watch.calls[1].stopped).toBe(true)
+    watch.calls[1].onStatus?.("live")
+    expect(invalidate).not.toHaveBeenCalled()
+  })
+
+  it("opens no stream for a position refused after it unmounted", () => {
+    const { hook } = setup({ head: 7, generation: "old" })
+    hook.unmount()
+    watch.calls[0].onCompacted?.()
+    expect(watch.calls).toHaveLength(1)
   })
 
   it("starts at the server's head without a position", () => {
