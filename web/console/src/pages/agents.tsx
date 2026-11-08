@@ -121,11 +121,16 @@ export function AgentsPage() {
   )
   // A listed chat stays marked Working until its thread row is read again,
   // and the open conversation re-reads only at its own run's settle: without
-  // this watch, a chat still running behind another one settles unseen.
+  // this watch, a chat still running behind another one settles unseen. It
+  // resumes from the list's own head, so a chat that settles after the list
+  // was read and before the stream opens is heard too.
   const anyRunning = threads.some((t) => t.properties.status === "running")
-  useLiveRecords(anyRunning ? [`${LLM_PACKAGE}/thread`] : [], [
-    [...THREAD_LISTS_KEY],
-  ])
+  useLiveRecords(
+    anyRunning ? [`${LLM_PACKAGE}/thread`] : [],
+    [[...THREAD_LISTS_KEY]],
+    undefined,
+    conversations.data
+  )
   const threadIds = useMemo(() => threads.map((t) => t.id), [threads])
   const openings = useQuery(openingMessagesQueryOptions(threadIds))
   const openingByThread = useMemo(

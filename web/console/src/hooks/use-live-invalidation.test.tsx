@@ -12,16 +12,22 @@ import type { ChangeRow } from "@/lib/api/types"
 
 const watch = vi.hoisted(() => ({
   calls: [] as {
+    from?: number
+    generation?: string
     filter?: { kinds?: string[] }
     onRow: (row: ChangeRow) => void
+    onCompacted?: () => void
     stopped: boolean
   }[],
 }))
 
 vi.mock("@/lib/api/changes", () => ({
   watchChanges: (opts: {
+    from?: number
+    generation?: string
     filter?: { kinds?: string[] }
     onRow: (row: ChangeRow) => void
+    onCompacted?: () => void
   }) => {
     const call = { ...opts, stopped: false }
     watch.calls.push(call)
@@ -33,7 +39,7 @@ vi.mock("@/lib/api/changes", () => ({
   },
 }))
 
-import { createChangeBatcher } from "./use-live-records"
+import { createChangeBatcher, useLiveRecords } from "./use-live-records"
 import {
   changedInScope,
   dedupeChanges,
@@ -236,6 +242,56 @@ describe("useLiveInvalidation", () => {
     const { hook } = setup({ kinds: [TASK] })
     hook.unmount()
     expect(watch.calls[0].stopped).toBe(true)
+  })
+})
+
+describe("useLiveRecords", () => {
+  beforeEach(() => {
+    watch.calls = []
+  })
+  afterEach(() => cleanup())
+
+  function setup(from?: { head: number; generation: string }) {
+    const client = new QueryClient()
+    const invalidate = vi.spyOn(client, "invalidateQueries")
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const hook = renderHook(
+      ({ head }: { head: number }) =>
+        useLiveRecords(
+          [TASK],
+          [["records"]],
+          undefined,
+          from && { ...from, head }
+        ),
+      { wrapper, initialProps: { head: from?.head ?? 0 } }
+    )
+    return { invalidate, hook }
+  }
+
+  it("resumes from the read it was given, and a newer read does not reopen it", () => {
+    const { hook } = setup({ head: 7, generation: "g" })
+    expect(watch.calls).toHaveLength(1)
+    expect(watch.calls[0]).toMatchObject({ from: 7, generation: "g" })
+    hook.rerender({ head: 9 })
+    expect(watch.calls).toHaveLength(1)
+  })
+
+  it("re-reads and follows from the head when its position is gone", () => {
+    const { invalidate } = setup({ head: 7, generation: "old" })
+    act(() => watch.calls[0].onCompacted?.())
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({
+      queryKey: ["records"],
+    })
+    expect(watch.calls).toHaveLength(2)
+    expect(watch.calls[1].from).toBeUndefined()
+    expect(watch.calls[1].onCompacted).toBeUndefined()
+  })
+
+  it("starts at the server's head without a position", () => {
+    setup()
+    expect(watch.calls[0].from).toBeUndefined()
   })
 })
 

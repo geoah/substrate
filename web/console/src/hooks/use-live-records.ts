@@ -4,10 +4,14 @@
  * ordinary queries, so the watch carries no state of its own and a dropped
  * stream costs nothing but freshness (lib/api/changes.ts reconnects). */
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryKey } from "@tanstack/react-query"
 
-import { watchChanges, type WatchStatus } from "@/lib/api/changes"
+import {
+  watchChanges,
+  type WatchHandle,
+  type WatchStatus,
+} from "@/lib/api/changes"
 
 /** A sync writes many rows in one breath: one re-read covers them all. The
  * batch flushes `wait` ms after the LAST item, and never later than
@@ -50,26 +54,57 @@ export function createChangeBatcher<T>(
   }
 }
 
+/** Where a watch resumes: the `head` and `generation` of the list read whose
+ * rows the surface shows. Without it the stream starts at the server's head
+ * when it opens, and a row committed after the read and before that is never
+ * heard. */
+export interface LiveFrom {
+  head: number
+  generation: string
+}
+
 export function useLiveRecords(
   kinds: string[],
   invalidate: QueryKey[],
-  onStatus?: (status: WatchStatus, detail?: string) => void
+  onStatus?: (status: WatchStatus, detail?: string) => void,
+  from?: LiveFrom
 ) {
   const queryClient = useQueryClient()
   const kindsKey = JSON.stringify([...kinds].sort())
   const invalidateKey = JSON.stringify(invalidate)
+  // Read when the stream opens, never a reason to reopen it: every re-read
+  // the watch causes answers a newer head.
+  const fromRef = useRef(from)
+  useEffect(() => {
+    fromRef.current = from
+  })
   useEffect(() => {
     if (!kinds.length) return
     const keys = JSON.parse(invalidateKey) as QueryKey[]
-    const batcher = createChangeBatcher<true>(() => {
+    const reread = () => {
       for (const key of keys)
         void queryClient.invalidateQueries({ queryKey: key })
-    })
-    const handle = watchChanges({
-      filter: { kinds: JSON.parse(kindsKey) as string[] },
-      onRow: () => batcher.push(true),
-      onStatus,
-    })
+    }
+    const batcher = createChangeBatcher<true>(reread)
+    let handle: WatchHandle
+    const open = (start?: LiveFrom) => {
+      handle = watchChanges({
+        from: start?.head,
+        generation: start?.generation,
+        filter: { kinds: JSON.parse(kindsKey) as string[] },
+        onRow: () => batcher.push(true),
+        onStatus,
+        // A position the server no longer holds (a restored repository):
+        // re-read now and follow from the head.
+        onCompacted: start
+          ? () => {
+              reread()
+              open()
+            }
+          : undefined,
+      })
+    }
+    open(fromRef.current)
     return () => {
       batcher.cancel()
       handle.stop()
