@@ -31,17 +31,35 @@ export interface AppManifest {
 
 /** The manifest of an app served from `base` on this page's origin: its
  * client document at `<base>client.json`, its callback the base itself. A
- * loopback origin makes it a local app, whose document is never fetched. */
+ * loopback origin makes it a local app, whose document is never fetched.
+ * Absent, the base is the page's folder (`appBase`); an app that routes in
+ * its path, not its hash, names it (`import.meta.env.BASE_URL`). */
 export function webManifest(
   input: Omit<AppManifest, "clientID" | "redirectURI"> & { base?: string }
 ): AppManifest {
   const { base: at, ...rest } = input
-  const base = new URL(at ?? "./", window.location.href)
+  const base = at ? new URL(at, window.location.href) : appBase()
   return {
     ...rest,
     clientID: new URL("client.json", base).toString(),
     redirectURI: base.toString(),
   }
+}
+
+/** The folder a page is served from, ending in `/`. A last segment with no
+ * dot is a folder opened without its slash (`/substrate/tasks`), never a
+ * file beside the app, so the client id is `/substrate/tasks/client.json`
+ * and not `/substrate/client.json`. */
+export function appBase(location: Location | URL = window.location): URL {
+  const path = location.pathname
+  const last = path.slice(path.lastIndexOf("/") + 1)
+  const folder =
+    last === ""
+      ? path
+      : last.includes(".")
+        ? path.slice(0, -last.length)
+        : `${path}/`
+  return new URL(folder, location.origin)
 }
 
 /** The server an app needs: what its manifest names, else every scope verb

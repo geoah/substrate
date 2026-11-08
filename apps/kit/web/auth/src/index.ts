@@ -1,4 +1,5 @@
 export {
+  appBase,
   packageDetail,
   packageName,
   requirementOf,
@@ -12,7 +13,13 @@ export {
   unrevokedSentences,
   unrevokedTitle,
 } from "./revocations"
-export { SignInError, beginSignIn, completeSignIn, isCallback } from "./flow"
+export {
+  SignInError,
+  beginSignIn,
+  completeSignIn,
+  discardStrayCallback,
+  isCallback,
+} from "./flow"
 export { makePKCE, randomToken } from "./pkce"
 export {
   checkAppStatus,

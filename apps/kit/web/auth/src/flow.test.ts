@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { SignInError, beginSignIn, completeSignIn, isCallback } from "./flow"
+import {
+  SignInError,
+  beginSignIn,
+  completeSignIn,
+  discardStrayCallback,
+  isCallback,
+} from "./flow"
 import { packageDetail, type AppManifest } from "./manifest"
 
 const server = "https://substrate.example.com"
@@ -188,5 +194,25 @@ describe("the sign-in", () => {
       metadata.token_endpoint,
       metadata.revocation_endpoint,
     ])
+  })
+
+  it("takes a code no sign-in here asked for out of the address bar", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?code=c&state=s&iss=x&keep=1#/item/a"
+    )
+    expect(isCallback(manifest)).toBe(false)
+    expect(discardStrayCallback(manifest)).toBe(true)
+    expect(window.location.search).toBe("?keep=1")
+    expect(window.location.hash).toBe("#/item/a")
+    expect(discardStrayCallback(manifest)).toBe(false)
+  })
+
+  it("leaves a return this tab began for the exchange", async () => {
+    const url = await begin()
+    returnTo({ code: "c", state: url.searchParams.get("state")! })
+    expect(discardStrayCallback(manifest)).toBe(false)
+    expect(new URLSearchParams(window.location.search).get("code")).toBe("c")
   })
 })

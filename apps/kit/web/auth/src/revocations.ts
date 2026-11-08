@@ -22,28 +22,32 @@ export class RevocationQueue {
     }
   }
 
-  private write(list: Session[]): void {
+  private write(list: Session[]): boolean {
     try {
       if (list.length) localStorage.setItem(this.key, JSON.stringify(list))
       else localStorage.removeItem(this.key)
+      return true
     } catch {
       // a private window keeps nothing: the revocation is tried once
+      return false
     }
   }
 
-  private keep(session: Session): void {
+  /** Keeps the token to revoke, before anything else forgets it: a
+   * sign-out calls this before it clears the session, so the token is never
+   * held by nothing. Answers whether it was kept. */
+  keep(session: Session): boolean {
     const list = this.pending().filter((s) => s.token !== session.token)
-    this.write([...list, session])
+    return this.write([...list, session])
   }
 
   private forget(session: Session): void {
     this.write(this.pending().filter((s) => s.token !== session.token))
   }
 
-  /** Keeps the token, then revokes it. Answers whether the server
-   * confirmed; one it did not stays kept for `retry`. */
-  async revoke(session: Session): Promise<boolean> {
-    this.keep(session)
+  /** Revokes a token already kept, and forgets it once the server confirms.
+   * Answers whether it did; one it did not stays kept for `retry`. */
+  async send(session: Session): Promise<boolean> {
     try {
       await revoke(session)
       this.forget(session)
@@ -51,6 +55,21 @@ export class RevocationQueue {
     } catch {
       return false
     }
+  }
+
+  /** Keeps the token, then revokes it. */
+  async revoke(session: Session): Promise<boolean> {
+    this.keep(session)
+    return this.send(session)
+  }
+
+  /** Calls `fn` whenever another tab changes the tokens kept. */
+  watch(fn: () => void): () => void {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === this.key || e.key === null) fn()
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
   }
 
   /** Tries every kept token again and answers the ones still live. A
@@ -78,7 +97,7 @@ export class RevocationQueue {
  * again, and where the owner revokes it by hand. */
 export function unrevokedSentences(
   appName: string,
-  unrevoked: Session[]
+  unrevoked: readonly Session[]
 ): string[] {
   const groups = new Map<string, Session>()
   for (const s of unrevoked) {

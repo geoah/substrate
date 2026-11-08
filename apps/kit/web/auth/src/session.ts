@@ -26,7 +26,9 @@ export function hasEnded(session: Session, now = Date.now()): boolean {
 }
 
 /** Sessions kept in this browser's storage, one per app: a web app's token
- * lives where its pages can read it, which is what a public client is. */
+ * lives where its pages can read it, which is what a public client is. The
+ * kept session is the one every tab of the app runs on: a sign-out or a
+ * sign-in in one tab reaches the others through `watch`. */
 export class SessionStore {
   private readonly key: string
 
@@ -60,9 +62,36 @@ export class SessionStore {
       // a private window keeps nothing to clear
     }
   }
+
+  /** Clears the kept session only while it is still `token`'s: a tab whose
+   * access ended never signs out a session another tab signed in since. */
+  clearIf(token: string): void {
+    if (this.load()?.token === token) this.clear()
+  }
+
+  /** Whether `token` is the session every tab runs on now. */
+  current(token: string): boolean {
+    return this.load()?.token === token
+  }
+
+  /** Calls `fn` with the kept session whenever another tab changes it. A
+   * tab's own writes raise no storage event, so it learns only of others'. */
+  watch(fn: (session: Session | null) => void): () => void {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === this.key || e.key === null) fn(this.load())
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }
 }
 
-/** Revokes the session's token (RFC 7009). A token already gone is done. */
+/** Revokes the session's token (RFC 7009). Only a 2xx confirms it: the RFC's
+ * server answers 200 for a token it revoked and for one already invalid, and
+ * internal/api's handler answers 200 to every well-formed request and 503
+ * when it could not revoke. A 400 or a 401 refuses the request itself
+ * (invalid_request, unsupported_token_type, invalid_client) and revokes
+ * nothing, so the token is still live and is kept to try again and to name
+ * to the owner. */
 export async function revoke(session: Session): Promise<void> {
   const endpoint =
     session.revocationEndpoint ?? `${session.server}/oauth/revoke`
@@ -79,7 +108,7 @@ export async function revoke(session: Session): Promise<void> {
     body,
     redirect: "error",
   })
-  if (!res.ok && res.status !== 400 && res.status !== 401) {
+  if (!res.ok) {
     throw new Error(
       `The server didn't confirm revoking this sign-in (${res.status}).`
     )

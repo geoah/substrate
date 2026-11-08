@@ -46,6 +46,34 @@ describe("RevocationQueue", () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it("counts only a 2xx as revoked: a 400 or a 401 leaves the token live", async () => {
+    const queue = new RevocationQueue("template")
+    for (const status of [400, 401]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          Promise.resolve(
+            new Response('{"error":"invalid_client"}', { status })
+          )
+        )
+      )
+      expect(await queue.revoke(session("a"))).toBe(false)
+      expect(queue.pending().map((s) => s.token)).toEqual(["a"])
+    }
+  })
+
+  it("keeps a token before it is sent, so nothing else need hold it", async () => {
+    const queue = new RevocationQueue("template")
+    expect(queue.keep(session("a"))).toBe(true)
+    expect(queue.pending().map((s) => s.token)).toEqual(["a"])
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response("{}")))
+    )
+    expect(await queue.send(session("a"))).toBe(true)
+    expect(queue.pending()).toEqual([])
+  })
+
   it("says each server and repository once", () => {
     expect(
       unrevokedSentences("Substrate Template", [session("a"), session("b")])

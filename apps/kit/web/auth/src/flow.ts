@@ -92,6 +92,37 @@ export function isCallback(
   )
 }
 
+/** An authorization response's parameters (RFC 6749 §4.1.2, RFC 9207). */
+const responseParameters = [
+  "code",
+  "state",
+  "iss",
+  "error",
+  "error_description",
+  "error_uri",
+]
+
+/** Takes an authorization response this tab did not ask for out of the
+ * address bar, so a code never stays where history, a bookmark or a shared
+ * link keeps it: a redirect opened in another tab, or one whose sign-in
+ * this tab forgot. Answers whether there was one. */
+export function discardStrayCallback(
+  manifest: AppManifest,
+  location: Location = window.location
+): boolean {
+  if (isCallback(manifest, location)) return false
+  const q = new URLSearchParams(location.search)
+  if (!responseParameters.some((p) => q.has(p))) return false
+  for (const p of responseParameters) q.delete(p)
+  const query = q.toString()
+  window.history.replaceState(
+    null,
+    "",
+    location.pathname + (query ? `?${query}` : "") + location.hash
+  )
+  return true
+}
+
 interface TokenResponse {
   access_token: string
   token_type?: string
