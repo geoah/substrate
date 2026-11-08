@@ -356,9 +356,10 @@ safe on any prefix of a reply: an unclosed fence is code, a half table is
 text. Settled messages are parsed once and memoized; only the streaming one
 re-parses on each flush; text past 200,000 characters is plain. Code blocks
 scroll sideways and have Copy. A link opens only when it is `http`, `https`,
-`mailto` or a record link (below), and one that opens outside the app
-carries the external-link mark beside its text, which VoiceOver reads as
-"opens in your browser".
+`mailto`, a console path (`[Books](/applets/books)`, which opens that page
+of the console on the signed-in server) or a record link (below), and one
+that opens outside the app carries the external-link mark beside its text,
+which VoiceOver reads as "opens in your browser".
 
 ## The interface
 
