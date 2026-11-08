@@ -124,10 +124,12 @@ export function SubstrateProvider({
 
   /** A session whose access ended here: forgotten unless another tab has
    * signed in since, whose session this tab takes up instead. One this tab
-   * has moved on from meanwhile is left be. */
+   * has moved on from meanwhile is left be. `cause` is the keeper's: a 401
+   * the server answered, or a time up that may rest on this browser's
+   * clock, whose token is still queued to revoke. */
   const endSession = useCallback(
-    (ended: Session, words: string) => {
-      void keeper.end(ended).then((now) => {
+    (ended: Session, words: string, cause: "refused" | "timeUp") => {
+      void keeper.end(ended, cause).then((now) => {
         if (shown.current?.token !== ended.token) return
         shown.current = now
         setSession(now)
@@ -154,8 +156,8 @@ export function SubstrateProvider({
       setProblem(null)
       setSession(now)
     }
-    const stopSession = keeper.store.watch(look)
-    const stopRevocations = keeper.queue.watch(() =>
+    const stopSession = keeper.watchSession(look)
+    const stopRevocations = keeper.watchQueue(() =>
       setUnrevoked(keeper.pending())
     )
     const visible = () => {
@@ -256,7 +258,8 @@ export function SubstrateProvider({
         `Your access to ${host} ended. Sign in again` +
           (waiting
             ? ` to send the ${waiting === 1 ? "change" : `${waiting} changes`} waiting in this browser.`
-            : ".")
+            : "."),
+        "refused"
       )
     }
     const a = link.linked.subscribe(check)
@@ -277,7 +280,8 @@ export function SubstrateProvider({
       if (wait <= 0)
         return endSession(
           session,
-          "The time you approved it for is up. Sign in again."
+          "The time you approved it for is up. Sign in again.",
+          "timeUp"
         )
       timer = setTimeout(arm, Math.min(wait, longestWait))
     }
@@ -308,9 +312,12 @@ export function SubstrateProvider({
     const unsubscribe = statusModel.subscribe(() => {
       const { status } = statusModel.getSnapshot()
       if (status?.issues.some((i) => i.type === "accessEnded"))
+        // The check may rest on this browser's clock, so the token is
+        // queued to revoke as for a time up.
         endSession(
           session,
-          `${new URL(session.server).host} no longer accepts ${manifest.name}: the time you approved it for is up, or it was revoked in Settings, under Apps. Sign in again.`
+          `${new URL(session.server).host} no longer accepts ${manifest.name}: the time you approved it for is up, or it was revoked in Settings, under Apps. Sign in again.`,
+          "timeUp"
         )
     })
     void statusModel.refresh(true)

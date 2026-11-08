@@ -54,13 +54,15 @@ const keeper = new SessionKeeper(manifest.id)
 keeper.load() // the session every tab runs on
 await keeper.signIn(session) // a sign-in's return, kept
 await keeper.signOut(session) // { type: "signedOut" } or { type: "replaced", session }
-await keeper.end(session) // a 401 or the time up, taken up
+await keeper.end(session, "refused") // a 401, taken up
+await keeper.end(session, "timeUp") // the time up by this browser's clock
 keeper.onUnrevoked((left) => show(left)) // the revocations still owed
 ```
 
 The session lives in `localStorage`, one per app, and is the one every tab
-of the app runs on: `keeper.store.watch` hears another tab sign out or sign
-in, and `current(token)` says whether a tab's token is still the kept one.
+of the app runs on: `keeper.watchSession` hears another tab sign out or sign
+in, `keeper.watchQueue` another tab's revocations, and `current(token)`
+says whether a tab's token is still the kept one.
 
 Every change of it goes through `SessionKeeper`, under one Web Lock all
 the app's tabs share, `substrate.session.<app id>`. A change reads the kept
@@ -70,7 +72,9 @@ write: a sign-in's return replaces the session kept when it is saved,
 whichever tab put it there. Where the browser has no Web Locks (before
 Safari 15.4, Firefox 96 or Chrome 69, and in jsdom), the lock holds within
 the tab alone (`tabLocks`): its own changes run one at a time, another
-tab's may not. Reading the session writes nothing; one whose time is up
+tab's may not. `sessionLocks()` picks between the two, and the keeper's
+`locks` option replaces it (a test passes `FakeLocks` from
+`@substrate/testing`). Reading the session writes nothing; one whose time is up
 reads as none, and a change under the lock clears it.
 
 **The token is readable by every script on the page.** A public client has
@@ -114,14 +118,22 @@ leaves the queue only once its server confirms revoking it.
   session that stands and answers `replaced` with it, to take up. Where the
   queue will not take the token, `signOut` rejects with `NotSignedOut` and
   nothing changes, even when the server could be reached.
-- **An access that ended** (a 401 to a request carrying the token, or its
-  time up) is cleared while it is still the kept one, and nothing is
-  queued: the server's word or the clock ended the token.
+- **An access that ended** is cleared while it is still the kept one. A
+  401 to a request carrying the token (`"refused"`) queues nothing: the
+  server's word ended it. A time up (`"timeUp"`) rests on this browser's
+  clock, which may run ahead of the server's, so the token is queued like
+  any other first; where the queue will not take it, the session stays kept
+  (no tab runs on it: it reads as none) and the next sign-in queues it.
+  A sign-out queues a token whose time looks up too, and the queue forgets
+  one only on the server's answer.
 
 The revocations are sent from the queue after the lock is let go, in the
-background, each on its own: no change waits on one. One the server does
-not confirm is sent again at every open, when the network comes back, and
-after a wait that grows while anyone listens (`onUnrevoked`). Only a 2xx
+background, each on its own: no change waits on one, and one the server
+does not answer holds back no other. A request gets 20 s (the
+`revokeTimeout` option) before it counts as not confirmed. One the server
+does not confirm is sent again at every open, when the network comes back,
+and after a wait that grows while anyone listens (`onUnrevoked`, told as
+each token's revocation settles). Only a 2xx
 confirms a revocation: RFC 7009's server answers 200 for a token it revoked
 and for one already invalid (the substrate answers 200 to every
 well-formed request, 503 when it could not revoke), while a 400 or 401

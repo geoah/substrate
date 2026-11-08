@@ -98,6 +98,7 @@ describe.each([
   afterEach(() => {
     uninstall()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it("takes the one lock every tab of the app shares", async () => {
@@ -294,16 +295,80 @@ describe.each([
     }
   })
 
-  it("forgets a queued token whose time is up without asking the server", async () => {
+  it("sends a queued token whose time is up, since only the server's answer confirms it gone", async () => {
     localStorage.setItem(
       queueKey,
       JSON.stringify([session("old", { expiresAt: 1000 })])
     )
-    const sent = vi.fn(fake.fetch)
-    vi.stubGlobal("fetch", sent)
     expect(await tab().send()).toEqual([])
-    expect(sent).not.toHaveBeenCalled()
+    expect(fake.revoked.has("old")).toBe(true)
     expect(queued()).toEqual([])
+  })
+
+  it("keeps custody of a token whose time looks up only by this browser's clock", async () => {
+    const now = Date.now()
+    const live = (token: string) =>
+      session(token, { expiresAt: now + 3_600_000 })
+    // The clock runs two hours ahead of the server's.
+    vi.spyOn(Date, "now").mockReturnValue(now + 7_200_000)
+    const here = tab()
+
+    // A sign-out queues it and the server is asked.
+    keep(live("a"))
+    expect(await here.signOut(live("a"))).toEqual({ type: "signedOut" })
+    await until(() => fake.revoked.has("a"), 2000, "a revoked")
+    expect(queued()).toEqual([])
+
+    // A time up queues it before the session is cleared.
+    keep(live("b"))
+    expect(await here.end(live("b"), "timeUp")).toBeNull()
+    expect(stored()).toBeUndefined()
+    await until(() => fake.revoked.has("b"), 2000, "b revoked")
+
+    // Where the queue will not take it, the session stays kept, and the
+    // next sign-in queues it.
+    keep(live("c"))
+    const full = refuse(queueKey)
+    expect(await here.end(live("c"), "timeUp")).toBeNull()
+    expect(stored()).toBe("c")
+    expect(here.load()).toBeNull()
+    full.mockRestore()
+    await here.signIn(session("d"))
+    expect(stored()).toBe("d")
+    accounted("c", "d")
+    await until(() => fake.revoked.has("c"), 2000, "c revoked")
+  })
+
+  it("leaves nothing queued for a 401: the server's word is the confirmation", async () => {
+    keep(session("a"))
+    expect(await tab().end(session("a"), "refused")).toBeNull()
+    expect(stored()).toBeUndefined()
+    expect(queued()).toEqual([])
+  })
+
+  it("retries each token on its own while another's revocation hangs, and gives the hung one up in time", async () => {
+    localStorage.setItem(queueKey, JSON.stringify([session("a"), session("b")]))
+    const release = revocationWaits("a")
+    fake.fail({ path: /oauth\/revoke/ }, 503)
+    const here = new SessionKeeper("template", {
+      retryDelays: [10],
+      revokeTimeout: 200,
+    })
+    const heard: string[][] = []
+    const stop = here.onUnrevoked((left) =>
+      heard.push(left.map((s) => s.token))
+    )
+    void here.send()
+    // b's 503 is told and sent again while a is still on the wire.
+    await until(() => fake.revoked.has("b"), 2000, "b sent again")
+    expect(heard[0]).toEqual(["b"])
+    expect(queued()).toEqual(["a"])
+    // a's request runs out of time, counts as not confirmed, and is told.
+    await until(() => heard.some((l) => l.includes("a")), 2000, "a timed out")
+    release()
+    await until(() => fake.revoked.has("a"), 2000, "a revoked")
+    await until(() => queued().length === 0, 2000, "the queue drained")
+    stop()
   })
 
   it("never revokes the token the kept session holds", async () => {

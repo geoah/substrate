@@ -86,22 +86,43 @@ export class SessionStore {
  * (invalid_request, unsupported_token_type, invalid_client) and revokes
  * nothing, so the token is still live and is kept to try again and to name
  * to the owner. */
-export async function revoke(session: Session): Promise<void> {
+/** How long a revocation may take before it counts as not confirmed. */
+export const revokeTimeout = 20_000
+
+export async function revoke(
+  session: Session,
+  timeoutMs = revokeTimeout
+): Promise<void> {
   const endpoint =
     session.revocationEndpoint ?? `${session.server}/oauth/revoke`
   const body = new URLSearchParams({
     token: session.token,
     client_id: session.clientID,
   })
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body,
-    redirect: "error",
+  // A request the server never answers counts as not confirmed, so the
+  // token is sent again later rather than held on the wire for good. The
+  // race settles even where a fetch does not honour the abort.
+  const abort = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort()
+      reject(new Error("The server didn't answer the revocation in time."))
+    }, timeoutMs)
   })
+  const res = await Promise.race([
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body,
+      redirect: "error",
+      signal: abort.signal,
+    }),
+    timedOut,
+  ]).finally(() => clearTimeout(timer))
   if (!res.ok) {
     throw new Error(
       `The server didn't confirm revoking this sign-in (${res.status}).`

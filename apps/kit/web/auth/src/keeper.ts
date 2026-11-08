@@ -64,6 +64,9 @@ export interface SessionKeeperOptions {
   /** The waits before revocations the server did not confirm are sent
    * again, in ms; the last repeats. */
   retryDelays?: readonly number[]
+  /** How long one revocation may take before it counts as not confirmed,
+   * in ms. */
+  revokeTimeout?: number
 }
 
 const defaultRetryDelays = [5_000, 30_000, 120_000, 600_000]
@@ -84,10 +87,11 @@ const defaultRetryDelays = [5_000, 30_000, 120_000, 600_000]
  * so. Revocations are sent from the queue after the lock is let go, in the
  * background, and sent again while they fail: no change waits on one. */
 export class SessionKeeper {
-  readonly store: SessionStore
-  readonly queue: RevocationQueue
+  private readonly store: SessionStore
+  private readonly queue: RevocationQueue
   private readonly locks?: SessionLocks
   private readonly retryDelays: readonly number[]
+  private readonly revokeTimeout?: number
   /** Each token's revocation on the wire, by token. */
   private readonly inflight = new Map<string, Promise<void>>()
   /** The tokens whose last revocation the server did not confirm. */
@@ -101,6 +105,17 @@ export class SessionKeeper {
     this.queue = new RevocationQueue(appID)
     this.locks = opts.locks
     this.retryDelays = opts.retryDelays ?? defaultRetryDelays
+    this.revokeTimeout = opts.revokeTimeout
+  }
+
+  /** Calls `fn` when another tab changes the kept session. */
+  watchSession(fn: () => void): () => void {
+    return this.store.watch(fn)
+  }
+
+  /** Calls `fn` when another tab changes the tokens queued to revoke. */
+  watchQueue(fn: () => void): () => void {
+    return this.queue.watch(fn)
   }
 
   /** The kept session, while its access has not ended. */
@@ -135,7 +150,9 @@ export class SessionKeeper {
    * the queue will not take it either. */
   async signIn(next: Session): Promise<void> {
     const kept = await this.locked(() => {
-      const before = this.store.load()
+      // Raw, not `load`: a session whose time looks up by this browser's
+      // clock may still be live on the server, so it is queued like any.
+      const before = this.store.read()
       const replaced = before && before.token !== next.token ? before : null
       if (replaced && !this.queue.keep(replaced))
         return this.queue.keep(next) ? "queued" : "refused"
@@ -163,8 +180,9 @@ export class SessionKeeper {
    * the queue will not take the token. */
   async signOut(session: Session): Promise<SignOut> {
     const out = await this.locked((): SignOut | null => {
-      // A token whose time is up needs no revoking.
-      if (!hasEnded(session) && !this.queue.keep(session)) return null
+      // Queued even when its time looks up: only the server's answer
+      // confirms a token is gone, and this browser's clock may run ahead.
+      if (!this.queue.keep(session)) return null
       const kept = this.store.read()
       if (kept?.token !== session.token)
         return kept && !hasEnded(kept)
@@ -184,24 +202,37 @@ export class SessionKeeper {
     return out
   }
 
-  /** Takes up the end of `session`'s access here: a 401 to a request that
-   * carried its token (a tab's requests carry only the kept session's), or
-   * its time up. The server's word or the clock ended the token already, so
-   * nothing is queued: the kept session is cleared while it is still that
-   * one, and answers the session kept after, one another tab signed in
-   * since. */
-  async end(session: Session): Promise<Session | null> {
-    return this.locked(() => {
+  /** Takes up the end of `session`'s access here, and answers the session
+   * kept after: one another tab signed in since, or none. `cause` says who
+   * ended it:
+   * - `"refused"`: the server answered 401 to a request that carried its
+   *   token (a tab's requests carry only the kept session's). The server's
+   *   word is the confirmation, so nothing is queued.
+   * - `"timeUp"`: this browser's clock, or a check that may rest on it,
+   *   says its time is up. A clock can run ahead of the server's, so the
+   *   token is queued like any other before the session is cleared; where
+   *   the queue will not take it, the session stays kept (no tab runs on
+   *   it, since `load` passes it over) and the next sign-in queues it. */
+  async end(
+    session: Session,
+    cause: "refused" | "timeUp" = "refused"
+  ): Promise<Session | null> {
+    const after = await this.locked(() => {
       const kept = this.store.read()
       if (kept?.token !== session.token)
         return kept && !hasEnded(kept) ? kept : null
+      if (cause === "timeUp" && !this.queue.keep(session)) return null
       try {
         this.store.clear()
       } catch {
-        // Ended either way; the next sign-in replaces it.
+        // Kept, and still the token's one copy if the queue holds none;
+        // the next sign-in replaces it and queues it.
+        if (cause === "timeUp") this.queue.drop(session)
       }
       return null
     })
+    if (cause === "timeUp") void this.send()
+    return after
   }
 
   /** Lets go of a token a sign-in minted and will not keep (one for another
@@ -238,12 +269,13 @@ export class SessionKeeper {
     try {
       due = await this.locked(() => {
         // One the kept session still holds (a sign-in whose save failed
-        // and whose replaced token could not leave the queue) is in use,
-        // and one whose time is up needs no revoking: both are forgotten.
+        // and whose replaced token could not leave the queue) is in use:
+        // it is forgotten here. Every other is sent, a token whose time
+        // looks up included: only the server's answer confirms it is gone.
         const kept = this.store.read()?.token
         const out: Session[] = []
         for (const s of this.queue.pending()) {
-          if (s.token === kept || hasEnded(s)) this.queue.drop(s)
+          if (s.token === kept) this.queue.drop(s)
           else out.push(s)
         }
         return out
@@ -252,10 +284,19 @@ export class SessionKeeper {
       due = this.queue.pending()
     }
     await Promise.all(due.map((s) => this.sendOne(s)))
+    return this.report()
+  }
+
+  /** Tells the listeners the tokens still unrevoked, and schedules the next
+   * pass while any are. Called as each token's revocation settles, so one
+   * still on the wire holds back no other's retry. */
+  private report(): Session[] {
     const left = this.queue.pending().filter((s) => this.failed.has(s.token))
-    this.failures = left.length ? this.failures + 1 : 0
     for (const fn of this.listeners) fn(left)
-    if (left.length && this.listeners.size && !this.timer) {
+    if (!left.length) {
+      this.failures = 0
+    } else if (this.listeners.size && !this.timer) {
+      this.failures++
       const at = Math.min(this.failures, this.retryDelays.length) - 1
       this.timer = setTimeout(() => void this.send(), this.retryDelays[at])
     }
@@ -267,7 +308,7 @@ export class SessionKeeper {
   private sendOne(session: Session): Promise<void> {
     let sending = this.inflight.get(session.token)
     if (sending) return sending
-    sending = revoke(session)
+    sending = revoke(session, this.revokeTimeout)
       .then(
         async () => {
           this.failed.delete(session.token)
@@ -278,7 +319,10 @@ export class SessionKeeper {
         }
       )
       .catch(() => {})
-      .finally(() => this.inflight.delete(session.token))
+      .finally(() => {
+        this.inflight.delete(session.token)
+        this.report()
+      })
     this.inflight.set(session.token, sending)
     return sending
   }
