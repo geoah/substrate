@@ -232,6 +232,8 @@ func TestAgentQueryCardCarriesTheLimitsInForce(t *testing.T) {
 		"a query call stops after 1s",
 		"a result over 4 KiB is replaced by",
 		"narrow once",
+		"groups by source, about, code, metric, channel, statistic, never by kind",
+		"list each kind with first 1 and count true",
 	} {
 		if !strings.Contains(tight, want) {
 			t.Errorf("tight's query card lacks %q:\n%s", want, tight)

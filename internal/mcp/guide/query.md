@@ -93,7 +93,7 @@ Steps per day:
 
 - `bucket`: `{"calendar": "hour|day|week|month", "timezone"}`, `{"every": "PT15M"}`, or absent for one bucket over the range. `range` is half-open `[gte, lt)` and required except with `"latest": true`, which answers each stream's newest point.
 - `reducers` by form: `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": 0.95}`, `{"durationIn": [100, 140]}`, `{"timeInState": ["open"]}`, `increase`, `rate`, `circularMean`. A reducer the metric's form does not admit is `422`.
-- `groupBy`: `source`, `about`, `code`, `metric`, `channel`, `statistic`. Also `unit`, `fill: "zero"`, `rolling: {"buckets": 7}`, `metrics: [{ref}, …]` (up to 16).
+- `groupBy`: `source`, `about`, `code`, `metric`, `channel`, `statistic`, never `kind`: count a kind with a list's `count`. Also `unit`, `fill: "zero"`, `rolling: {"buckets": 7}`, `metrics: [{ref}, …]` (up to 16).
 - A property read sums a declared number of the filtered kinds instead:
 
 ```json
