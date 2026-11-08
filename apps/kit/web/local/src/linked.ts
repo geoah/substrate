@@ -186,7 +186,14 @@ export class LinkedRecords {
   private folds = new Map<string, Map<string, Folded>>()
   /** The kinds a change touched since their map was last folded. */
   private refold = new Set<string>()
-  private listedKinds = new Set<string>()
+  /** How much of each kind was read: whole, or up to the read's limit. */
+  private coverage = new Map<string, "whole" | "partial">()
+  /** Records read and not found, or removed, since: absent though their
+   * kind was read only in part. */
+  private absentKeys = new Set<string>()
+  /** Records a screen asked for that a partial read may have cut off,
+   * read by themselves until each is found or known absent. */
+  private wanted = new Set<string>()
   private status: LinkedStatus = "loading"
   private words?: string
   private cached = false
@@ -209,6 +216,9 @@ export class LinkedRecords {
   /** The last list taken: one started before it answers into nothing. */
   private listTaken = 0
   private listRetry?: ReturnType<typeof setTimeout>
+  /** The page came back to the front, or online, while a list ran: a
+   * follow that paused or ended meanwhile goes when the list is done. */
+  private woken = false
   private collected = new Set<string>()
   /** Each record's read in flight, by ticket: one removed or replaced is
    * answered into nothing. */
@@ -261,9 +271,36 @@ export class LinkedRecords {
     this.writeStates.get(recordKey(kind, id))
 
   /** Whether a kind's records are known whole, so a record not among them
-   * is absent rather than not read yet: listed from the server, or kept
-   * whole by this browser. */
-  hasListed = (kind: string): boolean => this.listedKinds.has(kind)
+   * is absent rather than not read yet: listed from the server, or kept by
+   * this browser from such a list, and not cut off at the read's limit. */
+  hasListed = (kind: string): boolean => this.coverage.get(kind) === "whole"
+
+  /** Whether a record not shown is known not to be in the repository: its
+   * kind read whole, a read of it that found none, or a write waiting here
+   * that removes it. A record shown is never absent. */
+  isAbsent = (kind: string, id: string): boolean => {
+    if (this.recordSnapshot(kind, id)) return false
+    const key = recordKey(kind, id)
+    return (
+      this.hasListed(kind) ||
+      this.absentKeys.has(key) ||
+      this.server.get(key) !== undefined
+    )
+  }
+
+  /** Reads a record its kind's read may have cut off at its limit: one not
+   * shown and not known absent is read by itself, now if its kind was read
+   * in part, after the list if it was not read yet. `recordSnapshot` and
+   * `isAbsent` answer once it is. */
+  resolve = (kind: string, id: string): void => {
+    if (!this.kinds.includes(kind) || this.isAbsent(kind, id)) return
+    if (this.recordSnapshot(kind, id)) return
+    const key = recordKey(kind, id)
+    this.wanted.add(key)
+    const partial = this.coverage.get(kind) === "partial"
+    if (partial && this.abort && !this.inflight.has(key))
+      void this.refresh(kind, id, this.watch?.signal)
+  }
 
   statusSnapshot = (): LinkedStatusSnapshot => {
     const s = this.statusShot
@@ -434,8 +471,12 @@ export class LinkedRecords {
         if (event === "offline" || abort.signal.aborted) return
         // Back online or to the front: a follow waiting out its pause, one
         // that ended, or a list waiting to be tried again goes now. One
-        // reading, open, or stopped for good is left alone.
-        if (this.listing) return
+        // open, or stopped for good, is left alone, and one reading is
+        // looked at again when its list is done.
+        if (this.listing) {
+          this.woken = true
+          return
+        }
         if (
           this.watchState === "paused" ||
           this.watchState === "ended" ||
@@ -476,10 +517,12 @@ export class LinkedRecords {
         const byKind = new Map<string, Map<string, SubstrateRecord>>()
         for (const kind of kept.kinds ?? []) {
           byKind.set(kind, new Map())
-          this.listedKinds.add(kind)
+          const partial = kept.partial?.includes(kind)
+          this.coverage.set(kind, partial ? "partial" : "whole")
         }
         for (const r of kept.records) byKind.get(r.kind)?.set(r.id, r)
         for (const [kind, ids] of byKind) this.server.replace(kind, ids)
+        if (kept.partial?.length) this.limitReached = kept.records.length
         this.cursor = kept.cursor
         this.cached = kept.records.length > 0 || !!kept.cursor
         this.emit()
@@ -500,9 +543,10 @@ export class LinkedRecords {
     const watch = new AbortController()
     this.watch = watch
     this.watchState = "connecting"
+    this.woken = false
     let mustList = !this.cursor
     let listedEarly = false
-    if (mustList && !this.listedKinds.size)
+    if (mustList && !this.coverage.size)
       this.setStatus("loading", `Reading your ${this.kept}…`)
     const onEvent = (e: WatchEvent) => {
       if (watch.signal.aborted) return
@@ -552,7 +596,7 @@ export class LinkedRecords {
           if (
             mustList &&
             !listedEarly &&
-            this.kinds.some((k) => !this.listedKinds.has(k))
+            this.kinds.some((k) => !this.coverage.has(k))
           ) {
             listedEarly = true
             void this.list(undefined, watch.signal)
@@ -589,8 +633,9 @@ export class LinkedRecords {
     )
   }
 
-  /** The kinds read whole and kept, with the watch's bookmark as where the
-   * watch follows them from; without one, shown and not followed from. */
+  /** The kinds read and kept, whole or up to the limit, with the watch's
+   * bookmark as where the watch follows them from; without one, shown and
+   * not followed from. */
   private async list(
     bookmark: WatchCursor | undefined,
     signal: AbortSignal
@@ -601,7 +646,7 @@ export class LinkedRecords {
     this.listRetry = undefined
     try {
       const page = await this.client.listAll(
-        { kinds: this.kinds, first: 500 },
+        { kinds: this.kinds, first: Math.min(500, this.limit) },
         this.limit,
         signal
       )
@@ -617,22 +662,31 @@ export class LinkedRecords {
         const here = this.server.get(recordKey(r.kind, r.id))
         byKind.get(r.kind)?.set(r.id, here && same(here, r) ? here : r)
       }
+      // A cursor left means the read stopped at its limit: a record not
+      // among these may be past it.
+      const whole = !page.cursor
       for (const [kind, ids] of byKind) {
         this.server.replace(kind, ids)
-        this.listedKinds.add(kind)
+        this.coverage.set(kind, whole ? "whole" : "partial")
       }
-      this.limitReached = page.cursor ? page.records.length : undefined
+      this.limitReached = whole ? undefined : page.records.length
       this.cached = false
-      this.cache?.listed(page.records, this.kinds, bookmark)
+      this.cache?.listed(page.records, this.kinds, bookmark, whole)
       if (bookmark) {
         this.cursor = bookmark
-        this.status = "live"
-        this.words = undefined
+        // A follow that went quiet while the list ran says so still.
+        if (this.watchState === "open") {
+          this.status = "live"
+          this.words = undefined
+        }
       }
-      if (this.listing === run) this.listing = 0
       this.emit()
-      const keys = [...this.collected]
+      const keys = new Set(this.collected)
       this.collected.clear()
+      for (const key of this.wanted) {
+        if (whole || this.server.get(key)) this.wanted.delete(key)
+        else keys.add(key)
+      }
       for (const key of keys) {
         const [kind, id] = splitKey(key)
         void this.refresh(kind, id, signal)
@@ -653,12 +707,22 @@ export class LinkedRecords {
           if (!signal.aborted) void this.list(bookmark, signal)
         }, 5000)
     } finally {
-      if (this.listing === run) this.listing = 0
+      if (this.listing === run) {
+        this.listing = 0
+        const paused =
+          this.watchState === "paused" || this.watchState === "ended"
+        if (this.woken && paused && !signal.aborted) this.connect()
+        this.woken = false
+      }
     }
   }
 
+  /** The records the watch named while away, and those a screen still
+   * waits for, read again. */
   private rereadStale(signal: AbortSignal): void {
-    for (const key of this.cache?.staleKeys ?? []) {
+    const keys = new Set(this.cache?.staleKeys)
+    for (const key of this.wanted) keys.add(key)
+    for (const key of keys) {
       const [kind, id] = splitKey(key)
       void this.refresh(kind, id, signal)
     }
@@ -669,6 +733,8 @@ export class LinkedRecords {
   private removed(key: string): void {
     this.inflight.delete(key)
     this.landedAt.delete(key)
+    this.wanted.delete(key)
+    this.absentKeys.add(key)
     this.server.delete(key)
   }
 
@@ -686,13 +752,21 @@ export class LinkedRecords {
       this.inflight.delete(key)
       const before = Math.max(this.listedAt, this.landedAt.get(key) ?? 0)
       if (!record && ticket <= before) return
+      this.wanted.delete(key)
       const here = this.server.get(key)
       const next =
         record && here && (here.version > record.version || same(here, record))
           ? here
           : record
-      if (next) this.server.set(key, next)
-      else this.server.delete(key)
+      if (next) {
+        this.absentKeys.delete(key)
+        this.server.set(key, next)
+      } else {
+        this.absentKeys.add(key)
+        // A read that found none moves nothing a reader holds but
+        // `isAbsent`, which every listener reads again.
+        if (!this.server.delete(key)) this.emit()
+      }
       this.cache?.refreshed(key, next)
     } catch (e) {
       if (this.inflight.get(key) === ticket) this.inflight.delete(key)
@@ -703,20 +777,19 @@ export class LinkedRecords {
   }
 
   /** A write the outbox says landed, laid over the server's copy before it
-   * leaves the queue. */
-  private layLanded(
-    entry: OutboxEntry,
-    record: SubstrateRecord | undefined
-  ): void {
+   * leaves the queue. One that left no record (a delete, or a create whose
+   * row was found gone since) removes the record here and in the cache,
+   * and a read of it from before answers into nothing. */
+  private layLanded(entry: OutboxEntry, record: SubstrateRecord | null): void {
     if (!this.kinds.includes(entry.kind)) return
     const key = entryKey(entry)
-    if (entry.method === "DELETE") {
+    if (!record) {
       this.removed(key)
       this.cache?.refreshed(key, null)
       return
     }
     this.landedAt.set(key, this.tickets)
-    if (!record) return
+    this.absentKeys.delete(key)
     const here = this.server.get(key)
     if (here && (here.version > record.version || same(here, record))) return
     this.server.set(key, record)

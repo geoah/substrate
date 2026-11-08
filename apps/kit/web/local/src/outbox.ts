@@ -145,10 +145,11 @@ const chainLimit = 32
 const createdVersion = 1
 
 /** What a write that landed leaves: the record the server holds after it,
- * where it answered one, and the version the write itself made, which the
- * chain moves a later edit's base along. */
+ * null where it holds none (a delete, or a create whose row was found gone
+ * since), and the version the write itself made, which the chain moves a
+ * later edit's base along. */
 interface Landed {
-  record?: SubstrateRecord
+  record: SubstrateRecord | null
   made?: number
 }
 
@@ -211,7 +212,7 @@ export class Outbox {
   private unsubscribe?: () => void
   private listeners = new Set<() => void>()
   private landedListeners = new Set<
-    (entry: OutboxEntry, record: SubstrateRecord | undefined) => void
+    (entry: OutboxEntry, record: SubstrateRecord | null) => void
   >()
   private snapshot: OutboxSummary
   readonly ready: Promise<void>
@@ -287,12 +288,13 @@ export class Outbox {
 
   getSnapshot = (): OutboxSummary => this.snapshot
 
-  /** Called with each write the server took, and the record it answered
-   * (none for a delete), before the write leaves the queue: a reader lays
-   * the answer over its copy first, so the record never shows undone in
-   * between. */
+  /** Called with each write the server took, and the record the server
+   * holds after it, or null where it holds none: a delete, or a create
+   * whose row was found gone since. It is called before the write leaves
+   * the queue: a reader lays the answer over its copy first, so the record
+   * never shows undone in between. */
   onLanded(
-    fn: (entry: OutboxEntry, record: SubstrateRecord | undefined) => void
+    fn: (entry: OutboxEntry, record: SubstrateRecord | null) => void
   ): () => void {
     this.landedListeners.add(fn)
     return () => this.landedListeners.delete(fn)
@@ -538,7 +540,7 @@ export class Outbox {
     for (let entry = this.next(tried); entry; entry = this.next(tried)) {
       tried.add(entry.id)
       const signal = this.abort.signal
-      let landed: Landed = {}
+      let landed: Landed = { record: null }
       let failure: unknown
       let failed = false
       try {
@@ -669,8 +671,9 @@ export class Outbox {
           // since, so the row is read instead. The create made the version
           // every record is created at, so an edit queued on it is sent on
           // that one and parks if another device moved the record since.
+          // A row found gone since is a create that landed and was deleted.
           const record = await this.client.record(kind, id, signal)
-          return { record: record ?? undefined, made: createdVersion }
+          return { record, made: createdVersion }
         }
       case "PATCH":
         if (entry.baseVersion !== undefined) {
@@ -706,7 +709,7 @@ export class Outbox {
         }
       case "DELETE":
         await this.client.delete(kind, id, signal)
-        return {}
+        return { record: null }
     }
   }
 

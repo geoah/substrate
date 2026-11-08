@@ -140,4 +140,35 @@ describe("the record cache", () => {
     expect(wider.records.map((r) => r.id)).toEqual(["a"])
     storage.close()
   })
+
+  it("keeps which kinds a list cut off at its limit apart from those read whole", async () => {
+    const storage = await openRepositoryStorage("test", "cache-7.example.org")
+    const cache = new RecordCache(storage, 0)
+    const at = { seq: 3, generation: "g1" }
+    cache.listed([record(kind, "a")], [kind, other], at, false)
+    await cache.save()
+    const cut = await new RecordCache(storage, 0).load([kind, other])
+    expect(cut).toMatchObject({ kinds: [kind, other], partial: [kind, other] })
+    expect(cut.cursor).toEqual(at)
+
+    cache.listed([record(kind, "a"), record(kind, "b")], [kind, other], at)
+    await cache.save()
+    const whole = await new RecordCache(storage, 0).load([kind, other])
+    expect(whole).toMatchObject({ kinds: [kind, other], partial: [] })
+    storage.close()
+  })
+
+  it("tries a failed save once more while nothing else changes", async () => {
+    const storage = await openRepositoryStorage("test", "cache-8.example.org")
+    const cache = new RecordCache(failingOnce(storage), 0, 20)
+    cache.listed([record(kind, "a")], [kind], { seq: 3, generation: "g1" })
+    await cache.save()
+    expect(cache.saveProblem).toBe("QuotaExceededError")
+    await new Promise((r) => setTimeout(r, 80))
+    expect(cache.saveProblem).toBeUndefined()
+    const kept = await new RecordCache(storage, 0).load([kind])
+    expect(kept.records.map((r) => r.id)).toEqual(["a"])
+    await cache.close()
+    storage.close()
+  })
 })

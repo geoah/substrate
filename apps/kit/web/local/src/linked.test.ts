@@ -72,6 +72,7 @@ function link(
     outbox?: Outbox
     kinds?: string[]
     connectivity?: Connectivity
+    limit?: number
   } = {}
 ): LinkedRecords {
   const linked = new LinkedRecords({
@@ -424,5 +425,93 @@ describe("the linked records", () => {
     await until(() => linked.writeState(kind, "a1") === "parked")
     expect(linked.statusSnapshot()).toMatchObject({ pending: 0, parked: 1 })
     expect(linked.recordSnapshot(kind, "a1")).toBeUndefined()
+  })
+
+  it("drops a record whose create met its row gone since, and a read of it from before", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    const cache = new RecordCache(storage, 0)
+    const outbox = new Outbox({
+      client,
+      storage,
+      connectivity: steadyConnectivity,
+    })
+    stops.push(() => outbox.close())
+    const linked = link({ outbox, cache })
+    await until(() => !!linked.recordSnapshot(kind, "a1"), 2000, "the list")
+    // The feed goes quiet, so only the create says the row is gone.
+    fake.fail({ path: /changes/ }, 503, undefined, {}, 1000)
+    fake.dropWatches()
+    let gets = 0
+    const read = holding(
+      (method, path) => method === "GET" && path.endsWith("/a1") && ++gets === 1
+    )
+    void linked.refresh(kind, "a1")
+    await until(() => read.held() === 1, 2000, "the read")
+    await client.delete(kind, "a1")
+    // The create's earlier try landed and its answer was lost.
+    fake.fail({ method: "PUT" }, 409, {
+      error: { code: "conflict", message: "it exists" },
+    })
+    await outbox.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
+    await until(() => outbox.getSnapshot().waiting === 0, 2000, "the create")
+    expect(linked.recordSnapshot(kind, "a1")).toBeUndefined()
+    read.open()
+    await tick()
+    expect(linked.recordSnapshot(kind, "a1")).toBeUndefined()
+    expect(linked.isAbsent(kind, "a1")).toBe(true)
+    await cache.save()
+    expect((await storage.readRecords()).records).toEqual([])
+  })
+
+  it("reads by itself a record its kind's list cut off at the limit, and keeps the kind read in part", async () => {
+    for (const id of ["a1", "a2", "a3"]) fake.seed(kind, id, { name: id })
+    const cache = new RecordCache(storage, 0)
+    const linked = link({ cache, limit: 2 })
+    await until(() => linked.statusSnapshot().status === "live")
+    expect(linked.statusSnapshot().limitReached).toBe(2)
+    expect(linked.hasListed(kind)).toBe(false)
+    expect(linked.recordSnapshot(kind, "a3")).toBeUndefined()
+    expect(linked.isAbsent(kind, "a3")).toBe(false)
+    expect(linked.isAbsent(kind, "gone")).toBe(false)
+
+    linked.resolve(kind, "a3")
+    linked.resolve(kind, "gone")
+    await until(
+      () =>
+        linked.recordSnapshot(kind, "a3")?.properties.name === "a3" &&
+        linked.isAbsent(kind, "gone"),
+      2000,
+      "the reads"
+    )
+    linked.stop()
+    await cache.close()
+
+    const again = link({ cache: new RecordCache(storage, 0), limit: 2 })
+    await until(() => !!again.recordSnapshot(kind, "a1"), 2000, "the kept ones")
+    expect(again.hasListed(kind)).toBe(false)
+    expect(again.isAbsent(kind, "other")).toBe(false)
+  })
+
+  it("follows again after a list the page came to the front during, when the follow ended meanwhile", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    const net = front()
+    const list = holding((_method, path) => path === "/api/v1/records")
+    const linked = link({ connectivity: net })
+    await until(() => list.held() === 1, 2000, "the list")
+    fake.fail({ path: /changes/ }, 400, {
+      error: { code: "bad_request", message: "not now" },
+    })
+    fake.dropWatches()
+    await until(() => linked.statusSnapshot().status === "error", 2000, "ended")
+    net.show()
+    list.open()
+    await until(() => fake.openWatches === 1, 2000, "the follow again")
+    fake.change(kind, "a1", { name: "Oat milk" })
+    await until(
+      () => linked.recordSnapshot(kind, "a1")?.properties.name === "Oat milk",
+      2000,
+      "the change"
+    )
+    expect(linked.statusSnapshot().status).toBe("live")
   })
 })

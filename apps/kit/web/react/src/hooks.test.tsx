@@ -129,4 +129,36 @@ describe("the record hooks", () => {
     await act(() => until(() => reads.includes("gone:absent")))
     expect(reads).toContain("a:present")
   })
+
+  it("reads by itself a record past a list cut off at its limit before saying it is absent", async () => {
+    for (const id of ["a", "b", "c"]) fake.seed(Item.kind, id, { name: id })
+    linked = new LinkedRecords({
+      client: new SubstrateClient(fake.origin, "tok"),
+      kinds: [Item.kind],
+      outbox,
+      connectivity: steadyConnectivity,
+      limit: 2,
+    })
+    const reads: string[] = []
+    function One(props: { id: string }) {
+      const read = useRecord(Item, props.id)
+      reads.push(`${props.id}:${read.state}`)
+      return null
+    }
+    linked.start()
+    await act(() => until(() => linked.statusSnapshot().status === "live"))
+    render(
+      <Provider>
+        <One id="c" />
+        <One id="gone" />
+      </Provider>
+    )
+    await act(() =>
+      until(() => reads.includes("c:present") && reads.includes("gone:absent"))
+    )
+    expect(reads.indexOf("c:loading")).toBeLessThan(reads.indexOf("c:present"))
+    expect(reads.indexOf("gone:loading")).toBeLessThan(
+      reads.indexOf("gone:absent")
+    )
+  })
 })

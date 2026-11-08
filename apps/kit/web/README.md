@@ -328,7 +328,9 @@ cannot write over an edit another device made in between. The edits queued
 on it before it landed (on version 0) are sent at version 1, the version a
 create makes, so a change made elsewhere meanwhile parks them as a conflict
 rather than being overwritten. A row found gone since still counts the
-create as landed; the record's later writes then meet a 404 and park.
+create as landed, and the record goes from what this browser shows and
+keeps, a read of it from before answering into nothing; its later writes
+then meet a 404 and park.
 
 ## Work on it
 

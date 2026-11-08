@@ -47,6 +47,9 @@ A create met by a record at its id counts as landed with version 1, the
 version every record is created at: its properties are never sent again,
 so a change another device made since stands, and an edit queued on the
 create is sent at version 1 and parks as a conflict if the record moved.
+`onLanded` hears each landed write with the record the server holds after
+it, or null where it holds none: a delete, or a create whose row was found
+gone since, which the linked records and the cache then drop.
 
 The network failing, a 5xx or a 429 stops the run and tries again with
 backoff (a fifth of jitter, `Retry-After` honoured); the browser's online
@@ -71,10 +74,18 @@ the feed. The cache keeps the cursor with the records, the rows it moved
 past and the kinds it listed under it in one transaction, so a reload
 resumes where it was and reads again what it had not. A 410, a `compacted`
 frame, or a kind the app shows that the cache never listed relists. A save
-that fails is kept and written with the next, so the kept cursor never
-passes a change the kept records lack. A record's read answered after its
-removal, a list or one of the app's writes landed is dropped, and a read
-never replaces a newer version.
+that fails is kept and written with the next, or tried once more a few
+seconds later while nothing changes, so the kept cursor never passes a
+change the kept records lack. A record's read answered after its removal,
+a list or one of the app's writes landed is dropped, and a read never
+replaces a newer version.
+
+A list stops at `limit` records (10,000 unless the app says), and one that
+stops with more left reads its kinds **in part**: `limitReached` says how
+many it read, `hasListed` stays false, and the cache keeps the kinds as
+read in part, so a reload does not take them for whole. A record not among
+them is not known absent until `resolve(kind, id)` reads it by itself,
+which `useRecord` does.
 
 The outbox's waiting writes are laid over the records (`foldRecords`), a
 parked one not, so a change made offline shows at once and stays shown
@@ -88,6 +99,7 @@ record redraws only what reads it:
 | `recordSnapshot(kind, id)` | one record; a new object only when it moves                                             |
 | `writeState(kind, id)`     | `"pending"`, `"parked"` (a refused write, holding back the rest) or undefined           |
 | `hasListed(kind)`          | whether the kind's records are known whole, listed or kept, so one missing is absent    |
+| `isAbsent(kind, id)`       | whether a record not shown is known absent: its kind whole, or it read and not found    |
 | `statusSnapshot()`         | the status, its words, `cached`, `limitReached`, and the pending and parked counts      |
 
 `subscribe` hears every change once per turn. `getSnapshot()` is every

@@ -15,14 +15,19 @@ import type { RepositoryStorage, StoredRecords } from "./storage"
  *
  * Saves are gathered for `delay` ms and written in one transaction, the
  * cursor beside the records, the stale marks it moved past and the kinds
- * read whole under it, so a reload never resumes past a change whose record
- * it does not hold. A save that fails is kept and written with the next. */
+ * read under it, whole or cut off at the read's limit, so a reload never
+ * resumes past a change whose record it does not hold, nor takes a kind
+ * read in part for one read whole. A save that fails is kept and written
+ * with the next, or tried once more after `retryDelay` ms. */
 export class RecordCache {
   private readonly storage: RepositoryStorage
   private readonly delay: number
+  private readonly retryDelay: number
   private cursor?: WatchCursor
-  /** The kinds whose records are held whole: listed, then followed. */
+  /** The kinds whose records are held: listed, then followed. */
   private covered: string[] = []
+  /** Of `covered`, those whose list stopped at its limit. */
+  private partial: string[] = []
   private stale = new Set<string>()
   private replace = new Set<string>()
   private dirty = new Map<string, SubstrateRecord | null>()
@@ -36,9 +41,10 @@ export class RecordCache {
   /** Why the last save failed, until one succeeds. */
   saveProblem?: string
 
-  constructor(storage: RepositoryStorage, delay = 150) {
+  constructor(storage: RepositoryStorage, delay = 150, retryDelay = 5000) {
     this.storage = storage
     this.delay = delay
+    this.retryDelay = retryDelay
   }
 
   /** Calls `fn` after each save lands, or fails: what a reader of the
@@ -48,22 +54,25 @@ export class RecordCache {
     return () => this.listeners.delete(fn)
   }
 
-  /** What the device kept of `kinds`: the records of those it held whole,
-   * and the cursor only where it held all of them, since a watch from it
-   * never carries what changed in another kind before it. A kind the app
-   * shows that the device never listed is read again with every other. */
+  /** What the device kept of `kinds`: the records of those it listed,
+   * those whose list stopped at its limit named `partial`, and the cursor
+   * only where it held all of them, since a watch from it never carries
+   * what changed in another kind before it. A kind the app shows that the
+   * device never listed is read again with every other. */
   async load(kinds: readonly string[]): Promise<StoredRecords> {
     const stored = await this.storage.readRecords()
-    const whole = kinds.filter((k) => stored.kinds?.includes(k))
-    const resumes = !!stored.cursor && whole.length === kinds.length
+    const held = kinds.filter((k) => stored.kinds?.includes(k))
+    const resumes = !!stored.cursor && held.length === kinds.length
     const shown = (key: string) => kinds.some((k) => key.startsWith(`${k}/`))
     this.cursor = resumes ? stored.cursor : undefined
-    this.covered = whole
+    this.covered = held
+    this.partial = held.filter((k) => stored.partial?.includes(k))
     this.stale = new Set(resumes ? stored.stale.filter(shown) : [])
     return {
-      records: stored.records.filter((r) => whole.includes(r.kind)),
+      records: stored.records.filter((r) => held.includes(r.kind)),
       cursor: this.cursor,
-      kinds: whole,
+      kinds: held,
+      partial: [...this.partial],
       stale: [...this.stale],
     }
   }
@@ -76,13 +85,14 @@ export class RecordCache {
     return [...this.stale]
   }
 
-  /** A list read of `kinds`, whole: their records replaced by these. The
-   * watch resumes from `bookmark`, the one it opened at before the list
-   * was read. */
+  /** A list read of `kinds`: their records replaced by these, read whole
+   * or, `whole` false, up to the read's limit. The watch resumes from
+   * `bookmark`, the one it opened at before the list was read. */
   listed(
     records: SubstrateRecord[],
     kinds: readonly string[],
-    bookmark: WatchCursor | undefined
+    bookmark: WatchCursor | undefined,
+    whole = true
   ): void {
     if (this.closed) return
     for (const kind of kinds) {
@@ -101,6 +111,10 @@ export class RecordCache {
       for (const kind of kinds)
         if (!this.covered.includes(kind)) this.covered.push(kind)
     }
+    this.partial = this.partial.filter(
+      (k) => this.covered.includes(k) && !kinds.includes(k)
+    )
+    if (!whole) this.partial.push(...kinds)
     this.metaDirty = true
     this.schedule()
   }
@@ -158,6 +172,7 @@ export class RecordCache {
     this.epoch++
     this.cursor = undefined
     this.covered = []
+    this.partial = []
     this.stale.clear()
     this.replace.clear()
     this.dirty.clear()
@@ -184,14 +199,20 @@ export class RecordCache {
   /** Writes what changed since the last save landed, after any save still
    * running. */
   save(): Promise<void> {
+    return this.queue(false)
+  }
+
+  private queue(retry: boolean): Promise<void> {
     clearTimeout(this.timer)
-    this.saving = this.saving.then(() => this.write())
+    this.saving = this.saving.then(() => this.write(retry))
     return this.saving
   }
 
   /** The batch is taken when its turn comes, never earlier, so a save
-   * queued behind one that fails carries what that one could not write. */
-  private async write(): Promise<void> {
+   * queued behind one that fails carries what that one could not write.
+   * One that fails is tried once more after a pause, so a page left alone
+   * still writes it; a retry that fails waits for the next change. */
+  private async write(retry: boolean): Promise<void> {
     const replaceKinds = [...this.replace]
     const dirty = this.dirty
     const meta = this.metaDirty
@@ -213,12 +234,17 @@ export class RecordCache {
         remove,
         cursor: meta ? (this.cursor ?? null) : undefined,
         kinds: meta ? [...this.covered] : undefined,
+        partial: meta ? [...this.partial] : undefined,
         stale: meta ? [...this.stale] : undefined,
       })
       this.saveProblem = undefined
     } catch (e) {
       this.saveProblem = e instanceof Error ? e.message : String(e)
-      if (epoch === this.epoch) this.putBack(replaceKinds, dirty)
+      if (epoch === this.epoch) {
+        this.putBack(replaceKinds, dirty)
+        if (!retry && !this.closed)
+          this.timer = setTimeout(() => void this.queue(true), this.retryDelay)
+      }
     }
     for (const fn of this.listeners) fn()
   }

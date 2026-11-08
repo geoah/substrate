@@ -27,24 +27,29 @@ export interface RepositoryStorage {
 export interface StoredRecords {
   records: SubstrateRecord[]
   cursor?: WatchCursor
-  /** The kinds read whole under `cursor`: the watch from it holds every
-   * change of these and of no other. */
+  /** The kinds read under `cursor`: the watch from it holds every change
+   * of these and of no other. Each was read whole, unless `partial` names
+   * it. */
   kinds?: string[]
+  /** Of `kinds`, those whose read stopped at its limit, more records left
+   * unread: a record not held may still be in the repository. */
+  partial?: string[]
   /** Records a watch row named that were not read again since, as
    * `kind/id`. */
   stale: string[]
 }
 
 /** One save of the record cache: `replaceKinds` drops every record of those
- * kinds before `put` lands, and `cursor`, `kinds` and `stale` are written in
- * the same transaction as the records, so the cursor never runs ahead of
- * them. */
+ * kinds before `put` lands, and `cursor`, `kinds`, `partial` and `stale` are
+ * written in the same transaction as the records, so the cursor never runs
+ * ahead of them. */
 export interface RecordsChange {
   replaceKinds?: string[]
   put: SubstrateRecord[]
   remove: string[]
   cursor?: WatchCursor | null
   kinds?: string[]
+  partial?: string[]
   stale?: string[]
 }
 
@@ -173,13 +178,14 @@ class IndexedDBStorage implements RepositoryStorage {
 
   async readRecords(): Promise<StoredRecords> {
     const tx = this.db.transaction(["records", "meta"], "readonly")
-    const [records, cursor, kinds, stale] = await Promise.all([
+    const [records, cursor, kinds, partial, stale] = await Promise.all([
       request<SubstrateRecord[]>(tx.objectStore("records").getAll()),
       request<WatchCursor | undefined>(tx.objectStore("meta").get("cursor")),
       request<string[] | undefined>(tx.objectStore("meta").get("kinds")),
+      request<string[] | undefined>(tx.objectStore("meta").get("partial")),
       request<string[] | undefined>(tx.objectStore("meta").get("stale")),
     ])
-    return { records, cursor, kinds, stale: stale ?? [] }
+    return { records, cursor, kinds, partial, stale: stale ?? [] }
   }
 
   async writeRecords(change: RecordsChange): Promise<void> {
@@ -193,6 +199,7 @@ class IndexedDBStorage implements RepositoryStorage {
     if (change.cursor === null) meta.delete("cursor")
     else if (change.cursor) meta.put(change.cursor, "cursor")
     if (change.kinds) meta.put(change.kinds, "kinds")
+    if (change.partial) meta.put(change.partial, "partial")
     if (change.stale) meta.put(change.stale, "stale")
     await done(tx)
   }
@@ -253,6 +260,7 @@ export class MemoryStorage implements RepositoryStorage {
   private records = new Map<string, SubstrateRecord>()
   private cursor?: WatchCursor
   private kinds?: string[]
+  private partial?: string[]
   private stale: string[] = []
 
   constructor(problem?: string) {
@@ -276,6 +284,7 @@ export class MemoryStorage implements RepositoryStorage {
       records: [...this.records.values()].map((r) => structuredClone(r)),
       cursor: this.cursor,
       kinds: this.kinds && [...this.kinds],
+      partial: this.partial && [...this.partial],
       stale: [...this.stale],
     })
   }
@@ -290,6 +299,7 @@ export class MemoryStorage implements RepositoryStorage {
     if (change.cursor === null) this.cursor = undefined
     else if (change.cursor) this.cursor = change.cursor
     if (change.kinds) this.kinds = [...change.kinds]
+    if (change.partial) this.partial = [...change.partial]
     if (change.stale) this.stale = [...change.stale]
     return Promise.resolve()
   }
@@ -298,6 +308,7 @@ export class MemoryStorage implements RepositoryStorage {
     this.records.clear()
     this.cursor = undefined
     this.kinds = undefined
+    this.partial = undefined
     this.stale = []
     return Promise.resolve()
   }

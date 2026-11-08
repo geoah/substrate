@@ -6,7 +6,7 @@ import type {
   OutboxEntry,
   OutboxSummary,
 } from "@substrate/local"
-import { useMemo, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useSyncExternalStore } from "react"
 import { useConnection, useSubstrate } from "./context"
 import {
   deriveLinkStatus,
@@ -59,11 +59,12 @@ export type RecordRead<T> =
   | { state: "present"; value: T }
 
 const loading: RecordRead<never> = { state: "loading" }
-const absent: RecordRead<never> = { state: "absent" }
+const absentRead: RecordRead<never> = { state: "absent" }
 
-/** One record of a kind, read as the app's own value. `loading` until its
- * kind was read or kept here, so a link to a record opened before the read
- * finishes waits rather than saying it is gone. */
+/** One record of a kind, read as the app's own value. `loading` until it is
+ * known absent: its kind read whole, or, where the kind's read stopped at
+ * its limit, the record read by itself. A link to a record opened before
+ * the read finishes waits rather than saying it is gone. */
 export function useRecord<T, D>(
   kind: Kind<T, D>,
   id: string | undefined
@@ -72,15 +73,23 @@ export function useRecord<T, D>(
   const record = useSyncExternalStore(linked.subscribe, () =>
     id ? linked.recordSnapshot(kind.kind, id) : undefined
   )
-  const listed = useListed(kind)
+  const absent = useSyncExternalStore(
+    linked.subscribe,
+    () => !id || linked.isAbsent(kind.kind, id)
+  )
+  const unresolved = !!id && !record && !absent
+  useEffect(() => {
+    if (unresolved) linked.resolve(kind.kind, id)
+  }, [linked, kind.kind, id, unresolved])
   return useMemo(() => {
     if (record) return { state: "present", value: readThrough(kind, record) }
-    return listed || !id ? absent : loading
-  }, [record, listed, kind, id])
+    return absent ? absentRead : loading
+  }, [record, absent, kind])
 }
 
-/** Whether a kind's records were read from the server, or kept here from a
- * read: what tells "none yet" from "none". */
+/** Whether a kind's records were read whole from the server, or kept here
+ * from such a read: what tells "none yet" from "none". A read that stopped
+ * at its limit (`useLinkedStatus().limitReached`) is not whole. */
 export function useListed(kind: string | Kind<unknown, never>): boolean {
   const { linked } = useSubstrate()
   const ref = typeof kind === "string" ? kind : kind.kind
