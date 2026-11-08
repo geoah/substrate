@@ -14,7 +14,12 @@ const record = (properties: Record<string, unknown>): SubstrateRecord => ({
 describe("defineKind", () => {
   const Item = defineKind("substrate.reamde.dev/template/item", {
     read: (r) => ({ id: r.id, name: stringProp(r, "name") ?? "" }),
-    write: (d: { name: string }) => ({ name: d.name.trim() }),
+    write: (d: Partial<{ name: string; note: string | null }>) => {
+      const out: Record<string, unknown> = {}
+      if (d.name !== undefined) out.name = d.name.trim()
+      if (d.note !== undefined) out.note = d.note
+      return out
+    },
   })
 
   it("reads and writes through the app's codec", () => {
@@ -23,8 +28,18 @@ describe("defineKind", () => {
       name: "Milk",
     })
     expect(Item.write({ name: "  Eggs " })).toEqual({ name: "Eggs" })
+    // A field the draft leaves out is not written; null clears one.
+    expect(Item.write({ note: null })).toEqual({ note: null })
     expect(Item.is(record({}))).toBe(true)
     expect(Item.ref("x")).toBe("substrate.reamde.dev/template/item/x")
+  })
+
+  it("throws for a write of a kind that declares none", () => {
+    const ReadOnly = defineKind<string, { name: string }>(
+      "substrate.reamde.dev/template/item",
+      { read: (r) => r.id }
+    )
+    expect(() => ReadOnly.write({})).toThrow(/declares no write/)
   })
 
   it("refuses a kind not named in full", () => {

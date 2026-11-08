@@ -29,8 +29,10 @@ export interface Kind<T, D = never> {
   readonly kind: string
   readonly name: KindName
   read(record: SubstrateRecord): T
-  /** The properties a create of `draft` writes. */
-  write(draft: D): Record<string, unknown>
+  /** The properties a draft writes: every field it names, null clearing
+   * one; a field it leaves out is not written. Throws for a kind that
+   * declares no write. */
+  write(draft: Partial<D>): Record<string, unknown>
   is(record: { kind: string }): boolean
   /** A record's key where several kinds share one store. */
   key(id: string): string
@@ -40,7 +42,9 @@ export interface Kind<T, D = never> {
 
 export interface KindCodec<T, D> {
   read: (record: SubstrateRecord) => T
-  write?: (draft: D) => Record<string, unknown>
+  /** The properties a draft writes: every field it names, null clearing
+   * one; a field it leaves out is not written. */
+  write?: (draft: Partial<D>) => Record<string, unknown>
 }
 
 /** Declares a kind. Throws at once for a reference not named in full,
@@ -59,7 +63,7 @@ export function defineKind<T, D = never>(
     kind,
     name,
     read: codec.read,
-    write: (draft: D) => {
+    write: (draft: Partial<D>) => {
       if (!codec.write) throw new Error(`${kind} declares no write.`)
       return codec.write(draft)
     },
