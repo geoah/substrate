@@ -12,6 +12,8 @@
 import type { ReactNode } from "react"
 
 import { pageTitleClass } from "./page-title"
+import { StageTag } from "@/components/nav/stage-tag"
+import type { Stage } from "@/lib/stage"
 import { cn } from "@/lib/utils"
 
 export function PageHeader({
@@ -21,6 +23,7 @@ export function PageHeader({
   description,
   actions,
   glyph,
+  stage,
   size = "page",
   children,
   className,
@@ -38,6 +41,8 @@ export function PageHeader({
   actions?: ReactNode
   /** A `KindGlyph` (size lg) or another mark. */
   glyph?: ReactNode
+  /** The place's release stage, as a pill after the title. */
+  stage?: Stage
   /** `record` sets the glyph above the larger title. */
   size?: "page" | "record"
   /** What else belongs to the head, under the description: a callout. */
@@ -47,6 +52,12 @@ export function PageHeader({
   const h1 = heading ?? (
     <h1 className={cn(pageTitleClass(size), size === "record" && "mt-2.5")}>
       {title}
+      {stage && (
+        <StageTag
+          stage={stage}
+          className="ml-2.5 inline-block align-middle leading-[18px]"
+        />
+      )}
     </h1>
   )
   const text = (
