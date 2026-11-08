@@ -12,6 +12,7 @@ import {
 import { useState, type ReactNode } from "react"
 import { useTaskActions } from "./actions"
 import { Menu, type MenuItem } from "./Menu"
+import { Notices } from "./Notices"
 import { inboxTitle, listTitle, sameSelection, type Selection } from "./model"
 import { openCount } from "./present"
 import { useReorder } from "./reorder"
@@ -168,6 +169,7 @@ export function ListsMenu(props: {
           </div>
           <LargeTitle>Lists</LargeTitle>
           <LinkStatus status={model.status} words={model.words} />
+          <Notices wide={false} />
         </>
       )}
       <nav

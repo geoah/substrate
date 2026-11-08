@@ -1,22 +1,22 @@
 import {
-  AccountSection,
   LargeTitle,
   Row,
   Section,
   SelectRow,
+  SubstrateSettings,
   ToggleRow,
   useSubstrate,
 } from "@substrate/react"
 import { CircleAlert } from "lucide-react"
-import { hourWords, type Order } from "./model"
+import { Kinds, hourWords, type Order } from "./model"
 import type { Permission } from "./reminders"
 import { reminderHours, useSettings } from "./state"
 
 /** What this browser is called where TasksSettings names the device. */
 const device = "This Browser"
 
-/** Settings: the app's reminders and lists (TasksSettings.sections), then
- * the link's sections the kit draws, then the keys a keyboard has. */
+/** Settings: the app's reminders and lists (TasksSettings.sections), the
+ * keys a keyboard has, then the link's sections the kit draws. */
 export function SettingsScreen(props: {
   permission: Permission
   planned: number
@@ -112,7 +112,6 @@ export function SettingsScreen(props: {
             onChange={(showCompleted) => set({ showCompleted })}
           />
         </Section>
-        <AccountSection />
         {props.keyboard && (
           <Section
             header="Keyboard"
@@ -127,9 +126,9 @@ export function SettingsScreen(props: {
             ))}
           </Section>
         )}
-        <Section header="About">
-          <Row label="Version" value={manifest.softwareVersion} />
-        </Section>
+        <SubstrateSettings
+          kindLabels={{ [Kinds.task]: "Task", [Kinds.list]: "Task list" }}
+        />
       </div>
     </div>
   )

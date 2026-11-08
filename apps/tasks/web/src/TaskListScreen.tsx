@@ -12,6 +12,7 @@ import {
 import { Fragment, useState } from "react"
 import { useCompleting, useTaskActions } from "./actions"
 import { Menu, MenuButton, type MenuItem } from "./Menu"
+import { Notices } from "./Notices"
 import { inboxTitle, type Order, type Selection } from "./model"
 import { presentList, type ListView, type RowView } from "./present"
 import { useReorder } from "./reorder"
@@ -130,6 +131,7 @@ export function TaskListScreen(props: {
       <LargeTitle className="pb-1 break-words">{view.title}</LargeTitle>
       <Summary view={view} />
       <LinkStatus status={model.status} words={model.words} />
+      <Notices wide={!props.addsFromTabBar} />
 
       {view.chips.length > 0 && (
         <div

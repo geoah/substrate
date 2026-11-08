@@ -13,6 +13,7 @@ const manifest = webManifest({
   name: "Substrate Tasks",
   scopes: ["write:substrate.reamde.dev/tasks/*"],
   details: [packageDetail("substrate.reamde.dev/tasks", 1)],
+  packageNames: { "substrate.reamde.dev/tasks": "Tasks" },
   softwareVersion: __APP_VERSION__,
   base: import.meta.env.BASE_URL,
 })
@@ -22,6 +23,7 @@ createRoot(document.getElementById("root")!).render(
     <SubstrateApp
       manifest={manifest}
       kinds={kinds}
+      kept="tasks"
       tagline="Your to-do list, kept in your own Substrate."
       icon={
         <img

@@ -1,4 +1,4 @@
-import { positionAfter, uuidv7, type SubstrateRecord } from "@substrate/client"
+import { positionAfter, uuidv7 } from "@substrate/client"
 import { useWrites } from "@substrate/react"
 import { useMemo } from "react"
 import {
@@ -108,25 +108,6 @@ if (typeof window !== "undefined")
   window.addEventListener("pagehide", () => {
     for (const w of [...windows.values()]) w.write()
   })
-
-/** What the kit's writes will take: the words of a write the device could
- * not keep, handed to the caller instead of a toast. */
-type NotKept = { onNotKept?: (words: string) => void }
-interface Saving {
-  create: (
-    kind: string,
-    id: string,
-    properties: Record<string, unknown>,
-    opts?: NotKept
-  ) => Promise<SubstrateRecord | null>
-  patch: (
-    kind: string,
-    id: string,
-    properties: Record<string, unknown>,
-    ifVersion?: number,
-    opts?: NotKept
-  ) => Promise<SubstrateRecord | null>
-}
 
 /** Every write the owner makes, as TasksEnrichment and TaskWrites make
  * them: a create as a PUT on an id the device chose, a change as a patch of
@@ -289,7 +270,6 @@ export function useTaskActions() {
         d: TaskDraft,
         notKept: (words: string) => void
       ): Promise<boolean> {
-        const saving = writes as unknown as Saving
         const opts = { onNotKept: notKept }
         const name = d.name.trim()
         const notes = d.notes.trim() ? d.notes : null
@@ -307,7 +287,7 @@ export function useTaskActions() {
           if (d.priority !== "none") props.priority = d.priority
           for (const k of Object.keys(props))
             if (props[k] === null) delete props[k]
-          return saving
+          return writes
             .create(Kinds.task, uuidv7(), props, opts)
             .then((r) => !!r)
         }
@@ -326,7 +306,7 @@ export function useTaskActions() {
         if (!sameDue(due, draftDue(was))) Object.assign(out, dueProperties(due))
         if (d.priority !== was.priority) out.priority = d.priority
         if (!Object.keys(out).length) return Promise.resolve(true)
-        return saving
+        return writes
           .patch(Kinds.task, seen.id, out, seen.version, opts)
           .then((r) => !!r)
       },

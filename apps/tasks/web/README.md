@@ -10,7 +10,7 @@ the same records and the same writes as the Apple and Android apps, on
 | Needs you       | every open task across the lists in its band: Needs you (late, or high and urgent with no day), each with Move and Won't Do; Coming up (within the week); Later; the chips that narrow it to one list; quick add for today |
 | No List, a list | the list's open tasks in my order or by due date, its done ones under Done when Settings shows them, quick add, New Task, and the ⋯ menu: Sort Tasks By, Show or Hide Completed, Rename List…, Delete List…                |
 | A task          | its name beside its round mark; Status, List and Priority (both change in place), Due, Completed; its notes as markdown and its link; Mark as Done, Won't Do or Reopen (Undo while marked), Delete Task; Edit              |
-| Settings        | Reminders and Lists as TasksSettings has them, the repository, server, access and package the approval gave, Sign Out, the keys                                                                                            |
+| Settings        | Reminders and Lists as TasksSettings has them, the keys on a desktop, then the kit's sections: Your Substrate, the changes refused, Repository, Approved access, Storage, About                                            |
 
 A phone has a tab per section of the App menu (Needs you with its badge,
 Lists, Settings) and the round + that adds a task; from 768 px wide the
@@ -48,7 +48,8 @@ neighbours (`Position.moves`, in `src/position.ts`), and a neighbour only
 where the order needs it (two with one number, one with none, a gap used
 up); Save in the editor patches the fields
 the owner changed on the version they opened, so a change made elsewhere
-meanwhile is refused and said, never written over; a state moves only by
+meanwhile is never written over: the kit's outbox parks it, the lists say
+"1 change needs you", and Settings offers Keep My Edit and Use Theirs; a state moves only by
 patch, and a reopen clears `completedAt` in the same write; moving a task
 rewrites `list` and `position` together, the position a decimal after the
 last of its new list's; a list is deleted with a plain DELETE and the

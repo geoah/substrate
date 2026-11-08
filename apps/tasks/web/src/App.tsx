@@ -40,7 +40,7 @@ export function App() {
   const now = useNow()
   const wide = useMediaQuery("(min-width: 768px)")
   const threeColumns = useMediaQuery("(min-width: 1000px)")
-  const keyboard = useMediaQuery("(hover: hover) and (pointer: fine)")
+  const keyboard = useMediaQuery("(hover: hover) and (pointer: fine)") && wide
   const reminders = useReminders(model.tasks, model.lists, settings, now)
 
   const { section, selection } = route
