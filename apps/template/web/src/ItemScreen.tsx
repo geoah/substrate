@@ -60,7 +60,8 @@ export function ItemScreen(props: { id: string; onBack: () => void }) {
     if (written.kept) setEditing(null)
   }
 
-  const changed = !!editing && name.trim() !== editing.name && !!name.trim()
+  const unsaved = !!editing && name !== editing.name
+  const changed = unsaved && name.trim() !== editing.name && !!name.trim()
 
   return (
     <div className="mx-auto w-full max-w-2xl pb-16">
@@ -87,6 +88,7 @@ export function ItemScreen(props: { id: string; onBack: () => void }) {
       <Sheet
         open={!!editing}
         onClose={() => setEditing(null)}
+        unsaved={unsaved}
         title="Edit Item"
         actions={
           <BarButton prominent disabled={!changed} onClick={() => void save()}>

@@ -203,13 +203,16 @@ export function BarButton({
 }
 
 /** The bar over a screen: back, a centred title, actions. The title is the
- * screen's heading, for a screen with no `LargeTitle`. */
+ * screen's heading, an `h1`, on a screen with no `LargeTitle`; beside one,
+ * which is the heading, `heading={false}` makes it words in the bar. */
 export function NavBar(props: {
   title?: ReactNode
+  heading?: boolean
   onBack?: () => void
   backLabel?: string
   actions?: ReactNode
 }) {
+  const Title = (props.heading ?? true) ? "h1" : "p"
   return (
     <div className="sticky top-0 z-20 flex h-[60px] items-center gap-2 bg-gradient-to-b from-grouped via-grouped/90 to-transparent px-4 pt-2">
       <div className="flex min-w-11 flex-1 justify-start">
@@ -223,9 +226,9 @@ export function NavBar(props: {
         )}
       </div>
       {props.title && (
-        <h1 className="min-w-0 truncate text-center text-[17px] font-semibold">
+        <Title className="min-w-0 truncate text-center text-[17px] font-semibold">
           {props.title}
-        </h1>
+        </Title>
       )}
       <div className="flex min-w-11 flex-1 justify-end gap-2">
         {props.actions}
@@ -234,6 +237,7 @@ export function NavBar(props: {
   )
 }
 
+/** The screen's heading, its `h1`, in large type under the bar. */
 export function LargeTitle({
   children,
   className,
@@ -280,20 +284,25 @@ function useReturnFocus(open: boolean): () => HTMLElement | true {
 
 /** A modal: a sheet from the bottom on a phone, a centred card wider. Base
  * UI's dialog holds the contract: it renders in a portal, locks the page's
- * scroll and makes the rest of it inert, keeps focus inside, closes on
- * Escape and an outside press, and gives focus back when it closes. */
+ * scroll, hides the rest of the page from assistive technology and keeps
+ * focus inside, closes on Escape and an outside press, and gives focus
+ * back when it closes. */
 export function Sheet(props: {
   open: boolean
   onClose: () => void
   title: ReactNode
   children: ReactNode
   actions?: ReactNode
+  /** It holds input not saved yet: an outside press leaves it open, so a
+   * stray tap never drops an edit. Cancel and Escape still close it. */
+  unsaved?: boolean
 }) {
   const popup = useRef<HTMLDivElement>(null)
   const returnFocus = useReturnFocus(props.open)
   return (
     <Dialog.Root
       open={props.open}
+      disablePointerDismissal={props.unsaved}
       onOpenChange={(open) => {
         if (!open) props.onClose()
       }}
@@ -395,9 +404,9 @@ export function Alert(props: {
                   : "grid grid-cols-2 [&>*+*]:border-l [&>*+*]:border-separator"
               )}
             >
-              {buttons.map((b) => (
+              {buttons.map((b, i) => (
                 <button
-                  key={b.label}
+                  key={i}
                   type="button"
                   disabled={b.disabled}
                   data-cancel={b.role === "cancel" || undefined}

@@ -173,7 +173,7 @@ export function ListsMenu(props: {
     <div className="flex min-h-full flex-col">
       {props.sidebar ? (
         <div className="flex h-[60px] items-center gap-2 pt-2 pr-3 pl-5">
-          <h1 className="flex-1 text-[17px] font-semibold">Lists</h1>
+          <h2 className="flex-1 text-[17px] font-semibold">Lists</h2>
           {newList}
         </div>
       ) : (

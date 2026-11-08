@@ -81,6 +81,7 @@ export function App() {
       lists={model.lists}
       now={now}
       onBack={threeColumns ? undefined : () => openTask(undefined)}
+      beside={threeColumns}
     />
   )
 

@@ -35,8 +35,11 @@ export function TaskDetail(props: {
   lists: TaskList[]
   now: Date
   onBack?: () => void
+  /** Beside the list, whose large title is the page's heading. */
+  beside?: boolean
 }) {
   const { task: t, now } = props
+  const Title = props.beside ? "h2" : "h1"
   const actions = useTaskActions()
   const completing = useCompleting()
   const pending = completing.get(t.id)
@@ -60,7 +63,7 @@ export function TaskDetail(props: {
       <div className="px-4 pt-2">
         <Section>
           <div className="flex items-center gap-2 py-1.5 pr-1.5 pl-4">
-            <h1
+            <Title
               className={cx(
                 "min-w-0 flex-1 text-[22px] leading-snug font-semibold break-words select-text",
                 open && pending === undefined ? "text-label" : "text-secondary",
@@ -69,7 +72,7 @@ export function TaskDetail(props: {
               )}
             >
               {title}
-            </h1>
+            </Title>
             <StatusMark
               status={t.status}
               pending={pending}

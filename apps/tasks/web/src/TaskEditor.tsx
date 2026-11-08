@@ -109,6 +109,7 @@ export function TaskEditor(props: {
     <Sheet
       open
       onClose={props.onClose}
+      unsaved={touched}
       title={seen ? "Edit Task" : "New Task"}
       actions={
         <BarButton

@@ -74,7 +74,10 @@ that were not kept.
 A change draws only the components that read it: a record of one kind
 leaves the readers of another alone, and the connection, the app status and
 the outbox are apart from the records, so a status check never draws a
-list again.
+list again. A kind's `read` is run once per record object and its value
+kept while the object stands, so it must depend on the record alone: never
+on the time, the settings or anything else outside it, which a screen
+applies to the values it reads instead.
 
 A write resolves once this browser has it: `{ kept: true, id, shown }`, the
 record as the owner now sees it, or `{ kept: false, words }`. **Kept is not
@@ -110,12 +113,17 @@ the one issue the owner should act on now at the top of a screen, and
 ## Pieces
 
 `Section`, `Row`, `NoteRow`, `VerbatimRow`, `ProblemBox`, `ActionRow`,
-`SelectRow`, `ToggleRow`, `Field`, `NavBar` (its title the screen's
-heading), `BarButton`, `LargeTitle`, `TabBar` (a labelled `nav`),
-`SidebarItem`, `LinkStatus`, and three modals on Base UI's dialog: `Sheet`,
-`Alert` (a title, words, a field, and its answers) and `Confirm`. Each
-renders in a portal, locks the page's scroll and makes the rest of it
-inert, keeps focus inside, closes on Escape (only the topmost), and gives
-focus back to what opened it. Focus starts on the field marked
-`autoFocus`, else on an alert's Cancel, else on the first control. Motion
-honours `prefers-reduced-motion`.
+`SelectRow`, `ToggleRow`, `Field`, `NavBar`, `BarButton`, `LargeTitle`,
+`TabBar` (a labelled `nav`), `SidebarItem`, `LinkStatus`, and three modals
+on Base UI's dialog: `Sheet`, `Alert` (a title, words, a field, and its
+answers) and `Confirm`. A screen has one `h1`: its `LargeTitle`, else the
+`NavBar`'s title; a bar beside a large title takes `heading={false}`.
+
+Each modal renders in a portal, locks the page's scroll, hides the rest of
+the page from assistive technology and keeps focus inside it, closes on
+Escape (only the topmost), and gives focus back to what opened it. Focus
+starts on the field marked `autoFocus`, else on an alert's Cancel, else on
+the first control. An outside press closes a `Sheet` unless it is
+`unsaved`, which an editor sets while it holds input not saved, so a stray
+tap never drops an edit; Cancel and Escape still close it. An alert never
+closes on one. Motion honours `prefers-reduced-motion`.

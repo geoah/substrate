@@ -20,7 +20,12 @@ function Opener(props: { onConfirm?: () => void }) {
       <button type="button" onClick={() => setSheet(true)}>
         Edit
       </button>
-      <Sheet open={sheet} onClose={() => setSheet(false)} title="Edit Item">
+      <Sheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        unsaved={name !== ""}
+        title="Edit Item"
+      >
         <Field label="Name" value={name} onChange={setName} autoFocus />
         <button type="button" onClick={() => setAsking(true)}>
           Delete
@@ -42,7 +47,7 @@ function Opener(props: { onConfirm?: () => void }) {
 }
 
 describe("the dialogs", () => {
-  it("open in a portal, named, with the page behind them inert, and focus on the field marked", async () => {
+  it("open in a portal, named, with the page behind them hidden from assistive technology, and focus on the field marked", async () => {
     const { container } = render(<Opener />)
     fireEvent.click(screen.getByText("Edit"))
     const dialog = await screen.findByRole("dialog", { name: "Edit Item" })
@@ -88,5 +93,32 @@ describe("the dialogs", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(opener))
     expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it("close a sheet on an outside press, unless it holds input not saved yet", async () => {
+    render(<Opener />)
+    const pressOutside = (dialog: HTMLElement) => {
+      const outside = dialog.parentElement!
+      fireEvent.pointerDown(outside)
+      fireEvent.mouseDown(outside)
+      fireEvent.pointerUp(outside)
+      fireEvent.mouseUp(outside)
+      fireEvent.click(outside)
+    }
+    fireEvent.click(screen.getByText("Edit"))
+    pressOutside(await screen.findByRole("dialog"))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+
+    fireEvent.click(screen.getByText("Edit"))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Milk" },
+    })
+    pressOutside(dialog)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("Milk")
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
   })
 })
