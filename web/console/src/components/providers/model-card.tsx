@@ -44,6 +44,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { providerInfo } from "@/lib/actor-identity"
+import { scrollIntoPage } from "@/hooks/use-page-scroll"
 import { CORE_AUTHORITY, LLM_PACKAGE_NAME } from "@/lib/api/http"
 import { operatorDefaultsQueryOptions } from "@/lib/api/operator"
 import { patchRecord, putRecord, recordWriteReaches } from "@/lib/api/records"
@@ -100,7 +101,7 @@ function CardShell({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (focused) ref.current?.scrollIntoView?.({ block: "center" })
+    if (focused) scrollIntoPage(ref.current, { block: "center" })
   }, [focused])
   return (
     <div

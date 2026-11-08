@@ -27,6 +27,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { UnitsProvider } from "@/components/units-provider"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { usePageScroll } from "@/hooks/use-page-scroll"
 import { useVisualViewportHeight } from "@/hooks/use-visual-viewport"
 import {
   actorIdentity,
@@ -506,6 +507,8 @@ function ShellBody() {
   const peek = useSidebarPeek()
   const announcement = usePageTitle(pathname)
   useVisualViewportHeight()
+  const pageRef = useRef<HTMLDivElement>(null)
+  usePageScroll(pageRef)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -569,7 +572,10 @@ function ShellBody() {
             <SearchIcon />
           </Button>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div
+          ref={pageRef}
+          className="flex min-h-0 flex-1 flex-col overflow-auto"
+        >
           <Outlet />
         </div>
       </SidebarInset>

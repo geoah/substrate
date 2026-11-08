@@ -22,13 +22,19 @@ const NONE: SubstrateRecord[] = []
 
 /** The view records shipped for one collection. `settled` once the read
  * answered or failed: a repository that does not declare the kind has none,
- * and the page opens on All. */
+ * and the page opens on All.
+ *
+ * Never the previous read's records as a placeholder: the page stays mounted
+ * from one collection to the next, and the last collection's views taken as
+ * this one's would open it on the last one's default, or settle it before
+ * its own arrive and miss its own. */
 export function useCollectionViewRecords(kind: KindInfo | undefined): {
   records: SubstrateRecord[]
   settled: boolean
 } {
   const read = useQuery({
     ...recordsQueryOptions(collectionViewsParams(kind?.identity ?? "")),
+    placeholderData: undefined,
     enabled: Boolean(kind),
   })
   return {
