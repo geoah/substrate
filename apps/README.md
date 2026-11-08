@@ -30,10 +30,11 @@ for the team `xcode/project.yml` names; the builds use the Apple Development ide
 account signed in to Xcode, which `-allowProvisioningUpdates` registers the
 app id and the device profile with. CI builds no Apple app: its `apps linux`
 job builds and tests the kit and every app's core on Linux, then the core of
-an app `apps:new` makes, and its `android build` job builds the kit for
-Android ([Android](#android)); the SwiftUI side is a Mac's, through the
-`apple:test:*` tasks. The two run on a change to what they build, and a pull
-request waits for both through the required `apps gate` check.
+an app `apps:new` makes, after the Swift format check. CI builds nothing
+for Android while no app ships there ([Android](#android)); the SwiftUI side
+is a Mac's, through the `apple:test:*` tasks. The job runs on a change to
+what it builds, and a pull request waits for it through the required `apps
+gate` check.
 
 ## How the console runs in it
 
@@ -1118,8 +1119,8 @@ the Gradle root in `gradle/` with the open-source Swift 6.4.2 and the Swift
 SDK for Android, which the `android:*` tasks pin as their own tools (the
 `apple:*` tasks keep Xcode's). `mise run android:sdk` installs the
 toolchain once, `android:build`, `android:test` and `android:smoke` build,
-test and run it on an emulator, and the CI job `android build` builds it on
-Linux. [kit/android/README.md](kit/android/README.md) says how the bridge
+test and run it on an emulator. No CI job builds it while no app ships for
+Android, so these are a laptop's. [kit/android/README.md](kit/android/README.md) says how the bridge
 runs, how its Kotlin is generated, how an app adds its roots, and how
 kit-ui draws the shared screens. `mise run apps:gallery` draws every shared
 screen's fixtures with SwiftUI and with Compose into `build/gallery/apple`
@@ -1132,7 +1133,8 @@ fixture's two side by side.
 and `mise run fmt:check` fails on what it would change, printing the diff;
 `fmt:swift`, `fmt:kotlin` and their `:check`s are one language each, all
 four through `.mise/appsfmt.sh`. The check is the writer run over a copy, so
-the two cannot disagree. The CI job `android build` runs both checks.
+the two cannot disagree. The CI job `apps linux` runs the Swift check; no
+CI job runs the Kotlin one while no app ships for Android.
 
 - **Swift**: swift-format, configured once in `.swift-format` here, from the
   open-source Swift 6.4.2 the `android:*` tasks pin rather than Xcode's, whose
@@ -1238,7 +1240,7 @@ change is a dependency that changed under its name. `mise run
 lint:toolchain` holds the metadata to the locks (every locked module
 listed, a sha256 for each of its files, metadata files verified, no
 `<trust>` entry, aapt2 for Linux and macOS), so a lock change without it
-fails the `lint` job before the `android build` one. Two downloads are not
+fails the `lint` job. Two downloads are not
 Gradle's and so not in it: the Gradle distribution, which the wrapper
 checks against `distributionSha256Sum`, and the `android-all` jars
 Robolectric downloads itself at test time for kit-ui's gallery check,
