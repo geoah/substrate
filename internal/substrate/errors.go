@@ -128,6 +128,16 @@ const ReasonQuota = "quota"
 // ReasonKeyRefused is the ErrorPayload reason of ErrKeyRefused.
 const ReasonKeyRefused = "key_refused"
 
+// ReasonStaleRevision is the ErrorPayload reason of a ValidationError whose
+// problems include a written `revision` below the stored one (decision 0162):
+// a newer write of the record landed first, so that write never lands
+// whatever else it fixes, and a client that queued it drops it rather than
+// asking its owner. It names no record, so a request that writes several (a
+// function call's effects, refused and rolled back whole) is not safe to drop
+// on it alone. A write that removes a stored revision is not stale and
+// carries no reason.
+const ReasonStaleRevision = "stale_revision"
+
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
 	Error ErrorPayload `json:"error"`
@@ -140,8 +150,8 @@ type ErrorEnvelope struct {
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
-// set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`, and
-// ReasonQuota on `guard`.
+// set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`,
+// ReasonQuota on `guard`, and ReasonStaleRevision on `validation`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`
@@ -163,9 +173,12 @@ type ProblemDetail struct {
 	Message string `json:"message"`
 }
 
-// ValidationError carries per-field detail for the UI's YAML editor.
+// ValidationError carries per-field detail for the UI's YAML editor. Reason
+// is the ErrorPayload reason the refusal answers with, "" or
+// ReasonStaleRevision.
 type ValidationError struct {
 	Problems []string
+	Reason   string
 }
 
 func (e *ValidationError) Error() string {

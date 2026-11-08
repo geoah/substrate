@@ -108,6 +108,15 @@ func refused(t *testing.T, what string, err error, want string) {
 	}
 }
 
+// reasonOf is the reason a refusal answers with on the wire, "" for none.
+func reasonOf(err error) string {
+	var ve *substrate.ValidationError
+	if !errors.As(err, &ve) {
+		return ""
+	}
+	return ve.Reason
+}
+
 func weighing(r observedRepo) map[string]any {
 	return map[string]any{
 		"metric": r.metricRef("health/body_mass"),
@@ -242,15 +251,30 @@ func TestObservedWriteRefusesAFallingRevision(t *testing.T) {
 	props["value"] = quantity("71.00", "kg")
 	_, err := r.put(t, r.observation, fid("w"), props)
 	refused(t, "a lower revision", err, "props.revision: 2 is below the stored revision 3")
+	if got := reasonOf(err); got != substrate.ReasonStaleRevision {
+		t.Errorf("a lower revision: reason %q, want %q", got, substrate.ReasonStaleRevision)
+	}
 	if got := r.get(t, r.observation, fid("w")).Properties["value"].(map[string]any)["value"]; got != "72.10" {
 		t.Errorf("the stale write landed: value %v", got)
 	}
+	// A stale write that is wrong in another way too is still stale: fixing
+	// the rest would not land it.
+	props["circular"] = true
+	_, err = r.put(t, r.observation, fid("w"), props)
+	refused(t, "a lower revision and a circular weight", err, "props.circular: averages an angle on the circle")
+	if got := reasonOf(err); got != substrate.ReasonStaleRevision {
+		t.Errorf("a lower revision and a circular weight: reason %q, want %q", got, substrate.ReasonStaleRevision)
+	}
+	delete(props, "circular")
 	// A patch that names no revision keeps the stored one.
 	if _, err := r.patch(t, r.observation, fid("w"), map[string]any{"utcOffset": 120}); err != nil {
 		t.Errorf("a patch without a revision: %v", err)
 	}
 	_, err = r.patch(t, r.observation, fid("w"), map[string]any{"revision": nil})
 	refused(t, "removing the revision", err, "props.revision: the stored revision 3 is never removed")
+	if got := reasonOf(err); got != "" {
+		t.Errorf("removing the revision: reason %q, want none: it is not stale", got)
+	}
 }
 
 // A trace keeps its nulls, stores its unit as the unit's id, and carries the

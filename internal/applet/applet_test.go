@@ -594,8 +594,22 @@ func TestARefusedStepNamesItsActionAndStep(t *testing.T) {
 		Action: substrate.AppletAction{Name: "save"},
 	})
 	var ve *substrate.ValidationError
-	if !errors.As(err, &ve) || ve.Problems[0] != "actions.save[0] (ensure): props.title: required" {
+	if !errors.As(err, &ve) || ve.Problems[0] != "actions.save[0] (ensure): props.title: required" || ve.Reason != "" {
 		t.Fatalf("want the step named on the refusal, got %v", err)
+	}
+
+	// A stale revision keeps its reason through the naming, so the API
+	// answers the action's refusal with it.
+	f.refuse = &substrate.ValidationError{
+		Problems: []string{"props.revision: 2 is below the stored revision 3; a rewrite never lowers it, so this is a stale delivery"},
+		Reason:   substrate.ReasonStaleRevision,
+	}
+	_, err = runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+		State:  substrate.AppletState{Screen: "add", UI: map[string]any{"form": map[string]any{"title": "A Title", "author": "Someone New"}}},
+		Action: substrate.AppletAction{Name: "save"},
+	})
+	if !errors.As(err, &ve) || !strings.HasPrefix(ve.Problems[0], "actions.save[0] (ensure): props.revision:") || ve.Reason != substrate.ReasonStaleRevision {
+		t.Fatalf("want the stale refusal named with its reason, got %v (reason %q)", err, ve.Reason)
 	}
 }
 
