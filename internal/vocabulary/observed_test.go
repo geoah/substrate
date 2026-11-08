@@ -330,6 +330,35 @@ func TestCheckObservedRefusesAZeroSpacing(t *testing.T) {
 	}
 }
 
+// Only a revision below the stored one is stale: a client drops a stale write
+// and parks every other refusal for its owner, and a removed revision is the
+// writer's mistake, not a newer write landing first.
+func TestRevisionProblemsReportOnlyAFallingRevisionStale(t *testing.T) {
+	stored := map[string]any{"revision": 3}
+	cases := []struct {
+		name    string
+		stored  map[string]any
+		written map[string]any
+		problem string
+		stale   bool
+	}{
+		{"lower", stored, map[string]any{"revision": 2}, "props.revision: 2 is below the stored revision 3", true},
+		{"removed", stored, map[string]any{}, "props.revision: the stored revision 3 is never removed", false},
+		{"equal", stored, map[string]any{"revision": 3}, "", false},
+		{"higher", stored, map[string]any{"revision": 4}, "", false},
+		{"none stored", map[string]any{}, map[string]any{"revision": 1}, "", false},
+	}
+	for _, tc := range cases {
+		problems, stale := vocabulary.RevisionProblems(tc.stored, tc.written)
+		if got := strings.Join(problems, "\n"); tc.problem == "" && got != "" || !strings.Contains(got, tc.problem) {
+			t.Errorf("%s: problems %q, want %q", tc.name, got, tc.problem)
+		}
+		if stale != tc.stale {
+			t.Errorf("%s: stale = %v, want %v", tc.name, stale, tc.stale)
+		}
+	}
+}
+
 // Each point of a trace may be in range while their spread is not: the stats
 // are refused as a validation problem, never stored as an infinity a JSON
 // encoder cannot write.

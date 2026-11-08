@@ -43,11 +43,17 @@ func TestRevisedKindRefusesAFallingRevision(t *testing.T) {
 	night["timeAsleep"] = "PT3H"
 	_, err := r.put(t, sleep, fid("n"), night)
 	refused(t, "a lower revision", err, "props.revision: 3 is below the stored revision 5")
+	if got := reasonOf(err); got != substrate.ReasonStaleRevision {
+		t.Errorf("a lower revision: reason %q, want %q", got, substrate.ReasonStaleRevision)
+	}
 	if got := r.get(t, sleep, fid("n")).Properties["timeAsleep"]; got != "PT7H25M" {
 		t.Errorf("the stale write landed: timeAsleep %v", got)
 	}
 	_, err = r.patch(t, sleep, fid("n"), map[string]any{"revision": nil})
 	refused(t, "removing the revision", err, "props.revision: the stored revision 5 is never removed")
+	if got := reasonOf(err); got != "" {
+		t.Errorf("removing the revision: reason %q, want none: it is not stale", got)
+	}
 }
 
 // A lab result's reference range is two quantities, each held to the unit

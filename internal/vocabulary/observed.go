@@ -710,22 +710,24 @@ func (c *obsCheck) offset(name string) {
 // `observed` or `revised` to its stored revision (decision 0162): the written
 // revision is at least the stored one, and a stored one is never removed. An
 // equal one is admitted, which is how an adapter fix rewrites output its
-// upstream did not change.
-func RevisionProblems(stored, written map[string]any) []string {
+// upstream did not change. stale reports a written revision below the stored
+// one, which the write path answers with its own reason; a removed one is the
+// writer's mistake, not a newer write landing first, and is not stale.
+func RevisionProblems(stored, written map[string]any) (problems []string, stale bool) {
 	was, had := ObservedRevisionOf(stored)
 	if !had {
-		return nil
+		return nil, false
 	}
 	now, has := ObservedRevisionOf(written)
 	switch {
 	case !has:
 		return []string{fmt.Sprintf(
-			"props.revision: the stored revision %d is never removed; a rewrite carries one at least as high", was)}
+			"props.revision: the stored revision %d is never removed; a rewrite carries one at least as high", was)}, false
 	case now < was:
 		return []string{fmt.Sprintf(
-			"props.revision: %d is below the stored revision %d; a rewrite never lowers it, so this is a stale delivery", now, was)}
+			"props.revision: %d is below the stored revision %d; a rewrite never lowers it, so this is a stale delivery", now, was)}, true
 	}
-	return nil
+	return nil, false
 }
 
 // ObservedRevisionOf reads a stored revision, false when there is none.

@@ -34,8 +34,11 @@ export type ErrorCode =
  * a model call carried, and the message names the vendor and the card to add
  * a working key on. `quota` rides a `guard` (403): the repository's allowance
  * from the operator for the UTC day is used up, and the message names the
- * site and when it resets. */
-export type ErrorReason = "observed_rederiving" | "key_refused" | "quota"
+ * site and when it resets. `stale_revision` rides a `validation` (422): the
+ * write's `revision` is below the stored one, so a newer write landed first
+ * and this one never will. */
+export type ErrorReason =
+  "observed_rederiving" | "key_refused" | "quota" | "stale_revision"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

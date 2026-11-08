@@ -215,6 +215,65 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	if !reflect.DeepEqual(env2.Error.ProblemDetails, want) {
 		t.Fatalf("problemDetails = %v, want %v", env2.Error.ProblemDetails, want)
 	}
+	if env2.Error.Reason != "" {
+		t.Fatalf("a plain validation refusal answered reason %q", env2.Error.Reason)
+	}
+}
+
+// A write whose revision is below the stored one is refused `validation`, as
+// it always was, and narrowed by the reason `stale_revision`, so a client's
+// outbox drops it without matching the message, which stays the same words
+// for a client that still does. A removed revision is no stale write and
+// carries no reason.
+func TestRESTStaleRevisionIsValidationWithItsReason(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+
+	const problem = "props.revision: 2 is below the stored revision 3; a rewrite never lowers it, so this is a stale delivery"
+	stale := &substrate.ValidationError{Problems: []string{problem}, Reason: substrate.ReasonStaleRevision}
+	writes := []struct {
+		op, method, path string
+		body             map[string]any
+	}{
+		{"Put", http.MethodPost, recordsPath, map[string]any{"kind": personKind, "properties": map[string]any{"revision": 2}}},
+		{"Put", http.MethodPut, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
+		{"Patch", http.MethodPatch, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
+	}
+	for _, w := range writes {
+		t.Run(w.method, func(t *testing.T) {
+			ds.errs[w.op] = stale
+			defer delete(ds.errs, w.op)
+			rec := env.do(t, w.method, w.path, tok, w.body)
+			wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
+			// The reason sits at error.reason, beside the code.
+			var raw struct {
+				Error map[string]any `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+				t.Fatal(err)
+			}
+			if raw.Error["reason"] != "stale_revision" {
+				t.Fatalf("error.reason = %v, want stale_revision (body %s)", raw.Error["reason"], rec.Body.String())
+			}
+			p := decodeJSON[substrate.ErrorEnvelope](t, rec).Error
+			if p.Message != stale.Error() || !strings.Contains(p.Message, "below the stored revision") {
+				t.Fatalf("message = %q, want the words it always had", p.Message)
+			}
+			want := []substrate.ProblemDetail{{Path: "props.revision", Message: strings.TrimPrefix(problem, "props.revision: ")}}
+			if !reflect.DeepEqual(p.ProblemDetails, want) || !reflect.DeepEqual(p.Problems, []string{problem}) {
+				t.Fatalf("problems = %v, problemDetails = %v", p.Problems, p.ProblemDetails)
+			}
+		})
+	}
+
+	ds.errs["Put"] = &substrate.ValidationError{Problems: []string{"props.revision: the stored revision 3 is never removed; a rewrite carries one at least as high"}}
+	defer delete(ds.errs, "Put")
+	rec := env.do(t, http.MethodPut, peoplePath+"/w", tok, map[string]any{"properties": map[string]any{}})
+	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
+	if strings.Contains(rec.Body.String(), `"reason"`) {
+		t.Fatalf("a removed revision answered a reason: %s", rec.Body.String())
+	}
 }
 
 // Issue 516: a repository latched behind its tables refuses every write until

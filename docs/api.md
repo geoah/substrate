@@ -2455,13 +2455,24 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has three members: `observed_rederiving` on `unavailable`,
+set is closed and has four members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
-working key ([operator defaults](#operator-defaults)); and `quota` on
-`guard`, an operator-paid call past the repository's allowance for the day.
-A client that does not know a reason acts on the code.
+working key ([operator defaults](#operator-defaults)); `quota` on
+`guard`, an operator-paid call past the repository's allowance for the day;
+and `stale_revision` on `validation`, a write whose `revision` is below the
+stored one, so a newer write of the record landed first and this one never
+lands ([observations](observations.md#the-rules-the-substrate-refuses)).
+`stale_revision` rides the whole refusal whenever one of its problems is the
+falling revision, at `props.revision`; a write that removes a stored revision
+carries no reason. A client that does not know a reason acts on the code.
+
+```json
+{"error": {"code": "validation", "reason": "stale_revision", "message": "…",
+  "problems": ["props.revision: 2 is below the stored revision 3; …"],
+  "problemDetails": [{"path": "props.revision", "message": "2 is below the stored revision 3; …"}]}}
+```
 
 Every response carries an `X-Request-Id` header: 16 characters the server
 mints for the request, never one the caller sent. The server's log line about

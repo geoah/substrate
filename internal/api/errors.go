@@ -118,7 +118,7 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: ve.Reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrParked):

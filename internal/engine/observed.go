@@ -73,6 +73,7 @@ func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string
 		return nil
 	}
 	var problems []string
+	var reason string
 	// The units are read through the transaction's graph (decision 0186).
 	var units *vocabulary.UnitGraph
 	if observed || metric {
@@ -107,12 +108,18 @@ func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string
 	}
 	// A revision is compared with the live row it rewrites. A create and a
 	// put onto a tombstone start a record afresh, so neither has one to fall
-	// below.
+	// below. A stale revision is the whole refusal's reason whatever else is
+	// wrong with the write: fixing the rest still leaves a write a newer one
+	// superseded.
 	if (observed || revised) && before != nil && before.DeletedAt == nil && !sp.resurrect {
-		problems = append(problems, vocabulary.RevisionProblems(before.Props, row.Props)...)
+		revision, stale := vocabulary.RevisionProblems(before.Props, row.Props)
+		problems = append(problems, revision...)
+		if stale {
+			reason = substrate.ReasonStaleRevision
+		}
 	}
 	if len(problems) > 0 {
-		return &substrate.ValidationError{Problems: problems}
+		return &substrate.ValidationError{Problems: problems, Reason: reason}
 	}
 	if !observed {
 		return nil
