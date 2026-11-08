@@ -400,11 +400,11 @@ jobs:
     # SUBSTRATE_TEST_DATABASE_URL. Same task, same assertions; only the machine
     # differs.
     #
-    # Its stock 100 connections are not raised the way testdb raises its own
-    # container's: the suite runs GOMAXPROCS tests at once holding ~4
-    # connections each, which is ~16 on this runner's four vCPUs. A LARGER
-    # runner would need that ceiling lifted in .mise/cipostgres.sh, and the
-    # failure says "too many clients already".
+    # It allows 500 connections, as testdb's own container does: one engine
+    # process may hold 28, and the suite runs GOMAXPROCS tests at once, some
+    # of them two or more processes, so the stock 100 was reachable on this
+    # runner's four vCPUs and failed a test with "too many clients already"
+    # (.mise/cipostgres.sh says when).
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
