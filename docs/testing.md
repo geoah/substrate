@@ -723,7 +723,7 @@ runs.
 | go test | `ci:go` | the short suite, no database | through `go gate` | 54 s |
 | engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` | 76 s |
 | db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
-| db providertest 1/2, 2/2 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
+| db providertest 1/3 to 3/3 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
 | db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill | through `go gate` | |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
 | apps linux | `ci:apps` | the kit and every app's core built and tested on Linux in the swift container, then the core of an app `apps:new` makes | through `apps gate` | |
@@ -757,8 +757,8 @@ weekly on `main` and on dispatch, never on a pull request, and
 ### The database suite, cut for the runner
 
 The engine package is too long for one 4 vCPU runner, so CI runs it as
-sixteen matrix jobs, and `internal/catalog` and `internal/providertest` as
-two each.
+sixteen matrix jobs, `internal/catalog` as two and `internal/providertest`
+as three.
 `.mise/dbshard.sh` reads a package's top-level test names from its
 `_test.go` files, sorts them and gives shard `k` every `n`th name starting
 from the `k`th, as one `-run` regex anchored at both ends. Every test lands in

@@ -382,7 +382,7 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
   # The database packages outside the engine, cut so none waits on another:
-  # catalog and providertest in two shards each, testenv on its own. `-p 1`
+  # catalog in two shards, providertest in three, testenv on its own. `-p 1`
   # inside each, because the packages of one run share the one database.
   # `cache` names the Go cache entry: the shards of one package build one
   # test binary, and each package keeps its own.
@@ -404,16 +404,21 @@ jobs:
             cache: catalog
             shard: 2
             shards: 2
-          - part: providertest 1/2
+          - part: providertest 1/3
             task: "ci:db:providertest"
             cache: providertest
             shard: 1
-            shards: 2
-          - part: providertest 2/2
+            shards: 3
+          - part: providertest 2/3
             task: "ci:db:providertest"
             cache: providertest
             shard: 2
-            shards: 2
+            shards: 3
+          - part: providertest 3/3
+            task: "ci:db:providertest"
+            cache: providertest
+            shard: 3
+            shards: 3
           - part: rest
             task: "ci:db:rest"
             cache: rest
