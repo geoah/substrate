@@ -37,8 +37,8 @@ data:
   #     is the owner's, and Moss relays the questions and continues the same
   #     thread; the architect binds the timeline and repeating traits, the
   #     designer designs from the owner's tasks and reads windows; both
-  #     think at high. 12 was a draft on the branch.
-  version: 13
+  #     think at high. 12 and 13 were drafts on the branch.
+  version: 14
 ---
 # ---- Moss: the owner's assistant, with a name and a temperament ------------
 # Moss grows on what is already there, which is the job: an assistant that
@@ -695,11 +695,14 @@ data:
   # An applet is designed once and used daily, so the designer thinks at
   # `high`, Anthropic's floor for work that needs intelligence; Moss stays
   # at `low`, the effort chat answers well at, and hands the building here.
+  # maxTokens holds its thinking and a whole applet in one turn, and stays
+  # under the 21333 a sub-agent's one-shot request may ask for: above it
+  # the API wants a stream, and a sub-agent's call is not one.
   provider: anthropic
   model: claude-opus-5-5
   params:
     reasoningEffort: high
-    maxTokens: 32000
+    maxTokens: 20000
   tools:
     - function: substrate.reamde.dev/core/query
     - function: substrate.reamde.dev/core/write
