@@ -341,7 +341,7 @@ function listOptions(
 /** One card per section, hairlines between its rows. */
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-6 rounded-[14px] bg-card [&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-0 [&>*+*]:before:top-0 [&>*+*]:before:ml-4 [&>*+*]:before:h-px [&>*+*]:before:scale-y-50 [&>*+*]:before:bg-separator [&>*:first-child]:rounded-t-[14px] [&>*:last-child]:rounded-b-[14px]">
+    <div className="mb-6 rounded-[14px] bg-card [&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-0 [&>*+*]:before:top-0 [&>*+*]:before:z-[1] [&>*+*]:before:ml-4 [&>*+*]:before:h-px [&>*+*]:before:scale-y-50 [&>*+*]:before:bg-separator [&>*:first-child]:rounded-t-[14px] [&>*:last-child]:rounded-b-[14px]">
       {children}
     </div>
   )
