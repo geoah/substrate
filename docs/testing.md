@@ -704,9 +704,9 @@ Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
 pipeline is reproducible on a laptop. Each job behind a required check has a
 budget of about a minute on the runner, and several are over it; the rest
 run on the same pull request and on `main` and do not block a merge. The
-apps' two jobs behind `apps gate` are far past it, and run only on a change
-to what they build (the `changes` job's `apps` answer): such a pull request
-waits for them, and every other one passes the gate with both skipped. The
+apps' job behind `apps gate` is far past it, and runs only on a change
+to what it builds (the `changes` job's `apps` answer): such a pull request
+waits for it, and every other one passes the gate with it skipped. The
 Median column is the median job time over the 29 pull request runs of
 2026-10-10 to 2026-10-12 that ran the Go suite; a row without one was
 cut or added since; `gh run view <id> --json createdAt,jobs`
@@ -726,9 +726,8 @@ runs.
 | db providertest 1/3 to 3/3 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
 | db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill | through `go gate` | |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
-| apps linux | `ci:apps` | the kit and every app's core built and tested on Linux in the swift container, then the core of an app `apps:new` makes | through `apps gate` | |
-| android build | `ci:android` | the apps' Swift and Kotlin format checks, the Android toolchain installed, the bridge's generator checked and its tests, and the kit cross-compiled for Android | through `apps gate` | |
-| apps gate | `.mise/appsgate.sh` (in the workflow) | reads `changes`' `apps` answer: red unless both apps jobs succeeded on `true`, or passed skipped on `false`, and red with no answer | yes | |
+| apps linux | `ci:apps` | the apps' Swift format check, the kit and every app's core built and tested on Linux in the swift container, then the core of an app `apps:new` makes; nothing is built for Android while no app ships there | through `apps gate` | |
+| apps gate | `.mise/appsgate.sh` (in the workflow) | reads `changes`' `apps` answer: red unless `apps linux` succeeded on `true`, or passed skipped on `false`, and red with no answer | yes | |
 | acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no | 50 s |
 | providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams; a failed run keeps `.dev/providere2e/`, the server's log included, as the `providere2e-logs` artifact | no | 260 s |
 | race | `ci:race` | the short suite under `-race` | no | 145 s |

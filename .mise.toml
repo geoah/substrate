@@ -690,15 +690,16 @@ run = "yamlfmt -lint ."
 
 [tasks."fmt:swift:check"]
 description = "Fail if any Swift file under apps/ is unformatted, printing the diff"
-# Run in the `android build` job, which installs this Swift, rather than
-# `lint`, which installs no Swift (`lint:ci` holds that it runs somewhere).
+# Run in the `apps linux` job (ci:apps), which installs this Swift, rather
+# than `lint`, which installs no Swift (`lint:ci` holds that it runs
+# somewhere).
 tools = { swift = "6.4.2" }
 run = ".mise/appsfmt.sh swift check"
 
 [tasks."fmt:kotlin:check"]
 description = "Fail if any Kotlin file under apps/ is unformatted, printing the diff"
-# In the `android build` job beside `fmt:swift:check`, where the JDK and
-# Gradle's caches already are.
+# A laptop's: no CI job runs it while no app ships for Android, and
+# `lint:ci` names it as the one `fmt:check` part CI leaves out.
 tools = { java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/appsfmt.sh kotlin check"
 
@@ -1215,11 +1216,11 @@ run = "goreleaser release --clean --skip=before"
 [tasks."ci:lint"]
 description = "CI job `lint`: every linter and formatter check but Go's and the apps' Swift and Kotlin, the release config, and the diff guards"
 # Go's pair is `lint go` (ci:lint:go): golangci-lint typechecks the module, and
-# on one runner beside the rest it made this job 63 seconds. The Swift and
-# Kotlin format checks are `android build`'s (ci:android), the job that
-# installs a Swift and a JDK. The three lists together are `lint` plus
-# `fmt:check`, which `lint:ci` holds, so a linter added to `lint` and to no
-# job fails there.
+# on one runner beside the rest it made this job 63 seconds. The Swift format
+# check is `apps linux`'s (ci:apps), the job that installs a Swift. The three
+# lists together are `lint` plus `fmt:check` but the Kotlin check, which no
+# CI job runs while nothing ships for Android, and `lint:ci` holds that, so
+# a linter added to `lint` and to no job fails there.
 # The three diff guards ride here because they need a base branch and `lint`
 # does not have one: `kinds:check` holds a changed declaration to a version
 # bump and a new kind's name to docs/terms.md and its family, `frozen:check`
@@ -1384,27 +1385,14 @@ description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
 [tasks."ci:apps"]
-description = "CI job `apps linux`: the kit and every app's core built and tested on Linux, then an app apps:new makes"
+description = "CI job `apps linux`: the apps' Swift format check, the kit and every app's core built and tested on Linux, then an app apps:new makes"
 # Gated on `changes`' `apps` answer: only a change to apps/, the console
 # fixture the kit's tests read, the scaffold or this pipeline's own
-# definition runs it. One after the other: each is a swift container.
-run = ["mise run apps:test:linux", "mise run apps:new:check"]
-
-[tasks."ci:android"]
-description = "CI job `android build`: the apps' Swift and Kotlin format checks, the Android toolchain installed, the generator checked, the bridge's tests, and the kit cross-compiled for both ABIs"
-# Gated on `changes`' `apps` answer, as `ci:apps` is. Sequential: each step
-# after the SDK needs the SDK it installs. The format checks come first and
-# need none of it, only the Swift and the JDK every step here runs on; they
-# are here rather than in `lint`, whose runner has neither, and only a
-# change the gate passes can move their answer.
-run = [
-  "mise run fmt:swift:check",
-  "mise run fmt:kotlin:check",
-  "mise run android:sdk",
-  "mise run android:generate:check",
-  "mise run android:test",
-  "mise run android:build",
-]
+# definition runs it. One after the other: the format check is the fastest
+# answer, and the two after it are each a swift container. The Android
+# build was `android build` until 2026-11-08; no app ships for Android yet,
+# so it is a laptop's (`android:build`, `android:test`).
+run = ["mise run fmt:swift:check", "mise run apps:test:linux", "mise run apps:new:check"]
 
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
@@ -1448,17 +1436,15 @@ depends = [
   "ci:console:test",
   "ci:image",
   "ci:apps",
-  "ci:android",
 ]
 
 [tasks."ci:quick"]
-description = "The required checks that need no database, Docker or Android toolchain: lint, lint go, console, console test, go test"
+description = "The required checks that need no database or Docker: lint, lint go, console, console test, go test"
 # The fast answer before a push: the jobs a pull request's verdict waits on,
 # less the database half of `go gate` (the engine shards and the `db` jobs),
 # which `mise run test:db` runs under the machine-wide slot, and the apps'
-# jobs behind `apps gate` (ci:apps, a swift container; ci:android, the
-# Android SDK). No workflow runs it; each of its parts is a job of its own
-# there.
+# job behind `apps gate` (ci:apps, a swift container). No workflow runs it;
+# each of its parts is a job of its own there.
 depends = [
   "ci:lint",
   "ci:lint:go",

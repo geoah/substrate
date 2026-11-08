@@ -199,7 +199,7 @@ scenario apps-app-json true seed apps/tasks/app.json '{}'
 scenario apps-scope-fixture true seed web/console/src/lib/app-scopes.fixture.json '[]'
 scenario apps-the-workflow-itself true touch_file .github/workflows/ci.yml
 scenario apps-the-tasks true seed .mise.toml '[tasks]'
-scenario apps-the-android-script true seed .mise/android.sh '#!/bin/sh'
+scenario apps-the-android-script false seed .mise/android.sh '#!/bin/sh'
 scenario apps-the-scaffold true seed .mise/appsnew.sh '#!/bin/sh'
 scenario apps-the-scaffold-check true seed .mise/appsnewcheck.sh '#!/bin/sh'
 scenario apps-the-formatters true seed .mise/appsfmt.sh '#!/bin/sh'
@@ -423,20 +423,21 @@ PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://exampl
 # --- the lint jobs cover every linter --------------------------------------
 
 # CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`, and
-# the apps' format checks, which want a Swift and a JDK, are steps of
-# `ci:android`. A linter added to the aggregate and to none of them would run
-# on a laptop and never on a pull request. A run that fails says so, rather
-# than reading as nothing missing.
+# the apps' Swift format check, which wants a Swift, is a step of `ci:apps`.
+# A linter added to the aggregate and to none of them would run on a laptop
+# and never on a pull request. The Kotlin check is the one exception, named
+# here: no CI job runs it while no app ships for Android. A run that fails
+# says so, rather than reading as nothing missing.
 if missing="$("$python" - 2>"$tmp/lint-jobs.err" <<'PY'
 import re, tomllib
 t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
 want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
 have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
-have |= {m for step in t["ci:android"]["run"] for m in re.findall(r"mise run (\S+)", step)}
-print(" ".join(sorted(want - have)))
+have |= {m for step in t["ci:apps"]["run"] for m in re.findall(r"mise run (\S+)", step)}
+print(" ".join(sorted(want - have - {"fmt:kotlin:check"})))
 PY
 )"; then
-  [ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
+  [ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:apps: ${missing}"
 else
   flag "the lint jobs' coverage was not checked: $(cat "$tmp/lint-jobs.err")"
 fi
@@ -594,18 +595,18 @@ case "$(pipeline "$tmp/mise-no-providers.toml" .github/workflows .github/ruleset
 *"runs ci:providers, which \`mise run ci\` neither"*) ;;
 *) flag "the pipeline: ci:providers missing from \`ci\` was not reported" ;;
 esac
-# And the gates: `apps gate` without `if: always()`, `android build` dropped
-# from what it needs, and two more jobs moved onto the apps answer with
-# nothing holding them.
+# And the gates: `apps gate` without `if: always()`, `apps linux` dropped
+# from what it needs, and another job moved onto the apps answer with
+# nothing holding it.
 scratch "$tmp/wf-gate-skipped" '/^  apps-gate:$/,/^    if: always()$/{/^    if: always()$/d;}'
 case "$(pipeline .mise.toml "$tmp/wf-gate-skipped" .github/rulesets/main.json)" in
-*"ci.yml:apps-gate is a required check that needs changes, apps-linux, android and does not run"*) ;;
+*"ci.yml:apps-gate is a required check that needs changes, apps-linux and does not run"*) ;;
 *) flag "the pipeline: an \`apps gate\` a skip passes was not reported" ;;
 esac
-scratch "$tmp/wf-gate-unheld" 's/^    needs: \[changes, apps-linux, android\]$/    needs: [changes, apps-linux]/'
+scratch "$tmp/wf-gate-unheld" 's/^    needs: \[changes, apps-linux\]$/    needs: [changes]/'
 case "$(pipeline .mise.toml "$tmp/wf-gate-unheld" .github/rulesets/main.json)" in
-*"ci.yml:android runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
-*) flag "the pipeline: \`android build\` outside what \`apps gate\` needs was not reported" ;;
+*"ci.yml:apps-linux runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
+*) flag "the pipeline: \`apps linux\` outside what \`apps gate\` needs was not reported" ;;
 esac
 scratch "$tmp/wf-gate-third" 's/^\(    if: needs\.changes\.outputs\.\)go\( == .true.\)$/\1apps\2/'
 case "$(pipeline .mise.toml "$tmp/wf-gate-third" .github/rulesets/main.json)" in
@@ -629,18 +630,23 @@ apps_gate() {
   status=$?
   [ "$status" -eq "$expected" ] || flag "apps gate ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
 }
-apps_gate built 0 true 'apps linux=success' 'android build=success'
-apps_gate one-red 1 true 'apps linux=success' 'android build=failure'
-apps_gate one-cancelled 1 true 'apps linux=cancelled' 'android build=success'
-apps_gate skipped-on-a-change 1 true 'apps linux=skipped' 'android build=success'
-apps_gate untouched 0 false 'apps linux=skipped' 'android build=skipped'
-apps_gate untouched-ran-anyway 0 false 'apps linux=success' 'android build=skipped'
-apps_gate untouched-red 1 false 'apps linux=failure' 'android build=skipped'
-apps_gate untouched-cancelled 1 false 'apps linux=skipped' 'android build=cancelled'
-apps_gate no-answer 1 '' 'apps linux=skipped' 'android build=skipped'
-apps_gate answer-unset 1 - 'apps linux=skipped' 'android build=skipped'
-apps_gate odd-answer 1 yes 'apps linux=success' 'android build=success'
-apps_gate no-result 1 true 'apps linux=success' 'android build='
+# ci.yml gives the gate one job today. The script holds every job it is
+# named, so the scenarios below give it a second, `another job`, too.
+apps_gate built-alone 0 true 'apps linux=success'
+apps_gate red-alone 1 true 'apps linux=failure'
+apps_gate untouched-alone 0 false 'apps linux=skipped'
+apps_gate built 0 true 'apps linux=success' 'another job=success'
+apps_gate one-red 1 true 'apps linux=success' 'another job=failure'
+apps_gate one-cancelled 1 true 'apps linux=cancelled' 'another job=success'
+apps_gate skipped-on-a-change 1 true 'apps linux=skipped' 'another job=success'
+apps_gate untouched 0 false 'apps linux=skipped' 'another job=skipped'
+apps_gate untouched-ran-anyway 0 false 'apps linux=success' 'another job=skipped'
+apps_gate untouched-red 1 false 'apps linux=failure' 'another job=skipped'
+apps_gate untouched-cancelled 1 false 'apps linux=skipped' 'another job=cancelled'
+apps_gate no-answer 1 '' 'apps linux=skipped' 'another job=skipped'
+apps_gate answer-unset 1 - 'apps linux=skipped' 'another job=skipped'
+apps_gate odd-answer 1 yes 'apps linux=success' 'another job=success'
+apps_gate no-result 1 true 'apps linux=success' 'another job='
 apps_gate no-jobs 2 true
 
 # --- the database slot --------------------------------------------------------
@@ -1574,8 +1580,8 @@ toolchain fmt-swift 1 'fmt:swift runs swift 0.0.1, and the android:* tasks' .mis
   's/^tools = { swift = "[^"]*" }$/tools = { swift = "0.0.1" }/'
 toolchain fmt-kotlin 1 'fmt:kotlin runs java temurin-0.0.1, and the android:* tasks' .mise.toml \
   's/^tools = { java = "[^"]*" }$/tools = { java = "temurin-0.0.1" }/'
-# The android build job without the Swift the android:* tasks pin: CI
-# installs only what a job names, so its tasks would run the runner's own.
+# The apps linux job without the Swift the android:* tasks pin: CI installs
+# only what a job names, so its format check would run the runner's own.
 toolchain android-install 1 'does not install swift@' .github/workflows/ci.yml '/install_args:/s/ swift@[^ ]*//'
 
 # The Gradle dependency verification against the locks: a locked module the

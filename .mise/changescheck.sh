@@ -32,13 +32,12 @@
 # as its `apps gate` does a missing `apps=` (.mise/appsgate.sh).
 #
 # The same diff answers a second question, `apps` (the first argument;
-# none is `go`): does the change touch what the `apps linux` and `android
-# build` jobs build? They read only apps/ (the Swift packages, the Gradle
-# build, the formatters' configuration), the console fixture the kit's scope
-# words are held to, the root .editorconfig ktfmt reads under apps/'s, and
-# their own definitions (.mise.toml, .mise/android.sh, the formatters'
-# .mise/appsfmt.sh, the scaffold apps:new runs in it, .mise/appsnew.sh, and
-# the check that runs it, .mise/appsnewcheck.sh, this workflow), so there the
+# none is `go`): does the change touch what the `apps linux` job builds? It
+# reads only apps/ (the Swift packages, the formatter's configuration), the
+# console fixture the kit's scope words are held to, the root .editorconfig,
+# and its own definitions (.mise.toml, the formatters' .mise/appsfmt.sh, the
+# scaffold apps:new runs in it, .mise/appsnew.sh, and the check that runs
+# it, .mise/appsnewcheck.sh, this workflow), so there the
 # list is the RELEVANT set: a change elsewhere cannot
 # move its result, and a docs or Go change skips its build.
 #
@@ -130,7 +129,7 @@ inert() {
 apps_input() {
   case "$1" in
   apps/* | web/console/src/lib/app-scopes.fixture.json | .editorconfig) return 0 ;;
-  .mise.toml | .github/workflows/ci.yml | .mise/android.sh | .mise/appsfmt.sh | .mise/appsnew.sh | .mise/appsnewcheck.sh) return 0 ;;
+  .mise.toml | .github/workflows/ci.yml | .mise/appsfmt.sh | .mise/appsnew.sh | .mise/appsnewcheck.sh) return 0 ;;
   *) return 1 ;;
   esac
 }

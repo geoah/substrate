@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # The verdict of the `apps gate` job, the one check the ruleset requires for
-# the apps' jobs (`apps linux` and `android build`). Theirs cannot be
-# required: each runs only when the `changes` job answers apps=true, and
-# GitHub passes a required check whose job was skipped, so a `changes` that
-# failed to answer (both jobs then skipped) would merge an app change that
-# nothing built. So the gate reads the answer itself:
+# the apps' jobs (today `apps linux` alone). Theirs cannot be required: each
+# runs only when the `changes` job answers apps=true, and GitHub passes a
+# required check whose job was skipped, so a `changes` that failed to answer
+# (the jobs then skipped) would merge an app change that nothing built. So
+# the gate reads the answer itself:
 #
 #   apps=true   every job must have succeeded;
 #   apps=false  every job must have been skipped, or have succeeded;
