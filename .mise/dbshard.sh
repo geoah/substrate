@@ -69,6 +69,6 @@ names="$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*\(' "$pkg"/*_test.go |
 mine="$(printf '%s\n' "$names" | SHARD="$shard" SHARDS="$shards" .mise/shardselect.sh)"
 total="$(printf '%s\n' "$names" | grep -c .)"
 count="$(printf '%s\n' "$mine" | grep -c .)"
-run="^($(printf '%s\n' "$mine" | paste -sd '|'))\$"
+run="^($(printf '%s\n' "$mine" | paste -sd '|' -))\$"
 echo "${label}: shard ${shard}/${shards}, ${count} of ${total} tests"
-exec go test -count=1 -skip "$skip" -timeout 12m -run "$run" "./${pkg}/"
+exec go test -count=1 -skip "$skip" -timeout 12m -run "$run" ${cover[@]+"${cover[@]}"} "./${pkg}/"
