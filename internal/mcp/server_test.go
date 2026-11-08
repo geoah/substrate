@@ -58,7 +58,7 @@ func TestTheProtocolsEdges(t *testing.T) {
 		{"a batch", `[{"jsonrpc":"2.0","id":1,"method":"ping"}]`, "", 400, codeInvalidRequest},
 		{"not JSON", `{`, "", 400, codeParse},
 		{"not 2.0", `{"jsonrpc":"1.0","id":1,"method":"ping"}`, "", 400, codeInvalidRequest},
-		{"an unknown method", `{"jsonrpc":"2.0","id":1,"method":"resources/list"}`, "", 200, codeMethodNotFound},
+		{"an unknown method", `{"jsonrpc":"2.0","id":1,"method":"completion/complete"}`, "", 200, codeMethodNotFound},
 		{"discover under its own header", `{"jsonrpc":"2.0","id":1,"method":"server/discover"}`, "2026-07-28", 200, codeMethodNotFound},
 		{"a version not spoken", `{"jsonrpc":"2.0","id":1,"method":"ping"}`, "2024-11-05", 400, codeInvalidRequest},
 		{"an unknown tool", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}`, "", 200, codeInvalidParams},
@@ -89,8 +89,12 @@ func TestInitializeNegotiatesAVersionAndCarriesTheRules(t *testing.T) {
 		t.Fatalf("initialize = %v", r)
 	}
 	first, _, _ := strings.Cut(r["instructions"].(string), "\n")
-	if !strings.Contains(first, "kinds tool") || len(first) > 250 {
-		t.Fatalf("the instructions' first line, all Codex shows, is %q", first)
+	if !strings.Contains(first, "overview") || !strings.Contains(first, "guide") || len(first) > 250 {
+		t.Fatalf("the instructions' first line is %q", first)
+	}
+	// Claude Code keeps the first 4096 characters of a server's instructions.
+	if n := len(r["instructions"].(string)); n > 4096 {
+		t.Fatalf("the instructions are %d bytes, past the 4096 a client keeps", n)
 	}
 }
 
@@ -302,8 +306,10 @@ func TestEachToolBuildsItsRequest(t *testing.T) {
 		{"write", `{"op":"put","kind":"` + task + `","properties":{"name":"x"},"idempotencyKey":"k"}`, "POST", "/records", "", `{"kind":"` + task + `","properties":{"name":"x"}}`, "k"},
 		{"write", `{"op":"patch","kind":"` + task + `","id":"t1","properties":{"status":"done"},"ifVersion":3}`, "PATCH", "/" + task + "/t1", "", `{"ifVersion":3,"properties":{"status":"done"}}`, ""},
 		{"write", `{"op":"delete","kind":"` + task + `","id":"t1","ifVersion":3}`, "DELETE", "/" + task + "/t1", "ifVersion=3", "", ""},
-		{"decide", `{"id":"r1","decision":"accepted"}`, "PATCH", "/substrate.reamde.dev/core/recordpatchrequest/r1", "", `{"properties":{"decision":"accepted"}}`, ""},
+		{"decide", `{"id":"r1","decision":"accepted","ifVersion":2}`, "PATCH", "/substrate.reamde.dev/core/recordpatchrequest/r1", "", `{"ifVersion":2,"properties":{"decision":"accepted"}}`, ""},
 		{"apply", `{"documents":[{"kind":"x"}],"plan":true}`, "POST", "/vocabulary/plan", "", `{"documents":[{"kind":"x"}]}`, ""},
+		{"apply", `{"documents":[{"kind":"x"}],"plan":true,"holdWaitingMappings":true}`, "POST", "/vocabulary/plan", "", `{"documents":[{"kind":"x"}],"holdWaitingMappings":true}`, ""},
+		{"query", `{"kind":"` + task + `","count":true,"first":1}`, "GET", "/records", `count=1&filter=%7B%22kinds%22%3A%5B%22ada.example.com%2Ftasks%2Ftask%22%5D%7D&first=1`, "", ""},
 		{"packages", `{"action":"install","id":"providers.substrate.reamde.dev/google"}`, "POST", "/catalog/providers.substrate.reamde.dev%2Fgoogle/install", "", "", ""},
 		{"packages", `{"action":"disable","id":"ada.example.com/notes"}`, "PATCH", "/substrate.reamde.dev/core/bundle/ada.example.com%2Fnotes", "", `{"properties":{"disabled":true}}`, ""},
 		{"call", `{"function":"ada.example.com/notes/stats","input":{"text":"hi"},"idempotencyKey":"c"}`, "POST", "/substrate.reamde.dev/core/function/ada.example.com%2Fnotes%2Fstats/call", "", `{"input":{"text":"hi"}}`, "c"},
@@ -350,31 +356,6 @@ func TestAToolTakesAKindOnlyAsAFullReference(t *testing.T) {
 		if text, isErr := call(t, api, "query", args); !isErr || len(api.got) != 0 {
 			t.Errorf("query %s = %q after %d requests, want refused before any", args, text, len(api.got))
 		}
-	}
-}
-
-func TestKindsSummarizesTheDeclarations(t *testing.T) {
-	page := `{"records":[{"id":"ada.example.com/tasks/task","properties":{"description":"A thing to do. It has a status.","purpose":"primary"}},` +
-		`{"id":"substrate.reamde.dev/core/trigger","properties":{"description":"Runs on changes.","purpose":"internal"}},` +
-		`{"id":"ada.example.com/notes/note","properties":{}}],"cursor":"c2"}`
-	api := &fakeAPI{answers: []Response{{Status: 200, Body: []byte(page)}}}
-	text, isErr := call(t, api, "kinds", `{}`)
-	if isErr {
-		t.Fatal(text)
-	}
-	var got struct {
-		Kinds  []map[string]string `json:"kinds"`
-		Cursor string              `json:"cursor"`
-	}
-	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Kinds) != 3 || got.Kinds[0]["description"] != "A thing to do." || got.Kinds[1]["purpose"] != "internal" ||
-		got.Kinds[2]["purpose"] != "primary" || got.Cursor != "c2" {
-		t.Fatalf("kinds = %s", text)
-	}
-	if q := api.got[0].Query.Get("filter"); q != `{"kinds":["substrate.reamde.dev/core/kind"]}` {
-		t.Fatalf("filter = %s", q)
 	}
 }
 

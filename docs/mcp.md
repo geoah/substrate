@@ -50,9 +50,12 @@ variable, and send it as a header. In `~/.cursor/mcp.json`:
 
 ## What an assistant can do
 
-What the owner does in the console: read every record, the token and
+Most of what the owner does in the console: read every record, the token and
 credential records among them (their secrets are digests and redacted
-values); write any record but those; declare and change kinds, triggers,
+values); write any record but those and the protected
+`substrate.reamde.dev/core/secret` records (a secret-typed property of
+another kind, such as a provider's `apiKey`, is written like any other);
+declare and change kinds, triggers,
 functions and agents; install providers and import samples; run functions,
 chat with agents, run syncs; merge and split records; read and store files.
 
@@ -74,7 +77,9 @@ token the owner made by hand. Its token works at `/mcp` alone.
 
 | Tool | What it does |
 | --- | --- |
-| `kinds` | the kinds the repository holds, each with its purpose and first sentence |
+| `overview` | start here: the owner's authority, each package with its source and kinds, the agents, applets and LLM providers, what waits on the owner, and the guide's topics |
+| `guide` | the documentation, one topic at a time (below) |
+| `kinds` | the kinds the repository holds, grouped by package, each with its purpose and first sentence; narrowed by package, purpose or words |
 | `describe_kind` | one kind's declaration |
 | `query` | one record or one of its values, a page, a search, a window or an aggregate |
 | `history` | the changes to a record, a kind or by an actor, paged by cursor and generation |
@@ -87,8 +92,53 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | `triggers` | status, sync status, wake, run, replay, parked deliveries |
 | `files` | read a blob in chunks, or store one |
 | `units` | the unit table a page at a time, and conversions |
-| `merge` | merge or split two records |
+| `merge` | merge two records, or split a merge by its id |
 | `applets` | the guide to building an applet, and a preview that checks one and draws a screen ([applets](applets.md)) |
+
+## The guide
+
+An assistant reads what it needs when it needs it, not up front: the
+instructions `initialize` carries are a dozen lines (the rules every write
+keeps, and which tool to call first), and the rest is the guide, one topic
+at a time, a few thousand characters each. `guide` without a topic lists
+them, each with what it covers:
+
+| Topic | Covers |
+| --- | --- |
+| `records` | writing records, change requests, the questions agents ask |
+| `query` | filters, search, windows, aggregates, the changelog |
+| `vocabulary` | declaring packages and kinds, every property type, changing a kind safely |
+| `traits` | what each core trait gives a kind and when to bind it |
+| `packages` | the catalog, samples, providers, inputs |
+| `agents` | Moss and its helpers, the owner's own agents, LLM providers and models |
+| `automation` | functions, triggers and policies |
+| `observations` | metrics, measured values and units |
+| `console` | the console's record pages and saved views |
+| `applets` | building an applet ([applets](applets.md)) |
+
+The topics are files under `internal/mcp/guide/` (the applets topic is
+`internal/applet/guide.md`), and the same text is each topic's resource,
+`substrate://guide/<topic>`, which Claude Code attaches with
+`@substrate:substrate://guide/<topic>`. Tests hold the topics to the door's
+tool names, the vocabulary topic to every property type the parser takes,
+and the traits topic to every core trait.
+
+## Prompts
+
+A client that offers prompts shows each as a command the owner starts
+(Claude Code: `/mcp__substrate__<name>`). Each is a request in the owner's
+voice that names the tools and topics the work needs, with at most one
+optional argument, since a client may split arguments on whitespace:
+
+| Prompt | Does |
+| --- | --- |
+| `tour` | what the substrate holds and what waits on the owner |
+| `new_collection` | designs a collection, plans it and applies it on the owner's word |
+| `new_applet` | builds an applet and previews every screen |
+| `inbox` | the change requests and questions waiting on the owner, and what is due |
+| `tidy` | finds duplicates, gaps and inconsistent values in one collection |
+
+## Results
 
 Each tool is a REST request made in process with the assistant's own token,
 so every rule of [using a substrate from an agent](for-agents.md) holds,
@@ -103,7 +153,10 @@ Stateless: one JSON-RPC message per `POST /mcp`, answered as JSON, with no
 session and no server stream, so `GET` and `DELETE` with a token are `405`.
 `initialize` speaks `2025-11-25`, `2025-06-18` and `2025-03-26`.
 `server/discover` (the 2026-07-28 revision) answers method-not-found, and
-clients fall back to `initialize`. A request without a token is `401`,
+clients fall back to `initialize`. The methods are `initialize`, `ping`,
+`tools/list`, `tools/call`, `resources/list`, `resources/templates/list`
+(none), `resources/read`, `prompts/list` and `prompts/get`; the guide's
+resources and the prompts are fixed, so neither list changes. A request without a token is `401`,
 naming `scope="mcp"` and the door's own metadata at
 `/.well-known/oauth-protected-resource/mcp`; a token that is not an
 assistant's is `403` with `error="insufficient_scope"`. The sign-in is
