@@ -81,8 +81,9 @@ function LandingFragment({ html, source }: { html: string; source: string }) {
 }
 
 /** What a signed-out visitor sees at `/` when the deployment sets a landing
- * page: a thin frame the console owns (the brand, and the two doors) around
- * the operator's fragment. */
+ * page: a thin frame the console owns (the brand, and the sign-in door)
+ * around the operator's fragment. The register door is the fragment's own
+ * call to action, so the bar does not repeat it. */
 export function LandingPage({ site }: { site: SiteInfo }) {
   useDocumentTitle(site.tagline ? `${site.name}: ${site.tagline}` : site.name)
   const load = useLanding(site.landing ?? "")
@@ -93,7 +94,7 @@ export function LandingPage({ site }: { site: SiteInfo }) {
           <Link to="/" className="rounded-lg" aria-label={site.name}>
             <DoorBrand site={site} size="sm" />
           </Link>
-          {/* Tighter on a phone, where the brand, the switch and both doors
+          {/* Tighter on a phone, where the brand, the switch and the door
             share 358 px. */}
           <nav className="flex items-center gap-0.5 sm:gap-2">
             <ColorSchemeMenu className="size-8 sm:size-9" />
@@ -106,13 +107,6 @@ export function LandingPage({ site }: { site: SiteInfo }) {
               )}
             >
               Sign in
-            </Link>
-            <Link
-              to="/register"
-              search={{}}
-              className={buttonVariants({ size: "lg" })}
-            >
-              Create your Substrate
             </Link>
           </nav>
         </div>

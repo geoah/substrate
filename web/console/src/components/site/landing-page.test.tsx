@@ -60,7 +60,7 @@ describe("LandingPage", () => {
     fetchMock.mockReset()
   })
 
-  it("frames the fragment with the brand and the two doors", async () => {
+  it("frames the fragment with the brand and the sign-in door", async () => {
     fetchMock.mockResolvedValue(new Response(FRAGMENT, { status: 200 }))
     render(<LandingPage site={SITE} />)
     expect(screen.getByText("Crane")).toBeTruthy()
@@ -68,11 +68,8 @@ describe("LandingPage", () => {
     expect(
       screen.getByRole("link", { name: "Sign in" }).getAttribute("href")
     ).toBe("/login")
-    expect(
-      screen
-        .getByRole("link", { name: "Create your Substrate" })
-        .getAttribute("href")
-    ).toBe("/register")
+    // The register door is the fragment's call to action, not the bar's.
+    expect(document.querySelector('header a[href="/register"]')).toBeNull()
     await waitFor(() =>
       expect(fragmentRoot().querySelector("h1")).not.toBeNull()
     )
@@ -137,6 +134,6 @@ describe("LandingPage", () => {
     expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBe(2)
     expect(
       screen.getAllByRole("link", { name: "Create your Substrate" }).length
-    ).toBe(2)
+    ).toBe(1)
   })
 })
