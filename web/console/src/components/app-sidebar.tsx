@@ -49,6 +49,7 @@ import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindCard } from "@/components/identity/kind-ref"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { PurposeTag } from "@/components/identity/purpose-tag"
+import { StageTag } from "@/components/nav/stage-tag"
 import { SwitchMark, ToggleSwitch } from "@/components/nav/toggle-switch"
 import { Button } from "@/components/ui/button"
 import {
@@ -95,6 +96,7 @@ import {
 import { kindByIdentity, kindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
 import { OBSERVED_TRAIT } from "@/lib/core-kinds"
+import { stageNote, type Stage } from "@/lib/stage"
 import { kindHasTrait } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
@@ -125,11 +127,13 @@ function NavRow({
   to,
   icon: Icon,
   label,
+  stage,
   extra,
 }: {
   to: Place
   icon: LucideIcon
   label: string
+  stage?: Stage
   extra?: ReactNode
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -144,11 +148,13 @@ function NavRow({
       to={to}
       onClick={close}
       aria-current={active ? "page" : undefined}
+      aria-description={stage && stageNote(stage)}
       className={cn(ROW, active && ACTIVE)}
     >
       <Icon className="size-4 shrink-0" strokeWidth={1.8} />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {extra}
+      <span className="min-w-0 truncate">{label}</span>
+      {stage && <StageTag stage={stage} />}
+      <span className="ml-auto flex shrink-0 items-center">{extra}</span>
     </Link>
   )
 }
@@ -159,7 +165,14 @@ function ObservationsRow() {
   const registry = useQuery(kindsQueryOptions)
   const any = (registry.data ?? []).some((k) => kindHasTrait(k, OBSERVED_TRAIT))
   if (!any) return null
-  return <NavRow to="/observations" icon={ActivityIcon} label="Observations" />
+  return (
+    <NavRow
+      to="/observations"
+      icon={ActivityIcon}
+      label="Observations"
+      stage="beta"
+    />
+  )
 }
 
 /** A kind's record count, only when a page already counted it: the sidebar
@@ -686,14 +699,20 @@ export function AppSidebar({
         <nav aria-label="Places" className="flex flex-col">
           <NavRow to="/" icon={HomeIcon} label="Home" />
           <NavRow to="/data" icon={DatabaseIcon} label="All data" />
-          <NavRow to="/applets" icon={AppWindowIcon} label="Applets" />
+          <NavRow
+            to="/applets"
+            icon={AppWindowIcon}
+            label="Applets"
+            stage="alpha"
+          />
           <ObservationsRow />
-          <NavRow to="/agents" icon={BotIcon} label="Agents" />
+          <NavRow to="/agents" icon={BotIcon} label="Agents" stage="beta" />
           <NavRow to="/tools" icon={WrenchIcon} label="Tools" />
           <NavRow
             to="/providers"
             icon={PlugIcon}
             label="Providers"
+            stage="beta"
             extra={<ProviderCount />}
           />
         </nav>

@@ -94,6 +94,7 @@ export function AppletsPage() {
     <TablePage className="pb-16">
       <PageHeader
         title="Applets"
+        stage="alpha"
         description="Small applets over your records. Open one here, or on its own, full screen, on your phone."
       />
       {applets.isPending ? (

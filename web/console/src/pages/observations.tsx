@@ -513,6 +513,7 @@ export function ObservationsPage() {
     <div className={cn("shrink-0 pt-6", GUTTER)}>
       <PageHeader
         title="Observations"
+        stage="beta"
         meta={
           // The rows shown, which a filter or the search narrows: a count of
           // what the server read would change with some filters and not

@@ -159,7 +159,7 @@ export function ProvidersPage() {
           onDone={welcome.dismiss}
         />
       ) : (
-        <PageHeader title="Providers" description={DESCRIPTION} />
+        <PageHeader title="Providers" stage="beta" description={DESCRIPTION} />
       )}
       <OAuthReturnNote
         connected={connected}

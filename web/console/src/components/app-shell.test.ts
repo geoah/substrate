@@ -16,7 +16,7 @@ describe("crumbsFor", () => {
     expect(crumbsFor("/account/tokens")).toEqual([{ label: "Settings" }])
     expect(crumbsFor("/tools")).toEqual([{ label: "Tools" }])
     expect(crumbsFor("/providers")).toEqual([{ label: "Providers" }])
-    expect(crumbsFor("/agents")).toEqual([{ label: "Agents" }])
+    expect(crumbsFor("/agents")).toEqual([{ label: "Agents", stage: "beta" }])
     expect(crumbsFor("/observations")).toEqual([{ label: "Observations" }])
   })
 

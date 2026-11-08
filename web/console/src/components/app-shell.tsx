@@ -16,6 +16,7 @@ import { CommandMenu } from "@/components/command-menu"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { SectionBoundary } from "@/components/page-error"
 import { ProviderBadge } from "@/components/identity/provider-badge"
+import { StageTag } from "@/components/nav/stage-tag"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import {
@@ -60,6 +61,7 @@ import {
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { toolName } from "@/lib/tools"
 import { brandedTitle, onSite } from "@/lib/site"
+import type { Stage } from "@/lib/stage"
 import { cn } from "@/lib/utils"
 
 export interface Crumb {
@@ -76,6 +78,9 @@ export interface Crumb {
   /** The crumb names a record: the renderer reads its title, and `label` is
    * what shows until it lands. */
   record?: { kind: string; id: string }
+  /** The place's release stage, as a pill after the label: Agents, whose
+   * page has no title of its own for one. */
+  stage?: Stage
 }
 
 const decode = (s: string) => {
@@ -179,9 +184,9 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
     case "account":
       return [{ label: "Settings" }]
     case "agents":
-      if (!rest.length) return [{ label: "Agents" }]
+      if (!rest.length) return [{ label: "Agents", stage: "beta" }]
       return [
-        { label: "Agents", to: "/agents" },
+        { label: "Agents", to: "/agents", stage: "beta" },
         technical
           ? { label: rest.join("/"), mono: true }
           : { label: agentName(rest.join("/")) },
@@ -400,6 +405,7 @@ function CrumbBody({ crumb }: { crumb: Crumb }) {
       >
         {crumb.record ? <RecordCrumbLabel crumb={crumb} /> : crumb.label}
       </span>
+      {crumb.stage && <StageTag stage={crumb.stage} />}
     </>
   )
 }
