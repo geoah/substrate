@@ -105,11 +105,6 @@ class ByKind<V> {
     return this.kinds.get(kind)?.get(id)
   }
 
-  has(key: string): boolean {
-    const [kind, id] = splitKey(key)
-    return this.kinds.get(kind)?.has(id) ?? false
-  }
-
   set(key: string, value: V): this {
     const [kind, id] = splitKey(key)
     let ids = this.kinds.get(kind)
@@ -172,17 +167,14 @@ function sameRecords(
 export class LinkedRecords {
   readonly client: SubstrateClient
   readonly kinds: string[]
-  protected readonly outbox?: Outbox
-  protected readonly cache?: RecordCache
+  private readonly outbox?: Outbox
+  private readonly cache?: RecordCache
   private readonly connectivity: Connectivity
   private readonly kept: string
   private readonly limit: number
   private readonly followOptions?: FollowOptions
   /** The records as the server last answered them. */
-  protected server = new ByKind<SubstrateRecord>((k) => this.touch(k))
-  /** Writes shown before the server has them outside the outbox: what the
-   * deprecated `apply` lays over. */
-  protected overlays = new ByKind<SubstrateRecord | null>((k) => this.touch(k))
+  private readonly server = new ByKind<SubstrateRecord>((k) => this.touch(k))
   /** The app's kinds' waiting writes, by kind, in the outbox's order. */
   private queue = new Map<string, OutboxEntry[]>()
   private queueEntries?: readonly OutboxEntry[]
@@ -357,10 +349,6 @@ export class LinkedRecords {
       else out.delete(id)
     }
     this.folds.set(kind, folds)
-    for (const [id, r] of this.overlays.of(kind)) {
-      if (r) out.set(id, r)
-      else out.delete(id)
-    }
     return out
   }
 
@@ -410,7 +398,7 @@ export class LinkedRecords {
   }
 
   /** Tells every listener once for every change made in the same turn. */
-  protected emit(): void {
+  private emit(): void {
     if (this.emitQueued) return
     this.emitQueued = true
     queueMicrotask(() => {
@@ -705,7 +693,6 @@ export class LinkedRecords {
           : record
       if (next) this.server.set(key, next)
       else this.server.delete(key)
-      this.overlays.delete(key)
       this.cache?.refreshed(key, next)
     } catch (e) {
       if (this.inflight.get(key) === ticket) this.inflight.delete(key)

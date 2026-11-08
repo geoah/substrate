@@ -1,7 +1,7 @@
 import type { SubstrateClient } from "@substrate/client"
 import { RecordCache } from "./cache"
 import type { Connectivity } from "./connectivity"
-import { LinkedRecords, type LinkedRecordsOptions } from "./linked"
+import { LinkedRecords } from "./linked"
 import { Outbox } from "./outbox"
 import {
   databaseName,
@@ -12,11 +12,11 @@ import {
 /** One signed-in repository as an app keeps it in the browser: its
  * storage, the outbox its writes wait in, the cache its records open from,
  * and the linked records the screens read. */
-export interface RepositoryLink<L extends LinkedRecords = LinkedRecords> {
+export interface RepositoryLink {
   storage: RepositoryStorage
   outbox: Outbox
   cache: RecordCache
-  linked: L
+  linked: LinkedRecords
   /** Starts reading, following and sending. */
   start(): void
   /** Stops all of it, writes what the cache still holds and closes the
@@ -29,7 +29,7 @@ export interface RepositoryLink<L extends LinkedRecords = LinkedRecords> {
   forget(): Promise<void>
 }
 
-export interface OpenRepositoryOptions<L extends LinkedRecords> {
+export interface OpenRepositoryOptions {
   /** The app's id: two apps on one origin keep apart. */
   app: string
   repository: string
@@ -38,17 +38,15 @@ export interface OpenRepositoryOptions<L extends LinkedRecords> {
   kept?: string
   connectivity?: Connectivity
   factory?: IDBFactory
-  /** The linked records' class, for one that adds to it. */
-  makeLinked?: (opts: LinkedRecordsOptions) => L
 }
 
 /** Opens what the browser keeps for a repository, and wires the outbox to
  * the linked records: a guarded change is sent on the version the records
  * last read, and a landed write is laid over them before it leaves the
  * queue. */
-export async function openRepository<L extends LinkedRecords = LinkedRecords>(
-  opts: OpenRepositoryOptions<L>
-): Promise<RepositoryLink<L>> {
+export async function openRepository(
+  opts: OpenRepositoryOptions
+): Promise<RepositoryLink> {
   const storage = await openRepositoryStorage(
     opts.app,
     opts.repository,
@@ -56,7 +54,7 @@ export async function openRepository<L extends LinkedRecords = LinkedRecords>(
   )
   // The outbox asks the records for versions, and the records follow the
   // outbox: one is made before the other, so the outbox reads through this.
-  const holder: { linked?: L } = {}
+  const holder: { linked?: LinkedRecords } = {}
   const outbox = new Outbox({
     client: opts.client,
     storage,
@@ -65,17 +63,14 @@ export async function openRepository<L extends LinkedRecords = LinkedRecords>(
     shareName: `${databaseName(opts.app, opts.repository)}.outbox`,
   })
   const cache = new RecordCache(storage)
-  const linkedOptions: LinkedRecordsOptions = {
+  const link = new LinkedRecords({
     client: opts.client,
     kinds: opts.kinds,
     outbox,
     cache,
     connectivity: opts.connectivity,
     kept: opts.kept,
-  }
-  const link: L = opts.makeLinked
-    ? opts.makeLinked(linkedOptions)
-    : (new LinkedRecords(linkedOptions) as L)
+  })
   holder.linked = link
   await outbox.ready
   let closing: Promise<void> | undefined
