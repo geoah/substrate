@@ -61,8 +61,8 @@ beforeEach(async () => {
   outboxes = []
 })
 
-afterEach(() => {
-  for (const o of outboxes) o.close()
+afterEach(async () => {
+  for (const o of outboxes) await o.close()
   storage.close()
   vi.unstubAllGlobals()
 })
@@ -76,7 +76,7 @@ describe("the outbox", () => {
     const first = open()
     await first.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
     expect(first.getSnapshot().waiting).toBe(1)
-    first.close()
+    await first.close()
 
     const second = open()
     await second.ready
@@ -103,22 +103,53 @@ describe("the outbox", () => {
     })
   })
 
-  it("lands a create whose earlier try landed with its answer lost on the same row", async () => {
+  it("counts a create whose earlier try landed as landed, and never writes it again", async () => {
+    // The earlier try landed and its answer was lost; another device
+    // renamed it since.
     fake.seed(kind, "a1", { name: "Milk" })
+    fake.change(kind, "a1", { name: "Oat milk" })
     const o = open()
-    await o.write(
-      RecordWrites.create(kind, "a1", { name: "Milk", note: "2 l" })
-    )
+    const landed: (number | undefined)[] = []
+    o.onLanded((_, r) => landed.push(r?.version))
+    await o.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
     await until(settled(o))
-    expect(fake.writes()).toEqual([`PUT ${kind}/a1`, `PUT ${kind}/a1`])
-    expect(fake.requests[1].body).toEqual({
-      properties: { name: "Milk", note: "2 l" },
-    })
+    expect(fake.writes()).toEqual([`PUT ${kind}/a1`])
+    expect(fake.live(kind, "a1")?.properties).toEqual({ name: "Oat milk" })
+    expect(landed).toEqual([2])
+    expect(o.getSnapshot()).toMatchObject({ waiting: 0, parked: [] })
+  })
+
+  it("sends an edit queued on a create at the version the create made", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    net.set(false)
+    const o = open()
+    await o.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
+    await o.write(RecordWrites.edit(kind, "a1", { note: "2 l" }, 0))
+    net.set(true)
+    await until(settled(o))
+    expect(
+      fake.requests.map(
+        (r) =>
+          `${r.method} ${(r.body as { ifVersion?: number })?.ifVersion ?? ""}`
+      )
+    ).toEqual(["PUT 0", "GET ", "PATCH 1"])
     expect(fake.live(kind, "a1")?.properties).toEqual({
       name: "Milk",
       note: "2 l",
     })
-    expect(o.getSnapshot().parked).toEqual([])
+  })
+
+  it("parks an edit queued on a create another device changed before the retry", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    fake.change(kind, "a1", { name: "Oat milk" })
+    net.set(false)
+    const o = open()
+    await o.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
+    await o.write(RecordWrites.edit(kind, "a1", { name: "Whole milk" }, 0))
+    net.set(true)
+    await until(() => o.getSnapshot().parked.length === 1)
+    expect(o.getSnapshot().parked[0]).toMatchObject({ conflict: true })
+    expect(fake.live(kind, "a1")?.properties).toEqual({ name: "Oat milk" })
   })
 
   it("parks an edit on a version another device moved, and keeps the owner's choice", async () => {
@@ -261,18 +292,50 @@ describe("the outbox", () => {
     expect(o.getSnapshot().waiting).toBe(0)
   })
 
-  it("drops a write a newer one already overtook", async () => {
-    fake.seed(kind, "a1", { name: "Milk" })
-    fake.fail({ method: "PATCH" }, 422, {
+  describe("a write refused at its revision", () => {
+    const refusal = {
       error: {
         code: "validation",
-        message: "revision 3 is below the stored revision 4",
+        message: "the record was refused",
+        problems: ["props.revision: 3 is below the stored revision 4"],
+        problemDetails: [
+          {
+            path: "props.revision",
+            message: "3 is below the stored revision 4",
+          },
+        ],
       },
+    }
+
+    it("is dropped when the record holds a later revision", async () => {
+      fake.seed(kind, "a1", { revision: 4 })
+      fake.fail({ method: "PATCH" }, 422, refusal)
+      const o = open()
+      await o.write(RecordWrites.change(kind, "a1", { revision: 3 }))
+      await until(settled(o))
+      expect(o.getSnapshot()).toMatchObject({ waiting: 0, parked: [] })
     })
-    const o = open()
-    await o.write(RecordWrites.change(kind, "a1", { name: "x" }))
-    await until(settled(o))
-    expect(o.getSnapshot()).toMatchObject({ waiting: 0, parked: [] })
+
+    it("is parked when the record does not", async () => {
+      fake.seed(kind, "a1", { revision: 2 })
+      fake.fail({ method: "PATCH" }, 422, refusal)
+      const o = open()
+      await o.write(RecordWrites.change(kind, "a1", { revision: 3 }))
+      await until(() => o.getSnapshot().parked.length === 1)
+    })
+
+    it("is parked on the server's words alone", async () => {
+      fake.seed(kind, "a1", { revision: 4 })
+      fake.fail({ method: "PATCH" }, 422, {
+        error: {
+          code: "validation",
+          message: "revision 3 is below the stored revision 4",
+        },
+      })
+      const o = open()
+      await o.write(RecordWrites.change(kind, "a1", { revision: 3 }))
+      await until(() => o.getSnapshot().parked.length === 1)
+    })
   })
 
   it("sends a write queued while a send runs", async () => {
@@ -310,6 +373,39 @@ describe("the outbox", () => {
       waiting: 0,
       saveProblem: "QuotaExceededError",
     })
+  })
+
+  it("never takes back a landed write on another tab's change read meanwhile", async () => {
+    const share = { shareName: `share-${n}` }
+    // This tab's reads of the queue answer late, as a busy disk does: one
+    // begun before a write lands answers after it.
+    const slow: RepositoryStorage = Object.create(storage) as RepositoryStorage
+    slow.readOutbox = async () => {
+      const file = await storage.readOutbox()
+      await new Promise((r) => setTimeout(r, 30))
+      return file
+    }
+    net.set(false)
+    // Web Locks keep the other tab from sending; here it stays offline.
+    const away = network()
+    away.set(false)
+    const a = open({ ...share, storage: slow })
+    const b = open({ ...share, connectivity: away })
+    await Promise.all([a.ready, b.ready])
+    await a.write(RecordWrites.create(kind, "a1", { name: "Milk" }))
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      if (init?.method === "PUT" && input.endsWith("/a1")) {
+        // The other tab queues a write while this one's is on the wire.
+        await b.write(RecordWrites.create(kind, "b2", { name: "Eggs" }))
+        await new Promise((r) => setTimeout(r, 5))
+      }
+      return fake.fetch(input, init)
+    })
+    net.set(true)
+    await until(() => !!fake.live(kind, "a1") && !a.getSnapshot().flushing)
+    await new Promise((r) => setTimeout(r, 100))
+    expect(a.getSnapshot().entries.map((e) => e.recordID)).not.toContain("a1")
+    expect(fake.writes().filter((w) => w.endsWith("/a1"))).toHaveLength(1)
   })
 
   it("keeps two tabs' writes, each saved over what the other kept", async () => {

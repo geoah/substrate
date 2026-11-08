@@ -96,8 +96,9 @@ function entry(
  * never another's (the kit's RecordWrites). */
 export const RecordWrites = {
   /** A create: a PUT with `ifVersion: 0` at an id the device minted. A
-   * retry whose earlier try landed meets the record there and is sent again
-   * as a PUT that merges, so it lands the same row. */
+   * retry whose earlier try landed meets the record there and counts as
+   * landed: the row is read, never written again, so a change another
+   * device made since stands. */
   create(
     kind: string,
     id: string,

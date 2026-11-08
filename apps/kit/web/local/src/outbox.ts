@@ -77,6 +77,15 @@ export class EditConflict extends Error {
   }
 }
 
+/** A write the record has moved past: a newer delivery of it landed
+ * first, and this one is stale. */
+export class Overtaken extends Error {
+  constructor() {
+    super("A newer write of the record landed first.")
+    this.name = "Overtaken"
+  }
+}
+
 export type Verdict =
   /** A newer write of the record landed first: this one is stale. */
   | { type: "drop" }
@@ -89,6 +98,7 @@ export type Verdict =
 
 /** What a failed write means for the run. */
 export function classify(error: unknown): Verdict {
+  if (error instanceof Overtaken) return { type: "drop" }
   if (error instanceof EditConflict)
     return { type: "park", words: error.message, conflict: true }
   if (error instanceof SubstrateError) {
@@ -96,8 +106,6 @@ export function classify(error: unknown): Verdict {
       return { type: "stop", state: { type: "signedOut" } }
     if (error.insufficientScope)
       return { type: "stop", state: { type: "needsApproval" } }
-    if (error.status === 422 && /below the stored revision/.test(error.words))
-      return { type: "drop" }
     if (error.transient)
       return {
         type: "stop",
@@ -133,6 +141,25 @@ export interface OutboxOptions {
 const defaultBackoff = [1000, 2000, 5000, 10_000, 30_000, 60_000]
 /** How many of a record's landed edits the chain keeps. */
 const chainLimit = 32
+/** The version every record is created at. */
+const createdVersion = 1
+
+/** What a write that landed leaves: the record the server holds after it,
+ * where it answered one, and the version the write itself made, which the
+ * chain moves a later edit's base along. */
+interface Landed {
+  record?: SubstrateRecord
+  made?: number
+}
+
+/** A record's `revision`, the number an observed kind rewrites under
+ * (decision 0162). */
+function revisionOf(properties: Record<string, unknown> | undefined): number {
+  const v = properties?.revision
+  if (typeof v === "number") return v
+  if (typeof v === "string" && v.trim() !== "") return Number(v)
+  return NaN
+}
 
 function sendable(entries: readonly OutboxEntry[]): number {
   const held = new Set<string>()
@@ -174,6 +201,13 @@ export class Outbox {
   private closed = false
   private abort = new AbortController()
   private channel?: BroadcastChannel
+  /** Every read and write of the kept queue, one after another in the
+   * order asked: a read answered after a later write would put back what
+   * that write took out, a landed write with its old base among it. */
+  private io: Promise<void> = Promise.resolve()
+  private reloadQueued = false
+  /** The send running in this tab, which `close` waits out. */
+  private running: Promise<void> = Promise.resolve()
   private unsubscribe?: () => void
   private listeners = new Set<() => void>()
   private landedListeners = new Set<
@@ -196,11 +230,13 @@ export class Outbox {
   }
 
   private async open(): Promise<void> {
-    try {
-      this.file = await this.storage.readOutbox()
-    } catch (e) {
-      this.saveProblem = describe(e)
-    }
+    await this.serial(async () => {
+      try {
+        this.file = await this.storage.readOutbox()
+      } catch (e) {
+        this.saveProblem = describe(e)
+      }
+    })
     if (this.closed) return
     this.unsubscribe = this.connectivity.subscribe((event) => {
       if (event === "offline") {
@@ -213,19 +249,33 @@ export class Outbox {
     })
     if (this.shareName && typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel(this.shareName)
-      this.channel.onmessage = () => void this.reload()
+      this.channel.onmessage = () => this.reload()
     }
     this.emit()
     if (sendable(this.file.entries)) this.soon()
   }
 
-  /** Stops sending and listening. What waits stays kept. */
-  close(): void {
+  /** Stops sending and listening, and resolves once the send in progress
+   * and the queue's last read or write are done, so the storage can close
+   * under it. What waits stays kept. */
+  async close(): Promise<void> {
     this.closed = true
     this.abort.abort()
     clearTimeout(this.timer)
     this.unsubscribe?.()
     this.channel?.close()
+    await this.ready
+    await this.running
+    await this.io
+  }
+
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.io.then(fn)
+    this.io = next.then(
+      () => undefined,
+      () => undefined
+    )
+    return next
   }
 
   // ---- following --------------------------------------------------------
@@ -275,13 +325,19 @@ export class Outbox {
   }
 
   /** Reads the queue again: another tab changed it. */
-  private async reload(): Promise<void> {
-    try {
-      this.file = await this.storage.readOutbox()
-      this.emit()
-    } catch {
-      // the next change reads it again
-    }
+  private reload(): void {
+    if (this.reloadQueued) return
+    this.reloadQueued = true
+    void this.serial(async () => {
+      this.reloadQueued = false
+      if (this.closed) return
+      try {
+        this.file = await this.storage.readOutbox()
+        this.emit()
+      } catch {
+        // the next change reads it again
+      }
+    })
   }
 
   // ---- queueing ---------------------------------------------------------
@@ -354,16 +410,18 @@ export class Outbox {
 
   /** A change the app asked for: saved before it returns. */
   private async change(edit: (file: OutboxFile) => void): Promise<void> {
-    try {
-      this.file = await this.storage.updateOutbox(edit)
-      this.saveProblem = undefined
-    } catch (e) {
-      this.saveProblem = describe(e)
+    await this.serial(async () => {
+      try {
+        this.file = await this.storage.updateOutbox(edit)
+        this.saveProblem = undefined
+      } catch (e) {
+        this.saveProblem = describe(e)
+        this.emit()
+        throw new OutboxNotSaved(this.saveProblem)
+      }
+      this.revision++
       this.emit()
-      throw new OutboxNotSaved(this.saveProblem)
-    }
-    this.revision++
-    this.emit()
+    })
     this.channel?.postMessage("changed")
   }
 
@@ -371,16 +429,18 @@ export class Outbox {
    * whatever storage says, since the server holds it now. At worst a write
    * is sent again after a reload, which every write here survives. */
   private async commit(edit: (file: OutboxFile) => void): Promise<void> {
-    try {
-      this.file = await this.storage.updateOutbox(edit)
-      this.saveProblem = undefined
-    } catch (e) {
-      const file = structuredClone(this.file)
-      edit(file)
-      this.file = file
-      this.saveProblem = describe(e)
-    }
-    this.emit()
+    await this.serial(async () => {
+      try {
+        this.file = await this.storage.updateOutbox(edit)
+        this.saveProblem = undefined
+      } catch (e) {
+        const file = structuredClone(this.file)
+        edit(file)
+        this.file = file
+        this.saveProblem = describe(e)
+      }
+      this.emit()
+    })
     this.channel?.postMessage("changed")
   }
 
@@ -430,6 +490,8 @@ export class Outbox {
     const revision = this.revision
     this.flushing = true
     this.emit()
+    let settle!: () => void
+    this.running = new Promise((resolve) => (settle = resolve))
     try {
       const locks =
         typeof navigator !== "undefined" ? navigator.locks : undefined
@@ -450,6 +512,7 @@ export class Outbox {
       }
     } finally {
       this.flushing = false
+      settle()
       this.emit()
     }
     // Writes queued during the run go now, unless the run stopped for the
@@ -461,44 +524,50 @@ export class Outbox {
 
   private async run(): Promise<void> {
     // The queue as kept: another tab may have changed it.
-    try {
-      this.file = await this.storage.readOutbox()
-    } catch {
-      // the copy in memory stands
-    }
+    await this.serial(async () => {
+      try {
+        this.file = await this.storage.readOutbox()
+      } catch {
+        // the copy in memory stands
+      }
+    })
     const run = this.generation
     const tried = new Set<string>()
     let refusal: string | undefined
     let held = false
     for (let entry = this.next(tried); entry; entry = this.next(tried)) {
       tried.add(entry.id)
-      let record: SubstrateRecord | undefined
+      const signal = this.abort.signal
+      let landed: Landed = {}
       let failure: unknown
       let failed = false
       try {
-        record = await this.send(entry, this.abort.signal)
+        landed = await this.send(entry, signal)
       } catch (e) {
         failed = true
-        failure = e
+        failure = await this.overtaken(entry, e, signal).then(
+          (stale) => (stale ? new Overtaken() : e),
+          (readFailed: unknown) => readFailed
+        )
       }
       if (run !== this.generation || this.closed) return
       const id = entry.id
       const key = entryKey(entry)
       if (!failed) {
         this.failures = 0
+        const { record, made } = landed
         for (const fn of this.landedListeners) fn(entry, record)
-        const landed = entry
         await this.commit((file) => {
-          if (landed.method === "DELETE") {
+          if (entry.method === "DELETE") {
             delete file.chains[key]
-          } else if (record && landed.baseVersion !== undefined) {
+          } else if (made !== undefined && entry.baseVersion !== undefined) {
             // A create asserted its 0 itself; an edit, the end of the chain.
             const from =
-              landed.method === "PUT"
-                ? landed.baseVersion
-                : asserted(file, key, landed.baseVersion)
+              entry.method === "PUT"
+                ? entry.baseVersion
+                : asserted(file, key, entry.baseVersion)
             const chain = (file.chains[key] ??= {})
-            chain[String(from)] = record.version
+            chain[String(from)] = made
             const keys = Object.keys(chain)
             for (const k of keys.slice(
               0,
@@ -575,32 +644,33 @@ export class Outbox {
     return undefined
   }
 
-  /** One write, answering the record the server holds after it. */
-  private async send(
-    entry: OutboxEntry,
-    signal: AbortSignal
-  ): Promise<SubstrateRecord | undefined> {
+  /** One write, answering what it left on the server. */
+  private async send(entry: OutboxEntry, signal: AbortSignal): Promise<Landed> {
     const { kind, recordID: id } = entry
     const props = entry.properties ?? {}
     const conflict = (e: unknown) => e instanceof SubstrateError && e.conflict
+    const made = (record: SubstrateRecord): Landed => ({
+      record,
+      made: record.version,
+    })
     switch (entry.method) {
       case "PUT":
         if (entry.baseVersion === undefined)
-          return this.client.put(kind, id, props, undefined, signal)
+          return made(await this.client.put(kind, id, props, undefined, signal))
         try {
-          return await this.client.put(
-            kind,
-            id,
-            props,
-            entry.baseVersion,
-            signal
+          return made(
+            await this.client.put(kind, id, props, entry.baseVersion, signal)
           )
         } catch (e) {
-          // The id was minted here, so a record there is this create's
-          // earlier try, its answer lost: merged on top, it lands the same
-          // row.
           if (!conflict(e)) throw e
-          return this.client.put(kind, id, props, undefined, signal)
+          // The id was minted here, so the row there is this create's
+          // earlier try, its answer lost: the create landed. Sent again,
+          // its properties would land over whatever another device wrote
+          // since, so the row is read instead. The create made the version
+          // every record is created at, so an edit queued on it is sent on
+          // that one and parks if another device moved the record since.
+          const record = await this.client.record(kind, id, signal)
+          return { record: record ?? undefined, made: createdVersion }
         }
       case "PATCH":
         if (entry.baseVersion !== undefined) {
@@ -610,30 +680,53 @@ export class Outbox {
             entry.baseVersion
           )
           try {
-            return await this.client.patch(kind, id, props, version, signal)
+            return made(
+              await this.client.patch(kind, id, props, version, signal)
+            )
           } catch (e) {
             if (conflict(e)) throw new EditConflict((e as SubstrateError).words)
             throw e
           }
         }
         if (!entry.guarded)
-          return this.client.patch(kind, id, props, undefined, signal)
+          return made(
+            await this.client.patch(kind, id, props, undefined, signal)
+          )
         try {
           const version =
             this.versionOf?.(kind, id) ??
             (await this.readVersion(entry, signal))
-          return await this.client.patch(kind, id, props, version, signal)
+          return made(await this.client.patch(kind, id, props, version, signal))
         } catch (e) {
           if (!conflict(e)) throw e
           // Somebody wrote it since: read it, and send the change again on
           // top, once.
           const version = await this.readVersion(entry, signal)
-          return this.client.patch(kind, id, props, version, signal)
+          return made(await this.client.patch(kind, id, props, version, signal))
         }
       case "DELETE":
         await this.client.delete(kind, id, signal)
-        return undefined
+        return {}
     }
+  }
+
+  /** Whether a refusal is the record holding a later revision than the
+   * write carries: a newer delivery of an observation landed first (decision
+   * 0162). The envelope says only `validation`, so the stored revision is
+   * read and compared, never the server's words. */
+  private async overtaken(
+    entry: OutboxEntry,
+    error: unknown,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    if (!(error instanceof SubstrateError) || error.code !== "validation")
+      return false
+    if (!error.problemDetails.some((d) => d.path === "props.revision"))
+      return false
+    const mine = revisionOf(entry.properties)
+    if (!Number.isFinite(mine)) return false
+    const stored = await this.client.record(entry.kind, entry.recordID, signal)
+    return revisionOf(stored?.properties) > mine
   }
 
   private async readVersion(
