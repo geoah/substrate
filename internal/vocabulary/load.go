@@ -1085,6 +1085,22 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 		// that is not repeated is the one mistake the bare forms cannot make.
 		case ref.List:
 			l.checkListToken(where, t, ref)
+		// The dot names a declared property the bare spelling gives to a
+		// derived token ({.snippet}), so the property must be declared, and on
+		// any other name the bare spelling already reads it and is the one
+		// spelling a reader sees.
+		case ref.Own:
+			if !derivedOnly(ref.Prop) {
+				l.errf("%s: data.displayTemplate: {%s}: the dot is only for a property a derived token shadows — {%s} is the spelling",
+					where, ref, ref.Prop)
+				continue
+			}
+			if _, ok := t.Props[ref.Prop]; !ok {
+				l.errf("%s: data.displayTemplate: {%s}: %s declares no property %q",
+					where, ref, t.Name, ref.Prop)
+				continue
+			}
+			l.ownToken(where, t, ref.Prop)
 		// A derived token needs no declaration to check against: it is computed
 		// from the record. But a kind MAY declare a property of the token's
 		// name, and then the declaration is what renders (Template.Render), so

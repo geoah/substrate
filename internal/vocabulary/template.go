@@ -14,8 +14,9 @@ import (
 // property name, a reference property's name (renders the referents' titles), a
 // dotted reference.property (renders the first referent's property), a LIST
 // path ({emails[]} the first value of a repeated property, {names[].displayName}
-// the first entry's field), or one of the DERIVED tokens ({snippet},
-// {localName}, {id}).
+// the first entry's field), one of the DERIVED tokens ({snippet},
+// {localName}, {id}), or a declared property the bare spelling gives to a
+// derived token ({.snippet}).
 type Template struct {
 	Raw   string
 	Parts []TemplatePart
@@ -34,6 +35,10 @@ type TemplateRef struct {
 	// property.
 	Ref  string
 	Prop string // property name, "" when the alternative is a bare head
+	// Own is the leading-dot spelling, `{.snippet}`: the record's own declared
+	// property of a name whose bare spelling is a derived token that never
+	// yields to one (derivedOnly). It renders as a bare property does.
+	Own bool
 	// List is the `[]` hop: the alternative reads the HEAD of a repeated
 	// property rather than all of it — `{emails[]}` the first value of a
 	// repeated scalar (Ref ""), `{names[].displayName}` the first entry's
@@ -46,7 +51,8 @@ type TemplateRef struct {
 	// a declared property, so it needs no declaration to check against. Every
 	// derived token except {snippet} yields to a REAL property of the same name
 	// (Render): a kind that declares `localName` means its own property, and a
-	// derived token silently shadowing it would be the worse surprise.
+	// derived token silently shadowing it would be the worse surprise. A kind
+	// that declares `snippet` reads it as {.snippet}.
 	Derived string
 }
 
@@ -66,10 +72,20 @@ var derivedTokens = map[string]bool{
 	DerivedSnippet: true, DerivedLocalName: true, DerivedID: true,
 }
 
+// derivedOnly reports whether a derived token keeps its derived meaning on a
+// kind that declares a property of its name. {snippet} predates the rule the
+// other two follow: it has always been derived-only, and yielding would
+// silently change what a kind declaring `snippet` already renders. The
+// declared property is spelled {.snippet} instead, and only a name this
+// answers for takes the dot.
+func derivedOnly(token string) bool { return token == DerivedSnippet }
+
 func (r TemplateRef) String() string {
 	switch {
 	case r.Derived != "":
 		return r.Derived
+	case r.Own:
+		return "." + r.Prop
 	case r.Ref != "" && r.List:
 		return r.Ref + "[]." + r.Prop
 	case r.Ref != "":
@@ -129,6 +145,13 @@ func parseToken(body string) (TemplatePart, error) {
 		}
 		if derivedTokens[alt] {
 			part.Alts = append(part.Alts, TemplateRef{Derived: alt})
+			continue
+		}
+		if name, own := strings.CutPrefix(alt, "."); own {
+			if !ValidCamel(name) {
+				return part, fmt.Errorf("%q is not .property", alt)
+			}
+			part.Alts = append(part.Alts, TemplateRef{Prop: name, Own: true})
 			continue
 		}
 		name, prop, dotted := strings.Cut(alt, ".")
@@ -329,7 +352,7 @@ func (p TemplatePart) resolve(r Resolver) string {
 	for _, alt := range p.Alts {
 		var v string
 		switch {
-		case alt.Derived == DerivedSnippet:
+		case derivedOnly(alt.Derived):
 			v = r.Derived(alt.Derived)
 		case alt.Derived != "":
 			// A REAL declaration of the token's name wins, by DECLARATION and
@@ -339,10 +362,6 @@ func (p TemplatePart) resolve(r Resolver) string {
 			// exactly as the bare identifier below does — the property's value,
 			// then the referents' titles — because a derived token that skipped
 			// that hop would render an id where the model says a referent's title.
-			//
-			// {snippet} predates the rule and keeps its old meaning: it has
-			// always been derived-only, and a kind declaring `snippet` would
-			// silently change what its shipped template rendered.
 			if !r.Declares(alt.Derived) {
 				v = r.Derived(alt.Derived)
 			} else if v = r.Prop(alt.Derived); blank(v) {
@@ -355,8 +374,9 @@ func (p TemplatePart) resolve(r Resolver) string {
 		case alt.Ref != "":
 			v = r.Reference(alt.Ref, alt.Prop)
 		default:
-			// A bare identifier is a property's own value or, failing that,
-			// the titles a reference property names ("{name|participants}").
+			// A bare identifier, or a dotted one (Own), is a property's own
+			// value or, failing that, the titles a reference property names
+			// ("{name|participants}").
 			if v = r.Prop(alt.Prop); blank(v) {
 				v = r.Reference(alt.Prop, "")
 			}

@@ -266,9 +266,13 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   property); a LIST HEAD (`{names[].displayName}` the first entry's field of a
   repeated object, `{assignees[].login}` the first referent's property of a
   repeated reference, `{emails[]}` the first value of a repeated scalar); one
-  of the derived tokens `{snippet}`, `{localName}` and `{id}`, each of which
-  yields to a real property of that name; or one of the column-backed names
-  every record carries (`{title}`, `{at}`, `{endsAt}`, `{dueAt}`). `[]` is a SUFFIX on the head and never a
+  of the derived tokens `{snippet}` (the opening of the record's longest text,
+  a declared `body` included), `{localName}` and `{id}`; or one of the
+  column-backed names every record carries (`{title}`, `{at}`, `{endsAt}`,
+  `{dueAt}`). `{localName}` and `{id}` yield to a real property of that name.
+  `{snippet}` never does, so it means the same on every kind, and a kind that
+  declares a `snippet` of its own reads it as `{.snippet}`, a spelling the
+  loader refuses on any other name. `[]` is a SUFFIX on the head and never a
   subscript — `{names[0].displayName}` is refused, because an index promises an
   order a provider array does not have — and the entry taken is the first that
   renders anything, so an entry missing the field does not title a record with
