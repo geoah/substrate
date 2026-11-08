@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -142,6 +143,17 @@ var builtinKinds = map[Datatype]bool{
 	DatatypeTimezone: true, DatatypeRecurrence: true, DatatypeEnum: true,
 	DatatypeJSON: true, DatatypeSecret: true, DatatypeDigest: true,
 	DatatypeState: true, DatatypeBlobRef: true,
+}
+
+// Datatypes are the property types a declaration may name, sorted: the
+// built-in kinds with object and reference, which own their parse branches.
+func Datatypes() []Datatype {
+	out := []Datatype{DatatypeObject, DatatypeReference}
+	for k := range builtinKinds {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // shortStringKinds are the string-family kinds that carry FTS band B and

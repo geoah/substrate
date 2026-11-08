@@ -168,7 +168,7 @@ func TestTheDoorSpeaksTheProtocolStatelessly(t *testing.T) {
 		Instructions    string         `json:"instructions"`
 	}
 	if err := json.Unmarshal(init.Result, &res); err != nil || res.ProtocolVersion != "2025-06-18" ||
-		res.ServerInfo["name"] != "substrate" || !strings.HasPrefix(res.Instructions, "Read the kinds tool") {
+		res.ServerInfo["name"] != "substrate" || !strings.HasPrefix(res.Instructions, "Call overview first") {
 		t.Fatalf("initialize = %s", init.Result)
 	}
 	// A version the door does not speak is answered with its newest.
@@ -202,6 +202,16 @@ func TestTheDoorSpeaksTheProtocolStatelessly(t *testing.T) {
 				t.Fatalf("tool %s carries no %s: a client reads it as the worst case", tool.Name, hint)
 			}
 		}
+	}
+
+	// The overview's reads, and the guide, are all on the door's routes: the
+	// fake holds none of the kinds it reads, but no read is refused there.
+	text, isErr := callTool(t, env.h, tok, "overview", map[string]any{})
+	if isErr || strings.Contains(text, "answered 403") || !strings.Contains(text, `"guide"`) {
+		t.Fatalf("overview = %s", text)
+	}
+	if text, isErr = callTool(t, env.h, tok, "guide", map[string]any{"topic": "records"}); isErr || !strings.HasPrefix(text, "# ") {
+		t.Fatalf("guide = %.200s", text)
 	}
 
 	// A notification is accepted with nothing to say; a token's GET or

@@ -41,6 +41,9 @@ const (
 	codeInvalidRequest = -32600
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
+	// codeResourceNotFound is the code MCP gives a read of a resource the
+	// server does not hold.
+	codeResourceNotFound = -32002
 )
 
 // API is the substrate's REST API as the door reaches it.
@@ -158,6 +161,24 @@ func (s *Server) Handle(ctx context.Context, api API, body []byte, versionHeader
 		return answer(m.ID, map[string]any{})
 	case "tools/list":
 		return answer(m.ID, map[string]any{"tools": s.listTools()})
+	case "resources/list":
+		return answer(m.ID, map[string]any{"resources": s.listResources()})
+	case "resources/templates/list":
+		return answer(m.ID, map[string]any{"resourceTemplates": []any{}})
+	case "resources/read":
+		res, rpcErr := readResource(m.Params)
+		if rpcErr != nil {
+			return answerError(http.StatusOK, m.ID, rpcErr.Code, rpcErr.Message)
+		}
+		return answer(m.ID, res)
+	case "prompts/list":
+		return answer(m.ID, map[string]any{"prompts": listPrompts()})
+	case "prompts/get":
+		res, rpcErr := getPrompt(m.Params)
+		if rpcErr != nil {
+			return answerError(http.StatusOK, m.ID, rpcErr.Code, rpcErr.Message)
+		}
+		return answer(m.ID, res)
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -206,9 +227,13 @@ func (s *Server) initialize(params json.RawMessage) map[string]any {
 	}
 	return map[string]any{
 		"protocolVersion": version,
-		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-		"serverInfo":      map[string]any{"name": s.name, "version": s.version},
-		"instructions":    Instructions,
+		"capabilities": map[string]any{
+			"tools":     map[string]any{"listChanged": false},
+			"resources": map[string]any{"listChanged": false, "subscribe": false},
+			"prompts":   map[string]any{"listChanged": false},
+		},
+		"serverInfo":   map[string]any{"name": s.name, "version": s.version},
+		"instructions": Instructions,
 	}
 }
 
@@ -241,6 +266,9 @@ func (s *Server) call(ctx context.Context, api API, t Tool, args json.RawMessage
 	out, err := t.Run(ctx, api, args)
 	if err != nil {
 		return toolResult(err.Error(), true)
+	}
+	if plain, ok := out.(plainText); ok {
+		return toolResult(string(plain), false)
 	}
 	text, err := encode(out)
 	if err != nil {

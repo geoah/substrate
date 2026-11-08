@@ -103,7 +103,8 @@ authenticates, and answers that interface in process.
   plan to the owner).
 - Methods: `initialize`, `ping`, `tools/list`, `tools/call` and the
   `notifications/*` it ignores. Resources, prompts and elicitation are not
-  offered.
+  offered. (Since 2026-11-08 the guide's topics are resources and five
+  workflows are prompts: [connecting an assistant](../mcp.md#the-guide).)
 - A tool result is one text block of compact JSON, with no
   `structuredContent`. A result past 32 KiB is never cut mid-JSON: its long
   string values are cut first, each named under `cut`; a mutation's answer
