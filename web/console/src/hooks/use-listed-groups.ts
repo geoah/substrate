@@ -37,9 +37,18 @@ export function useListedGroups(
   const statuses = useQuery(bundleStatusesQueryOptions)
   const accountsRead = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
 
+  // A package published outside the providers authority is a provider when
+  // its status says its declarations bring an account (decision record 0238),
+  // so it is held to the same rule; until the statuses answer it is listed.
   const providers = useMemo(
-    () => (groups ?? []).filter((g) => g.type === "provider"),
-    [groups]
+    () =>
+      (groups ?? []).filter(
+        (g) =>
+          g.type === "provider" ||
+          (g.type === "package" &&
+            Boolean(statuses.data?.find((b) => b.id === bundleOf(g))?.provider))
+      ),
+    [groups, statuses.data]
   )
   const steps = useMemo(() => {
     if (!statuses.data || !accountsRead.data) return undefined
@@ -78,7 +87,9 @@ export function useListedGroups(
   })
 
   if (!groups) return undefined
-  if (statuses.isError || accountsRead.isError) return groups
+  // A capped read may have left out the account that connects a provider.
+  if (statuses.isError || accountsRead.isError || accountsRead.data?.capped)
+    return groups
   const countOf = new Map(counted.map((k, i) => [k.identity, counts[i]]))
   const held = (g: CollectionGroup): boolean | undefined => {
     if (liveRecords(g) === 0) return false
@@ -89,7 +100,7 @@ export function useListedGroups(
   }
   return groups.filter(
     (g) =>
-      g.type !== "provider" ||
+      !providers.includes(g) ||
       (collectionsListed(steps?.get(bundleOf(g)), held(g)) ?? false)
   )
 }

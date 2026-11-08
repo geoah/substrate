@@ -141,8 +141,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function Listed() {
-  const groups = useMemo(() => collectionGroups(KINDS, HOME), [])
+function Listed({ kinds }: { kinds: KindInfo[] }) {
+  const groups = useMemo(() => collectionGroups(kinds, HOME), [kinds])
   const listed = useListedGroups(groups)
   return (
     <p data-testid="listed">{(listed ?? []).map((g) => g.label).join(", ")}</p>
@@ -151,21 +151,25 @@ function Listed() {
 
 function renderListed(
   statuses: BundleStatus[],
-  accounts: SubstrateRecord[] | undefined
+  accounts: SubstrateRecord[] | undefined,
+  {
+    kinds = KINDS,
+    capped = false,
+  }: { kinds?: KindInfo[]; capped?: boolean } = {}
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  client.setQueryData(kindsQueryOptions.queryKey, KINDS)
+  client.setQueryData(kindsQueryOptions.queryKey, kinds)
   client.setQueryData(bundleStatusesQueryOptions.queryKey, statuses)
   if (accounts)
     client.setQueryData(
       traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT).queryKey,
-      { records: accounts, capped: false }
+      { records: accounts, capped }
     )
   render(
     <QueryClientProvider client={client}>
-      <Listed />
+      <Listed kinds={kinds} />
     </QueryClientProvider>
   )
   return client
@@ -216,6 +220,42 @@ describe("useListedGroups", () => {
     const client = renderListed([unfinished({ liveRecords: 1 })], [])
     await settled(client, 2)
     await listed("Tasks")
+  })
+
+  it("leaves out a provider published outside the providers authority, left at its sign-in details", async () => {
+    const acme = "connector.example.com/acme"
+    const kinds = [
+      ...KINDS,
+      kind(`${acme}/config`, {
+        purpose: "internal",
+        traits: ["substrate.reamde.dev/core/oauth2"],
+      }),
+      kind(`${acme}/account`, {
+        purpose: "internal",
+        traits: ["substrate.reamde.dev/core/accountconfig"],
+      }),
+      kind(`${acme}/ticket`),
+    ]
+    renderListed(
+      [
+        connected(),
+        unfinished({
+          id: acme,
+          name: "acme",
+          authority: "connector.example.com",
+          package: "acme",
+          inputs: [{ name: "client", kind: `${acme}/config` }],
+        }),
+      ],
+      [account("connected")],
+      { kinds }
+    )
+    await listed("Tasks, From GitHub")
+  })
+
+  it("lists every provider where the accounts read was capped", async () => {
+    renderListed([connected()], [account("pending")], { capped: true })
+    await listed("Tasks, From GitHub")
   })
 
   it("lists every group where the accounts could not be read", async () => {
