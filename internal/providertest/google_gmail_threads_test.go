@@ -2,7 +2,7 @@ package providertest
 
 // The google bundle's `syncgmail` over a mailbox whose threads answer
 // `threads.get`: what each mirrored thread and message is called once the
-// sync has written it.
+// sync has written it, and which header addresses become hub rows.
 
 import (
 	"net/http"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // threadedGmail is one mailbox whose history delta names `delta`, whose
@@ -206,5 +207,85 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 		if got, ok := messages[mid]; !ok || got != want {
 			t.Errorf("message %s is titled %q (mirrored %v), want %q", mid, got, ok, want)
 		}
+	}
+}
+
+// TestGoogleGmailReplyAddressesMakeNoContact: a notification service that
+// takes replies by mail names a fresh `Reply-To` mailbox for every thread,
+// and each one became an `emailaddress` hub row and so, through core's
+// mapping, a contact of its own: an account following GitHub filled its
+// contacts with one `reply+…@reply.github.com` per thread. Such an address
+// keeps its occurrence on the message, spelled as the header spelled it, and
+// gets no hub row and no contact. The service's one sender is an identity and
+// keeps both.
+func TestGoogleGmailReplyAddressesMakeNoContact(t *testing.T) {
+	requirePython(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+
+	relay := func(token string) string { return "reply+" + token + "@reply.github.com" }
+	notification := func(id, tid, token string) map[string]any {
+		return gmailMail(id, tid, "A comment", "A comment.",
+			[2]string{"Subject", "Re: [owner/repo] A pull request (PR #" + id + ")"},
+			[2]string{"From", "Grace <notifications@github.com>"},
+			[2]string{"To", "owner/repo <repo@noreply.github.com>"},
+			[2]string{"Reply-To", "owner/repo <" + relay(token) + ">"})
+	}
+	fake := &threadedGmail{
+		historyID: "9000",
+		delta:     []string{"n-1", "n-2"},
+		mail: map[string]map[string]any{
+			"n-1": notification("n-1", "t-n1", "AAEXAMPLEONE000000000000000000"),
+			"n-2": notification("n-2", "t-n2", "AAEXAMPLETWO000000000000000000"),
+		},
+		threads: map[string][]string{"t-n1": {"n-1"}, "t-n2": {"n-2"}},
+	}
+	syncThreadedGmail(t, ds, fake)
+
+	hub := map[string]bool{}
+	for _, row := range listLive(t, ds, googlePackage+"/emailaddress") {
+		if addr, ok := row.Properties["address"].(string); ok {
+			hub[addr] = true
+		}
+	}
+	if !hub["notifications@github.com"] || !hub["repo@noreply.github.com"] {
+		t.Fatalf("hub rows = %v, want the sender and the recipient", hub)
+	}
+	for addr := range hub {
+		if strings.HasSuffix(addr, "@reply.github.com") {
+			t.Errorf("a reply address has a hub row: %s", addr)
+		}
+	}
+
+	var sender bool
+	for _, row := range listLive(t, ds, vocabulary.CoreKind("contact")) {
+		emails, _ := row.Properties["emails"].([]any)
+		for _, e := range emails {
+			addr, _ := e.(string)
+			if strings.HasSuffix(addr, "@reply.github.com") {
+				t.Errorf("contact %s carries a reply address: %v", row.ID, emails)
+			}
+			sender = sender || addr == "notifications@github.com"
+		}
+	}
+	if !sender {
+		t.Error("no contact carries notifications@github.com: core's mapping did not run on the hub")
+	}
+
+	row := mustGet(t, ds, googleGmailMsgKind, message(t, ds, "n-1"))
+	replyTo, _ := row.Properties["replyTo"].([]any)
+	if len(replyTo) != 1 {
+		t.Fatalf("replyTo = %v, want the one occurrence", row.Properties["replyTo"])
+	}
+	entry, _ := replyTo[0].(map[string]any)
+	if entry["value"] != relay("AAEXAMPLEONE000000000000000000") || entry["name"] != "owner/repo" {
+		t.Fatalf("replyTo entry = %v, want the address and the name as the header spelled them", entry)
+	}
+	if _, ok := entry["address"]; ok {
+		t.Fatalf("replyTo entry = %v, names a hub row", entry)
+	}
+	from, _ := row.Properties["from"].([]any)
+	if len(from) != 1 || storedRefPath(from[0].(map[string]any)["address"]) == "" {
+		t.Fatalf("from = %v, want the sender's occurrence naming its hub row", row.Properties["from"])
 	}
 }

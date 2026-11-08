@@ -34,6 +34,21 @@ func TestBodyHelpersGoogle(t *testing.T) {
 	runBodyCases(t, bodyPython(t, dir), "py/test_google_trait.py", dir)
 }
 
+// TestBodyHelpersGoogleGmail runs internal/providertest/py/test_google_gmail.py
+// over the shipped syncgmail body: which header addresses become hub rows,
+// so a per-thread reply address never reaches a contact.
+func TestBodyHelpersGoogleGmail(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	written := writeBodies(t, providersDir+"/google/bundle.yaml", dir, func(name string) bool {
+		return name == "syncgmail"
+	})
+	if written != 1 {
+		t.Fatalf("wrote %d google bodies, want syncgmail alone", written)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_google_gmail.py", dir)
+}
+
 // TestBodyHelpersBeeper runs internal/providertest/py/test_beeper_offline.py
 // over the shipped beeper messagessync body: which failures mean Beeper
 // Desktop is not reachable, and the throttled stamp that pauses the sync
