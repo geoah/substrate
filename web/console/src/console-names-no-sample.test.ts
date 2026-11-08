@@ -53,9 +53,9 @@ const BUNDLE_KIND = "substrate.reamde.dev/core/bundle"
 /** The packages under the substrate's own authority, by directory: a
  * first-party catalogue carries a bundle document (kinds_test.go holds the
  * split), and every other one is seeded (`core`, `llm`, `console`,
- * `observations`, `assistant`). The console may name a seeded package, and a sample
- * sharing one's word (the `llm` sample) is held to the other patterns
- * only. */
+ * `observations`, `assistant`, `applets`). The console may name a seeded
+ * package, and a sample sharing one's word (the `llm` sample) is held to the
+ * other patterns only. */
 const { SEEDED, CATALOGUES } = (() => {
   const all = new Set<string>()
   const catalogues = new Set<string>()
@@ -267,7 +267,7 @@ describe("the console's source", () => {
     expect(SAMPLES).toEqual(expect.arrayContaining(["people", "tasks"]))
     expect(SAMPLES).not.toContain("llm")
     expect([...SEEDED].sort()).toEqual(
-      ["assistant", "console", "core", "llm", "observations"].sort()
+      ["applets", "assistant", "console", "core", "llm", "observations"].sort()
     )
     expect(CATALOGUES).toEqual(
       expect.arrayContaining(["health", "labs", "environment"])

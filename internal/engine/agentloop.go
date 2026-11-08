@@ -2143,6 +2143,8 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchVocabulary(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolEdit:
 		return l.dispatchEdit(ctx, c, args)
+	case tool.builtin == vocabulary.AgentToolAppletPreview:
+		return l.dispatchAppletPreview(ctx, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:

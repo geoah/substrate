@@ -1,7 +1,7 @@
 /** The sidebar: the repository at the top (the one account menu: settings,
- * theme, sign out), the search that opens ⌘K, the five places (Home, All
- * data, Agents, Tools, Providers, and Observations after All data where a
- * kind records measurements), then the collections grouped the way a
+ * theme, sign out), the search that opens ⌘K, the places (Home, All data,
+ * Applets, Agents, Tools, Providers, and Observations after Applets where a kind
+ * records measurements), then the collections grouped the way a
  * person meets them (one group per package, one "From <Provider>" per
  * provider) and, at the foot, History, Settings and the Technical details
  * switch. The repository's name appears once: a second chip for it is a
@@ -22,6 +22,7 @@ import {
 } from "@tanstack/react-router"
 import {
   ActivityIcon,
+  AppWindowIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   BotIcon,
@@ -112,6 +113,7 @@ function useCloseOnPhone(): () => void {
 type Place =
   | "/"
   | "/data"
+  | "/applets"
   | "/observations"
   | "/agents"
   | "/tools"
@@ -684,6 +686,7 @@ export function AppSidebar({
         <nav aria-label="Places" className="flex flex-col">
           <NavRow to="/" icon={HomeIcon} label="Home" />
           <NavRow to="/data" icon={DatabaseIcon} label="All data" />
+          <NavRow to="/applets" icon={AppWindowIcon} label="Applets" />
           <ObservationsRow />
           <NavRow to="/agents" icon={BotIcon} label="Agents" />
           <NavRow to="/tools" icon={WrenchIcon} label="Tools" />

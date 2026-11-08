@@ -256,6 +256,21 @@ var wireTypes = map[string]any{
 	"TriggerRan":      TriggerRan{},
 	"FunctionCalled":  FunctionCalled{},
 	"WebhookAccepted": WebhookAccepted{},
+	// An applet's runtime (applets.go): what the console sends to render a
+	// substrate.reamde.dev/applets/applet record and run its actions, and
+	// the frame of A2UI messages it draws.
+	"AppletState":          AppletState{},
+	"AppletShown":          AppletShown{},
+	"AppletRenderInput":    AppletRenderInput{},
+	"AppletAction":         AppletAction{},
+	"AppletActInput":       AppletActInput{},
+	"AppletFrame":          AppletFrame{},
+	"AppletHeader":         AppletHeader{},
+	"A2UIMessage":          A2UIMessage{},
+	"A2UICreateSurface":    A2UICreateSurface{},
+	"A2UIUpdateComponents": A2UIUpdateComponents{},
+	"A2UIUpdateDataModel":  A2UIUpdateDataModel{},
+	"A2UIDeleteSurface":    A2UIDeleteSurface{},
 	// The repository's unit graph and one conversion through it (GET /units,
 	// /units/convert, decision 0186).
 	"UnitTable":            UnitTable{},

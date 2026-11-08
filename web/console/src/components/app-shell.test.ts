@@ -38,6 +38,21 @@ describe("crumbsFor", () => {
     expect(pageTitle(crumbsFor("/settings/name"))).toBe("Your name · Settings")
   })
 
+  it("reads an applet under Applets, by its name unless technical", () => {
+    expect(crumbsFor("/applets")).toEqual([{ label: "Applets" }])
+    expect(crumbsFor("/applets/books")).toEqual([
+      { label: "Applets", to: "/applets" },
+      {
+        label: "Untitled applet",
+        record: { kind: "substrate.reamde.dev/applets/applet", id: "books" },
+      },
+    ])
+    expect(crumbsFor("/applets/books", true)[1]).toMatchObject({
+      label: "books",
+      mono: true,
+    })
+  })
+
   it("keeps the timeline under Observations", () => {
     expect(crumbsFor("/observations/timeline")).toEqual([
       { label: "Observations", to: "/observations" },

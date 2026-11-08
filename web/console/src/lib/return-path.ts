@@ -37,10 +37,12 @@ export function safeReturnPath(value: unknown): string | undefined {
 }
 
 /** The path a reader whose session just ended returns to after signing in
- * again: an app's approval page only, because that is a flow somebody else
- * started and cannot resume on their own. Everywhere else lands on Home. */
+ * again: an app's approval page, because that is a flow somebody else
+ * started and cannot resume on their own, and a standalone applet, which has
+ * no console around it to find the way back from. Everywhere else lands on
+ * Home. */
 export function returnAfterExpiry(pathname: string): string | undefined {
-  return pathname.startsWith("/authorize/")
+  return pathname.startsWith("/authorize/") || pathname.startsWith("/a/")
     ? safeReturnPath(pathname)
     : undefined
 }

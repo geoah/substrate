@@ -114,7 +114,7 @@ observing domain shares. It is seeded into every repository beside `core`,
 `llm` and `console` and upgraded at open, so every repository and every
 provider names an observation the same way
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-Unlike the other three seeded packages its kinds are your data, not the
+Unlike core, llm and console its kinds are your data, not the
 substrate's state: they keep their own `purpose`, and their records can be
 merged ([merges](projection.md#merges)). The package ships no metrics; the
 [catalogues](#the-well-known-catalogues) and the providers do.

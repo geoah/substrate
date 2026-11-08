@@ -60,6 +60,11 @@ describe("returnAfterExpiry", () => {
     expect(returnAfterExpiry("/authorize/AbC123")).toBe("/authorize/AbC123")
   })
 
+  it("returns to a standalone applet", () => {
+    expect(returnAfterExpiry("/a/books")).toBe("/a/books")
+    expect(returnAfterExpiry("/applets/books")).toBeUndefined()
+  })
+
   it("lands everywhere else on Home", () => {
     expect(returnAfterExpiry("/data/ada.example.com")).toBeUndefined()
     expect(returnAfterExpiry("/authorize")).toBeUndefined()

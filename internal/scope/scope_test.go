@@ -44,6 +44,9 @@ func TestTheGrammarAdmitsThePatternsAndRefusesTheRest(t *testing.T) {
 		"write:substrate.reamde.dev/core/*",
 		"write:substrate.reamde.dev/llm/provider",
 		"write:substrate.reamde.dev/llm/*",
+		// An applet runs under whoever opens it, so no app writes one.
+		"write:substrate.reamde.dev/applets/applet",
+		"write:substrate.reamde.dev/applets/*",
 	}
 	for _, raw := range refused {
 		if _, err := Parse(raw); err == nil {
@@ -162,6 +165,7 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 		// A glob never reaches an internal kind, nor writes core or llm.
 		{"substrate.reamde.dev/core/trigger", true, false, false},
 		{"substrate.reamde.dev/llm/provider", true, false, false},
+		{"substrate.reamde.dev/applets/applet", true, false, false},
 		{"substrate.reamde.dev/console/view", true, false, false},
 		{"substrate.reamde.dev/core/token", true, false, false},
 		{"substrate.reamde.dev/core/secret", true, false, false},

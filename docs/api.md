@@ -2321,6 +2321,50 @@ It logs `export aborted mid-stream` naming the digest. The client sees a
 failed transfer and an archive with no `snapshot.json`, never a complete
 `200`.
 
+## Applets
+
+An applet ([applets](applets.md), decision
+[0243](decisions/0243-an-applet-is-a2ui-screens-the-server-runs-and-the-console-gives-applets-a-place.md))
+is a record of `substrate.reamde.dev/applets/applet`, written like any record
+by the owner's token, the MCP door or the assistant's designer; no app scope
+writes one. Three routes run it, each under the caller's own token, so an
+applet reads and writes what that token may. The wire is
+`internal/substrate/applets.go`. Alpha (`applets` in discovery).
+
+| Route | Body | Answers |
+| --- | --- | --- |
+| `POST /api/v1/substrate.reamde.dev/applets/applet/{id}/render` | `{state?, shown?}` | the frame for the state's screen |
+| `POST …/applets/applet/{id}/act` | `{state, shown?, action: {name, context, sourceComponentId, userMessage}, confirmed?}` | the frame after the action |
+| `POST …/applets/applet/{id}/preview` | `{applet?, screen?, params?, ui?}` | the check's problems and one screen's outline; writes nothing |
+
+A frame is `{applet, state, shown, messages, notice?, confirm?,
+confirmLabel?, confirmDanger?}`: `messages` are A2UI v1.0
+agent-to-renderer messages (`createSurface` when the screen or the applet's
+version changes, else `updateDataModel` of `/data`, `/counts`, `/params`,
+`/applet`, and of `/ui` only when an action changed it), and `applet` names the
+kinds whose changes re-render the screen (`watch`), the `/ui` paths whose
+edits do (`refreshOn`), the start screen and the actions that delete. The
+server keeps no session: the renderer sends its state on every call.
+
+An action whose steps ask a question answers `confirm` and runs nothing; the
+same request with `confirmed: true` runs it. An action is **not replayed**:
+the route takes no `Idempotency-Key`, its steps carry none, a retried tap
+runs them again (a retried create makes a second record), and a step
+that wrote stays written when a later one is refused, whose problems answer
+`422` naming the action and the step
+([#1265](https://github.com/geoah/substrate/issues/1265)).
+
+### The image proxy
+
+`GET /api/v1/images?url=<https address>` answers the image an applet names
+on another site, fetched by the server for the owner's token or a full-access
+one (a scoped app token is refused): https only, public addresses only, checked at every connect and
+redirect, PNG, JPEG, GIF, WebP and AVIF and never SVG, at most 8 MiB, eight
+fetches at a time. The answer carries `Cache-Control: private, max-age=86400`
+and a sandboxing CSP. Every way the address fails to give an image is a `404`
+saying which. The console draws applets' images through it, so its own
+`img-src` stays its origin.
+
 ## Webhooks
 
 `POST /webhooks/{authority}/{trigger}` is the one route that takes a body and

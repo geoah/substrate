@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/applet"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -1255,6 +1256,19 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// leaves the record live (llmmodels.go).
 	if sp.ty.Identity == typeModel {
 		if err := t.admitModelRow(sp.id, row.Props); err != nil {
+			return nil, err
+		}
+	}
+
+	// An applet is held to the A2UI catalog and to the kinds and functions it
+	// names at the write (applets.go), so its author reads one problem per path
+	// here, and the shared registry lock keeps a kind it names in place for
+	// the check, as the trigger admission's does.
+	if sp.ty.Identity == applet.Kind && !t.internal {
+		if err := t.lockRegistryDepShared(); err != nil {
+			return nil, err
+		}
+		if err := t.admitApplet(sp.id, row.Props); err != nil {
 			return nil, err
 		}
 	}

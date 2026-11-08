@@ -1,0 +1,110 @@
+# Applets the owner uses over their records (docs/plans/applets.md): each applet
+# is a record whose screens are A2UI v1.0 components (https://a2ui.org), with
+# the sources that fill their data model and the actions their buttons run.
+# The server renders a screen into A2UI messages and runs an action as reads
+# and writes under the caller's own token, so a tap is a query or a write and
+# never a model turn, and a client holds no query API of its own.
+#
+# SEEDED, like core and the console: its source is `builtin`, so no token or
+# agent writes its declarations, and a repository created before it existed
+# receives it at its next open. Outside core on purpose: an applet is something
+# the owner and their assistant make, not the substrate's machinery.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/applets
+data:
+  authority: substrate.reamde.dev
+  package: applets
+  version: 1
+---
+# The applet. `internal`, so an agent's glob never reaches it: Moss's designer
+# names it in its writes, and every write of one is checked by the engine
+# against the A2UI catalog and the repository's kinds (internal/applet
+# Check), refused with one problem per path.
+#
+# `json` for the four structured properties: a screen is a flat list of
+# A2UI components whose props are the catalog's, nested deeper than a
+# declared field reaches, and the check reads them whole.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/applets/applet
+data:
+  authority: substrate.reamde.dev
+  package: applets
+  description: >-
+    An applet over the owner's records: screens drawn from A2UI components,
+    the reads that fill them and the actions their buttons run.
+  purpose: internal
+  names:
+    singular: applet
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the applet's name, as its launcher and title bar show it
+    description:
+      type: text
+      description: one sentence on what the applet is for
+    icon:
+      type: string
+      description: a lucide icon name for the launcher, such as book-open
+    start:
+      type: string
+      description: the screen the applet opens on; absent is the only screen
+    state:
+      type: json
+      description: the initial UI state, the data model's /ui, which the applet's
+        inputs bind to
+    sources:
+      type: json
+      description: 'the reads that fill the data model, by name: each {kind,
+        id, where, search, orderBy, first, expand}, its results at /data/<name>'
+    actions:
+      type: json
+      description: 'what the applet''s buttons run, by name: each a list of
+        steps such as {op: create, kind, properties} or {op: navigate, screen,
+        params}'
+    screens:
+      type: json
+      required: true
+      description: 'the screens, by name: each {title, sources, refreshOn,
+        init, components}, the components an A2UI v1.0 basic catalog list
+        with one root'
+---
+# ---- preview: see what an applet draws -----------------------------------------
+# The designer's eyes (docs/plans/applets.md): one screen of a stored applet,
+# or of a draft that was never written, rendered against the live records as
+# an outline of its components with every binding resolved, the problems the
+# write would be refused with, and each binding that resolved to nothing. It
+# reads the sources' kinds under the calling agent's reads and writes
+# nothing; an action is never run.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: substrate.reamde.dev/applets/preview
+data:
+  authority: substrate.reamde.dev
+  package: applets
+  description: >-
+    Preview one screen of an applet: the component tree with its bindings
+    resolved against the owner's records, the problems a write of it would
+    be refused with, and every binding that resolved to nothing. Name a stored
+    applet by id, or pass a draft's properties as applet. Writes nothing.
+  runtime: host
+  arguments:
+    - name: id
+      type: string
+      description: a stored applet's id
+    - name: applet
+      type: json
+      description: a draft applet's properties (name, start, state, sources,
+        actions and screens), previewed without writing it
+    - name: screen
+      type: string
+      description: the screen to preview; absent is the applet's start
+    - name: params
+      type: json
+      description: 'the screen''s params, such as {"id": "<a record id>"}'
+    - name: ui
+      type: json
+      description: UI state to preview with, merged over the applet's state

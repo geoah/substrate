@@ -245,7 +245,7 @@ manifest document is a record of a core kind whatever package it describes.
 
 The fifth seeded package (decision record
 [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
-the owner's assistant, three agents and no kinds, written into every
+the owner's assistant, four agents and no kinds, written into every
 repository and upgraded at boot, so a prompt fix reaches every repository
 with the binary.
 
@@ -256,11 +256,28 @@ with the binary.
   the owner's kinds and applies only what the owner asked for. Its writes
   name `core/package` and `core/kind` alone, and it never converts records.
 - `librarian`, which Moss calls as a background job for bulk record work.
+- `designer`, which Moss calls as a background job to build or change one
+  of the owner's applets: its writes name `applets/applet` alone, and it checks each
+  screen with `preview` ([the applets plan](plans/applets.md)).
 
 The owner shapes them without editing them: `llm/instruction` records
 naming one of them ride its system prompt, and Moss proposes one when asked
-to change how it works. All three name the seeded `anthropic` row. The
+to change how it works. All four name the seeded `anthropic` row. The
 design and the recorded sessions are in [docs/plans/moss.md](plans/moss.md).
+
+## substrate.reamde.dev/applets
+
+The sixth seeded package, a proof of concept
+([the applets plan](plans/applets.md)): the applets the owner and their
+assistant make over the owner's records.
+
+| Kind  | What it is |
+| ----- | ---------- |
+| `applet` | One applet: `name`, `description`, `icon`, `start`, and four `json` properties, `state` (the initial UI state), `sources` (the reads that fill the data model), `actions` (the steps a button runs) and `screens` (each a list of [A2UI](https://a2ui.org) v1.0 components). `internal`, so an agent writes one only where its writes name the kind. Every write is checked against the A2UI catalog and the repository's kinds and functions, one problem per path. |
+
+It also ships the `preview` host function: one screen of an applet rendered
+against the owner's records as an outline, with every binding that resolved
+to nothing, for the agent that designs it.
 
 ## substrate.reamde.dev/console
 

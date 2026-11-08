@@ -88,6 +88,7 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | `files` | read a blob in chunks, or store one |
 | `units` | the unit table a page at a time, and conversions |
 | `merge` | merge or split two records |
+| `applets` | the guide to building an applet, and a preview that checks one and draws a screen ([applets](applets.md)) |
 
 Each tool is a REST request made in process with the assistant's own token,
 so every rule of [using a substrate from an agent](for-agents.md) holds,

@@ -62,10 +62,10 @@ from.
 The sidebar holds, top to bottom: the repository name, which opens the account
 menu (**Account and settings**, **Appearance**, the **Technical details**
 switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
-the five places (**Home**, **All data**, **Agents**, **Tools**,
-**Providers**, with the provider packages added plus the AI models with a
-key counted beside the last, and
-[**Observations**](#observations) after All data where some kind records
+the six places (**Home**, **All data**, [**Applets**](#applets), **Agents**,
+**Tools**, **Providers**, with the provider packages added plus the AI models
+with a key counted beside the last, and
+[**Observations**](#observations) after Applets where some kind records
 measurements),
 **Favorites**, the collections, and at the foot **History**, **Settings** and
 the **Technical details** switch. Collapsed, it peeks over the page while the
@@ -912,6 +912,27 @@ adjusted one.
 Both queues are their collections, under **Substrate** with Technical details
 on. A request is also reached from the records it names (their **Connected
 to**), and a change request from the agent's thread, as a card.
+
+## Applets
+
+An applet is a small app over your records that Moss builds when you ask for
+one ("an app for my books"), kept as a record of
+`substrate.reamde.dev/applets/applet` ([applets](applets.md), decision
+[0243](decisions/0243-an-applet-is-a2ui-screens-the-server-runs-and-the-console-gives-applets-a-place.md)).
+**Applets** lists them, each with its icon, name and description, and opens
+one in the console at `/applets/{id}` or full screen, with nothing of the
+console around it, at `/a/{id}` (**Open full screen**), the address to keep on
+a phone's home screen. The shell's page links the applet's **Definition**, its
+record.
+
+The server draws every screen from the applet's record and runs its buttons'
+actions as reads and writes under your token, so an applet reaches nothing you
+cannot. A screen follows the records it shows as they change, its address
+holds the screen and the record it is about, so Back and a bookmark work, and
+a screen that cannot open opens the applet's first screen instead, saying why.
+An action that deletes asks first, and its answer says **Delete**. Images an
+applet names on another site come through the server's image proxy, so the
+site never learns who is looking.
 
 ## Agents
 

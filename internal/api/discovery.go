@@ -229,6 +229,12 @@ var features = []featureInfo{
 	// the scoped surface is the records route, the record path and the unit
 	// reads alone.
 	{Name: "apps", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
+	// Applets (docs/plans/applets.md): records of the seeded applets package
+	// rendered as A2UI v1.0 screens, `POST …/applets/applet/{id}/render`,
+	// `/act` and `/preview`, and the image proxy, `GET /images`, that draws
+	// the images they name. Alpha: the record's format, its steps and its
+	// data model grow with the first applets people keep.
+	{Name: "applets", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST, surfaceMCP}},
 }
 
 // operatorDefaultsFeature is listed only where the server booted with an
