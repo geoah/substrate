@@ -40,11 +40,23 @@ export function StatusMark(props: {
   label: string
   onToggle: () => void
 }) {
-  const filled = props.pending !== undefined || props.status === "done"
-  const left =
-    props.pending !== undefined
-      ? Math.max(0, props.pending - Date.now())
-      : undefined
+  const { pending } = props
+  const filled = pending !== undefined || props.status === "done"
+  const ring = useRef<SVGCircleElement>(null)
+  // The ring is the window: it starts where the window stands, so a mark
+  // drawn again mid-window (the task opened) drains from there.
+  useEffect(() => {
+    if (pending === undefined || !ring.current) return
+    const drain = ring.current.animate(
+      [{ strokeDashoffset: 0 }, { strokeDashoffset: 100 }],
+      { duration: undoWindow, fill: "forwards" }
+    )
+    drain.currentTime = Math.max(
+      0,
+      Math.min(undoWindow, undoWindow - (pending - Date.now()))
+    )
+    return () => drain.cancel()
+  }, [pending])
   return (
     <button
       type="button"
@@ -56,13 +68,14 @@ export function StatusMark(props: {
       aria-label={props.label}
       className="group relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      {left !== undefined && (
+      {pending !== undefined && (
         <svg
           viewBox="0 0 36 36"
           className="absolute size-9 -rotate-90"
           aria-hidden
         >
           <circle
+            ref={ring}
             cx="18"
             cy="18"
             r="16.5"
@@ -72,10 +85,6 @@ export function StatusMark(props: {
             strokeLinecap="round"
             strokeWidth="2.5"
             className="stroke-accent/55"
-            style={{
-              animation: `tasks-drain ${undoWindow}ms linear forwards`,
-              animationDelay: `${left - undoWindow}ms`,
-            }}
           />
         </svg>
       )}
@@ -85,7 +94,7 @@ export function StatusMark(props: {
           filled
             ? "border-accent bg-accent text-white"
             : "border-tertiary group-hover:border-accent",
-          props.pending !== undefined && "scale-[1.08]",
+          pending !== undefined && "scale-[1.08]",
           props.status === "abandoned" && "text-secondary"
         )}
       >

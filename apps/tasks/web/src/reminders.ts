@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   dayDate,
   isOpen,
@@ -135,10 +135,10 @@ export function useReminders(
     }
   }, [])
 
-  const reminders = plan(tasks, lists, settings, permission, now)
-  const key = reminders
-    .map((r) => `${r.id}@${r.at.getTime()}:${r.title}:${r.body}`)
-    .join("|")
+  const reminders = useMemo(
+    () => plan(tasks, lists, settings, permission, now),
+    [tasks, lists, settings, permission, now]
+  )
 
   useEffect(() => {
     const latest = () => tasks
@@ -153,16 +153,15 @@ export function useReminders(
         )
       )
     return () => timers.forEach((t) => clearTimeout(t))
-    // The plan's own words are the dependency: a new array each render is
-    // not a new plan.
-  }, [key])
+  }, [reminders, tasks])
 
   // A tap on a reminder the worker showed comes back as a message.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return
-    const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "tasks.reminder" && typeof e.data.task === "string")
-        opened(e.data.task, () => tasks)
+    const onMessage = (e: MessageEvent<unknown>) => {
+      const data = e.data as { type?: unknown; task?: unknown } | null
+      if (data?.type === "tasks.reminder" && typeof data.task === "string")
+        opened(data.task, () => tasks)
     }
     navigator.serviceWorker.addEventListener("message", onMessage)
     return () =>

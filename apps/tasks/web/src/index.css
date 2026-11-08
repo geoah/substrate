@@ -13,14 +13,3 @@
     --sx-accent-text: #ff698c;
   }
 }
-
-/* The undo window's ring: full when a task is marked done, empty as the
- * write goes. */
-@keyframes tasks-drain {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: 100;
-  }
-}

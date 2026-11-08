@@ -1,6 +1,6 @@
 import { BarButton, Field, Section, SelectRow, Sheet } from "@substrate/react"
 import { CircleAlert } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useEffectEvent, useState } from "react"
 import {
   draftOf,
   dueKinds,
@@ -58,10 +58,9 @@ export function TaskEditor(props: {
 
   // A task deleted while it was being edited closes its editor.
   const gone = props.seed.kind === "task" && !props.task
-  const close = useRef(props.onClose)
-  close.current = props.onClose
+  const close = useEffectEvent(() => props.onClose())
   useEffect(() => {
-    if (gone) close.current()
+    if (gone) close()
   }, [gone])
 
   const set = (patch: Partial<TaskDraft>) => {

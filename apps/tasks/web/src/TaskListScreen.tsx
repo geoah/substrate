@@ -116,7 +116,9 @@ export function TaskListScreen(props: {
             <MenuButton
               label="List Options"
               items={() =>
-                listOptions(view, settings.order, actions.deleteList)
+                listOptions(view, settings.order, (id) =>
+                  actions.deleteList(id)
+                )
               }
               className="flex size-11 items-center justify-center rounded-full bg-card/80 shadow-[0_1px_6px_rgb(0_0_0/0.08)] ring-1 ring-separator/40 backdrop-blur-xl active:bg-selected"
             >
@@ -173,7 +175,10 @@ export function TaskListScreen(props: {
             <p className="max-w-xs text-[17px] text-secondary">
               {view.empty!.message}
             </p>
-            <NewTaskButton label={view.newTask} onClick={actions.newTask} />
+            <NewTaskButton
+              label={view.newTask}
+              onClick={() => actions.newTask()}
+            />
           </div>
         )}
 
@@ -248,7 +253,7 @@ export function TaskListScreen(props: {
         {!props.addsFromTabBar && !showEmpty && (
           <NewTaskButton
             label={view.newTask}
-            onClick={actions.newTask}
+            onClick={() => actions.newTask()}
             compact
           />
         )}

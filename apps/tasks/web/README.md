@@ -5,23 +5,48 @@ package (`substrate.reamde.dev/tasks`, [its README](../package/README.md)),
 the same records and the same writes as the Apple and Android apps, on
 [the web kit](../../kit/web/README.md). React 19, Vite and Tailwind CSS 4.
 
-| Screen | What it shows |
-| --- | --- |
-| Today | open tasks due today or before, soonest first, with their list; quick add for today |
-| No List, a list | the list's open tasks in their order, its completed ones when Settings shows them, quick add, New Task, rename and delete the list |
-| A task | Status, List and Priority (both change in place), Due, Notes and Link; Mark as Done, Won't Do or Reopen, Delete Task; Edit |
-| Settings | Show Completed Tasks (kept on this device), the repository, server, access and package the approval gave, Sign Out |
+| Screen          | What it shows                                                                                                                                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Needs you       | every open task across the lists in its band: Needs you (late, or high and urgent with no day), each with Move and Won't Do; Coming up (within the week); Later; the chips that narrow it to one list; quick add for today |
+| No List, a list | the list's open tasks in my order or by due date, its done ones under Done when Settings shows them, quick add, New Task, and the ⋯ menu: Sort Tasks By, Show or Hide Completed, Rename List…, Delete List…                |
+| A task          | its name beside its round mark; Status, List and Priority (both change in place), Due, Completed; its notes as markdown and its link; Mark as Done, Won't Do or Reopen (Undo while marked), Delete Task; Edit              |
+| Settings        | Reminders and Lists as TasksSettings has them, the repository, server, access and package the approval gave, Sign Out, the keys                                                                                            |
 
-A phone has the tab bar over stacks, from 768 px wide the lists sit beside
-the list, and from 1180 px the open task is a third column. Where the owner
-is lives in the address bar (`#/today`, `#/list/<id>/<task>`), so a link to
-a task opens it.
+A phone has a tab per section of the App menu (Needs you with its badge,
+Lists, Settings) and the round + that adds a task; from 768 px wide the
+sections and the lists sit in a sidebar beside the list, and from 1000 px
+the open task is a third column. Where the owner is lives in the address
+bar (`#/needs`, `#/list/<id>/<task>`), so a link to a task opens it.
+
+A row's mark completes its task after a 3 s undo window, a second tap
+within it taking the mark back. A right click or a long press opens a
+row's menu (its state, Edit, Priority, Move to List, Delete Task) and a
+list's (Rename…, Delete…). In my order, tasks and lists drag into place: a
+mouse at once, a finger after a hold, Alt with ↑ or ↓ from the keyboard.
+On a phone a row swipes: from the left, what its mark does; from the
+right, Delete and Won't Do.
+
+With a keyboard: N is New Task (⌘N is the browser's), ⌘, Settings, ↑ and ↓
+move through the list beside an open task, E edits it, ⌘↵ saves the
+editor and Escape closes what is open.
+
+**Reminders** are the native app's plan (`Reminders.plan`): each open task
+due ahead, at its moment or at the hour Settings chooses for a task due on
+a day. The browser shows them through the Notification API, and only while
+the page is open: a page that is closed runs nothing. Where a browser lets
+only a worker notify (Chrome on Android), `reminders-sw.js` shows them and
+brings a tap back; it caches nothing. [PARITY.md](PARITY.md) is the rest of
+what the web matches and does not.
 
 ## The writes
 
-As TasksKit's (`TaskWrites`): a task or list is created with a PUT on a
-lowercase UUIDv7 the app chose (`ifVersion: 0`); a toggle, a move or a
-priority is a patch of what changed; Save in the editor patches the fields
+As TasksKit's (`TaskWrites`, `TasksEnrichment`): a task or list is created
+with a PUT on a lowercase UUIDv7 the app chose (`ifVersion: 0`); a toggle,
+a move, a reschedule or a priority is a patch of what changed; a task or
+list dragged writes its own `position`, a decimal between its new
+neighbours (`Position.moves`, in `src/position.ts`), and a neighbour only
+where the order needs it (two with one number, one with none, a gap used
+up); Save in the editor patches the fields
 the owner changed on the version they opened, so a change made elsewhere
 meanwhile is refused and said, never written over; a state moves only by
 patch, and a reopen clears `completedAt` in the same write; moving a task

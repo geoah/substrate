@@ -171,6 +171,7 @@ export function useTaskActions() {
           if (now) status(now, "done")
         }
         windows.set(id, { timer: window.setTimeout(write, undoWindow), write })
+        navigator.vibrate?.(8)
         completingStore.set((m) => new Map(m).set(id, Date.now() + undoWindow))
       },
       reopen(id: string) {

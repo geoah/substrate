@@ -120,7 +120,7 @@ export function App() {
           section={section}
           badge={badge}
           onSection={onSection}
-          onAdd={actions.newTask}
+          onAdd={() => actions.newTask()}
         />
         {overlays}
       </div>

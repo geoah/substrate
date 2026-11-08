@@ -79,7 +79,7 @@ export function taskMenu(
       items: [
         { id: undefined, title: inboxTitle },
         ...lists.map((l) => ({
-          id: l.id as string | undefined,
+          id: l.id,
           title: listTitle(l),
         })),
       ].map((l) => ({

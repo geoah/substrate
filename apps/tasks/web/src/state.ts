@@ -119,11 +119,14 @@ const defaults: Settings = {
 
 function readSettings(): Settings {
   try {
-    const saved = JSON.parse(localStorage.getItem(settingsKey) ?? "{}")
-    const s = { ...defaults, ...saved }
+    const saved: unknown = JSON.parse(localStorage.getItem(settingsKey) ?? "{}")
+    const s = (saved && typeof saved === "object" ? saved : {}) as Partial<
+      Record<keyof Settings, unknown>
+    >
+    const hour = typeof s.remindHour === "number" ? s.remindHour : NaN
     return {
       remind: s.remind === true,
-      remindHour: reminderHours.includes(s.remindHour) ? s.remindHour : 9,
+      remindHour: reminderHours.includes(hour) ? hour : defaults.remindHour,
       order: s.order === "due" ? "due" : "manual",
       showCompleted: s.showCompleted === true,
     }

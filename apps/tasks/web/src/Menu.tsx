@@ -2,6 +2,7 @@ import { cx } from "@substrate/react"
 import { Check, ChevronLeft, ChevronRight } from "lucide-react"
 import {
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
@@ -85,14 +86,13 @@ export function Menu(props: {
   const marked = items.some(
     (i) =>
       i.kind !== "divider" &&
-      (i.icon || ("checked" in i && i.checked !== undefined))
+      (!!i.icon || ("checked" in i && i.checked !== undefined))
   )
 
   const back = () => setPath((p) => p.slice(0, -1))
-  const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   // On the window, not the menu: a finger's hold leaves the focus where the
   // browser's own mouse events put it.
-  keys.current = (e: KeyboardEvent) => {
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
     const all = [
       ...(box.current?.querySelectorAll<HTMLElement>(
         "[role=menuitem],[role=menuitemradio]"
@@ -121,11 +121,11 @@ export function Menu(props: {
     } else if (e.key === "Tab") {
       e.preventDefault()
     }
-  }
+  })
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => keys.current(e)
-    window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
+    const listener = (e: KeyboardEvent) => onKey(e)
+    window.addEventListener("keydown", listener, true)
+    return () => window.removeEventListener("keydown", listener, true)
   }, [])
 
   return (
@@ -278,13 +278,12 @@ export function Alert(props: {
   }[]
   onCancel: () => void
 }) {
-  const cancel = useRef(props.onCancel)
-  cancel.current = props.onCancel
+  const cancel = useEffectEvent(() => props.onCancel())
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault()
-        cancel.current()
+        cancel()
       }
     }
     window.addEventListener("keydown", onKey)

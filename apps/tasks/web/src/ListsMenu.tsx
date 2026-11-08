@@ -40,7 +40,7 @@ export function ListsMenu(props: {
   const reorder = useReorder({
     ids: model.lists.map((l) => l.id),
     enabled: true,
-    onMove: actions.reorderList,
+    onMove: (id, index) => actions.reorderList(id, index),
     onMenu: (id, at) => setMenu({ id, at }),
     announce: setSpoken,
   })

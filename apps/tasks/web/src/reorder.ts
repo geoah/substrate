@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -26,7 +27,10 @@ export function useReorder(opts: {
   const elements = useRef(new Map<string, HTMLElement>())
   const [drag, setDrag] = useState<Drag | undefined>()
   const live = useRef(opts)
-  live.current = opts
+  // Read by the window's listeners a gesture adds, after the render.
+  useLayoutEffect(() => {
+    live.current = opts
+  })
   const gesture = useRef<Gesture | undefined>(undefined)
 
   const end = useCallback(() => {
