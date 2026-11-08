@@ -31,9 +31,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS = os.path.join(ROOT, "apps")
 KIT = os.path.join(APPS, "kit")
 
-# The folders under apps/ that are not apps: the kit, the Xcode project and
-# the Gradle root.
-NOT_APPS = {"kit", "xcode", "gradle"}
+# The folders under apps/ that are not apps: the kit, the Xcode project, the
+# Gradle root, and the web workspace's installed packages (apps/ is a pnpm
+# workspace root, so `pnpm install` puts node_modules beside the apps).
+NOT_APPS = {"kit", "xcode", "gradle", "node_modules"}
 
 # Build output a laptop leaves in the tree, which no rule reads.
 SKIP_DIRS = {".build", "build", ".swiftpm", "DerivedData", "node_modules"}
