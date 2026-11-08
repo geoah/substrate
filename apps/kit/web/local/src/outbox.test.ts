@@ -276,6 +276,34 @@ describe("the outbox", () => {
 
     await o.discard(o.getSnapshot().parked[0].id)
     expect(o.getSnapshot().waiting).toBe(0)
+    await until(() => o.getSnapshot().state.type === "sent", 2000, "sent")
+  })
+
+  it("says nothing refused once the last parked write is resolved, here or in another tab", async () => {
+    const share = { shareName: `share-${n}` }
+    for (const id of ["a1", "b2"])
+      fake.fail({ method: "PUT", path: new RegExp(`/${id}$`) }, 422, {
+        error: { code: "validation", message: "name is required" },
+      })
+    const o = open(share)
+    const other = open(share)
+    await Promise.all([o.ready, other.ready])
+    await o.write(RecordWrites.create(kind, "a1", {}))
+    await o.write(RecordWrites.create(kind, "b2", {}))
+    await until(() => o.getSnapshot().parked.length === 2, 2000, "parked")
+    expect(o.getSnapshot().state).toEqual({
+      type: "refused",
+      words: "name is required",
+    })
+
+    await o.resolve(o.getSnapshot().parked[0].id, false)
+    await until(() => !o.getSnapshot().flushing)
+    expect(o.getSnapshot().state.type).toBe("refused")
+    // The other tab discards the last one.
+    await until(() => other.getSnapshot().parked.length === 1)
+    await other.discard(other.getSnapshot().parked[0].id)
+    await until(() => o.getSnapshot().state.type === "sent", 2000, "sent")
+    expect(o.getSnapshot().waiting).toBe(0)
   })
 
   it("lets a delete replace the record's writes still waiting", async () => {

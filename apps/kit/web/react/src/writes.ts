@@ -4,7 +4,7 @@ import {
   type Kind,
   type SubstrateRecord,
 } from "@substrate/client"
-import { RecordWrites, applyEntry, type LocalWrite } from "@substrate/local"
+import { RecordWrites, type LocalWrite } from "@substrate/local"
 import { useMemo } from "react"
 import { useSubstrate } from "./context"
 import { readThrough } from "./hooks"
@@ -101,13 +101,11 @@ export function useWrites(): Writes {
       } catch (e) {
         return notKept(e, opts)
       }
-      if (!linked.kinds.includes(kind))
-        return { kept: true, id, shown: undefined }
-      const before = linked.recordSnapshot(kind, id)
-      const shown = write.entries.reduce<SubstrateRecord | undefined>(
-        (r, e) => applyEntry(e, r),
-        before
-      )
+      // The linked records follow the outbox, so the write is laid over
+      // their copy already.
+      const shown = linked.kinds.includes(kind)
+        ? linked.recordSnapshot(kind, id)
+        : undefined
       return { kept: true, id, shown }
     }
     return {

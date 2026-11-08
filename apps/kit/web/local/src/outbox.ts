@@ -335,11 +335,37 @@ export class Outbox {
       if (this.closed) return
       try {
         this.file = await this.storage.readOutbox()
+        this.settleState()
         this.emit()
       } catch {
         // the next change reads it again
       }
     })
+  }
+
+  /** The state after a send, or once nothing is left to send: refused
+   * while a write waits parked, in the words of `refusal` or the first
+   * parked write's, else sent. */
+  private rest(refusal?: string): OutboxState {
+    const parked = this.file.entries.find((e) => e.parked)
+    if (refusal === undefined && parked) refusal = parked.lastError ?? ""
+    return refusal !== undefined
+      ? { type: "refused", words: refusal }
+      : { type: "sent" }
+  }
+
+  /** A state that named what waits ends once nothing does: offline with
+   * nothing to send, refused with nothing parked, as after the last parked
+   * write's Discard here or in another tab. Answers whether it moved. */
+  private settleState(): boolean {
+    if (sendable(this.file.entries)) return false
+    if (this.state.type !== "offline" && this.state.type !== "refused")
+      return false
+    const next = this.rest()
+    if (next.type === this.state.type && next.words === this.state.words)
+      return false
+    this.state = next
+    return true
   }
 
   // ---- queueing ---------------------------------------------------------
@@ -482,7 +508,7 @@ export class Outbox {
     if (this.flushing || this.closed) return this.state
     clearTimeout(this.timer)
     if (!sendable(this.file.entries)) {
-      if (this.state.type === "offline") this.setState({ type: "sent" })
+      if (this.settleState()) this.emit()
       return this.state
     }
     if (!this.connectivity.online()) {
@@ -619,14 +645,7 @@ export class Outbox {
           break
       }
     }
-    refusal ??= this.file.entries.find((e) => e.parked)?.lastError
-    if (refusal === undefined && this.file.entries.some((e) => e.parked))
-      refusal = ""
-    this.setState(
-      refusal !== undefined
-        ? { type: "refused", words: refusal }
-        : { type: "sent" }
-    )
+    this.setState(this.rest(refusal))
     // A write moved again since its read waits for the next run.
     if (held) this.later()
   }

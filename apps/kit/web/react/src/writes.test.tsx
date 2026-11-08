@@ -36,6 +36,7 @@ function wrapper(storage = new MemoryStorage()) {
     outbox,
     connectivity: steadyConnectivity,
   })
+  linked.start()
   const value = {
     client,
     linked,
@@ -67,9 +68,13 @@ describe("useWrites", () => {
   it("resolves kept once the outbox has a write, with the record as it now shows", async () => {
     const { result } = renderHook(() => useWrites(), { wrapper: wrapper() })
     let created: WriteResult<unknown> | undefined
+    let shownAsListed = false
     await act(async () => {
       created = await result.current.create(kind, "a1", { name: "Milk" })
+      shownAsListed =
+        created.kept && created.shown === linked.recordSnapshot(kind, "a1")
     })
+    expect(shownAsListed).toBe(true)
     expect(created).toMatchObject({
       kept: true,
       id: "a1",
