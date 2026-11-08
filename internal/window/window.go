@@ -390,6 +390,13 @@ func computedID(seriesID string, at time.Time) string {
 	return seriesID + "_" + at.UTC().Format(slotLayout)
 }
 
+// SeriesOf names the series a computed occurrence's id comes from, or
+// reports that the id is not one.
+func SeriesOf(id string) (string, bool) {
+	series, _, ok := splitComputedID(id)
+	return series, ok
+}
+
 // splitComputedID reads a computed id apart, or reports that it is not one.
 func splitComputedID(id string) (seriesID string, at time.Time, ok bool) {
 	i := strings.LastIndex(id, "_")

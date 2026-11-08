@@ -8,6 +8,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/geoah/substrate/internal/applet"
 	"github.com/geoah/substrate/internal/substrate"
@@ -29,6 +31,20 @@ func (s appletSchema) Kind(ref string) (applet.KindShape, bool) {
 			ps.Values = append(ps.Values, v.Value)
 		}
 		shape.Props[name] = ps
+	}
+	// A trait's timeline columns are the kind's without a declaration, and an
+	// applet filters a window and orders by them; a window read bounds at on
+	// every timeline kind, whichever column the binding moved it onto.
+	for _, b := range k.Traits {
+		cols := slices.Collect(maps.Values(b.Columns))
+		if b.Identity == vocabulary.TraitTemporalCore {
+			cols = append(cols, substrate.PropAt)
+		}
+		for _, col := range cols {
+			if _, declared := shape.Props[col]; !declared {
+				shape.Props[col] = applet.PropShape{Type: "datetime"}
+			}
+		}
 	}
 	return shape, true
 }
@@ -115,6 +131,46 @@ func (a agentReads) List(ctx context.Context, q substrate.Query) (*substrate.Pag
 		}
 	}
 	return page, nil
+}
+
+// Window holds a window read to the agent's reads as List does: its rows,
+// the series it expands and the records they expand. The overrides stay
+// whole, since each only takes a slot away from a series the agent reads.
+func (a agentReads) Window(ctx context.Context, q substrate.WindowQuery) (*substrate.WindowPage, error) {
+	page, err := a.ds.Window(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	allowed := func(recs []*substrate.Record) []*substrate.Record {
+		kept := recs[:0:0]
+		for _, r := range recs {
+			if a.allows(r.Kind) {
+				kept = append(kept, r)
+			}
+		}
+		return kept
+	}
+	page.Rows, page.Series = allowed(page.Rows), allowed(page.Series)
+	for path, r := range page.Included {
+		if !a.allows(r.Kind) {
+			delete(page.Included, path)
+		}
+	}
+	return page, nil
+}
+
+func (a agentReads) TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error) {
+	kinds, err := a.ds.TypesImplementing(ctx, trait)
+	if err != nil {
+		return nil, err
+	}
+	kept := kinds[:0:0]
+	for _, k := range kinds {
+		if a.allows(k.Identity) {
+			kept = append(kept, k)
+		}
+	}
+	return kept, nil
 }
 
 func (agentReads) Put(context.Context, substrate.Actor, substrate.PutInput) (*substrate.Record, error) {

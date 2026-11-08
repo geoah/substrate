@@ -759,6 +759,16 @@ the default chain refuses the hop that would run at depth 4, as a tool error
 the caller sees. It is a separate counter from causal depth: an agent hop never
 moves the causal one, while a function sub-call inside a tool still rides it.
 
+**A sub-agent call may continue the thread an earlier one answered with.**
+The call takes `input` and, optionally, `thread`: the `thread` an earlier
+call's result named. With it, the child runs another turn of that
+conversation, its earlier messages and tool results replayed, instead of
+starting over. This is how a sub-agent asks before it builds: it ends with
+its questions, the caller puts them to the owner (Moss with `ask`), and the
+caller sends the answers on the same thread. Only a thread the caller's own
+thread opened for that same sub-agent continues; any other is a tool error
+before the child runs.
+
 **The emit ceiling rides every hop.** A child's effective emit is its own
 declared emit intersected with the caller's effective emit, enforced against
 function-tool effects and `propose` alike. An empty-emit parent delegating to a

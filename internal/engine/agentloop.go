@@ -1939,6 +1939,8 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		add(sub.Name, sub.Description,
 			map[string]any{"type": "object", "properties": map[string]any{
 				"input": map[string]any{"type": "string", "description": "the task for the sub-agent"},
+				"thread": map[string]any{"type": "string", "description": "the thread an earlier call to this sub-agent answered with, to continue " +
+					"that conversation with input (the answers to the questions it asked, say); leave it out to start a fresh one"},
 			}, "required": []any{"input"}}, agentTool{sub: sub})
 	}
 	return l.addOfferedTools(ctx)
@@ -3038,6 +3040,12 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	if input == "" {
 		return toolError("input is required — the task for the sub-agent"), false
 	}
+	continued, _ := args["thread"].(string)
+	if continued != "" {
+		if err := l.continuedChild(ctx, sub, continued); err != nil {
+			return toolError(err.Error()), false
+		}
+	}
 	// The child chain's writes are the tally's entries past this mark: the
 	// child and every grandchild append theirs to the one shared tally as
 	// their own tool rows are stamped, and nothing on the child's run writes
@@ -3054,10 +3062,10 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	cctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	defer context.AfterFunc(l.runCtx, cancel)()
-	var child string
+	child := continued
 	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input, notAfter: notAfter,
-		parent: l.threadID, depth: depth,
+		parent: l.threadID, depth: depth, threadID: continued,
 		// A stop of the detached turn stops the child with it, and the
 		// child settles `stopped` on its own bounded writes.
 		stopHub:  l.in.stopHub,
@@ -3084,6 +3092,28 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 		return toolError(err.Error()), false
 	}
 	return toolJSON(map[string]any{"reply": res.Reply, "thread": res.Thread, "status": res.Status}), res.Status != threadError
+}
+
+// continuedChild admits a sub-agent call that continues an earlier thread:
+// one this caller's own thread opened for this same sub-agent. So a call
+// resumes the conversation it started, with what the sub-agent already read
+// and decided, and never takes over another agent's thread or reaches into
+// another conversation's.
+func (l *agentLoop) continuedChild(ctx context.Context, sub *vocabulary.Agent, id string) error {
+	row, err := l.ds.Get(ctx, typeThread, id)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return fmt.Errorf("thread %s: no such thread; leave thread out to start a fresh one", id)
+	}
+	if err != nil {
+		return err
+	}
+	if agent := referenceID(row.Properties["agent"]); agent != sub.Identity() {
+		return fmt.Errorf("thread %s is %s's, not %s's: continue a thread only with the sub-agent that answered it", id, agent, sub.Name)
+	}
+	if parent := referenceID(row.Properties[threadRelPare]); parent != l.threadID {
+		return fmt.Errorf("thread %s was not opened from this conversation: leave thread out to start a fresh one", id)
+	}
+	return nil
 }
 
 // --- the completion transport ------------------------------------------------------
