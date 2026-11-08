@@ -21,6 +21,7 @@ const designerID = "substrate.reamde.dev/assistant/designer"
 func padsApplet(pad string) map[string]any {
 	return map[string]any{
 		"name":    "Pads",
+		"runtime": "a2ui",
 		"sources": map[string]any{"pads": map[string]any{"kind": pad, "orderBy": "name"}},
 		"screens": map[string]any{
 			"home": map[string]any{

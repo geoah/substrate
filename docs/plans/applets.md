@@ -88,6 +88,7 @@ metadata:
 data:
   properties:
     name: Books
+    runtime: a2ui
     description: What I'm reading, what's next, and a search to add more.
     icon: book-open
     start: library
@@ -178,6 +179,19 @@ data:
         sources: [book]
         components: [...]
 ```
+
+### `runtime`
+
+What draws the applet's screens, required and with no default
+([decision 0244](../decisions/0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md)).
+`a2ui` is the one there is: the screens below, rendered by the server into
+A2UI messages. An applet has two halves. The data half, `state`, `sources`
+and `actions`, is the server's whatever draws the screens; the view half,
+`start` and `screens`, is the runtime's. A runtime added later is a new
+value with a view of its own, which reads and acts through the same
+sources and actions, never a guess about what an applet written before it
+meant. Applets written before the property existed were named `a2ui` by
+repository migration 4.
 
 ### `start`, `state`
 
@@ -384,5 +398,13 @@ read, offline use.
   under it for anyone with the link. Writes land as the share's actor,
   gated by default.
 - **Native.** The SwiftUI renderer draws the same frames.
+- **Another runtime.** A code runtime (React in a sandboxed frame with no
+  network, reaching the repository only through the applet's own sources
+  and actions over a message bridge) is a second value of `runtime`. It
+  needs routes that answer data rather than A2UI frames, a headless
+  renderer for the designer's preview, and a web view in the native apps.
+  A substrate catalog extending A2UI's (charts, badges, a `when`) comes
+  first: it covers most of what a richer screen wants while staying
+  checked and native.
 - **Moss's chat cards.** A reply that shows records is an A2UI surface Moss
   writes inline, and "keep this" makes it an applet.

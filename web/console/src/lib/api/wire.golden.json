@@ -250,6 +250,7 @@
     "id": true,
     "name": true,
     "refreshOn": false,
+    "runtime": true,
     "start": true,
     "title": true,
     "version": true,

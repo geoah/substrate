@@ -440,7 +440,8 @@ func testTypes() []substrate.KindInfo {
 				"purpose": "internal",
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string"}, "description": map[string]any{"type": "text"},
-					"icon": map[string]any{"type": "string"}, "start": map[string]any{"type": "string"},
+					"runtime": map[string]any{"type": "enum", "values": []any{map[string]any{"value": "a2ui", "label": "A2UI"}}},
+					"icon":    map[string]any{"type": "string"}, "start": map[string]any{"type": "string"},
 					"state": map[string]any{"type": "json"}, "sources": map[string]any{"type": "json"},
 					"actions": map[string]any{"type": "json"}, "screens": map[string]any{"type": "json"},
 				},

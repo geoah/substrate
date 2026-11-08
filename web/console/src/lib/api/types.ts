@@ -2246,6 +2246,8 @@ export interface AppletFrame {
 export interface AppletHeader {
   id: string
   name: string
+  /** What draws the applet's screens; a frame is the a2ui runtime's. */
+  runtime: string
   description?: string
   icon?: string
   version: number

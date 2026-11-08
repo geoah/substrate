@@ -34,6 +34,9 @@ and writes under the token of whoever opens it. The owner opens it at
 
 - `name` (required), `description` (one sentence), `icon` (a lucide name:
   `book-open`, `sprout`, `dumbbell`, `list-checks`, `wallet`).
+- `runtime` (required): `"a2ui"`, the one runtime there is: screens of A2UI
+  components the server renders. It has no default, so a runtime added
+  later never changes what an applet written now means.
 - `start`: the screen it opens on. It must read no `/params`.
 - `state`: the initial UI state, the data model's `/ui`. Every input binds a
   path under a key declared here: `{"q": "", "status": [], "form": {"title": ""}, "edit": {}}`.

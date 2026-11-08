@@ -1362,6 +1362,7 @@ const appletFrame: Shape<AppletFrame> = {
 const appletHeader: Shape<AppletHeader> = {
   id: true,
   name: true,
+  runtime: true,
   description: false,
   icon: false,
   version: true,

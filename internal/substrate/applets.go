@@ -92,8 +92,12 @@ type AppletFrame struct {
 // its sources read, whose changes re-render it, and the /ui paths whose
 // edits re-render it (a filter, a search box).
 type AppletHeader struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Runtime is what draws the applet's screens; a frame is the a2ui
+	// runtime's, and a renderer that meets another runtime says it cannot
+	// draw it rather than drawing it wrong.
+	Runtime     string `json:"runtime"`
 	Description string `json:"description,omitempty"`
 	Icon        string `json:"icon,omitempty"`
 	Version     int64  `json:"version"`
