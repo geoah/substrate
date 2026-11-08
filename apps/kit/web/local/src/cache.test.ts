@@ -1,10 +1,24 @@
 import type { SubstrateRecord } from "@substrate/client"
 import { describe, expect, it } from "vitest"
 import { RecordCache } from "./cache"
-import { openRepositoryStorage } from "./storage"
+import { openRepositoryStorage, type RepositoryStorage } from "./storage"
 
 const kind = "substrate.reamde.dev/template/item"
 const other = "substrate.reamde.dev/template/note"
+/** Storage whose next record save fails a moment after it is asked, as a
+ * full disk does. */
+function failingOnce(storage: RepositoryStorage): RepositoryStorage {
+  const flaky = Object.create(storage) as RepositoryStorage
+  let fail = true
+  flaky.writeRecords = async (change) => {
+    if (!fail) return storage.writeRecords(change)
+    fail = false
+    await new Promise((r) => setTimeout(r, 10))
+    throw new Error("QuotaExceededError")
+  }
+  return flaky
+}
+
 const record = (k: string, id: string, version = 1): SubstrateRecord => ({
   id,
   kind: k,
@@ -70,6 +84,60 @@ describe("the record cache", () => {
     expect((await storage.readRecords()).cursor).toBeUndefined()
     await cache.clear()
     expect((await storage.readRecords()).records).toEqual([])
+    storage.close()
+  })
+
+  it("keeps a save that failed for the next, so the cursor never passes it", async () => {
+    const storage = await openRepositoryStorage("test", "cache-4.example.org")
+    const cache = new RecordCache(failingOnce(storage), 0)
+    cache.listed([record(kind, "a"), record(kind, "b")], [kind], {
+      seq: 10,
+      generation: "g1",
+    })
+    await cache.save()
+    expect(cache.saveProblem).toBe("QuotaExceededError")
+    cache.row({ seq: 11, kind, recordId: "a", op: "delete", removes: true })
+    await cache.save()
+    expect(cache.saveProblem).toBeUndefined()
+
+    const kept = await new RecordCache(storage, 0).load([kind])
+    expect(kept.records.map((r) => r.id)).toEqual(["b"])
+    expect(kept.cursor).toEqual({ seq: 11, generation: "g1" })
+    storage.close()
+  })
+
+  it("puts back a failed save under what was listed since", async () => {
+    const storage = await openRepositoryStorage("test", "cache-5.example.org")
+    const cache = new RecordCache(failingOnce(storage), 0)
+    cache.listed([record(kind, "a")], [kind], { seq: 3, generation: "g1" })
+    cache.refreshed(`${kind}/a`, record(kind, "a", 2))
+    const failing = cache.save()
+    await new Promise((r) => setTimeout(r, 0))
+    // Listed again while the failing save is on its way.
+    cache.listed([record(kind, "b")], [kind], { seq: 5, generation: "g1" })
+    await failing
+    expect(cache.saveProblem).toBe("QuotaExceededError")
+    await cache.save()
+
+    const kept = await new RecordCache(storage, 0).load([kind])
+    expect(kept.records.map((r) => r.id)).toEqual(["b"])
+    expect(kept.cursor).toEqual({ seq: 5, generation: "g1" })
+    storage.close()
+  })
+
+  it("resumes only over the kinds it listed, and shows those it holds", async () => {
+    const storage = await openRepositoryStorage("test", "cache-6.example.org")
+    const cache = new RecordCache(storage, 0)
+    cache.listed([record(kind, "a")], [kind], { seq: 3, generation: "g1" })
+    await cache.save()
+
+    const narrower = await new RecordCache(storage, 0).load([kind])
+    expect(narrower.cursor).toEqual({ seq: 3, generation: "g1" })
+
+    const wider = await new RecordCache(storage, 0).load([kind, other])
+    expect(wider.cursor).toBeUndefined()
+    expect(wider.kinds).toEqual([kind])
+    expect(wider.records.map((r) => r.id)).toEqual(["a"])
     storage.close()
   })
 })

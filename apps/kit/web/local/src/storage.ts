@@ -18,7 +18,8 @@ export interface RepositoryStorage {
   /** The bytes each area holds, as a person reads a size: roughly the JSON
    * it is kept as. */
   usage(): Promise<{ outbox: number; records: number }>
-  /** Forgets everything kept for the repository. */
+  /** Forgets everything kept for the repository. Rejects with
+   * `NotForgotten` when the browser would not delete it. */
   destroy(): Promise<void>
   close(): void
 }
@@ -26,21 +27,45 @@ export interface RepositoryStorage {
 export interface StoredRecords {
   records: SubstrateRecord[]
   cursor?: WatchCursor
+  /** The kinds read whole under `cursor`: the watch from it holds every
+   * change of these and of no other. */
+  kinds?: string[]
   /** Records a watch row named that were not read again since, as
    * `kind/id`. */
   stale: string[]
 }
 
 /** One save of the record cache: `replaceKinds` drops every record of those
- * kinds before `put` lands, and `cursor` and `stale` are written in the same
- * transaction as the records, so the cursor never runs ahead of them. */
+ * kinds before `put` lands, and `cursor`, `kinds` and `stale` are written in
+ * the same transaction as the records, so the cursor never runs ahead of
+ * them. */
 export interface RecordsChange {
   replaceKinds?: string[]
   put: SubstrateRecord[]
   remove: string[]
   cursor?: WatchCursor | null
+  kinds?: string[]
   stale?: string[]
 }
+
+/** The browser did not delete what it kept for a repository. The message
+ * is words for a screen. */
+export class NotForgotten extends Error {
+  readonly reason: "blocked" | "failed"
+  constructor(reason: "blocked" | "failed", detail?: string) {
+    super(
+      reason === "blocked"
+        ? "This browser still keeps this repository's data: another tab of this app has it open. Close the app's other tabs and try again."
+        : `This browser could not delete this repository's data${detail ? ` (${detail})` : ""}. Try again, or clear this site's data in the browser's settings.`
+    )
+    this.name = "NotForgotten"
+    this.reason = reason
+  }
+}
+
+/** How long a deletion another tab holds up may take before it is reported:
+ * a tab closing its copy finishes the transaction it is in first. */
+const blockedGrace = 1000
 
 const recordKey = (r: { kind: string; id: string }) => `${r.kind}/${r.id}`
 
@@ -148,12 +173,13 @@ class IndexedDBStorage implements RepositoryStorage {
 
   async readRecords(): Promise<StoredRecords> {
     const tx = this.db.transaction(["records", "meta"], "readonly")
-    const [records, cursor, stale] = await Promise.all([
+    const [records, cursor, kinds, stale] = await Promise.all([
       request<SubstrateRecord[]>(tx.objectStore("records").getAll()),
       request<WatchCursor | undefined>(tx.objectStore("meta").get("cursor")),
+      request<string[] | undefined>(tx.objectStore("meta").get("kinds")),
       request<string[] | undefined>(tx.objectStore("meta").get("stale")),
     ])
-    return { records, cursor, stale: stale ?? [] }
+    return { records, cursor, kinds, stale: stale ?? [] }
   }
 
   async writeRecords(change: RecordsChange): Promise<void> {
@@ -166,6 +192,7 @@ class IndexedDBStorage implements RepositoryStorage {
     for (const r of change.put) records.put(r, recordKey(r))
     if (change.cursor === null) meta.delete("cursor")
     else if (change.cursor) meta.put(change.cursor, "cursor")
+    if (change.kinds) meta.put(change.kinds, "kinds")
     if (change.stale) meta.put(change.stale, "stale")
     await done(tx)
   }
@@ -190,9 +217,25 @@ class IndexedDBStorage implements RepositoryStorage {
   async destroy(): Promise<void> {
     const name = this.db.name
     this.db.close()
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
       const req = this.factory.deleteDatabase(name)
-      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+      req.onsuccess = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      req.onerror = () => {
+        clearTimeout(timer)
+        reject(new NotForgotten("failed", req.error?.message))
+      }
+      // The request stays pending and deletes once the other copies close;
+      // until then the data is still on the device, which the caller says.
+      req.onblocked = () => {
+        timer ??= setTimeout(
+          () => reject(new NotForgotten("blocked")),
+          blockedGrace
+        )
+      }
     })
   }
 
@@ -209,6 +252,7 @@ export class MemoryStorage implements RepositoryStorage {
   private outbox = emptyOutboxFile()
   private records = new Map<string, SubstrateRecord>()
   private cursor?: WatchCursor
+  private kinds?: string[]
   private stale: string[] = []
 
   constructor(problem?: string) {
@@ -231,6 +275,7 @@ export class MemoryStorage implements RepositoryStorage {
     return Promise.resolve({
       records: [...this.records.values()].map((r) => structuredClone(r)),
       cursor: this.cursor,
+      kinds: this.kinds && [...this.kinds],
       stale: [...this.stale],
     })
   }
@@ -244,6 +289,7 @@ export class MemoryStorage implements RepositoryStorage {
       this.records.set(recordKey(r), structuredClone(r))
     if (change.cursor === null) this.cursor = undefined
     else if (change.cursor) this.cursor = change.cursor
+    if (change.kinds) this.kinds = [...change.kinds]
     if (change.stale) this.stale = [...change.stale]
     return Promise.resolve()
   }
@@ -251,6 +297,7 @@ export class MemoryStorage implements RepositoryStorage {
   clearRecords(): Promise<void> {
     this.records.clear()
     this.cursor = undefined
+    this.kinds = undefined
     this.stale = []
     return Promise.resolve()
   }

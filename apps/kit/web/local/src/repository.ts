@@ -19,10 +19,13 @@ export interface RepositoryLink<L extends LinkedRecords = LinkedRecords> {
   linked: L
   /** Starts reading, following and sending. */
   start(): void
-  /** Stops all of it; what is kept stays. */
-  close(): void
-  /** Stops all of it and forgets what this browser kept for the
-   * repository, unsent writes included: a sign-out. */
+  /** Stops all of it, writes what the cache still holds and closes the
+   * storage; what is kept stays. Resolves once the storage is closed, and
+   * every call answers the same close. */
+  close(): Promise<void>
+  /** Closes, then deletes what this browser kept for the repository,
+   * unsent writes included: a sign-out. Rejects with `NotForgotten`, whose
+   * message a screen shows, when the browser did not delete it. */
   forget(): Promise<void>
 }
 
@@ -75,14 +78,17 @@ export async function openRepository<L extends LinkedRecords = LinkedRecords>(
     : (new LinkedRecords(linkedOptions) as L)
   holder.linked = link
   await outbox.ready
-  let closed = false
-  const close = () => {
-    if (closed) return
-    closed = true
-    link.stop()
-    outbox.close()
-    void cache.save()
-  }
+  let closing: Promise<void> | undefined
+  const close = () =>
+    (closing ??= (async () => {
+      link.stop()
+      try {
+        await outbox.close()
+        await cache.close()
+      } finally {
+        storage.close()
+      }
+    })())
   return {
     storage,
     outbox,
@@ -91,8 +97,7 @@ export async function openRepository<L extends LinkedRecords = LinkedRecords>(
     start: () => link.start(),
     close,
     async forget() {
-      close()
-      await outbox.reset().catch(() => {})
+      await close()
       await storage.destroy()
     },
   }

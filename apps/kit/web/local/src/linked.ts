@@ -12,7 +12,7 @@ import {
 import type { RecordCache } from "./cache"
 import { browserConnectivity, type Connectivity } from "./connectivity"
 import { entryKey, type OutboxEntry } from "./entry"
-import { foldRecords } from "./fold"
+import { applyEntry } from "./fold"
 import type { Outbox } from "./outbox"
 
 export type LinkedStatus =
@@ -37,6 +37,27 @@ export interface LinkedSnapshot {
   revision: number
 }
 
+/** Where the linked records stand, apart from the records: a new object
+ * only when one of these changes. */
+export interface LinkedStatusSnapshot {
+  status: LinkedStatus
+  /** Words for a status line: why it is reconnecting, or what failed. */
+  words?: string
+  /** Shown from what this browser kept; nothing newer was read yet. */
+  cached: boolean
+  /** The read stopped at its limit with this many records read and more
+   * left unread. */
+  limitReached?: number
+  /** How many records have a write waiting to be sent. */
+  pending: number
+  /** How many records have a write the server refused. */
+  parked: number
+}
+
+/** A record's writes in the outbox: `parked` where one was refused, which
+ * holds back the rest; `pending` where some wait to be sent. */
+export type WriteState = "pending" | "parked"
+
 export interface LinkedRecordsOptions {
   client: SubstrateClient
   kinds: readonly string[]
@@ -51,6 +72,85 @@ export interface LinkedRecordsOptions {
 }
 
 const signedOutWords = "Your access to this server ended. Sign in again."
+const noRecords: ReadonlyMap<string, SubstrateRecord> = new Map()
+
+/** `kind/id` split after the kind's three segments: an id may hold a
+ * slash, a kind never more than two. */
+function splitKey(key: string): [string, string] {
+  let at = -1
+  for (let i = 0; i < 3; i++) {
+    at = key.indexOf("/", at + 1)
+    if (at < 0) return [key, ""]
+  }
+  return [key.slice(0, at), key.slice(at + 1)]
+}
+
+/** Values by kind, then id, so a change to one kind touches no other's map,
+ * keyed `kind/id` at its edge as the outbox and the fold key a record.
+ * `touched` hears every kind that changed. */
+class ByKind<V> {
+  private readonly kinds = new Map<string, Map<string, V>>()
+  private readonly touched: (kind: string) => void
+
+  constructor(touched: (kind: string) => void) {
+    this.touched = touched
+  }
+
+  of(kind: string): ReadonlyMap<string, V> {
+    return this.kinds.get(kind) ?? (noRecords as ReadonlyMap<string, V>)
+  }
+
+  get(key: string): V | undefined {
+    const [kind, id] = splitKey(key)
+    return this.kinds.get(kind)?.get(id)
+  }
+
+  has(key: string): boolean {
+    const [kind, id] = splitKey(key)
+    return this.kinds.get(kind)?.has(id) ?? false
+  }
+
+  set(key: string, value: V): this {
+    const [kind, id] = splitKey(key)
+    let ids = this.kinds.get(kind)
+    if (!ids) this.kinds.set(kind, (ids = new Map<string, V>()))
+    if (ids.get(id) === value && ids.has(id)) return this
+    ids.set(id, value)
+    this.touched(kind)
+    return this
+  }
+
+  delete(key: string): boolean {
+    const [kind, id] = splitKey(key)
+    if (!this.kinds.get(kind)?.delete(id)) return false
+    this.touched(kind)
+    return true
+  }
+
+  replace(kind: string, ids: Map<string, V>): void {
+    this.kinds.set(kind, ids)
+    this.touched(kind)
+  }
+}
+
+/** One record's waiting writes as last laid over the server's copy: the
+ * same answer while neither moves. */
+interface Folded {
+  base: SubstrateRecord | undefined
+  writes: string
+  record: SubstrateRecord | undefined
+}
+
+/** Whether a fold changed nothing a reader holds: the same records, each
+ * the same object. */
+function sameRecords(
+  a: ReadonlyMap<string, SubstrateRecord>,
+  b: ReadonlyMap<string, SubstrateRecord>
+): boolean {
+  if (a.size !== b.size) return false
+  for (const [id, r] of b) if (a.get(id) !== r) return false
+  return true
+}
 
 /** The records of the kinds an app shows, kept linked to the repository:
  * what this browser kept, shown at once; then read whole and followed on
@@ -63,7 +163,12 @@ const signedOutWords = "Your access to this server ended. Sign in again."
  * watch is followed from that bookmark: an app token's lists carry no head
  * (decision 0195), so a list read first leaves nothing to follow from but
  * the live head, past whatever was written meanwhile. A change written
- * while the list was read is read again after it. */
+ * while the list was read is read again after it.
+ *
+ * A screen reads one kind, one record or the status, each through a
+ * snapshot that stays the same object until what it holds changes: a
+ * change to one record rebuilds its kind's map alone, and a status change
+ * none. `subscribe` hears every change, once per turn. */
 export class LinkedRecords {
   readonly client: SubstrateClient
   readonly kinds: string[]
@@ -73,23 +178,55 @@ export class LinkedRecords {
   private readonly kept: string
   private readonly limit: number
   private readonly followOptions?: FollowOptions
-  protected server = new Map<string, SubstrateRecord>()
-  /** Writes shown before the server has them outside the outbox, by key:
-   * what the deprecated `apply` lays over. */
-  protected overlays = new Map<string, SubstrateRecord | null>()
+  /** The records as the server last answered them. */
+  protected server = new ByKind<SubstrateRecord>((k) => this.touch(k))
+  /** Writes shown before the server has them outside the outbox: what the
+   * deprecated `apply` lays over. */
+  protected overlays = new ByKind<SubstrateRecord | null>((k) => this.touch(k))
+  /** The app's kinds' waiting writes, by kind, in the outbox's order. */
+  private queue = new Map<string, OutboxEntry[]>()
+  private queueEntries?: readonly OutboxEntry[]
+  private queueSignature = new Map<string, string>()
+  private writeStates = new Map<string, WriteState>()
+  private pendingCount = 0
+  private parkedCount = 0
+  private views = new Map<string, ReadonlyMap<string, SubstrateRecord>>()
+  private folds = new Map<string, Map<string, Folded>>()
+  /** The kinds a change touched since their map was last folded. */
+  private refold = new Set<string>()
+  private listedKinds = new Set<string>()
   private status: LinkedStatus = "loading"
   private words?: string
   private cached = false
   private limitReached?: number
   private revision = 0
-  private snapshot: LinkedSnapshot
+  private statusShot: LinkedStatusSnapshot
+  private built?: LinkedSnapshot
   private listeners = new Set<() => void>()
+  /** The session, start to stop. */
   private abort?: AbortController
+  /** The follow running now and the reads it started: the session's one
+   * child, replaced on every connect. */
   private watch?: AbortController
+  private watchState: "connecting" | "open" | "paused" | "ended" | "stopped" =
+    "stopped"
   private cursor?: WatchCursor
-  private listing = false
+  /** The list in flight, by number; 0 for none. */
+  private listing = 0
+  private lists = 0
+  /** The last list taken: one started before it answers into nothing. */
+  private listTaken = 0
+  private listRetry?: ReturnType<typeof setTimeout>
   private collected = new Set<string>()
+  /** Each record's read in flight, by ticket: one removed or replaced is
+   * answered into nothing. */
   private inflight = new Map<string, number>()
+  private tickets = 0
+  /** The last ticket handed out before a list was taken: a read from
+   * before it that found nothing is older than the list. */
+  private listedAt = 0
+  /** The same, per record, for a write of it that landed. */
+  private landedAt = new Map<string, number>()
   private unsubscribers: (() => void)[] = []
   private emitQueued = false
 
@@ -102,7 +239,8 @@ export class LinkedRecords {
     this.kept = opts.kept ?? "records"
     this.limit = opts.limit ?? 10_000
     this.followOptions = opts.follow
-    this.snapshot = this.makeSnapshot()
+    this.takeQueue()
+    this.statusShot = this.makeStatus()
   }
 
   subscribe = (fn: () => void): (() => void) => {
@@ -110,40 +248,174 @@ export class LinkedRecords {
     return () => this.listeners.delete(fn)
   }
 
-  getSnapshot = (): LinkedSnapshot => this.snapshot
-
-  private makeSnapshot(): LinkedSnapshot {
-    const queue = (this.outbox?.getSnapshot().entries ?? []).filter((e) =>
-      this.kinds.includes(e.kind)
-    )
-    const records = foldRecords(this.server, queue)
-    for (const [key, r] of this.overlays) {
-      if (r) records.set(key, r)
-      else records.delete(key)
+  /** The records of one kind as the owner sees them, by id: the server's
+   * with the waiting writes laid over, a refused one not. The same map
+   * until a record of the kind changes. */
+  kindSnapshot = (kind: string): ReadonlyMap<string, SubstrateRecord> => {
+    if (this.refold.delete(kind)) {
+      const next = this.fold(kind)
+      const was = this.views.get(kind)
+      if (!was || !sameRecords(was, next)) this.views.set(kind, next)
     }
+    return this.views.get(kind) ?? noRecords
+  }
+
+  /** One record as the owner sees it: the same object until it changes. */
+  recordSnapshot = (kind: string, id: string): SubstrateRecord | undefined =>
+    this.kindSnapshot(kind).get(id)
+
+  /** Whether a record has writes waiting, or one refused. */
+  writeState = (kind: string, id: string): WriteState | undefined =>
+    this.writeStates.get(recordKey(kind, id))
+
+  /** Whether a kind's records are known whole, so a record not among them
+   * is absent rather than not read yet: listed from the server, or kept
+   * whole by this browser. */
+  hasListed = (kind: string): boolean => this.listedKinds.has(kind)
+
+  statusSnapshot = (): LinkedStatusSnapshot => {
+    const s = this.statusShot
+    if (
+      s.status !== this.status ||
+      s.words !== this.words ||
+      s.cached !== this.cached ||
+      s.limitReached !== this.limitReached ||
+      s.pending !== this.pendingCount ||
+      s.parked !== this.parkedCount
+    )
+      this.statusShot = this.makeStatus()
+    return this.statusShot
+  }
+
+  /** Every kind's records and the status in one snapshot, built when asked
+   * and kept until the next change. It copies every kind: a screen reads
+   * the snapshot of what it shows. */
+  getSnapshot = (): LinkedSnapshot => {
+    if (this.built?.revision === this.revision) return this.built
+    const records = new Map<string, SubstrateRecord>()
+    for (const kind of this.kinds)
+      for (const [id, r] of this.kindSnapshot(kind))
+        records.set(recordKey(kind, id), r)
     const pending = new Set<string>()
     const parked = new Set<string>()
-    for (const e of queue) (e.parked ? parked : pending).add(entryKey(e))
-    return {
+    for (const entries of this.queue.values())
+      for (const e of entries) (e.parked ? parked : pending).add(entryKey(e))
+    const s = this.statusSnapshot()
+    this.built = {
       records,
       pending,
       parked,
+      status: s.status,
+      words: s.words,
+      cached: s.cached,
+      limitReached: s.limitReached,
+      revision: this.revision,
+    }
+    return this.built
+  }
+
+  private makeStatus(): LinkedStatusSnapshot {
+    return {
       status: this.status,
       words: this.words,
       cached: this.cached,
       limitReached: this.limitReached,
-      revision: this.revision,
+      pending: this.pendingCount,
+      parked: this.parkedCount,
     }
   }
 
-  /** Draws once for every change made in the same turn. */
+  /** One kind as the owner sees it. A record whose writes and server copy
+   * did not move keeps the object it was laid over as. */
+  private fold(kind: string): ReadonlyMap<string, SubstrateRecord> {
+    const server = this.server.of(kind)
+    const out = new Map(server)
+    const byId = new Map<string, OutboxEntry[]>()
+    for (const e of this.queue.get(kind) ?? []) {
+      if (e.parked) continue
+      const writes = byId.get(e.recordID)
+      if (writes) writes.push(e)
+      else byId.set(e.recordID, [e])
+    }
+    const was = this.folds.get(kind)
+    const folds = new Map<string, Folded>()
+    for (const [id, entries] of byId) {
+      const base = server.get(id)
+      const writes = entries.map((e) => e.id).join(",")
+      let memo = was?.get(id)
+      if (!memo || memo.base !== base || memo.writes !== writes)
+        memo = {
+          base,
+          writes,
+          record: entries.reduce<SubstrateRecord | undefined>(
+            (r, e) => applyEntry(e, r),
+            base
+          ),
+        }
+      folds.set(id, memo)
+      if (memo.record) out.set(id, memo.record)
+      else out.delete(id)
+    }
+    this.folds.set(kind, folds)
+    for (const [id, r] of this.overlays.of(kind)) {
+      if (r) out.set(id, r)
+      else out.delete(id)
+    }
+    return out
+  }
+
+  /** The outbox's queue again: the kinds whose waiting writes moved are
+   * folded again, and no other. */
+  private takeQueue(): void {
+    const entries = this.outbox?.getSnapshot().entries ?? []
+    if (entries === this.queueEntries) return
+    this.queueEntries = entries
+    const byKind = new Map<string, OutboxEntry[]>()
+    for (const e of entries) {
+      if (!this.kinds.includes(e.kind)) continue
+      const list = byKind.get(e.kind)
+      if (list) list.push(e)
+      else byKind.set(e.kind, [e])
+    }
+    let moved = false
+    for (const kind of this.kinds) {
+      const list = byKind.get(kind) ?? []
+      const signature = list
+        .map((e) => (e.parked ? `${e.id}!` : e.id))
+        .join(",")
+      if (signature === (this.queueSignature.get(kind) ?? "")) continue
+      this.queueSignature.set(kind, signature)
+      this.queue.set(kind, list)
+      this.touch(kind)
+      moved = true
+    }
+    if (!moved) return
+    const states = new Map<string, WriteState>()
+    for (const list of this.queue.values())
+      for (const e of list) {
+        const key = entryKey(e)
+        if (e.parked) states.set(key, "parked")
+        else if (!states.has(key)) states.set(key, "pending")
+      }
+    this.writeStates = states
+    let pending = 0
+    for (const state of states.values()) if (state === "pending") pending++
+    this.pendingCount = pending
+    this.parkedCount = states.size - pending
+  }
+
+  private touch(kind: string): void {
+    this.refold.add(kind)
+    this.emit()
+  }
+
+  /** Tells every listener once for every change made in the same turn. */
   protected emit(): void {
     if (this.emitQueued) return
     this.emitQueued = true
     queueMicrotask(() => {
       this.emitQueued = false
       this.revision++
-      this.snapshot = this.makeSnapshot()
       for (const fn of this.listeners) fn()
     })
   }
@@ -159,8 +431,12 @@ export class LinkedRecords {
     this.stop()
     const abort = new AbortController()
     this.abort = abort
+    abort.signal.addEventListener("abort", () => this.watch?.abort(), {
+      once: true,
+    })
     if (this.outbox) {
-      this.unsubscribers.push(this.outbox.subscribe(() => this.emit()))
+      this.takeQueue()
+      this.unsubscribers.push(this.outbox.subscribe(() => this.takeQueue()))
       this.unsubscribers.push(
         this.outbox.onLanded((entry, record) => this.layLanded(entry, record))
       )
@@ -168,14 +444,16 @@ export class LinkedRecords {
     this.unsubscribers.push(
       this.connectivity.subscribe((event) => {
         if (event === "offline" || abort.signal.aborted) return
-        // Back online or to the front: a watch waiting out its pause opens
-        // now. One stopped for good stays stopped.
+        // Back online or to the front: a follow waiting out its pause, one
+        // that ended, or a list waiting to be tried again goes now. One
+        // reading, open, or stopped for good is left alone.
+        if (this.listing) return
         if (
-          this.status === "reconnecting" ||
-          this.status === "error" ||
-          this.status === "loading"
+          this.watchState === "paused" ||
+          this.watchState === "ended" ||
+          this.listRetry !== undefined
         )
-          this.connect(abort.signal)
+          this.connect()
       })
     )
     void this.begin(abort.signal)
@@ -185,6 +463,10 @@ export class LinkedRecords {
     this.abort?.abort()
     this.abort = undefined
     this.watch = undefined
+    this.watchState = "stopped"
+    this.listing = 0
+    clearTimeout(this.listRetry)
+    this.listRetry = undefined
     for (const u of this.unsubscribers) u()
     this.unsubscribers = []
   }
@@ -193,7 +475,7 @@ export class LinkedRecords {
   async reload(): Promise<void> {
     this.cursor = undefined
     this.cache?.relist()
-    if (this.abort) this.connect(this.abort.signal)
+    if (this.abort) this.connect()
     else this.start()
     return Promise.resolve()
   }
@@ -203,8 +485,13 @@ export class LinkedRecords {
       try {
         const kept = await this.cache.load(this.kinds)
         if (signal.aborted) return
-        for (const r of kept.records)
-          this.server.set(recordKey(r.kind, r.id), r)
+        const byKind = new Map<string, Map<string, SubstrateRecord>>()
+        for (const kind of kept.kinds ?? []) {
+          byKind.set(kind, new Map())
+          this.listedKinds.add(kind)
+        }
+        for (const r of kept.records) byKind.get(r.kind)?.set(r.id, r)
+        for (const [kind, ids] of byKind) this.server.replace(kind, ids)
         this.cursor = kept.cursor
         this.cached = kept.records.length > 0 || !!kept.cursor
         this.emit()
@@ -212,30 +499,35 @@ export class LinkedRecords {
         // nothing kept: read it all
       }
     }
-    if (!signal.aborted) this.connect(signal)
+    if (!signal.aborted) this.connect()
   }
 
   /** Follows the feed from where it was, or opens it to list after its
-   * bookmark. Replaces any follow running. */
-  private connect(signal: AbortSignal): void {
+   * bookmark. Replaces the follow running, and the list it opened. */
+  private connect(): void {
+    if (!this.abort || this.abort.signal.aborted) return
     this.watch?.abort()
+    clearTimeout(this.listRetry)
+    this.listRetry = undefined
     const watch = new AbortController()
     this.watch = watch
-    signal.addEventListener("abort", () => watch.abort(), { once: true })
+    this.watchState = "connecting"
     let mustList = !this.cursor
     let listedEarly = false
-    if (mustList && !this.server.size)
+    if (mustList && !this.listedKinds.size)
       this.setStatus("loading", `Reading your ${this.kept}…`)
     const onEvent = (e: WatchEvent) => {
       if (watch.signal.aborted) return
       switch (e.type) {
         case "opened":
+          this.watchState = "open"
           if (mustList) {
             mustList = false
             void this.list(e.cursor, watch.signal)
           } else {
             this.cursor = e.cursor
             this.cache?.bookmark(e.cursor)
+            this.cached = false
             this.setStatus("live")
             this.rereadStale(watch.signal)
           }
@@ -253,8 +545,7 @@ export class LinkedRecords {
           if (this.listing) {
             this.collected.add(key)
           } else if (row.removes) {
-            this.server.delete(key)
-            this.emit()
+            this.removed(key)
           } else {
             void this.refresh(row.kind, row.recordId, watch.signal)
           }
@@ -264,27 +555,35 @@ export class LinkedRecords {
         case "relist":
           this.cursor = undefined
           this.cache?.relist()
-          this.connect(signal)
+          this.connect()
           break
         case "interrupted":
+          this.watchState = "paused"
           // A watch that cannot open holds back neither the records nor why
           // a list is refused, which says more than the watch's refusal.
-          if (mustList && !listedEarly && !this.server.size) {
+          if (
+            mustList &&
+            !listedEarly &&
+            this.kinds.some((k) => !this.listedKinds.has(k))
+          ) {
             listedEarly = true
             void this.list(undefined, watch.signal)
           }
           this.setStatus("reconnecting", e.words)
           break
         case "signedOut":
+          this.watchState = "stopped"
           this.setStatus("signedOut", signedOutWords)
           break
         case "needsApproval":
+          this.watchState = "stopped"
           this.setStatus(
             "needsApproval",
             `Your approval does not reach your ${this.kept}.`
           )
           break
         case "ended":
+          this.watchState = "ended"
           this.setStatus(
             "error",
             `Your ${this.kept} are not being updated: ${e.words}`
@@ -308,19 +607,32 @@ export class LinkedRecords {
     bookmark: WatchCursor | undefined,
     signal: AbortSignal
   ): Promise<void> {
-    this.listing = true
+    const run = ++this.lists
+    this.listing = run
+    clearTimeout(this.listRetry)
+    this.listRetry = undefined
     try {
       const page = await this.client.listAll(
         { kinds: this.kinds, first: 500 },
         this.limit,
         signal
       )
-      if (signal.aborted) return
-      this.server = new Map(
-        page.records
-          .filter((r) => !r.deletedAt && this.kinds.includes(r.kind))
-          .map((r) => [recordKey(r.kind, r.id), r])
+      if (signal.aborted || run < this.listTaken) return
+      this.listTaken = run
+      this.listedAt = this.tickets
+      this.landedAt.clear()
+      const byKind = new Map<string, Map<string, SubstrateRecord>>(
+        this.kinds.map((k) => [k, new Map()])
       )
+      for (const r of page.records) {
+        if (r.deletedAt) continue
+        const here = this.server.get(recordKey(r.kind, r.id))
+        byKind.get(r.kind)?.set(r.id, here && same(here, r) ? here : r)
+      }
+      for (const [kind, ids] of byKind) {
+        this.server.replace(kind, ids)
+        this.listedKinds.add(kind)
+      }
       this.limitReached = page.cursor ? page.records.length : undefined
       this.cached = false
       this.cache?.listed(page.records, this.kinds, bookmark)
@@ -329,16 +641,15 @@ export class LinkedRecords {
         this.status = "live"
         this.words = undefined
       }
-      this.listing = false
+      if (this.listing === run) this.listing = 0
       this.emit()
       const keys = [...this.collected]
       this.collected.clear()
       for (const key of keys) {
-        const at = key.lastIndexOf("/")
-        void this.refresh(key.slice(0, at), key.slice(at + 1), signal)
+        const [kind, id] = splitKey(key)
+        void this.refresh(kind, id, signal)
       }
     } catch (e) {
-      this.listing = false
       if (signal.aborted) return
       if (e instanceof SubstrateError && e.status === 401)
         return this.setStatus("signedOut", signedOutWords)
@@ -349,34 +660,55 @@ export class LinkedRecords {
         )
       this.setStatus("reconnecting", describe(e))
       if (bookmark)
-        setTimeout(() => {
+        this.listRetry = setTimeout(() => {
+          this.listRetry = undefined
           if (!signal.aborted) void this.list(bookmark, signal)
         }, 5000)
+    } finally {
+      if (this.listing === run) this.listing = 0
     }
   }
 
   private rereadStale(signal: AbortSignal): void {
     for (const key of this.cache?.staleKeys ?? []) {
-      const at = key.lastIndexOf("/")
-      void this.refresh(key.slice(0, at), key.slice(at + 1), signal)
+      const [kind, id] = splitKey(key)
+      void this.refresh(kind, id, signal)
     }
   }
 
-  /** Reads one record again, as the feed named it. */
+  /** A record the server says is gone: a read of it in flight answers
+   * from before, or from a restore whose own row reads it again. */
+  private removed(key: string): void {
+    this.inflight.delete(key)
+    this.landedAt.delete(key)
+    this.server.delete(key)
+  }
+
+  /** Reads one record again, as the feed named it. An answer a removal,
+   * a list or a landed write overtook while it was read is dropped, and a
+   * version older than the one here never replaces it. */
   async refresh(kind: string, id: string, signal?: AbortSignal): Promise<void> {
     if (!this.kinds.includes(kind)) return
     const key = recordKey(kind, id)
-    const ticket = (this.inflight.get(key) ?? 0) + 1
+    const ticket = ++this.tickets
     this.inflight.set(key, ticket)
     try {
       const record = await this.client.record(kind, id, signal)
-      if (this.inflight.get(key) !== ticket) return
-      if (record) this.server.set(key, record)
+      if (this.inflight.get(key) !== ticket || signal?.aborted) return
+      this.inflight.delete(key)
+      const before = Math.max(this.listedAt, this.landedAt.get(key) ?? 0)
+      if (!record && ticket <= before) return
+      const here = this.server.get(key)
+      const next =
+        record && here && (here.version > record.version || same(here, record))
+          ? here
+          : record
+      if (next) this.server.set(key, next)
       else this.server.delete(key)
       this.overlays.delete(key)
-      this.cache?.refreshed(key, record)
-      this.emit()
+      this.cache?.refreshed(key, next)
     } catch (e) {
+      if (this.inflight.get(key) === ticket) this.inflight.delete(key)
       if (e instanceof SubstrateError && e.status === 401)
         this.setStatus("signedOut", signedOutWords)
       // Otherwise it stays stale: read again when the watch opens again.
@@ -392,13 +724,14 @@ export class LinkedRecords {
     if (!this.kinds.includes(entry.kind)) return
     const key = entryKey(entry)
     if (entry.method === "DELETE") {
-      this.server.delete(key)
+      this.removed(key)
       this.cache?.refreshed(key, null)
       return
     }
+    this.landedAt.set(key, this.tickets)
     if (!record) return
     const here = this.server.get(key)
-    if (here && here.version > record.version) return
+    if (here && (here.version > record.version || same(here, record))) return
     this.server.set(key, record)
     this.cache?.refreshed(key, record)
   }
@@ -411,11 +744,17 @@ export class LinkedRecords {
 
   /** A record as the owner sees it. */
   get(kind: string, id: string): SubstrateRecord | undefined {
-    return this.snapshot.records.get(recordKey(kind, id))
+    return this.recordSnapshot(kind, id)
   }
 
   /** Every record of a kind as the owner sees them. */
   all(kind: string): SubstrateRecord[] {
-    return [...this.snapshot.records.values()].filter((r) => r.kind === kind)
+    return [...this.kindSnapshot(kind).values()]
   }
+}
+
+/** Two answers for one record at one version: the same record, so the
+ * object a screen holds stays. */
+function same(a: SubstrateRecord, b: SubstrateRecord): boolean {
+  return a.version === b.version && a.title === b.title
 }
