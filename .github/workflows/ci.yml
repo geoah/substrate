@@ -31,12 +31,13 @@
 # it: over the 29 pull request runs of 2026-10-10 to 2026-10-12 that ran the
 # Go suite, `console test` took a median 133 s, `db rest` 122 s and an engine
 # shard 76 s, and `go gate` went green a median 179 s after the push. No
-# job builds or tests the apps or checks their Swift and Kotlin formatting:
-# that is a laptop's (apps/README.md), as shipping them is.
+# job builds or tests the native apps or checks their Swift and Kotlin
+# formatting: that is a laptop's (apps/README.md), as shipping them is. The
+# web kit and web apps are `apps web`'s.
 # `gh run view <id> --json createdAt,jobs` measures a run. Everything else
 # runs on the same pull request and on main and is not required: `providers
 # e2e` (228 to 325 s in those runs), `acceptance drill` (one serial
-# scenario), `race`, `cross compile`, `image builds and boots`. `audit` is
+# scenario), `race`, `cross compile`, `apps web`, `image builds and boots`. `audit` is
 # not here: it runs in audit.yml, because this workflow's conclusion is what
 # latest.yml, release-please.yml and release.yml wait for.
 #
@@ -890,6 +891,28 @@ jobs:
       # shared 10 GB cache budget competing for eviction against the Go caches
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console:test
+
+  # The web kit and the web apps (apps/pnpm-workspace.yaml): their vitest
+  # suite, eslint, tsc, prettier and every app's build. Not required, and not
+  # path-gated, as `console` is not: a gated job is held only through a gate
+  # that reads the changes answer, and this one costs about a minute.
+  apps-web:
+    name: apps web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_key_prefix: mise-v2
+          cache_save: ${{ github.event_name == 'push' }}
+          install_args: node pnpm
+      # No pnpm store cache, for the reason the console job gives.
+      - run: mise run ci:apps:web
 
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
   # volumes and a throwaway Postgres. The release ships the same runtime stage
