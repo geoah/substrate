@@ -63,10 +63,14 @@ export class SessionStore {
     }
   }
 
-  /** Clears the kept session only while it is still `token`'s: a tab whose
-   * access ended never signs out a session another tab signed in since. */
-  clearIf(token: string): void {
-    if (this.load()?.token === token) this.clear()
+  /** Clears the kept session only while it is still `token`'s, and answers
+   * the session kept after: none, or the one another tab signed in since,
+   * which a tab whose session ended never signs out. */
+  clearIf(token: string): Session | null {
+    const kept = this.load()
+    if (kept?.token !== token) return kept
+    this.clear()
+    return null
   }
 
   /** Whether `token` is the session every tab runs on now. */

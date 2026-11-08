@@ -28,20 +28,23 @@ export class RevocationQueue {
       else localStorage.removeItem(this.key)
       return true
     } catch {
-      // a private window keeps nothing: the revocation is tried once
+      // a private or a full storage keeps nothing: the caller hears it
       return false
     }
   }
 
   /** Keeps the token to revoke, before anything else forgets it: a
    * sign-out calls this before it clears the session, so the token is never
-   * held by nothing. Answers whether it was kept. */
+   * held by nothing. Answers whether it was kept; where it was not, the
+   * session is its only copy until the server confirms revoking it. */
   keep(session: Session): boolean {
     const list = this.pending().filter((s) => s.token !== session.token)
     return this.write([...list, session])
   }
 
-  private forget(session: Session): void {
+  /** Forgets a kept token without revoking it: one kept for a change that
+   * did not happen, whose session still holds it. */
+  drop(session: Session): void {
     this.write(this.pending().filter((s) => s.token !== session.token))
   }
 
@@ -50,7 +53,7 @@ export class RevocationQueue {
   async send(session: Session): Promise<boolean> {
     try {
       await revoke(session)
-      this.forget(session)
+      this.drop(session)
       return true
     } catch {
       return false
@@ -78,12 +81,12 @@ export class RevocationQueue {
     const left: Session[] = []
     for (const session of this.pending()) {
       if (session.expiresAt !== undefined && session.expiresAt <= now) {
-        this.forget(session)
+        this.drop(session)
         continue
       }
       try {
         await revoke(session)
-        this.forget(session)
+        this.drop(session)
       } catch {
         left.push(session)
       }

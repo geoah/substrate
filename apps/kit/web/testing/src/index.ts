@@ -44,13 +44,16 @@ const refused = (status: number, code: string, message: string) =>
 
 /** A substrate in memory behind `fetch`: records with versions, a write's
  * `ifVersion` held as the server holds it, a plain delete, the list read
- * (without a head, as an app token's is), and the change feed's ndjson
- * watch, which stays open and carries each later write. `offline` makes
+ * (without a head, as an app token's is) a page at a time, the change
+ * feed's ndjson watch, which stays open and carries each later write, and
+ * token revocation, after which the token is refused. `offline` makes
  * every request fail as `fetch` does without a network. */
 export class FakeSubstrate {
   readonly origin: string
   readonly records = new Map<string, SubstrateRecord>()
   readonly requests: SeenRequest[] = []
+  /** The tokens revoked through `/oauth/revoke`. */
+  readonly revoked = new Set<string>()
   offline = false
   generation = "g1"
   checkResult: AuthorizationCheckResult = { scopes: { missing: [] }, setup: [] }
@@ -205,6 +208,16 @@ export class FakeSubstrate {
       failure.times--
       return json(failure.status, failure.body, failure.headers)
     }
+    if (path === "/oauth/revoke" && method === "POST") {
+      const token = (body as { token?: string } | undefined)?.token
+      if (token) this.revoked.add(token)
+      return json(200, {})
+    }
+    const bearer = new Headers(init.headers)
+      .get("Authorization")
+      ?.replace(/^Bearer /, "")
+    if (bearer && this.revoked.has(bearer))
+      return refused(401, "auth", "the token was revoked")
     if (path === "/api/v1/changes") return this.watch(url, signal)
     if (path === "/api/v1/records" && method === "GET") return this.list(url)
     if (path === "/api/v1/authorizations/check" && method === "POST")
@@ -218,10 +231,17 @@ export class FakeSubstrate {
     const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
       kinds?: string[]
     }
-    const records = [...this.records.values()].filter(
+    const all = [...this.records.values()].filter(
       (r) => !r.deletedAt && (filter.kinds ?? []).includes(r.kind)
     )
-    return json(200, { records })
+    const from = Number(url.searchParams.get("after") ?? 0)
+    const first = Number(url.searchParams.get("first") ?? 200)
+    const records = all.slice(from, from + first)
+    const more = from + first < all.length
+    return json(
+      200,
+      more ? { records, cursor: String(from + first) } : { records }
+    )
   }
 
   private record(

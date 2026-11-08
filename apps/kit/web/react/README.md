@@ -38,8 +38,15 @@ longer the kept one, so the server refuses them and the tab ends.
 A sign-out keeps the token to revoke before it clears the session, so a
 revocation that meets no server leaves the token held by the queue rather
 than by nothing, then forgets what this browser kept for the repository
-(the outbox and the saved records), then revokes. Forgetting that another
-tab still holds open is said on the connect screen.
+(the outbox and the saved records) while it revokes. Forgetting that
+another tab still holds open is said on the connect screen. Where the
+browser will not keep the token, it is revoked before the session is
+cleared, and when the server cannot confirm that either, `signOut` rejects
+with `NotSignedOut` and the app stays signed in (Settings says so beside
+Sign Out). A tab that slept through another tab's sign-in signs out only
+its own token: the other session stands, the tab takes it up, and the
+repository's data stays where it is that session's too. One sign-out runs
+at a time.
 
 `SubstrateProvider` is the same without the screens, for an app with its
 own connect screen: its children read `useConnection()` (the `phase`,

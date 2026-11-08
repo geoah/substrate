@@ -51,8 +51,9 @@ rather than its hash passes `base`.
 one whose access has ended. It is the session every tab of the app runs
 on: `watch` hears another tab sign out or sign in, `current(token)` says
 whether a tab's token is still the kept one, and `clearIf(token)` ends a
-session only while it is still that one, so a tab whose access ended never
-signs out a session another tab signed in since.
+session only while it is still that one and answers the session kept
+after, so a tab whose access ended never signs out a session another tab
+signed in since.
 
 **The token is readable by every script on the page.** A public client has
 nowhere else to keep it, so a cross-site scripting hole in an app is the
@@ -88,9 +89,16 @@ await queue.retry() // at every open: the tokens still live
 unrevokedSentences(manifest.name, queue.pending())
 ```
 
-A sign-out keeps the token before it clears the session, so a revocation
-that meets no server leaves the live token held by the queue rather than by
-nothing. Only a 2xx confirms a revocation: RFC 7009's server answers 200
+`signOut(session, store, queue)` is the sign-out, in that order: the token
+is kept before the session is cleared, so a revocation that meets no server
+leaves the live token held by the queue rather than by nothing. Where the
+queue will not keep it (a full or private storage), the session is the
+token's only copy, so it is revoked first and cleared only once the server
+confirms; when neither works, `signOut` rejects with `NotSignedOut` and the
+owner is still signed in, to try again. It clears the session only while it
+is still the one signed out of: a tab that slept through another tab's
+sign-in revokes its own token and answers `replaced` with the session that
+stands. Only a 2xx confirms a revocation: RFC 7009's server answers 200
 for a token it revoked and for one already invalid (the substrate answers
 200 to every well-formed request, 503 when it could not revoke), while a
 400 or 401 refuses the request and revokes nothing, so the token stays

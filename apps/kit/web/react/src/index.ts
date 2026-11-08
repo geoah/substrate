@@ -8,7 +8,7 @@ export {
   stringProp,
 } from "@substrate/client"
 export type { Kind, SubstrateRecord } from "@substrate/client"
-export { packageDetail, webManifest } from "@substrate/auth"
+export { NotSignedOut, packageDetail, webManifest } from "@substrate/auth"
 export type { AppManifest } from "@substrate/auth"
 
 export { SubstrateApp, Spinner } from "./SubstrateApp"

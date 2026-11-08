@@ -13,6 +13,8 @@ export {
   unrevokedSentences,
   unrevokedTitle,
 } from "./revocations"
+export { NotSignedOut, signOut } from "./signout"
+export type { SignOut } from "./signout"
 export {
   SignInError,
   beginSignIn,

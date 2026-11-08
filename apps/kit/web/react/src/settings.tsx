@@ -198,6 +198,7 @@ export function RepositorySection(props: {
   const { appStatus, unrevoked } = useConnection()
   const summary = useOutbox()
   const [asking, setAsking] = useState(false)
+  const [notSignedOut, setNotSignedOut] = useState<string | null>(null)
   const host = new URL(session.server).host
   const waiting = summary.waiting
   const message = [
@@ -235,6 +236,13 @@ export function RepositorySection(props: {
             message={n}
           />
         ))}
+        {notSignedOut && (
+          <ProblemBox
+            role="alert"
+            title="Not signed out"
+            message={notSignedOut}
+          />
+        )}
         <ActionRow destructive onClick={() => setAsking(true)}>
           Sign Out
         </ActionRow>
@@ -247,7 +255,10 @@ export function RepositorySection(props: {
         onCancel={() => setAsking(false)}
         onConfirm={() => {
           setAsking(false)
-          void signOut()
+          setNotSignedOut(null)
+          signOut().catch((e: unknown) =>
+            setNotSignedOut(e instanceof Error ? e.message : String(e))
+          )
         }}
       />
     </>

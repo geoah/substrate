@@ -7,6 +7,7 @@ import {
   discardStrayCallback,
   isCallback,
   requirementOf,
+  signOut as signOutOf,
   type AppManifest,
   type AppStatusState,
   type Session,
@@ -43,6 +44,15 @@ const noStatus = () => signedOutStatus
 /** setTimeout fires at once for a wait past 2^31-1 ms (24.8 days), so a
  * longer one is waited in steps. */
 const longestWait = 2_147_483_647
+
+/** Runs one at a time: a call while one runs answers that one. */
+function oneAtATime(): (run: () => Promise<void>) => Promise<void> {
+  let running: Promise<void> | null = null
+  return (run) =>
+    (running ??= run().finally(() => {
+      running = null
+    }))
+}
 
 export interface SubstrateProviderProps {
   manifest: AppManifest
@@ -118,8 +128,7 @@ export function SubstrateProvider({
    * signed in since, whose session this tab takes up instead. */
   const endSession = useCallback(
     (ended: Session, words: string) => {
-      store.clearIf(ended.token)
-      const now = store.load()
+      const now = store.clearIf(ended.token)
       setSession(now)
       setProblem(
         now
@@ -164,30 +173,47 @@ export function SubstrateProvider({
     }
   }, [store, revocations])
 
-  // The server's redirect back. A sign-in again that fails leaves the
-  // session it would have replaced in place.
+  // The server's redirect back. The session it replaces is the one kept
+  // when it answers, which another tab may have signed in meanwhile, and
+  // its token is kept to revoke before the new session takes its place, or
+  // revoked first where the queue will not keep it. A sign-in again that
+  // fails leaves the kept session in place.
   useEffect(() => {
     if (!completing || started.current) return
     started.current = true
-    const previous = store.load()
     completeSignIn(manifest)
-      .then((s) => {
-        if (previous && previous.token !== s.token) revocations.keep(previous)
-        store.save(s)
+      .then(async (s) => {
+        const kept = store.load()
+        const replaced = kept && kept.token !== s.token ? kept : null
+        const held = !replaced || revocations.keep(replaced)
+        const gone = !held && !!replaced && (await revocations.send(replaced))
+        try {
+          store.save(s)
+        } catch (e) {
+          // Not kept, the new token is held by nothing: it is revoked, and
+          // the session before stays.
+          if (replaced && held) revocations.drop(replaced)
+          void revocations.send(s)
+          throw e
+        }
         setSession(s)
         setProblem(null)
-        if (previous && previous.token !== s.token)
-          void revocations
-            .send(previous)
-            .then(() => setUnrevoked(revocations.pending()))
+        if (!replaced) return
+        if (held) await revocations.send(replaced)
+        else if (!gone) {
+          const host = new URL(replaced.server).host
+          toast(
+            `Signed in, but ${manifest.name}'s earlier access still works on ${host}. Revoke it yourself in ${host}'s Settings, under Apps.`,
+            "error"
+          )
+        }
+        setUnrevoked(revocations.pending())
       })
       .catch((e: unknown) => {
-        if (previous) {
-          setSession(previous)
-          toast(describe(e), "error")
-        } else {
-          setProblem({ title: "Couldn't sign in", message: describe(e) })
-        }
+        const kept = store.load()
+        setSession(kept)
+        if (kept) toast(describe(e), "error")
+        else setProblem({ title: "Couldn't sign in", message: describe(e) })
       })
       .finally(() => setCompleting(false))
   }, [completing, manifest, store, revocations, toast])
@@ -353,29 +379,39 @@ export function SubstrateProvider({
     }
   }, [session, manifest, toast])
 
-  // In this order: the token is kept to revoke before the session that
-  // holds it is cleared, so it is never held by nothing; clearing it signs
-  // out every tab, whose requests stop carrying it; then what this browser
-  // kept for the repository is forgotten while the token is revoked, and
-  // the screen names it only if the server did not confirm.
-  const signOut = useCallback(async () => {
+  // `signOutOf` keeps the token or revokes it before the session that holds
+  // it is cleared, and clears it only while it is this tab's: clearing it
+  // signs out every tab, whose requests stop carrying it; then what this
+  // browser kept for the repository is forgotten while the token is
+  // revoked, and the screen names it only if the server did not confirm.
+  // A session another tab signed in since stands, and this tab takes it
+  // up, the repository's data kept where it is that session's too. One
+  // sign-out runs at a time.
+  const signingOut = useMemo(() => oneAtATime(), [])
+  const signOut = useCallback(() => {
     const s = session
     const l = link
-    if (s) revocations.keep(s)
-    store.clear()
-    setSession(null)
-    setProblem(null)
-    await Promise.all([
-      l?.forget().catch((e: unknown) =>
-        setProblem({
-          title: "Signed out, but not everything was forgotten",
-          message: describe(e),
-        })
-      ),
-      s && revocations.send(s),
-    ])
-    setUnrevoked(revocations.pending())
-  }, [session, link, store, revocations])
+    if (!s) return Promise.resolve()
+    return signingOut(async () => {
+      const out = await signOutOf(s, store, revocations)
+      setProblem(null)
+      setSession(out.type === "replaced" ? out.session : null)
+      const shared =
+        out.type === "replaced" &&
+        out.session.repository.toLowerCase() === s.repository.toLowerCase()
+      await Promise.all([
+        !shared &&
+          l?.forget().catch((e: unknown) =>
+            setProblem({
+              title: "Signed out, but not everything was forgotten",
+              message: describe(e),
+            })
+          ),
+        out.revoked,
+      ])
+      setUnrevoked(revocations.pending())
+    })
+  }, [session, link, store, revocations, signingOut])
 
   const value = useMemo<SubstrateContextValue | null>(
     () =>
