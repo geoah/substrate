@@ -224,79 +224,107 @@ func TestGoogleGmailRowsAreTitledByWhatTheMailSays(t *testing.T) {
 	}
 }
 
-// TestGoogleGmailReplyAddressesMakeNoContact: a notification service that
-// takes replies by mail names a fresh `Reply-To` mailbox for every thread,
-// and each one became an `emailaddress` hub row and so, through core's
-// mapping, a contact of its own: an account following GitHub filled its
-// contacts with one `reply+…@reply.github.com` per thread. Such an address
-// keeps its occurrence on the message, spelled as the header spelled it, and
-// gets no hub row and no contact. The service's one sender is an identity and
-// keeps both.
+// TestGoogleGmailReplyAddressesMakeNoContact: GitHub's notification mail
+// names mailboxes that are no party. `Reply-To` is a fresh
+// `reply+…@reply.github.com` for every thread, and `To`/`Cc` carry the reason
+// the mail was sent, `repo@`, `mention@` and the rest at
+// `noreply.github.com`. Each became an `emailaddress` hub row and so, through
+// core's mapping, a contact of its own: an account following GitHub filled
+// its contacts with them. Such an address keeps its occurrence on the
+// message, spelled and named as the header had it, and gets no hub row and no
+// contact, so GitHub is one contact, its sender. A person's commit address
+// under `users.noreply.github.com` is an identity and keeps both.
 func TestGoogleGmailReplyAddressesMakeNoContact(t *testing.T) {
 	requirePython(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
 
 	relay := func(token string) string { return "reply+" + token + "@reply.github.com" }
-	notification := func(id, tid, token string) map[string]any {
+	notification := func(id, tid, token, cc string) map[string]any {
 		return gmailMail(id, tid, "A comment", "A comment.",
 			[2]string{"Subject", "Re: [owner/repo] A pull request (PR #" + id + ")"},
 			[2]string{"From", "Grace <notifications@github.com>"},
 			[2]string{"To", "owner/repo <repo@noreply.github.com>"},
+			[2]string{"Cc", cc},
 			[2]string{"Reply-To", "owner/repo <" + relay(token) + ">"})
 	}
+	const person = "12345+grace@users.noreply.github.com"
 	fake := &threadedGmail{
 		historyID: "9000",
-		delta:     []string{"n-1", "n-2"},
+		delta:     []string{"n-1", "n-2", "p-1"},
 		mail: map[string]map[string]any{
-			"n-1": notification("n-1", "t-n1", "AAEXAMPLEONE000000000000000000"),
-			"n-2": notification("n-2", "t-n2", "AAEXAMPLETWO000000000000000000"),
+			"n-1": notification("n-1", "t-n1", "AAEXAMPLEONE000000000000000000",
+				"Mention <mention@noreply.github.com>"),
+			"n-2": notification("n-2", "t-n2", "AAEXAMPLETWO000000000000000000",
+				"Author <Author@NoReply.GitHub.com>, Your activity <your_activity@noreply.github.com>"),
+			"p-1": gmailMail("p-1", "t-p1", "A patch", "A patch.",
+				[2]string{"Subject", "[PATCH] Fix the title"},
+				[2]string{"From", "Grace <" + person + ">"}),
 		},
-		threads: map[string][]string{"t-n1": {"n-1"}, "t-n2": {"n-2"}},
+		threads: map[string][]string{"t-n1": {"n-1"}, "t-n2": {"n-2"}, "t-p1": {"p-1"}},
 	}
 	syncThreadedGmail(t, ds, fake)
 
+	// A relay domain is matched exactly: the reasons' domain, never one
+	// under it.
+	domain := func(addr string) string {
+		return strings.ToLower(addr[strings.LastIndexByte(addr, '@')+1:])
+	}
+	relayed := func(addr string) bool {
+		d := domain(addr)
+		return d == "reply.github.com" || d == "noreply.github.com"
+	}
 	hub := map[string]bool{}
 	for _, row := range listLive(t, ds, googlePackage+"/emailaddress") {
 		if addr, ok := row.Properties["address"].(string); ok {
 			hub[addr] = true
 		}
 	}
-	if !hub["notifications@github.com"] || !hub["repo@noreply.github.com"] {
-		t.Fatalf("hub rows = %v, want the sender and the recipient", hub)
+	if !hub["notifications@github.com"] || !hub[person] {
+		t.Fatalf("hub rows = %v, want GitHub's sender and the person", hub)
 	}
 	for addr := range hub {
-		if strings.HasSuffix(addr, "@reply.github.com") {
-			t.Errorf("a reply address has a hub row: %s", addr)
+		if relayed(addr) {
+			t.Errorf("a relay address has a hub row: %s", addr)
 		}
 	}
 
-	var sender bool
+	// GitHub is ONE contact, and the person under its domain is another.
+	carrying := map[string][]string{}
 	for _, row := range listLive(t, ds, vocabulary.CoreKind("contact")) {
 		emails, _ := row.Properties["emails"].([]any)
 		for _, e := range emails {
 			addr, _ := e.(string)
-			if strings.HasSuffix(addr, "@reply.github.com") {
-				t.Errorf("contact %s carries a reply address: %v", row.ID, emails)
+			if relayed(addr) {
+				t.Errorf("contact %s carries a relay address: %v", row.ID, emails)
 			}
-			sender = sender || addr == "notifications@github.com"
+			if d := domain(addr); d == "github.com" || strings.HasSuffix(d, ".github.com") {
+				carrying[addr] = append(carrying[addr], row.ID)
+			}
 		}
 	}
-	if !sender {
-		t.Error("no contact carries notifications@github.com: core's mapping did not run on the hub")
+	if len(carrying) != 2 || len(carrying["notifications@github.com"]) != 1 || len(carrying[person]) != 1 {
+		t.Fatalf("contacts carrying a GitHub address = %v, want one for notifications@github.com and one for %s",
+			carrying, person)
 	}
 
 	row := mustGet(t, ds, googleGmailMsgKind, message(t, ds, "n-1"))
-	replyTo, _ := row.Properties["replyTo"].([]any)
-	if len(replyTo) != 1 {
-		t.Fatalf("replyTo = %v, want the one occurrence", row.Properties["replyTo"])
-	}
-	entry, _ := replyTo[0].(map[string]any)
-	if entry["value"] != relay("AAEXAMPLEONE000000000000000000") || entry["name"] != "owner/repo" {
-		t.Fatalf("replyTo entry = %v, want the address and the name as the header spelled them", entry)
-	}
-	if _, ok := entry["address"]; ok {
-		t.Fatalf("replyTo entry = %v, names a hub row", entry)
+	for name, want := range map[string]map[string]any{
+		"replyTo": {"value": relay("AAEXAMPLEONE000000000000000000"), "name": "owner/repo"},
+		"to":      {"value": "repo@noreply.github.com", "name": "owner/repo"},
+		"cc":      {"value": "mention@noreply.github.com", "name": "Mention"},
+	} {
+		entries, _ := row.Properties[name].([]any)
+		if len(entries) != 1 {
+			t.Fatalf("%s = %v, want the one occurrence", name, row.Properties[name])
+		}
+		entry, _ := entries[0].(map[string]any)
+		if entry["value"] != want["value"] || entry["name"] != want["name"] {
+			t.Errorf("%s entry = %v, want the address and the name as the header spelled them", name, entry)
+		}
+		if _, ok := entry["address"]; ok {
+			t.Errorf("%s entry = %v, names a hub row", name, entry)
+		}
 	}
 	from, _ := row.Properties["from"].([]any)
 	if len(from) != 1 || storedRefPath(from[0].(map[string]any)["address"]) == "" {

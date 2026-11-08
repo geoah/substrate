@@ -302,7 +302,14 @@ data:
   # `snippet` property (`{.snippet}`), then the opening of its body, so a
   # member row `threads.get` alone wrote is titled by its preview. Template
   # only.
-  version: 48
+  #
+  # 49: every address at exactly `noreply.github.com` is a relay address
+  # too: GitHub's notification-reason mailboxes (`repo@`, `mention@`,
+  # `author@` and the rest) get no `emailaddress` row, so core mints no
+  # contact per reason and `notifications@github.com` is GitHub's one
+  # contact. A subdomain is not: `users.noreply.github.com` is a person's
+  # commit address and keeps its row.
+  version: 49
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -7487,9 +7494,11 @@ data:
     #
     # A mailbox that does not parse makes no entry at all; the verbatim
     # `headers` above still carries the line, and `payload` still carries the
-    # tree it came from. A per-thread reply address (`REPLY_RELAYS` in
-    # `syncgmail`) makes an entry with no `address`: it names one thread, not
-    # a party, so it gets no hub row and core mints no contact for it.
+    # tree it came from. A relay address (`REPLY_RELAYS` in `syncgmail`:
+    # GitHub's per-thread `reply+…@reply.github.com` and its
+    # `…@noreply.github.com` notification reasons) makes an entry with no
+    # `address`: it names no party, so it gets no hub row and core mints no
+    # contact for it.
     #
     # `value` is the API's own field position and keeps THE HEADER'S
     # SPELLING — trimmed and otherwise untouched, local part included, the
@@ -7512,7 +7521,7 @@ data:
           kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox, composed from the normal
             form (domain lowercased) and reached by attendee lists and the
-            address book too; absent for a per-thread reply address"
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7533,7 +7542,7 @@ data:
           kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox, composed from the normal
             form (domain lowercased) and reached by attendee lists and the
-            address book too; absent for a per-thread reply address"
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7554,7 +7563,7 @@ data:
           kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox, composed from the normal
             form (domain lowercased) and reached by attendee lists and the
-            address book too; absent for a per-thread reply address"
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7575,7 +7584,7 @@ data:
           kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox, composed from the normal
             form (domain lowercased) and reached by attendee lists and the
-            address book too; absent for a per-thread reply address"
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7596,7 +7605,7 @@ data:
           kind: providers.substrate.reamde.dev/google/emailaddress
           description: "the hub row for this mailbox, composed from the normal
             form (domain lowercased) and reached by attendee lists and the
-            address book too; absent for a per-thread reply address"
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7988,20 +7997,32 @@ data:
     _RE_ADDR = re.compile(
         r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
         + _LABEL + r"(?:\." + _LABEL + r")+$")
-    # PER-THREAD REPLY ADDRESSES, and this is the one list of them. A service
-    # that takes replies by mail mints a fresh mailbox for every thread it
-    # notifies about and names it in `Reply-To`, so the address identifies
-    # the THREAD and no other message ever carries it. The hub is one party's
-    # identity across messages, so such an address gets no `emailaddress` row
-    # and its occurrence entry no `address` (`_addrs`): the entry keeps the
-    # header's `value` and `name`, the message is mirrored whole, and core's
-    # mapping mints no contact per thread. Each entry is (domain, local-part
-    # prefix): the domain matched exactly, the prefix ignoring case, and a
-    # token after it. A service goes in only on evidence that it mints one
-    # address per thread; its shared sender (`notifications@github.com`) is
-    # one identity and keeps its row.
+    # RELAY ADDRESSES, and this is the one list of them: mailboxes a service
+    # writes into a header that name no party. GitHub's notification mail
+    # carries two sorts. `reply+<token>@reply.github.com` in `Reply-To` is
+    # minted fresh for every thread, so it names the THREAD. `repo@`,
+    # `mention@`, `author@`, `state_change@` and the rest at
+    # `noreply.github.com` in `To`/`Cc` name the REASON the mail was sent,
+    # under a display name that is often the repository. The hub is one
+    # party's identity across messages, so a relay address gets no
+    # `emailaddress` row and its occurrence entry no `address` (`_addrs`):
+    # the entry keeps the header's `value` and `name`, the message is
+    # mirrored whole, and core's mapping mints no contact for it. GitHub's
+    # one contact is its sender, `notifications@github.com`.
+    #
+    # Each entry is (domain, local-part prefix). The domain is matched
+    # exactly, in any case (`_mailbox` lowercases it), and never a
+    # subdomain: `<id>+<login>@users.noreply.github.com` is a person's
+    # commit address and keeps its row. The prefix is compared ignoring case
+    # and needs a character after it, so an empty prefix is any local part.
+    # A service goes in only on evidence of what its addresses name.
+    #
+    # The engine's repository migration that removes the contacts earlier
+    # versions made from these addresses carries a Go copy of this rule;
+    # change the two together.
     REPLY_RELAYS = (
         ("reply.github.com", "reply+"),
+        ("noreply.github.com", ""),
     )
     # RFC 5322 `msg-id`, with the angle brackets the header wraps it in. The
     # brackets are dropped from the decoded properties so `inReplyTo` and
@@ -8411,8 +8432,8 @@ data:
 
 
     def _relay(normal):
-        """Whether a mailbox in normal form is a per-thread reply address
-        (REPLY_RELAYS)."""
+        """Whether a mailbox in normal form is a relay address, one that names
+        a thread or a notification reason and never a party (REPLY_RELAYS)."""
         local, _, domain = normal.rpartition("@")
         for relay, prefix in REPLY_RELAYS:
             if (domain == relay and len(local) > len(prefix)
@@ -8576,7 +8597,7 @@ data:
         `value` keeps THE HEADER'S SPELLING (trimmed, local part untouched);
         only the hub reference beside it is normalised. A mailbox that does not
         parse makes no entry at all and no hub row; the verbatim `headers` and
-        the exact `payload` still carry the line. A per-thread reply address
+        the exact `payload` still carry the line. A relay address
         (REPLY_RELAYS) makes an entry with no `normal`, so it names no hub row
         and mints none.
         """
@@ -9375,8 +9396,8 @@ data:
             props["thread"] = {"ref": tref}
             # The occurrence entries carry the header's own spelling in `value`
             # and the hub row in `address`; `normal` is this body's scratch key
-            # and never reaches a property. An entry without one is a
-            # per-thread reply address, which names no hub row (`_addrs`).
+            # and never reaches a property. An entry without one is a relay
+            # address, which names no hub row (`_addrs`).
             for name in ("from", "to", "cc", "bcc", "replyTo"):
                 entries = props.get(name)
                 if not entries:

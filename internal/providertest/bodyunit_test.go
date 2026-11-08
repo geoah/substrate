@@ -36,7 +36,7 @@ func TestBodyHelpersGoogle(t *testing.T) {
 
 // TestBodyHelpersGoogleGmail runs internal/providertest/py/test_google_gmail.py
 // over the shipped syncgmail body: which header addresses become hub rows,
-// so a per-thread reply address never reaches a contact.
+// so a relay address never reaches a contact.
 func TestBodyHelpersGoogleGmail(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -257,11 +257,14 @@ is ever written back to Google.
   `syncdrive` reads one `files.list` page, one `changes.list` page, or one
   batch of eight `files.export` calls, per invocation. All four write an
   `emailaddress` row per address they see, and none writes a kind this package
-  does not own. The one exception is a per-thread reply address in a mail
-  header, such as GitHub's `reply+…@reply.github.com`: it names one thread and
-  no party, so `syncgmail` keeps it on the message as written and gives it no
-  row, and no contact is made for it. The list of such addresses is
-  `REPLY_RELAYS` in that body.
+  does not own. The one exception is a relay address in a mail header, one
+  that names no party: GitHub's per-thread `reply+…@reply.github.com`, and
+  every address at exactly `noreply.github.com` (`repo@`, `mention@` and the
+  other notification reasons). `syncgmail` keeps it on the message as written
+  and gives it no row, so no contact is made for it, and GitHub's one contact
+  is `notifications@github.com`. A subdomain is not a relay:
+  `<id>+<login>@users.noreply.github.com` is a person's commit address. The
+  list is `REPLY_RELAYS` in that body.
 - **Triggers (12)**, three per stream. `google-contacts-on-connect`,
   `google-gmail-on-connect`, `google-calendar-on-connect` and
   `google-drive-on-connect` fire their stream's sync while the account is

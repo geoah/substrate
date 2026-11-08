@@ -25,7 +25,8 @@ TOKEN = "AAEXAMPLETOKEN0000000000000000000000000000000000"
 
 
 class RelayTest(unittest.TestCase):
-    """A per-thread reply address names a thread, never a party."""
+    """A relay address names a thread or a notification reason, never a
+    party."""
 
     def relay(self, addr):
         normal = BODY["_mailbox"](addr)
@@ -37,20 +38,45 @@ class RelayTest(unittest.TestCase):
         # The domain is normalised and the prefix compared ignoring case.
         self.assertTrue(self.relay("Reply+%s@Reply.GitHub.com" % TOKEN))
 
+    def test_a_github_notification_reason_is_a_relay(self):
+        # Every local part at exactly noreply.github.com, in any case.
+        for addr in (
+                "repo@noreply.github.com",
+                "author@noreply.github.com",
+                "mention@noreply.github.com",
+                "subscribed@noreply.github.com",
+                "comment@noreply.github.com",
+                "state_change@noreply.github.com",
+                "review_requested@noreply.github.com",
+                "team_mention@noreply.github.com",
+                "push@noreply.github.com",
+                "ci_activity@noreply.github.com",
+                "assign@noreply.github.com",
+                "manual@noreply.github.com",
+                "your_activity@noreply.github.com",
+                "Mention@NoReply.GitHub.com"):
+            with self.subTest(addr=addr):
+                self.assertTrue(self.relay(addr))
+
     def test_an_identity_is_not(self):
         for addr in (
-                # GitHub's one sender and its no-reply recipients are shared
-                # by every notification: each is one identity.
+                # GitHub's sender is one identity, shared by every
+                # notification, and so is its no-reply sender.
                 "notifications@github.com",
                 "noreply@github.com",
-                "repo@noreply.github.com",
+                # A person's commit address sits UNDER the reasons' domain.
+                "12345+grace@users.noreply.github.com",
+                "12345+Grace@Users.NoReply.GitHub.com",
+                # The reasons' domain under another, or inside a longer label.
+                "repo@noreply.github.com.example.com",
+                "repo@xnoreply.github.com",
                 # The prefix alone, with no token after it.
                 "reply+@reply.github.com",
                 # The prefix at another domain, and the domain under another.
                 "reply+%s@github.com" % TOKEN,
                 "reply+%s@reply.github.com.example.com" % TOKEN,
                 "reply+%s@example.com" % TOKEN,
-                # Another local part at the relay domain.
+                # Another local part at the reply domain.
                 "someone@reply.github.com",
                 "ada+reply@example.com"):
             with self.subTest(addr=addr):
@@ -78,6 +104,19 @@ class AddressDecodeTest(unittest.TestCase):
              "normal": "notifications@github.com", "name": "GitHub"},
         ])
         self.assertEqual(rows, ["ada@example.com", "notifications@github.com"])
+
+    def test_a_notification_reason_keeps_its_name_and_no_row(self):
+        entries, rows = BODY["_addrs"]([
+            "owner/repo <repo@noreply.github.com>, "
+            "Mention <Mention@NoReply.GitHub.com>, "
+            "Grace <12345+grace@users.noreply.github.com>"])
+        self.assertEqual(entries, [
+            {"value": "repo@noreply.github.com", "name": "owner/repo"},
+            {"value": "Mention@NoReply.GitHub.com", "name": "Mention"},
+            {"value": "12345+grace@users.noreply.github.com",
+             "normal": "12345+grace@users.noreply.github.com", "name": "Grace"},
+        ])
+        self.assertEqual(rows, ["12345+grace@users.noreply.github.com"])
 
 
 if __name__ == "__main__":
