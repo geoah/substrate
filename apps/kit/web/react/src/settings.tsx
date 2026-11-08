@@ -7,8 +7,8 @@ import {
 import { displayServerVersion } from "@substrate/client"
 import type { OutboxEntry } from "@substrate/local"
 import { useEffect, useState, type ReactNode } from "react"
-import { useSubstrate } from "./context"
-import { useLinkStatus, useOutbox } from "./hooks"
+import { useConnection, useSubstrate } from "./context"
+import { useOutbox, useStatusSentence } from "./hooks"
 import { formatMoment } from "./status"
 import { useToast } from "./toast"
 import {
@@ -42,9 +42,10 @@ function packageValue(p: PackageStanding, checking: boolean): string {
  * sentence, why where there is a reason, each package the app needs, and
  * what the owner can do about it (the kit's StatusPresenter). */
 export function StatusSection() {
-  const { session, outbox, appStatus, checking, signInAgain } = useSubstrate()
+  const { session, outbox, signInAgain } = useSubstrate()
+  const { appStatus, checking } = useConnection()
   const summary = useOutbox()
-  const { status, sentence, tone } = useLinkStatus()
+  const { status, sentence, tone } = useStatusSentence()
   const host = new URL(session.server).host
   const actions: { title: string; run: () => void }[] = []
   if (summary.waiting > 0 || summary.flushing)
@@ -193,7 +194,8 @@ export function RepositorySection(props: {
   /** What else signing out gives up, in the app's words, after the kit's. */
   signOutMessage?: string
 }) {
-  const { session, manifest, appStatus, unrevoked, signOut } = useSubstrate()
+  const { session, manifest, signOut } = useSubstrate()
+  const { appStatus, unrevoked } = useConnection()
   const summary = useOutbox()
   const [asking, setAsking] = useState(false)
   const host = new URL(session.server).host

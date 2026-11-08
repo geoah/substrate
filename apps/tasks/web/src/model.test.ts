@@ -1,7 +1,8 @@
 import type { SubstrateRecord } from "@substrate/client"
 import { describe, expect, it } from "vitest"
 import {
-  Kinds,
+  List,
+  Task,
   addDays,
   banded,
   civilDay,
@@ -19,7 +20,7 @@ const today = civilDay(now)
 function task(id: string, properties: Record<string, unknown>): TaskItem {
   const r: SubstrateRecord = {
     id,
-    kind: Kinds.task,
+    kind: Task.kind,
     properties: { name: id, status: "open", ...properties },
     version: 1,
     createdAt: "2026-11-01T10:00:00Z",
@@ -85,7 +86,7 @@ describe("words", () => {
 
   it("asks before a list goes, naming its tasks", () => {
     const list = { id: "l", name: "Home", version: 1 }
-    const one = [task("a", { list: `${Kinds.list}/l` })]
+    const one = [task("a", { list: List.ref("l") })]
     expect(deleteListQuestion(list, [])).toMatchObject({
       title: "Delete “Home”?",
       message: "The list has no tasks.",

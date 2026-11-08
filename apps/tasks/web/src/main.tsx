@@ -1,9 +1,8 @@
-import { packageDetail, webManifest } from "@substrate/auth"
-import { SubstrateApp } from "@substrate/react"
+import { SubstrateApp, packageDetail, webManifest } from "@substrate/react"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
-import { kinds } from "./model"
+import { List, Task } from "./model"
 import "./index.css"
 
 // app.json's ids, package and scope: the approval installs the published
@@ -15,14 +14,13 @@ const manifest = webManifest({
   details: [packageDetail("substrate.reamde.dev/tasks", 1)],
   packageNames: { "substrate.reamde.dev/tasks": "Tasks" },
   softwareVersion: __APP_VERSION__,
-  base: import.meta.env.BASE_URL,
 })
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <SubstrateApp
       manifest={manifest}
-      kinds={kinds}
+      kinds={[Task, List]}
       kept="tasks"
       tagline="Your to-do list, kept in your own Substrate."
       icon={

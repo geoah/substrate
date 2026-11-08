@@ -1,6 +1,7 @@
 import { displayServerVersion } from "@substrate/client"
 import type { Change } from "@substrate/auth"
-import { useSubstrate } from "./context"
+import { useConnection, useSubstrate } from "./context"
+import { useParkedWrites } from "./hooks"
 import { formatDay } from "./status"
 import { ProblemBox, type Tone } from "./ui"
 
@@ -32,7 +33,8 @@ function Changes({ changes }: { changes: Change[] }) {
  * ending soon (the kit's AccessPresenter). Nothing while there is none, and
  * nothing for a check the network stopped, which the status line says. */
 export function AccessBanner(props: { className?: string }) {
-  const { manifest, session, appStatus, signInAgain } = useSubstrate()
+  const { manifest, session, signInAgain } = useSubstrate()
+  const { appStatus } = useConnection()
   const issue = appStatus?.issues.find((i) => i.type !== "unreachable")
   if (!issue || issue.type === "accessEnded") return null
   const app = manifest.name
@@ -103,6 +105,36 @@ export function AccessBanner(props: { className?: string }) {
         >
           <Changes changes={changes} />
         </ProblemBox>
+      </div>
+    </div>
+  )
+}
+
+/** The changes the server refused, as one notice above a screen: how many,
+ * and the way to Settings, where each one's Retry and Discard are. Nothing
+ * while none waits. */
+export function RefusedBanner(props: {
+  className?: string
+  onOpenSettings: () => void
+}) {
+  const parked = useParkedWrites()
+  if (!parked.length) return null
+  const one = parked.length === 1
+  return (
+    <div className={props.className}>
+      <div className="overflow-hidden rounded-[10px] bg-card">
+        <ProblemBox
+          tone="caution"
+          title={
+            one ? "1 change needs you" : `${parked.length} changes need you`
+          }
+          message={
+            one
+              ? "Your substrate refused it. Retry or discard it in Settings."
+              : "Your substrate refused them. Retry or discard them in Settings."
+          }
+          action={{ title: "Open Settings", onClick: props.onOpenSettings }}
+        />
       </div>
     </div>
   )

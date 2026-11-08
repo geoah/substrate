@@ -1,4 +1,11 @@
-import { LargeTitle, LinkStatus, NavBar, cx } from "@substrate/react"
+import {
+  LargeTitle,
+  LinkStatus,
+  NavBar,
+  cx,
+  useLinkedStatus,
+  useListed,
+} from "@substrate/react"
 import {
   ArrowUpDown,
   CircleCheck,
@@ -9,11 +16,11 @@ import {
   Plus,
   Trash2,
 } from "lucide-react"
-import { Fragment, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { useCompleting, useTaskActions } from "./actions"
 import { Menu, MenuButton, type MenuItem } from "./Menu"
 import { Notices } from "./Notices"
-import { inboxTitle, type Order, type Selection } from "./model"
+import { List, Task, inboxTitle, type Order, type Selection } from "./model"
 import { presentList, type ListView, type RowView } from "./present"
 import { useReorder } from "./reorder"
 import {
@@ -42,17 +49,26 @@ export function TaskListScreen(props: {
   onOpenTask: (id: string) => void
 }) {
   const model = useTasks()
+  const link = useLinkedStatus()
+  const tasksRead = useListed(Task)
+  const listsRead = useListed(List)
   const actions = useTaskActions()
   const [settings] = useSettings()
   const filter = useStore(filterStore)
   const completing = useCompleting()
-  const view = presentList(
-    props.selection,
-    model,
-    settings,
-    filter,
-    completing,
-    props.now
+  // The rows are presented again only when the records, the settings,
+  // the filter, a completion's window or the minute move.
+  const view = useMemo(
+    () =>
+      presentList(
+        props.selection,
+        model,
+        settings,
+        filter,
+        completing,
+        props.now
+      ),
+    [props.selection, model, settings, filter, completing, props.now]
   )
   const [quick, setQuick] = useState("")
   const [menu, setMenu] = useState<{
@@ -76,8 +92,7 @@ export function TaskListScreen(props: {
     onMenu: (id, at) => setMenu({ id, at }),
   })
 
-  const deleted =
-    props.selection.kind === "list" && !view.list && model.status === "live"
+  const deleted = props.selection.kind === "list" && !view.list && listsRead
   if (deleted)
     return (
       <div className="mx-auto w-full max-w-2xl">
@@ -130,7 +145,7 @@ export function TaskListScreen(props: {
       />
       <LargeTitle className="pb-1 break-words">{view.title}</LargeTitle>
       <Summary view={view} />
-      <LinkStatus status={model.status} words={model.words} />
+      <LinkStatus status={link.status} words={link.words} />
       <Notices wide={!props.addsFromTabBar} />
 
       {view.chips.length > 0 && (
@@ -166,7 +181,7 @@ export function TaskListScreen(props: {
           </p>
         )}
 
-        {showEmpty && model.status === "live" && (
+        {showEmpty && tasksRead && (
           <div className="flex flex-col items-center gap-3 px-6 pt-14 pb-6 text-center">
             <CircleCheck
               className="size-10 text-secondary"

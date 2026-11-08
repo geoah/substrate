@@ -8,7 +8,7 @@ import {
   useSubstrate,
 } from "@substrate/react"
 import { CircleAlert } from "lucide-react"
-import { Kinds, hourWords, type Order } from "./model"
+import { List, Task, hourWords, type Order } from "./model"
 import type { Permission } from "./reminders"
 import { reminderHours, useSettings } from "./state"
 
@@ -127,7 +127,7 @@ export function SettingsScreen(props: {
           </Section>
         )}
         <SubstrateSettings
-          kindLabels={{ [Kinds.task]: "Task", [Kinds.list]: "Task list" }}
+          kindLabels={{ [Task.kind]: "Task", [List.kind]: "Task list" }}
         />
       </div>
     </div>

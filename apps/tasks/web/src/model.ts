@@ -1,20 +1,10 @@
+import { comparePositions, positionAfter } from "@substrate/client"
 import {
-  comparePositions,
-  positionAfter,
-  referencePath,
+  defineKind,
   refProp,
   stringProp,
   type SubstrateRecord,
-} from "@substrate/client"
-
-/** The package's kinds (apps/tasks/package): the same records the iPhone,
- * iPad, Mac and Android apps read and write. */
-export const Kinds = {
-  task: "substrate.reamde.dev/tasks/task",
-  list: "substrate.reamde.dev/tasks/list",
-} as const
-
-export const kinds = [Kinds.task, Kinds.list]
+} from "@substrate/react"
 
 export type Priority = "none" | "low" | "medium" | "high" | "urgent"
 export type Status = "open" | "done" | "abandoned"
@@ -84,7 +74,6 @@ export interface TaskItem {
   status: Status
   completedAt?: Date
   version: number
-  record: SubstrateRecord
 }
 
 export interface TaskList {
@@ -92,6 +81,27 @@ export interface TaskList {
   name: string
   position?: string
   version: number
+}
+
+/** What a write of a task names, as TasksCodec writes one: a create its
+ * name and what it holds, never its state, which moves only by patch, so a
+ * create sent again after the task was done never moves it back; a change
+ * or an edit the fields it sets, null clearing one. */
+export interface TaskFields {
+  name: string
+  notes?: string | null
+  link?: string | null
+  /** A list's id; null is No List. */
+  list?: string | null
+  position?: string
+  due?: Due | null
+  priority?: Priority
+  status?: Status
+}
+
+export interface ListFields {
+  name: string
+  position?: string
 }
 
 const isPriority = (v: unknown): v is Priority =>
@@ -109,7 +119,9 @@ function nonEmpty(text: string | undefined): string | undefined {
   return text && text.trim() ? text : undefined
 }
 
-/** A task read leniently, as TasksCodec reads one. */
+/** A task read leniently, as TasksCodec reads one: a value the app does
+ * not know reads as the kind's default, so a newer build's record never
+ * hides a task. */
 export function readTask(r: SubstrateRecord): TaskItem {
   const p = r.properties
   const at = moment(stringProp(r, "dueAt"))
@@ -126,14 +138,13 @@ export function readTask(r: SubstrateRecord): TaskItem {
     name: stringProp(r, "name") ?? "",
     description: nonEmpty(stringProp(r, "description")),
     url: nonEmpty(stringProp(r, "url")),
-    list: list && list.kind === Kinds.list ? list.id : undefined,
+    list: list && List.is(list) ? list.id : undefined,
     position: positionText(p.position),
     due: day ? { day, at } : undefined,
     priority: isPriority(p.priority) ? p.priority : "none",
     status: isStatus(p.status) ? p.status : "open",
     completedAt: moment(stringProp(r, "completedAt")),
     version: r.version,
-    record: r,
   }
 }
 
@@ -152,9 +163,44 @@ function positionText(v: unknown): string | undefined {
   return undefined
 }
 
-export function listValue(id: string): string {
-  return referencePath(Kinds.list, id)
+/** A task's fields as properties: only what the draft names, so nothing
+ * the app does not know is ever written over. */
+export function writeTask(d: Partial<TaskFields>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (d.name !== undefined) out.name = d.name
+  if (d.notes !== undefined) out.description = d.notes
+  if (d.link !== undefined) out.url = d.link
+  if (d.list !== undefined) out.list = d.list === null ? null : List.ref(d.list)
+  if (d.position !== undefined) out.position = d.position
+  if (d.due !== undefined) Object.assign(out, dueProperties(d.due ?? undefined))
+  if (d.priority !== undefined) out.priority = d.priority
+  if (d.status !== undefined) {
+    out.status = d.status
+    // The move to done stamps completedAt and nothing removes it on the
+    // way back, so a reopen clears it in the same write.
+    if (d.status === "open") out.completedAt = null
+  }
+  return out
 }
+
+export function writeList(d: Partial<ListFields>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (d.name !== undefined) out.name = d.name
+  if (d.position !== undefined) out.position = d.position
+  return out
+}
+
+/** The package's kinds (apps/tasks/package): the same records the iPhone,
+ * iPad, Mac and Android apps read and write, through the same codec. */
+export const List = defineKind("substrate.reamde.dev/tasks/list", {
+  read: readList,
+  write: writeList,
+})
+
+export const Task = defineKind("substrate.reamde.dev/tasks/task", {
+  read: readTask,
+  write: writeTask,
+})
 
 export function taskTitle(t: { name: string }): string {
   return t.name || "Untitled task"

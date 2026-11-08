@@ -1,15 +1,14 @@
-import { positionAfter, uuidv7 } from "@substrate/client"
-import { useWrites } from "@substrate/react"
+import { positionAfter } from "@substrate/client"
+import { useKindWrites } from "@substrate/react"
 import { useMemo } from "react"
 import {
-  Kinds,
+  List,
+  Task,
   addDays,
   atTime,
   civilDay,
-  dueProperties,
   inSelection,
   isOpen,
-  listValue,
   moves,
   nextTaskPosition,
   sameDue,
@@ -18,6 +17,7 @@ import {
   type Priority,
   type Selection,
   type Status,
+  type TaskFields,
   type TaskItem,
   type TaskList,
 } from "./model"
@@ -110,26 +110,22 @@ if (typeof window !== "undefined")
   })
 
 /** Every write the owner makes, as TasksEnrichment and TaskWrites make
- * them: a create as a PUT on an id the device chose, a change as a patch of
- * what changed, an edit on the version the owner saw, a state only by
- * patch, a move of order as the positions `Position.moves` gives, and a
- * plain DELETE. */
+ * them, through the two kinds' codec: a create as a PUT on an id the device
+ * chose, a change as a patch of what changed, an edit on the version the
+ * owner saw, a state only by patch, a move of order as the positions
+ * `Position.moves` gives, and a plain DELETE. Each is kept in the outbox
+ * before it resolves; what the server refuses waits in Settings. */
 export function useTaskActions() {
-  const writes = useWrites()
+  const tasks = useKindWrites(Task)
+  const lists = useKindWrites(List)
   const model = useTasks()
   return useMemo(() => {
     const task = (id: string) => model.task(id)
-    const patch = (t: TaskItem, properties: Record<string, unknown>) =>
-      writes.patch(Kinds.task, t.id, properties)
+    const change = (t: TaskItem, fields: Partial<TaskFields>) =>
+      void tasks.change(t.id, fields)
 
     const status = (t: TaskItem, to: Status) => {
-      if (!moves(t.status, to)) return
-      // The stamp is written on the way in and nothing removes it on the
-      // way out, so a reopen clears it in the same write.
-      void patch(
-        t,
-        to === "open" ? { status: to, completedAt: null } : { status: to }
-      )
+      if (moves(t.status, to)) change(t, { status: to })
     }
 
     /** A completion still in its window is taken back before anything
@@ -183,27 +179,27 @@ export function useTaskActions() {
           ? { day, at: atTime(day, at.getHours(), at.getMinutes()) }
           : { day }
         if (sameDue(due, t.due)) return
-        void patch(t, dueProperties(due))
+        change(t, { due })
       },
       setPriority(id: string, priority: Priority) {
         const t = task(id)
         if (!t || t.priority === priority) return
-        void patch(t, { priority })
+        change(t, { priority })
       },
       /** Moving to another list rewrites `list` and `position` in one patch,
        * after the last of its new list. */
       move(id: string, list: string | undefined) {
         const t = task(id)
         if (!t || t.list === list || (list && !model.list(list))) return
-        void patch(t, {
-          list: list ? listValue(list) : null,
+        change(t, {
+          list: list ?? null,
           position: nextTaskPosition(model.tasks, list),
         })
       },
       deleteTask(id: string) {
         undo(id)
         if (!task(id)) return
-        void writes.remove(Kinds.task, id)
+        void tasks.remove(id)
         const r = currentRoute()
         if (r.task === id) go({ ...r, task: undefined }, true)
       },
@@ -223,7 +219,7 @@ export function useTaskActions() {
         )
         for (const [moved, position] of Object.entries(changes)) {
           const t = task(moved)
-          if (t && t.position !== position) void patch(t, { position })
+          if (t && t.position !== position) change(t, { position })
         }
       },
       reorderList(id: string, index: number) {
@@ -236,7 +232,7 @@ export function useTaskActions() {
         for (const [moved, position] of Object.entries(changes)) {
           const l = model.list(moved)
           if (l && l.position !== position)
-            void writes.patch(Kinds.list, l.id, { position })
+            void lists.change(l.id, { position })
         }
       },
 
@@ -246,13 +242,12 @@ export function useTaskActions() {
         const trimmed = name.trim()
         if (!trimmed) return
         const { list, day } = newTaskSeed()
-        const props: Record<string, unknown> = {
+        void tasks.create({
           name: trimmed,
           position: nextTaskPosition(model.tasks, list),
-        }
-        if (list) props.list = listValue(list)
-        if (day) props.dueDay = day
-        void writes.create(Kinds.task, uuidv7(), props)
+          list,
+          due: day ? { day } : undefined,
+        })
       },
       newTask() {
         openEditor({ kind: "new", ...newTaskSeed() })
@@ -265,7 +260,7 @@ export function useTaskActions() {
        * or a patch of the fields the owner changed on the version they saw,
        * a moved task put after the last of its new list. Resolves whether
        * the write was kept. */
-      save(
+      async save(
         seen: TaskItem | undefined,
         d: TaskDraft,
         notKept: (words: string) => void
@@ -274,58 +269,56 @@ export function useTaskActions() {
         const name = d.name.trim()
         const notes = d.notes.trim() ? d.notes : null
         const link = d.link.trim() || null
-        const due = draftDue(d)
+        const due = draftDue(d) ?? null
         if (!seen) {
-          const props: Record<string, unknown> = {
-            name,
-            position: nextTaskPosition(model.tasks, d.list),
-            ...dueProperties(due),
-          }
-          if (notes) props.description = notes
-          if (link) props.url = link
-          if (d.list) props.list = listValue(d.list)
-          if (d.priority !== "none") props.priority = d.priority
-          for (const k of Object.keys(props))
-            if (props[k] === null) delete props[k]
-          return writes
-            .create(Kinds.task, uuidv7(), props, opts)
-            .then((r) => !!r)
+          const written = await tasks.create(
+            {
+              name,
+              notes,
+              link,
+              list: d.list,
+              position: nextTaskPosition(model.tasks, d.list),
+              due,
+              priority: d.priority === "none" ? undefined : d.priority,
+            },
+            opts
+          )
+          return written.kept
         }
         const was = draftOf(seen)
-        const out: Record<string, unknown> = {}
-        if (d.name !== was.name) out.name = name
-        if (d.notes !== was.notes) out.description = notes
-        if (d.link !== was.link) out.url = link
+        const fields: Partial<TaskFields> = {}
+        if (d.name !== was.name) fields.name = name
+        if (d.notes !== was.notes) fields.notes = notes
+        if (d.link !== was.link) fields.link = link
         if (d.list !== was.list) {
-          out.list = d.list ? listValue(d.list) : null
-          out.position = nextTaskPosition(
+          fields.list = d.list ?? null
+          fields.position = nextTaskPosition(
             model.tasks.filter((t) => t.id !== seen.id),
             d.list
           )
         }
-        if (!sameDue(due, draftDue(was))) Object.assign(out, dueProperties(due))
-        if (d.priority !== was.priority) out.priority = d.priority
-        if (!Object.keys(out).length) return Promise.resolve(true)
-        return writes
-          .patch(Kinds.task, seen.id, out, seen.version, opts)
-          .then((r) => !!r)
+        if (!sameDue(due ?? undefined, draftDue(was))) fields.due = due
+        if (d.priority !== was.priority) fields.priority = d.priority
+        if (!Object.keys(fields).length) return true
+        const written = await tasks.edit(seen.id, fields, seen.version, opts)
+        return written.kept
       },
 
       createList(name: string) {
         const trimmed = name.trim()
         if (!trimmed) return
-        const id = uuidv7()
-        void writes.create(Kinds.list, id, {
-          name: trimmed,
-          position: positionAfter(model.lists.map((l) => l.position)),
-        })
-        show({ kind: "list", id })
+        void lists
+          .create({
+            name: trimmed,
+            position: positionAfter(model.lists.map((l) => l.position)),
+          })
+          .then((w) => w.kept && show({ kind: "list", id: w.id }))
       },
       renameList(id: string, name: string) {
         const l = model.list(id)
         const trimmed = name.trim()
         if (!l || !trimmed || trimmed === l.name) return
-        void writes.patch(Kinds.list, id, { name: trimmed })
+        void lists.change(id, { name: trimmed })
       },
       /** Asks first: the list owns its tasks. */
       deleteList(id: string) {
@@ -338,7 +331,7 @@ export function useTaskActions() {
         deletingListStore.set(undefined)
         const l = id ? model.list(id) : undefined
         if (!l) return
-        void writes.remove(Kinds.list, l.id)
+        void lists.remove(l.id)
         const r = currentRoute()
         if (r.selection?.kind === "list" && r.selection.id === l.id)
           go(
@@ -353,7 +346,7 @@ export function useTaskActions() {
       },
     }
     return actions
-  }, [writes, model])
+  }, [tasks, lists, model])
 }
 
 export type TaskActions = ReturnType<typeof useTaskActions>

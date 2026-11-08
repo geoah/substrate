@@ -1,12 +1,13 @@
 import type { AppStatus } from "@substrate/auth"
-import { recordKey, type Kind } from "@substrate/client"
+import type { Kind, SubstrateRecord } from "@substrate/client"
 import type {
-  LinkedSnapshot,
+  LinkedStatusSnapshot,
+  Outbox,
   OutboxEntry,
   OutboxSummary,
 } from "@substrate/local"
 import { useMemo, useSyncExternalStore } from "react"
-import { useSubstrate } from "./context"
+import { useConnection, useSubstrate } from "./context"
 import {
   deriveLinkStatus,
   statusSentence,
@@ -14,92 +15,137 @@ import {
   type LinkStatus,
 } from "./status"
 
-/** The records of the app's kinds as the owner sees them, current with the
- * change feed and the outbox. */
-export function useLive(): LinkedSnapshot {
-  const { linked } = useSubstrate()
-  return useSyncExternalStore(linked.subscribe, linked.getSnapshot)
-}
+// A record object is never changed in place, so a kind's read of it stands
+// as long as the object does: a record that did not change reads as the
+// same value, and a memoized row keyed on it does not draw again.
+const reads = new WeakMap<object, WeakMap<object, unknown>>()
 
-// A record object is never changed in place, so what a kind read of it
-// stands for as long as the object does.
-const reads = new WeakMap<object, Map<Kind<unknown, never>, unknown>>()
-
-function readThrough<T>(kind: Kind<T, never>, record: object): T {
+/** A record read through its kind's codec, once per record object. */
+export function readThrough<T>(
+  kind: { read: (record: SubstrateRecord) => T },
+  record: SubstrateRecord
+): T {
   let byKind = reads.get(record)
   if (!byKind) {
-    byKind = new Map()
+    byKind = new WeakMap()
     reads.set(record, byKind)
   }
-  const k = kind as Kind<unknown, never>
-  if (byKind.has(k)) return byKind.get(k) as T
-  const value = kind.read(record as Parameters<Kind<T, never>["read"]>[0])
-  byKind.set(k, value)
+  if (byKind.has(kind)) return byKind.get(kind) as T
+  const value = kind.read(record)
+  byKind.set(kind, value)
   return value
 }
 
-/** Every record of a kind, read as the app's own value. The array changes
- * only when the records do. */
-export function useRecords<T, D>(kind: Kind<T, D>): T[] {
-  const live = useLive()
-  const k = kind as unknown as Kind<T, never>
-  return useMemo(() => {
-    const out: T[] = []
-    for (const r of live.records.values())
-      if (r.kind === kind.kind) out.push(readThrough(k, r))
-    return out
-  }, [live.records, kind.kind, k])
+/** Every record of a kind, read as the app's own value. The array is the
+ * same until a record of that kind changes, and each value the same until
+ * its record does, so a change to another kind, the connection or the
+ * outbox draws nothing here. */
+export function useRecords<T, D>(kind: Kind<T, D>): readonly T[] {
+  const { linked } = useSubstrate()
+  const records = useSyncExternalStore(linked.subscribe, () =>
+    linked.kindSnapshot(kind.kind)
+  )
+  return useMemo(
+    () => Array.from(records.values(), (r) => readThrough(kind, r)),
+    [records, kind]
+  )
 }
 
-/** One record of a kind, read as the app's own value, or undefined while
- * the repository holds none. */
+/** One record as a screen draws it: still being read, not in the
+ * repository, or its value. */
+export type RecordRead<T> =
+  | { state: "loading"; value?: undefined }
+  | { state: "absent"; value?: undefined }
+  | { state: "present"; value: T }
+
+const loading: RecordRead<never> = { state: "loading" }
+const absent: RecordRead<never> = { state: "absent" }
+
+/** One record of a kind, read as the app's own value. `loading` until its
+ * kind was read or kept here, so a link to a record opened before the read
+ * finishes waits rather than saying it is gone. */
 export function useRecord<T, D>(
   kind: Kind<T, D>,
   id: string | undefined
-): T | undefined {
-  const live = useLive()
-  const k = kind as unknown as Kind<T, never>
-  const record = id ? live.records.get(recordKey(kind.kind, id)) : undefined
-  return useMemo(
-    () => (record ? readThrough(k, record) : undefined),
-    [record, k]
+): RecordRead<T> {
+  const { linked } = useSubstrate()
+  const record = useSyncExternalStore(linked.subscribe, () =>
+    id ? linked.recordSnapshot(kind.kind, id) : undefined
+  )
+  const listed = useListed(kind)
+  return useMemo(() => {
+    if (record) return { state: "present", value: readThrough(kind, record) }
+    return listed || !id ? absent : loading
+  }, [record, listed, kind, id])
+}
+
+/** Whether a kind's records were read from the server, or kept here from a
+ * read: what tells "none yet" from "none". */
+export function useListed(kind: string | Kind<unknown, never>): boolean {
+  const { linked } = useSubstrate()
+  const ref = typeof kind === "string" ? kind : kind.kind
+  return useSyncExternalStore(linked.subscribe, () => linked.hasListed(ref))
+}
+
+/** Whether a record's last write is still waiting to be sent (`pending`)
+ * or was refused by the server and waits for the owner (`parked`). */
+export function useWriteState(
+  kind: string | Kind<unknown, never>,
+  id: string
+): "pending" | "parked" | undefined {
+  const { linked } = useSubstrate()
+  const ref = typeof kind === "string" ? kind : kind.kind
+  return useSyncExternalStore(linked.subscribe, () =>
+    linked.writeState(ref, id)
   )
 }
 
-/** Whether a record has a write waiting to be sent: show it as not landed
- * yet. A write the server refused is not waiting; `useRefused` says it. */
-export function usePending(
-  kind: string | Kind<unknown, never>,
-  id: string
-): boolean {
-  const live = useLive()
-  return live.pending.has(
-    recordKey(typeof kind === "string" ? kind : kind.kind, id)
-  )
-}
-
-/** Whether a record has a write the server refused, waiting for the owner. */
-export function useRefused(
-  kind: string | Kind<unknown, never>,
-  id: string
-): boolean {
-  const live = useLive()
-  return live.parked.has(
-    recordKey(typeof kind === "string" ? kind : kind.kind, id)
-  )
+/** How the reading of the app's records stands: loading, live,
+ * reconnecting and why, from what this browser kept, and how many records
+ * wait or were refused. A new object only when one of these changes. */
+export function useLinkedStatus(): LinkedStatusSnapshot {
+  const { linked } = useSubstrate()
+  return useSyncExternalStore(linked.subscribe, linked.statusSnapshot)
 }
 
 /** Where the outbox stands: the writes waiting, the ones refused, and how
- * its last send ended. */
+ * its last send ended. Every change to the outbox draws it again. */
 export function useOutbox(): OutboxSummary {
   const { outbox } = useSubstrate()
   return useSyncExternalStore(outbox.subscribe, outbox.getSnapshot)
 }
 
+const noEntries: readonly OutboxEntry[] = []
+const parkedSelectors = new WeakMap<Outbox, () => readonly OutboxEntry[]>()
+
+/** An outbox's parked writes, as the same array while the same writes are
+ * parked with the same words. */
+function parkedOf(outbox: Outbox): () => readonly OutboxEntry[] {
+  let select = parkedSelectors.get(outbox)
+  if (select) return select
+  let last = noEntries
+  select = () => {
+    const parked = outbox.getSnapshot().parked
+    const same =
+      parked.length === last.length &&
+      parked.every(
+        (e, i) =>
+          e.id === last[i].id &&
+          e.lastError === last[i].lastError &&
+          e.conflict === last[i].conflict
+      )
+    if (!same) last = parked.length ? parked : noEntries
+    return last
+  }
+  parkedSelectors.set(outbox, select)
+  return select
+}
+
 /** The writes the server refused, waiting for the owner to retry or
- * discard them. */
+ * discard them: the same array while the same writes are parked. */
 export function useParkedWrites(): readonly OutboxEntry[] {
-  return useOutbox().parked
+  const { outbox } = useSubstrate()
+  return useSyncExternalStore(outbox.subscribe, parkedOf(outbox))
 }
 
 /** The last check of the app's standing with its server, and how to run it
@@ -109,7 +155,7 @@ export function useAppStatus(): {
   checking: boolean
   refresh: () => Promise<void>
 } {
-  const { appStatus, checking, checkStatus } = useSubstrate()
+  const { appStatus, checking, checkStatus } = useConnection()
   return useMemo(
     () => ({
       status: appStatus,
@@ -120,14 +166,15 @@ export function useAppStatus(): {
   )
 }
 
-/** Where the app stands with its repository, in one sentence, as Settings'
- * Status says it. */
-export function useLinkStatus(): {
+/** Where the app stands with its repository, in Settings' one sentence:
+ * the status, the sentence and its tone. */
+export function useStatusSentence(): {
   status: LinkStatus
   sentence: string
   tone: ReturnType<typeof statusTone>
 } {
-  const { manifest, appStatus, kept } = useSubstrate()
+  const { manifest, kept } = useSubstrate()
+  const { appStatus } = useConnection()
   const outbox = useOutbox()
   return useMemo(() => {
     const status = deriveLinkStatus({

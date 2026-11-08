@@ -1,10 +1,9 @@
-import { useLive } from "@substrate/react"
+import { useRecords } from "@substrate/react"
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import {
-  Kinds,
+  List,
+  Task,
   arrangeLists,
-  readList,
-  readTask,
   type Order,
   type Selection,
   type TaskItem,
@@ -17,37 +16,29 @@ export interface TasksModel {
   lists: TaskList[]
   task: (id: string) => TaskItem | undefined
   list: (id: string) => TaskList | undefined
-  status: string
-  words?: string
 }
 
-/** The live records read as tasks and lists. */
+/** The tasks and lists, joined: the same object until a task or a list
+ * changes, and each task the same object until its record does. */
 export function useTasks(): TasksModel {
-  const live = useLive()
+  const allTasks = useRecords(Task)
+  const allLists = useRecords(List)
   return useMemo(() => {
-    const tasks: TaskItem[] = []
-    const lists: TaskList[] = []
-    for (const r of live.records.values()) {
-      if (r.kind === Kinds.task) tasks.push(readTask(r))
-      else if (r.kind === Kinds.list) lists.push(readList(r))
-    }
-    const listIDs = new Set(lists.map((l) => l.id))
+    const listIDs = new Set(allLists.map((l) => l.id))
     // A task whose list was deleted goes with it (onDelete: cascade): until
     // the collector's pass, the app shows none of its tasks.
-    const shown = tasks.filter(
+    const tasks = allTasks.filter(
       (t) => t.list === undefined || listIDs.has(t.list)
     )
-    const byTask = new Map(shown.map((t) => [t.id, t]))
-    const byList = new Map(lists.map((l) => [l.id, l]))
+    const byTask = new Map(tasks.map((t) => [t.id, t]))
+    const byList = new Map(allLists.map((l) => [l.id, l]))
     return {
-      tasks: shown,
-      lists: arrangeLists(lists),
+      tasks,
+      lists: arrangeLists([...allLists]),
       task: (id: string) => byTask.get(id),
       list: (id: string) => byList.get(id),
-      status: live.status,
-      words: live.words,
     }
-  }, [live])
+  }, [allTasks, allLists])
 }
 
 /** Now, presented again when the words drawn stop being true: at the next

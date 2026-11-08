@@ -44,7 +44,7 @@ export function ConnectScreen(props: {
    * came back refused; a title says what else it is. */
   problem?: string | { title: string; message: string } | null
   /** Tokens a sign-out could not revoke, said under the form. */
-  unrevoked?: Session[]
+  unrevoked?: readonly Session[]
   onSignIn: (located: LocatedServer) => Promise<void>
 }) {
   const app = props.manifest.name
@@ -56,14 +56,23 @@ export function ConnectScreen(props: {
     }
   })
   const [phase, setPhase] = useState<Phase>({ type: "idle" })
-  const [problem, setProblem] = useState<{
-    title: string
-    message: string
-  } | null>(() =>
-    typeof props.problem === "string"
-      ? { title: "Couldn't sign in", message: props.problem }
-      : (props.problem ?? null)
+  // The screen's own problem, else the one it was given until the owner
+  // tries again: a sign-out can name one after the screen is shown.
+  const [own, setOwn] = useState<{ title: string; message: string } | null>(
+    null
   )
+  const [dismissed, setDismissed] = useState<typeof props.problem>(null)
+  const given =
+    props.problem && props.problem !== dismissed
+      ? typeof props.problem === "string"
+        ? { title: "Couldn't sign in", message: props.problem }
+        : props.problem
+      : null
+  const problem = own ?? given
+  const setProblem = (next: { title: string; message: string } | null) => {
+    setDismissed(props.problem)
+    setOwn(next)
+  }
   const input = useRef<HTMLInputElement>(null)
   const fieldID = useId()
   const noteID = useId()

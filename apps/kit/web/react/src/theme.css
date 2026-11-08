@@ -3,6 +3,11 @@
  * accent per app (its app.json `accent`), which an app sets on :root as
  * --sx-accent and --sx-accent-text. Import after tailwindcss. */
 
+/* The kit's own components, scanned for their classes: Tailwind resolves
+ * an @source against the stylesheet that declares it, so an app importing
+ * this file never names a path into the kit. */
+@source "./";
+
 @theme inline {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui,

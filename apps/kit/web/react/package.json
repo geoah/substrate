@@ -19,6 +19,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@substrate/auth": "workspace:*",
     "@substrate/client": "workspace:*",
     "@substrate/local": "workspace:*",

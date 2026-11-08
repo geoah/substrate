@@ -9,6 +9,7 @@ import {
   Row,
   Section,
   Sheet,
+  Spinner,
   useKindWrites,
   useRecord,
 } from "@substrate/react"
@@ -20,20 +21,27 @@ import { WriteState } from "./WriteState"
  * owner opened it at, so a change made elsewhere meanwhile comes back as a
  * conflict to resolve in Settings, never written over. */
 export function ItemScreen(props: { id: string; onBack: () => void }) {
-  const item = useRecord(Item, props.id)
+  const read = useRecord(Item, props.id)
   const writes = useKindWrites(Item)
   const [editing, setEditing] = useState<Item | null>(null)
   const [name, setName] = useState("")
   const [notKept, setNotKept] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const item = read.value
   if (!item) {
     return (
       <div className="mx-auto w-full max-w-2xl">
         <NavBar onBack={props.onBack} backLabel="Items" />
-        <p className="px-4 py-16 text-center text-[17px] text-secondary">
-          This item is not in your repository.
-        </p>
+        {read.state === "loading" ? (
+          <div className="flex justify-center py-16 text-secondary">
+            <Spinner />
+          </div>
+        ) : (
+          <p className="px-4 py-16 text-center text-[17px] text-secondary">
+            This item is not in your repository.
+          </p>
+        )}
       </div>
     )
   }
@@ -46,13 +54,10 @@ export function ItemScreen(props: { id: string; onBack: () => void }) {
 
   const save = async () => {
     if (!editing) return
-    const kept = await writes.edit(
-      editing.id,
-      Item.write({ name }),
-      editing.version,
-      { onNotKept: setNotKept }
-    )
-    if (kept) setEditing(null)
+    const written = await writes.edit(editing.id, { name }, editing.version, {
+      onNotKept: setNotKept,
+    })
+    if (written.kept) setEditing(null)
   }
 
   const changed = !!editing && name.trim() !== editing.name && !!name.trim()
@@ -111,7 +116,7 @@ export function ItemScreen(props: { id: string; onBack: () => void }) {
         onCancel={() => setDeleting(false)}
         onConfirm={() => {
           setDeleting(false)
-          void writes.remove(item.id).then((kept) => kept && props.onBack())
+          void writes.remove(item.id).then((w) => w.kept && props.onBack())
         }}
       />
     </div>

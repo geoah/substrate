@@ -3,7 +3,14 @@
 React for a Substrate web app: the signed-in shell, the record and write
 hooks, Settings' sections, and the screen pieces in the Apple apps' grouped
 style. Import `@substrate/react/theme.css` after Tailwind 4 and set the
-app's accent on `:root` as `--sx-accent` and `--sx-accent-text`.
+app's accent on `:root` as `--sx-accent` and `--sx-accent-text`; the theme
+names the kit's own components as a Tailwind source, so an app's stylesheet
+names no path into the kit.
+
+An app imports this package alone: `defineKind`, the property readers
+(`stringProp`, `numberProp`, `booleanProp`, `refProp`), `webManifest` and
+`packageDetail` are re-exported from `@substrate/client` and
+`@substrate/auth`.
 
 ## The shell
 
@@ -21,28 +28,64 @@ app's standing at once and when the page comes back to the front, ends the
 session on a 401 or when the approved time is up (unsent writes stay for
 the next sign-in), and retries the revocations a sign-out still owes.
 
+Every tab of an app runs on the one session `localStorage` keeps. A
+sign-out in one tab closes the repository in the others and drops their
+records; a sign-in in one opens it in the others. A tab that slept through
+either (a background tab, a page back from the cache) looks again when it
+comes to the front, and until then its requests carry no token that is no
+longer the kept one, so the server refuses them and the tab ends.
+
+A sign-out keeps the token to revoke before it clears the session, so a
+revocation that meets no server leaves the token held by the queue rather
+than by nothing, then forgets what this browser kept for the repository
+(the outbox and the saved records), then revokes. Forgetting that another
+tab still holds open is said on the connect screen.
+
+`SubstrateProvider` is the same without the screens, for an app with its
+own connect screen: its children read `useConnection()` (the `phase`,
+`signingIn`, `signedOut`, `opening` or `open`, the `problem`, the
+`unrevoked` tokens, `signIn(located)` and the app status) and render the
+records once the phase is `open`. Wrap it in a `ToastHost` to hear writes
+that were not kept.
+
 ## Hooks
 
-| Hook                                            | Answers                                                                            |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `useRecords(Item)` / `useRecord(Item, id)`      | records of a kind read through its codec, current with the feed and the outbox     |
-| `useKindWrites(Item)`                           | `create(draft)`, `change(id, props)`, `edit(id, props, seenVersion)`, `remove(id)` |
-| `useWrites()`                                   | the untyped `create`, `patch`, `remove`                                            |
-| `usePending(Item, id)` / `useRefused(Item, id)` | whether a record's write waits, or was refused                                     |
-| `useOutbox()` / `useParkedWrites()`             | the outbox's summary, and the writes refused                                       |
-| `useLinkStatus()`                               | where the app stands, in Settings' one sentence                                    |
-| `useAppStatus()`                                | the last status check, and `refresh`                                               |
-| `useLive()`                                     | the linked records' snapshot                                                       |
-| `useSubstrate()`                                | the manifest, session, client, outbox, `signInAgain`, `signOut`                    |
+| Hook                                 | Answers                                                                                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useRecords(Item)`                   | every record of a kind, read through its codec: the same array until a record of that kind changes, each value the same until its record does        |
+| `useRecord(Item, id)`                | one record: `{ state: "loading" }` until its kind was read, `{ state: "absent" }`, or `{ state: "present", value }`                                  |
+| `useListed(Item)`                    | whether a kind's records were read, or kept from a read: "none yet" against "none"                                                                   |
+| `useWriteState(Item, id)`            | `pending` while a record's write waits to be sent, `parked` while one was refused and waits for the owner                                            |
+| `useKindWrites(Item)`                | `create(draft)`, `change(id, draft)`, `edit(id, draft, seenVersion)`, `remove(id)`, each draft written through the kind's codec                      |
+| `useWrites()`                        | the same writes by kind reference and properties, for a kind the app does not declare                                                                |
+| `useLinkedStatus()`                  | how the reading stands (loading, live, reconnecting and why), and how many records wait or were refused; a new object only when one of these changes |
+| `useOutbox()` / `useParkedWrites()`  | the outbox's summary, and the writes refused                                                                                                         |
+| `useStatusSentence()`                | where the app stands, in Settings' one sentence                                                                                                      |
+| `useAppStatus()`                     | the last status check, and `refresh`                                                                                                                 |
+| `useConnection()` / `useSubstrate()` | the connection, signed in or not; the open repository (manifest, session, client, linked records, outbox, `signInAgain`, `signOut`)                  |
 
-A write resolves once the outbox keeps it, with the record as it now shows;
-null (false for a remove) only when the browser could not keep it. Pass
-`{ onNotKept }` to say why beside a form instead of in a toast:
+A change draws only the components that read it: a record of one kind
+leaves the readers of another alone, and the connection, the app status and
+the outbox are apart from the records, so a status check never draws a
+list again.
+
+A write resolves once this browser has it: `{ kept: true, id, shown }`, the
+record as the owner now sees it, or `{ kept: false, words }`. **Kept is not
+landed.** The write waits in the outbox and is sent when the server can be
+reached; one the server refuses is parked for the owner (Settings' Refused
+by Your Substrate, `RefusedBanner`). A codec that throws, and storage that
+would not keep the write, are both not kept, said in a toast, or beside a
+form with `{ onNotKept }`:
 
 ```tsx
-const id = await writes.create({ name }, { onNotKept: setProblem })
-if (id) setDraft("") // kept: the draft may go
+const written = await writes.create({ name }, { onNotKept: setProblem })
+if (written.kept) setDraft("") // the outbox has it: the draft may go
 ```
+
+`shown` is undefined after a delete, for a kind the app does not read, and
+for a change to a record not read here; the write is kept all the same. A
+create leaves out properties given null, which hold nothing on a record not
+made yet.
 
 ## Settings
 
@@ -54,21 +97,18 @@ ID and the server's words, Retry and Discard, or Keep My Edit and Use
 Theirs), Repository (server, repository, version, Sign Out), Approved
 access (each scope in words and as carried, until when, Change Access…),
 Storage and About. Each is also its own component. `<AccessBanner />` puts
-the one issue the owner should act on now at the top of a screen.
+the one issue the owner should act on now at the top of a screen, and
+`<RefusedBanner onOpenSettings={…} />` the changes refused.
 
 ## Pieces
 
 `Section`, `Row`, `NoteRow`, `VerbatimRow`, `ProblemBox`, `ActionRow`,
-`SelectRow`, `ToggleRow`, `Field`, `NavBar`, `BarButton`, `LargeTitle`,
-`TabBar`, `SidebarItem`, `LinkStatus`, and two modals: `Sheet` and
-`Confirm`, which take focus when they open (Confirm on Cancel), keep Tab
-inside, close on Escape (only the topmost), and give focus back. Motion
+`SelectRow`, `ToggleRow`, `Field`, `NavBar` (its title the screen's
+heading), `BarButton`, `LargeTitle`, `TabBar` (a labelled `nav`),
+`SidebarItem`, `LinkStatus`, and three modals on Base UI's dialog: `Sheet`,
+`Alert` (a title, words, a field, and its answers) and `Confirm`. Each
+renders in a portal, locks the page's scroll and makes the rest of it
+inert, keeps focus inside, closes on Escape (only the topmost), and gives
+focus back to what opened it. Focus starts on the field marked
+`autoFocus`, else on an alert's Cancel, else on the first control. Motion
 honours `prefers-reduced-motion`.
-
-## Deprecated
-
-`LiveCollection` with its `apply` and `landed` (write through `useWrites`),
-`useSubstrate().collection` (use `linked`), `AccountSection` (use
-`SubstrateSettings`, or `RepositorySection` and `ApprovedAccessSection`),
-and the `LiveSnapshot` and `LiveStatus` names (`LinkedSnapshot`,
-`LinkedStatus` in `@substrate/local`).

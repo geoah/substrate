@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@substrate/react/theme.css";
-@source "../../../kit/web/react/src";
 
 /* Tasks' accent, app.json's `accent`. */
 :root {

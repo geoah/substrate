@@ -1,6 +1,12 @@
+import { AlertDialog } from "@base-ui/react/alert-dialog"
+import { Dialog } from "@base-ui/react/dialog"
 import { ChevronLeft, ChevronRight, ChevronsUpDown, X } from "lucide-react"
-import { useId, type ButtonHTMLAttributes, type ReactNode } from "react"
-import { useDialog } from "./dialog"
+import {
+  useLayoutEffect,
+  useRef,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react"
 
 /** The kit's screen pieces in the Apple apps' grouped style: inset cards of
  * rows, labels left and values right, the same labels in read and edit. */
@@ -83,7 +89,8 @@ export function SelectRow<T extends string>(props: {
   const current =
     props.options.find((o) => o.value === props.value)?.label ?? props.value
   return (
-    <label className="relative flex min-h-11 w-full items-center gap-3 px-4 py-2.5 active:bg-selected">
+    // The select is invisible over the row, so the row shows its focus.
+    <label className="relative flex min-h-11 w-full items-center gap-3 px-4 py-2.5 active:bg-selected has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-accent">
       <span className="shrink-0 text-[17px]">{props.label}</span>
       <span className="ml-auto flex min-w-0 items-center gap-1 text-[17px] text-secondary">
         <span className="truncate">{current}</span>
@@ -195,7 +202,8 @@ export function BarButton({
   )
 }
 
-/** The bar over a screen: back, a centred title, actions. */
+/** The bar over a screen: back, a centred title, actions. The title is the
+ * screen's heading, for a screen with no `LargeTitle`. */
 export function NavBar(props: {
   title?: ReactNode
   onBack?: () => void
@@ -215,9 +223,9 @@ export function NavBar(props: {
         )}
       </div>
       {props.title && (
-        <div className="min-w-0 truncate text-center text-[17px] font-semibold">
+        <h1 className="min-w-0 truncate text-center text-[17px] font-semibold">
           {props.title}
-        </div>
+        </h1>
       )}
       <div className="flex min-w-11 flex-1 justify-end gap-2">
         {props.actions}
@@ -245,9 +253,35 @@ export function LargeTitle({
   )
 }
 
-/** A modal: a sheet from the bottom on a phone, a centred card wider. It
- * takes focus when it opens and gives it back when it closes, keeps Tab
- * inside it, and closes on Escape. */
+/** Where a modal's focus starts: the element marked `data-autofocus`, else
+ * the one `fallback` names, else its first control. */
+function startFocus(
+  popup: HTMLElement | null,
+  fallback?: string
+): HTMLElement | true {
+  return (
+    popup?.querySelector<HTMLElement>("[data-autofocus]") ??
+    (fallback ? popup?.querySelector<HTMLElement>(fallback) : null) ??
+    true
+  )
+}
+
+/** Where a modal's focus goes back to when it closes: what held it as the
+ * modal opened, while that is still on the page. Base UI's own return finds
+ * a trigger, and these modals are opened by state, not by one. */
+function useReturnFocus(open: boolean): () => HTMLElement | true {
+  const before = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement)
+      before.current = document.activeElement
+  }, [open])
+  return () => (before.current?.isConnected ? before.current : true)
+}
+
+/** A modal: a sheet from the bottom on a phone, a centred card wider. Base
+ * UI's dialog holds the contract: it renders in a portal, locks the page's
+ * scroll and makes the rest of it inert, keeps focus inside, closes on
+ * Escape and an outside press, and gives focus back when it closes. */
 export function Sheet(props: {
   open: boolean
   onClose: () => void
@@ -255,46 +289,140 @@ export function Sheet(props: {
   children: ReactNode
   actions?: ReactNode
 }) {
-  const ref = useDialog(props.open, props.onClose)
-  const titleID = useId()
-  if (!props.open) return null
+  const popup = useRef<HTMLDivElement>(null)
+  const returnFocus = useReturnFocus(props.open)
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center">
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]"
-        onClick={props.onClose}
-      />
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleID}
-        tabIndex={-1}
-        className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[14px] bg-grouped shadow-2xl outline-none motion-safe:animate-[sx-rise_200ms_ease-out] sm:max-w-lg sm:rounded-[14px]"
-      >
-        <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-          <BarButton onClick={props.onClose} aria-label="Cancel">
-            <X className="size-5" aria-hidden />
-          </BarButton>
-          <h2
-            id={titleID}
-            className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold"
+    <Dialog.Root
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open) props.onClose()
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]" />
+        <Dialog.Viewport className="fixed inset-0 z-40 flex items-end justify-center sm:items-center">
+          <Dialog.Popup
+            ref={popup}
+            initialFocus={() => startFocus(popup.current)}
+            finalFocus={returnFocus}
+            className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[14px] bg-grouped text-label shadow-2xl outline-none motion-safe:animate-[sx-rise_200ms_ease-out] sm:max-w-lg sm:rounded-[14px]"
           >
-            {props.title}
-          </h2>
-          <div className="flex min-w-11 justify-end">{props.actions}</div>
-        </div>
-        <div className="overflow-y-auto px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          {props.children}
-        </div>
-      </div>
-    </div>
+            <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+              <BarButton onClick={props.onClose} aria-label="Cancel">
+                <X className="size-5" aria-hidden />
+              </BarButton>
+              <Dialog.Title className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold">
+                {props.title}
+              </Dialog.Title>
+              <div className="flex min-w-11 justify-end">{props.actions}</div>
+            </div>
+            <div className="overflow-y-auto px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              {props.children}
+            </div>
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
-/** A question before something that cannot be undone. Focus starts on
- * Cancel, the answer that changes nothing. */
+/** One of an alert's answers. The `cancel` one changes nothing: focus
+ * starts on it, and Escape is it. */
+export interface AlertButton {
+  label: string
+  onClick: () => void
+  role?: "cancel" | "destructive" | "default"
+  disabled?: boolean
+}
+
+/** A question in the middle of the screen, the platform's alert: a title,
+ * its words, what the owner fills in (`children`), and the answers, side by
+ * side when two short ones fit, else stacked with Cancel last. An outside
+ * press does not answer it. */
+export function Alert(props: {
+  open: boolean
+  title: string
+  message?: ReactNode
+  children?: ReactNode
+  buttons: AlertButton[]
+  /** Escape: the answer that changes nothing. */
+  onCancel: () => void
+}) {
+  const popup = useRef<HTMLDivElement>(null)
+  const returnFocus = useReturnFocus(props.open)
+  const stacked =
+    props.buttons.length > 2 || props.buttons.some((b) => b.label.length > 12)
+  const buttons = stacked
+    ? [...props.buttons].sort(
+        (a, b) => Number(a.role === "cancel") - Number(b.role === "cancel")
+      )
+    : props.buttons
+  return (
+    <AlertDialog.Root
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open) props.onCancel()
+      }}
+    >
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]" />
+        <AlertDialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <AlertDialog.Popup
+            ref={popup}
+            initialFocus={() => startFocus(popup.current, "[data-cancel]")}
+            finalFocus={returnFocus}
+            className="relative w-full max-w-[300px] overflow-hidden rounded-[14px] bg-card/95 text-center text-label shadow-2xl backdrop-blur-xl outline-none motion-safe:animate-[sx-pop_150ms_ease-out]"
+          >
+            <div className="px-4 pt-5 pb-4">
+              <AlertDialog.Title className="text-[17px] font-semibold">
+                {props.title}
+              </AlertDialog.Title>
+              {props.message && (
+                <AlertDialog.Description
+                  render={<div />}
+                  className="mt-1 text-[13px] leading-snug"
+                >
+                  {props.message}
+                </AlertDialog.Description>
+              )}
+              {props.children}
+            </div>
+            <div
+              className={cx(
+                "border-t border-separator",
+                stacked
+                  ? "flex flex-col [&>*+*]:border-t [&>*+*]:border-separator"
+                  : "grid grid-cols-2 [&>*+*]:border-l [&>*+*]:border-separator"
+              )}
+            >
+              {buttons.map((b) => (
+                <button
+                  key={b.label}
+                  type="button"
+                  disabled={b.disabled}
+                  data-cancel={b.role === "cancel" || undefined}
+                  onClick={b.onClick}
+                  className={cx(
+                    "min-h-11 px-3 py-2 text-[17px] disabled:opacity-40",
+                    b.role === "destructive"
+                      ? "text-danger"
+                      : "text-accent-text",
+                    b.role !== "cancel" && "font-semibold"
+                  )}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </AlertDialog.Popup>
+        </AlertDialog.Viewport>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  )
+}
+
+/** A question before something that cannot be undone: Cancel, and the
+ * one answer that does it. */
 export function Confirm(props: {
   open: boolean
   title: string
@@ -305,57 +433,21 @@ export function Confirm(props: {
   /** Whether confirming gives something up: shown in red. */
   destructive?: boolean
 }) {
-  const ref = useDialog(props.open, props.onCancel)
-  const titleID = useId()
-  const messageID = useId()
-  if (!props.open) return null
-  const destructive = props.destructive ?? true
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-black/35 motion-safe:animate-[sx-fade_150ms_ease-out]"
-        onClick={props.onCancel}
-      />
-      <div
-        ref={ref}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleID}
-        aria-describedby={messageID}
-        tabIndex={-1}
-        className="relative w-full max-w-[300px] overflow-hidden rounded-[14px] bg-card/95 text-center shadow-2xl backdrop-blur-xl outline-none motion-safe:animate-[sx-pop_150ms_ease-out]"
-      >
-        <div className="px-4 pt-5 pb-4">
-          <h2 id={titleID} className="text-[17px] font-semibold">
-            {props.title}
-          </h2>
-          <div id={messageID} className="mt-1 text-[13px]">
-            {props.message}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 border-t border-separator">
-          <button
-            type="button"
-            data-autofocus
-            className="h-11 border-r border-separator text-[17px] text-accent-text"
-            onClick={props.onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className={cx(
-              "h-11 text-[17px] font-semibold",
-              destructive ? "text-danger" : "text-accent-text"
-            )}
-            onClick={props.onConfirm}
-          >
-            {props.confirm}
-          </button>
-        </div>
-      </div>
-    </div>
+    <Alert
+      open={props.open}
+      title={props.title}
+      message={props.message}
+      onCancel={props.onCancel}
+      buttons={[
+        { label: "Cancel", role: "cancel", onClick: props.onCancel },
+        {
+          label: props.confirm,
+          role: (props.destructive ?? true) ? "destructive" : "default",
+          onClick: props.onConfirm,
+        },
+      ]}
+    />
   )
 }
 
@@ -388,6 +480,7 @@ export function Field(props: {
           value={props.value}
           placeholder={props.placeholder}
           autoFocus={props.autoFocus}
+          data-autofocus={props.autoFocus || undefined}
           onChange={(e) => props.onChange(e.target.value)}
         />
       )}
@@ -396,9 +489,19 @@ export function Field(props: {
 }
 
 /** The bottom bar of a phone: a few top-level sections. */
-export function TabBar({ children }: { children: ReactNode }) {
+export function TabBar({
+  children,
+  label = "Sections",
+}: {
+  children: ReactNode
+  /** What a screen reader calls the bar. */
+  label?: string
+}) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <nav
+      aria-label={label}
+      className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    >
       <div className="flex w-full max-w-sm items-stretch gap-1 rounded-full bg-card/80 p-1.5 shadow-[0_2px_16px_rgb(0_0_0/0.12)] ring-1 ring-separator/40 backdrop-blur-xl">
         {children}
       </div>

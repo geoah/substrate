@@ -10,8 +10,6 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@substrate/auth": "workspace:*",
-    "@substrate/client": "workspace:*",
     "@substrate/react": "workspace:*",
     "lucide-react": "^1.49.0",
     "react": "^19.3.0",

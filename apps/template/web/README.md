@@ -15,13 +15,19 @@ React 19, Vite and Tailwind CSS 4.
 Where the owner is lives in the address bar (`#/`, `#/item/<id>`,
 `#/settings`).
 
-| File                                        | What                                                                |
-| ------------------------------------------- | ------------------------------------------------------------------- |
-| `src/kinds.ts`                              | the one kind, declared once with `defineKind`                       |
-| `src/main.tsx`                              | the manifest (app.json's ids, package and scope) and `SubstrateApp` |
-| `src/ItemsScreen.tsx`, `src/ItemScreen.tsx` | the screens, on `useRecords`, `useRecord` and `useKindWrites`       |
-| `src/SettingsScreen.tsx`                    | `SubstrateSettings`; an app's own sections go above it              |
-| `vite.config.ts`                            | `@substrate/vite`'s `substrateSite`                                 |
+| File                                        | What                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `src/kinds.ts`                              | the one kind, declared once with `defineKind`: its read and its write      |
+| `src/main.tsx`                              | the manifest (app.json's ids, package and scope) and `SubstrateApp`        |
+| `src/ItemsScreen.tsx`, `src/ItemScreen.tsx` | the screens, on `useRecords`, `useListed`, `useRecord` and `useKindWrites` |
+| `src/AddItem.tsx`                           | the field that adds an item, kept until the outbox has it                  |
+| `src/WriteState.tsx`                        | an item's write waiting or refused, from `useWriteState`                   |
+| `src/SettingsScreen.tsx`                    | `SubstrateSettings`; an app's own sections go above it                     |
+| `vite.config.ts`                            | `@substrate/vite`'s `substrateSite`                                        |
+
+Everything the app imports from the kit comes from `@substrate/react`. The
+kit's README walks through these files: [an app, file by
+file](../../kit/web/README.md#an-app-file-by-file).
 
 ## The writes
 

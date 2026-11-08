@@ -1,4 +1,10 @@
-import { LargeTitle, LinkStatus, cx } from "@substrate/react"
+import {
+  LargeTitle,
+  LinkStatus,
+  cx,
+  useLinkedStatus,
+  useListed,
+} from "@substrate/react"
 import {
   ChevronRight,
   CircleCheck,
@@ -13,7 +19,13 @@ import { useState, type ReactNode } from "react"
 import { useTaskActions } from "./actions"
 import { Menu, type MenuItem } from "./Menu"
 import { Notices } from "./Notices"
-import { inboxTitle, listTitle, sameSelection, type Selection } from "./model"
+import {
+  List,
+  inboxTitle,
+  listTitle,
+  sameSelection,
+  type Selection,
+} from "./model"
 import { openCount } from "./present"
 import { useReorder } from "./reorder"
 import { namingStore, useTasks, type Section } from "./state"
@@ -32,6 +44,8 @@ export function ListsMenu(props: {
   onSelect: (s: Selection) => void
 }) {
   const model = useTasks()
+  const link = useLinkedStatus()
+  const listsRead = useListed(List)
   const actions = useTaskActions()
   const [menu, setMenu] = useState<{
     id: string
@@ -151,7 +165,7 @@ export function ListsMenu(props: {
     )
   )
   const noLists =
-    model.lists.length === 0 && model.status === "live"
+    model.lists.length === 0 && listsRead
       ? "No lists yet. Add one to sort your tasks."
       : undefined
 
@@ -168,7 +182,7 @@ export function ListsMenu(props: {
             {newList}
           </div>
           <LargeTitle>Lists</LargeTitle>
-          <LinkStatus status={model.status} words={model.words} />
+          <LinkStatus status={link.status} words={link.words} />
           <Notices wide={false} />
         </>
       )}

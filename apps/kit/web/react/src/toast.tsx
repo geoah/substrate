@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -26,13 +27,26 @@ export function useToast() {
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const next = useRef(1)
+  // A host that unmounts takes its toasts' timers with it.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const t of pending) clearTimeout(t)
+      pending.clear()
+    }
+  }, [])
   const show = useCallback((text: string, tone: Toast["tone"] = "info") => {
     const id = next.current++
     setToasts((t) => [...t, { id, text, tone }])
-    setTimeout(
-      () => setToasts((t) => t.filter((x) => x.id !== id)),
+    const timer = setTimeout(
+      () => {
+        timers.current.delete(timer)
+        setToasts((t) => t.filter((x) => x.id !== id))
+      },
       tone === "error" ? 7000 : 3500
     )
+    timers.current.add(timer)
   }, [])
   return (
     <ToastContext.Provider value={show}>

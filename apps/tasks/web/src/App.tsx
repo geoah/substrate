@@ -1,10 +1,10 @@
-import { TabItem, cx, useMediaQuery } from "@substrate/react"
+import { TabItem, cx, useListed, useMediaQuery } from "@substrate/react"
 import { CircleCheck, ListChecks, Plus, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useTaskActions } from "./actions"
 import { ListsMenu } from "./ListsMenu"
 import { Alert } from "./Menu"
-import type { Selection } from "./model"
+import { Task, type Selection } from "./model"
 import { deleteListQuestion, needsYouBadge } from "./present"
 import { useReminders } from "./reminders"
 import { SettingsScreen } from "./SettingsScreen"
@@ -42,15 +42,16 @@ export function App() {
   const threeColumns = useMediaQuery("(min-width: 1000px)")
   const keyboard = useMediaQuery("(hover: hover) and (pointer: fine)") && wide
   const reminders = useReminders(model.tasks, model.lists, settings, now)
+  // Whether the tasks were read: a task missing before then may come yet.
+  const listed = useListed(Task)
 
   const { section, selection } = route
   const task = route.task ? model.task(route.task) : undefined
 
   // A task deleted elsewhere closes; a link to one not yet read waits.
   useEffect(() => {
-    if (route.task && !task && model.status === "live")
-      go({ ...route, task: undefined }, true)
-  }, [route, task, model.status])
+    if (route.task && !task && listed) go({ ...route, task: undefined }, true)
+  }, [route, task, listed])
 
   // A reminder's task, once its record is read: Lists, on its list, open.
   useEffect(() => {
@@ -65,9 +66,9 @@ export function App() {
         },
         true
       )
-    else if (model.status === "live")
+    else if (listed)
       go({ section: "needs", selection: { kind: "needs" } }, true)
-  }, [route.tapped, model, model.status])
+  }, [route.tapped, model, listed])
 
   useShortcuts({ threeColumns, taskID: route.task, actions })
 
@@ -206,7 +207,10 @@ function PhoneBar(props: {
   onAdd: () => void
 }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-center gap-3 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <nav
+      aria-label="Sections"
+      className="fixed inset-x-0 bottom-0 z-30 flex justify-center gap-3 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    >
       <div className="flex min-w-0 flex-1 items-stretch gap-1 rounded-full bg-card/80 p-1.5 shadow-[0_2px_16px_rgb(0_0_0/0.12)] ring-1 ring-separator/40 backdrop-blur-xl sm:max-w-sm">
         <TabItem
           icon={<CircleCheck className="size-6" />}
