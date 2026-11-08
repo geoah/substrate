@@ -124,11 +124,14 @@ owner="$("${compose[@]}" exec -T substrate stat -c %u /var/lib/substrate/reposit
 # The uv on PATH, the one the runner execs, must be the release the
 # Dockerfile pins, and static. The upstream amd64 release is static-pie:
 # musl's ldd lists only the loader, with no `=>` line. The arm64 one is plain
-# static, and musl's ldd refuses it, exit 1, with "Not a valid dynamic
-# program", which is that same answer. Alpine's package links libc.musl,
-# libgcc_s and libbz2, and names itself `alpine-linux-musl` in its version
-# string. Any other ldd failure is a failure here, not a pass, because a check
-# that cannot run proves nothing.
+# static, and musl's ldd refuses it, exit 1, with "<path>: Not a valid
+# dynamic program", which is the same answer for an ELF file: a dynamically
+# linked one, PIE or not, carries an interpreter ldd can read. ldd refuses a
+# script the same way, so the refusal counts only for a file that opens with
+# the ELF magic, which a wrapper exec'ing Alpine's uv does not. Alpine's
+# package links libc.musl, libgcc_s and libbz2, and names itself
+# `alpine-linux-musl` in its version string. Any other ldd failure is a
+# failure here, not a pass, because a check that cannot run proves nothing.
 uv_pin="$(sed -n 's/^ARG UV_VERSION=\([^[:space:]]*\).*/\1/p' Dockerfile | head -1)"
 [ -n "$uv_pin" ] || fail "the Dockerfile declares no ARG UV_VERSION= to hold the image's uv to"
 uv_path="$("${compose[@]}" exec -T substrate sh -c 'command -v uv')" ||
@@ -140,15 +143,19 @@ case "$uv_version" in
 "uv ${uv_pin}" | "uv ${uv_pin} "*) ;;
 *) fail "${uv_path} reports ${uv_version}, but the Dockerfile pins UV_VERSION ${uv_pin}" ;;
 esac
-if ! uv_libs="$("${compose[@]}" exec -T substrate ldd "$uv_path" 2>&1)"; then
+if uv_libs="$("${compose[@]}" exec -T substrate ldd "$uv_path" 2>&1)"; then
   case "$uv_libs" in
-  *"Not a valid dynamic program"*) ;;
+  *"=>"*) fail "${uv_path} links shared libraries, so it is not the static upstream release: ${uv_libs}" ;;
+  esac
+else
+  case "$uv_libs" in
+  *"${uv_path}: Not a valid dynamic program"*) ;;
   *) fail "ldd could not read ${uv_path}: ${uv_libs}" ;;
   esac
+  uv_magic="$("${compose[@]}" exec -T substrate head -c 4 "$uv_path" | od -An -tx1 | tr -d ' \n')"
+  [ "$uv_magic" = "7f454c46" ] ||
+    fail "ldd refused ${uv_path} and it is no ELF binary (it opens with ${uv_magic:-nothing}), so it is a wrapper, not the static upstream release"
 fi
-case "$uv_libs" in
-*"=>"*) fail "${uv_path} links shared libraries, so it is not the static upstream release: ${uv_libs}" ;;
-esac
 
 doc="$(curl -fsS "${base}/.well-known/substrate/server.json")"
 version="$(printf '%s' "$doc" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
