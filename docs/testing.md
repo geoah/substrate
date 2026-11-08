@@ -368,11 +368,21 @@ halves run with `-coverpkg=github.com/geoah/substrate/...`, so a statement
 counts whichever package's tests ran it (`internal/api`'s tests drive most
 of `internal/window`, `internal/providertest` drives the engine from outside).
 The total is over every package in the module, a package with no tests at
-0%. CI
-keeps `coverage.out` as an artifact of every push to `main` (the `coverage`
-job), so a reviewer can answer "is that new branch covered" without running
-anything. A PR's runs carry no profile: the PR jobs are sharded, and merging
-their partial profiles would buy nothing a push to `main` cannot wait for.
+0%. The two halves' profiles are merged by `.mise/covermerge.sh`, which adds
+up each block's count across the test binaries that report it, the sum `go
+tool cover` would make of the concatenated files, in a fiftieth of the size.
+
+CI keeps `coverage.out` as an artifact of every run that tests Go, a pull
+request's included (the `coverage` job), so a reviewer can answer "is that
+new branch covered" without running anything. CI does not run the suite a
+second time for it. Every Go test job runs its suite instrumented, because
+its task sets `SUBSTRATE_TEST_COVERPROFILE` (which `test:short`,
+`.mise/dbshard.sh` and the `ci:db:rest` and `ci:drill` lines read), and
+uploads its part, and the `coverage` job merges the parts with the same
+script (`ci:coverage:merge`). Instrumenting is close to free here: the
+engine package took 1194 s instrumented in one run on `main` on 2026-11-08,
+and its sixteen plain shards of the same commit summed to 1273 s. The
+second run it replaced was what made the job 26 minutes long.
 
 ## The console
 
@@ -698,8 +708,8 @@ apps' two jobs behind `apps gate` are far past it, and run only on a change
 to what they build (the `changes` job's `apps` answer): such a pull request
 waits for them, and every other one passes the gate with both skipped. The
 Median column is the median job time over the 29 pull request runs of
-2026-10-10 to 2026-10-12 that ran the Go suite (the coverage job: the 12
-pushes to `main` in the same days); `gh run view <id> --json createdAt,jobs`
+2026-10-10 to 2026-10-12 that ran the Go suite; a row without one was
+cut or added since; `gh run view <id> --json createdAt,jobs`
 measures a run. `go gate` went green a median 179 s after the push in those
 runs.
 
@@ -713,7 +723,8 @@ runs.
 | go test | `ci:go` | the short suite, no database | through `go gate` | 54 s |
 | engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` | 76 s |
 | db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
-| db rest | `ci:db:rest` | `internal/providertest`, and `internal/testenv` without the acceptance drill | through `go gate` | 122 s |
+| db providertest 1/2, 2/2 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
+| db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill | through `go gate` | |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
 | apps linux | `ci:apps` | the kit and every app's core built and tested on Linux in the swift container, then the core of an app `apps:new` makes | through `apps gate` | |
 | android build | `ci:android` | the apps' Swift and Kotlin format checks, the Android toolchain installed, the bridge's generator checked and its tests, and the kit cross-compiled for Android | through `apps gate` | |
@@ -724,7 +735,7 @@ runs.
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64, and golangci-lint for darwin | no | 82 s |
 | image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no | 115 s |
 | changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites, and `apps=` for the apps' jobs | no | 9 s |
-| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only | 632 s |
+| coverage | `ci:coverage:merge` | merges the profile every Go test job wrote into `coverage.out`, kept as an artifact; runs no test | no | |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not. So does
@@ -746,7 +757,8 @@ weekly on `main` and on dispatch, never on a pull request, and
 ### The database suite, cut for the runner
 
 The engine package is too long for one 4 vCPU runner, so CI runs it as
-sixteen matrix jobs, and `internal/catalog` as two.
+sixteen matrix jobs, and `internal/catalog` and `internal/providertest` as
+two each.
 `.mise/dbshard.sh` reads a package's top-level test names from its
 `_test.go` files, sorts them and gives shard `k` every `n`th name starting
 from the `k`th, as one `-run` regex anchored at both ends. Every test lands in
@@ -856,8 +868,8 @@ environment with `main`'s deployment policy alone, and write nothing on
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without
 the provider suite, and `mise run ci` runs `ci:coverage` in place of `ci:go`,
-the shards, the `db` jobs and the drill, because it is the same tests once
-with the profile, and `ci:providers` beside it.
+the shards, the `db` jobs, the drill and the `coverage` job's merge, because
+it is the same tests once with the profile, and `ci:providers` beside it.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.

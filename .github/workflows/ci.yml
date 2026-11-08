@@ -76,8 +76,15 @@
 # so every test lands in exactly one shard and a new test lands in one without
 # anybody editing a list. The `shard:` list under `engine` is the ONE place
 # that count is written: `strategy.job-total` feeds SHARDS and the job name.
-# The unsharded suite with its coverage profile is the `coverage` job, which
-# runs on push to main only.
+#
+# Coverage is not a second run. Every Go test job (`go test`, the `engine`
+# shards, the `db` jobs, `acceptance drill`) runs its suite instrumented,
+# with SUBSTRATE_TEST_COVERPROFILE set by its task, and uploads its part of
+# the profile; the `coverage` job merges the parts. Instrumenting cost the
+# short suite 12 s of its 72 and the engine nothing measurable (1194 s
+# instrumented unsharded on main against 16 plain shards summing to more).
+# The `coverage` job used to run the whole suite again on one runner, 26
+# minutes on every push to main, and latest.yml waited for all of it.
 #
 # The actions/cache steps below are the one thing that IS about the machine and
 # so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
@@ -180,8 +187,10 @@ jobs:
             lychee goreleaser uv actionlint zizmor
       # kinds:check compiles cmd/vocabularydiff only on a pull request that
       # changes kinds/ or samples/, so a push to main builds nothing this job
-      # could save. It restores `go test`'s entry, which holds every package
-      # vocabularydiff imports, and saves nothing. The paths must stay
+      # could save. It restores `go test`'s entry and saves nothing. That
+      # entry's objects of this module's packages are instrumented for
+      # coverage, so vocabularydiff compiles those again; its third-party
+      # imports still come from the entry. The paths must stay
       # `go test`'s: a different list is a different cache version and never
       # matches.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -350,6 +359,15 @@ jobs:
         continue-on-error: true
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:go
+      # The job's part of the coverage profile, which the `coverage` job
+      # merges. A failed suite still writes one, which is when it is wanted.
+      - if: always() && steps.changes.outputs.go == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-part-go
+          path: coverage.part.out
+          if-no-files-found: error
+          retention-days: 1
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && steps.cache.outputs.cache-hit != 'true'
         run: .mise/gocache.sh prune ~/.cache/go-build
@@ -363,11 +381,11 @@ jobs:
             ~/.cache/go-build
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
-  # The database packages outside the engine, split in two so neither waits
-  # on the other: catalog alone is half of their time. `-p 1` inside each,
-  # because the packages of one run share the one database. `cache` names the
-  # Go cache entry: the catalog halves build one test binary and `rest` builds
-  # others, so each task keeps its own.
+  # The database packages outside the engine, cut so none waits on another:
+  # catalog and providertest in two shards each, testenv on its own. `-p 1`
+  # inside each, because the packages of one run share the one database.
+  # `cache` names the Go cache entry: the shards of one package build one
+  # test binary, and each package keeps its own.
   db:
     name: db ${{ matrix.part }}
     runs-on: ubuntu-latest
@@ -384,6 +402,16 @@ jobs:
           - part: catalog 2/2
             task: "ci:db:catalog"
             cache: catalog
+            shard: 2
+            shards: 2
+          - part: providertest 1/2
+            task: "ci:db:providertest"
+            cache: providertest
+            shard: 1
+            shards: 2
+          - part: providertest 2/2
+            task: "ci:db:providertest"
+            cache: providertest
             shard: 2
             shards: 2
           - part: rest
@@ -466,6 +494,15 @@ jobs:
         run: .mise/cipostgres.sh wait
       - if: steps.changes.outputs.go == 'true'
         run: mise run "$TASK"
+      # The job's part of the coverage profile, which the `coverage` job
+      # merges. A failed suite still writes one, which is when it is wanted.
+      - if: always() && steps.changes.outputs.go == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-part-db-${{ matrix.cache }}-${{ matrix.shard }}
+          path: coverage.part.out
+          if-no-files-found: error
+          retention-days: 1
       # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
@@ -536,6 +573,15 @@ jobs:
         run: .mise/cipostgres.sh wait
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:engine
+      # The job's part of the coverage profile, which the `coverage` job
+      # merges. A failed suite still writes one, which is when it is wanted.
+      - if: always() && steps.changes.outputs.go == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-part-engine-${{ matrix.shard }}
+          path: coverage.part.out
+          if-no-files-found: error
+          retention-days: 1
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
         run: .mise/gocache.sh prune ~/.cache/go-build
@@ -672,6 +718,15 @@ jobs:
         continue-on-error: true
       - run: .mise/cipostgres.sh wait
       - run: mise run ci:drill
+      # The job's part of the coverage profile, which the `coverage` job
+      # merges. A failed suite still writes one, which is when it is wanted.
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-part-drill
+          path: coverage.part.out
+          if-no-files-found: error
+          retention-days: 1
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         run: .mise/gocache.sh prune ~/.cache/go-build
@@ -702,68 +757,44 @@ jobs:
             [ "$result" = success ] || { echo "a gated job ended $result"; exit 1; }
           done
 
+  # The test jobs' coverage parts, merged into the one profile. No suite runs
+  # here, so the job takes seconds once the last test job is done. It runs
+  # wherever they do, a pull request included: the profile answers "is that
+  # new branch tested" for the reviewer of the change that adds the branch.
+  # `always()`, because a failing suite still writes its part.
   coverage:
     name: coverage
-    if: github.event_name == 'push'
+    needs: [changes, go, engine, db, drill]
+    if: always() && needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    env:
-      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
-      SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: .mise/cipostgres.sh start
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           experimental: true
           version: 2026.9.2
           cache_key_prefix: mise-v2
           cache_save: ${{ github.event_name == 'push' }}
-      # Its own key: -covermode=atomic instruments every package, so the
-      # objects `go test` and the shards cache are of no use here.
-      - id: cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          install_args: go
+      # Each part lands in a directory named for its artifact.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}-${{
-            github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}-
-            ${{ runner.os }}-go-coverage-
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        run: .mise/gocache.sh age ~/.cache/go-build
-        continue-on-error: true
-      - run: .mise/cipostgres.sh wait
-      - run: mise run ci:coverage
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        run: .mise/gocache.sh prune ~/.cache/go-build
-        continue-on-error: true
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ steps.cache.outputs.cache-primary-key }}
+          pattern: coverage-part-*
+          path: coverage-parts
+      - run: mise run ci:coverage:merge
       # The profile, kept as an artifact rather than sent to a coverage
       # service. There is no threshold and no badge on purpose (see
       # `test:coverage` in .mise.toml): this is here so a reviewer asking "is
       # that new branch tested" can download the answer, not so a number can
-      # fail a build. `if: always()` because a failing suite still produces a
-      # profile, and that is exactly when it is wanted.
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      # fail a build.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage
           path: coverage.out
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
   race:

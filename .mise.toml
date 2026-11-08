@@ -115,7 +115,7 @@ description = "Load .dev/synth into a running substrate: -server, -authority, SY
 run = "go run ./cmd/synth load"
 
 [tasks.test]
-description = "The whole Go suite, sequential: what ci:coverage runs on main"
+description = "The whole Go suite, sequential"
 # SEQUENTIAL, not `depends`. mise runs dependencies in PARALLEL, and running
 # the short suite alongside the container suite starves the pgvector container
 # on a small machine — it dies mid-run and every remaining case fails with
@@ -149,7 +149,12 @@ description = "go test -short ./... — skips every suite that needs a database"
 # Go's cacheable set, so without it a run can answer "(cached)" and rerun
 # nothing, which once kept a real failure invisible locally until CI,
 # cacheless, caught it.
-run = "go test -count=1 -short ./..."
+#
+# SUBSTRATE_TEST_COVERPROFILE, here and in `test:db:engine` and the `ci:db:*`
+# and `ci:drill` tasks, writes the run's coverage profile there with
+# `test:coverage`'s flags. Every CI test job sets it and keeps its profile,
+# and the `coverage` job merges them (`ci:coverage:merge`).
+run = "go test -count=1 -short ${SUBSTRATE_TEST_COVERPROFILE:+-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=$SUBSTRATE_TEST_COVERPROFILE} ./..."
 
 [tasks."test:db"]
 description = "The suites that want a database: a pgvector container, or SUBSTRATE_TEST_DATABASE_URL"
@@ -229,9 +234,8 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # nothing exercises — `go tool cover -html=coverage.out` is the useful view.
 #
 # The two halves run sequentially for the same reason `test` does, and their
-# profiles are concatenated: a profile is a `mode:` line then one line per
-# block, so keeping the first line and dropping the other's is the whole merge.
-# `go tool cover` adds up a block that more than one test binary reports.
+# profiles are merged by .mise/covermerge.sh, which adds up a block that more
+# than one test binary reports, as `go tool cover` would.
 #
 # -coverpkg=github.com/geoah/substrate/...: a statement counts when any
 # package's tests run it, not only its own package's. Without it
@@ -246,9 +250,8 @@ run = [
   "go test -count=1 -short -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.short.out ./...",
   ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/...",
   """
-    { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
+    .mise/covermerge.sh coverage.out coverage.short.out coverage.db.out
     rm -f coverage.short.out coverage.db.out
-    go tool cover -func=coverage.out | tail -1
     """,
 ]
 
@@ -1271,26 +1274,35 @@ description = "CI job `go test`: the short suite, no database"
 # runs the rest of the suite.
 #
 # `run`, not `depends`: mise gives a dependency task its own environment, so a
-# variable set here would never reach the test task.
-env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
+# variable set here would never reach the test task. The profile is the job's
+# part of the `coverage` job's merge, see `test:short`.
+env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
 run = "mise run test:short"
 
 [tasks."ci:db:catalog"]
 description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"
 # The second-slowest database package, so it is sharded the way the engine is.
-env = { PKG = "internal/catalog" }
+env = { PKG = "internal/catalog", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = ".mise/dblock.sh .mise/dbshard.sh"
+
+[tasks."ci:db:providertest"]
+description = "CI job `db providertest k/n`: one shard of internal/providertest against the database, SHARD and SHARDS from the environment"
+# It was `db rest` with internal/testenv, and at 200 to 420 seconds the
+# slowest job behind `go gate` and the last part the `coverage` job waited
+# for, so it is sharded the way catalog is. It warms each provider closure's
+# PEP 723 body through uv, so the job caches ~/.cache/uv beside the Go
+# caches. SUBSTRATE_REQUIRE_PROVIDER_SUITES turns the suite's skips for a
+# missing `uv` or `python3`, or an offline resolve, into failures: a shard
+# that ran no provider case is red, not green.
+env = { PKG = "internal/providertest", SUBSTRATE_REQUIRE_PROVIDER_SUITES = "1", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."ci:db:rest"]
-description = "CI job `db rest`: providertest and testenv against the database, without the acceptance drill"
-# internal/providertest warms each provider closure's PEP 723 body through uv,
-# so the job caches ~/.cache/uv beside the Go caches. The acceptance drill is
-# one serial scenario longer than this job's budget, so it is `ci:drill`.
-# SUBSTRATE_REQUIRE_PROVIDER_SUITES turns the suite's skips for a missing
-# `uv` or `python3`, or an offline resolve, into failures: a job that ran no
-# provider case is red, not green.
-env = { SUBSTRATE_REQUIRE_PROVIDER_SUITES = "1" }
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/..."
+description = "CI job `db rest`: testenv against the database, without the acceptance drill"
+# The acceptance drill is one serial scenario longer than this job's budget,
+# so it is `ci:drill`.
+env = { SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ${SUBSTRATE_TEST_COVERPROFILE:+-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=$SUBSTRATE_TEST_COVERPROFILE} ./internal/testenv/..."
 
 [tasks."ci:drill"]
 description = "CI job `acceptance drill`: internal/testenv's release acceptance drill, alone"
@@ -1298,7 +1310,8 @@ description = "CI job `acceptance drill`: internal/testenv's release acceptance 
 # another key, compare, interrupted import, second restore, replaced cursor),
 # so it cannot be cut. It runs on every PR and on main and is not required:
 # it is past the required checks' one-minute budget on its own.
-run = ".mise/dblock.sh go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ./internal/testenv/"
+env = { SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = ".mise/dblock.sh go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ${SUBSTRATE_TEST_COVERPROFILE:+-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=$SUBSTRATE_TEST_COVERPROFILE} ./internal/testenv/"
 
 [tasks."ci:providers"]
 description = "CI job `providers e2e`: the provider suite, alone on its runner"
@@ -1310,17 +1323,28 @@ depends = ["test:db:providers"]
 description = "CI job `engine N/M`: one shard of the engine suite; SHARD and SHARDS from the environment"
 # One matrix job per shard. The matrix in .github/workflows/ci.yml is the one
 # place the shard count is written; this task reads it from the environment.
-# No sandbox variable: the engine has no confinement cases.
-depends = ["test:db:engine"]
+# No sandbox variable: the engine has no confinement cases. `run`, not
+# `depends`, so the profile variable reaches the task, see `ci:go`.
+env = { SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = "mise run test:db:engine"
 
 [tasks."ci:coverage"]
-description = "CI job `coverage`: the whole suite, unsharded, with the profile; runs on main"
-# The profile CI keeps as an artifact. Unsharded because merging the shards'
-# partial profiles buys nothing a push to main cannot wait for: this job runs
-# on `push`, so a PR never waits on it. It is `test:coverage` with the sandbox
-# gate armed, see `ci:go`.
+description = "`mise run ci`'s Go suite: what every CI test job runs, run once, unsharded, with the profile"
+# Not a CI job. In CI the suite is the `go test`, `engine`, `db` and
+# `acceptance drill` jobs, each keeping its part of the profile, and the
+# `coverage` job merges the parts (`ci:coverage:merge`). Until 2026-11-08 the
+# `coverage` job ran this, the whole suite a second time on one runner: 26
+# minutes on main, every one of which `latest.yml` waited for. It is
+# `test:coverage` with the sandbox gate armed, see `ci:go`.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
 run = "mise run test:coverage"
+
+[tasks."ci:coverage:merge"]
+description = "CI job `coverage`: merge the test jobs' profiles under coverage-parts/ into coverage.out"
+# The parts are the artifacts the test jobs upload, one directory each. The
+# job fails on a part that is missing or not a profile, so a merge never
+# reports a total over fewer jobs than ran.
+run = ".mise/covermerge.sh coverage.out coverage-parts/*/coverage.part.out"
 
 [tasks."ci:race"]
 description = "CI job `race` — the short suite under the race detector"
@@ -1405,7 +1429,7 @@ run = ".mise/llmlive.sh"
 description = "Every CI job, locally. This is the whole pipeline."
 # `ci:coverage` and not `ci:go` plus the shards: it is the same tests as
 # `ci:go`, every `ci:engine` shard, the `db` jobs and the drill together, run
-# once, with the profile. `ci:providers` runs beside it, and the two database
+# once, with the profile, which is what the `coverage` job merges theirs into. `ci:providers` runs beside it, and the two database
 # runs take the machine-wide slot (.mise/dblock.sh) one after the other.
 # `ci:llm` is absent on purpose: it is not a pull request job, and it buys
 # real completions, so `mise run ci` on a laptop spends nothing. `lint:ci`

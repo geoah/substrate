@@ -464,13 +464,16 @@ mise, workflows, ruleset = sys.argv[1:4]
 tasks = tomllib.load(open(mise, "rb"))["tasks"]
 ci = set(tasks["ci"]["depends"])
 # The tasks `ci` runs inside another: ci:coverage's two runs are the short
-# suite and every database package unsharded, the drill included.
+# suite and every database package unsharded, the drill included, and it
+# merges their profiles as the `coverage` job merges the test jobs'.
 covered = {
     "ci:go": "ci:coverage",
     "ci:engine": "ci:coverage",
     "ci:db:catalog": "ci:coverage",
+    "ci:db:providertest": "ci:coverage",
     "ci:db:rest": "ci:coverage",
     "ci:drill": "ci:coverage",
+    "ci:coverage:merge": "ci:coverage",
 }
 # Never in `ci`: it buys completions.
 excluded = {"ci:llm"}
