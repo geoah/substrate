@@ -3243,23 +3243,24 @@ func TestShippedSchemaLoads(t *testing.T) {
 			t.Errorf("%s missing", ident)
 		}
 	}
-	// THE SEEDED TREE IS CORE, LLM, CONSOLE, OBSERVATIONS AND ASSISTANT,
-	// beside the authority row that owns them (records 0192 and 0241). Every
+	// THE SEEDED TREE IS CORE, LLM, CONSOLE, OBSERVATIONS, ASSISTANT AND
+	// APPLETS, beside the authority row that owns them (records 0192 and
+	// 0241, docs/plans/applets.md). Every
 	// other package is one a repository installs; a domain package
 	// reappearing here would silently go back to being seeded into every new
 	// repository.
 	seeded := map[string]bool{
 		vocabulary.PackageCore: true, vocabulary.PackageLLM: true,
 		vocabulary.PackageConsole: true, vocabulary.PackageObservations: true,
-		vocabulary.PackageAssistant: true,
+		vocabulary.PackageAssistant: true, vocabulary.PackageApplets: true,
 	}
 	for _, g := range r.PackageList() {
 		if g.IsAuthority() {
 			continue
 		}
 		if !seeded[g.Identity] || !vocabulary.SeededPackage(g.Identity) {
-			t.Errorf("the seeded tree declares %s: only %s, %s, %s, %s and %s are seeded; vocabulary ships as an installable package",
-				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM, vocabulary.PackageConsole, vocabulary.PackageObservations, vocabulary.PackageAssistant)
+			t.Errorf("the seeded tree declares %s: only %s, %s, %s, %s, %s and %s are seeded; vocabulary ships as an installable package",
+				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM, vocabulary.PackageConsole, vocabulary.PackageObservations, vocabulary.PackageAssistant, vocabulary.PackageApplets)
 		}
 		delete(seeded, g.Identity)
 	}

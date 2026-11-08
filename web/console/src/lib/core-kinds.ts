@@ -32,6 +32,19 @@ export const LLM_PACKAGE = `${CORE_AUTHORITY}/${LLM_PACKAGE_NAME}`
  * console itself reads, seeded like core and llm (decision record 0166). */
 export const CONSOLE_PACKAGE_NAME = "console"
 
+/** The applets package's own word: the applets the owner and their assistant make
+ * over the owner's records, each a record whose screens the server renders
+ * as A2UI (docs/plans/applets.md). Seeded, and outside core, so it is no
+ * machinery package. */
+export const APPLETS_PACKAGE_NAME = "applets"
+
+/** The applets package IDENTITY, `<authority>/<package>`. */
+export const APPLETS_PACKAGE = `${CORE_AUTHORITY}/${APPLETS_PACKAGE_NAME}`
+
+/** One applet: its screens, the reads that fill them and the actions their
+ * buttons run. */
+export const APPLET_KIND = `${APPLETS_PACKAGE}/applet`
+
 /** The packages under CORE_AUTHORITY that hold the substrate's own state:
  * every kind in them is `internal`. The rest of the authority is the owner's
  * data: the seeded `observations` package and the well-known catalogues

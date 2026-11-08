@@ -2176,3 +2176,117 @@ export interface AuthorizationProviderChoice {
   input: string
   provider: string
 }
+
+// ── applets (internal/substrate/applets.go) ───────────────────────────────────────
+
+/** What a renderer holds between frames: the screen it shows, the screen's
+ * params, and the data model's `/ui`, which its inputs write. The server
+ * keeps none of it. */
+export interface AppletState {
+  screen: string
+  params?: Record<string, unknown>
+  ui?: Record<string, unknown>
+}
+
+/** What the renderer draws now. A frame for the same screen of the same applet
+ * version updates the data model alone, so an input keeps its focus. */
+export interface AppletShown {
+  screen: string
+  version: number
+  /** Which record the screen is about: the server enters a screen again,
+   * running its init, when these differ from the state's. */
+  params?: Record<string, unknown>
+}
+
+/** `POST …/applets/applet/{id}/render`. No state is the applet's start: its first
+ * screen and its declared initial `/ui`. */
+export interface AppletRenderInput {
+  state?: AppletState
+  shown?: AppletShown
+}
+
+/** A button's A2UI `event` as the renderer resolved it at the tap. */
+export interface AppletAction {
+  name: string
+  context?: Record<string, unknown>
+  sourceComponentId?: string
+  /** The event's `userMessage`, resolved at the tap: what the owner did, in
+   * words. */
+  userMessage?: string
+}
+
+/** `POST …/applets/applet/{id}/act`. `confirmed` answers the question a step's
+ * `confirm` asked: until it is true, such an action runs nothing. */
+export interface AppletActInput {
+  state: AppletState
+  shown?: AppletShown
+  action: AppletAction
+  confirmed?: boolean
+}
+
+/** One answer of the applet runtime: the A2UI messages that bring the renderer
+ * to `state`, and what the host does around them. */
+export interface AppletFrame {
+  applet: AppletHeader
+  state: AppletState
+  shown: AppletShown
+  messages: A2UIMessage[]
+  /** A line to show once, from an action's `notify` step. */
+  notice?: string
+  /** The question an action waits on: nothing ran. */
+  confirm?: string
+  /** The answer that runs the action ("Delete", "Save"). */
+  confirmLabel?: string
+  /** The action deletes: its answer is drawn as a destructive one. */
+  confirmDanger?: boolean
+}
+
+/** The applet, and what keeps its screen current: the kinds its sources read
+ * and the `/ui` paths whose edits re-render it. */
+export interface AppletHeader {
+  id: string
+  name: string
+  description?: string
+  icon?: string
+  version: number
+  title: string
+  /** The screen the applet opens on: the way home when another fails. */
+  start: string
+  watch?: string[]
+  refreshOn?: string[]
+  /** The actions that delete a record: their buttons are drawn as
+   * destructive ones. */
+  destructive?: string[]
+}
+
+/** One A2UI v1.0 agent-to-renderer message: exactly one body is set. */
+export interface A2UIMessage {
+  version: string
+  createSurface?: A2UICreateSurface
+  updateComponents?: A2UIUpdateComponents
+  updateDataModel?: A2UIUpdateDataModel
+  deleteSurface?: A2UIDeleteSurface
+}
+
+export interface A2UICreateSurface {
+  surfaceId: string
+  catalogId: string
+  components: Record<string, unknown>[]
+  dataModel: Record<string, unknown>
+}
+
+export interface A2UIUpdateComponents {
+  surfaceId: string
+  components: Record<string, unknown>[]
+}
+
+/** A null `value` removes the key at `path`. */
+export interface A2UIUpdateDataModel {
+  surfaceId: string
+  path: string
+  value: unknown
+}
+
+export interface A2UIDeleteSurface {
+  surfaceId: string
+}

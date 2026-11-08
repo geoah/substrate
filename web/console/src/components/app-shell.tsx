@@ -44,6 +44,7 @@ import {
   packageTitle,
 } from "@/lib/collections"
 import {
+  APPLET_KIND,
   isMachinery,
   isSeededOwnerData,
   sharedOwnerDataGroup,
@@ -215,6 +216,18 @@ export function crumbsFor(pathname: string, technical = false): Crumb[] {
         { label: provider.name, provider: provider.key },
       ]
     }
+    case "applets": {
+      if (!rest.length) return [{ label: "Applets" }]
+      const id = rest.join("/")
+      return [
+        { label: "Applets", to: "/applets" },
+        {
+          label: technical ? id : untitled(APPLET_KIND),
+          ...(technical && { mono: true }),
+          record: { kind: APPLET_KIND, id },
+        },
+      ]
+    }
     case "merge-requests":
     case "change-requests": {
       // The queue is the kind's own collection, so the parent crumbs walk back
@@ -348,7 +361,10 @@ function usePageTitle(pathname: string): string {
 }
 
 /** A record crumb reads as its title; technical mode keeps the id, which is
- * what the reader came to copy. */
+ * what the reader came to copy. Until the title lands the crumb holds its
+ * place: "Untitled" names a record that has no title, not one still
+ * loading. A page that already knows the title (an applet's runtime) writes
+ * it into the same query. */
 function RecordCrumbLabel({ crumb }: { crumb: Crumb }) {
   const [technical] = useTechnicalDetails()
   const kinds = useQuery(kindsQueryOptions)
@@ -359,7 +375,16 @@ function RecordCrumbLabel({ crumb }: { crumb: Crumb }) {
     enabled: known && !technical,
   })
   if (technical) return <>{crumb.label}</>
-  return <>{title.data || crumb.label}</>
+  if (title.data) return <>{title.data}</>
+  if (kinds.isPending || (known && title.isPending))
+    return (
+      <span
+        aria-hidden
+        data-slot="crumb-pending"
+        className="inline-block h-3 w-20 animate-pulse rounded bg-muted align-middle"
+      />
+    )
+  return <>{crumb.label}</>
 }
 
 function CrumbBody({ crumb }: { crumb: Crumb }) {

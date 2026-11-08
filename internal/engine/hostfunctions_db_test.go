@@ -187,6 +187,10 @@ func preHostKindsDir(t *testing.T) string {
 	if err := os.RemoveAll(filepath.Join(dir, vocabulary.PackageAssistant)); err != nil {
 		t.Fatal(err)
 	}
+	// So did the applets package, which declares a host function of its own.
+	if err := os.RemoveAll(filepath.Join(dir, vocabulary.PackageApplets)); err != nil {
+		t.Fatal(err)
+	}
 	fn := filepath.Join(core, "function.yaml")
 	raw, err := os.ReadFile(fn)
 	if err != nil {

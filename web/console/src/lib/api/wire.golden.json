@@ -1,4 +1,29 @@
 {
+  "A2UICreateSurface": {
+    "catalogId": true,
+    "components": true,
+    "dataModel": true,
+    "surfaceId": true
+  },
+  "A2UIDeleteSurface": {
+    "surfaceId": true
+  },
+  "A2UIMessage": {
+    "createSurface": false,
+    "deleteSurface": false,
+    "updateComponents": false,
+    "updateDataModel": false,
+    "version": true
+  },
+  "A2UIUpdateComponents": {
+    "components": true,
+    "surfaceId": true
+  },
+  "A2UIUpdateDataModel": {
+    "path": true,
+    "surfaceId": true,
+    "value": true
+  },
   "AddonInstallResult": {
     "package": true,
     "problem": false,
@@ -195,6 +220,54 @@
     "addonFor": true,
     "package": true,
     "version": true
+  },
+  "AppletActInput": {
+    "action": true,
+    "confirmed": false,
+    "shown": false,
+    "state": true
+  },
+  "AppletAction": {
+    "context": false,
+    "name": true,
+    "sourceComponentId": false,
+    "userMessage": false
+  },
+  "AppletFrame": {
+    "applet": true,
+    "confirm": false,
+    "confirmDanger": false,
+    "confirmLabel": false,
+    "messages": true,
+    "notice": false,
+    "shown": true,
+    "state": true
+  },
+  "AppletHeader": {
+    "description": false,
+    "destructive": false,
+    "icon": false,
+    "id": true,
+    "name": true,
+    "refreshOn": false,
+    "start": true,
+    "title": true,
+    "version": true,
+    "watch": false
+  },
+  "AppletRenderInput": {
+    "shown": false,
+    "state": false
+  },
+  "AppletShown": {
+    "params": false,
+    "screen": true,
+    "version": true
+  },
+  "AppletState": {
+    "params": false,
+    "screen": true,
+    "ui": false
   },
   "AuthorizationAccount": {
     "id": true,

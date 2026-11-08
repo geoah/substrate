@@ -1,0 +1,193 @@
+{
+  "name": "Books",
+  "description": "What I'm reading, what's next, and a search to add more.",
+  "icon": "book-open",
+  "start": "library",
+  "state": {
+    "status": [],
+    "q": "",
+    "search": {"q": "", "results": []},
+    "form": {"title": "", "author": ""},
+    "edit": {}
+  },
+  "sources": {
+    "books": {
+      "kind": "ada.example.com/library/book",
+      "where": {"status": {"in": {"@path": "/ui/status"}}},
+      "search": {"@path": "/ui/q"},
+      "orderBy": "title",
+      "first": 200,
+      "expand": ["author"]
+    },
+    "book": {
+      "kind": "ada.example.com/library/book",
+      "id": {"@path": "/params/id"},
+      "expand": ["author"]
+    }
+  },
+  "actions": {
+    "open": [
+      {"op": "navigate", "screen": "book", "params": {"id": {"@path": "/context/id"}}}
+    ],
+    "saveNotes": [
+      {"op": "patch", "kind": "ada.example.com/library/book", "id": {"@path": "/params/id"},
+       "properties": {"notes": {"@path": "/ui/edit/notes"}}},
+      {"op": "notify", "text": "Notes saved"}
+    ],
+    "add": [
+      {"op": "navigate", "screen": "add"}
+    ],
+    "search": [
+      {"op": "call", "function": "ada.example.com/library/searchbooks",
+       "input": {"query": {"@path": "/ui/search/q"}}, "pick": "/results", "into": "/ui/search/results"}
+    ],
+    "addResult": [
+      {"op": "ensure", "as": "author", "kind": "ada.example.com/library/author",
+       "where": {"name": {"eq": {"@path": "/context/author"}}},
+       "properties": {"name": {"@path": "/context/author"}}},
+      {"op": "create", "as": "book", "kind": "ada.example.com/library/book",
+       "properties": {
+         "title": {"@path": "/context/title"},
+         "author": {"@path": "/results/author/ref"},
+         "year": {"@path": "/context/year"},
+         "isbn": {"@path": "/context/isbn"},
+         "coverUrl": {"@path": "/context/coverUrl"},
+         "status": "want"
+       }},
+      {"op": "notify", "text": {"@call": "formatString", "args": {"value": "Added ${/context/title}"}}},
+      {"op": "navigate", "screen": "book", "params": {"id": {"@path": "/results/book/id"}}}
+    ],
+    "save": [
+      {"op": "ensure", "as": "author", "kind": "ada.example.com/library/author",
+       "where": {"name": {"eq": {"@path": "/ui/form/author"}}},
+       "properties": {"name": {"@path": "/ui/form/author"}}},
+      {"op": "create", "kind": "ada.example.com/library/book",
+       "properties": {"title": {"@path": "/ui/form/title"}, "author": {"@path": "/results/author/ref"}, "status": "want"}},
+      {"op": "set", "values": {"/ui/form": {"title": "", "author": ""}}},
+      {"op": "notify", "text": "Saved"},
+      {"op": "navigate", "screen": "library"}
+    ],
+    "setStatus": [
+      {"op": "patch", "kind": "ada.example.com/library/book", "id": {"@path": "/params/id"},
+       "properties": {"status": {"@path": "/context/status"}}}
+    ],
+    "finish": [
+      {"op": "patch", "kind": "ada.example.com/library/book", "id": {"@path": "/params/id"},
+       "properties": {"status": "read", "finishedAt": {"@now": "date"}}},
+      {"op": "notify", "text": "Marked as read"}
+    ],
+    "remove": [
+      {"op": "delete", "kind": "ada.example.com/library/book", "id": {"@path": "/params/id"},
+       "confirm": {"@call": "formatString", "args": {"value": "Delete “${/context/title}”?"}}},
+      {"op": "navigate", "screen": "library"}
+    ]
+  },
+  "screens": {
+    "library": {
+      "title": "Library",
+      "sources": ["books"],
+      "refreshOn": ["/ui/status", "/ui/q"],
+      "components": [
+        {"id": "root", "component": "Column", "children": ["toolbar", "filters", "count", "list"]},
+        {"id": "toolbar", "component": "Row", "align": "end", "children": ["q", "addButton"]},
+        {"id": "q", "component": "TextField", "label": "Search", "placeholder": "Title or author",
+         "value": {"@path": "/ui/q"}, "weight": 1},
+        {"id": "addButton", "component": "Button", "variant": "primary", "child": "addLabel",
+         "action": {"event": {"name": "add"}}},
+        {"id": "addLabel", "component": "Text", "text": "Add a book"},
+        {"id": "filters", "component": "ChoicePicker", "label": "Status", "variant": "multipleSelection",
+         "displayStyle": "chips", "value": {"@path": "/ui/status"},
+         "options": [
+           {"label": "Reading", "value": "reading"},
+           {"label": "Want to read", "value": "want"},
+           {"label": "Read", "value": "read"},
+           {"label": "Abandoned", "value": "abandoned"}
+         ]},
+        {"id": "count", "component": "Text", "variant": "caption",
+         "text": {"@call": "formatString", "args": {"value": "${/counts/books} books"}}},
+        {"id": "list", "component": "List", "children": {"path": "/data/books", "componentId": "row"}},
+        {"id": "row", "component": "Button", "variant": "borderless", "child": "rowLayout",
+         "action": {"event": {"name": "open", "context": {"id": {"@path": "id"}}}}},
+        {"id": "rowLayout", "component": "Row", "align": "center", "children": ["rowCover", "rowText"]},
+        {"id": "rowCover", "component": "Image", "variant": "avatar", "fit": "cover",
+         "url": {"@path": "properties/coverUrl"}, "description": {"@path": "properties/title"}},
+        {"id": "rowText", "component": "Column", "weight": 1, "children": ["rowTitle", "rowMeta"]},
+        {"id": "rowTitle", "component": "Text",
+         "text": {"@call": "formatString", "args": {"value": "**${properties/title}**"}}},
+        {"id": "rowMeta", "component": "Text", "variant": "caption",
+         "text": {"@call": "formatString", "args": {"value": "${properties/author/properties/name} · ${properties/status}"}}}
+      ]
+    },
+    "book": {
+      "title": "Book",
+      "sources": ["book"],
+      "init": [
+        {"op": "read", "kind": "ada.example.com/library/book", "id": {"@path": "/params/id"},
+         "pick": "/properties", "into": "/ui/edit"}
+      ],
+      "components": [
+        {"id": "root", "component": "Column", "children": ["hero", "statusPicker", "actionsRow", "notes", "saveNotes", "removeButton"]},
+        {"id": "hero", "component": "Row", "align": "start", "children": ["cover", "heroText"]},
+        {"id": "cover", "component": "Image", "variant": "mediumFeature", "fit": "cover",
+         "url": {"@path": "/data/book/properties/coverUrl"}},
+        {"id": "heroText", "component": "Column", "weight": 1, "children": ["bookTitle", "bookAuthor", "bookStatus"]},
+        {"id": "bookTitle", "component": "Text",
+         "text": {"@call": "formatString", "args": {"value": "## ${/data/book/properties/title}"}}},
+        {"id": "bookAuthor", "component": "Text",
+         "text": {"@call": "formatString", "args": {"value": "by ${/data/book/properties/author/properties/name}"}}},
+        {"id": "bookStatus", "component": "Text", "variant": "caption",
+         "text": {"@call": "formatString", "args": {"value": "Status: ${/data/book/properties/status}"}}},
+        {"id": "statusPicker", "component": "Row", "children": ["wantButton", "readingButton", "finishButton"]},
+        {"id": "wantButton", "component": "Button", "child": "wantLabel",
+         "action": {"event": {"name": "setStatus", "context": {"status": "want"}}}},
+        {"id": "wantLabel", "component": "Text", "text": "Want to read"},
+        {"id": "readingButton", "component": "Button", "child": "readingLabel",
+         "action": {"event": {"name": "setStatus", "context": {"status": "reading"}}}},
+        {"id": "readingLabel", "component": "Text", "text": "Reading"},
+        {"id": "finishButton", "component": "Button", "variant": "primary", "child": "finishLabel",
+         "action": {"event": {"name": "finish"}}},
+        {"id": "finishLabel", "component": "Text", "text": "Finished it"},
+        {"id": "actionsRow", "component": "Divider"},
+        {"id": "notes", "component": "TextField", "label": "Notes", "variant": "longText", "value": {"@path": "/ui/edit/notes"}},
+        {"id": "saveNotes", "component": "Button", "child": "saveNotesLabel", "action": {"event": {"name": "saveNotes"}}},
+        {"id": "saveNotesLabel", "component": "Text", "text": "Save notes"},
+        {"id": "removeButton", "component": "Button", "variant": "borderless", "child": "removeLabel",
+         "action": {"event": {"name": "remove", "context": {"title": {"@path": "/data/book/display/title"}}}}},
+        {"id": "removeLabel", "component": "Text", "text": "Delete this book"}
+      ]
+    },
+    "add": {
+      "title": "Add a book",
+      "components": [
+        {"id": "root", "component": "Column", "children": ["searchRow", "results", "divider", "manual", "formTitle", "formAuthor", "saveButton"]},
+        {"id": "searchRow", "component": "Row", "align": "end", "children": ["searchQ", "searchButton"]},
+        {"id": "searchQ", "component": "TextField", "label": "Search Open Library", "weight": 1,
+         "value": {"@path": "/ui/search/q"}},
+        {"id": "searchButton", "component": "Button", "variant": "primary", "child": "searchLabel",
+         "action": {"event": {"name": "search"}},
+         "checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/ui/search/q"}}}, "message": "Type a title or an author"}]},
+        {"id": "searchLabel", "component": "Text", "text": "Search"},
+        {"id": "results", "component": "List", "children": {"path": "/ui/search/results", "componentId": "result"}},
+        {"id": "result", "component": "Row", "align": "center", "children": ["resultCover", "resultText", "resultAdd"]},
+        {"id": "resultCover", "component": "Image", "variant": "avatar", "fit": "cover", "url": {"@path": "coverUrl"}},
+        {"id": "resultText", "component": "Column", "weight": 1, "children": ["resultTitle", "resultMeta"]},
+        {"id": "resultTitle", "component": "Text", "text": {"@call": "formatString", "args": {"value": "**${title}**"}}},
+        {"id": "resultMeta", "component": "Text", "variant": "caption",
+         "text": {"@call": "formatString", "args": {"value": "${author} · ${year}"}}},
+        {"id": "resultAdd", "component": "Button", "child": "resultAddLabel",
+         "action": {"event": {"name": "addResult", "context": {
+           "title": {"@path": "title"}, "author": {"@path": "author"}, "year": {"@path": "year"},
+           "isbn": {"@path": "isbn"}, "coverUrl": {"@path": "coverUrl"}}}}},
+        {"id": "resultAddLabel", "component": "Text", "text": "Add"},
+        {"id": "divider", "component": "Divider"},
+        {"id": "manual", "component": "Text", "variant": "caption", "text": "Or add one by hand"},
+        {"id": "formTitle", "component": "TextField", "label": "Title", "value": {"@path": "/ui/form/title"}},
+        {"id": "formAuthor", "component": "TextField", "label": "Author", "value": {"@path": "/ui/form/author"}},
+        {"id": "saveButton", "component": "Button", "variant": "primary", "child": "saveLabel",
+         "action": {"event": {"name": "save"}},
+         "checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/ui/form/title"}}}, "message": "A book needs a title"}]},
+        {"id": "saveLabel", "component": "Text", "text": "Save"}
+      ]
+    }
+  }
+}

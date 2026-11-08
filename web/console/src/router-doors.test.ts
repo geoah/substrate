@@ -7,7 +7,12 @@
 import { afterEach, describe, expect, it } from "vitest"
 
 import { clearSession, saveSession } from "@/lib/api/session"
-import { authorizeRoute, loginRoute, registerRoute } from "@/router"
+import {
+  authorizeRoute,
+  loginRoute,
+  registerRoute,
+  standaloneAppletRoute,
+} from "@/router"
 
 /** What a route's beforeLoad redirects to; undefined when it lets the page
  * render. */
@@ -45,6 +50,38 @@ describe("the approval page's gate", () => {
   it("lets a signed-in owner through", () => {
     signIn()
     expect(target(authorizeRoute, { request: "AbC123" })).toBeUndefined()
+  })
+})
+
+describe("a standalone applet's gate", () => {
+  const gate = () => {
+    const beforeLoad = standaloneAppletRoute.options.beforeLoad as (
+      ctx: unknown
+    ) => void
+    try {
+      beforeLoad({
+        params: { id: "books" },
+        location: { href: "/a/books?screen=book&p.id=b1" },
+      })
+    } catch (thrown) {
+      const { to, search } =
+        (thrown as { options?: Record<string, unknown> }).options ?? {}
+      return { to, search }
+    }
+    return undefined
+  }
+
+  it("sends a signed-out owner to sign in, returning to the same screen", () => {
+    clearSession()
+    expect(gate()).toEqual({
+      to: "/login",
+      search: { redirect: "/a/books?screen=book&p.id=b1" },
+    })
+  })
+
+  it("lets a signed-in owner through", () => {
+    signIn()
+    expect(gate()).toBeUndefined()
   })
 })
 

@@ -61,7 +61,7 @@ var retiredFunctionRuntimes = map[string]string{
 	"go": "write the body in python",
 }
 
-// The seven host functions the engine implements, by identity. They are ordinary
+// The eight host functions the engine implements, by identity. They are ordinary
 // function records — seeded, browsable, pickable as agent tools by reference —
 // and these constants are what the dispatch switch and the grant checks key on.
 const (
@@ -85,6 +85,10 @@ const (
 	// HostFunctionEdit reads one text property by line and changes it by
 	// exact replacement.
 	HostFunctionEdit = PackageCore + "/edit"
+	// HostFunctionAppletPreview renders one screen of an applet against the
+	// live records, for the agent that designs it. It is the applets
+	// package's, not core's (docs/plans/applets.md).
+	HostFunctionAppletPreview = PackageApplets + "/preview"
 
 	// The two ways an agent's call of a function runs: holding the loop until
 	// it returns, or as a background job the loop does not wait for (decision

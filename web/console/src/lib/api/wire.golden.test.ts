@@ -44,6 +44,11 @@ import type { LoginRequest, RegisterInput, RegisterResult } from "./auth"
 import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
 import type {
+  A2UICreateSurface,
+  A2UIDeleteSurface,
+  A2UIMessage,
+  A2UIUpdateComponents,
+  A2UIUpdateDataModel,
   AffectedRecord,
   Aggregate,
   AggregateBucket,
@@ -90,6 +95,13 @@ import type {
   AuthorizationPublisher,
   AuthorizationPackagePublisher,
   AppAddon,
+  AppletActInput,
+  AppletAction,
+  AppletFrame,
+  AppletHeader,
+  AppletRenderInput,
+  AppletShown,
+  AppletState,
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
@@ -1302,6 +1314,94 @@ const unseededRecord: Shape<UnseededRecord> = {
   reason: true,
 }
 
+/** An applet's runtime (docs/plans/applets.md): what the renderer sends to
+ * render a screen and run an action, the frame it gets back, and the A2UI
+ * v1.0 messages the frame carries. */
+const appletState: Shape<AppletState> = {
+  screen: true,
+  params: false,
+  ui: false,
+}
+
+const appletShown: Shape<AppletShown> = {
+  screen: true,
+  version: true,
+  params: false,
+}
+
+const appletRenderInput: Shape<AppletRenderInput> = {
+  state: false,
+  shown: false,
+}
+
+const appletAction: Shape<AppletAction> = {
+  name: true,
+  context: false,
+  sourceComponentId: false,
+  userMessage: false,
+}
+
+const appletActInput: Shape<AppletActInput> = {
+  state: true,
+  shown: false,
+  action: true,
+  confirmed: false,
+}
+
+const appletFrame: Shape<AppletFrame> = {
+  applet: true,
+  state: true,
+  shown: true,
+  messages: true,
+  notice: false,
+  confirm: false,
+  confirmLabel: false,
+  confirmDanger: false,
+}
+
+const appletHeader: Shape<AppletHeader> = {
+  id: true,
+  name: true,
+  description: false,
+  icon: false,
+  version: true,
+  title: true,
+  start: true,
+  watch: false,
+  refreshOn: false,
+  destructive: false,
+}
+
+const a2uiMessage: Shape<A2UIMessage> = {
+  version: true,
+  createSurface: false,
+  updateComponents: false,
+  updateDataModel: false,
+  deleteSurface: false,
+}
+
+const a2uiCreateSurface: Shape<A2UICreateSurface> = {
+  surfaceId: true,
+  catalogId: true,
+  components: true,
+  dataModel: true,
+}
+
+const a2uiUpdateComponents: Shape<A2UIUpdateComponents> = {
+  surfaceId: true,
+  components: true,
+}
+
+const a2uiUpdateDataModel: Shape<A2UIUpdateDataModel> = {
+  surfaceId: true,
+  path: true,
+  value: true,
+}
+
+const a2uiDeleteSurface: Shape<A2UIDeleteSurface> = {
+  surfaceId: true,
+}
+
 const unitConversion: Shape<UnitConversion> = {
   value: true,
   unit: true,
@@ -1477,6 +1577,18 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RepositoryUnit: repositoryUnit,
   RepositoryConversion: repositoryConversion,
   UnseededRecord: unseededRecord,
+  AppletState: appletState,
+  AppletShown: appletShown,
+  AppletRenderInput: appletRenderInput,
+  AppletAction: appletAction,
+  AppletActInput: appletActInput,
+  AppletFrame: appletFrame,
+  AppletHeader: appletHeader,
+  A2UIMessage: a2uiMessage,
+  A2UICreateSurface: a2uiCreateSurface,
+  A2UIUpdateComponents: a2uiUpdateComponents,
+  A2UIUpdateDataModel: a2uiUpdateDataModel,
+  A2UIDeleteSurface: a2uiDeleteSurface,
 }
 
 /** The interfaces the modules in this directory export that mirror no Go

@@ -1,7 +1,8 @@
-/** Code-based route tree. Everything except the doors (/login, /register)
- * and an app's approval page (/authorize/$request) sits under the shell
- * route, whose beforeLoad is the session gate: no token, no console. The
- * approval page keeps a gate of its own, outside the shell. */
+/** Code-based route tree. Everything except the doors (/login, /register),
+ * an app's approval page (/authorize/$request) and a standalone applet (/a/$id)
+ * sits under the shell route, whose beforeLoad is the session gate: no
+ * token, no console. The approval page and a standalone applet keep a gate of
+ * their own, outside the shell. */
 
 import {
   createRootRoute,
@@ -48,6 +49,8 @@ import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
 import { OwnerNamePage } from "@/pages/owner-name"
 import { AssistantsPage } from "@/pages/assistants"
+import { AppletPage, AppletsPage, StandaloneAppletPage } from "@/pages/applets"
+import { appletSearch } from "@/lib/applet-location"
 
 const rootRoute = createRootRoute()
 
@@ -130,6 +133,22 @@ export const authorizeRoute = createRoute({
     }
   },
   component: AuthorizePage,
+})
+
+// An applet on its own (docs/plans/applets.md): the whole viewport, none of
+// the shell, so a phone can keep it on its home screen. It keeps a gate of
+// its own, like the approval page, and a signed-out owner comes back to the
+// same screen.
+export const standaloneAppletRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/a/$id",
+  validateSearch: appletSearch,
+  beforeLoad: ({ location }) => {
+    if (!hasSession()) {
+      throw redirect({ to: "/login", search: { redirect: location.href } })
+    }
+  },
+  component: StandaloneAppletPage,
 })
 
 /** The shell's gate. A signed-out reader goes to the sign-in, except at `/`
@@ -327,6 +346,21 @@ export const agentRoute = createRoute({
   component: AgentPage,
 })
 
+export const appletsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/applets",
+  component: AppletsPage,
+})
+
+// One applet in the shell. The address holds its screen and that screen's
+// params (`?screen=book&p.id=…`), so Back walks the screens.
+export const appletRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/applets/$id",
+  validateSearch: appletSearch,
+  component: AppletPage,
+})
+
 export const mergeRequestDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/merge-requests/$id",
@@ -482,6 +516,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
   authorizeRoute,
+  standaloneAppletRoute,
   shellRoute.addChildren([
     homeRoute,
     changelogRoute,
@@ -497,6 +532,8 @@ const routeTree = rootRoute.addChildren([
     bundleSettingsRoute,
     agentsRoute,
     agentRoute,
+    appletsRoute,
+    appletRoute,
     mergeRequestDetailRoute,
     changeRequestDetailRoute,
     authorityRoute,

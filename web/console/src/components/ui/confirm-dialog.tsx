@@ -21,8 +21,9 @@ export interface ConfirmDialogProps {
   open?: boolean
   /** A question: "Delete “Groceries”?" */
   title: ReactNode
-  /** What happens, and what does not. */
-  consequence: ReactNode
+  /** What happens, and what does not; absent where the question says it
+   * all. */
+  consequence?: ReactNode
   /** The confirm button's verb: "Delete", "Sign out". */
   confirm: ReactNode
   /** Red confirm, for what cannot be undone. */
@@ -63,7 +64,7 @@ export function ConfirmDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{consequence}</DialogDescription>
+          {consequence && <DialogDescription>{consequence}</DialogDescription>}
         </DialogHeader>
         {children}
         {error && (

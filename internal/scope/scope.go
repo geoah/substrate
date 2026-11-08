@@ -187,8 +187,12 @@ func (k Kind) binds(trait string) bool { return slices.Contains(k.Traits, trait)
 // unwritable are the packages no scope writes, whatever it says: they hold
 // the machinery that runs code (functions, agents, triggers), spends the
 // owner's LLM budget (providers), decides for the owner (policies,
-// interactions, change requests) or IS the vocabulary.
-var unwritable = []string{vocabulary.PackageCore, vocabulary.PackageLLM}
+// interactions, change requests) or IS the vocabulary. The applets package
+// is one too: an applet runs reads and writes under the token of whoever
+// opens it, and an image URL it builds from a record's values carries them
+// to its host, so only the owner, their assistant's designer and the MCP
+// door write one (docs/plans/applets.md).
+var unwritable = []string{vocabulary.PackageCore, vocabulary.PackageLLM, vocabulary.PackageApplets}
 
 // Scope is one parsed entry.
 type Scope struct {
@@ -345,7 +349,7 @@ func patternProblem(s Scope) string {
 		}
 	}
 	if s.Verb == Write && writesUnwritable(p) {
-		return "writes the core or llm package, which no scope writes"
+		return "writes the core, llm or applets package, which no scope writes"
 	}
 	return ""
 }
@@ -417,7 +421,7 @@ func callPatternProblem(s Scope) string {
 		}
 	}
 	if writesUnwritable(p) {
-		return "names a function of the core or llm package, which no app calls"
+		return "names a function of the core, llm or applets package, which no app calls"
 	}
 	return ""
 }

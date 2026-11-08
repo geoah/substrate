@@ -73,6 +73,9 @@ var mcpRoutes = func() map[string]bool {
 		"GET " + v + unitsConvertRoute,
 		"POST " + v + "/merge",
 		"POST " + v + "/split",
+		// The applets tool's preview (applets.go): an assistant builds an
+		// applet with write and checks each screen here.
+		"POST " + v + appletPreviewRoute,
 	} {
 		out[route] = true
 	}

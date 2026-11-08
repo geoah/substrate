@@ -204,15 +204,16 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kinds: %v", err)
 	}
-	// The SEEDED set is core, llm (record 0077), console (record 0166) and
-	// observations (record 0192) and nothing else: a domain package appearing
-	// here would be vocabulary silently going back to being seeded into every
-	// new repository, and the first-party catalogues are installed, not
-	// seeded.
-	seededPackages := map[string]bool{"core": true, "llm": true, "console": true, "observations": true}
+	// The SEEDED set is core, llm (record 0077), console (record 0166),
+	// observations (record 0192) and applets (docs/plans/applets.md) and
+	// nothing else: a domain package appearing here would be vocabulary
+	// silently going back to being seeded into every new repository, and the
+	// first-party catalogues are installed, not seeded. The assistant is
+	// seeded too, and declares no kind.
+	seededPackages := map[string]bool{"core": true, "llm": true, "console": true, "observations": true, "applets": true}
 	for _, k := range declared {
 		if k.Authority != "substrate.reamde.dev" || !seededPackages[k.Package] {
-			t.Errorf("a freshly created repository speaks %s: only core, llm, console and observations are seeded", k.Identity)
+			t.Errorf("a freshly created repository speaks %s: only core, llm, console, observations and applets are seeded", k.Identity)
 		}
 	}
 	if _, err := ds.KindByRef(ctx, "substrate.reamde.dev/console/recordview"); err != nil {
@@ -267,6 +268,7 @@ func TestCreationSeedsTheAssistantAndNoSample(t *testing.T) {
 	slices.Sort(agents)
 	want := []string{
 		"substrate.reamde.dev/assistant/architect",
+		"substrate.reamde.dev/assistant/designer",
 		"substrate.reamde.dev/assistant/librarian",
 		"substrate.reamde.dev/assistant/moss",
 	}

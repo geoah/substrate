@@ -1,0 +1,80 @@
+# The demo's one function (docs/plans/applets.md): a book search an applet's
+# `call` step and Moss itself can use. It is the owner's, applied by hand
+# with the authority rewritten to theirs, because no agent writes a function
+# yet (docs/plans/moss-roadmap.md, phase 2's builder):
+#
+#   sed 's/ada.example.com/<your authority>/' openlibrary.yaml | substratectl apply -f -
+#
+# It reaches openlibrary.org alone and writes nothing.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ada.example.com/openlibrary
+data:
+  authority: ada.example.com
+  package: openlibrary
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: ada.example.com/openlibrary/search
+data:
+  authority: ada.example.com
+  package: openlibrary
+  description: >-
+    Search Open Library for books by title, author or ISBN. Returns results,
+    each {title, author, year, isbn, coverUrl, key}. Read-only.
+  runtime: python
+  timeout: PT20S
+  effect: read
+  offer:
+    agents: true
+    name: book_search
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: a title, an author or an ISBN
+    - name: limit
+      type: int
+      description: how many results, 8 when absent and 20 at most
+  returns:
+    - name: results
+      type: json
+      repeated: true
+      required: true
+  permissions:
+    network:
+      - openlibrary.org
+  source: |
+    import json
+    import urllib.parse
+    import urllib.request
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise ValueError("query is required")
+        limit = max(1, min(int(args.get("limit") or 8), 20))
+        url = "https://openlibrary.org/search.json?" + urllib.parse.urlencode({
+            "q": query,
+            "limit": limit,
+            "fields": "key,title,author_name,first_publish_year,isbn,cover_i",
+        })
+        req = urllib.request.Request(url, headers={"User-Agent": "substrate-applets-demo (https://example.com)"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.load(resp)
+        results = []
+        for doc in data.get("docs") or []:
+            cover = doc.get("cover_i")
+            isbns = doc.get("isbn") or []
+            authors = doc.get("author_name") or []
+            results.append({
+                "title": doc.get("title") or "",
+                "author": authors[0] if authors else "",
+                "year": doc.get("first_publish_year"),
+                "isbn": isbns[0] if isbns else "",
+                "coverUrl": f"https://covers.openlibrary.org/b/id/{cover}-M.jpg" if cover else "",
+                "key": doc.get("key") or "",
+            })
+        return {"output": {"results": results}}

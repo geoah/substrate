@@ -136,6 +136,9 @@ type Config struct {
 	// DomainResolver answers the `_substrate` TXT lookups of domain
 	// verification (decision 0208). Nil is the system resolver.
 	DomainResolver domains.Resolver
+	// ImageClient is the image proxy's outbound client; nil is egress's
+	// confined client, which a test replaces to reach a local server.
+	ImageClient *http.Client
 	// ServerInstances reads the instance id a `server=` origin serves. Nil
 	// fetches its server.json through the confined client, which never dials
 	// a loopback or private address; a test answers from memory.
@@ -181,6 +184,10 @@ type handler struct {
 	// outside world (domain.go).
 	resolver  domains.Resolver
 	instances serverInstances
+	// images is the image proxy's outbound client, and imageSlots the
+	// fetches it runs at once (images.go).
+	images     *http.Client
+	imageSlots chan struct{}
 	// setups runs approvals' set ups, one per repository at a time, checks
 	// is the last set up check each token got, and checkTurns queues the
 	// checks' plans (appsetup.go).
@@ -236,7 +243,11 @@ func New(cfg Config) http.Handler {
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
 	}
-	h.resolver, h.instances = cfg.DomainResolver, cfg.ServerInstances
+	h.resolver, h.instances, h.images = cfg.DomainResolver, cfg.ServerInstances, cfg.ImageClient
+	if h.images == nil {
+		h.images = imageClient()
+	}
+	h.imageSlots = make(chan struct{}, imageSlots)
 	if h.resolver == nil {
 		h.resolver = net.DefaultResolver
 	}
@@ -445,6 +456,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// The operator defaults read (operatordefaults.go): the owner's,
 			// and a full-access app token's, never a scoped one's.
 			r.Get(operatorDefaultsRoute, h.getOperatorDefaults)
+			// The image proxy (images.go): the owner's alone, because it
+			// fetches any public address and no scope names one.
+			r.Get(imagesRoute, h.getImage)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -489,6 +503,12 @@ func (h *handler) mountResources(r chi.Router) {
 			// name (scopedDataset.CallFunction, decision 0219). Five
 			// segments, so the record path below never shadows it.
 			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
+			// An applet's runtime (applets.go): its reads and writes are the
+			// token's own, so an app's token reaches the applets its scopes
+			// read, held by the scopedDataset like every route here.
+			r.Post(appletRenderRoute, h.postAppletRender)
+			r.Post(appletActRoute, h.postAppletAct)
+			r.Post(appletPreviewRoute, h.postAppletPreview)
 			// Whether an app is still set up, asked with its own token
 			// (appsetup.go). The static segment wins over the owner's
 			// /authorizations/{request} below, whichever group holds it.

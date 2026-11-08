@@ -45,17 +45,22 @@ const (
 	// agents the binary ships and upgrades, which the owner shapes through
 	// instructions rather than edits.
 	PackageAssistant = AuthorityPublisher + "/assistant"
+	// PackageApplets is the sixth (docs/plans/applets.md): the applets the
+	// owner and their assistant make over the owner's records, A2UI screens
+	// the server renders.
+	PackageApplets = AuthorityPublisher + "/applets"
 )
 
 // SeededPackage reports whether a package is one the binary seeds.
 func SeededPackage(name string) bool {
-	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageObservations || name == PackageAssistant
+	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageObservations || name == PackageAssistant || name == PackageApplets
 }
 
 // SubstrateStatePackage reports whether a seeded package holds the
-// substrate's own state (core, llm, console), as against the owner's data.
+// substrate's own state (core, llm, console, applets), as against the owner's
+// data.
 func SubstrateStatePackage(name string) bool {
-	return name == PackageCore || name == PackageLLM || name == PackageConsole
+	return name == PackageCore || name == PackageLLM || name == PackageConsole || name == PackageApplets
 }
 
 // KindContact is the owner's contacts: a person, a business, a group or a bot

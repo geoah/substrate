@@ -434,6 +434,19 @@ type fakeKey struct {
 func testTypes() []substrate.KindInfo {
 	return []substrate.KindInfo{
 		{
+			Identity: "substrate.reamde.dev/applets/applet", Name: "applet", Authority: "substrate.reamde.dev", Package: "applets",
+			Version: 1, Source: "builtin",
+			Definition: map[string]any{
+				"purpose": "internal",
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string"}, "description": map[string]any{"type": "text"},
+					"icon": map[string]any{"type": "string"}, "start": map[string]any{"type": "string"},
+					"state": map[string]any{"type": "json"}, "sources": map[string]any{"type": "json"},
+					"actions": map[string]any{"type": "json"}, "screens": map[string]any{"type": "json"},
+				},
+			},
+		},
+		{
 			Identity: "samples.substrate.reamde.dev/people/person", Name: "person", Authority: "samples.substrate.reamde.dev", Package: "people",
 			Version: 1, Source: "builtin",
 			Definition: map[string]any{

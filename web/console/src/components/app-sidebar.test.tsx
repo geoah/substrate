@@ -128,6 +128,7 @@ function renderTree(tree: ReactNode) {
   const routeTree = rootRoute.addChildren(
     [
       "/data",
+      "/applets",
       "/agents",
       "/tools",
       "/providers",
@@ -324,6 +325,8 @@ describe("the repository", () => {
       name: "ada.example.com: account menu",
     })
     expect(screen.getAllByText("ada.example.com")).toHaveLength(1)
+    // The places: Applets sits with Home and All data.
+    expect(await href("Applets")).toBe("/applets")
     // The foot keeps History, Settings and the switch, and no second chip.
     expect(await href("History")).toBe("/history")
     expect(await href("Settings")).toBe("/settings")

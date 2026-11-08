@@ -21,11 +21,14 @@ import (
 // cannot run code.
 //
 // img-src and font-src take data: because the bundler inlines an asset under
-// 4 KiB as a data URI. frame-ancestors 'none' is the reason the policy exists
+// 4 KiB as a data URI. img-src takes blob: because an applet's images arrive
+// through the image proxy (images.go) as bytes the console fetched with its
+// token, so no image on a page is fetched from another origin.
+// frame-ancestors 'none' is the reason the policy exists
 // at all: the console's bearer token sits in same-origin localStorage, so no
 // other origin may frame the console and drive it.
 const consolePolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'none'; " +
+	"img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; " +
 	"form-action 'self'; frame-ancestors 'none'"
 
 // hstsPolicy asks a browser to reach this host over HTTPS alone for a year.

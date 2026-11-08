@@ -70,6 +70,8 @@ API call that completes a task.
 - [Functions and the host SDK](functions.md)
 - [Agents](agents.md) — assistants that read your records and write back
   through the same API; this part is alpha
+- [Applets](applets.md) — small apps over your records that Moss builds when
+  you ask, drawn as A2UI screens the substrate runs; alpha
 - [The bundles catalog](bundles-catalog.md)
 
 ## Tools and operations

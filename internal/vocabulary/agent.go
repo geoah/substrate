@@ -42,6 +42,8 @@ const (
 	AgentToolVocabulary = "vocabulary"
 	// AgentToolEdit views and replaces text inside one property.
 	AgentToolEdit = "edit"
+	// AgentToolAppletPreview renders one screen of an applet, reading only.
+	AgentToolAppletPreview = "preview"
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
@@ -57,8 +59,9 @@ var agentBuiltinByIdentity = map[string]string{
 	HostFunctionAsk:     AgentToolAsk,
 	HostFunctionWait:    AgentToolWait,
 
-	HostFunctionVocabulary: AgentToolVocabulary,
-	HostFunctionEdit:       AgentToolEdit,
+	HostFunctionVocabulary:    AgentToolVocabulary,
+	HostFunctionEdit:          AgentToolEdit,
+	HostFunctionAppletPreview: AgentToolAppletPreview,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -414,11 +417,11 @@ var deletedAgentToolKeys = map[string]string{
 	"callable": "function — a tool entry names a function, and only a function",
 }
 
-// agentBuiltinIdentities lists the seven host functions in the order the
+// agentBuiltinIdentities lists the eight host functions in the order the
 // errors name them.
 var agentBuiltinIdentities = []string{
 	HostFunctionQuery, HostFunctionPropose, HostFunctionWrite, HostFunctionAsk, HostFunctionWait,
-	HostFunctionVocabulary, HostFunctionEdit,
+	HostFunctionVocabulary, HostFunctionEdit, HostFunctionAppletPreview,
 }
 
 // buildPackageAgents parses one authority's agent documents — load.go's one-line
@@ -587,6 +590,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		case AgentToolEdit:
 			if a.Reads == nil || len(a.Emit) == 0 {
 				l.errf("%s: data.tools: edit needs data.permissions.reads and data.permissions.writes, since it reads the text it changes", where)
+				return nil
+			}
+		case AgentToolAppletPreview:
+			if a.Reads == nil {
+				l.errf("%s: data.tools: preview needs data.permissions.reads, since it reads what the applet's sources read", where)
 				return nil
 			}
 		case AgentToolVocabulary:
