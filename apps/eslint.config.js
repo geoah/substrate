@@ -47,7 +47,11 @@ export default defineConfig([
         // Each file is read through the tsconfig that includes it; the
         // build configs, which none does, through a default project.
         projectService: {
-          allowDefaultProject: ["vitest.config.ts", "*/web/vite.config.ts"],
+          allowDefaultProject: [
+            "vitest.config.ts",
+            "*/web/vite.config.ts",
+            "kit/web/vite.lib.ts",
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },

@@ -1,0 +1,4 @@
+# Prettier reads the .gitignore beside it alone, and the one that ignores
+# build output is at the root of the repository.
+**/dist
+**/node_modules

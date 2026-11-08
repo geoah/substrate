@@ -1,8 +1,13 @@
 {
   "name": "@substrate/testing",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.121.0",
   "description": "The web kit's test doubles: a fake substrate over fetch. Tests only.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoah/substrate.git",
+    "directory": "apps/kit/web/testing"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -12,9 +17,24 @@
     }
   },
   "scripts": {
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@substrate/client": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
   }
 }

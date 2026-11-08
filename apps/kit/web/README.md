@@ -346,11 +346,34 @@ pnpm fmt:check   # prettier
 
 CI's `apps web` job runs the same five (`mise run ci:apps:web`).
 
+## Publishing
+
+Every package is built for npm the same way (`pnpm build:kit`): its
+`src/index.ts` bundled into one ES module, `dist/index.js`, by Vite's
+library mode (`vite.lib.ts`), its dependencies and peers left as imports,
+and its declarations from `tsc` (`tsconfig.build.json`). One file, not a
+file per module, because the sources import each other without extensions,
+which a bundler resolves and Node does not. `publishConfig` points the
+published `exports` at `dist/`; in the workspace they stay on `src/`, so
+the apps and the tests never need a build.
+
+The kit is released with the substrate: release-please writes the
+release's version into each `package.json` (`release-please-config.json`'s
+`extra-files`), and `release.yml` packs the packages (`web-kit`, with a
+token that only reads) and publishes them (`npm`, through npm's trusted
+publishing, with provenance when the run started from the tagged commit).
+`mise run apps:web:pack` makes the same tarballs into `build/npm`, to see
+what npm would receive.
+
+Every package is still `private`, so a release packs and publishes none.
+Opening them takes: a scope of our own (`@substrate` on npm is another
+project's), so a rename of the six packages and of every import; a
+license; and, on npmjs.com, a trusted publisher per package naming this
+repository and `release-please.yml`. Then `private` comes off.
+
 ## Not yet
 
 - **Opening with no network at all.** The records and the outbox survive a
   reload, so a page that loads opens with its last state while the server
   cannot be reached; loading the page itself offline needs a service worker
   caching the app's build, which no app has yet.
-- **Publishing the packages** for other repositories: they are workspace
-  packages, `private`.

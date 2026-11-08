@@ -1,8 +1,13 @@
 {
   "name": "@substrate/react",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.121.0",
   "description": "React for a Substrate web app: the signed-in shell, the record and write hooks, Settings' sections and the grouped screen pieces.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoah/substrate.git",
+    "directory": "apps/kit/web/react"
+  },
   "type": "module",
   "sideEffects": [
     "*.css"
@@ -16,6 +21,7 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json && cp src/theme.css dist/theme.css",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
@@ -37,5 +43,20 @@
     "@types/react-dom": "^19",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./theme.css": "./dist/theme.css"
+    },
+    "types": "./dist/index.d.ts"
   }
 }

@@ -189,6 +189,18 @@ request and its release. When they differ, the `attest` job attests nothing,
 because the statement would name a commit the artifacts were not built from;
 the run summary says so, and `gh attestation verify` fails on that release.
 
+## The web kit on npm
+
+A release also carries the web kit's packages (`apps/kit/web`, [its
+README](../apps/kit/web/README.md#publishing)) at the release's version,
+which release-please writes into each `package.json`. `release.yml`'s
+`web-kit` job packs them and its `npm` job publishes them through npm's
+trusted publishing: no npm token is stored, and each package's page on
+npmjs.com names this repository and `release-please.yml` as its trusted
+publisher. A package marked `private` is neither packed nor published, so
+until the kit is opened a release publishes nothing to npm. A re-run skips
+each version npm already holds.
+
 ## Setup and recovery
 
 The workflow authenticates as a GitHub App, through a token

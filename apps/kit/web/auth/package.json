@@ -1,8 +1,13 @@
 {
   "name": "@substrate/auth",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.121.0",
   "description": "An app's sign-in to a Substrate: OAuth 2.1 with PKCE and package details, the session, its status and its revocation. No framework.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoah/substrate.git",
+    "directory": "apps/kit/web/auth"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -13,6 +18,7 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
@@ -20,5 +26,19 @@
   },
   "devDependencies": {
     "@substrate/testing": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
   }
 }

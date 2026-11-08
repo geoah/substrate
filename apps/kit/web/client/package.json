@@ -1,8 +1,13 @@
 {
   "name": "@substrate/client",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.121.0",
   "description": "The Substrate REST API from a browser: records, the change feed, discovery, ids and positions. No framework.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoah/substrate.git",
+    "directory": "apps/kit/web/client"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -13,6 +18,21 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p ."
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
   }
 }

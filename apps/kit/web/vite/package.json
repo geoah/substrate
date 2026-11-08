@@ -1,8 +1,13 @@
 {
   "name": "@substrate/vite",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.121.0",
   "description": "A Substrate web app's build: where it is served, its client metadata document and its web manifest.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geoah/substrate.git",
+    "directory": "apps/kit/web/vite"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -13,6 +18,7 @@
   },
   "types": "./src/index.ts",
   "scripts": {
+    "build": "vite build --config ../vite.lib.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p ."
   },
   "peerDependencies": {
@@ -21,5 +27,19 @@
   "devDependencies": {
     "@types/node": "^26",
     "vite": "^8"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
   }
 }
