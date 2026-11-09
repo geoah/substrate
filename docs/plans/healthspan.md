@@ -1,7 +1,7 @@
 # Healthspan: a health app on the web kit
 
-Status: proposal, 2026-11-09, against `main` at `6717954da`, second draft
-after one review ([Reviews](#reviews)). Nothing here is built yet.
+Status: proposal, 2026-11-09, against `main` at `6717954da`, fourth draft
+after three reviews ([Reviews](#reviews)). Nothing here is built yet.
 
 ## The problem
 
@@ -156,7 +156,7 @@ device and to undo.
 | --- | --- | --- |
 | `name` | string, required | the file's name, or "Entered by hand" |
 | `format` | enum `csv`, `manual` | how it came in |
-| `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; any of them → `undoing` → `undone` |
+| `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; `planned`, `importing`, `stopped`, `imported` → `undoing` → `undone`; `undone` → `undoing`, to clean up what landed late |
 | `runner` | object | the lease of the browser running it: a device id the browser minted, and `until`, a datetime |
 | `source` | reference to `observations/source` | the lab it is from |
 | `rows` | repeated object | the normalized plan, one entry per result: its key, metric, time, value or text, unit, comparator, range, flag, and the key of its report |
@@ -259,10 +259,11 @@ both win a transition.
   `runner`: it takes it with a guarded patch where `runner` is absent or its
   `until` has passed, for 60 seconds, and renews it every 20 seconds with a
   guarded patch that also writes `results`. It sends a write only while at
-  least 20 seconds of the lease remain, and aborts each request 5 seconds
-  before the lease ends, so no write it sends can be in flight after its
-  lease. A renewal refused (the version moved: another browser took over,
-  or the owner pressed Undo) stops it at once. A Web Lock per import keeps
+  least 20 seconds of the lease remain, and gives up waiting on one 5
+  seconds before the lease ends. Giving up stops this browser, not the
+  server: a write the server accepted may still commit later, and nothing
+  bounds when (What is left, below). A renewal refused (the version moved:
+  another browser took over, or the owner pressed Undo) stops it at once. A Web Lock per import keeps
   two tabs of one browser from contending.
 - **Setup** (from `planned`): the lab's source is a PUT at `ifVersion: 0`
   under `lab/<the lab's name, lowercased and hyphenated>`; a 409 reads the
@@ -276,23 +277,27 @@ both win a transition.
   and `runner` cleared, in one guarded patch.
 - **Recovery.** Every state but `imported` and `undone` is resumable from
   the import's row on Sources, on any device, once no live lease holds it:
-  `planned` runs setup, `importing` and `stopped` run the writing from the
-  start (what landed answers 409 and compares equal), `undoing` runs the
-  undo again.
-- **Undo** takes the lease as above (waiting out a live one, which the page
-  shows), moves the import to `undoing` in that patch, and then waits until
-  the previous lease's `until` has passed by 30 seconds (the server's
-  request deadline), so a write the previous runner sent has landed or
-  failed. Then it deletes every report and result the plan names (a 404 is
+  `planned` runs setup; `stopped` first moves to `importing` in the patch
+  that takes the lease, then runs the writing; `importing` runs the writing
+  from the start (what landed answers 409 and compares equal); `undoing`
+  runs the undo again.
+- **Undo** is best-effort reconciliation, not a fence. It takes the lease
+  as above (waiting out a live one, which the page shows), moves the import
+  to `undoing` in that patch, and waits until the previous lease's `until`
+  has passed by 30 seconds, a heuristic for a write still in flight to land
+  first. Then it deletes every report and result the plan names (a 404 is
   already gone), then everything that still points at the import through
   `origin`, reads that list again, and moves the import to `undone`. A
   result's derived twins in the other unit go with it: `convertlab` deletes
   the derivations of a deleted input, asynchronously.
-- **What is left.** No record carries a cross-record guard, so the fence is
-  time: a request the server accepted before the lease ended but applied
-  more than 30 seconds later could still land after Undo. Sources therefore
-  counts what points at each `undone` import and offers Undo again where
-  the count is not zero.
+- **What is left.** No record write carries a cross-record guard, and the
+  server bounds receiving a request's body, not applying it. A late write
+  onto an id Undo deleted is refused: a PUT at `ifVersion: 0` meets the
+  tombstone's version before it could restore it. A late first write of an
+  id that had not landed when Undo deleted it (a 404) can still land after
+  Undo. Sources therefore counts what points at each `undone` import and,
+  where the count is not zero, offers Undo again (`undone` → `undoing`),
+  which deletes what landed.
 
 **Enter a result** writes one `labresult`, its report and an import with a
 one-row plan, through the same runner.
@@ -374,10 +379,12 @@ change is listed under the table and in "How the score works".
 **Which night.** A sleep's night is the local day before the day it ended
 on, from `endsAt` and `utcOffsetEnd` (WHOOP writes the record's one offset
 into both). A resting heart rate summary's night is the night of the
-counted sleep of the same source its span overlaps most; one that overlaps
-none (WHOOP's span when a recovery has no sleep, which is its cycle's) is
-the local day its span starts on when it starts at noon or later, else the
-day before.
+sleep of the same source, counted or not, that its span overlaps most (the
+WHOOP adapter spans a recovery over the sleep it scores); one that overlaps
+no sleep (WHOOP's span when a recovery has no sleep, which is its cycle's)
+is the local day its span starts on when it starts at noon or later, else
+the day before. So a recovery moves with its sleep wherever the sleep's
+night differs from its cycle's.
 
 | Contributor | Today, from the mirror | On the shared kinds | |
 | --- | --- | --- | --- |
@@ -387,13 +394,16 @@ day before.
 | Strength minutes | scored workouts whose WHOOP sport is in the white paper's strength list | counted workouts whose `sport` is in the generic strength set (`strength`, `yoga`, `pilates`) or whose `sportSource`, normalized, is in the WHOOP list | kept for WHOOP; Apple Health's traditional and functional strength training (`sport: strength`) now count |
 | Steps | Apple Health steps, daily sums | the daily sum of `health/steps`, priority policy | kept |
 | VO2 max | Apple Watch readings | `health/vo2_max` readings over two years, priority policy | kept |
-| Resting heart rate | each scored recovery's resting heart rate | the `health/resting_heart_rate` summary, on its night (above) | kept |
+| Resting heart rate | each scored recovery's resting heart rate, on its cycle's night | the `health/resting_heart_rate` summary, on its night (above) | kept, but for the night (below) |
+| The 21-in-31 gate (the score updates only with 21 recoveries in the 31 nights before a week) | nights with a scored recovery, on the cycle's night | nights with a resting heart rate summary, on its night | kept, but for the night (below); a source with a daily resting heart rate (Apple Watch) passes it on the days it reports one |
 | Lean body mass | two named labs' scans | body composition results (`health/fat_free_mass` over the same scan's `health/body_mass`, or 100 less `health/body_fat_fraction`) in `labs/labresult`, priority policy | kept, without the names |
-| Days worn | a night with a scored sleep or recovery | a night with a counted sleep or a resting heart rate summary | kept |
+| Days worn | a night with a scored sleep or recovery | a night with a counted sleep or a resting heart rate summary | kept, but for the night (below) |
 
 **What changes on purpose.** A sleep's night comes from its own end, not
 its cycle's day, so a sleep that ends after the next cycle has started (a
-late nap, a second sleep after waking) moves to the night it ended in.
+late nap, a second sleep after waking) moves to the night it ended in, and
+with it the recovery spanning it: that night's resting heart rate, its
+place in the 21-in-31 gate and its day worn move too.
 Strength minutes count other sources' strength workouts. Consistency is
 WHOOP's own score, so a repository without one has no consistency
 contributor rather than one computed some other way.
@@ -402,7 +412,9 @@ contributor rather than one computed some other way.
 Apple Health adapters write (their mappings in
 `kinds/providers.substrate.reamde.dev/`), each with the expected
 contributor values chosen above: naps, unscored sleeps and workouts, a
-sleep ending after a cycle starts, a recovery spanning a cycle, a time zone
+sleep ending after a cycle starts with the recovery spanning it (its
+resting heart rate, gate night and day worn asserted), a recovery over an
+unscored sleep, a recovery spanning a cycle, a time zone
 change, uncommon WHOOP sports, and Apple Health's traditional and
 functional strength training. Then the owner's own data: the old engine on
 the mirror and the new one on the shared kinds, both read from one
@@ -466,15 +478,16 @@ Two additions every health app needs, made in the kit rather than the app:
     its own through the client (an import step, a rank); or through the
     change feed.
   - **The feed.** One follower in the provider (`follow` from
-    `@substrate/client`) watches the kinds the mounted reads name. It starts
-    from a bookmark taken before any read it covers: a list of those kinds
-    with `first=1`, whose `head` and `generation` are the watch's `from`
-    (the handoff [the list read](../api.md#counting-the-filtered-set)
-    promises), so a change after a read began is never missed. When the
-    set of kinds grows it restarts from the last cursor it saw, not the
-    live head. On `relist` (the history moved on) it invalidates every followed
-    read, takes a new bookmark and starts again; on `ended` it stops,
-    and the reads fall back to `staleAfter`.
+    `@substrate/client`) watches the kinds the mounted reads name. A scoped
+    token's list carries no `head` or `generation` (`internal/api/scoped.go`
+    strips them), so the bookmark is the watch's own: the follower starts
+    from the live head (`from` null), and a read it covers starts only once
+    the watch has `opened`, so a change after the read began is always
+    delivered. When the set of kinds grows it restarts from the last cursor
+    it saw, not the live head. On `relist` (the history moved on) it opens a
+    fresh watch first, and only once that has `opened` invalidates every
+    followed read; on `ended` it stops, and the reads fall back to
+    `staleAfter`.
   - It follows only kinds the repository holds: the kinds of the packages
     the app asks for, which the approval installs, and an optional one
     (`clinical`) only once a list of it has answered, so a kind the server
@@ -516,15 +529,19 @@ screenshot script captures only the demo.
   (`<5`), units that do not convert, the split at 2,000 rows, the derived
   ids, a lost answer (409 that compares equal), a conflict (409 that does
   not), the "may already be here" mark, the lease taken, renewed, lost and
-  waited out, resume from each state (`planned`, `importing`, `stopped`,
-  `undoing`), a second browser resuming during and after Undo, undo of a
-  partial import, and the count that offers Undo again.
+  waited out, resume from each state (`planned`, `importing`, `stopped`
+  through `importing`, `undoing`), a second browser resuming during and
+  after Undo, undo of a partial import, a late write onto a tombstoned id
+  (refused), a delayed first write after Undo (lands, counted, Undo again
+  from `undone`).
 - Sources: the priorities written for a group, a link of two sources, the
   record order with ranked and unranked sources.
 - `useRead`: invalidation by the outbox, by `invalidate`, by the feed, and
-  by `staleAfter`; the bookmark before the read (a change between the read
-  and the stream is seen), the restart from the last cursor, `relist`, an
-  optional kind left out until it answers; the abort on sign-out.
+  by `staleAfter`; a read held until the watch has `opened` (a change
+  between the read and the stream is seen), the restart from the last
+  cursor, `relist` reopening before it refetches, an optional kind left out
+  until it answers; the abort on sign-out; all of it under a scoped app
+  token in the fake substrate.
 - Today's rules, filters, chart maths, scales and suggestions, carried over.
 - End to end on a local substrate (`mise run dev:up` with the authority
   document from this tree): connect, approve (the three packages install),
@@ -592,3 +609,11 @@ One pull request, built in this order:
   report and accession, never by equal values; the follower's bookmark
   before the read, its cursor kept across restarts, `relist` and `ended`,
   and only kinds the repository holds.
+- **Astra, third draft: rework.** Taken: the watch's `opened` as the
+  bookmark, because a scoped token's list carries none; Undo described as
+  best-effort with the 30 seconds a heuristic, since the server bounds a
+  request's body and not its commit, with fixtures for a tombstoned id
+  (refused) and a delayed first create (lands, then Undo again); a
+  recovery, its gate night and its day worn moving with the sleep it spans,
+  named as a change; `stopped` → `importing` before a resumed write and
+  `undone` → `undoing` declared.
