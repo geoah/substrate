@@ -149,3 +149,26 @@ pins         [paths], where a case says it: the preference's pins that show, in
 - **Reopening** also sets to `null` each property the move into the current
   state stamps (a machine transition's `stamps`), so a reopened task holds no
   completion time.
+
+## Words
+
+The new screens' words, written once here so every platform says the same
+thing. A presenter writes them; a test on each side holds its presenter to
+them. `{n}`, `{collection}` and the like are filled in, and a count of one
+takes the singular.
+
+| Where                     | Words                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Needs you, the queue row  | `{n} suggestions` / `1 suggestion`; under it `Tasks waiting for you to accept or dismiss`               |
+| Needs you, the undated row| `No date`; under it `Open tasks with no due date`; its count                                            |
+| The queue                 | title `Suggestions`; under it `Accept one to put it on your list, or dismiss it.`; `Select`; empty: `No suggestions`, `Suggested tasks show here until you accept or dismiss them.` |
+| A suggestion's row        | its title; meta `{collection} · {written}` then its due and its group; `Dismiss`, `Accept`              |
+| A suggestion's page       | `Suggestion in {collection} · written {written}`; the description under the property's label; `Details`; `Collection`; docked `Dismiss`, `Accept` |
+| Several destinations      | a sheet titled `Accept as` or `Reopen as`, each value by its declared label, and `Cancel`               |
+| Undo                      | `Accepted`, `Dismissed`, `Done`, `Won't do`, each with `Undo`                                           |
+| Lists                     | `Search lists and projects` (the group kinds' plural labels, lower case, joined); `Pinned`; a section per group kind headed by its plural label with its full reference under it; `No {reference label}` (`No list`, `No project`) with `{collection} tasks in no {reference label}` under it; `Missing`, with `Tasks whose {reference label} is gone or out of reach`; `{n} more with nothing open` |
+| A group                   | `{kind label} · {status}` and `{n} open` under the title; the queue row as on Needs you; `To Do`; `Done`; `Pin`, `Unpin` |
+| Settings                  | a row `Collections`, `{n} on`                                                                           |
+| Collections               | title `Collections`; `Every collection of yours with a done state. Turn one on to see its tasks here; Substrate Tasks then asks to change them.`; section `Show tasks from`; a row's meta `{n} open`, `{n} suggested`, `grouped by {reference label}`, `View only`; footer `Turning a collection off only hides it here. Its tasks stay where they are.`; section `Save new tasks to`, row `New tasks` |
+| A collection              | its label as the title and its full reference under it; `Group by`, each single reference by its label with its target kind under it, and `Nothing`, `One list of every task`; `How its states read`: `Suggestion`, `Open`, `Done`, `Dropped`, each with its values; `Fields the app shows`: `Title`, `Due`, `Due day`, `Priority`, `Order`, each with its property or `None` |
+| Approval                  | turning a collection on: `Substrate Tasks needs your approval to change your {collection}.` and `Approve`; refused: `Not approved. {collection} stays view only.` |
