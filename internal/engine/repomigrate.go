@@ -85,6 +85,7 @@ var repositoryMigrations = []repositoryMigration{
 	{Version: 2, Name: "qualify_bare_selector_kinds", Run: migrateQualifyBareSelectorKinds},
 	{Version: 3, Name: "name_units_by_unit_records", Run: migrateNameUnitsByUnitRecords},
 	{Version: 4, Name: "name_applet_runtimes", Run: migrateNameAppletRuntimes},
+	{Version: 5, Name: "remove_reply_relay_contacts", Run: migrateRemoveReplyRelayContacts},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside
