@@ -110,6 +110,41 @@ func TestAnAppTokenListsTheImplementorsItsGrantReaches(t *testing.T) {
 		t.Fatalf("implementors %v, want %v", ids, want)
 	}
 
+	// The declaration it answers is the kind's own data map.
+	for _, k := range got.Items {
+		if k.Identity == taskKind && k.Definition["traits"] == nil {
+			t.Fatalf("the task's declaration lost its traits: %v", k.Definition)
+		}
+	}
+
+	// Declared to bind the trait later, the person is listed from the next
+	// request on; made internal, no trait scope lists it again.
+	declare(ds, personKind, func(def map[string]any) { def["traits"] = []any{temporalTrait + "(point)"} })
+	if got := implementorIDs(t, e, route, app); !slices.Equal(got, []string{conversationKind, personKind, taskKind}) {
+		t.Fatalf("after the person binds the trait: %v", got)
+	}
+	declare(ds, personKind, func(def map[string]any) { def["purpose"] = "internal" })
+	if got := implementorIDs(t, e, route, app); !slices.Equal(got, []string{conversationKind, taskKind}) {
+		t.Fatalf("an internal implementor was listed: %v", got)
+	}
+
+	// A read-only trait scope lists the same kinds; a grant over an unrelated
+	// kind lists none.
+	readScope := "read:implements(" + temporalTrait + ")"
+	reader := e.grant(readScope, []string{readScope})
+	if got := implementorIDs(t, e, route, reader); !slices.Equal(got, []string{conversationKind, taskKind}) {
+		t.Fatalf("a read-only trait scope's implementors: %v", got)
+	}
+	// The fake lists implementors from its own table, as the engine lists
+	// them from declarations, so the person leaves it with the trait.
+	ds.mu.Lock()
+	ds.traits[temporalTrait] = []string{taskKind, conversationKind}
+	ds.mu.Unlock()
+	unrelated := "write:" + personKind
+	if got := implementorIDs(t, e, route, e.grant(unrelated, []string{unrelated})); len(got) != 0 {
+		t.Fatalf("an unrelated grant's implementors: %v", got)
+	}
+
 	narrow := "write:" + taskKind
 	exact := e.grant(narrow, []string{narrow})
 	rec = e.do(http.MethodGet, route, exact, nil, "")
@@ -117,4 +152,16 @@ func TestAnAppTokenListsTheImplementorsItsGrantReaches(t *testing.T) {
 	if got := decodeJSON[substrate.OperationalList[substrate.KindInfo]](t, rec); len(got.Items) != 1 || got.Items[0].Identity != taskKind {
 		t.Fatalf("an exact scope's implementors: %+v", got.Items)
 	}
+}
+
+func implementorIDs(t *testing.T, e *appEnv, route, bearer string) []string {
+	t.Helper()
+	rec := e.do(http.MethodGet, route, bearer, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	var ids []string
+	for _, k := range decodeJSON[substrate.OperationalList[substrate.KindInfo]](t, rec).Items {
+		ids = append(ids, k.Identity)
+	}
+	slices.Sort(ids)
+	return ids
 }
