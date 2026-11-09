@@ -50,7 +50,7 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 
 - `orderBy`: a list of `{"property", "desc"}`. A declared property, `at`, `endsAt`, `dueAt`, `createdAt` or `updatedAt`, camelCase. Absent, a list is newest first (`createdAt` descending).
 - `expand`: reference property names a selected kind declares; their targets come back once each under `included`, keyed `"<kind>/<id>"`. One hop.
-- `count: true` adds `count`, the size of the whole filtered set, whatever page you are on. `first: 1` with it reads the number alone.
+- `count: true` adds `count`, the size of the whole filtered set, whatever page you are on. `first: 1` with it answers the count alongside at most one record.
 
 ## Ranked search
 
@@ -93,7 +93,7 @@ Steps per day:
 
 - `bucket`: `{"calendar": "hour|day|week|month", "timezone"}`, `{"every": "PT15M"}`, or absent for one bucket over the range. `range` is half-open `[gte, lt)` and required except with `"latest": true`, which answers each stream's newest point.
 - `reducers` by form: `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": 0.95}`, `{"durationIn": [100, 140]}`, `{"timeInState": ["open"]}`, `increase`, `rate`, `circularMean`. A reducer the metric's form does not admit is `422`.
-- `groupBy`: `source`, `about`, `code`, `metric`, `channel`, `statistic`. Also `unit`, `fill: "zero"`, `rolling: {"buckets": 7}`, `metrics: [{ref}, …]` (up to 16).
+- `groupBy`: `source`, `about`, `code`, `metric`, `channel`, `statistic`, never `kind`: count a kind with a list's `count`. Also `unit`, `fill: "zero"`, `rolling: {"buckets": 7}`, `metrics: [{ref}, …]` (up to 16).
 - A property read sums a declared number of the filtered kinds instead:
 
 ```json

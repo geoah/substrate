@@ -42,15 +42,15 @@ data:
   description: >-
     Read records. Pass kind + id for one record; q + filter.kinds (required;
     + mode, first) to rank by relevance; aggregate to bucket values; otherwise
-    filter (+ orderBy, first, after, expand) to list. A filter is {search,
+    filter (+ orderBy, first, after, expand, count) to list. A filter is {search,
     kinds, purposes, ids, implements, properties, labels, deleted, referencing}:
     properties maps a name to a condition (eq, in, prefix, match, gt, gte,
-    lt, lte, contains, exists), timestamps RFC3339, so a day is properties:
-    {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}}; search
-    is words against the indexed text, match against one text property, both
-    in q's grammar (words, "a phrase", -word, a OR b, prefix*); referencing:
-    {ref: "<kind>/<id>" or refs: [up to 256], property?} lists what points
-    AT them. A list is {records, cursor, head, generation, included?, matches?}:
+    lt, lte, contains, exists), timestamps RFC3339; a day is properties: {at:
+    {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}}; search is
+    words against indexed text, match against one text property, both in q's
+    grammar (words, "a phrase", -word, a OR b, prefix*); referencing: {ref:
+    "<kind>/<id>" or refs: [up to 256], property?} lists what points AT them.
+    A list is {records, cursor, head, generation, included?, matches?, count?}:
     resend cursor as after for more; expand names references whose targets
     ride in included, keyed by "<kind>/<id>". Records are addressed by their
     full reference, never a bare id. Read-only.
@@ -84,6 +84,10 @@ data:
       repeated: true
       description: reference properties whose targets to include beside the
         page, one hop
+    - name: count
+      type: bool
+      description: with a list, also answer count, the size of the whole filtered
+        set; with first 1, the count alongside at most one record
     - name: q
       type: string
       description: >-
@@ -101,8 +105,8 @@ data:
       type: json
       description: >-
         {metric: {ref}, range: {gte, lt}, bucket: {calendar: day, timezone},
-        reducers: [avg], groupBy, unit}, or metrics: [{ref}], or property:
-        {name} of filter.kinds; latest: true reads the newest
+        reducers: [avg], groupBy: [source], unit}, or metrics: [{ref}], or
+        property: {name} of filter.kinds; latest: true reads the newest
     - name: downsample
       type: json
       description: >-

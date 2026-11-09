@@ -275,17 +275,22 @@ entry could name only a function.
   and `filter.purposes` alone is not enough. The REST route, the direct call
   of this function and the console's search still take a search that names
   nothing. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
-  `referencing` included), `orderBy`, `first`, `after` and `expand` list a
-  page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. `filter`, `orderBy`, `aggregate` and
+  `referencing` included), `orderBy`, `first`, `after`, `expand` and `count`
+  list a page, which answers `{records, cursor, head, generation, included?,
+  matches?, count?}` exactly as the route does: `count` is the size of the
+  whole filtered set, so `first: 1` with it answers a kind's count beside at
+  most one record, one kind per read, and `q` beside it is refused. `filter`, `orderBy`, `aggregate` and
   `downsample` each take their JSON value (a list for `orderBy`, an object
   for the rest) or the same value encoded as a JSON string, and any other
   type is refused. A `filter` bounding `at` on both
   ends is the [window read](api.md#the-window-read), computed occurrences
   included. `aggregate` is the [aggregate read](api.md#the-aggregate-read)
   instead of a list, with `filter`, `kind` and `downsample` beside it; `id`,
-  `q`, `mode`, `first`, `after`, `orderBy` and `expand` beside it are refused
-  by name. Every kind it reads is held to the allowlist: `filter.kinds`, a
+  `q`, `mode`, `first`, `after`, `orderBy`, `expand` and `count` beside it
+  are refused by name. It groups by `source`, `about`, `code`, `metric`,
+  `channel` and `statistic`, never by kind, and the line the engine appends
+  to the card names them from the list the read enforces. Every kind it
+  reads is held to the allowlist: `filter.kinds`, a
   records bucket's kinds, the targets of either filter's `referencing`, the
   kind of each metric `metric` and `metrics` name, whose record the read
   looks up, and, where a `priority` policy names no `order`,
@@ -306,6 +311,19 @@ entry could name only a function.
   override that claims a slot, whatever its kind, so an override outside the
   allowlist removes its slot (decision 0111). List and search clamp to the
   remaining row budget; a blown budget is a tool error the model sees.
+  A refusal the engine makes from the call's arguments alone, before it
+  reads anything stored (a key the grammar does not take, a malformed
+  filter or order, an argument beside an arm that refuses it, a group or a
+  reducer the aggregate read does not have), answers `{error, invalid:
+  true, note}`, the note saying the same call fails the same way whatever
+  the repository holds. The loop keeps each such refusal for the run and
+  answers an exact repeat of the call, whatever order its arguments come
+  in, with `repeated: true`, without reading or spending the read budget:
+  no write lifts it. Every other refusal is a plain `{error}` and is never
+  kept, since a write or a later call may lift it (a kind, metric or record
+  that is not there, a kind outside the allowlist, the row budget, a
+  timeout, an index still being re-derived, a time zone the server cannot
+  load until its zone file appears), so the identical call reads again.
 
   An agent holding `query` gets a **kinds list** in its system prompt,
   after its own `prompt`: the `primary` and `supporting` kinds its

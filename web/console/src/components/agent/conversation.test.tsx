@@ -56,7 +56,13 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
   }
 })
 
-import type { AgentEvent } from "@/lib/api/agents"
+import {
+  agentRunsQueryOptions,
+  conversationsQueryOptions,
+  lastChatQueryOptions,
+  threadMessagesQueryOptions,
+  type AgentEvent,
+} from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
 import { resetUnsent } from "@/lib/unsent-messages"
@@ -126,6 +132,39 @@ function mount(
 }
 
 describe("Conversation", () => {
+  it("puts a new chat in the chat lists as soon as its run names the thread", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const empty = { records: [], head: 0, generation: "g" }
+    const lists = [
+      conversationsQueryOptions().queryKey,
+      lastChatQueryOptions().queryKey,
+      agentRunsQueryOptions("helper").queryKey,
+    ]
+    const transcript = threadMessagesQueryOptions("t-0").queryKey
+    for (const key of [...lists, transcript]) client.setQueryData(key, empty)
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    )
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "can you make a new kind?" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    for (const key of lists)
+      expect(client.getQueryState(key)?.isInvalidated).toBe(false)
+
+    act(() => calls[0].onEvent({ kind: "thread", thread: "t-1" }))
+
+    // Mid-run, before any settle: the lists re-read and find the thread
+    // running, and no transcript is touched while the stream shows it.
+    for (const key of lists)
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(transcript)?.isInvalidated).toBe(false)
+  })
+
   it("releases the composer and keeps the message when a new chat fails before its thread", () => {
     mount()
     const box = screen.getByRole("textbox")

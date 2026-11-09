@@ -853,7 +853,8 @@ page's own snapshot, so the rows and the number agree. Zero is a count and is
 answered; a list that did not ask carries no `count` at all. `1` is the only
 value: any other is `400 bad_request` naming it, because a `count=true` read
 as "no" would answer a page without the number its caller is about to render.
-A reader that wants the number alone asks `first=1`.
+A reader that wants the number asks `first=1`, which answers it alongside
+at most one record.
 
 **It costs a scan of every matching row.** The count runs the list's own
 predicate as one `SELECT count(*)` with no ordering and no row read out, so

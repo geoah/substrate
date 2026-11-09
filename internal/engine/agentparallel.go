@@ -220,8 +220,9 @@ func (l *agentLoop) dispatchRun(ctx context.Context, run []*toolRun) {
 	}
 }
 
-// prepareCall resolves a call's tool and arguments, and spends a `query`
-// call's read budget, before the call launches. pending is how many
+// prepareCall resolves a call's tool and arguments, answers the exact repeat
+// of a read this run refused (agentrefused.go), and spends a `query` call's
+// read budget, before the call launches. pending is how many
 // `query` calls of the span may hold a share of the rows at once, this one
 // included: each takes its part of what is left, so concurrent reads never
 // overrun the budget together. A call answered here is settled.
@@ -242,6 +243,10 @@ func (l *agentLoop) prepareCall(c *toolRun, pending int) {
 		}
 	}
 	if tool.builtin != vocabulary.AgentToolQuery {
+		return
+	}
+	if prior := l.priorRefusal(c); prior != "" {
+		settle(prior)
 		return
 	}
 	reads := l.ag.Reads

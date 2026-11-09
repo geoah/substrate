@@ -263,6 +263,24 @@ func offsetMinutes(t time.Time) int64 {
 	return int64(off / 60)
 }
 
+// unloadedZone is the refusal of a time zone the server could not load. The
+// plan refuses every other body from its text alone; this one it refuses from
+// the zone database beside it (ZONEINFO, the system's zoneinfo), which can
+// gain the zone while the server runs, so the agent's query tool leaves it to
+// the read and never keeps it for the run (parseAggregateCall).
+type unloadedZone struct{ error }
+
+func (e unloadedZone) Unwrap() error { return e.error }
+
+// bucketZone loads a bucket's zone by its name, or refuses it at path.
+func bucketZone(path, name string) (*time.Location, error) {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, unloadedZone{refuse(path, "%q is not a time zone the server knows", name)}
+	}
+	return loc, nil
+}
+
 // parseBucket reads the request's bucket into p.bucket.
 func (p *aggPlan) parseBucket() error {
 	b := p.a.Bucket
@@ -299,9 +317,9 @@ func (p *aggPlan) parseBucket() error {
 		if b.Calendar == "" || b.Timezone != "" {
 			return refuse("aggregate.bucket.fallbackTimezone", "a fallback zone places the values written without a UTC offset in the recorded-local calendar (calendar with no timezone); every, records and a calendar in a timezone place each value by its instant")
 		}
-		loc, err := time.LoadLocation(b.FallbackTimezone)
+		loc, err := bucketZone("aggregate.bucket.fallbackTimezone", b.FallbackTimezone)
 		if err != nil {
-			return refuse("aggregate.bucket.fallbackTimezone", "%q is not a time zone the server knows", b.FallbackTimezone)
+			return err
 		}
 		spec.fallback = loc
 	}
@@ -338,9 +356,9 @@ func (p *aggPlan) parseBucket() error {
 		spec.mode = bucketLocal
 		spec.loc = time.UTC
 		if b.Timezone != "" {
-			loc, err := time.LoadLocation(b.Timezone)
+			loc, err := bucketZone("aggregate.bucket.timezone", b.Timezone)
 			if err != nil {
-				return refuse("aggregate.bucket.timezone", "%q is not a time zone the server knows", b.Timezone)
+				return err
 			}
 			spec.mode, spec.loc = bucketCalendar, loc
 		}

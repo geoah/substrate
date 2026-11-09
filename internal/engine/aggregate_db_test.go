@@ -14,6 +14,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,13 +193,15 @@ func wantNum(t *testing.T, label string, row substrate.AggregateRow, reducer str
 	}
 }
 
-var athens = func() *time.Location {
+// athens loads on first use, never at package init: TestMain sets ZONEINFO,
+// which the time package reads once, at the first zone anything loads.
+var athens = sync.OnceValue(func() *time.Location {
 	loc, err := time.LoadLocation("Europe/Athens")
 	if err != nil {
 		panic(err)
 	}
 	return loc
-}()
+})
 
 // A heart rate read served from rollups equals the one served from raw
 // points and the observed package's reducers over the stored points, bucket
@@ -413,7 +416,7 @@ func TestAggregateTwaFallsBackToRawUnderATightMaxGap(t *testing.T) {
 func TestAggregateHeartRateZonesWeekly(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	monday := time.Date(2026, 4, 6, 0, 0, 0, 0, athens)
+	monday := time.Date(2026, 4, 6, 0, 0, 0, 0, athens())
 	for w := range 26 {
 		run := monday.AddDate(0, 0, 7*w+2).Add(7 * time.Hour)
 		for _, src := range []struct {
@@ -733,7 +736,7 @@ func TestAggregateSleepStagesByRecordWindows(t *testing.T) {
 func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	start := time.Date(2026, 9, 1, 0, 0, 0, 0, athens)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, athens())
 	vals := []any{"18342.655", "18343.100", "18344.000", "0.250", "1.000", "1.500", "2.125", "3.000"}
 	var offsets []int64
 	for i := range vals {
@@ -785,7 +788,7 @@ func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 func TestAggregateTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	monday := time.Date(2026, 7, 6, 0, 0, 0, 0, athens)
+	monday := time.Date(2026, 7, 6, 0, 0, 0, 0, athens())
 	var points []struct {
 		at   time.Time
 		code string
@@ -1082,11 +1085,11 @@ func TestAggregateRecordedLocalDayAcrossAnOffsetChange(t *testing.T) {
 func TestAggregateAthensDayAcrossTheClockChange(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
-	day := time.Date(2026, 10, 25, 0, 0, 0, 0, athens)
+	day := time.Date(2026, 10, 25, 0, 0, 0, 0, athens())
 	f.steps("garmin", day, time.Hour, 24, 1, 1)
 	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
-		Range:    rng(day, time.Date(2026, 10, 27, 0, 0, 0, 0, athens)),
+		Range:    rng(day, time.Date(2026, 10, 27, 0, 0, 0, 0, athens())),
 		Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Athens"},
 		Reducers: reducers("count", "sum"), Fill: "zero",
 	})
