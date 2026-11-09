@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-17
 decision-makers: George Antoniadis
+amended-by: 0248
 ---
 
 # 0168. A provider's live events ship as an opt-in bundle that requires the provider, with its webhook off
