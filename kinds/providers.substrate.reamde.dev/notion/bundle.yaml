@@ -387,9 +387,9 @@ data:
       writer: connector
       displayName: Sync status
       description: >-
-        the last sync outcome — ok, ok (deferred: blocks xN), erroring: <sentence>,
-        and what could not be read when an object answered 404 or 403. After
-        an erroring sentence, a second line may carry the technical detail
+        the last sync outcome — ok, ok (deferred: blocks xN), erroring: <sentence>
+        with any technical detail on the next line, and what could not be
+        read when Notion answered 404 or 403
     # ---- the core `sync` trait (substrate decision 0085) ------------------
     # The twelve properties the trait contracts, each redeclared with the
     # writer main's Google bundle uses. THREE OF THEM ARE ALREADY ABOVE and

@@ -449,10 +449,9 @@ data:
       writer: connector
       displayName: Sync status
       description: >-
-        the last sync outcome: ok, ok (N pending), erroring: <reason>, "Not
-        syncing: another Beeper connection…" for a duplicate, Beeper Desktop
-        is not reachable (since <time>)…, and a trailing [N couldn't be read:
-        …]
+        the last sync outcome: ok, ok (N pending), erroring: <reason>, a duplicate's
+        "Not syncing: …", Beeper Desktop is not reachable (since <time>)…,
+        and a trailing [N couldn't be read: …]
     # --- the core `sync` trait's connector hands (decision 0085) -------------
     # The ten properties the trait contracts that the CONNECTOR writes; the
     # owner's two (`syncRequestedAt`, `syncPaused`) are above. The sync body

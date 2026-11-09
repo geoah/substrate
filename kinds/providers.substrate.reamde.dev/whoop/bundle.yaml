@@ -181,6 +181,8 @@ data:
   # 27: every failure the sync and the webhook write or raise opens with a
   # plain sentence saying what failed and what to do, the technical detail
   # on the line after it; a connection failure says which kind it was.
+  # The adapter's stamp follows the package to `whoop@27`; what it writes
+  # is unchanged.
   version: 27
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -3889,7 +3891,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `whoop-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "whoop@26"
+    ADAPTER = "whoop@27"
 
     OBSERVATION = "substrate.reamde.dev/observations/observation"
     SOURCE = "substrate.reamde.dev/observations/source"
