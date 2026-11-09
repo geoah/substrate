@@ -857,8 +857,8 @@ data:
       embed: true
       writer: connector
       displayName: Text
-      description: the message's words as markdown; cleared when it was deleted
-        for everyone
+      description: the message's words as markdown, kept when the message
+        is deleted
     editedAt:
       type: datetime
       writer: connector
@@ -926,8 +926,8 @@ data:
       type: enum
       writer: connector
       displayName: Deleted
-      description: deleted for everyone, which clears its text and files,
-        or by you on another device, which keeps them
+      description: deleted for everyone, or by you on another device; either
+        way its text and files stay here
       values:
         - value: everyone
           label: For everyone
@@ -1050,8 +1050,8 @@ data:
       type: text
       writer: connector
       displayName: Caption
-      description: the words sent with the file; cleared when the message
-        was deleted for everyone
+      description: the words sent with the file, kept when the message is
+        deleted
     file:
       type: blobref
       mediaTypes: [image/*, video/*, audio/*, application/*, text/*]
@@ -2164,7 +2164,8 @@ data:
                 act.set("result", {"ref": msg.path})
         fresh = not msg.exists and not msg.was_live and not msg.was_tomb
         if msg.get("deleted") == "everyone":
-            # Deleted for everyone: what the message said stays withdrawn.
+            # Deleted for everyone: the row keeps what the message said before
+            # the delete, and no later copy replaces it.
             msg.exists = True
             return
         held = msg.get("editCount") or 0
@@ -2225,6 +2226,8 @@ data:
 
     def apply_message_delete(b, ev):
         msg = held_message(b, ev)
+        # A delete marks the row and keeps what the message said, its files and
+        # their captions: the mirror is the owner's archive.
         if ev.scope == "owner":
             if msg.get("deleted") != "everyone":
                 msg.set("deleted", "owner")
@@ -2234,13 +2237,7 @@ data:
             return
         msg.set("deleted", "everyone")
         msg.set("deletedAt", ev.at)
-        msg.set("text", None)
         msg.set("sourceSeq", ev.seq)
-        for aid in b.attachments_of.get(msg.path, ()):
-            att = b.rows[(ATTACHMENT, aid)]
-            if att.exists:
-                att.set("file", None)
-                att.set("caption", None)
 
 
     def parse_message_reactions(b, ev, raw):

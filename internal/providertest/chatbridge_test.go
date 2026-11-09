@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -364,13 +365,14 @@ func TestChatBridgeGoldenBatches(t *testing.T) {
 		t.Fatalf("the book club's members after Cleo joined and Ben left: %v", got)
 	}
 	gone := mustGet(t, ds, cbMessage, cbMessageID(cbGroup, "3EB0AA11"))
-	if gone.Properties["deleted"] != "everyone" || gone.Properties["text"] != nil ||
+	if gone.Properties["deleted"] != "everyone" || gone.Properties["text"] != "the cover" ||
 		gone.Properties["deletedAt"] != "2026-11-09T10:06:59Z" {
 		t.Fatalf("the photo message deleted for everyone: %v", gone.Properties)
 	}
-	photo = mustGet(t, ds, cbAttachment, cbAttachmentID(cbGroup, "3EB0AA11", "0"))
-	if photo.Properties["file"] != nil || photo.Properties["caption"] != nil {
-		t.Fatalf("the photo of a message deleted for everyone still holds %v", photo.Properties)
+	kept := mustGet(t, ds, cbAttachment, cbAttachmentID(cbGroup, "3EB0AA11", "0"))
+	if !reflect.DeepEqual(kept.Properties["file"], photo.Properties["file"]) ||
+		kept.Properties["caption"] != "the cover" {
+		t.Fatalf("the photo of a message deleted for everyone: %v, was %v", kept.Properties, photo.Properties)
 	}
 	acct = mustGet(t, ds, cbAccount, cbAccountID())
 	if acct.Properties["connectionState"] != "connected" || acct.Properties["warnings"] != nil ||
@@ -1012,10 +1014,10 @@ func TestChatBridgeMultipartMedia(t *testing.T) {
 	}
 }
 
-// A message deleted for everyone keeps its row, clears its text and files,
-// and stays withdrawn against a later upsert; deleted by the owner on another
-// device it keeps them, and a later delete for everyone still clears them.
-func TestChatBridgeDeletedForEveryoneStaysWithdrawn(t *testing.T) {
+// A delete marks a message and keeps what it said and its files. Deleted for
+// everyone, it takes no later upsert; deleted by the owner on another device,
+// it takes its edits until a delete for everyone marks it so.
+func TestChatBridgeDeletedMessagesKeepTheirContent(t *testing.T) {
 	ds := newChatBridge(t)
 	s := &cbStream{}
 	cbOpen(t, ds, s, cbDirect)
@@ -1025,18 +1027,38 @@ func TestChatBridgeDeletedForEveryoneStaysWithdrawn(t *testing.T) {
 			"at": "2026-11-09T11:30:00Z",
 		})
 	}
+	photo := map[string]any{
+		"part": "0", "content": "image", "mimeType": "image/jpeg",
+		"caption": "the plan", "file": map[string]any{"part": "media-1"}, "mediaState": "stored",
+	}
 	cbDeliver(t, ds, cbBatch(
-		s.message(cbDirect, "m1", map[string]any{"text": "secret"}),
+		s.message(cbDirect, "m1", map[string]any{
+			"text": "secret", "content": "image",
+			"attachments": []any{photo},
+		}),
 		s.message(cbDirect, "m2", map[string]any{"text": "kept"}),
 		del("m1", "everyone"), del("m2", "owner"),
-	), nil, "2026-11-09T12:00:00Z")
+	), []cbFile{{Part: "media-1", Filename: "plan.jpg", MediaType: "image/jpeg", Text: "not really a jpeg"}},
+		"2026-11-09T12:00:00Z")
+	held := mustGet(t, ds, cbAttachment, cbAttachmentID(cbDirect, "m1", "0"))
+	if held.Properties["file"] == nil || held.Properties["caption"] != "the plan" {
+		t.Fatalf("the photo of a message deleted for everyone: %v", held.Properties)
+	}
 	cbDeliver(t, ds, cbBatch(
-		s.message(cbDirect, "m1", map[string]any{"text": "secret again"}),
+		s.message(cbDirect, "m1", map[string]any{
+			"text": "secret again", "content": "text",
+			"attachments": []any{},
+		}),
 		s.message(cbDirect, "m2", map[string]any{"text": "kept, edited"}),
 	), nil, "2026-11-09T12:00:01Z")
 	m1 := mustGet(t, ds, cbMessage, cbMessageID(cbDirect, "m1"))
-	if m1.Properties["deleted"] != "everyone" || m1.Properties["text"] != nil {
-		t.Fatalf("a message deleted for everyone came back: %v", m1.Properties)
+	if m1.Properties["deleted"] != "everyone" || m1.Properties["text"] != "secret" ||
+		m1.Properties["deletedAt"] != "2026-11-09T11:30:00Z" {
+		t.Fatalf("a message deleted for everyone took a later copy: %v", m1.Properties)
+	}
+	if got := mustGet(t, ds, cbAttachment, cbAttachmentID(cbDirect, "m1", "0")); !reflect.DeepEqual(got.Properties, held.Properties) {
+		t.Fatalf("a later copy changed the photo of a message deleted for everyone: %v, was %v",
+			got.Properties, held.Properties)
 	}
 	m2 := mustGet(t, ds, cbMessage, cbMessageID(cbDirect, "m2"))
 	if m2.Properties["deleted"] != "owner" || m2.Properties["text"] != "kept, edited" {
@@ -1044,7 +1066,7 @@ func TestChatBridgeDeletedForEveryoneStaysWithdrawn(t *testing.T) {
 	}
 	cbDeliver(t, ds, cbBatch(del("m2", "everyone")), nil, "2026-11-09T12:00:02Z")
 	if got := mustGet(t, ds, cbMessage, cbMessageID(cbDirect, "m2")); got.Properties["deleted"] != "everyone" ||
-		got.Properties["text"] != nil {
+		got.Properties["text"] != "kept, edited" {
 		t.Fatalf("deleted for everyone after the owner's delete: %v", got.Properties)
 	}
 }

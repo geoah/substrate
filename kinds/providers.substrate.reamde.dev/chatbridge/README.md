@@ -530,12 +530,14 @@ number.
 - **Edits.** A `message.upsert` whose `editCount` is below the stored one
   (absent counts as 0) is an older copy, from a page of history, and is
   left out, so it cannot undo an edit.
-- **Deletes.** `scope: everyone` marks the message `deleted: everyone` and
-  clears its `text` and its attachments' `file` and `caption`; `scope:
-  owner` (you deleted it on another device) marks `deleted: owner` and keeps
-  them, and a later delete for everyone still clears them. A message deleted
-  for everyone takes no later upsert. Clearing is not erasure: the changelog
-  is append-only and every export carries the earlier text.
+- **Deletes.** A delete marks the message and keeps what it said: `scope:
+  everyone` (withdrawn on the network) marks it `deleted: everyone`, `scope:
+  owner` (you deleted it on another device) `deleted: owner`, and either sets
+  `deletedAt`; its `text`, its attachments' `file` and their `caption` stay.
+  The mirror is your archive, so a message withdrawn on the network is still
+  here, marked deleted. A message deleted for everyone takes no later
+  upsert, and keeps what it said before the delete; one deleted for you
+  still takes its edits, and a later delete for everyone marks it so.
 - **Chats.** `chat.delete` tombstones the chat. A later `chat.upsert` brings
   it back: with what it held, messages included, while the engine has not
   collected it yet, and fresh once it has.
