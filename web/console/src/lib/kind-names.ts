@@ -38,6 +38,7 @@ export function declaredLabel(kind: KindInfo | string): KindLabel | undefined {
  * than none. */
 const WORDS = new Set([
   "account",
+  "action",
   "actor",
   "address",
   "agent",
@@ -94,6 +95,7 @@ const WORDS = new Set([
   "id",
   "immunization",
   "ink",
+  "instance",
   "instruction",
   "interaction",
   "issue",

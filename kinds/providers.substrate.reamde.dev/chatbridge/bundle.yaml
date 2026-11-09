@@ -163,8 +163,8 @@ data:
   package: chatbridge
   description: >-
     One running copy of the chat bridge program, which signs in to chat networks
-    as you and delivers what happens there: its name, its build, the networks
-    it can run, and how far its stream of events has been applied.
+    as you. It says its name, its build, the networks it can run, and how
+    far its stream of events has been applied.
   purpose: internal
   names:
     singular: instance
@@ -240,10 +240,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: chatbridge
   description: >-
-    One sign-in on one chat network through the chat bridge, such as your
-    WhatsApp: its state and the network's warnings, who you are there, and
-    your settings for it. Deleting it drops every chat and message it brought
-    in, and the bridge signs out.
+    One of your sign-ins on a chat network, such as your WhatsApp, kept by
+    the chat bridge. It carries its state and the network's warnings, who
+    you are there, and your settings for it. Deleting it drops every chat
+    and message it brought in, and the bridge signs out.
   purpose: supporting
   names:
     singular: account
@@ -475,10 +475,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: chatbridge
   description: >-
-    Someone on a chat network, as one of your sign-ins sees them: their names,
-    handle, numbers and addresses, and whether they are in your address book
-    there. The same person seen through two sign-ins is two records, which
-    contacts join.
+    Someone on a chat network, as one of your sign-ins sees them. It holds
+    their names, handle, numbers and addresses, and whether they are in your
+    address book there. The same person seen through two sign-ins is two records,
+    which contacts join.
   purpose: supporting
   names:
     singular: user
@@ -565,9 +565,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: chatbridge
   description: >-
-    One conversation on a chat network through the chat bridge: a direct chat,
-    a group, a channel or a space, with its members, its settings, what the
-    network lets you do in it, and how far you have read it.
+    One conversation on a chat network: a direct chat, a group, a channel
+    or a space. It holds its members, its settings, what the network lets
+    you do in it, and how far you have read it.
   names:
     singular: chat
   displayTemplate: "{chatName|otherUser.fullName|otherUser.handle|chatId}"
@@ -773,9 +773,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: chatbridge
   description: >-
-    One message in one chat, on whatever network the chat is on: who sent
-    it and when, its text, what it replies to, its reactions, and whether
-    it was edited or deleted. Its files are its attachments.
+    One message in one of your chats, on whatever network the chat is on.
+    It holds who sent it and when, its text, what it replies to, its reactions,
+    and whether it was edited or deleted. Its files are its attachments.
   names:
     singular: message
   traits:
@@ -974,8 +974,8 @@ data:
   authority: providers.substrate.reamde.dev
   package: chatbridge
   description: >-
-    One file sent with a message, such as a photo or a voice note: what it
-    is, its size, and its bytes once the bridge fetched them.
+    One file sent with a message, such as a photo or a voice note. It holds
+    what the file is, its size, and its bytes once the bridge fetched them.
   purpose: supporting
   names:
     singular: messageattachment

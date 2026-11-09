@@ -187,6 +187,11 @@ const READS: Record<string, number> = {
   "providers.substrate.reamde.dev/whoop/sleep": 3,
   // No section: it only keeps the scrape's metadata closed on the sheet.
   "providers.substrate.reamde.dev/firecrawl/webdocument": 0,
+  // The conversation block lists the chat's messages, actions and held
+  // requests as plain record reads: no aggregate.
+  "providers.substrate.reamde.dev/chatbridge/chat": 0,
+  // Its properties and its instance's row: no aggregate.
+  "providers.substrate.reamde.dev/chatbridge/account": 0,
   "substrate.reamde.dev/labs/labreport": 0,
   "substrate.reamde.dev/labs/labresult": 0,
   "substrate.reamde.dev/labs/metric": 0,

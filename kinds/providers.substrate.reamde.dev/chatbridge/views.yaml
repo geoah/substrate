@@ -78,8 +78,10 @@ data:
           label: Runs on
           kind: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/instance
           property: instance
-          columns: [instanceName, version, networks, lastSeenAt, appliedSeq,
-            skippedEvents, lastSkipped]
+          # `networks` is a repeated object, which a table cell cannot show
+          # on one line; the instance's own page lists them.
+          columns: [instanceName, version, lastSeenAt, appliedSeq, skippedEvents,
+            lastSkipped]
       - properties:
           label: Your settings
           list:
