@@ -157,6 +157,7 @@ device and to undo.
 | `name` | string, required | the file's name, or "Entered by hand" |
 | `format` | enum `csv`, `manual` | how it came in |
 | `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; any of them → `undoing` → `undone` |
+| `runner` | object | the lease of the browser running it: a device id the browser minted, and `until`, a datetime |
 | `source` | reference to `observations/source` | the lab it is from |
 | `rows` | repeated object | the normalized plan, one entry per result: its key, metric, time, value or text, unit, comparator, range, flag, and the key of its report |
 | `reports` | repeated object | one entry per report: its key, its date, its lab's accession |
@@ -241,28 +242,57 @@ the other after it.
    picker of the repository's lab metrics, or is left out. A value whose
    unit converts to none of the entry's metrics, through
    `/api/v1/units/convert` (which no scope limits), is left out with the
-   reason.
+   reason. A row matching a result the repository already holds (the same
+   analyte on the same day, the value equal within the display precision,
+   from any source) is marked "may already be here" and left unticked; the
+   owner can tick it.
 3. The plan is shown: results per report, left out and why. Import writes
-   the `import` record with its plan at `planned`, a `source` for the lab
-   where none of class `lab` has its name, and moves the import to
-   `importing`.
-4. **The runner** writes each report, then each of its results, through the
-   client, in plan order, each a PUT at `ifVersion: 0` under its derived id.
-   A 409 reads the row and compares it with what the plan writes: the same
-   is a write that landed; different stops the import as `stopped` with the
-   problem. Any other refusal stops it too. Every 50 writes it patches
-   `results` and reads `status`, and stops when the import is no longer
-   `importing`. A Web Lock per import keeps one runner a browser; a second
-   device running the same import writes nothing twice, because every write
-   is the same PUT. At the end it patches `imported` and `importedAt`.
-5. **Resume** (on a `stopped` import, or an `importing` one no runner in
-   this browser holds) runs the runner again from the start: a write that
-   landed answers 409 and compares equal.
-6. **Undo** patches `undoing` first, so every runner stops at its next
-   check, then deletes every result and report the plan names (404 is
-   already gone), then everything that points at the import through
-   `origin`, then moves it to `undone`. A result's derived twins in the other
-   unit go with it: `convertlab` deletes the derivations of a deleted input.
+   the `import` record with its plan at `planned`.
+
+### The runner
+
+Every step below is idempotent, and every change of the import record is a
+patch held to the version last read (`ifVersion`), so two browsers never
+both win a transition.
+
+- **The lease.** A browser runs an import only while it holds
+  `runner`: it takes it with a guarded patch where `runner` is absent or its
+  `until` has passed, for 60 seconds, and renews it every 20 seconds with a
+  guarded patch that also writes `results`. It sends a write only while at
+  least 20 seconds of the lease remain, and aborts each request 5 seconds
+  before the lease ends, so no write it sends can be in flight after its
+  lease. A renewal refused (the version moved: another browser took over,
+  or the owner pressed Undo) stops it at once. A Web Lock per import keeps
+  two tabs of one browser from contending.
+- **Setup** (from `planned`): the lab's source is a PUT at `ifVersion: 0`
+  under `lab/<the lab's name, lowercased and hyphenated>`; a 409 reads the
+  row and takes it where it is of class `lab`, and otherwise suffixes the id.
+  Then the import moves to `importing`.
+- **Writing** (in `importing`): each report, then each of its results, in
+  plan order, each a PUT at `ifVersion: 0` under its derived id. A 409
+  reads the row and compares it with what the plan writes: the same is a
+  write that landed; different stops the import as `stopped` with the
+  problem, as any other refusal does. At the end, `imported`, `importedAt`
+  and `runner` cleared, in one guarded patch.
+- **Recovery.** Every state but `imported` and `undone` is resumable from
+  the import's row on Sources, on any device, once no live lease holds it:
+  `planned` runs setup, `importing` and `stopped` run the writing from the
+  start (what landed answers 409 and compares equal), `undoing` runs the
+  undo again.
+- **Undo** takes the lease as above (waiting out a live one, which the page
+  shows), moves the import to `undoing` in that patch, and then waits until
+  the previous lease's `until` has passed by 30 seconds (the server's
+  request deadline), so a write the previous runner sent has landed or
+  failed. Then it deletes every report and result the plan names (a 404 is
+  already gone), then everything that still points at the import through
+  `origin`, reads that list again, and moves the import to `undone`. A
+  result's derived twins in the other unit go with it: `convertlab` deletes
+  the derivations of a deleted input, asynchronously.
+- **What is left.** No record carries a cross-record guard, so the fence is
+  time: a request the server accepted before the lease ended but applied
+  more than 30 seconds later could still land after Undo. Sources therefore
+  counts what points at each `undone` import and offers Undo again where
+  the count is not zero.
 
 **Enter a result** writes one `labresult`, its report and an import with a
 one-row plan, through the same runner.
@@ -281,21 +311,25 @@ unit), its trend goal, its cadence and its info content, and no metric id.
 category `labs` or `body` and every `labs/analyte` record. An entry's
 metrics are those holding one of its codes, then the `labs/` or `health/`
 metric of its name. They fall into unit forms: the metrics whose units
-convert to the display unit through ordinary conversions (one form, however
-many metrics), and the others (a mass form beside a molar one), which
-convert only through the analyte's `molarMass` or formula. Results are
-read in the display form only. `convertlab` writes each result's twin in
-the analyte's other form (`derivedFrom` naming it), so a repository whose
-analyte record converts the two holds every result in both. A result of the
-other form with no twin in the display form (an analyte with no conversion)
-is converted in the app through the same analyte record where it can be,
-and shown apart, in its own unit, where it cannot.
+convert to the display unit through ordinary conversions (the display
+form, however many metrics), and the others (a mass form beside a molar
+one), which convert only through the analyte's `molarMass` or formula.
 
-**One specimen once.** Within the display form a result with `derivedFrom`
-naming a result already read is left out, and two originals of one analyte
-on the same day with the same value within the display precision (one
-owner's metric and the catalogue's, written by two imports of one report)
-are one point, the higher-ranked source's.
+**Reading an entry** reads its results in every form, then makes one point
+per specimen:
+
+1. A result and its derivations (`derivedFrom`, which `convertlab` writes on
+   each twin in the analyte's other form) are one specimen. Its point is the
+   member in the display form: the original where it is in that form, else
+   the twin.
+2. A specimen with no member in the display form (an analyte with no
+   conversion, or a twin not written yet) is converted in the app through
+   the analyte record where one converts it, and otherwise shown apart, in
+   its own unit, beside the card's chart.
+3. Two specimens are one only by identity: the same `report`, or the same
+   report `accession` from the same lab, and the same analyte. Two results
+   that merely agree (one day, one value) stay two points; the import's
+   "may already be here" mark is where that duplicate is caught.
 
 **Importing** picks the metric of the entry's form whose unit the row's
 unit converts to; `convertlab` then writes the twin.
@@ -321,31 +355,61 @@ The final declarations are held by `mise run kinds:check`. The app asks for
 ## The age score from the shared kinds
 
 The engine keeps its curves, its weekly snapshots and its report, and takes
-a new input built from the shared kinds instead of the WHOOP mirror. The
-choice is compatibility where the shared kinds carry what the engine read,
-and stated changes where they do not:
+a new input built from the shared kinds instead of the WHOOP mirror. Each
+rule below is chosen; "kept" means the same number on WHOOP data, and every
+change is listed under the table and in "How the score works".
 
-| Contributor | Today, from the mirror | On the shared kinds | Kept or changed |
+**Which records count.**
+
+- A `health/sleep` record counts only when it carries stage totals
+  (`light`, `deep` or `rem`). The WHOOP adapter writes them only for a
+  scored sleep (`bundle.yaml`, the sleep mapping's `if scored`), so this is
+  today's "scored sleeps" rule.
+- A `health/workout` counts toward strength minutes only when it carries a
+  measure of effort: `zoneDurations`, `strain` or `averageHeartRate`. WHOOP
+  writes all three from the score, so an unscored WHOOP workout carries none
+  and is left out, as today; a workout entered by hand with nothing
+  measured, from any source, is left out the same way.
+
+**Which night.** A sleep's night is the local day before the day it ended
+on, from `endsAt` and `utcOffsetEnd` (WHOOP writes the record's one offset
+into both). A resting heart rate summary's night is the night of the
+counted sleep of the same source its span overlaps most; one that overlaps
+none (WHOOP's span when a recovery has no sleep, which is its cycle's) is
+the local day its span starts on when it starts at noon or later, else the
+day before.
+
+| Contributor | Today, from the mirror | On the shared kinds | |
 | --- | --- | --- | --- |
-| Hours of sleep | every scored sleep's light, deep and REM time, naps included, on the night of its cycle | every `health/sleep` record's `light`, `deep` and `rem`, naps included | kept; the night is the local day before the one the sleep ended on (`utcOffsetEnd`), which is the cycle's night but for a sleep that ends after a cycle starts |
-| Sleep consistency | WHOOP's `sleepConsistencyPercentage`, naps excluded | `scores.sleepConsistency` (the WHOOP adapter writes it), naps excluded | kept where a source writes it; a repository with none has no consistency contributor, with the reason, as a missing VO2 max has today |
-| Zone 1–3, zone 4–5 minutes | each scored workout's zone durations | `health/workout` `zoneDurations` | kept |
-| Strength minutes | WHOOP sport names in the white paper's strength list | `sportSource` normalized against the same list where present, else `sport` in the generic strength set (`strength`, `yoga`, `pilates`) | kept for WHOOP; the generic set for other sources |
+| Hours of sleep | each scored sleep's light, deep and REM time, naps included, on its cycle's night | each counted sleep's `light`, `deep` and `rem`, naps included | kept, but for the night (below) |
+| Sleep consistency | `sleepConsistencyPercentage` of scored sleeps that are not naps | `scores.sleepConsistency` of counted sleeps that are not naps (`isNap`) | kept; a repository whose sources write none has no consistency contributor, with the reason |
+| Zone 1–3, zone 4–5 minutes | each scored workout's zone durations | `zoneDurations` | kept |
+| Strength minutes | scored workouts whose WHOOP sport is in the white paper's strength list | counted workouts whose `sport` is in the generic strength set (`strength`, `yoga`, `pilates`) or whose `sportSource`, normalized, is in the WHOOP list | kept for WHOOP; Apple Health's traditional and functional strength training (`sport: strength`) now count |
 | Steps | Apple Health steps, daily sums | the daily sum of `health/steps`, priority policy | kept |
 | VO2 max | Apple Watch readings | `health/vo2_max` readings over two years, priority policy | kept |
-| Resting heart rate | each scored recovery's resting heart rate | the nightly `health/resting_heart_rate` summary, on the night it spans | kept |
+| Resting heart rate | each scored recovery's resting heart rate | the `health/resting_heart_rate` summary, on its night (above) | kept |
 | Lean body mass | two named labs' scans | body composition results (`health/fat_free_mass` over the same scan's `health/body_mass`, or 100 less `health/body_fat_fraction`) in `labs/labresult`, priority policy | kept, without the names |
-| Days worn | a night with a scored sleep or recovery | a night with a sleep or a resting heart rate summary | kept |
+| Days worn | a night with a scored sleep or recovery | a night with a counted sleep or a resting heart rate summary | kept |
 
-What differs is said in "How the score works", not hidden. The acceptance
-test is the owner's own data: the old engine on the mirror and the new one
-on the shared kinds, both read from one repository through a read-only
-token, every weekly snapshot of the last year compared (age, pace, each
-contributor's value), with every difference above 0.1 years or one unit of a
-contributor explained in the pull request. Nothing from that run is
-committed. The unit fixtures are written in the shape the WHOOP adapter
-writes (its mapping in `kinds/providers.substrate.reamde.dev/whoop/bundle.yaml`),
-with naps, sleeps missing scores, a time zone change and uncommon sports.
+**What changes on purpose.** A sleep's night comes from its own end, not
+its cycle's day, so a sleep that ends after the next cycle has started (a
+late nap, a second sleep after waking) moves to the night it ended in.
+Strength minutes count other sources' strength workouts. Consistency is
+WHOOP's own score, so a repository without one has no consistency
+contributor rather than one computed some other way.
+
+**The checks.** The unit fixtures are written in the shape the WHOOP and
+Apple Health adapters write (their mappings in
+`kinds/providers.substrate.reamde.dev/`), each with the expected
+contributor values chosen above: naps, unscored sleeps and workouts, a
+sleep ending after a cycle starts, a recovery spanning a cycle, a time zone
+change, uncommon WHOOP sports, and Apple Health's traditional and
+functional strength training. Then the owner's own data: the old engine on
+the mirror and the new one on the shared kinds, both read from one
+repository through a read-only token, every weekly snapshot of the last
+year compared, and every difference above 0.1 years or one unit of a
+contributor traced to a rule above in the pull request. A difference no
+rule explains is a bug. Nothing from that run is committed.
 
 The score is described as an estimate the app computes from published
 reference curves, with the sources linked, not as any vendor's product.
@@ -389,8 +453,8 @@ Two additions every health app needs, made in the kit rather than the app:
   typed after [the aggregate read](../api.md#the-aggregate-read): the
   request (metric or metrics, latest, range, bucket, reducers, `from`,
   `statistic`, sources, groupBy, budget) and the answer (units, bucket, rows
-  with group, values, sources, count). Tested against the fake substrate,
-  which learns to answer a canned aggregate.
+  with group, values, sources, count, head). Tested against the fake
+  substrate, which learns to answer a canned aggregate.
 - **`useRead(key, read, {kinds, staleAfter})`** in `@substrate/react`: a read
   through the session's client that is not a linked record (an aggregate,
   a list of a kind the app does not keep).
@@ -399,10 +463,22 @@ Two additions every health app needs, made in the kit rather than the app:
     when a newer read of its key starts.
   - It is read again when one of `kinds` changes: through a write the outbox
     lands; through `invalidate(kinds)`, which the app calls after a write of
-    its own through the client (an import, a rank); or through the change
-    feed, which the provider follows for the kinds the mounted reads name
-    (one follower, `follow` from `@substrate/client`, restarted when the set
-    changes, its events coalesced for two seconds).
+    its own through the client (an import step, a rank); or through the
+    change feed.
+  - **The feed.** One follower in the provider (`follow` from
+    `@substrate/client`) watches the kinds the mounted reads name. It starts
+    from a bookmark taken before any read it covers: a list of those kinds
+    with `first=1`, whose `head` and `generation` are the watch's `from`
+    (the list-then-watch handoff
+    [the list read promises](../api.md#counting-the-filtered-set)), so a change after a read began is never missed. When the set
+    of kinds grows it restarts from the last cursor it saw, not the live
+    head. On `relist` (the history moved on) it invalidates every followed
+    read, takes a new bookmark and starts again; on `ended` it stops,
+    and the reads fall back to `staleAfter`.
+  - It follows only kinds the repository holds: the kinds of the packages
+    the app asks for, which the approval installs, and an optional one
+    (`clinical`) only once a list of it has answered, so a kind the server
+    does not know never ends the follower.
   - Sample kinds that change by the minute (`observations/observation`,
     `observations/trace`) are not followed: a read of them is read again
     when the page comes back in front after `staleAfter` (five minutes by
@@ -430,19 +506,25 @@ screenshot script captures only the demo.
   YAML declares), as the template's test does.
 - The engine's tests, carried over, and the adapter-shaped fixtures above.
 - Catalogue resolution: by code, by name, two metrics of one form, a mass
-  and a molar form with and without derived twins, the same specimen under
-  two metrics.
+  and a molar form with and without derived twins, a twin not written yet,
+  an analyte with no conversion, two results of one report under two
+  metrics (one point), two equal results of two reports (two points).
 - Profile: each source of each value, a yearless birthday, two patient
   records, no owner's contact, the 409 on create with the same and with
   different values.
 - Import: header detection, every column form of a range, comparators
   (`<5`), units that do not convert, the split at 2,000 rows, the derived
   ids, a lost answer (409 that compares equal), a conflict (409 that does
-  not), resume, undo while a runner writes, undo of a partial import.
+  not), the "may already be here" mark, the lease taken, renewed, lost and
+  waited out, resume from each state (`planned`, `importing`, `stopped`,
+  `undoing`), a second browser resuming during and after Undo, undo of a
+  partial import, and the count that offers Undo again.
 - Sources: the priorities written for a group, a link of two sources, the
   record order with ranked and unranked sources.
 - `useRead`: invalidation by the outbox, by `invalidate`, by the feed, and
-  by `staleAfter`; the abort on sign-out.
+  by `staleAfter`; the bookmark before the read (a change between the read
+  and the stream is seen), the restart from the last cursor, `relist`, an
+  optional kind left out until it answers; the abort on sign-out.
 - Today's rules, filters, chart maths, scales and suggestions, carried over.
 - End to end on a local substrate (`mise run dev:up` with the authority
   document from this tree): connect, approve (the three packages install),
@@ -498,3 +580,15 @@ One pull request, built in this order:
   app; priorities and links are the repository's to set, said plainly; the
   analytes in `labs` and the body metrics in `health`; the exact
   `core/setting` read is admissible, and disclosed.
+- **Astra, second draft: rework.** Resolved there: the session order, the
+  profile's create, the health version, the gender. Taken now: Undo fenced
+  by a lease with bounded requests and a wait past the previous lease, every
+  transition guarded, and a count that offers Undo again for what the time
+  fence cannot stop; recovery from every state; strength as the union of the
+  generic sports and WHOOP's list, so Apple Health's strength training
+  counts; which sleeps and workouts count and which night a sleep and a
+  resting heart rate fall on, each chosen and fixtured, with the changes
+  named; every unit form read and one point per specimen by `derivedFrom`,
+  report and accession, never by equal values; the follower's bookmark
+  before the read, its cursor kept across restarts, `relist` and `ended`,
+  and only kinds the repository holds.
