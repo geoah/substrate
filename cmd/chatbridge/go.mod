@@ -3,19 +3,22 @@ module github.com/geoah/substrate/cmd/chatbridge
 go 1.27.3
 
 require (
+	github.com/bwmarrin/discordgo v0.27.0
 	github.com/rs/zerolog v1.35.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+	go.mau.fi/mautrix-discord v0.7.6-0.20261105145914-4cd87ec1b5ce
 	go.mau.fi/mautrix-telegram v0.2610.0
 	go.mau.fi/mautrix-whatsapp v0.2610.0
 	go.mau.fi/util v0.11.0
 	go.mau.fi/whatsmeow v0.0.0-20261016130820-0b0a1cdac3e2
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
-	maunium.net/go/mautrix v0.32.0
+	maunium.net/go/mautrix v0.32.1-0.20261105144219-34c60c3608bd
 )
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -25,15 +28,21 @@ require (
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gotd/ige v0.2.2 // indirect
 	github.com/gotd/neo v0.1.5 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/icholy/digest v1.2.0 // indirect
+	github.com/imroc/req/v3 v3.57.0 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-sqlite3 v1.14.52 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
+	github.com/quic-go/quic-go v0.61.0 // indirect
+	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/tidwall/gjson v1.20.0 // indirect
@@ -62,3 +71,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+// mautrix-discord builds against Beeper's forks of discordgo and req. A
+// dependency's replace directives do not carry over, so these repeat the ones
+// its go.mod pins and move with it.
+replace github.com/bwmarrin/discordgo => github.com/beeper/discordgo v0.0.0-20261104162414-49256f3e1ca7
+
+replace github.com/imroc/req/v3 => github.com/beeper/req/v3 v3.0.0-20260925135712-b49593750e56

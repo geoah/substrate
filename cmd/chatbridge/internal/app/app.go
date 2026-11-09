@@ -175,6 +175,9 @@ func (a *App) OpenNetworks(opts networks.Options, only ...string) error {
 		if len(want) > 0 && !slices.Contains(want, spec.ID) {
 			continue
 		}
+		if len(want) == 0 && spec.Acknowledge != "" && !networks.Linked(a.Store, spec) {
+			continue
+		}
 		o := opts
 		if o.History == "" {
 			o.History = networks.HistoryRecent

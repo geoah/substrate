@@ -58,6 +58,7 @@ Usage:
   chatbridge authorize --server URL       get the bridge's token through the approval page
   chatbridge login whatsapp [--phone N]   link a WhatsApp account (stop the bridge first)
   chatbridge login telegram [--qr]        link a Telegram account (needs CHATBRIDGE_TELEGRAM_API_ID and _HASH)
+  chatbridge login discord [--token]      link a Discord account, once you accept its rule (see README.md)
   chatbridge status                       show what the store holds
   chatbridge version                      print the version
 
@@ -196,13 +197,14 @@ func loginCmd(args []string) error {
 		return err
 	}
 	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
-		return errors.New("login needs a network: chatbridge login whatsapp, or telegram")
+		return errors.New("login needs a network: chatbridge login whatsapp, telegram or discord")
 	}
 	network := args[0]
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	dataFlag(fs, &cfg)
 	phone := fs.String("phone", "", "the phone number, in international format: WhatsApp links with a pairing code typed on the phone instead of a QR; Telegram skips asking for it")
 	qr := fs.Bool("qr", false, "Telegram: link by scanning a QR in the app instead of a code sent to the phone")
+	token := fs.Bool("token", false, "Discord: link with the account's token, read without echo, instead of a QR")
 	history := fs.String("history", "", "how much history to ask for: recent, year or all; asked when absent")
 	invert := fs.Bool("invert-qr", false, "draw the QR for a terminal with a light background")
 	_ = fs.Parse(args[1:])
@@ -212,7 +214,12 @@ func loginCmd(args []string) error {
 
 	in := bufio.NewReader(os.Stdin)
 	depth := *history
-	if depth == "" {
+	switch {
+	case network == "discord" && depth != "":
+		return errors.New("discord takes no history depth: each chat starts from its latest page")
+	case network == "discord":
+		depth = string(networks.HistoryRecent)
+	case depth == "":
 		depth = askHistory(network, in)
 	}
 	h, err := networks.ParseHistory(depth)
@@ -229,6 +236,8 @@ func loginCmd(args []string) error {
 	switch {
 	case *qr:
 		flow = "qr"
+	case *token:
+		flow = networks.DiscordTokenFlow
 	case *phone != "" && network == "whatsapp":
 		flow = "phone"
 	}
