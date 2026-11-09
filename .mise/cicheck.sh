@@ -1392,7 +1392,7 @@ tcseed="$tmp/toolchain-seed"
 mkdir -p "$tcseed"
 shopt -s nullglob
 {
-  printf '%s\n' Dockerfile .mise.toml go.mod compose.yaml web/console/package.json \
+  printf '%s\n' Dockerfile .mise.toml go.mod cmd/chatbridge/go.mod compose.yaml web/console/package.json \
     .github/workflows/*.yml .github/workflows/*.yaml \
     .mise/android.sh apps/gradle/gradle/libs.versions.toml apps/gradle/gradle/wrapper/gradle-wrapper.properties \
     apps/gradle/gradle/verification-metadata.xml
@@ -1451,6 +1451,8 @@ toolchain gomod-toolchain 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
 toolchain go0.0.1 // upgrade|'
 toolchain gomod-toolchain-indented 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
   toolchain go0.0.1|'
+# The chat bridge's module is held to the same pin.
+toolchain chatbridge-gomod-go 1 'cmd/chatbridge/go.mod says go 0.0.1' cmd/chatbridge/go.mod 's/^go .*/go 0.0.1/'
 # The console's pnpm and the image's uv, each moved alone, and uv taken
 # from apk instead of the pinned release.
 toolchain pnpm 1 'activates pnpm 0.0.1, but .mise.toml pins' web/console/package.json \
