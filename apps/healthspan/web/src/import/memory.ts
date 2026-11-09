@@ -1,7 +1,8 @@
 // Records in this page's memory, held as the server holds them: versions,
 // `ifVersion` (a deleted record keeps its version, so a create onto it is
-// refused), plain deletes. The demo's imports run through it with the same
-// runner the owner's do, and change nothing but the page.
+// refused and a PUT held to it restores it), deletes plain or guarded, and
+// blobs by digest. The demo's imports run through it with the same runner
+// the owner's do, and change nothing but the page.
 
 import { SubstrateError, type SubstrateRecord } from "@substrate/client"
 import { refPath } from "./records"
@@ -9,6 +10,7 @@ import type { RunnerStore } from "./runner"
 
 export class MemoryStore implements RunnerStore {
   private readonly rows = new Map<string, SubstrateRecord>()
+  private readonly blobs = new Map<string, Uint8Array>()
   private readonly listeners = new Set<() => void>()
   private revision = 0
   private clock: number
@@ -20,6 +22,7 @@ export class MemoryStore implements RunnerStore {
   /** A record as another writer left it, before the page opened. */
   seed(record: SubstrateRecord): void {
     this.rows.set(`${record.kind}/${record.id}`, record)
+    this.changed()
   }
 
   /** Every live record of a kind. */
@@ -62,6 +65,36 @@ export class MemoryStore implements RunnerStore {
     await this.settle(signal)
     const r = this.rows.get(`${kind}/${id}`)
     return r && !r.deletedAt ? r : null
+  }
+
+  async tombstone(kind: string, id: string, signal?: AbortSignal) {
+    await this.settle(signal)
+    const r = this.rows.get(`${kind}/${id}`)
+    return r?.deletedAt ? r : null
+  }
+
+  /** A blob stored as another writer left it, before the page opened. */
+  seedBlob(digest: string, bytes: Uint8Array): void {
+    this.blobs.set(digest, bytes)
+    this.changed()
+  }
+
+  async putBlob(
+    digest: string,
+    bytes: Uint8Array,
+    _mediaType: string,
+    _name: string,
+    signal?: AbortSignal
+  ) {
+    await this.settle(signal)
+    this.blobs.set(digest, bytes)
+  }
+
+  async blob(digest: string, signal?: AbortSignal) {
+    await this.settle(signal)
+    const b = this.blobs.get(digest)
+    if (!b) this.refuse(404, "not_found", `blob ${digest} not found`)
+    return b
   }
 
   private write(
@@ -117,11 +150,18 @@ export class MemoryStore implements RunnerStore {
     return this.write(kind, id, properties, ifVersion, true)
   }
 
-  async delete(kind: string, id: string, signal?: AbortSignal) {
+  async delete(
+    kind: string,
+    id: string,
+    ifVersion?: number,
+    signal?: AbortSignal
+  ) {
     await this.settle(signal)
     const key = `${kind}/${id}`
     const r = this.rows.get(key)
     if (!r || r.deletedAt) return
+    if (ifVersion !== undefined && ifVersion !== r.version)
+      this.refuse(409, "conflict", `${key} is at version ${r.version}`)
     this.rows.set(key, {
       ...r,
       version: r.version + 1,

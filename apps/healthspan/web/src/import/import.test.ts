@@ -3,10 +3,10 @@ import type { CatalogueEntry, MetricRecord } from "../catalogue/types"
 import { KIND } from "../kinds"
 import { detectColumns, missingRoles, templateCsv } from "./columns"
 import { readTable } from "./csv"
-import { derivedMintedId, labSlug, reportId, resultId } from "./ids"
+import { derivedMintedId, labSlug, recordId } from "./ids"
 import { candidateMetrics, findEntry, type HeldResult } from "./match"
-import { MAX_ROWS, buildPlan } from "./plan"
-import { resultProps, sameAsPlanned } from "./records"
+import { MAX_ROWS, buildPlan, resultRecord } from "./plan"
+import { LAB_SOURCE, reportKey, resultKey, sameAsPlanned } from "./records"
 import { matchRows, readRows, tickedAtFirst, type MatchInput } from "./resolve"
 import {
   detectDayOrder,
@@ -318,10 +318,23 @@ describe("the plan", () => {
     )
     expect(derivedMintedId("x")).toBe("1de4b45ds6g1282rkwn7xtrcqn")
     const imp = "0194a1b2-0000-7000-8000-000000000001"
-    expect(reportId(imp, "1")).toBe(derivedMintedId(imp, "report", "1"))
-    expect(resultId(imp, "1")).toBe(derivedMintedId(imp, "1"))
-    expect(reportId(imp, "1")).not.toBe(resultId(imp, "1"))
-    expect(resultId(imp, "1")).toMatch(/^[0-7][0-9a-hjkmnp-tv-z]{25}$/)
+    // A file's records are keyed in the import's own namespace.
+    expect(recordId(reportKey("1"), imp)).toBe(
+      derivedMintedId(`healthspan/import/${imp}/labreport/1`)
+    )
+    expect(recordId(resultKey("1"), imp)).toBe(
+      derivedMintedId(`healthspan/import/${imp}/labresult/1`)
+    )
+    expect(recordId(reportKey("1"), imp)).not.toBe(
+      recordId(resultKey("1"), imp)
+    )
+    expect(recordId(resultKey("1"), "another")).not.toBe(
+      recordId(resultKey("1"), imp)
+    )
+    expect(recordId(resultKey("1"), imp)).toMatch(
+      /^[0-7][0-9a-hjkmnp-tv-z]{25}$/
+    )
+    expect(() => recordId(resultKey("1"))).toThrow()
     expect(labSlug("Ëxample  Lab, Ltd.")).toBe("example-lab-ltd")
   })
 
@@ -341,7 +354,7 @@ describe("the plan", () => {
     )
     const plan = buildPlan(rows, new Set(rows.map((r) => r.line)), {
       name: "results.csv",
-      format: "csv",
+      importer: "csv",
     })
     expect(plan.map((p) => [p.lab, p.reports.length, p.rows.length])).toEqual([
       ["Lab A", 2, 3],
@@ -353,6 +366,26 @@ describe("the plan", () => {
       ["2", "1"],
       ["3", "2"],
     ])
+    // Each lab's plan: its source the lab's, a report before its results.
+    const first = plan[0].plan
+    expect(first).toMatchObject({
+      importer: "csv",
+      name: "results.csv (1 of 2)",
+      source: LAB_SOURCE,
+      documents: [],
+    })
+    expect(first.records.map((r) => [r.kind.split("/").pop(), r.key])).toEqual([
+      ["labreport", "1"],
+      ["labresult", "1"],
+      ["labresult", "2"],
+      ["labreport", "2"],
+      ["labresult", "3"],
+    ])
+    expect(first.records[0].properties).toMatchObject({
+      lab: "Lab A",
+      accession: "X1",
+      source: { $ref: LAB_SOURCE },
+    })
   })
 
   it("splits a file of more than 2,000 rows between reports", async () => {
@@ -369,7 +402,7 @@ describe("the plan", () => {
     )
     const plan = buildPlan(rows, new Set(rows.map((r) => r.line)), {
       name: "big.csv",
-      format: "csv",
+      importer: "csv",
     })
     expect(plan.map((p) => p.rows.length)).toEqual([1800, 1800, 900])
     expect(plan.every((p) => p.rows.length <= MAX_ROWS)).toBe(true)
@@ -378,7 +411,7 @@ describe("the plan", () => {
       ["R2", "R3"],
       ["R4"],
     ])
-    expect(plan[1].name).toBe("big.csv (2 of 3)")
+    expect(plan[1].plan.name).toBe("big.csv (2 of 3)")
   })
 
   it("lists what was left out and why", async () => {
@@ -394,32 +427,38 @@ describe("the plan", () => {
       new Set(rows.filter(tickedAtFirst).map((r) => r.line)),
       {
         name: "f.csv",
-        format: "csv",
+        importer: "csv",
       }
     )
-    expect(plan[0].skipped).toMatch(/^- Line 3, Vitamin D: Its unit, ug\/dL/)
+    expect(plan[0].plan.left[0]).toMatchObject({
+      what: "Line 3, Vitamin D",
+      why: expect.stringMatching(/^Its unit, ug\/dL/),
+    })
   })
 
   it("writes a result exactly as labs/labresult declares it", () => {
     const imp = "0194a1b2-0000-7000-8000-000000000001"
-    const props = resultProps(
-      { id: imp, source: "lab/x", lab: "X" },
-      {
-        key: "1",
-        report: "1",
-        name: "CRP",
-        metric: "labs/crp",
-        takenAt: "2026-03-12T12:00:00+02:00",
-        value: "0.6",
-        comparator: "<",
-        unit: "mg/L",
-        high: "5",
-        flag: "H",
-      }
-    )
-    expect(props).toEqual({
+    const planned = resultRecord({
+      key: "1",
+      report: "1",
+      name: "CRP",
+      metric: "labs/crp",
+      takenAt: "2026-03-12T12:00:00+02:00",
+      value: "0.6",
+      comparator: "<",
+      unit: "mg/L",
+      high: "5",
+      flag: "H",
+    })
+    expect(planned).toMatchObject({
+      kind: KIND.labresult,
+      namespace: "import",
+      key: "1",
+      mode: "maintain",
+    })
+    expect(planned.properties).toEqual({
       metric: `${KIND.metric}/labs/crp`,
-      source: `${KIND.source}/lab/x`,
+      source: { $ref: LAB_SOURCE },
       at: "2026-03-12T12:00:00+02:00",
       utcOffset: 120,
       form: "gauge",
@@ -435,11 +474,17 @@ describe("the plan", () => {
           display: "High",
         },
       ],
-      report: `${KIND.labreport}/${reportId(imp, "1")}`,
-      origin: `${KIND.import}/${imp}`,
+      report: { $ref: reportKey("1") },
     })
+    // As the runner writes it: every reference resolved, origin the import.
+    const props: Record<string, unknown> = {
+      ...planned.properties,
+      source: `${KIND.source}/lab/x`,
+      report: `${KIND.labreport}/${recordId(reportKey("1"), imp)}`,
+      origin: `${KIND.import}/${imp}`,
+    }
     const stored = {
-      id: resultId(imp, "1"),
+      id: recordId(resultKey("1"), imp),
       kind: KIND.labresult,
       version: 1,
       createdAt: "",

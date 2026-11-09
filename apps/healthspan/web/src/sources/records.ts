@@ -10,7 +10,7 @@ import { readableLabId } from "../import/ids"
 import type { HeldResult } from "../import/match"
 import { refPath } from "../import/records"
 import { localDay } from "../import/values"
-import { KIND, type LabImport } from "../kinds"
+import { KIND, type ImportRecord } from "../kinds"
 
 export function readMetric(r: SubstrateRecord): MetricRecord {
   const p = r.properties
@@ -41,7 +41,7 @@ export function isLabMetric(m: MetricRecord): boolean {
 }
 
 /** Imports newest first: by their ids, which are time-ordered. */
-export function sortImports(list: readonly LabImport[]): LabImport[] {
+export function sortImports(list: readonly ImportRecord[]): ImportRecord[] {
   return [...list].sort((a, b) => b.id.localeCompare(a.id))
 }
 

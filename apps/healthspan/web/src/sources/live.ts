@@ -26,19 +26,20 @@ import type {
   SourceWrites,
   SourcesData,
 } from "../data/sources"
+import { indexedDbKeep } from "../import/keep"
 import type { HeldResult } from "../import/match"
-import type { PlannedImport } from "../import/plan"
+import { parsePlan, type StoredPlan } from "../import/planfile"
 import { RunRegistry, deviceId } from "../import/registry"
+import { originKinds, refPath } from "../import/records"
+import type { StageRequest } from "../import/runner"
 import {
   clientStore,
   countFiltered,
   listFiltered,
-  pointingAt,
   unitGraph,
 } from "../import/store"
-import { Import, KIND, type LabImport } from "../kinds"
+import { Import, KIND, type ImportRecord } from "../kinds"
 import { convert as convertUnit } from "../labs/units"
-import { refPath } from "../import/records"
 import { metricPath } from "./groups"
 import { buildSourceList } from "./list"
 import { keepLinkedTogether, linkProps, readLink } from "./links"
@@ -227,7 +228,7 @@ function useLiveSourceWrites(): SourceWrites {
   }, [writes, invalidate, client, profile, metrics])
 }
 
-function useLiveImports(): Read<LabImport[]> {
+function useLiveImports(): Read<ImportRecord[]> {
   const records = useRecords(Import)
   const listed = useListed(Import)
   return useMemo(
@@ -242,7 +243,7 @@ function useLiveImports(): Read<LabImport[]> {
   )
 }
 
-function useLiveImport(id: string): Read<LabImport | null> {
+function useLiveImport(id: string): Read<ImportRecord | null> {
   const read = useRecord(Import, id)
   return useMemo(
     () => ({
@@ -261,17 +262,6 @@ function useLiveImport(id: string): Read<LabImport | null> {
   )
 }
 
-function useLiveStillPointing(id: string, enabled: boolean): Read<number> {
-  const path = `${KIND.import}/${id}`
-  return useRead(
-    enabled ? `healthspan pointing ${id}` : null,
-    async (client, signal) =>
-      (await pointingAt(client, [KIND.labresult, KIND.labreport], path, signal))
-        .length,
-    { kinds: [KIND.labresult, KIND.labreport] }
-  )
-}
-
 const registries = new WeakMap<SubstrateClient, RunRegistry>()
 
 function registryFor(client: SubstrateClient): RunRegistry {
@@ -280,10 +270,65 @@ function registryFor(client: SubstrateClient): RunRegistry {
     r = new RunRegistry(clientStore(client), {
       device: deviceId(),
       lockPrefix: "healthspan.import.",
+      keep: indexedDbKeep(client.server),
     })
     registries.set(client, r)
   }
   return r
+}
+
+function useLivePlan(imp: ImportRecord): Read<StoredPlan | null> {
+  const { client } = useSubstrate()
+  const digest = imp.plan
+  const read = useRead(
+    digest ? `healthspan plan ${digest}` : null,
+    async (c, signal) =>
+      registryFor(client).plan(imp.id) ??
+      parsePlan(await clientStore(c).blob(digest!, signal)),
+    // A blob is the same bytes forever: nothing changes it.
+    { staleAfter: Number.POSITIVE_INFINITY }
+  )
+  return useMemo(
+    () => (digest ? read : { ...read, data: null, loading: false }),
+    [digest, read]
+  )
+}
+
+function useLiveCreated(imp: ImportRecord): Read<number> {
+  const path = `${KIND.import}/${imp.id}`
+  const kinds = originKinds(imp.importer)
+  return useRead(
+    imp.status === "staging" ? null : `healthspan created ${imp.id}`,
+    async (client, signal) => {
+      let n = 0
+      // The lab kinds every repository holds; the clinical ones apart, so a
+      // repository without them still counts the rest.
+      for (const group of [
+        kinds.filter((k) => k.includes("/labs/")),
+        kinds.filter((k) => !k.includes("/labs/")),
+      ]) {
+        if (!group.length) continue
+        try {
+          n += await countFiltered(
+            client,
+            { kinds: group, referencing: { ref: path, property: "origin" } },
+            (r) => refPath(r.properties.origin) === path,
+            signal
+          )
+        } catch (e) {
+          if (group[0].includes("/labs/")) throw e
+        }
+      }
+      return n
+    },
+    { kinds }
+  )
+}
+
+function useLiveKept(): ReadonlySet<string> {
+  const { client } = useSubstrate()
+  const registry = registryFor(client)
+  return useSyncExternalStore(registry.subscribe, registry.keptIds)
 }
 
 function useLiveRunState(id: string) {
@@ -292,16 +337,26 @@ function useLiveRunState(id: string) {
   return useSyncExternalStore(registry.subscribe, () => registry.state(id))
 }
 
+const WRITTEN = [KIND.labresult, KIND.labreport, KIND.source, KIND.import]
+
 function useLiveImportActions(): ImportActions {
   const { client } = useSubstrate()
   const invalidate = useInvalidate()
   return useMemo<ImportActions>(() => {
     const registry = registryFor(client)
+    const after = async <T>(p: Promise<T>): Promise<T> => {
+      try {
+        return await p
+      } finally {
+        invalidate(WRITTEN)
+      }
+    }
     return {
       convert: async (value, from, to) => {
         const v = convertUnit(await unitGraph(client), Number(value), from, to)
         return v === undefined ? undefined : String(v)
       },
+      units: () => unitGraph(client),
       held: async (metrics, days) => {
         if (!metrics.length || !days.length) return []
         const sorted = [...days].sort()
@@ -323,46 +378,25 @@ function useLiveImportActions(): ImportActions {
           return []
         }
       },
-      start: async (planned: PlannedImport[]) => {
-        const sources = await listFiltered(client, { kinds: SOURCE_KINDS })
-        const ids: string[] = []
-        for (const p of planned) {
-          const id = uuidv7()
-          const source = plannedSource(p.lab, sources)
-          await client.put(
-            KIND.import,
-            id,
-            Import.write({
-              name: p.name,
-              format: p.format,
-              lab: p.lab,
-              ...(source ? { source } : {}),
-              rows: p.rows,
-              reports: p.reports,
-              results: 0,
-              ...(p.skipped ? { skipped: p.skipped } : {}),
-            }),
-            0
+      start: async (requests: StageRequest[]) => {
+        // A lab of the same name the repository holds is named at once.
+        const labs = requests.some((r) => r.lab)
+          ? await listFiltered(client, { kinds: SOURCE_KINDS })
+          : []
+        const out = await registry.start(
+          requests.map((r) =>
+            r.lab && !r.source
+              ? { ...r, source: plannedSource(r.lab, labs) }
+              : r
           )
-          registry.rememberLab(id, p.lab)
-          ids.push(id)
-        }
-        void (async () => {
-          for (const id of ids) await registry.resume(id)
-          invalidate([KIND.labresult, KIND.labreport, KIND.source])
-        })()
-        return ids
-      },
-      resume: async (id) => {
-        const out = await registry.resume(id)
-        invalidate([KIND.labresult, KIND.labreport, KIND.source])
+        )
+        invalidate([KIND.import])
         return out
       },
-      undo: async (id) => {
-        const out = await registry.undo(id)
-        invalidate([KIND.labresult, KIND.labreport, KIND.source])
-        return out
-      },
+      finish: (id) => after(registry.finish(id)),
+      resume: (id) => after(registry.resume(id)),
+      undo: (id) => after(registry.undo(id)),
+      discard: (id) => after(registry.discard(id)),
     }
   }, [client, invalidate])
 }
@@ -375,7 +409,9 @@ export const liveSourcesData: SourcesData = {
   useSourceWrites: useLiveSourceWrites,
   useImports: useLiveImports,
   useImport: useLiveImport,
-  useStillPointing: useLiveStillPointing,
+  usePlan: useLivePlan,
+  useCreated: useLiveCreated,
+  useKept: useLiveKept,
   useRunState: useLiveRunState,
   useImportActions: useLiveImportActions,
 }

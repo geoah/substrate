@@ -1,12 +1,13 @@
 import { packageDetail, webManifest } from "@substrate/react"
 
 /** The packages and scopes app.json names, in its order: the approval
- * installs the three packages at these versions or later (a test holds this
+ * installs the four packages at these versions or later (a test holds this
  * to app.json). */
 export const PACKAGES = [
   ["substrate.reamde.dev/healthspan", 1],
   ["substrate.reamde.dev/health", 3],
   ["substrate.reamde.dev/labs", 2],
+  ["substrate.reamde.dev/clinical", 1],
 ] as const
 
 export const SCOPES = [
@@ -18,7 +19,7 @@ export const SCOPES = [
   "write:substrate.reamde.dev/observations/sourcelink",
   "read:substrate.reamde.dev/observations/*",
   "read:substrate.reamde.dev/health/*",
-  "read:substrate.reamde.dev/clinical/*",
+  "write:substrate.reamde.dev/clinical/*",
   "read:substrate.reamde.dev/core/contact",
   "read:substrate.reamde.dev/core/setting",
 ]
@@ -32,6 +33,7 @@ export const manifest = webManifest({
     "substrate.reamde.dev/healthspan": "Healthspan",
     "substrate.reamde.dev/health": "Health",
     "substrate.reamde.dev/labs": "Labs",
+    "substrate.reamde.dev/clinical": "Clinical",
   },
   softwareVersion: __APP_VERSION__,
 })

@@ -9,9 +9,9 @@ import {
   Spinner,
   cx,
 } from "@substrate/react"
-import { describe } from "@substrate/client"
-import { Check, FileUp } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { describe, uuidv7 } from "@substrate/client"
+import { Check } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CATALOGUE } from "../../catalogue"
 import { useBackend } from "../../data"
 import {
@@ -20,11 +20,10 @@ import {
   normalise,
   missingRoles,
   roleLabel,
-  templateCsv,
   type ColumnRole,
 } from "../../import/columns"
-import { readTable, type Table } from "../../import/csv"
-import { buildPlan } from "../../import/plan"
+import type { Table } from "../../import/csv"
+import { planRows } from "../../import/importers/csv"
 import {
   matchRows,
   pickKey,
@@ -39,101 +38,7 @@ import { metricIndex } from "../../sources/list"
 import { Badge } from "../Badge"
 import { TextButton } from "../IconButton"
 import { SegmentedControl } from "../ToggleGroup"
-import { EnterResultSheet } from "./EnterResultSheet"
-import { rowRange, rowValue } from "./ImportDetail"
-
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }))
-  const a = document.createElement("a")
-  a.href = url
-  a.download = name
-  document.body.append(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-/** The first step: a file chosen or dropped, the template, or a result
- * typed in instead. */
-function ChooseFile(props: {
-  onFile: (name: string, text: string) => void
-  problem?: string
-}) {
-  const input = useRef<HTMLInputElement>(null)
-  const [over, setOver] = useState(false)
-  const [entering, setEntering] = useState(false)
-  const take = async (file: File | undefined) => {
-    if (file) props.onFile(file.name, await file.text())
-  }
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault()
-    setOver(false)
-    void take(e.dataTransfer.files[0])
-  }
-  return (
-    <>
-      <label
-        onDragOver={(e) => {
-          e.preventDefault()
-          setOver(true)
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={onDrop}
-        className={cx(
-          "mb-7 flex cursor-pointer flex-col items-center gap-2 rounded-[14px] border-2 border-dashed px-6 py-10 text-center has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent",
-          over ? "border-accent bg-accent/10" : "border-separator bg-card"
-        )}
-      >
-        <FileUp className="size-8 text-accent-text" aria-hidden />
-        <span className="text-[17px] font-semibold">
-          Choose a file of lab results
-        </span>
-        <span className="text-[15px] text-secondary">
-          A CSV or TSV file, one row per result. Or drop it here.
-        </span>
-        <input
-          ref={input}
-          type="file"
-          accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
-          className="sr-only"
-          onChange={(e) => void take(e.target.files?.[0])}
-        />
-      </label>
-      {props.problem && (
-        <Section>
-          <ProblemBox
-            role="alert"
-            title="Couldn't read it"
-            message={props.problem}
-          />
-        </Section>
-      )}
-      <Section
-        header="What it reads"
-        footer="Columns are recognised by their headers, and you can change any of them before anything is written."
-      >
-        <NoteRow>
-          A date, the test&rsquo;s name or LOINC code, and the value, on each
-          row.
-        </NoteRow>
-        <NoteRow>
-          The unit, the lab&rsquo;s range (as one column or as low and high),
-          its flag, the lab and the report&rsquo;s accession number where the
-          file has them.
-        </NoteRow>
-        <ActionRow
-          onClick={() => download("lab-results-template.csv", templateCsv())}
-        >
-          Download the Template
-        </ActionRow>
-        <ActionRow onClick={() => setEntering(true)}>
-          Enter One Result Instead…
-        </ActionRow>
-      </Section>
-      <EnterResultSheet open={entering} onClose={() => setEntering(false)} />
-    </>
-  )
-}
+import { rowRange, rowValue } from "./PlanPreview"
 
 /** A column's row: its header and a sample over the role picker. */
 function ColumnRow(props: {
@@ -230,23 +135,33 @@ function TickRow(props: {
   )
 }
 
-interface Loaded {
-  name: string
-  table: Table
+/** The day order a table's dates read in, or undefined where every date
+ * reads both ways. */
+function dayOrderOf(table: Table): DayOrder | undefined {
+  const dateCol = detectColumns(table.headers).indexOf("date")
+  return dateCol < 0 ? "dmy" : detectDayOrder(table.rows.map((r) => r[dateCol]))
 }
 
-/** A file read, its columns, the plan, and Import: the import record
- * written at `planned` with its plan, then run. */
-export function ImportWizard() {
+/** A file of lab results read through the CSV importer: its columns, the
+ * day order, the lab, the rows ticked, the plan, and Import: each lab's
+ * plan staged as an import, then run. */
+export function CsvImport(props: {
+  name: string
+  table: Table
+  onBack: () => void
+}) {
   const sources = useBackend().sources
   const actions = sources.useImportActions()
   const metricsRead = sources.useLabMetrics()
   const metrics = useMemo(() => metricsRead.data ?? [], [metricsRead.data])
-  const [file, setFile] = useState<Loaded | null>(null)
-  const [fileProblem, setFileProblem] = useState<string>()
-  const [roles, setRoles] = useState<ColumnRole[]>([])
-  const [order, setOrder] = useState<DayOrder | undefined>()
-  const [orderAsked, setOrderAsked] = useState(false)
+  const file = { name: props.name, table: props.table }
+  const [roles, setRoles] = useState<ColumnRole[]>(() =>
+    detectColumns(props.table.headers)
+  )
+  const [order, setOrder] = useState<DayOrder | undefined>(() =>
+    dayOrderOf(props.table)
+  )
+  const [orderAsked] = useState(() => dayOrderOf(props.table) === undefined)
   const [lab, setLab] = useState("")
   const [picks, setPicks] = useState<Map<string, string>>(new Map())
   const [matched, setMatched] = useState<ResolvedRow[] | null>(null)
@@ -256,37 +171,16 @@ export function ImportWizard() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string>()
 
-  const onFile = (name: string, text: string) => {
-    const table = readTable(text, name)
-    if (!table.headers.length || !table.rows.length) {
-      setFileProblem("It holds no rows under a header row.")
-      return
-    }
-    setFileProblem(undefined)
-    setFile({ name, table })
-    setRoles(detectColumns(table.headers))
-    const dateCol = detectColumns(table.headers).indexOf("date")
-    const detected =
-      dateCol < 0 ? "dmy" : detectDayOrder(table.rows.map((r) => r[dateCol]))
-    setOrder(detected)
-    setOrderAsked(detected === undefined)
-    setPicks(new Map())
-    setToggled(new Map())
-    setMatched(null)
-  }
-
-  const missing = file ? missingRoles(roles) : []
+  const missing = missingRoles(roles)
   const labColumn = roles.includes("lab")
   const needsLab =
-    !!file &&
-    (!labColumn ||
-      file.table.rows.some((r) => !r[roles.indexOf("lab")]?.trim()))
+    !labColumn || file.table.rows.some((r) => !r[roles.indexOf("lab")]?.trim())
 
   // Matching runs again whenever what it reads changes; an older run's
   // answer is dropped.
   const runId = useRef(0)
   useEffect(() => {
-    if (!file || missing.length || !order || !metricsRead.data) return
+    if (missing.length || !order || !metricsRead.data) return
     const id = ++runId.current
     const rows = readRows(file.table, roles, order, lab)
     const t = setTimeout(() => {
@@ -312,9 +206,9 @@ export function ImportWizard() {
       )
     }, 250)
     return () => clearTimeout(t)
-    // `missing` follows `roles`.
+    // `missing` follows `roles`, and the file is the screen's for its life.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, roles, order, lab, picks, metrics, metricsRead.data, actions])
+  }, [roles, order, lab, picks, metrics, metricsRead.data, actions])
 
   const isTicked = (r: ResolvedRow) =>
     !r.problem && (toggled.get(r.line) ?? tickedAtFirst(r))
@@ -324,11 +218,8 @@ export function ImportWizard() {
     [matched, toggled]
   )
   const plan = useMemo(
-    () =>
-      file && matched
-        ? buildPlan(matched, ticked, { name: file.name, format: "csv" })
-        : [],
-    [file, matched, ticked]
+    () => (matched ? planRows(matched, ticked, props.name) : []),
+    [matched, ticked, props.name]
   )
   const planned = plan.reduce((n, p) => n + p.rows.length, 0)
   const ready =
@@ -338,10 +229,24 @@ export function ImportWizard() {
     setStarting(true)
     setStartError(undefined)
     try {
-      const ids = await actions.start(plan)
+      const requests = plan.map((p) => ({
+        id: uuidv7(),
+        plan: p.plan,
+        lab: p.lab,
+      }))
+      const outcomes = await actions.start(requests)
+      const failed = outcomes.find((o) => o.state !== "planned")
+      if (failed) {
+        setStartError(
+          failed.state === "failed"
+            ? failed.words
+            : "It could not be sent to your repository. Try again."
+        )
+        return
+      }
       go(
-        ids.length === 1
-          ? { screen: "import", id: ids[0] }
+        requests.length === 1
+          ? { screen: "import", id: requests[0].id }
           : { screen: "sources" }
       )
     } catch (e) {
@@ -350,8 +255,6 @@ export function ImportWizard() {
       setStarting(false)
     }
   }
-
-  if (!file) return <ChooseFile onFile={onFile} problem={fileProblem} />
 
   const sample = (i: number) => file.table.rows.find((r) => r[i]?.trim())?.[i]
   const index = metricIndex(metrics)
@@ -376,9 +279,7 @@ export function ImportWizard() {
           label="Rows"
           value={file.table.rows.length.toLocaleString("en-GB")}
         />
-        <ActionRow onClick={() => setFile(null)}>
-          Choose Another File…
-        </ActionRow>
+        <ActionRow onClick={props.onBack}>Choose Another File…</ActionRow>
       </Section>
 
       <Section
@@ -590,7 +491,7 @@ export function ImportWizard() {
                 ? "Importing…"
                 : `Import ${planned.toLocaleString("en-GB")} ${planned === 1 ? "result" : "results"}`}
             </BarButton>
-            <TextButton className="self-center" onClick={() => setFile(null)}>
+            <TextButton className="self-center" onClick={props.onBack}>
               Cancel
             </TextButton>
           </div>

@@ -1,25 +1,130 @@
-// The plan an import writes (docs/plans/healthspan.md, The package,
-// import): the ticked rows grouped into reports (one per accession, else
-// one per lab and day), one import per lab, at most 2,000 rows an import
-// record (a request body is capped at 1 MiB), a larger file split between
-// reports; and the rows left out, with why.
+// The plans a file of lab results or a hand entry makes
+// (docs/plans/healthspan.md, Import): the ticked rows grouped into reports
+// (one per accession, else one per lab and day), one import per lab, at most
+// 2,000 rows an import, a larger file split between reports; and the rows
+// left out, with why. Each is a `Plan` the one runner writes, its records
+// keyed in the import's own namespace.
 
-import type { ImportReport, ImportRow } from "../kinds"
+import { KIND } from "../kinds"
+import { interpretation } from "./importers/shared/ranges"
+import type {
+  ImporterId,
+  LeftOut,
+  Plan,
+  PlannedRecord,
+  PlannedRef,
+  RecordKey,
+} from "./importers/types"
+import { LAB_SOURCE, reportKey, resultKey } from "./records"
 import type { ResolvedRow } from "./resolve"
+import { offsetOf } from "./values"
 
-/** The most rows one import record holds. */
+const ref = (key: RecordKey): PlannedRef => ({ $ref: key })
+
+/** One result a CSV or a hand entry plans. */
+export interface ImportRow {
+  key: string
+  /** The key of its report in the plan. */
+  report: string
+  name?: string
+  /** The metric's id, such as `labs/ldl_cholesterol`. */
+  metric: string
+  takenAt: string
+  value?: string
+  comparator?: string
+  unit?: string
+  text?: string
+  low?: string
+  high?: string
+  flag?: string
+}
+
+/** One report a CSV or a hand entry plans. */
+export interface ImportReport {
+  key: string
+  takenAt: string
+  accession?: string
+}
+
+/** One report's record, exactly as `labs/labreport` declares it: when, the
+ * lab's name and source, its accession. */
+export function reportRecord(lab: string, report: ImportReport): PlannedRecord {
+  const properties: Record<string, unknown> = {
+    at: report.takenAt,
+    lab,
+    source: ref(LAB_SOURCE),
+  }
+  if (report.accession) properties.accession = report.accession
+  return { ...reportKey(report.key), mode: "maintain", properties }
+}
+
+/** One result's record, exactly as `labs/labresult` declares it: a gauge
+ * held for no time, its value a quantity with its comparator, or its
+ * words; the lab's range as two quantities in the result's unit; the flag
+ * as the lab's interpretation. */
+export function resultRecord(row: ImportRow): PlannedRecord {
+  const out: Record<string, unknown> = {
+    metric: `${KIND.metric}/${row.metric}`,
+    source: ref(LAB_SOURCE),
+    at: row.takenAt,
+    utcOffset: offsetOf(row.takenAt),
+    form: "gauge",
+    hold: "PT0S",
+    report: ref(reportKey(row.report)),
+  }
+  if (row.text !== undefined) out.text = row.text
+  else if (row.value !== undefined && row.unit)
+    out.value = row.comparator
+      ? { value: row.value, unit: row.unit, comparator: row.comparator }
+      : { value: row.value, unit: row.unit }
+  if (row.name) out.coding = { display: row.name }
+  if (row.low !== undefined || row.high !== undefined) {
+    const range: Record<string, unknown> = {}
+    if (row.low !== undefined && row.unit)
+      range.low = { value: row.low, unit: row.unit }
+    if (row.high !== undefined && row.unit)
+      range.high = { value: row.high, unit: row.unit }
+    if (Object.keys(range).length) out.referenceRanges = [range]
+  }
+  const flag = interpretation(row.flag)
+  if (flag) out.interpretation = flag
+  return { ...resultKey(row.key), mode: "maintain", properties: out }
+}
+
+/** The most rows one import holds. */
 export const MAX_ROWS = 2000
 
-/** One import the plan writes, before it has an id. */
-export interface PlannedImport {
-  name: string
-  format: "csv" | "manual"
+/** One import a file or a hand entry makes, before it has an id: its plan,
+ * and the lab's name its source is found or created by. */
+export interface LabPlan {
   /** The lab's name, as the file or the owner gave it. */
   lab: string
+  plan: Plan
+  /** The rows it writes, for the screens. */
   rows: ImportRow[]
   reports: ImportReport[]
-  /** The rows left out and why, as markdown. */
-  skipped?: string
+}
+
+/** The plan of one lab's reports and rows. */
+export function labPlan(opts: {
+  name: string
+  importer: Extract<ImporterId, "csv" | "manual">
+  lab: string
+  reports: readonly ImportReport[]
+  rows: readonly ImportRow[]
+  left?: LeftOut[]
+}): Plan {
+  return {
+    importer: opts.importer,
+    name: opts.name,
+    source: LAB_SOURCE,
+    records: opts.reports.flatMap((rep) => [
+      reportRecord(opts.lab, rep),
+      ...opts.rows.filter((r) => r.report === rep.key).map(resultRecord),
+    ]),
+    documents: [],
+    left: opts.left ?? [],
+  }
 }
 
 interface Report {
@@ -56,14 +161,11 @@ export function leftOutReason(r: ResolvedRow): string {
   return "Left out."
 }
 
-function skippedMarkdown(rows: ResolvedRow[]): string | undefined {
-  if (!rows.length) return undefined
-  return rows
-    .map((r) => {
-      const what = r.name ?? r.loinc ?? "a row"
-      return `- Line ${r.line}, ${what}: ${leftOutReason(r)}`
-    })
-    .join("\n")
+function leftOf(rows: ResolvedRow[]): LeftOut[] {
+  return rows.map((r) => ({
+    what: `Line ${r.line}, ${r.name ?? r.loinc ?? "a row"}`,
+    why: leftOutReason(r),
+  }))
 }
 
 /** The imports the ticked rows make: one or more per lab, each its own
@@ -71,8 +173,8 @@ function skippedMarkdown(rows: ResolvedRow[]): string | undefined {
 export function buildPlan(
   rows: readonly ResolvedRow[],
   ticked: ReadonlySet<number>,
-  opts: { name: string; format: "csv" | "manual" }
-): PlannedImport[] {
+  opts: { name: string; importer: Extract<ImporterId, "csv" | "manual"> }
+): LabPlan[] {
   const going = rows.filter(
     (r) => ticked.has(r.line) && !r.problem && r.metric && r.at && r.lab
   )
@@ -96,7 +198,7 @@ export function buildPlan(
     list.push(rep)
     byLab.set(rep.lab, list)
   }
-  const out: PlannedImport[] = []
+  const out: (Omit<LabPlan, "plan"> & { name: string; left: LeftOut[] })[] = []
   const labs = [...byLab.keys()].sort((a, b) => a.localeCompare(b))
   for (const lab of labs) {
     const reps = byLab
@@ -118,12 +220,12 @@ export function buildPlan(
     let count = 0
     const flush = () => {
       if (!current.length) return
-      const imp: PlannedImport = {
+      const imp: (typeof out)[number] = {
         name: opts.name,
-        format: opts.format,
         lab,
         rows: [],
         reports: [],
+        left: [],
       }
       current.forEach((rep, i) => {
         const key = String(i + 1)
@@ -155,12 +257,22 @@ export function buildPlan(
   for (const imp of out) {
     const mine = left.filter((r) => r.lab === imp.lab)
     if (mine.length && out.find((o) => o.lab === imp.lab) === imp)
-      imp.skipped = skippedMarkdown(mine)
+      imp.left = leftOf(mine)
   }
   const orphans = left.filter((r) => !out.some((o) => o.lab === r.lab))
   if (orphans.length && out[0])
-    out[0].skipped = [out[0].skipped, skippedMarkdown(orphans)]
-      .filter(Boolean)
-      .join("\n")
-  return out
+    out[0].left = [...out[0].left, ...leftOf(orphans)]
+  return out.map((imp) => ({
+    lab: imp.lab,
+    rows: imp.rows,
+    reports: imp.reports,
+    plan: labPlan({
+      name: imp.name,
+      importer: opts.importer,
+      lab: imp.lab,
+      reports: imp.reports,
+      rows: imp.rows,
+      left: imp.left,
+    }),
+  }))
 }

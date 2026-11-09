@@ -5,11 +5,12 @@
 
 import type { MetricRecord } from "../catalogue/types"
 import { demoSourcesData } from "../demo/sources"
-import type { LabImport } from "../kinds"
+import type { ImportRecord } from "../kinds"
+import type { UnitGraph } from "../labs/units"
 import type { HeldResult, Convert } from "../import/match"
-import type { PlannedImport } from "../import/plan"
+import type { StoredPlan } from "../import/planfile"
 import type { RunState } from "../import/registry"
-import type { RunOutcome } from "../import/runner"
+import type { RunOutcome, StageRequest } from "../import/runner"
 import type { MetricGroup, SessionKind } from "../sources/groups"
 import type { SourceLink } from "../sources/links"
 import { liveSourcesData } from "../sources/live"
@@ -56,13 +57,20 @@ export interface SourceWrites {
 export interface ImportActions {
   /** One conversion through the repository's unit graph. */
   convert: Convert
+  /** The repository's unit graph, which an importer reads through. */
+  units: () => Promise<UnitGraph>
   /** The results the repository holds for these metrics on these days. */
   held: (metrics: string[], days: string[]) => Promise<HeldResult[]>
-  /** Writes each planned import at `planned` and runs them one after
-   * another; answers their ids once written. */
-  start: (planned: PlannedImport[]) => Promise<string[]>
+  /** Stages each plan as a new import, one after another, and runs each
+   * once it is `planned`: answers how each staging ended, while the runs
+   * go on. */
+  start: (requests: StageRequest[]) => Promise<RunOutcome[]>
+  /** Finishes staging an import this browser began, then runs it. */
+  finish: (id: string) => Promise<RunOutcome>
   resume: (id: string) => Promise<RunOutcome>
   undo: (id: string) => Promise<RunOutcome>
+  /** Deletes a staging import outright, from any device. */
+  discard: (id: string) => Promise<RunOutcome>
 }
 
 export interface SourcesData {
@@ -77,12 +85,19 @@ export interface SourcesData {
   useSourceLinks(): Read<SourceLink[]>
   useSourceWrites(): SourceWrites
   /** Every import, newest first. */
-  useImports(): Read<LabImport[]>
+  useImports(): Read<ImportRecord[]>
   /** One import; null where it is not in the repository. */
-  useImport(id: string): Read<LabImport | null>
-  /** How many records still point at an import through `origin`: read for
-   * an undone one alone (`enabled`), where a late write may have landed. */
-  useStillPointing(id: string, enabled: boolean): Read<number>
+  useImport(id: string): Read<ImportRecord | null>
+  /** The plan an import writes, read from its blob; null where it has none
+   * yet (staging). */
+  usePlan(imp: ImportRecord): Read<StoredPlan | null>
+  /** How many records point at an import through `origin`: what it
+   * created, whatever its runs counted, and for an undone one what landed
+   * after the undo. */
+  useCreated(imp: ImportRecord): Read<number>
+  /** The staging imports this browser keeps the files of, which it can
+   * finish. */
+  useKept(): ReadonlySet<string>
   /** A run of an import in this page: its progress and how it ended. */
   useRunState(id: string): RunState
   useImportActions(): ImportActions

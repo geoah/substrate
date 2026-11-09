@@ -1,59 +1,17 @@
-import { SubstrateClient, type SubstrateRecord } from "@substrate/client"
-import { FakeLocks, FakeSubstrate } from "@substrate/testing"
+import { SubstrateClient } from "@substrate/client"
+import { FakeLocks } from "@substrate/testing"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { Import, KIND, type ImportRow, type LabImport } from "../kinds"
-import { labSourceId, reportId, resultId } from "./ids"
-import { refPath, resultProps } from "./records"
+import { Import, KIND, type ImportRecord } from "../kinds"
+import { Server, VirtualClock, browser, urlOf } from "./harness"
+import { labSourceId, recordId } from "./ids"
+import type { Plan, PlannedRecord } from "./importers/types"
+import { labPlan, resultRecord, type ImportRow } from "./plan"
+import { blobDigestOf, planBytes, storedPlan } from "./planfile"
+import { refPath, reportKey, resultKey } from "./records"
 import { RunRegistry } from "./registry"
-import {
-  LEASE_MS,
-  resumeImport,
-  undoImport,
-  type Clock,
-  type RunProgress,
-} from "./runner"
+import { LEASE_MS } from "./runner"
 import { clientStore } from "./store"
 
-/** Time that moves only when the runner waits, or a test moves it: the
- * lease's tests run at once. */
-class VirtualClock implements Clock {
-  t = Date.parse("2026-11-01T10:00:00Z")
-  private timers: { at: number; fire: () => void }[] = []
-  now = () => this.t
-  advance(ms: number) {
-    this.t += ms
-    for (const timer of this.timers.filter((x) => x.at <= this.t)) {
-      this.timers.splice(this.timers.indexOf(timer), 1)
-      timer.fire()
-    }
-  }
-  sleep = (ms: number) => {
-    this.advance(Math.max(0, ms))
-    return Promise.resolve()
-  }
-  deadline = (at: number) => {
-    const c = new AbortController()
-    const timer = { at, fire: () => c.abort() }
-    if (at <= this.t) c.abort()
-    else this.timers.push(timer)
-    return {
-      signal: c.signal,
-      clear: () => {
-        const i = this.timers.indexOf(timer)
-        if (i >= 0) this.timers.splice(i, 1)
-      },
-    }
-  }
-}
-
-const ORIGIN = "https://substrate.example.com"
-
-const urlOf = (input: string | URL | Request) =>
-  typeof input === "string"
-    ? input
-    : input instanceof URL
-      ? input.href
-      : input.url
 const ID = "0194a1b2-0000-7000-8000-00000000abcd"
 const LAB = "Example Lab"
 
@@ -78,106 +36,97 @@ const REPORTS = [
   { key: "2", takenAt: "2026-04-02T12:00:00+00:00" },
 ]
 
-let fake: FakeSubstrate
+const PLAN: Plan = labPlan({
+  name: "results.csv",
+  importer: "csv",
+  lab: LAB,
+  reports: REPORTS,
+  rows: ROWS,
+})
+
+const reportId = (key: string) => recordId(reportKey(key), ID)
+const resultId = (key: string) => recordId(resultKey(key), ID)
+
+let server: Server
 let clock: VirtualClock
 
-function seedImport(extra: Record<string, unknown> = {}): SubstrateRecord {
-  return fake.seed(KIND.import, ID, {
+/** The import as `planned`: its plan stored and named. */
+function seedPlanned(extra: Record<string, unknown> = {}) {
+  const bytes = planBytes(storedPlan(PLAN))
+  const digest = blobDigestOf(bytes)
+  server.blobs.set(digest, { bytes, at: clock.now() })
+  return server.fake.seed(KIND.import, ID, {
     ...Import.write({
       name: "results.csv",
-      format: "csv",
+      importer: "csv",
       status: "planned",
-      rows: ROWS,
-      reports: REPORTS,
-      results: 0,
+      lab: LAB,
+      plan: digest,
+      documents: [],
     }),
     ...extra,
   })
 }
 
-/** One browser: its own client over the fake, its own device id. */
-function browser(device: string, fetchImpl: typeof fetch = fake.fetch) {
-  const client = new SubstrateClient(ORIGIN, "tok")
-  const store = clientStore(client)
-  const progress: RunProgress[] = []
-  const opts = {
-    store,
-    device,
-    clock,
-    labName: LAB,
-    onProgress: (p: RunProgress) => progress.push(p),
-  }
-  return {
-    client,
-    store,
-    progress,
-    resume: (o: Partial<typeof opts> = {}) => {
-      vi.stubGlobal("fetch", fetchImpl)
-      return resumeImport(ID, { ...opts, ...o })
-    },
-    undo: (o: Partial<typeof opts> = {}) => {
-      vi.stubGlobal("fetch", fetchImpl)
-      return undoImport(ID, { ...opts, ...o })
-    },
-  }
+function imp(): ImportRecord {
+  return Import.read(server.importRecord(ID)!)
 }
 
-function imp(): LabImport {
-  return Import.read(fake.records.get(`${KIND.import}/${ID}`)!)
-}
-
-const live = (kind: string) =>
-  [...fake.records.values()].filter((r) => r.kind === kind && !r.deletedAt)
+const live = (kind: string) => server.all(kind)
 
 const pointing = () =>
   [...live(KIND.labresult), ...live(KIND.labreport)].filter(
     (r) => refPath(r.properties.origin) === `${KIND.import}/${ID}`
   )
 
-/** The fake with the server's tombstones: a create (`ifVersion: 0`) onto a
- * deleted record meets the tombstone's version and is refused. */
-function withTombstones(): typeof fetch {
-  return async (input, init = {}) => {
-    const url = new URL(urlOf(input))
-    const m = /^\/api\/v1\/([^/]+\/[^/]+\/[^/]+)\/([^/]+)$/.exec(url.pathname)
-    if (m && init.method === "PUT" && typeof init.body === "string") {
-      const body = JSON.parse(init.body) as { ifVersion?: number }
-      const here = fake.records.get(`${m[1]}/${decodeURIComponent(m[2])}`)
-      if (body.ifVersion === 0 && here?.deletedAt)
-        return new Response(
-          JSON.stringify({
-            error: { code: "conflict", message: `at version ${here.version}` },
-          }),
-          { status: 409, headers: { "Content-Type": "application/json" } }
-        )
-    }
-    return fake.fetch(input, init)
+/** A result as the runner writes it, every reference resolved. */
+function written(row: ImportRow): Record<string, unknown> {
+  const rec: PlannedRecord = resultRecord(row)
+  return {
+    ...rec.properties,
+    source: `${KIND.source}/${imp().source}`,
+    report: `${KIND.labreport}/${reportId(row.report)}`,
+    origin: `${KIND.import}/${ID}`,
   }
 }
 
+const a = (fetch?: typeof globalThis.fetch) =>
+  browser(server, "a", { labName: LAB, fetch })
+const b = (fetch?: typeof globalThis.fetch) =>
+  browser(server, "b", { labName: LAB, fetch })
+
 beforeEach(() => {
-  fake = new FakeSubstrate(ORIGIN)
   clock = new VirtualClock()
-  vi.stubGlobal("fetch", fake.fetch)
+  server = new Server(clock)
+  vi.stubGlobal("fetch", server.fetch)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("the runner", () => {
+describe("the runner on a file's plan", () => {
   it("runs a planned import: the lab's source, each report, each result, then imported", async () => {
-    seedImport()
-    const out = await browser("a").resume()
-    expect(out).toEqual({ state: "imported", results: 5 })
+    seedPlanned()
+    const out = await a().resume(ID)
+    expect(out).toEqual({
+      state: "imported",
+      counts: { created: 7, updated: 0, unchanged: 0, stale: 0, left: 0 },
+    })
     const done = imp()
     expect(done.status).toBe("imported")
     expect(done.runner).toBeUndefined()
-    expect(done.results).toBe(5)
+    expect(done.counts).toEqual({
+      created: 7,
+      updated: 0,
+      unchanged: 0,
+      stale: 0,
+      left: 0,
+    })
     expect(done.importedAt).toBeDefined()
     const source = labSourceId(LAB)
     expect(done.source).toBe(source)
-    expect(fake.live(KIND.source, source)?.properties).toEqual({
+    expect(server.live(KIND.source, source)?.properties).toEqual({
       name: LAB,
       class: "lab",
     })
@@ -185,15 +134,26 @@ describe("the runner", () => {
       live(KIND.labreport)
         .map((r) => r.id)
         .sort()
-    ).toEqual([reportId(ID, "1"), reportId(ID, "2")].sort())
+    ).toEqual([reportId("1"), reportId("2")].sort())
     expect(
       live(KIND.labresult)
         .map((r) => r.id)
         .sort()
-    ).toEqual(ROWS.map((r) => resultId(ID, r.key)).sort())
+    ).toEqual(ROWS.map((r) => resultId(r.key)).sort())
     expect(pointing()).toHaveLength(7)
+    // A result names its report and the lab's source.
+    expect(server.live(KIND.labresult, resultId("4"))?.properties).toEqual(
+      written(ROWS[3])
+    )
+    expect(server.live(KIND.labreport, reportId("1"))?.properties).toEqual({
+      at: REPORTS[0].takenAt,
+      lab: LAB,
+      accession: "A1",
+      source: `${KIND.source}/${source}`,
+      origin: `${KIND.import}/${ID}`,
+    })
     // Every planned write is a create at version 0.
-    const puts = fake.requests.filter(
+    const puts = server.fake.requests.filter(
       (r) => r.method === "PUT" && r.path.includes("/labs/")
     )
     expect(
@@ -202,10 +162,9 @@ describe("the runner", () => {
   })
 
   it("takes the lease for 60 seconds, held to the version read", async () => {
-    seedImport()
-    const b = browser("a")
-    await b.resume()
-    const take = fake.requests.find(
+    seedPlanned()
+    await a().resume(ID)
+    const take = server.fake.requests.find(
       (r) => r.method === "PATCH" && r.path.endsWith(ID)
     )!
     const body = take.body as {
@@ -219,19 +178,25 @@ describe("the runner", () => {
     )
   })
 
-  it("renews the lease every 20 seconds while it writes", async () => {
-    seedImport()
+  it("renews the lease every 20 seconds while it writes, with the counts so far", async () => {
+    seedPlanned()
     const slow: typeof fetch = async (input, init) => {
       if (init?.method === "PUT") clock.advance(8_000)
-      return fake.fetch(input, init)
+      return server.fetch(input, init)
     }
-    await browser("a", slow).resume()
-    const leases = fake.requests
+    await a(slow).resume(ID)
+    const leases = server.fake.requests
       .filter((r) => r.method === "PATCH" && r.path.endsWith(ID))
       .map(
         (r) =>
-          (r.body as { properties: { runner?: { until: string } | null } })
-            .properties
+          (
+            r.body as {
+              properties: {
+                runner?: { until: string } | null
+                counts?: { created: number }
+              }
+            }
+          ).properties
       )
     // The take, at least two renewals, and the end.
     expect(leases.length).toBeGreaterThanOrEqual(4)
@@ -239,67 +204,68 @@ describe("the runner", () => {
       .map((p) => p.runner?.until)
       .filter((u): u is string => !!u)
       .map(Date.parse)
-    expect(untils).toEqual([...untils].sort((a, b) => a - b))
+    expect(untils).toEqual([...untils].sort((x, y) => x - y))
+    expect(leases.some((p) => (p.counts?.created ?? 0) > 0)).toBe(true)
     expect(imp().status).toBe("imported")
   })
 
   it("stops at once when a renewal is refused: another browser took over", async () => {
-    seedImport()
+    seedPlanned()
     let puts = 0
     const meddled: typeof fetch = async (input, init) => {
       if (init?.method === "PUT" && urlOf(input).includes("/labs/")) {
         clock.advance(8_000)
         if (++puts === 3)
-          fake.change(KIND.import, ID, {
+          server.fake.change(KIND.import, ID, {
             runner: {
               device: "b",
               until: new Date(clock.t + LEASE_MS).toISOString(),
             },
           })
       }
-      return fake.fetch(input, init)
+      return server.fetch(input, init)
     }
-    const out = await browser("a", meddled).resume()
+    const out = await a(meddled).resume(ID)
     expect(out.state).toBe("lost")
     expect(imp().runner?.device).toBe("b")
     // The renewal refused is the last request the browser sent.
-    const last = fake.requests.at(-1)!
+    const last = server.fake.requests.at(-1)!
     expect(last.method).toBe("PATCH")
     expect(last.path.endsWith(ID)).toBe(true)
     expect(live(KIND.labresult).length).toBeLessThan(ROWS.length)
   })
 
   it("refuses to resume while another browser's lease is live, and Undo waits it out", async () => {
-    seedImport({
+    seedPlanned({
       status: "importing",
       source: `${KIND.source}/lab/x`,
       runner: { device: "b", until: new Date(clock.t + 40_000).toISOString() },
     })
-    const a = browser("a")
-    expect(await a.resume()).toEqual({
+    const one = a()
+    expect(await one.resume(ID)).toEqual({
       state: "held",
       until: clock.t + 40_000,
     })
-    expect(fake.writes()).toEqual([])
-    const out = await a.undo()
+    expect(server.fake.writes()).toEqual([])
+    const out = await one.undo(ID)
     expect(out).toEqual({ state: "undone", remaining: 0 })
-    expect(a.progress).toContainEqual({
+    expect(one.progress).toContainEqual({
       phase: "waiting",
       until: Date.parse("2026-11-01T10:00:40Z"),
     })
     // It waited past the other lease's end by 30 seconds before deleting.
-    expect(a.progress).toContainEqual({
+    expect(one.progress).toContainEqual({
       phase: "settling",
       until: Date.parse("2026-11-01T10:01:10Z"),
     })
     expect(imp().status).toBe("undone")
   })
 
-  it("answers a lost answer: a write that landed meets 409 and compares equal", async () => {
-    seedImport()
+  it("answers a lost answer: a write that landed meets 409, compares equal, and counts unchanged", async () => {
+    seedPlanned()
     let puts = 0
     const lossy: typeof fetch = async (input, init) => {
-      const res = await fake.fetch(input, init)
+      const res = await server.fetch(input, init)
       if (
         init?.method === "PUT" &&
         urlOf(input).includes("/labresult/") &&
@@ -308,40 +274,40 @@ describe("the runner", () => {
         throw new TypeError("Failed to fetch")
       return res
     }
-    expect(await browser("a", lossy).resume()).toEqual({
+    expect(await a(lossy).resume(ID)).toEqual({
       state: "imported",
-      results: 5,
+      counts: { created: 6, updated: 0, unchanged: 1, stale: 0, left: 0 },
     })
     expect(live(KIND.labresult)).toHaveLength(5)
   })
 
   it("stops on a conflict that does not compare equal, and resumes from stopped through importing", async () => {
-    seedImport()
-    const clash = resultId(ID, "3")
-    fake.seed(KIND.labresult, clash, {
+    seedPlanned()
+    const clash = resultId("3")
+    server.fake.seed(KIND.labresult, clash, {
       metric: `${KIND.metric}/labs/triglycerides`,
       value: { value: "9.9", unit: "mmol/L" },
       at: "2026-03-12T12:00:00+00:00",
       origin: `${KIND.import}/${ID}`,
     })
-    const out = await browser("a").resume()
+    const out = await a().resume(ID)
     expect(out.state).toBe("stopped")
     expect(imp().status).toBe("stopped")
     expect(imp().problem).toMatch(/Result 3 is already in the repository/)
     expect(imp().runner).toBeUndefined()
-    expect(imp().results).toBe(2)
+    // The report and the two results before it.
+    expect(imp().counts?.created).toBe(3)
 
     // The owner mends the row; a resume moves stopped to importing in the
     // patch that takes the lease, then writes from the start.
-    const props = resultProps(
-      { id: ID, source: imp().source!, lab: LAB },
-      ROWS[2]
-    )
-    fake.change(KIND.labresult, clash, props)
-    const marker = fake.requests.length
-    const again = await browser("b").resume()
-    expect(again).toEqual({ state: "imported", results: 5 })
-    const take = fake.requests
+    server.fake.change(KIND.labresult, clash, written(ROWS[2]))
+    const marker = server.fake.requests.length
+    const again = await b().resume(ID)
+    expect(again).toEqual({
+      state: "imported",
+      counts: { created: 3, updated: 0, unchanged: 4, stale: 0, left: 0 },
+    })
+    const take = server.fake.requests
       .slice(marker)
       .find((r) => r.method === "PATCH" && r.path.endsWith(ID))!
     expect(
@@ -355,46 +321,41 @@ describe("the runner", () => {
   })
 
   it("resumes an importing import whose lease lapsed: what landed compares equal", async () => {
-    seedImport()
+    seedPlanned()
     let puts = 0
     const dies: typeof fetch = async (input, init) => {
       if (
         init?.method === "PUT" &&
         urlOf(input).includes("/labresult/") &&
         ++puts === 3
-      ) {
+      )
         clock.advance(LEASE_MS)
-        fake.change(KIND.import, ID, { results: 2 })
-      }
-      return fake.fetch(input, init)
+      return server.fetch(input, init)
     }
-    expect((await browser("a", dies).resume()).state).toBe("lost")
+    expect((await a(dies).resume(ID)).state).toBe("lost")
     expect(imp().status).toBe("importing")
     clock.advance(LEASE_MS)
-    expect(await browser("b").resume()).toEqual({
+    expect(await b().resume(ID)).toMatchObject({
       state: "imported",
-      results: 5,
+      counts: { created: 4, unchanged: 3 },
     })
     expect(live(KIND.labresult)).toHaveLength(5)
   })
 
   it("runs the undo again from undoing", async () => {
-    seedImport()
-    await browser("a").resume()
-    fake.change(KIND.import, ID, {
+    seedPlanned()
+    await a().resume(ID)
+    server.fake.change(KIND.import, ID, {
       status: "undoing",
       runner: { device: "a", until: new Date(clock.t - 1000).toISOString() },
     })
-    expect(await browser("b").resume()).toEqual({
-      state: "undone",
-      remaining: 0,
-    })
+    expect(await b().resume(ID)).toEqual({ state: "undone", remaining: 0 })
     expect(pointing()).toEqual([])
   })
 
   it("undoes a partial import, and a second browser resuming during and after it does nothing", async () => {
-    seedImport()
-    fake.seed(KIND.labresult, "someone-elses", {
+    seedPlanned()
+    server.fake.seed(KIND.labresult, "someone-elses", {
       metric: `${KIND.metric}/labs/ferritin`,
       at: "2026-04-02T12:00:00+00:00",
     })
@@ -409,88 +370,87 @@ describe("the runner", () => {
           JSON.stringify({ error: { code: "validation", message: "refused" } }),
           { status: 422, headers: { "Content-Type": "application/json" } }
         )
-      return fake.fetch(input, init)
+      return server.fetch(input, init)
     }
-    expect((await browser("a", stopsEarly).resume()).state).toBe("stopped")
+    expect((await a(stopsEarly).resume(ID)).state).toBe("stopped")
     expect(live(KIND.labresult)).toHaveLength(3)
 
     // Undo holds the lease while it waits for writes in flight to land.
-    fake.change(KIND.import, ID, {
+    server.fake.change(KIND.import, ID, {
       status: "undoing",
       runner: {
         device: "a",
         until: new Date(clock.t + LEASE_MS).toISOString(),
       },
     })
-    expect((await browser("b").resume()).state).toBe("held")
-    expect(await browser("a").undo()).toEqual({ state: "undone", remaining: 0 })
+    expect((await b().resume(ID)).state).toBe("held")
+    expect(await a().undo(ID)).toEqual({ state: "undone", remaining: 0 })
     expect(pointing()).toEqual([])
     // What the import did not write stays.
-    expect(fake.live(KIND.labresult, "someone-elses")).toBeDefined()
-    expect(await browser("b").resume()).toEqual({
-      state: "nothing",
-      status: "undone",
-    })
+    expect(server.live(KIND.labresult, "someone-elses")).toBeDefined()
+    expect(await b().resume(ID)).toEqual({ state: "nothing", status: "undone" })
   })
 
   it("refuses a late write onto an id Undo deleted, and Undo again deletes a delayed first write", async () => {
-    seedImport()
-    const tomb = withTombstones()
+    seedPlanned()
     let puts = 0
     const half: typeof fetch = async (input, init) => {
       if (
         init?.method === "PUT" &&
         urlOf(input).includes("/labresult/") &&
         ++puts === 4
-      ) {
+      )
         clock.advance(LEASE_MS * 2)
-        fake.change(KIND.import, ID, { results: 3 })
-      }
-      return tomb(input, init)
+      return server.fetch(input, init)
     }
-    expect((await browser("a", half).resume()).state).toBe("lost")
-    const landed = resultId(ID, "1")
-    const notLanded = resultId(ID, "5")
-    expect(fake.live(KIND.labresult, landed)).toBeDefined()
-    expect(fake.live(KIND.labresult, notLanded)).toBeUndefined()
+    expect((await a(half).resume(ID)).state).toBe("lost")
+    const landed = resultId("1")
+    const notLanded = resultId("5")
+    expect(server.live(KIND.labresult, landed)).toBeDefined()
+    expect(server.live(KIND.labresult, notLanded)).toBeUndefined()
 
-    expect(await browser("b", tomb).undo()).toEqual({
-      state: "undone",
-      remaining: 0,
-    })
-    const target = { id: ID, source: imp().source!, lab: LAB }
-    const late = new SubstrateClient(ORIGIN, "tok")
-    vi.stubGlobal("fetch", tomb)
+    expect(await b().undo(ID)).toEqual({ state: "undone", remaining: 0 })
+    const late = new SubstrateClient("https://substrate.example.com", "tok")
 
     // A late write onto a deleted id meets the tombstone's version.
     await expect(
-      late.put(KIND.labresult, landed, resultProps(target, ROWS[0]), 0)
+      late.put(KIND.labresult, landed, written(ROWS[0]), 0)
     ).rejects.toMatchObject({ status: 409 })
-    expect(fake.live(KIND.labresult, landed)).toBeUndefined()
+    expect(server.live(KIND.labresult, landed)).toBeUndefined()
 
     // A first write that had not landed when Undo ran can still land...
-    await late.put(KIND.labresult, notLanded, resultProps(target, ROWS[4]), 0)
+    await late.put(KIND.labresult, notLanded, written(ROWS[4]), 0)
     expect(pointing()).toHaveLength(1)
     // ...and Undo again, from undone, deletes it.
-    expect(await browser("b", tomb).undo()).toEqual({
-      state: "undone",
-      remaining: 0,
-    })
+    expect(await b().undo(ID)).toEqual({ state: "undone", remaining: 0 })
     expect(pointing()).toEqual([])
   })
 
   it("takes a lab's source where one of class lab answers the 409, else the next id", async () => {
-    fake.seed(KIND.source, labSourceId(LAB), {
+    server.fake.seed(KIND.source, labSourceId(LAB), {
       name: "A scale",
       class: "scale",
     })
-    fake.seed(KIND.source, labSourceId(LAB, 2), { name: LAB, class: "lab" })
-    seedImport()
-    await browser("a").resume()
+    server.fake.seed(KIND.source, labSourceId(LAB, 2), {
+      name: LAB,
+      class: "lab",
+    })
+    seedPlanned()
+    await a().resume(ID)
     expect(imp().source).toBe(labSourceId(LAB, 2))
-    expect(fake.live(KIND.source, labSourceId(LAB))?.properties.class).toBe(
+    expect(server.live(KIND.source, labSourceId(LAB))?.properties.class).toBe(
       "scale"
     )
+  })
+
+  it("reads the plan from its blob on a browser that did not stage it", async () => {
+    seedPlanned()
+    const out = await b().resume(ID)
+    expect(out.state).toBe("imported")
+    const reads = server.fake.requests.filter((r) => r.path.includes("/blobs/"))
+    // The blob read is the wrapper's, not the fake's: the fake saw none.
+    expect(reads).toEqual([])
+    expect(live(KIND.labresult)).toHaveLength(5)
   })
 })
 
@@ -499,14 +459,12 @@ describe("the runs of a page", () => {
     const locks = new FakeLocks()
     const uninstall = locks.install()
     try {
-      seedImport()
+      seedPlanned()
       const registry = new RunRegistry(
-        clientStore(new SubstrateClient(ORIGIN, "tok")),
-        {
-          device: "a",
-          clock,
-          lockPrefix: "healthspan.import.",
-        }
+        clientStore(
+          new SubstrateClient("https://substrate.example.com", "tok")
+        ),
+        { device: "a", clock, lockPrefix: "healthspan.import." }
       )
       const release = await locks.hold(`healthspan.import.${ID}`)
       expect(await registry.resume(ID)).toEqual({
@@ -525,5 +483,24 @@ describe("the runs of a page", () => {
     } finally {
       uninstall()
     }
+  })
+
+  it("stages a file's plan and runs it, the plan kept for the run", async () => {
+    const registry = new RunRegistry(
+      clientStore(new SubstrateClient("https://substrate.example.com", "tok")),
+      { device: "a", clock, lockPrefix: "healthspan.import." }
+    )
+    const outcomes = await registry.start([{ id: ID, plan: PLAN, lab: LAB }])
+    expect(outcomes).toEqual([{ state: "planned" }])
+    for (let i = 0; i < 50 && imp().status !== "imported"; i++)
+      await new Promise((r) => setTimeout(r, 0))
+    expect(imp()).toMatchObject({
+      status: "imported",
+      importer: "csv",
+      lab: LAB,
+      source: labSourceId(LAB),
+    })
+    expect(registry.plan(ID)?.records).toHaveLength(7)
+    expect(live(KIND.labresult)).toHaveLength(5)
   })
 })

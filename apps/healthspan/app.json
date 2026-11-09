@@ -15,6 +15,10 @@
     {
       "package": "substrate.reamde.dev/labs",
       "atLeast": 2
+    },
+    {
+      "package": "substrate.reamde.dev/clinical",
+      "atLeast": 1
     }
   ],
   "scopes": [
@@ -26,7 +30,7 @@
     "write:substrate.reamde.dev/observations/sourcelink",
     "read:substrate.reamde.dev/observations/*",
     "read:substrate.reamde.dev/health/*",
-    "read:substrate.reamde.dev/clinical/*",
+    "write:substrate.reamde.dev/clinical/*",
     "read:substrate.reamde.dev/core/contact",
     "read:substrate.reamde.dev/core/setting"
   ],

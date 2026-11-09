@@ -9,8 +9,9 @@
 #
 #   profile   the reference basis and the orders the app reads by, one per
 #             repository
-#   import    one file or one hand entry of lab results taken in, with the
-#             plan that says what it writes, so it can resume and be undone
+#   import    one run of an importer (a CSV, a hand entry, a provider's
+#             export or folder), naming the plan and the documents it
+#             writes, so it can resume on any device and be undone
 kind: substrate.reamde.dev/core/package
 metadata:
   id: substrate.reamde.dev/healthspan

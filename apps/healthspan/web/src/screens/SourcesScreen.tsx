@@ -161,7 +161,7 @@ export function SourcesScreen() {
           />
         ))}
         <ActionRow onClick={() => go({ screen: "import" })}>
-          Import a File…
+          Import Files or a Folder…
         </ActionRow>
         <ActionRow onClick={() => setEntering(true)}>Enter a Result…</ActionRow>
       </Section>

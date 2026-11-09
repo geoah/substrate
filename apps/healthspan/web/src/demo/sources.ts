@@ -10,11 +10,11 @@ import {
   type AggregateRow,
   type SubstrateRecord,
 } from "@substrate/client"
-import { useMemo, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import type { MetricRecord } from "../catalogue/types"
 import { useBackend } from "../data"
 import { useMode } from "../data/mode"
-import { settled, type Read } from "../data/read"
+import { pending, settled, type Read } from "../data/read"
 import type {
   Done,
   ImportActions,
@@ -22,14 +22,23 @@ import type {
   SourceWrites,
   SourcesData,
 } from "../data/sources"
+import { recordId } from "../import/ids"
+import { memoryKeep } from "../import/keep"
 import type { HeldResult } from "../import/match"
 import { MemoryStore } from "../import/memory"
-import type { PlannedImport } from "../import/plan"
-import { reportProps, resultProps, refPath } from "../import/records"
-import { reportId, resultId } from "../import/ids"
+import type { ImportRow, labPlan } from "../import/plan"
+import {
+  blobDigestOf,
+  parsePlan,
+  planBytes,
+  storedPlan,
+  type StoredPlan,
+} from "../import/planfile"
+import { originKinds, refPath } from "../import/records"
 import { RunRegistry, type RunState } from "../import/registry"
+import { EMPTY_GRAPH } from "../labs/units"
 import { factor } from "../lib/units"
-import { Import, KIND, type ImportRow, type LabImport } from "../kinds"
+import { Import, KIND, type ImportRecord } from "../kinds"
 import { buildSourceList } from "../sources/list"
 import { keepLinkedTogether, linkProps, readLink } from "../sources/links"
 import { priorityWrites } from "../sources/ranks"
@@ -372,19 +381,24 @@ const PAST: PastImport[] = [
 interface World {
   store: MemoryStore
   registry: RunRegistry
+  keep: ReturnType<typeof memoryKeep>
   today: Date
 }
 
 let world: World | undefined
 
-function seedPast(store: MemoryStore, today: Date) {
+/** Each past import as its runs left it: its plan stored and named, and
+ * what landed before it stopped or finished. The plans are built by the
+ * import screen's own code, which loads apart (with Effect), so the past
+ * imports appear a moment after the demo opens. */
+function seedPast(w: World, plans: typeof labPlan) {
   for (const p of PAST) {
-    const when = today.getTime() - p.daysAgo * DAY
+    const when = w.today.getTime() - p.daysAgo * DAY
     const id = uuidv7(when)
     const source = DEMO_SOURCES[p.source]
     const reports = p.rows.map((_, i) => ({
       key: String(i + 1),
-      takenAt: offsetAt(at(today, p.daysAgo - i * 7, 8)),
+      takenAt: offsetAt(at(w.today, p.daysAgo - i * 7, 8)),
     }))
     const rows: ImportRow[] = []
     p.rows.forEach((group, i) =>
@@ -397,49 +411,88 @@ function seedPast(store: MemoryStore, today: Date) {
         })
       )
     )
-    const landed = p.landed ?? rows.length
-    const target = { id, source: source.id, lab: source.name }
-    const stamp = at(today, p.daysAgo, 10)
-    const record = (
-      kind: string,
-      rid: string,
-      properties: Record<string, unknown>
-    ): SubstrateRecord => ({
-      id: rid,
-      kind,
-      properties,
-      version: 1,
-      createdAt: stamp,
-      updatedAt: stamp,
-    })
-    store.seed(
-      record(KIND.import, id, {
-        ...Import.write({
-          name: p.name,
-          format: "csv",
-          status: p.problem ? "stopped" : "imported",
-          source: source.id,
-          rows,
-          reports,
-          results: landed,
-          ...(p.problem ? { problem: p.problem } : { importedAt: stamp }),
-        }),
+    const plan = storedPlan(
+      plans({
+        name: p.name,
+        importer: "csv",
+        lab: source.name,
+        reports,
+        rows,
       })
     )
-    const reportsLanded = new Set(rows.slice(0, landed).map((r) => r.report))
-    for (const rep of reports)
-      if (!p.problem || reportsLanded.has(rep.key))
-        store.seed(
-          record(
-            KIND.labreport,
-            reportId(id, rep.key),
-            reportProps(target, rep)
-          )
-        )
-    for (const r of rows.slice(0, landed))
-      store.seed(
-        record(KIND.labresult, resultId(id, r.key), resultProps(target, r))
+    const bytes = planBytes(plan)
+    const digest = blobDigestOf(bytes)
+    w.store.seedBlob(digest, bytes)
+    const stamp = at(w.today, p.daysAgo, 10)
+    const landed = p.landed ?? rows.length
+    // What landed: each report and result up to the stop, as the runner
+    // wrote them.
+    const written = new Set<string>()
+    for (const rep of reports) {
+      const mine = rows.filter((r) => r.report === rep.key)
+      if (p.problem && !mine.some((r) => Number(r.key) <= landed)) continue
+      written.add(`report/${rep.key}`)
+      for (const r of mine)
+        if (Number(r.key) <= landed) written.add(`result/${r.key}`)
+    }
+    const origin = `${KIND.import}/${id}`
+    const sourcePath = `${KIND.source}/${source.id}`
+    for (const rec of plan.records) {
+      const tag = `${rec.kind === KIND.labreport ? "report" : "result"}/${rec.key}`
+      if (!written.has(tag)) continue
+      const props: Record<string, unknown> = { ...rec.properties, origin }
+      props.source = sourcePath
+      if (rec.kind === KIND.labresult) {
+        const report = (rec.properties.report as { $ref: { key: string } }).$ref
+          .key
+        props.report = `${KIND.labreport}/${recordId({ kind: KIND.labreport, namespace: "import", key: report }, id)}`
+      }
+      w.store.seed(record(rec.kind, recordId(rec, id), props, stamp))
+    }
+    const results = rows.filter((r) => written.has(`result/${r.key}`)).length
+    const reportsIn = reports.filter((r) =>
+      written.has(`report/${r.key}`)
+    ).length
+    w.store.seed(
+      record(
+        KIND.import,
+        id,
+        Import.write({
+          name: p.name,
+          importer: "csv",
+          status: p.problem ? "stopped" : "imported",
+          lab: source.name,
+          source: source.id,
+          plan: digest,
+          documents: [],
+          counts: {
+            created: results + reportsIn,
+            updated: 0,
+            unchanged: 0,
+            stale: 0,
+            left: 0,
+          },
+          ...(p.problem ? { problem: p.problem } : { importedAt: stamp }),
+        }),
+        stamp
       )
+    )
+  }
+}
+
+function record(
+  kind: string,
+  id: string,
+  properties: Record<string, unknown>,
+  stamp: string
+): SubstrateRecord {
+  return {
+    id,
+    kind,
+    properties,
+    version: 1,
+    createdAt: stamp,
+    updatedAt: stamp,
   }
 }
 
@@ -465,15 +518,19 @@ function worldFor(today: Date): World {
         : r
     )
   }
-  seedPast(store, today)
+  const keep = memoryKeep()
   world = {
     store,
     today,
+    keep,
     registry: new RunRegistry(store, {
       device: "demo-browser",
       lockPrefix: "healthspan.demo.import.",
+      keep,
     }),
   }
+  const w = world
+  void import("../import/plan").then(({ labPlan }) => seedPast(w, labPlan))
   return world
 }
 
@@ -612,7 +669,7 @@ function useDemoSourceWrites(): SourceWrites {
   }, [w, profile])
 }
 
-function useDemoImports(): Read<LabImport[]> {
+function useDemoImports(): Read<ImportRecord[]> {
   const w = useWorld()
   const version = w.store.version
   return useMemo(() => {
@@ -623,25 +680,58 @@ function useDemoImports(): Read<LabImport[]> {
   }, [w, version])
 }
 
-function useDemoImport(id: string): Read<LabImport | null> {
+function useDemoImport(id: string): Read<ImportRecord | null> {
   const list = useDemoImports().data ?? []
   const found = list.find((i) => i.id === id) ?? null
   return useMemo(() => settled(found), [found])
 }
 
-function useDemoStillPointing(id: string, enabled: boolean): Read<number> {
+function useDemoPlan(imp: ImportRecord): Read<StoredPlan | null> {
+  const w = useWorld()
+  const digest = imp.plan
+  const [loaded, setLoaded] = useState<{
+    digest: string
+    plan: StoredPlan | null
+  }>()
+  useEffect(() => {
+    if (!digest) return
+    let live = true
+    w.store.blob(digest).then(
+      (bytes) => {
+        if (live) setLoaded({ digest, plan: parsePlan(bytes) })
+      },
+      () => {
+        if (live) setLoaded({ digest, plan: null })
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [w, digest])
+  const kept = w.registry.plan(imp.id)
+  return useMemo(() => {
+    if (!digest) return settled(null)
+    if (loaded?.digest === digest) return settled(loaded.plan)
+    return kept ? settled(kept) : pending<StoredPlan | null>()
+  }, [digest, loaded, kept])
+}
+
+function useDemoCreated(imp: ImportRecord): Read<number> {
   const w = useWorld()
   const version = w.store.version
   return useMemo(() => {
     void version
-    if (!enabled) return settled(0)
-    const path = `${KIND.import}/${id}`
-    const n = [
-      ...w.store.all(KIND.labresult),
-      ...w.store.all(KIND.labreport),
-    ].filter((r) => refPath(r.properties.origin) === path).length
+    const path = `${KIND.import}/${imp.id}`
+    const n = originKinds(imp.importer)
+      .flatMap((k) => w.store.all(k))
+      .filter((r) => refPath(r.properties.origin) === path).length
     return settled(n)
-  }, [w, version, id, enabled])
+  }, [w, version, imp.id, imp.importer])
+}
+
+function useDemoKept(): ReadonlySet<string> {
+  const w = useWorld()
+  return useSyncExternalStore(w.registry.subscribe, w.registry.keptIds)
 }
 
 function useDemoRunState(id: string): RunState {
@@ -679,6 +769,7 @@ function useDemoImportActions(): ImportActions {
     () => ({
       convert: (value, from, to) =>
         Promise.resolve(demoConvert(value, from, to)),
+      units: () => Promise.resolve(EMPTY_GRAPH),
       held: (metrics, days) => {
         const want = new Set(metrics)
         const on = new Set(days)
@@ -689,36 +780,18 @@ function useDemoImportActions(): ImportActions {
             .filter((h) => want.has(h.metric) && on.has(h.day))
         )
       },
-      start: async (planned: PlannedImport[]) => {
-        const ids: string[] = []
-        for (const p of planned) {
-          const id = uuidv7()
-          const source = plannedSource(p.lab, w.store.all(KIND.source))
-          await w.store.put(
-            KIND.import,
-            id,
-            Import.write({
-              name: p.name,
-              format: p.format,
-              lab: p.lab,
-              ...(source ? { source } : {}),
-              rows: p.rows,
-              reports: p.reports,
-              results: 0,
-              ...(p.skipped ? { skipped: p.skipped } : {}),
-            }),
-            0
+      start: (requests) =>
+        w.registry.start(
+          requests.map((r) =>
+            r.lab && !r.source
+              ? { ...r, source: plannedSource(r.lab, w.store.all(KIND.source)) }
+              : r
           )
-          w.registry.rememberLab(id, p.lab)
-          ids.push(id)
-        }
-        void (async () => {
-          for (const id of ids) await w.registry.resume(id)
-        })()
-        return ids
-      },
+        ),
+      finish: (id) => w.registry.finish(id),
       resume: (id) => w.registry.resume(id),
       undo: (id) => w.registry.undo(id),
+      discard: (id) => w.registry.discard(id),
     }),
     [w]
   )
@@ -732,7 +805,9 @@ export const demoSourcesData: SourcesData = {
   useSourceWrites: useDemoSourceWrites,
   useImports: useDemoImports,
   useImport: useDemoImport,
-  useStillPointing: useDemoStillPointing,
+  usePlan: useDemoPlan,
+  useCreated: useDemoCreated,
+  useKept: useDemoKept,
   useRunState: useDemoRunState,
   useImportActions: useDemoImportActions,
 }

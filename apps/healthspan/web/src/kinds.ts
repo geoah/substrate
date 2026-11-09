@@ -1,11 +1,11 @@
 import { parseReference } from "@substrate/client"
 import {
   defineKind,
-  numberProp,
   refProp,
   stringProp,
   type SubstrateRecord,
 } from "@substrate/react"
+import type { ImporterId } from "./import/importers/types"
 
 /** Every kind the app names, in full: its own package's two, and the shared
  * ones it reads (and, for labs and sources, writes). */
@@ -125,52 +125,71 @@ export const Profile = defineKind(KIND.profile, {
 })
 
 export type ImportStatus =
-  "planned" | "importing" | "stopped" | "imported" | "undoing" | "undone"
+  | "staging"
+  | "planned"
+  | "importing"
+  | "stopped"
+  | "imported"
+  | "undoing"
+  | "undone"
 
-/** One result the plan writes. */
-export interface ImportRow {
-  key: string
-  /** The key of its report in the plan. */
-  report: string
-  name?: string
-  /** The metric's id, such as `labs/ldl_cholesterol`. */
-  metric: string
-  takenAt: string
-  value?: string
-  comparator?: string
-  unit?: string
-  text?: string
-  low?: string
-  high?: string
-  flag?: string
-}
+export type { ImporterId }
 
-export interface ImportReport {
-  key: string
-  takenAt: string
-  accession?: string
-}
+/** `import.yaml`'s `importer` values: every importer's id. */
+export const IMPORTER_IDS: readonly ImporterId[] = [
+  "csv",
+  "manual",
+  "numan",
+  "randox",
+  "dxa",
+  "nhs",
+  "mychart",
+]
 
 export interface ImportRunner {
   device: string
   until: string
 }
 
+/** What the latest run of an import did. */
+export interface ImportCounts {
+  created: number
+  /** A raised revision alone counts here, as the scripts count it. */
+  updated: number
+  unchanged: number
+  /** A newer export already wrote it: left alone. */
+  stale: number
+  /** References left out: no import has written their record. */
+  left: number
+}
+
+export const NO_COUNTS: ImportCounts = {
+  created: 0,
+  updated: 0,
+  unchanged: 0,
+  stale: 0,
+  left: 0,
+}
+
 /** An import as the screens and the runner read it. */
-export interface LabImport {
+export interface ImportRecord {
   id: string
   version: number
   name: string
-  format?: "csv" | "manual"
+  importer?: ImporterId
   status: ImportStatus
   runner?: ImportRunner
-  /** The lab's name, which names its source where none exists yet. */
+  /** For a CSV or a hand entry, the lab's name, which names its source
+   * where none exists yet. */
   lab?: string
-  /** The lab's source id. */
+  /** The source id the import names. */
   source?: string
-  rows: ImportRow[]
-  reports: ImportReport[]
-  results: number
+  /** The plan blob's digest, from `planned` on. */
+  plan?: string
+  /** The digests of the documents named so far. */
+  documents: string[]
+  /** What the latest run did; absent until a run saved some. */
+  counts?: ImportCounts
   problem?: string
   importedAt?: string
   skipped?: string
@@ -180,20 +199,22 @@ export interface LabImport {
  * only by a patch, along a declared transition. */
 export interface ImportDraft {
   name: string
-  format: "csv" | "manual"
+  importer: ImporterId
   status: ImportStatus
   runner: ImportRunner | null
   lab: string
   source: string | null
-  rows: ImportRow[]
-  reports: ImportReport[]
-  results: number
+  /** A blob digest, `blob-sha256-<hex>`. */
+  plan: string | null
+  documents: string[]
+  counts: ImportCounts | null
   problem: string | null
   importedAt: string | null
   skipped: string | null
 }
 
 const STATUSES: readonly ImportStatus[] = [
+  "staging",
   "planned",
   "importing",
   "stopped",
@@ -202,86 +223,54 @@ const STATUSES: readonly ImportStatus[] = [
   "undone",
 ]
 
-function objects(v: unknown): Record<string, unknown>[] {
-  return Array.isArray(v)
-    ? v.filter(
-        (x): x is Record<string, unknown> => !!x && typeof x === "object"
-      )
-    : []
-}
-
 function str(o: Record<string, unknown>, key: string): string | undefined {
   const v = o[key]
   return typeof v === "string" && v !== "" ? v : undefined
 }
 
-/** A reference field inside an object: `{ref}` as served or a bare path. */
-function refId(v: unknown, kind: string): string | undefined {
-  const path =
-    typeof v === "string"
-      ? v
-      : v && typeof v === "object" && "ref" in v
-        ? v.ref
-        : undefined
-  const ref = typeof path === "string" ? parseReference(path) : undefined
-  return ref?.kind === kind ? ref.id : undefined
+/** A blob reference as served (`{digest, name, mediaType, size, status}`,
+ * or the bare `{digest}` of one whose manifest is gone) or as written (the
+ * digest). */
+export function blobDigest(v: unknown): string | undefined {
+  if (typeof v === "string") return v || undefined
+  if (v && typeof v === "object" && "digest" in v) {
+    const d = v.digest
+    return typeof d === "string" && d ? d : undefined
+  }
+  return undefined
 }
 
-function readRow(o: Record<string, unknown>): ImportRow | undefined {
-  const key = str(o, "key")
-  const report = str(o, "report")
-  const metric = refId(o.metric, KIND.metric)
-  const takenAt = str(o, "takenAt")
-  if (!key || !report || !metric || !takenAt) return undefined
+function count(o: Record<string, unknown>, key: string): number {
+  const v = o[key]
+  return typeof v === "number" && Number.isFinite(v) && v > 0
+    ? Math.floor(v)
+    : 0
+}
+
+function readCounts(v: unknown): ImportCounts | undefined {
+  if (!v || typeof v !== "object") return undefined
+  const o = v as Record<string, unknown>
   return {
-    key,
-    report,
-    metric,
-    takenAt,
-    name: str(o, "name"),
-    value: str(o, "value"),
-    comparator: str(o, "comparator"),
-    unit: str(o, "unit"),
-    text: str(o, "text"),
-    low: str(o, "low"),
-    high: str(o, "high"),
-    flag: str(o, "flag"),
+    created: count(o, "created"),
+    updated: count(o, "updated"),
+    unchanged: count(o, "unchanged"),
+    stale: count(o, "stale"),
+    left: count(o, "left"),
   }
-}
-
-function writeRow(row: ImportRow): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    key: row.key,
-    report: row.report,
-    metric: `${KIND.metric}/${row.metric}`,
-    takenAt: row.takenAt,
-  }
-  for (const k of [
-    "name",
-    "value",
-    "comparator",
-    "unit",
-    "text",
-    "low",
-    "high",
-    "flag",
-  ] as const) {
-    if (row[k] !== undefined) out[k] = row[k]
-  }
-  return out
 }
 
 export const Import = defineKind(KIND.import, {
-  read: (r): LabImport => {
+  read: (r): ImportRecord => {
     const status = stringProp(r, "status")
     const runner = r.properties.runner
-    const format = stringProp(r, "format")
+    const importer = stringProp(r, "importer")
+    const documents = r.properties.documents
     return {
       id: r.id,
       version: r.version,
       name: stringProp(r, "name") ?? "Import",
-      format: format === "csv" || format === "manual" ? format : undefined,
-      status: STATUSES.find((s) => s === status) ?? "planned",
+      importer: IMPORTER_IDS.find((i) => i === importer),
+      status: STATUSES.find((s) => s === status) ?? "staging",
       runner:
         runner && typeof runner === "object"
           ? (() => {
@@ -293,17 +282,11 @@ export const Import = defineKind(KIND.import, {
           : undefined,
       lab: stringProp(r, "lab"),
       source: refProp(r, "source")?.id,
-      rows: objects(r.properties.rows)
-        .map(readRow)
-        .filter((x): x is ImportRow => !!x),
-      reports: objects(r.properties.reports).flatMap((o) => {
-        const key = str(o, "key")
-        const takenAt = str(o, "takenAt")
-        return key && takenAt
-          ? [{ key, takenAt, accession: str(o, "accession") }]
-          : []
-      }),
-      results: numberProp(r, "results") ?? 0,
+      plan: blobDigest(r.properties.plan),
+      documents: Array.isArray(documents)
+        ? documents.flatMap((d) => blobDigest(d) ?? [])
+        : [],
+      counts: readCounts(r.properties.counts),
       problem: stringProp(r, "problem"),
       importedAt: stringProp(r, "importedAt"),
       skipped: stringProp(r, "skipped"),
@@ -312,20 +295,25 @@ export const Import = defineKind(KIND.import, {
   write: (d: Partial<ImportDraft>) => {
     const out: Record<string, unknown> = {}
     if (d.name !== undefined) out.name = d.name
-    if (d.format !== undefined) out.format = d.format
+    if (d.importer !== undefined) out.importer = d.importer
     if (d.status !== undefined) out.status = d.status
     if (d.runner !== undefined) out.runner = d.runner
     if (d.lab !== undefined) out.lab = d.lab
     if (d.source !== undefined)
       out.source = d.source === null ? null : `${KIND.source}/${d.source}`
-    if (d.rows !== undefined) out.rows = d.rows.map(writeRow)
-    if (d.reports !== undefined)
-      out.reports = d.reports.map((r) =>
-        r.accession === undefined
-          ? { key: r.key, takenAt: r.takenAt }
-          : { key: r.key, takenAt: r.takenAt, accession: r.accession }
-      )
-    if (d.results !== undefined) out.results = d.results
+    if (d.plan !== undefined) out.plan = d.plan
+    if (d.documents !== undefined) out.documents = [...d.documents]
+    if (d.counts !== undefined)
+      out.counts =
+        d.counts === null
+          ? null
+          : {
+              created: d.counts.created,
+              updated: d.counts.updated,
+              unchanged: d.counts.unchanged,
+              stale: d.counts.stale,
+              left: d.counts.left,
+            }
     if (d.problem !== undefined) out.problem = d.problem
     if (d.importedAt !== undefined) out.importedAt = d.importedAt
     if (d.skipped !== undefined) out.skipped = d.skipped

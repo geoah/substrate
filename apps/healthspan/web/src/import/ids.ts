@@ -1,10 +1,13 @@
 // The ids an import writes. An app may create a record of a kind with
 // minted ids only under an id in the minted shape (decision 0228), so every
-// id the plan names is derived as the server derives one
+// id a plan names is derived as the server derives one
 // (vocabulary.DerivedMintedID): the first 16 bytes of the sha256 of its
 // parts, joined by NUL, marked as a UUIDv8 and written as 26 Crockford
-// characters. The plan's keys stay the parts, so the import record alone
-// still says what it writes (docs/plans/healthspan.md, The package, import).
+// characters. A planned record's id is the derivation of
+// `healthspan/<namespace>/<kind name>/<key>`, so the plan's keys alone say
+// what it writes (docs/plans/healthspan.md, Importers: Ids, and re-imports).
+
+import type { RecordKey } from "./importers/types"
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
@@ -111,15 +114,39 @@ export function derivedMintedId(...parts: string[]): string {
   return encodeMinted(u)
 }
 
-/** The id of the report the plan keys `key`: `<import id>/report/<key>`'s
- * parts. */
-export function reportId(importId: string, key: string): string {
-  return derivedMintedId(importId, "report", key)
+/** The namespace of the records a CSV or a hand entry writes: the import's
+ * own, since a file of lab results carries no provider key. Its records
+ * are keyed `import/<the import's id>`, so their ids are the import's own,
+ * a fresh set for every import, written once and compared, never decided
+ * by revision. */
+export const OWN = "import"
+
+/** A kind's name, the last part of its full name (`labreport`). */
+export function kindName(kind: string): string {
+  return kind.slice(kind.lastIndexOf("/") + 1)
 }
 
-/** The id of the result the plan keys `key`: `<import id>/<key>`'s parts. */
-export function resultId(importId: string, key: string): string {
-  return derivedMintedId(importId, key)
+/** The namespace a key's id derives under: the provider's, or for the
+ * import's own records `import/<importId>`. */
+export function namespaceOf(key: RecordKey, importId?: string): string {
+  if (key.namespace !== OWN) return key.namespace
+  if (!importId)
+    throw new Error("An import's own record needs the import's id.")
+  return `${OWN}/${importId}`
+}
+
+/** The id a planned record lives at: `DerivedMintedID` of
+ * `healthspan/<namespace>/<kind name>/<key>`, the derivation hashing the
+ * whole string, so a key of any length gives an id of fixed length. */
+export function recordId(key: RecordKey, importId?: string): string {
+  return derivedMintedId(
+    `healthspan/${namespaceOf(key, importId)}/${kindName(key.kind)}/${key.key}`
+  )
+}
+
+/** A planned record's path, `<kind>/<id>`, as a reference names it. */
+export function recordPath(key: RecordKey, importId?: string): string {
+  return `${key.kind}/${recordId(key, importId)}`
 }
 
 /** A lab's name as the readable part of its source's id: lowercased, its

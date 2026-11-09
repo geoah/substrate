@@ -6,15 +6,13 @@ import {
   SelectRow,
   Sheet,
 } from "@substrate/react"
+import { uuidv7 } from "@substrate/client"
 import { useMemo, useState } from "react"
-import { CATALOGUE } from "../../catalogue"
 import { useBackend } from "../../data"
 import { useMode } from "../../data/mode"
-import type { ColumnRole } from "../../import/columns"
-import { buildPlan } from "../../import/plan"
-import { matchRows, pickKey, readRows } from "../../import/resolve"
 import { unitLabel } from "../../lib/units"
 import { go } from "../../route"
+import { useImportContext } from "./context"
 
 const FLAGS = [
   { value: "", label: "None" },
@@ -23,24 +21,14 @@ const FLAGS = [
   { value: "A", label: "Abnormal" },
 ]
 
-const ROLES: ColumnRole[] = [
-  "date",
-  "name",
-  "value",
-  "unit",
-  "low",
-  "high",
-  "flag",
-  "lab",
-]
-
 function isoDay(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0")
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-/** One result typed in, written as an import of one row through the same
- * plan and runner as a file, so it can be undone like one. */
+/** One result typed in, read by the hand entry's importer into a plan of
+ * one report and one result, and written by the same runner as a file, so
+ * it can be undone like one. */
 export function EnterResultSheet(props: {
   open: boolean
   onClose: () => void
@@ -57,6 +45,7 @@ function EnterResultForm(props: { onClose: () => void }) {
     (s) => s.class === "lab"
   )
   const actions = sources.useImportActions()
+  const base = useImportContext()
   const sorted = useMemo(
     () =>
       [...(metricsRead.data ?? [])].sort((a, b) =>
@@ -77,37 +66,54 @@ function EnterResultForm(props: { onClose: () => void }) {
 
   const chosen = sorted.find((m) => m.id === metric)
   const ready =
-    !!chosen && !!day && value.trim() !== "" && lab.trim() !== "" && !saving
+    !!chosen &&
+    !!base &&
+    !!day &&
+    value.trim() !== "" &&
+    lab.trim() !== "" &&
+    !saving
 
   const save = async () => {
-    if (!chosen) return
+    if (!chosen || !base) return
     setSaving(true)
     setProblem(null)
     try {
-      const table = {
-        delimiter: "," as const,
-        headers: ROLES,
-        rows: [[day, chosen.name, value, unit, low, high, flag, lab]],
-      }
-      const rows = readRows(table, ROLES, "dmy", lab)
-      const [row] = await matchRows(rows, {
-        catalogue: CATALOGUE,
-        metrics: [chosen],
-        picks: new Map([[pickKey({ name: chosen.name }), chosen.id]]),
-        convert: actions.convert,
-        held: actions.held,
+      const { MANUAL_ANSWERS, NO_INPUT, errorWords, manual, readPlan } =
+        await import("./manualEntry")
+      const out = await readPlan(manual, NO_INPUT, {
+        ...base,
+        // The test picked is one of the lab metrics, whichever list the
+        // context holds.
+        metrics: [chosen, ...base.metrics.filter((m) => m.id !== chosen.id)],
+        answers: {
+          [MANUAL_ANSWERS.metric]: chosen.id,
+          [MANUAL_ANSWERS.day]: day,
+          [MANUAL_ANSWERS.value]: value,
+          [MANUAL_ANSWERS.unit]: unit,
+          [MANUAL_ANSWERS.low]: low,
+          [MANUAL_ANSWERS.high]: high,
+          [MANUAL_ANSWERS.flag]: flag,
+          [MANUAL_ANSWERS.lab]: lab,
+        },
       })
-      if (row.problem) {
-        setProblem(row.problem)
+      if ("error" in out) {
+        setProblem(errorWords(out.error))
         return
       }
-      const plan = buildPlan([row], new Set([row.line]), {
-        name: "Entered by hand",
-        format: "manual",
-      })
-      const [id] = await actions.start(plan)
+      const id = uuidv7()
+      const [staged] = await actions.start([
+        { id, plan: out.plan, lab: lab.trim() },
+      ])
+      if (staged?.state !== "planned") {
+        setProblem(
+          staged?.state === "failed"
+            ? staged.words
+            : "It could not be sent to your repository. Try again."
+        )
+        return
+      }
       props.onClose()
-      if (id) go({ screen: "import", id })
+      go({ screen: "import", id })
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e))
     } finally {

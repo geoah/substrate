@@ -1,10 +1,11 @@
 // The runner's records on the owner's substrate: the session's client, and
 // the reverse read for what points at an import.
 
-import type {
-  RecordPage,
+import {
   SubstrateClient,
-  SubstrateRecord,
+  failure,
+  type RecordPage,
+  type SubstrateRecord,
 } from "@substrate/client"
 import {
   parseUnitGraph,
@@ -93,14 +94,78 @@ export async function pointingAt(
   return rows.filter((r) => refPath(r.properties.origin) === path)
 }
 
+/** A blob's bytes up, by their digest: `PUT /api/v1/blobs/{digest}`, the
+ * name as `?name=` and the media type as `Content-Type`. */
+async function putBlob(
+  client: SubstrateClient,
+  digest: string,
+  bytes: Uint8Array,
+  mediaType: string,
+  name: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const headers = client.headers()
+  headers.set("Content-Type", mediaType || "application/octet-stream")
+  const res = await fetch(
+    client.url(`api/v1/blobs/${encodeURIComponent(digest)}`, { name }),
+    {
+      method: "PUT",
+      headers,
+      body: bytes as Uint8Array<ArrayBuffer>,
+      signal,
+      redirect: "error",
+    }
+  )
+  if (!res.ok) throw await failure(res)
+}
+
+/** A blob's bytes, which a live record of a kind the token reads names. */
+async function getBlob(
+  client: SubstrateClient,
+  digest: string,
+  signal?: AbortSignal
+): Promise<Uint8Array> {
+  const res = await fetch(
+    client.url(`api/v1/blobs/${encodeURIComponent(digest)}`),
+    {
+      headers: client.headers("*/*"),
+      signal,
+      redirect: "error",
+    }
+  )
+  if (!res.ok) throw await failure(res)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
 export function clientStore(client: SubstrateClient): RunnerStore {
   return {
     record: (kind, id, signal) => client.record(kind, id, signal),
+    tombstone: async (kind, id, signal) => {
+      const page = await client.json<RecordPage>("GET", "api/v1/records", {
+        query: {
+          filter: JSON.stringify({ kinds: [kind], ids: [id], deleted: true }),
+          first: "1",
+        },
+        signal,
+      })
+      return page.records?.find((r) => r.id === id && r.kind === kind) ?? null
+    },
     put: (kind, id, props, ifVersion, signal) =>
       client.put(kind, id, props, ifVersion, signal),
     patch: (kind, id, props, ifVersion, signal) =>
       client.patch(kind, id, props, ifVersion, signal),
-    delete: (kind, id, signal) => client.delete(kind, id, signal),
+    delete: async (kind, id, ifVersion, signal) => {
+      await client.send("DELETE", SubstrateClient.recordPath(kind, id), {
+        query: {
+          ifVersion: ifVersion === undefined ? undefined : String(ifVersion),
+        },
+        accept: [404],
+        signal,
+      })
+    },
+    putBlob: (digest, bytes, mediaType, name, signal) =>
+      putBlob(client, digest, bytes, mediaType, name, signal),
+    blob: (digest, signal) => getBlob(client, digest, signal),
     // A unit the graph does not hold, or every unit when the graph cannot
     // be read, compares by the server's spelling key, which is how it was
     // stored: a row found in the same unit under another name then stops

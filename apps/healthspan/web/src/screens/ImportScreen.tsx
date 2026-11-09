@@ -5,17 +5,18 @@ import { go } from "../route"
 import { EmptyState } from "../ui/EmptyState"
 import { Screen } from "../ui/Screen"
 import { ImportDetail } from "../ui/import/ImportDetail"
-import { ImportWizard } from "../ui/import/ImportWizard"
+import { NewImport } from "../ui/import/NewImport"
 
 const back = { label: "Sources", onClick: () => go({ screen: "sources" }) }
 
-/** A new import from a file (docs/plans/healthspan.md, Import), or one
- * import with its state, its plan, Resume and Undo. */
+/** A new import, from files, a folder or a zip read by whichever importer
+ * takes them (docs/plans/healthspan.md, Import), or one import with its
+ * state, its counts, its plan and its actions. */
 export function ImportScreen(props: { id?: string }) {
   if (!props.id)
     return (
       <Screen title="Import" back={back}>
-        <ImportWizard />
+        <NewImport />
       </Screen>
     )
   return <OneImport id={props.id} />

@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { Import, Profile, type ImportDraft, type ProfileDraft } from "./kinds"
+import {
+  IMPORTER_IDS,
+  Import,
+  Profile,
+  type ImportDraft,
+  type ImportStatus,
+  type ProfileDraft,
+} from "./kinds"
 
 /** The top-level property names a package file declares, and each object
  * property's field names, read from the YAML's indentation (the files keep
@@ -54,31 +61,36 @@ const fullProfile: ProfileDraft = {
   recordSeenAt: "2026-11-09T10:00:00Z",
 }
 
+/** The items of a list a property declares (`values:`, `states:`), in
+ * order. */
+function listed(file: string, prop: string, key: string): string[] {
+  const lines = readFileSync(
+    new URL(`../../package/${file}`, import.meta.url),
+    "utf8"
+  ).split("\n")
+  const at = lines.indexOf(`    ${prop}:`)
+  const start = lines.indexOf(`      ${key}:`, at)
+  const out: string[] = []
+  for (const line of lines.slice(start + 1)) {
+    const m = /^ {8}- (\S+)$/.exec(line)
+    if (!m) break
+    out.push(m[1])
+  }
+  return out
+}
+
+const DIGEST = `blob-sha256-${"a".repeat(64)}`
+
 const fullImport: ImportDraft = {
   name: "results.csv",
-  format: "csv",
+  importer: "csv",
   status: "importing",
   runner: { device: "d", until: "2026-11-09T10:01:00Z" },
   lab: "Example Lab",
   source: "lab/example",
-  rows: [
-    {
-      key: "1",
-      report: "r1",
-      name: "LDL",
-      metric: "labs/ldl_cholesterol",
-      takenAt: "2026-11-01T08:00:00Z",
-      value: "2.6",
-      comparator: "<",
-      unit: "mmol/L",
-      text: "x",
-      low: "0",
-      high: "3",
-      flag: "H",
-    },
-  ],
-  reports: [{ key: "r1", takenAt: "2026-11-01T08:00:00Z", accession: "A1" }],
-  results: 0,
+  plan: DIGEST,
+  documents: [`blob-sha256-${"b".repeat(64)}`],
+  counts: { created: 3, updated: 2, unchanged: 1, stale: 1, left: 1 },
   problem: null,
   importedAt: null,
   skipped: null,
@@ -96,13 +108,26 @@ describe("the package's kinds", () => {
     const { properties, fields } = declared("import.yaml")
     const written = Import.write(fullImport)
     expect(Object.keys(written).sort()).toEqual([...properties].sort())
-    const row = (written.rows as Record<string, unknown>[])[0]
-    expect(Object.keys(row).sort()).toEqual([...fields.rows].sort())
-    const report = (written.reports as Record<string, unknown>[])[0]
-    expect(Object.keys(report).sort()).toEqual([...fields.reports].sort())
     expect(Object.keys(written.runner as object).sort()).toEqual(
       [...fields.runner].sort()
     )
+    expect(Object.keys(written.counts as object).sort()).toEqual(
+      [...fields.counts].sort()
+    )
+  })
+
+  it("names import.yaml's importers and states, in its order", () => {
+    expect(listed("import.yaml", "importer", "values")).toEqual(IMPORTER_IDS)
+    const states: ImportStatus[] = [
+      "staging",
+      "planned",
+      "importing",
+      "stopped",
+      "imported",
+      "undoing",
+      "undone",
+    ]
+    expect(listed("import.yaml", "status", "states")).toEqual(states)
   })
 
   it("reads back what it writes", () => {
@@ -122,9 +147,24 @@ describe("the package's kinds", () => {
       version: 3,
     })
     const i = Import.read(record(Import.kind, Import.write(fullImport)))
-    expect(i.rows[0]).toEqual(fullImport.rows[0])
-    expect(i.reports).toEqual(fullImport.reports)
-    expect(i.source).toBe("lab/example")
-    expect(i.status).toBe("importing")
+    expect(i).toMatchObject({
+      importer: "csv",
+      status: "importing",
+      source: "lab/example",
+      plan: DIGEST,
+      documents: fullImport.documents,
+      counts: fullImport.counts,
+      runner: fullImport.runner,
+    })
+    // A blob reference as served carries its manifest beside the digest.
+    const served = Import.read(
+      record(Import.kind, {
+        ...Import.write(fullImport),
+        plan: { digest: DIGEST, size: 10, status: "stored" },
+        documents: [{ digest: fullImport.documents[0] }],
+      })
+    )
+    expect(served.plan).toBe(DIGEST)
+    expect(served.documents).toEqual(fullImport.documents)
   })
 })
