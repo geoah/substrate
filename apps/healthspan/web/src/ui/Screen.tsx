@@ -15,9 +15,11 @@ import { go } from "../route"
 import { useShell } from "./shell"
 
 /** A screen's frame: the bar (Back, the actions, Settings on a phone), the
- * large title, the link's state and the kit's banners, then the content at
- * the screen's width. `wide` is for the card grids, which take what the
- * window gives them. */
+ * large title, the link's state and the kit's banners, the toolbar, then
+ * the content at the screen's width. `wide` is for the card grids, which
+ * take what the window gives them; `width` sets the card screens' column
+ * instead (Labs and Healthspan: `cards`, or `full` in their Wide view,
+ * the column `lib/display`'s `gridColumns` counts). */
 export function Screen(props: {
   title: ReactNode
   /** A line under the title. */
@@ -25,6 +27,12 @@ export function Screen(props: {
   back?: { label: string; onClick: () => void }
   actions?: ReactNode
   wide?: boolean
+  /** `cards`: at most 1088 px; `full`: the whole main area. Wins over
+   * `wide`. */
+  width?: "cards" | "full"
+  /** The filters and switches under the title, before the content: they
+   * wrap onto more lines rather than leave the screen. */
+  toolbar?: ReactNode
   /** Settings itself shows no Settings button. */
   noSettings?: boolean
   children: ReactNode
@@ -40,7 +48,13 @@ export function Screen(props: {
     <div
       className={cx(
         "mx-auto w-full",
-        props.wide ? "max-w-[1600px]" : "max-w-3xl",
+        props.width === "full"
+          ? "max-w-none"
+          : props.width === "cards"
+            ? "max-w-[1088px]"
+            : props.wide
+              ? "max-w-[1600px]"
+              : "max-w-3xl",
         shell.wide ? "pb-16" : "pb-32"
       )}
     >
@@ -63,6 +77,11 @@ export function Screen(props: {
         </p>
       )}
       {demo ? <DemoBanner /> : <LiveBanners />}
+      {props.toolbar && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 px-4">
+          {props.toolbar}
+        </div>
+      )}
       <div className="px-4">{props.children}</div>
     </div>
   )
