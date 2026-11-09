@@ -681,6 +681,10 @@ door and that trigger's parked list
   each declaration, only the implementors the token reads, so an app over
   every kind with a trait learns them without a scope on
   `substrate.reamde.dev/core/kind`;
+- `GET /api/v1/substrate.reamde.dev/core/kind/{kind}`, the kind percent-encoded,
+  answers the declaration of a kind the token reads, and `404` for any other,
+  so an app learns the label and the properties of a kind it was approved to
+  read;
 - inbound links, property provenance and expanded referents of other kinds
   are left out of every record it receives;
 - a trigger (`substrate.reamde.dev/core/trigger`, which only an exact scope
