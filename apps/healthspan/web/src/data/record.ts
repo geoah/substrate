@@ -6,7 +6,7 @@ import { useRead, useRecord, useSubstrate } from "@substrate/react"
 import { useCallback, useMemo } from "react"
 import { demoRecordRows } from "../demo/record"
 import { useDemoProfileRecord } from "../demo/profile"
-import { PROFILE_ID, Profile } from "../kinds"
+import { KIND, PROFILE_ID, Profile } from "../kinds"
 import {
   CLINICAL_KINDS,
   hasRows,
@@ -100,7 +100,9 @@ const RECORD_KEY = "healthspan/record"
 
 export const liveRecord: RecordData = recordData({
   useClinicalRecord: () =>
-    useRead(RECORD_KEY, readRecord, { kinds: CLINICAL_KINDS }),
+    useRead(RECORD_KEY, readRecord, {
+      kinds: [...CLINICAL_KINDS, KIND.import, KIND.source],
+    }),
   useSeenAt() {
     const profile = useRecord(Profile, PROFILE_ID)
     return {

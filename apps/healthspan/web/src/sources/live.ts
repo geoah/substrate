@@ -86,19 +86,35 @@ async function countsBySource(
   return out
 }
 
+/** The most groups a latest read may answer (the server's cap). */
+const LATEST_GROUP_CAP = 2000
+
 function useLiveSourceList(): Read<SourceSummary[]> {
   const records = useRead(
     "healthspan sources",
     (client, signal) => listFiltered(client, { kinds: SOURCE_KINDS }, signal),
     { kinds: SOURCE_KINDS }
   )
+  // One read per kind, at the server's group cap (a latest read answers one
+  // group per metric and source, and its default of 200 is passed by one
+  // repository's labs alone), the rows put together.
   const latest = useRead(
     "healthspan sources latest",
-    (client, signal) =>
-      client.aggregate(
-        { latest: true, groupBy: ["metric", "source"] },
-        { filter: { kinds: LATEST_KINDS }, signal }
-      ),
+    async (client, signal) => {
+      const answers = await Promise.all(
+        LATEST_KINDS.map((kind) =>
+          client.aggregate(
+            {
+              latest: true,
+              groupBy: ["metric", "source"],
+              budget: { maxGroups: LATEST_GROUP_CAP },
+            },
+            { filter: { kinds: [kind] }, signal }
+          )
+        )
+      )
+      return { ...answers[0], rows: answers.flatMap((a) => a.rows) }
+    },
     { kinds: LATEST_KINDS }
   )
   const counts = useRead(

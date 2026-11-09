@@ -411,6 +411,7 @@ class Run {
   private plan?: StoredPlan
   /** Setup created the provider's source in this run. */
   private sourceCreated = false
+  private sourceSetUp = false
   /** Whether a record outside the plan is there, by path. */
   private readonly exists = new Map<string, boolean>()
   private unitKey?: UnitKey
@@ -931,6 +932,7 @@ class Run {
       "The provider's source"
     )
     this.sourceCreated = tally === "created"
+    this.sourceSetUp = true
     await this.patch({ status: "importing", source: id })
   }
 
@@ -1111,20 +1113,23 @@ class Run {
       if (rec.namespace === OWN)
         tally = await this.writeOwn(rec.kind, id, { ...props, origin }, what)
       else if (rec.mode === "create") {
-        tally = await this.writeRecord(
-          rec.kind,
-          id,
-          dropNulls(props),
-          () => ({ kind: "unchanged" }),
-          what
-        )
-        if (
-          tally === "unchanged" &&
-          this.sourceCreated &&
-          plan.source &&
+        // The provider's source was written by this run's setup: writing it
+        // again would only meet it (a refused create, read back).
+        const setUp =
+          this.sourceSetUp &&
+          plan.source !== undefined &&
           keyOf(rec) === keyOf(plan.source)
-        )
-          tally = "created"
+        tally = setUp
+          ? this.sourceCreated
+            ? "created"
+            : "unchanged"
+          : await this.writeRecord(
+              rec.kind,
+              id,
+              dropNulls(props),
+              () => ({ kind: "unchanged" }),
+              what
+            )
       } else if (rec.mode === "merge") {
         tally = await this.writeRecord(
           rec.kind,

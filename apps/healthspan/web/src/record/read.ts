@@ -1,9 +1,12 @@
 // The clinical record (docs/plans/healthspan.md, The app: Record): one
 // list per clinical kind, all small, from every provider that writes them.
-// A provider keeps its upstream's ids as `<provider>/<account>/<id>`
-// (docs/clinical.md), so a row's provider is its id's first segment, and
-// it is named from the records: the service of its patient registration,
-// else the care provider its rows name most. Nothing here names one.
+// A row's provider is the source of the import that created it, where an
+// import did (its `origin`: an import's records have minted ids, which say
+// nothing of who wrote them); else, for a provider that keeps its
+// upstream's ids as `<provider>/<account>/<id>` (docs/clinical.md), the
+// id's first segment. It is named by that source's name, else the service
+// of its patient registration, else the care provider its rows name most.
+// Nothing here names one.
 
 import { SubstrateError, parseReference } from "@substrate/client"
 import type { SubstrateClient, SubstrateRecord } from "@substrate/client"
@@ -88,6 +91,10 @@ export interface ClinicalRecord {
   /** Patient registrations, by id order. Empty where the repository has
    * none. */
   patients: PatientRegistration[]
+  /** Each patient registration's provider (`providerOf`). */
+  patientProviders: ReadonlyMap<string, string>
+  /** A source's id to its name, for a provider an import's source is. */
+  sourceNames: ReadonlyMap<string, string>
 }
 
 function str(v: unknown): string | undefined {
@@ -106,16 +113,44 @@ function refTo(v: unknown, kind: string): string | undefined {
   return ref?.kind === kind ? ref.id : undefined
 }
 
-export function providerOf(id: string): string {
-  return id.split("/")[0]
+/** Which import wrote a record, and its source's name: what names a
+ * provider whose records' ids are minted. */
+export interface Provenance {
+  /** An import's id to its source's id. */
+  importSources: ReadonlyMap<string, string>
+  /** A source's id to its name. */
+  sourceNames: ReadonlyMap<string, string>
 }
 
-export function toRow(kind: RowKind, r: SubstrateRecord): ClinicalRow {
+const IMPORT_KIND = "substrate.reamde.dev/healthspan/import"
+const SOURCE_KIND = "substrate.reamde.dev/observations/source"
+const NO_PROVENANCE: Provenance = {
+  importSources: new Map(),
+  sourceNames: new Map(),
+}
+
+/** A record's provider: `source:<id>` for one an import created, else its
+ * id's first segment. */
+export function providerOf(
+  r: { id: string; properties?: Record<string, unknown> },
+  prov: Provenance = NO_PROVENANCE
+): string {
+  const imported = refTo(r.properties?.origin, IMPORT_KIND)
+  const source = imported && prov.importSources.get(imported)
+  if (source) return `source:${source}`
+  return r.id.split("/")[0]
+}
+
+export function toRow(
+  kind: RowKind,
+  r: SubstrateRecord,
+  prov: Provenance = NO_PROVENANCE
+): ClinicalRow {
   const p = r.properties
   return {
     id: r.id,
     kind,
-    provider: providerOf(r.id),
+    provider: providerOf(r, prov),
     organization: refTo(p.organization, `${CLINICAL}/organization`),
     at: str(p.at),
     arrivedAt: (r.version ?? 1) > 1 ? r.updatedAt : r.createdAt,
@@ -135,14 +170,15 @@ export function toRow(kind: RowKind, r: SubstrateRecord): ClinicalRow {
 }
 
 export function toRecord(
-  lists: Partial<Record<string, SubstrateRecord[]>>
+  lists: Partial<Record<string, SubstrateRecord[]>>,
+  prov: Provenance = NO_PROVENANCE
 ): ClinicalRecord {
   const rows = {} as ClinicalRecord["rows"]
   for (const k of RECORD_KINDS) {
     if (k === "organization" || k === "patient") continue
     rows[k] = (lists[k] ?? [])
       .filter((r) => !r.deletedAt)
-      .map((r) => toRow(k, r))
+      .map((r) => toRow(k, r, prov))
       .sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""))
   }
   const organizations = new Map(
@@ -151,11 +187,16 @@ export function toRecord(
       { id: r.id, name: str(r.properties.name) ?? str(r.title) ?? r.id },
     ])
   )
-  const patients = (lists.patient ?? [])
-    .filter((r) => !r.deletedAt)
-    .map(patientOf)
-    .sort((a, b) => a.id.localeCompare(b.id))
-  return { rows, organizations, patients }
+  const live = (lists.patient ?? []).filter((r) => !r.deletedAt)
+  const patients = live.map(patientOf).sort((a, b) => a.id.localeCompare(b.id))
+  const patientProviders = new Map(live.map((r) => [r.id, providerOf(r, prov)]))
+  return {
+    rows,
+    organizations,
+    patients,
+    patientProviders,
+    sourceNames: prov.sourceNames,
+  }
 }
 
 /** Every row the record lists, of every kind. */
@@ -186,13 +227,16 @@ export function providersOf(rec: ClinicalRecord): Provider[] {
   }
   return [...counts.entries()]
     .map(([id, named]) => {
+      const source = id.startsWith("source:")
+        ? rec.sourceNames.get(id.slice("source:".length))
+        : undefined
       const service = rec.patients.find(
-        (p) => providerOf(p.id) === id && p.service
+        (p) => rec.patientProviders.get(p.id) === id && p.service
       )?.service
       const most = [...named.entries()].sort(
         (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
       )[0]?.[0]
-      return { id, name: service ?? most ?? id }
+      return { id, name: source ?? service ?? most ?? id }
     })
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
@@ -236,6 +280,24 @@ export async function readRecord(
     if (refused(e)) return toRecord({})
     throw e
   }
+  const [imports, sources] = await Promise.all([
+    client.listAll({ kinds: [IMPORT_KIND] }, 5000, signal),
+    client.listAll({ kinds: [SOURCE_KIND] }, 5000, signal),
+  ])
+  const prov: Provenance = {
+    importSources: new Map(
+      imports.records.flatMap((r) => {
+        const source = refTo(r.properties.source, SOURCE_KIND)
+        return source ? [[r.id, source] as const] : []
+      })
+    ),
+    sourceNames: new Map(
+      sources.records.flatMap((r) => {
+        const name = str(r.properties.name)
+        return name ? [[r.id, name] as const] : []
+      })
+    ),
+  }
   const lists = await Promise.all(
     RECORD_KINDS.map(async (k) => {
       try {
@@ -251,7 +313,10 @@ export async function readRecord(
       }
     })
   )
-  return toRecord(Object.fromEntries(RECORD_KINDS.map((k, i) => [k, lists[i]])))
+  return toRecord(
+    Object.fromEntries(RECORD_KINDS.map((k, i) => [k, lists[i]])),
+    prov
+  )
 }
 
 /** `P18W` -> days; undefined when the duration is not one this reads. */
