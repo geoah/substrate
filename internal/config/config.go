@@ -205,6 +205,15 @@ type Config struct {
 	// ingress. The instruments record either way; this is only the door.
 	Metrics bool `envconfig:"SUBSTRATE_METRICS" default:"false"`
 
+	// MetricsAnonymize hashes the names the usage series carry: the
+	// repository, and every kind, package, function, agent and provider row
+	// outside the shipped vocabulary, keyed by the credential key so the
+	// hashes are stable across restarts and unreadable without it. ON by
+	// default: the usage series say what each person does, and a deployment
+	// whose operator should read that (one person's own box, or friends who
+	// agreed to it) turns it off.
+	MetricsAnonymize bool `envconfig:"SUBSTRATE_METRICS_ANONYMIZE" default:"true"`
+
 	// TrustedProxies lists the reverse proxies in front of the server, as
 	// comma-separated CIDRs or addresses. A request whose transport peer is
 	// one of them is paced by the client its X-Forwarded-For names (read

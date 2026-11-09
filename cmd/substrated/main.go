@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
@@ -228,6 +230,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// Before the engine opens: the boot's own writes are counted, and their
+	// labels follow the policy. The config already held the key to 32 bytes
+	// of base64.
+	credKey, _ := base64.StdEncoding.DecodeString(cfg.CredentialKey)
+	metrics.SetUsageLabels(cfg.MetricsAnonymize, credKey)
 
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),

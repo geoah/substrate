@@ -240,6 +240,7 @@ func New(cfg Config) http.Handler {
 	}
 	h.setups = appsetup.NewRunner(h.packages)
 	h.mcp = mcp.NewServer("substrate", build.Version())
+	h.mcp.OnToolCall = countMCPToolCall
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
 	}

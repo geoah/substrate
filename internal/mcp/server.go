@@ -80,6 +80,9 @@ type Response struct {
 type Server struct {
 	name, version string
 	tools         []Tool
+	// OnToolCall, when set, hears every tool call the door answered, by the
+	// tool's name and whether its result is an error.
+	OnToolCall func(ctx context.Context, tool string, failed bool)
 }
 
 // NewServer is the door with the substrate's tool set.
@@ -191,7 +194,12 @@ func (s *Server) Handle(ctx context.Context, api API, body []byte, versionHeader
 		if i < 0 {
 			return answerError(http.StatusOK, m.ID, codeInvalidParams, "no tool named "+p.Name)
 		}
-		return answer(m.ID, s.call(ctx, api, s.tools[i], p.Arguments))
+		out := s.call(ctx, api, s.tools[i], p.Arguments)
+		if s.OnToolCall != nil {
+			failed, _ := out["isError"].(bool)
+			s.OnToolCall(ctx, p.Name, failed)
+		}
+		return answer(m.ID, out)
 	default:
 		return answerError(http.StatusOK, m.ID, codeMethodNotFound, "method "+m.Method+" is not served")
 	}

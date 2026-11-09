@@ -465,6 +465,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	// The operator's install list runs inside the registration, so a person
 	// signs in to the providers the operator gives them already there.
 	s.openForOperatorInstalls(ctx, repo)
+	countAuth(repo.ID, "registered")
 	return out, nil
 }
 
@@ -616,6 +617,10 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	var zero substrate.TokenInfo
 	repo, _, err := s.verifyFactors(ctx, in)
 	if err != nil {
+		// Only under a name that exists, so a guessed one adds no series.
+		if errors.Is(err, substrate.ErrAuth) && s.repositoryExists(ctx, in.Repository) {
+			countAuth(in.Repository, "login_failed")
+		}
 		return zero, "", err
 	}
 	ds, err := s.open(ctx, repo)
@@ -626,7 +631,11 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	if label == "" {
 		label = "login"
 	}
-	return ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
+	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
+	if err == nil {
+		countAuth(repo.ID, "login")
+	}
+	return info, secret, err
 }
 
 // ChangePassword rewrites the password hash. It takes the CURRENT password
@@ -695,6 +704,7 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	s.lease.release(repo.ID)
 	s.unitGraphs.forget(repo.ID)
 	s.log.Info("substrate: repository deleted by its owner", "repository", repo.ID)
+	forgetUsage(repo.ID)
 	return nil
 }
 

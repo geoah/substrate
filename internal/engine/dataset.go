@@ -321,10 +321,13 @@ type dataset struct {
 	// row that can no longer be written would otherwise warn on every agent
 	// write for the life of the process.
 	warnedPolicies sync.Map
-	// unregisterMetrics drops this pool's sql.DBStats collector and the
-	// webhook spool's gauges on close; nil on a dataset that never
-	// registered them (creation's seed dataset).
+	// unregisterMetrics drops this pool's sql.DBStats collector, the
+	// webhook spool's gauges and the usage inventory on close; nil on a
+	// dataset that never registered them (creation's seed dataset).
 	unregisterMetrics func()
+	// usage is the repository's last inventory reading for the usage gauges
+	// (usagemetrics.go).
+	usage usageInventory
 
 	// reindexFrom is the search index version the open found below this
 	// binary's (searchindex.go checkSearchIndex); zero when the index is
@@ -830,6 +833,10 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	}
 	if t.changeSink != nil && len(t.entries) > 0 {
 		*t.changeSink = append(*t.changeSink, t.entries...)
+	}
+	// A replay re-derives history that was counted when it was written.
+	if !t.replaying {
+		ds.countChanges(t.pending)
 	}
 	for _, fn := range t.afterCommit {
 		fn()

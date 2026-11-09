@@ -636,6 +636,9 @@ type service struct {
 	// shippedRecords are the data records the shipped tree carries beside its
 	// declarations, in file order; none for a service built from a registry.
 	shippedRecords []vocabulary.ShippedRecord
+	// shippedModels are the model ids the shipped llm/model records name:
+	// public, so the usage series show them in clear (usagemetrics.go).
+	shippedModels map[string]bool
 	// bulkSeed writes a seed the repository holds none of in one bulk run
 	// (bulkwrite.go); off only under the test seam WithTestPerRecordSeed.
 	bulkSeed bool
@@ -913,6 +916,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedUnits:        o.seedUnits,
 		seedRecords:      o.seedRecords,
 		shippedRecords:   shippedRecords,
+		shippedModels:    shippedModelIDs(shippedRecords),
 		bulkSeed:         !o.perRecordSeed,
 		log:              o.log,
 		bg:               newBackground(),
@@ -1490,7 +1494,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// reopened publishes its live pool and not the one it let go.
 	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
 	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
-	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool() }
+	unregisterInventory := metrics.RegisterInventory(repo.ID, ds.inventory)
+	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory() }
 	return ds, nil
 }
 
