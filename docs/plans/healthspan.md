@@ -169,12 +169,13 @@ enough to resume on any device and to undo ([Importers](#importers)).
 | --- | --- | --- |
 | `name` | string, required | the file's or the folder's name, or "Entered by hand" |
 | `importer` | enum `csv`, `manual`, `numan`, `randox`, `dxa`, `nhs`, `mychart` | which importer read it; a new importer is a new value |
-| `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; `planned`, `importing`, `stopped`, `imported` → `undoing` → `undone`; `undone` → `undoing`, to clean up what landed late |
+| `status` | state | `staging` → `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; `staging`, `planned`, `importing`, `stopped`, `imported` → `undoing` → `undone`; `undone` → `undoing`, to clean up what landed late |
 | `runner` | object | the lease of the browser running it: a device id the browser minted, and `until`, a datetime |
 | `lab` | string | for a CSV or a hand entry: the lab's name as the file or the owner gave it, which names its source where none exists yet |
 | `source` | reference to `observations/source` | the provider the results are from, where one source stands for the import |
-| `plan` | blobref | the plan, as JSON: every record the import writes, its key, kind, properties, references by key and revision, and every document's bytes by digest |
-| `counts` | object | what the run did so far: `created`, `updated` (a revision-only write counts here, as the scripts count it), `unchanged`, `stale` and `left` (ints) |
+| `plan` | blobref | the plan, as JSON: every record the import writes, its key, kind, properties, references by key and revision, and every document by its digest |
+| `documents` | repeated blobref | every document the plan writes, named here so the server keeps it until the records that name it are written |
+| `counts` | object | what the latest run did: `created`, `updated` (a revision-only write counts here, as the scripts count it), `unchanged`, `stale` and `left` (ints) |
 | `problem` | string | why it stopped |
 | `importedAt` | datetime | when it finished |
 | `skipped` | markdown | what the importer left out and why |
@@ -185,17 +186,25 @@ records); the plan as serialized is held to the blob limit, 64 MiB, and
 each record write to 1 MiB. The plan names every document by its digest and
 holds no document bytes.
 
-**Staging.** Until the import record exists nothing is resumable from
-another device, because a token reads only a blob some record it reads
-names. So the import is staged from this browser, kept in its IndexedDB
-until the record is confirmed: its id is minted here; every document's
-bytes go up as blobs (a PUT by digest, which is idempotent); the plan goes
-up; then the import record is a PUT at `ifVersion: 0` under the minted id
-naming the plan, and a 409 reads the row and takes it where it names the
-same plan digest. A page closed before then offers, on its next open in
-this browser, to finish staging or to drop it. Once the record exists, any
-device resumes it from the plan, and every document it writes is already
-up.
+**Staging.** The server keeps a blob only while a live record names it
+through a `blobref` (a digest inside the plan's JSON is not one), and
+collects an unnamed blob a minute after its upload. So the import record is
+written first and names every blob as it goes up, from the browser that
+read the files, which keeps the bytes in its IndexedDB until staging ends:
+
+1. the import record, a PUT at `ifVersion: 0` under an id minted here, in
+   `staging` (a 409 reads it: this browser's own staging continues);
+2. the documents, a few at a time: each batch's blobs go up (a PUT by
+   digest, idempotent) and one guarded patch then adds their digests to
+   `documents`, within the minute;
+3. the plan goes up, and one guarded patch names it as `plan` and moves the
+   import to `planned`.
+
+A page closed during staging offers, on its next open in this browser, to
+finish it or to discard it; another device sees a staging import and can
+only discard it (Undo, which deletes the record, and the server then
+collects its blobs). From `planned` on, any device resumes it: the plan and
+every document are named by the record, so none is collected.
 
 Every record an import creates carries `origin` set to the import, but a
 source and an organization, which declare no `origin` or are shared
@@ -300,11 +309,16 @@ both win a transition.
   bounds when (What is left, below). A renewal refused (the version moved:
   another browser took over, or the owner pressed Undo) stops it at once. A Web Lock per import keeps
   two tabs of one browser from contending.
-- **Setup** (from `planned`): the lab's source is a lab source already
-  named as the import's `lab`, else a PUT at `ifVersion: 0` under the id
-  derived from the lab's name (lowercased and hyphenated); a 409 reads the
-  row and takes it where it is of class `lab`, and otherwise derives the
-  next id. Then the import moves to `importing`.
+- **Setup** (from `planned`): for a CSV or a hand entry, the lab's source
+  is a lab source already named as the import's `lab`, else a PUT at
+  `ifVersion: 0` under the id derived from the lab's name (lowercased and
+  hyphenated); a 409 reads the row and takes it where it is of class `lab`,
+  and otherwise derives the next id. For a provider import, the source is
+  the provider's own, `healthspan/source/<namespace>` ([Sources and
+  organizations](#importers)): created where absent with the plan's name
+  and class, taken as it is where present, whatever the owner renamed it
+  to. Either way the import names it as `source`, and moves to
+  `importing`.
 - **Writing** (in `importing`): the plan's records in its order (sources
   and organizations, then each report and its results, then the clinical
   records, a record after every record it names), each a PUT at
@@ -321,7 +335,11 @@ both win a transition.
   `planned` runs setup; `stopped` first moves to `importing` in the patch
   that takes the lease, then runs the writing; `importing` runs the writing
   from the start (what landed answers 409 and compares equal); `undoing`
-  runs the undo again.
+  runs the undo again. `counts` are the latest run's: a run starts them at
+  zero, and a record an earlier run wrote (its answer lost, or the page
+  closed before the counts were saved) counts `unchanged` in the run that
+  meets it again. What an import created, whatever its runs counted, is what
+  points at it through `origin`, which Sources counts and shows.
 - **Undo** is best-effort reconciliation, not a fence. It takes the lease
   as above (waiting out a live one, which the page shows), moves the import
   to `undoing` in that patch, and waits until the previous lease's `until`
@@ -479,11 +497,16 @@ key, so its records keep the import's own ids, as today.
   source.
 - An organization is `healthspan/ods/<ODS code>`, one id whatever importer
   meets it, so the NHS App's GP practice and MyChart's naming of the same
-  practice are one record. It is merged, never replaced: its identifiers are
-  the union of every importer's (by system and value), and every other
-  field is written only where the stored record has none, so an importer
-  that knows no address never clears one another wrote. Undo never deletes
-  one.
+  practice are one record. It is merged, never replaced, and outside the
+  revision decision: its identifiers are the union of every importer's (by
+  system and value), and every other field is written only where the
+  stored record has none, whatever either side's revision, so an older
+  export may still add an address a newer one lacked, and an importer that
+  knows no address never clears one another wrote. Its `revision` (the
+  kind binds `core/revised`, which refuses a lower one) is raised to the
+  plan's where the plan's is higher, and otherwise left out of the write. A
+  merge that adds anything or raises the revision counts `updated`, else
+  `unchanged`; an organization is never `stale`. Undo never deletes one.
 - A report's `review` is written when the report is created and never
   again, as the scripts do: the owner's review stands.
 
@@ -835,7 +858,13 @@ screenshot script captures only the demo.
   decided again); a source written once and an owner's edit of it kept;
   one organization from the NHS App then MyChart and the other way round,
   identifiers merged, an address kept; a report's `review` kept; staging
-  interrupted before the record and finished on the next open; Undo of the
+  interrupted after the record and before the plan, finished in the same
+  browser, discarded from another, a document's blob kept by `documents`
+  past the collector's minute; a lost answer and a page closed before the
+  counts were saved, the next run counting `unchanged` and Sources counting
+  by `origin`; a provider source taken as it is after the owner renamed it;
+  an organization merged from an older export after a newer one, and the
+  other way round; Undo of the
   later and of the earlier of two imports of one provider, deleting only
   what each created and never a source or an organization. On the owner's
   machine only, every importer's plan against the scripts' offline output
@@ -950,3 +979,11 @@ One pull request, built in this order:
   the tree and the differences from the scripts named, with the NHS App's
   historic results and prescription statuses taken in; `counts` in place of
   `results` through the runner.
+- **Astra, the importers' second draft: rework.** Taken: the import record
+  is written first, in a new `staging` state, and names every document blob
+  in `documents` as it goes up, so the collector never takes one; an
+  organization's merge is outside the revision decision, may take an older
+  export's missing field, raises its revision only upward and is never
+  stale; a provider import's setup takes its own source by id, never by
+  the lab's name; `counts` are the latest run's, and what an import created
+  is counted by `origin`.
