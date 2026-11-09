@@ -15,9 +15,9 @@ data:
   authority: substrate.reamde.dev
   package: tasks
   description: >-
-    How Substrate Tasks shows one collection of your tasks: whether it is on,
-    what it groups by, and which of its properties the app reads as the due
-    date, the priority and the order.
+    How Substrate Tasks shows one collection of your tasks: whether it is
+    on, what it groups by, and which of its properties the app reads as the
+    due date, the priority and the order.
   purpose: supporting
   names:
     singular: collection
@@ -29,8 +29,7 @@ data:
     kind:
       type: string
       required: true
-      description: the collection's kind, by its full reference, such as
-        substrate.reamde.dev/tasks/task
+      description: the collection's kind, by its full reference, such as substrate.reamde.dev/tasks/task
     enabled:
       type: bool
       description: whether Substrate Tasks shows the collection
