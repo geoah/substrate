@@ -327,7 +327,7 @@ both win a transition.
   `ifVersion: 0` under the id derived from the lab's name (lowercased and
   hyphenated); a 409 reads the row and takes it where it is of class `lab`,
   and otherwise derives the next id. For a provider import, the source is
-  the provider's own, `healthspan/source/<namespace>` ([Sources and
+  the provider's own, keyed by its namespace ([Sources and
   organizations](#importers)): created where absent with the plan's name
   and class, taken as it is where present, whatever the owner renamed it
   to. Either way the import names it as `source`, and moves to
@@ -503,12 +503,14 @@ key, so its records keep the import's own ids, as today.
 **Sources and organizations** are shared, and written once.
 
 - A source (`observations/source`, which declares no `origin` or
-  `revision`) is `healthspan/source/<namespace>`, created where absent with
+  `revision`) is keyed by its provider's namespace under the namespace
+  `source` (so its id derives from `healthspan/source/source/<namespace>`), created where absent with
   its name and class from the data or from the import screen's questions,
   and never written again: the owner's later edits of its name and its
   ranks stand, and Undo never deletes it, as the scripts never rewrite a
   source.
-- An organization is `healthspan/ods/<ODS code>`, one id whatever importer
+- An organization is keyed by its ODS code under the namespace `ods` (its
+  id derives from `healthspan/ods/organization/<ODS code>`), one id whatever importer
   meets it, so the NHS App's GP practice and MyChart's naming of the same
   practice are one record. It is merged, never replaced, and outside the
   revision decision: its identifiers are the union of every importer's (by
