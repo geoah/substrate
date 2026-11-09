@@ -101,3 +101,52 @@ export function readJson<A>(
     Effect.flatMap((value) => decodeValue(schema, value, file.path))
   )
 }
+
+/** A JSON integer that may be past what a float holds exactly (16 digits
+ * or more), outside a string: a string is matched first and kept whole, so
+ * digits inside one are never read as a number. */
+const BIG = /"(?:[^"\\]|\\.)*"|(?<![\d.eE+-])(-?\d{16,})(?![\d.eE])/g
+const MARK = "\u0000bigint:"
+/** The mark as JSON text writes it inside a string. */
+const MARK_JSON = "\\u0000bigint:"
+
+function revive(_: string, v: unknown): unknown {
+  return typeof v === "string" && v.startsWith(MARK)
+    ? BigInt(v.slice(MARK.length))
+    : v
+}
+
+/** Text parsed as JSON with every integer a float cannot hold exactly kept
+ * whole as a `bigint`, as Python's reader keeps it (the GP system's code
+ * ids run to 18 digits); every other number is a `number`, as `parseJson`
+ * gives it. `Unreadable` naming `path` where it is not JSON. */
+export function parseJsonLossless(
+  text: string,
+  path: string
+): Effect.Effect<unknown, ImportError> {
+  const marked = text.replace(BIG, (whole, digits: string | undefined) =>
+    digits !== undefined && !Number.isSafeInteger(Number(digits))
+      ? `"${MARK_JSON}${digits}"`
+      : whole
+  )
+  return Effect.try({
+    try: () =>
+      (marked === text
+        ? JSON.parse(text)
+        : JSON.parse(marked, revive)) as unknown,
+    catch: () => unreadable(path, "the file is not JSON"),
+  })
+}
+
+/** A JSON file decoded by `schema`, its integers past what a float holds
+ * exactly read whole as `bigint` (`parseJsonLossless`): the schema takes
+ * such a field as `Schema.BigInt`, or with text and numbers in a union. */
+export function readJsonLossless<A>(
+  schema: Schema.Decoder<A>,
+  file: InputFile
+): Effect.Effect<A, ImportError> {
+  return readText(file).pipe(
+    Effect.flatMap((text) => parseJsonLossless(text, file.path)),
+    Effect.flatMap((value) => decodeValue(schema, value, file.path))
+  )
+}

@@ -152,9 +152,17 @@ function bound(
   return v === undefined ? undefined : quantity(v, unit)
 }
 
+/** Whether a band says anything in words: a label, a word of its own, a
+ * detail or the coded result it expects. */
+function hasWords(band: Band): boolean {
+  return !!(band.lab || band.word || band.detail || band.expected)
+}
+
 /** The ranges of bands with no tone, in a reader's order: the normal or
  * optimal band first, a provider's own range last. A band whose own unit
- * no fixed factor moves into the value's is left out, with a note. */
+ * no fixed factor moves into the value's is left out, with a note; a band
+ * with no bound written and no words is dropped, and one with words alone
+ * (beside a value kept as received or written as words) keeps them. */
 export function plainRanges(
   bands: readonly Band[],
   units: RangeUnits
@@ -181,7 +189,7 @@ export function plainRanges(
     const high = bound(band.high, unit, factor)
     if (low) range.low = low
     if (high) range.high = high
-    if (!low && !high && !band.expected && !band.lab) continue
+    if (!low && !high && !hasWords(band)) continue
     const key = `${boundKey(range)}\u0000${bandText(band)}`
     if (seen.has(key)) continue
     seen.add(key)

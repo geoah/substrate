@@ -115,8 +115,8 @@ string or a `{text}`), the non-empty ones joined by a space, else its
 when the algorithm flags nothing, is the coded word `none`.
 
 **Its unit** is its `units` as printed, read through the shared unit table.
-The percentage of nucleated red cells prints `.` for a percent, so that
-term's `.` is read as `%`. Its **range** is one band labelled `lab` (the
+The percentage of nucleated red cells prints `.` for a percent, which the
+table's override for `nucleated_red_cells_per_100_wbc` reads as `%`. Its **range** is one band labelled `lab` (the
 range's word `normal`) from `range.minimum` and `range.maximum` where either
 is given; `range.units` is not read. A value has no flag and no specimen.
 Its **method** is `self reported` where its term starts with

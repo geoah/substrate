@@ -101,9 +101,10 @@ export function clinicalBand(o: Measurement): Band | undefined {
   } else if (/^<\s*([0-9.]+)$/.test(s)) high = strip(s.replace(/^<+/, ""))
   else if (/^>\s*([0-9.]+)$/.test(s)) low = strip(s.replace(/^>+/, ""))
   if (low === null && high === null) return undefined
-  // Numan's own word for it is `normal_value`: labelled so, the band keeps
-  // its words where its bounds cannot be written (a value kept as received)
-  return { low, high, lab: "normal", detail: "Numan clinical range", unit }
+  // Numan gives it no label: its word is `normal` (it is `normal_value`),
+  // which it keeps with its detail where its bounds cannot be written (a
+  // value kept as received)
+  return { low, high, word: "normal", detail: "Numan clinical range", unit }
 }
 
 /** Hurdle's bands from its rule (`{"NORMAL": ["<3.0"], "HIGH":

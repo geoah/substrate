@@ -258,6 +258,34 @@ describe("plain ranges", () => {
     expect(notes).toEqual(["the range in nmol/L has no fixed factor to ug/L"])
   })
 
+  it("keeps the words of a band with no label and no bound written", () => {
+    // Numan's clinical range: a word and a detail, no label of its own.
+    const clinical: Band = {
+      word: "normal",
+      detail: "Numan clinical range",
+      low: "1",
+      high: "3",
+      unit: "mmol/L",
+    }
+    // Beside a value kept as received its bounds are not written.
+    expect(plainRanges([clinical], { units }).ranges).toEqual([
+      { text: "normal: Numan clinical range" },
+    ])
+    // A word or a detail alone is words too; a band with neither is dropped.
+    expect(
+      plainRanges([{ word: "optimal" }, { detail: "own range" }, {}], { units })
+        .ranges
+    ).toEqual([{ text: "optimal" }, { text: "normal: own range" }])
+    // Its bounds are written where the value's unit is known.
+    expect(plainRanges([clinical], { ucum: "mmol/L", units }).ranges).toEqual([
+      {
+        low: { value: "1", unit: "mmol/L" },
+        high: { value: "3", unit: "mmol/L" },
+        text: "normal: Numan clinical range",
+      },
+    ])
+  })
+
   it("keeps a band once and drops one with neither bounds nor a word", () => {
     const { ranges } = plainRanges(
       [

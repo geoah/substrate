@@ -4,7 +4,14 @@
 
 import { Effect, Schema } from "effect"
 import { sha256 } from "../../ids"
-import { hex, parseJson, readJson, readText, decodeValue } from "../shared"
+import {
+  decodeValue,
+  hex,
+  parseJson,
+  parseJsonLossless,
+  readJson,
+  readText,
+} from "../shared"
 import type { ImportError, Input, InputFile } from "../types"
 import { Manifest } from "./schemas"
 
@@ -110,7 +117,10 @@ export class Folder {
       .sort((a, b) => byCodePoint(a.stem, b.stem))
   }
 
-  /** Every item of a resource decoded, by its stem, in file name order. */
+  /** Every item of a resource decoded, by its stem, in file name order,
+   * with its JSON as read. That JSON is kept whole (a lab order's is its
+   * report's file), so it is read losslessly: an integer past what a float
+   * holds exactly is a `bigint`, never rounded. */
   decodeItems<A>(
     resource: string,
     schema: Schema.Decoder<A>
@@ -120,7 +130,7 @@ export class Folder {
   > {
     return Effect.forEach(this.items(resource), (item) =>
       readText(item.file).pipe(
-        Effect.flatMap((t) => parseJson(t, item.file.path)),
+        Effect.flatMap((t) => parseJsonLossless(t, item.file.path)),
         Effect.flatMap((raw) =>
           decodeValue(schema, raw, item.file.path).pipe(
             Effect.map((value) => ({

@@ -20,6 +20,7 @@ import {
   NHS_NUMBER_SYSTEM,
   numberedKeys,
   organizationKey,
+  organizationRecordAt,
   parseClock,
   parseIso,
   plannedDocument,
@@ -347,19 +348,18 @@ export function readClinical(
         ? lines.pop()!
         : null
     const city = lines.length > 1 ? lines.pop()! : null
-    const properties: Record<string, unknown> = {
-      name: p.name || "Pharmacy",
-      type: "pharmacy",
-    }
-    const where =
-      lines.length || postcode ? address(lines, city, postcode) : null
-    if (where) properties.address = where
-    pharmacies.set(p.id, {
-      ...recordKey(KINDS.organization, ns, `pharmacy/${p.id}`),
-      mode: "merge",
-      properties,
-      revision: ctx.revision,
-    })
+    pharmacies.set(
+      p.id,
+      organizationRecordAt(
+        { namespace: ns, key: `pharmacy/${p.id}` },
+        {
+          name: p.name || "Pharmacy",
+          type: "pharmacy",
+          address: address(lines, city, postcode),
+        },
+        ctx.revision
+      )
+    )
   }
   organizations.push(...pharmacies.values())
 

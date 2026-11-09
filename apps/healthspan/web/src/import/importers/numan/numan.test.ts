@@ -430,7 +430,7 @@ describe("Numan's clinical range", () => {
     expect(band("0.0 - 3.0")).toEqual({
       low: "0.0",
       high: "3.0",
-      lab: "normal",
+      word: "normal",
       detail: "Numan clinical range",
       unit: "mmol/L",
     })

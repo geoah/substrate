@@ -8,7 +8,7 @@ import {
   decodeValue,
   readBytes,
   readJson,
-  readText,
+  readJsonLossless,
   unreadable,
 } from "../shared"
 import type { ImportError, Input, InputFile } from "../types"
@@ -123,53 +123,16 @@ export function runFile(
       )
 }
 
-/** A JSON integer past what a float holds exactly (the GP system's code
- * ids run to 18 digits), outside a string. */
-const BIG = /"(?:[^"\\]|\\.)*"|(?<![\d.eE+-])(-?\d{16,})(?![\d.eE])/g
-const MARK = "\u0000bigint:"
-/** The mark as JSON text writes it inside a string. */
-const MARK_JSON = "\\u0000bigint:"
-
-function revive(_: string, v: unknown): unknown {
-  return typeof v === "string" && v.startsWith(MARK)
-    ? BigInt(v.slice(MARK.length))
-    : v
-}
-
-/** JSON text parsed with every integer a float cannot hold exactly kept as
- * a `bigint`, as Python's reader keeps it; `Unreadable` where it is not
- * JSON. */
-export function parseLossless(
-  text: string,
-  path: string
-): Effect.Effect<unknown, ImportError> {
-  const marked = text.replace(BIG, (whole, digits: string | undefined) =>
-    digits !== undefined && !Number.isSafeInteger(Number(digits))
-      ? `"${MARK_JSON}${digits}"`
-      : whole
-  )
-  return Effect.try({
-    try: () =>
-      (marked === text
-        ? JSON.parse(text)
-        : JSON.parse(marked, revive)) as unknown,
-    catch: () => unreadable(path, "the file is not JSON"),
-  })
-}
-
-/** A response's JSON body, undefined where it has none. */
+/** A response's JSON body, undefined where it has none. The GP system's
+ * code ids run to 18 digits, so the body is read losslessly: an integer a
+ * float cannot hold exactly is a `bigint`. */
 export function bodyOf(
   run: Run,
   entry: ResponseEntry
 ): Effect.Effect<unknown, ImportError> {
   return runFile(run, entry.file).pipe(
-    Effect.flatMap((file) =>
-      readText(file).pipe(
-        Effect.flatMap((text) => parseLossless(text, file.path)),
-        Effect.flatMap((v) => decodeValue(Envelope, v, file.path)),
-        Effect.map((e) => e.body)
-      )
-    )
+    Effect.flatMap((file) => readJsonLossless(Envelope, file)),
+    Effect.map((e) => e.body)
   )
 }
 

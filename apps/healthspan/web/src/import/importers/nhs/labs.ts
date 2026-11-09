@@ -105,14 +105,6 @@ export const NHS_TERMS: Readonly<Record<string, AnalyteRef>> = {
   "AKI warning stage": { metric: "labs/aki_warning_stage" },
 }
 
-/** A unit one term prints otherwise than the shared table reads it: the
- * percentage of nucleated red cells prints `.` for a percent. */
-export const TERM_UNITS: Readonly<
-  Record<string, Readonly<Record<string, string>>>
-> = {
-  "Percentage nucleated RBCs": { ".": "%" },
-}
-
 const COMPARATORS: Readonly<Record<string, Comparator>> = {
   "<": "<",
   ">": ">",
@@ -173,7 +165,6 @@ export function testRows(
     const max = bound(v.range?.maximum)
     const bands: Band[] =
       min !== null || max !== null ? [{ low: min, high: max, lab: "lab" }] : []
-    const unit = v.units ?? null
     rows.push({
       key: `${t.id}/${v.term}`,
       analyte,
@@ -185,7 +176,7 @@ export function testRows(
       value: digits,
       comparator,
       text: digits ? null : said(v, display),
-      unit: (unit !== null && TERM_UNITS[v.term]?.[unit]) || unit,
+      unit: v.units ?? null,
       bands,
       method: v.term.startsWith("Self reported") ? "self reported" : null,
       upstreamId: `${t.id}/${v.term}`,

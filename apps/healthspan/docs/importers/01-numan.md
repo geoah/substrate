@@ -172,8 +172,9 @@ last of one code standing. Its band:
   the high bound; `> X` the low one. Anything else, or nothing, is no band.
 - Its unit is what follows the first space of `value` (`2.9 mmol/L`), none
   where it has no space.
-- It is labelled `normal` with the detail `Numan clinical range`: its text
-  is `normal: Numan clinical range`, and it sorts after the lab's.
+- It has no label: its word is `normal` and its detail `Numan clinical
+  range`, so its text is `normal: Numan clinical range`, and it sorts after
+  the lab's.
 - Its bounds are moved into the value's unit by a fixed factor (`g/dL` to
   `g/L` by 10; `pg/mL` and `ng/L`, `ng/mL` and `ug/L`, `m[IU]/L` and
   `u[IU]/mL` by 1). A range no fixed factor moves (folate's in `nmol/L`

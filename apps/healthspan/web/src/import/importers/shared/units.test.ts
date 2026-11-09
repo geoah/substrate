@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { sharedUnits } from "../testing"
-import { fixedFactor, knownUnit, ucum, UCUM_CODES } from "./units"
+import { entryByCode } from "../../../catalogue"
+import { sharedMetrics, sharedUnits } from "../testing"
+import { analyteKey } from "./metric"
+import {
+  fixedFactor,
+  knownUnit,
+  ucum,
+  UCUM_CODES,
+  UNIT_OVERRIDES,
+} from "./units"
 
 describe("a printed unit", () => {
   it("is the table's UCUM code, else as printed", () => {
@@ -25,6 +33,34 @@ describe("a printed unit", () => {
     expect(ucum("mmol/L", "blood_glucose")).toBe("mmol/L{glucose}")
     expect(ucum("ng/mL FEU", "d_dimer")).toBe("ng/mL")
     expect(UCUM_CODES.has("mmol/L{glucose}")).toBe(true)
+  })
+
+  it("reads the GP record's `.` for nucleated red cells per 100 white cells as a percent", () => {
+    // The analyte as the NHS importer names it: a shared metric with no
+    // catalogue entry, keyed by its id after the package.
+    const analyte = analyteKey({
+      metric: "labs/nucleated_red_cells_per_100_wbc",
+    })
+    expect(analyte).toBe("nucleated_red_cells_per_100_wbc")
+    expect(ucum(".", analyte)).toBe("%")
+    expect(knownUnit(".", analyte, sharedUnits())).toEqual({
+      ucum: "%",
+      id: "percent",
+    })
+    // Any other analyte's `.` is the table's: a ratio.
+    expect(ucum(".")).toBe("1")
+  })
+
+  it("names by every override an analyte the importers can name", () => {
+    // A catalogue entry's code, or a shared metric's id after the package:
+    // an override keyed otherwise never applies.
+    const metrics = new Set(
+      sharedMetrics().map((m) => m.id.slice(m.id.indexOf("/") + 1))
+    )
+    const unknown = UNIT_OVERRIDES.map((o) => o.analyte).filter(
+      (a) => !entryByCode(a) && !metrics.has(a)
+    )
+    expect(unknown).toEqual([])
   })
 
   it("is known where the code is the table's and the graph holds it", () => {

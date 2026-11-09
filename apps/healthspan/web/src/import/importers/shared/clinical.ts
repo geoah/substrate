@@ -4,9 +4,9 @@
 // health service's identifiers, and an organization, which every importer
 // that meets it merges into one record.
 
-import type { PlannedRecord } from "../types"
+import type { PlannedRecord, RecordKey } from "../types"
 import { strip } from "./numbers"
-import { organizationKey } from "./keys"
+import { KINDS, organizationKey, recordKey } from "./keys"
 import { SNOMED } from "./ranges"
 
 export { SNOMED } from "./ranges"
@@ -30,12 +30,21 @@ export interface Coding {
 /** A GP system's code id and term as a coding: an id whose partition digits
  * (the second and third from the end) are `01` or `11` is a SNOMED CT
  * description id, `00` or `10` a SNOMED CT concept, anything else the GP
- * system's own code. Null for no id. */
+ * system's own code. The id is its digits as text, or a `bigint` where the
+ * file was read losslessly (`readJsonLossless`) and it is past what a float
+ * holds exactly; a `number` is taken only as such a reader gives one, an
+ * integer a float holds exactly. Null for no id. */
 export function emisCoding(
-  codeId: string | number | null | undefined,
+  codeId: string | bigint | number | null | undefined,
   term?: string | null
 ): Coding | null {
-  if (codeId === null || codeId === undefined || codeId === "" || codeId === 0)
+  if (
+    codeId === null ||
+    codeId === undefined ||
+    codeId === "" ||
+    codeId === 0 ||
+    codeId === 0n
+  )
     return null
   const id = String(codeId)
   const partition = id.slice(-3, -1)
@@ -213,6 +222,26 @@ export interface OrganizationInput {
   identifiers?: readonly Identifier[]
 }
 
+/** An organization with no ODS code (a pharmacy a portal names by its own
+ * id), as an importer knows it: only what is given is written, as for
+ * `OrganizationInput`. */
+export type UncodedOrganizationInput = Omit<OrganizationInput, "ods">
+
+/** What an organization's record writes: its name, its identifiers where
+ * it has any, and every other field only where it is known. */
+function organizationProperties(
+  o: UncodedOrganizationInput,
+  identifiers: readonly Identifier[]
+): Record<string, unknown> {
+  const properties: Record<string, unknown> = { name: o.name }
+  if (identifiers.length) properties.identifiers = [...identifiers]
+  if (o.type) properties.type = o.type
+  if (o.address) properties.address = o.address
+  if (o.phone) properties.phone = o.phone
+  if (o.url) properties.url = o.url
+  return properties
+}
+
 /** An organization's planned record, `ods/<code>`, merged into what any
  * importer wrote there: identifiers unioned, every other field filled only
  * where empty. */
@@ -220,13 +249,27 @@ export function organizationRecord(
   o: OrganizationInput,
   revision: number
 ): PlannedRecord {
-  const properties: Record<string, unknown> = {
-    name: o.name,
-    identifiers: [odsIdentifier(o.ods), ...(o.identifiers ?? [])],
-  }
-  if (o.type) properties.type = o.type
-  if (o.address) properties.address = o.address
-  if (o.phone) properties.phone = o.phone
-  if (o.url) properties.url = o.url
+  const properties = organizationProperties(o, [
+    odsIdentifier(o.ods),
+    ...(o.identifiers ?? []),
+  ])
   return { ...organizationKey(o.ods), mode: "merge", properties, revision }
+}
+
+/** The planned record of an organization with no ODS code, under the
+ * namespace and key its importer gives it (`pharmacy/<id>` under the
+ * portal's namespace), merged as `organizationRecord`'s is: identifiers
+ * unioned (none written where it has none), every other field filled only
+ * where empty, the revision raised only upward. */
+export function organizationRecordAt(
+  at: Pick<RecordKey, "namespace" | "key">,
+  o: UncodedOrganizationInput,
+  revision: number
+): PlannedRecord {
+  return {
+    ...recordKey(KINDS.organization, at.namespace, at.key),
+    mode: "merge",
+    properties: organizationProperties(o, o.identifiers ?? []),
+    revision,
+  }
 }

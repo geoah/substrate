@@ -309,6 +309,23 @@ describe("reading the export", () => {
     expect(text.startsWith('{"key":"ORDER-A","orderName":')).toBe(true)
   })
 
+  it("keeps an integer in the order's JSON whole, past what a float holds", async () => {
+    const files = exportFiles()
+    const path = "items/test-results/ORDER-A.json"
+    files[path] = (files[path] as string).replace(
+      '"orderName"',
+      '"orderNumber": 12345678901234567891, "orderName"'
+    )
+    const p = await plan(input(files))
+    const file = record(p, KINDS.labreport, "RES-A").properties.file as {
+      $doc: string
+    }
+    const doc = p.documents.find((d) => d.digest === file.$doc)!
+    expect(new TextDecoder().decode(doc.bytes)).toContain(
+      '"orderNumber":12345678901234567891,'
+    )
+  })
+
   it("says how each visit happened: its summary's words, else its type", async () => {
     const p = await plan()
     const channel = (key: string) =>

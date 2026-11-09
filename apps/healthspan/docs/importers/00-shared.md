@@ -45,6 +45,11 @@ the decoder's message ("Expected string", "Missing key"). The message never
 holds the value, which can be the owner's data. A file that is not JSON is
 `Unreadable` with "the file is not JSON".
 
+A file whose integers can run past what a float holds exactly (2^53: the
+GP system's code ids, a provider's JSON kept whole as a report's file) is
+read losslessly: such an integer is a `bigint`, never rounded, and every
+other number is read as JSON reads it.
+
 A reading that finds nothing it can use (a time that is not ISO 8601, a
 manifest that names no run) gives `undefined`, and the importer turns that
 into `Unreadable`, naming the file and the field, where its page says the
@@ -173,7 +178,7 @@ package (`blood_glucose`). A missing unit is written `(none)`.
 | `fib4` | `-` | `{score}` |
 | `egfr` | `mL/min` | `mL/min/{1.73_m2}` |
 | `cholesterol_hdl_ratio` | (none), the empty string | `1` |
-| `nucleated_red_cells_fraction` | `.` | `%` |
+| `nucleated_red_cells_per_100_wbc` | `.` | `%` |
 | `blood_glucose` | `mmol/L` | `mmol/L{glucose}` |
 | `d_dimer` | `ng/mL FEU` | `ng/mL` |
 
@@ -285,8 +290,9 @@ as plain bands.
 each only where it is a number; a value kept as received or written as
 words keeps its bands' words alone. A band whose own unit differs from the
 value's is moved by a fixed factor or left out (Units, above). A band with
-no bound and no label is dropped, and a band equal to one before it (the
-same bounds and text) is kept once. Its text is its word, then what it
+no bound written and no words (no label, no word or detail of its own, no
+result it expects) is dropped; one with words keeps them. A band equal to
+one before it (the same bounds and text) is kept once. Its text is its word, then what it
 expects, the word's detail, the band's own detail and, for another panel's
 band, the panel, in lower case after a colon and joined by commas
 (`normal`, `low: deficient`, `normal: Numan clinical range`). The word is
@@ -385,7 +391,10 @@ provider's data, as each importer's page states.
   practice in the hospital's record are one record. It is merged, never
   replaced: its identifiers are the ODS code and any the importer adds, and
   only the fields the importer knows are written, so an importer that knows
-  no address never clears one another wrote.
+  no address never clears one another wrote. An organization with no ODS
+  code (a pharmacy a portal names by its own id) is keyed by its importer
+  under the provider's namespace and merged the same way, its identifiers
+  only those the importer adds.
 
 ## Documents
 

@@ -10,6 +10,7 @@ import {
   nhsNumberIdentifier,
   ODS_SYSTEM,
   organizationRecord,
+  organizationRecordAt,
   phone,
   precision,
   SNOMED,
@@ -41,6 +42,19 @@ describe("a GP system's code", () => {
       system: SNOMED,
       code: "123456000",
     })
+  })
+
+  it("takes an id read losslessly as a bigint, its digits whole", () => {
+    expect(emisCoding(14990931000006116n, "Example")).toEqual({
+      system: SNOMED,
+      descriptionId: "14990931000006116",
+      display: "Example",
+    })
+    expect(emisCoding(1022431000000105n)).toEqual({
+      system: SNOMED,
+      code: "1022431000000105",
+    })
+    expect(emisCoding(0n, "x")).toBeNull()
   })
 })
 
@@ -153,5 +167,48 @@ describe("identifiers and organizations", () => {
       "identifiers",
       "type",
     ])
+  })
+
+  it("merges an organization with no ODS code under its importer's key", () => {
+    expect(
+      organizationRecordAt(
+        { namespace: "mychart/example.org", key: "pharmacy/PH-1" },
+        {
+          name: "Example Pharmacy",
+          type: "pharmacy",
+          address: { lines: ["1 High Street"], postalCode: "AB1 2CD" },
+          phone: null,
+        },
+        1767225600
+      )
+    ).toEqual({
+      kind: KINDS.organization,
+      namespace: "mychart/example.org",
+      key: "pharmacy/PH-1",
+      mode: "merge",
+      revision: 1767225600,
+      properties: {
+        name: "Example Pharmacy",
+        type: "pharmacy",
+        address: { lines: ["1 High Street"], postalCode: "AB1 2CD" },
+      },
+    })
+    // Identifiers only where it has some; nothing else it does not know.
+    const bare = organizationRecordAt(
+      { namespace: "n", key: "k" },
+      { name: "Pharmacy", address: null },
+      1
+    )
+    expect(bare.properties).toEqual({ name: "Pharmacy" })
+    expect(
+      organizationRecordAt(
+        { namespace: "n", key: "k" },
+        { name: "Pharmacy", identifiers: [{ value: "P1", label: "Epic id" }] },
+        1
+      ).properties
+    ).toEqual({
+      name: "Pharmacy",
+      identifiers: [{ value: "P1", label: "Epic id" }],
+    })
   })
 })

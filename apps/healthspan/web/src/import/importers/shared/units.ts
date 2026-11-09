@@ -105,9 +105,11 @@ export const UNIT_SPELLINGS: Readonly<Record<string, string>> = {
 
 /** A spelling one analyte means otherwise than the table does: FSH's and
  * LH's `U/L` are international units, a free androgen index's `RATIO` is a
- * percent. The analyte is the catalogue entry's code, or for a measure
+ * percent, as is the GP record's `.` for nucleated red cells per 100 white
+ * cells. The analyte is the catalogue entry's code, or for a measure
  * outside the catalogue its shared metric's id after the package
- * (`blood_glucose`); a `null` spelling is a unit the provider leaves out. */
+ * (`blood_glucose`, `nucleated_red_cells_per_100_wbc`), as `analyteKey`
+ * names it; a `null` spelling is a unit the provider leaves out. */
 export const UNIT_OVERRIDES: readonly {
   analyte: string
   spelling: string | null
@@ -123,7 +125,7 @@ export const UNIT_OVERRIDES: readonly {
   { analyte: "egfr", spelling: "mL/min", ucum: "mL/min/{1.73_m2}" },
   { analyte: "cholesterol_hdl_ratio", spelling: null, ucum: "1" },
   { analyte: "cholesterol_hdl_ratio", spelling: "", ucum: "1" },
-  { analyte: "nucleated_red_cells_fraction", spelling: ".", ucum: "%" },
+  { analyte: "nucleated_red_cells_per_100_wbc", spelling: ".", ucum: "%" },
   { analyte: "blood_glucose", spelling: "mmol/L", ucum: "mmol/L{glucose}" },
   { analyte: "d_dimer", spelling: "ng/mL FEU", ucum: "ng/mL" },
 ]

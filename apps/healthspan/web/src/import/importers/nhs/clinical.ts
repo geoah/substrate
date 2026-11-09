@@ -479,13 +479,6 @@ export function clinician(who: string): { name: string; role: string | null } {
     : { name: strip(who), role: null }
 }
 
-/** A code id as its digits: a `bigint` read losslessly as text. */
-function codeText(
-  id: number | bigint | string | null | undefined
-): number | string | null | undefined {
-  return typeof id === "bigint" ? id.toString() : id
-}
-
 function joined(texts: readonly (string | null)[] | null | undefined): string {
   return (texts ?? []).filter((t): t is string => !!t).join("\n")
 }
@@ -508,7 +501,7 @@ function consultation(
       const text = joined(o.associatedTexts) || null
       const entry: Record<string, unknown> = { section }
       entry.term = o.term ?? null
-      entry.coding = emisCoding(codeText(o.codeId), o.term)
+      entry.coding = emisCoding(o.codeId, o.term)
       entry.text = text
       entry.upstreamId = o.eventGuid ?? null
       entries.push(entry)
@@ -662,7 +655,7 @@ function document(
   return {
     name: d.comments || `${d.term || "Document"}, ${day}`,
     type: d.term ?? null,
-    coding: emisCoding(codeText(d.codeId), d.term),
+    coding: emisCoding(d.codeId, d.term),
     at: d.effectiveDate.value ?? null,
     precision: precision(d.effectiveDate.datePart),
     status: "current",
