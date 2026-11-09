@@ -287,7 +287,29 @@ data:
   # 45: the account declares `oauthClient`, the client its grant was
   # issued to, which the OAuth facility writes at connect and checks before
   # a refresh. ADDITIVE.
-  version: 45
+  #
+  # 46: `gmailthread` titles itself by its members' subject, then their
+  # snippet, then its thread id, and `gmailmessage` by its subject, then the
+  # opening of its body. Templates only: a stored row takes the new title
+  # when the sync next writes it.
+  #
+  # 47: a per-thread reply address (`syncgmail`'s REPLY_RELAYS, GitHub's
+  # `reply+…@reply.github.com`) gets no `emailaddress` row, and the header
+  # entry naming it no `address`, so core mints no contact per thread. Rows
+  # and contacts an earlier version wrote for one are left as they are.
+  #
+  # 48: `gmailmessage` titles itself by its subject, then its Gmail
+  # `snippet` property (`{.snippet}`), then the opening of its body, so a
+  # member row `threads.get` alone wrote is titled by its preview. Template
+  # only.
+  #
+  # 49: every address at exactly `noreply.github.com` is a relay address
+  # too: GitHub's notification-reason mailboxes (`repo@`, `mention@`,
+  # `author@` and the rest) get no `emailaddress` row, so core mints no
+  # contact per reason and `notifications@github.com` is GitHub's one
+  # contact. A subdomain is not: `users.noreply.github.com` is a person's
+  # commit address and keeps its row.
+  version: 49
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -7135,6 +7157,14 @@ data:
 # subject of its newest message, one `referencing` read away. `temporal` goes
 # with them — a Thread carries no instant of its own, which is also why no
 # sweep may filter these rows by a window.
+#
+# THE TITLE READS THROUGH `messages`, so it needs no property of its own: the
+# subject of the first member that has one (the API's order, oldest first),
+# else the first member's Gmail `snippet`, else the thread id, which is all a
+# thin row has. A hop reads the member's DECLARED `snippet`, the property a
+# message titles itself by after its subject, and never the derived token. A
+# title renders when the row is written, and the authoritative read is staged
+# after the members it names, so it reads them as this batch left them.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailthread
@@ -7149,7 +7179,7 @@ data:
     could not read is written thin: its account and its threadId alone.
   names:
     singular: gmailthread
-  displayTemplate: "{threadId}"
+  displayTemplate: "{messages[].subject|messages[].snippet|threadId}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
@@ -7261,6 +7291,12 @@ data:
 # property is written null (which deletes). Everything decoded from `payload`
 # follows the payload: a response with no `payload` writes NOTHING derived
 # from one, so a thinner read can never erase a fuller row.
+#
+# THE TITLE is the subject, else Gmail's `snippet` property, else the opening
+# of `body`. The bare `{snippet}` token is the DERIVED excerpt on every kind,
+# so the property is spelled `{.snippet}`. A member row written from
+# `threads.get` alone has no subject and no body, and its preview is what
+# names it until a read of the message itself lands.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/gmailmessage
@@ -7278,7 +7314,7 @@ data:
     singular: gmailmessage
   traits:
     - substrate.reamde.dev/core/temporal(point)
-  displayTemplate: "{subject}"
+  displayTemplate: "{subject|.snippet|snippet}"
   properties:
     # --- identity -----------------------------------------------------------
     account:
@@ -7458,7 +7494,11 @@ data:
     #
     # A mailbox that does not parse makes no entry at all; the verbatim
     # `headers` above still carries the line, and `payload` still carries the
-    # tree it came from.
+    # tree it came from. A relay address (`REPLY_RELAYS` in `syncgmail`:
+    # GitHub's per-thread `reply+…@reply.github.com` and its
+    # `…@noreply.github.com` notification reasons) makes an entry with no
+    # `address`: it names no party, so it gets no hub row and core mints no
+    # contact for it.
     #
     # `value` is the API's own field position and keeps THE HEADER'S
     # SPELLING — trimmed and otherwise untouched, local part included, the
@@ -7479,9 +7519,9 @@ data:
         address:
           type: reference
           kind: providers.substrate.reamde.dev/google/emailaddress
-          description: "the hub row for this mailbox — composed from the normal
-            form (domain lowercased), and the row an attendee list and an
-            address-book entry reach too"
+          description: "the hub row for this mailbox, composed from the normal
+            form (domain lowercased) and reached by attendee lists and the
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7500,9 +7540,9 @@ data:
         address:
           type: reference
           kind: providers.substrate.reamde.dev/google/emailaddress
-          description: "the hub row for this mailbox — composed from the normal
-            form (domain lowercased), and the row an attendee list and an
-            address-book entry reach too"
+          description: "the hub row for this mailbox, composed from the normal
+            form (domain lowercased) and reached by attendee lists and the
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7521,9 +7561,9 @@ data:
         address:
           type: reference
           kind: providers.substrate.reamde.dev/google/emailaddress
-          description: "the hub row for this mailbox — composed from the normal
-            form (domain lowercased), and the row an attendee list and an
-            address-book entry reach too"
+          description: "the hub row for this mailbox, composed from the normal
+            form (domain lowercased) and reached by attendee lists and the
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7542,9 +7582,9 @@ data:
         address:
           type: reference
           kind: providers.substrate.reamde.dev/google/emailaddress
-          description: "the hub row for this mailbox — composed from the normal
-            form (domain lowercased), and the row an attendee list and an
-            address-book entry reach too"
+          description: "the hub row for this mailbox, composed from the normal
+            form (domain lowercased) and reached by attendee lists and the
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7563,9 +7603,9 @@ data:
         address:
           type: reference
           kind: providers.substrate.reamde.dev/google/emailaddress
-          description: "the hub row for this mailbox — composed from the normal
-            form (domain lowercased), and the row an attendee list and an
-            address-book entry reach too"
+          description: "the hub row for this mailbox, composed from the normal
+            form (domain lowercased) and reached by attendee lists and the
+            address book too; absent for an address that names no party"
         name:
           type: string
           description: "the display name THIS header spelled for the address,
@@ -7957,6 +7997,33 @@ data:
     _RE_ADDR = re.compile(
         r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
         + _LABEL + r"(?:\." + _LABEL + r")+$")
+    # RELAY ADDRESSES, and this is the one list of them: mailboxes a service
+    # writes into a header that name no party. GitHub's notification mail
+    # carries two sorts. `reply+<token>@reply.github.com` in `Reply-To` is
+    # minted fresh for every thread, so it names the THREAD. `repo@`,
+    # `mention@`, `author@`, `state_change@` and the rest at
+    # `noreply.github.com` in `To`/`Cc` name the REASON the mail was sent,
+    # under a display name that is often the repository. The hub is one
+    # party's identity across messages, so a relay address gets no
+    # `emailaddress` row and its occurrence entry no `address` (`_addrs`):
+    # the entry keeps the header's `value` and `name`, the message is
+    # mirrored whole, and core's mapping mints no contact for it. GitHub's
+    # one contact is its sender, `notifications@github.com`.
+    #
+    # Each entry is (domain, local-part prefix). The domain is matched
+    # exactly, in any case (`_mailbox` lowercases it), and never a
+    # subdomain: `<id>+<login>@users.noreply.github.com` is a person's
+    # commit address and keeps its row. The prefix is compared ignoring case
+    # and needs a character after it, so an empty prefix is any local part.
+    # A service goes in only on evidence of what its addresses name.
+    #
+    # The engine's repository migration that removes the contacts earlier
+    # versions made from these addresses carries a Go copy of this rule;
+    # change the two together.
+    REPLY_RELAYS = (
+        ("reply.github.com", "reply+"),
+        ("noreply.github.com", ""),
+    )
     # RFC 5322 `msg-id`, with the angle brackets the header wraps it in. The
     # brackets are dropped from the decoded properties so `inReplyTo` and
     # `references[]` join against `rfcMessageId`; `headers[]` keeps every line
@@ -8364,6 +8431,17 @@ data:
         return normal if _RE_ADDR.match(normal) else ""
 
 
+    def _relay(normal):
+        """Whether a mailbox in normal form is a relay address, one that names
+        a thread or a notification reason and never a party (REPLY_RELAYS)."""
+        local, _, domain = normal.rpartition("@")
+        for relay, prefix in REPLY_RELAYS:
+            if (domain == relay and len(local) > len(prefix)
+                    and local.lower().startswith(prefix)):
+                return True
+        return False
+
+
     def _refid(value):
         """A stored reference, as the bare row id. The engine hands one back
         either as `{"ref": id}` or as `<kind>/<id>`."""
@@ -8519,7 +8597,9 @@ data:
         `value` keeps THE HEADER'S SPELLING (trimmed, local part untouched);
         only the hub reference beside it is normalised. A mailbox that does not
         parse makes no entry at all and no hub row; the verbatim `headers` and
-        the exact `payload` still carry the line.
+        the exact `payload` still carry the line. A relay address
+        (REPLY_RELAYS) makes an entry with no `normal`, so it names no hub row
+        and mints none.
         """
         out, rows = [], []
         for value in values:
@@ -8528,12 +8608,14 @@ data:
                 normal = _mailbox(source)
                 if not normal:
                     continue
-                item = {"value": source, "normal": normal}
+                relay = _relay(normal)
+                item = {"value": source} if relay else {"value": source, "normal": normal}
                 label = (name or "").strip()
                 if label:
                     item["name"] = label
                 out.append(item)
-                rows.append(normal)
+                if not relay:
+                    rows.append(normal)
         return out, rows
 
 
@@ -9314,17 +9396,20 @@ data:
             props["thread"] = {"ref": tref}
             # The occurrence entries carry the header's own spelling in `value`
             # and the hub row in `address`; `normal` is this body's scratch key
-            # and never reaches a property.
+            # and never reaches a property. An entry without one is a relay
+            # address, which names no hub row (`_addrs`).
             for name in ("from", "to", "cc", "bcc", "replyTo"):
                 entries = props.get(name)
                 if not entries:
                     continue
-                props[name] = [
-                    {k: v for k, v in dict(
-                        entry, address={"ref": _address_id(host, aid,
-                                                           entry["normal"])}
-                    ).items() if k != "normal"}
-                    for entry in entries]
+                occurrences = []
+                for entry in entries:
+                    entry = dict(entry)
+                    normal = entry.pop("normal", "")
+                    if normal:
+                        entry["address"] = {"ref": _address_id(host, aid, normal)}
+                    occurrences.append(entry)
+                props[name] = occurrences
             seen.add(mref)
             batch.put(MESSAGE_TYPE, mref, properties=props)
             if not rec["hasPayload"]:

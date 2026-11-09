@@ -43,6 +43,8 @@ data:
 # mail sender converge on ONE person. The mirror carries the address and the
 # account it was seen through and nothing else (google 30): the name beside an
 # address in a header stays on the message row, so no name reaches the person.
+# A relay address, which names no party, gets no row (google 47 and 49), so
+# it never makes one.
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
   id: samples.substrate.reamde.dev/people/googleaddressperson

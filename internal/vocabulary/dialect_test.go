@@ -402,6 +402,72 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	}
 }
 
+// {snippet} is derived-only, so a kind that declares a `snippet` property (a
+// mail provider's own preview) had no token that read it. The dot is that
+// token, and the bare spelling keeps its meaning beside it.
+func TestADeclaredSnippetIsSpelledWithADot(t *testing.T) {
+	tmpl, err := vocabulary.ParseTemplate("{subject|.snippet|snippet}")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := tmpl.Refs()[1].String(); got != ".snippet" {
+		t.Fatalf("String() = %q, want the spelling it was written in", got)
+	}
+	excerpt := "the opening of the body"
+	for _, c := range []struct {
+		name string
+		r    testResolver
+		want string
+	}{
+		{"the subject first", testResolver{props: map[string]string{"subject": "Plan", "snippet": "preview"}, snippet: excerpt}, "Plan"},
+		{"then the declared property", testResolver{props: map[string]string{"snippet": "preview"}, snippet: excerpt}, "preview"},
+		{"then the derived excerpt", testResolver{declares: []string{"snippet"}, snippet: excerpt}, excerpt},
+	} {
+		if got := tmpl.Render(c.r); got != c.want {
+			t.Errorf("%s: render = %q, want %q", c.name, got, c.want)
+		}
+	}
+	bare, err := vocabulary.ParseTemplate("{snippet}")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := bare.Render(testResolver{props: map[string]string{"snippet": "preview"}, snippet: excerpt}); got != excerpt {
+		t.Fatalf("{snippet} on a kind declaring snippet = %q, want the derived excerpt still", got)
+	}
+
+	if _, err := dialectLoad(t, `  displayTemplate: "{subject|.snippet|snippet}"
+  properties: {subject: {type: string}, snippet: {type: string}}
+`); err != nil {
+		t.Fatalf("a declared snippet must load under the dot: %v", err)
+	}
+	for name, c := range map[string]struct{ body, want string }{
+		"undeclared": {`  displayTemplate: "{.snippet}"
+  properties: {label: {type: string}}
+`, `declares no property "snippet"`},
+		// Anywhere the bare spelling already reads the property, the dot
+		// would be a second spelling of it.
+		"a plain property": {`  displayTemplate: "{.label}"
+  properties: {label: {type: string}}
+`, "{label} is the spelling"},
+		"a derived token that yields": {`  displayTemplate: "{.localName}"
+  properties: {localName: {type: string}}
+`, "{localName} is the spelling"},
+		"sensitive": {`  displayTemplate: "{.snippet}"
+  properties: {snippet: {type: secret}}
+`, "sensitive value never renders into a title"},
+	} {
+		_, err := dialectLoad(t, c.body)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want one naming %q", name, err, c.want)
+		}
+	}
+	for _, bad := range []string{"{.}", "{.snippet.x}", "{.tags[]}", "{..snippet}"} {
+		if _, err := vocabulary.ParseTemplate(bad); err == nil {
+			t.Errorf("%s: expected a parse error", bad)
+		}
+	}
+}
+
 // The key contract has ONE grammar: CheckKey asks it in Go and the narrowing
 // guard hands the same pattern to Postgres, so the two answers cannot drift.
 func TestKeyPatternRegexpAgreesWithCheckKey(t *testing.T) {

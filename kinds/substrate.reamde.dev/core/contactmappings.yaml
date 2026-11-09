@@ -121,7 +121,10 @@ data:
 # Every address a mail header or an attendee list carries is one of these,
 # and this is what makes an address-book card and a mail sender meet on one
 # contact. The mirror holds the address alone: the name beside it in a header
-# stays on the message.
+# stays on the message. A relay address (GitHub's per-thread
+# `reply+…@reply.github.com`, or any address at exactly `noreply.github.com`)
+# names no party, so the Gmail sync gives it no row and no contact is made for
+# it.
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
   id: substrate.reamde.dev/core/googleemailaddress

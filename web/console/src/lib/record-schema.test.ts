@@ -686,6 +686,16 @@ describe("titleProperty", () => {
     expect(titleProperty(templated("{ name | id }", props))).toBe("name")
   })
 
+  it("reads a declared snippet only where the template spells it with a dot", () => {
+    const props = { snippet: { type: "string" } }
+    expect(titleProperty(templated("{.snippet}", props))).toBe("snippet")
+    expect(titleProperty(templated("{.snippet|snippet}", props))).toBe(
+      "snippet"
+    )
+    // Bare, it is the engine's excerpt of the body, whatever is declared.
+    expect(titleProperty(templated("{snippet}", props))).toBeUndefined()
+  })
+
   it("edits the built-in title only on a kind with no template", () => {
     expect(titleProperty(templated(undefined))).toBe("title")
     expect(titleProperty(undefined)).toBe("title")

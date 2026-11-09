@@ -402,3 +402,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0243](0243-an-applet-is-a2ui-screens-the-server-runs-and-the-console-gives-applets-a-place.md) | An applet is A2UI screens the server runs, seeded in every repository, and the console gives applets a place | accepted |
 | [0244](0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md) | An applet names its runtime, and a2ui is the one the server runs | accepted |
 | [0245](0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | A stale revision is a validation refusal narrowed by the reason `stale_revision` | proposed |
+| [0246](0246-a-declared-property-a-derived-only-token-shadows-is-spelled-with-a-leading-dot.md) | A declared property a derived-only token shadows is spelled with a leading dot | accepted |
