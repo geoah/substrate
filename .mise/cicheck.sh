@@ -390,8 +390,9 @@ PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://exampl
 
 # --- the lint jobs cover every linter --------------------------------------
 
-# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`. A
-# linter added to the aggregate and to neither would run on a laptop and
+# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`, and
+# the chat bridge's module lints in `ci:chatbridge`, beside its tests. A
+# linter added to the aggregate and to none of them would run on a laptop and
 # never on a pull request. The apps' Swift and Kotlin format checks are the
 # exceptions, named here: no CI job builds the apps or installs their
 # toolchains. A run that fails says so, rather than reading as nothing
@@ -400,11 +401,11 @@ if missing="$("$python" - 2>"$tmp/lint-jobs.err" <<'PY'
 import re, tomllib
 t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
 want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
-have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
+have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"]) | set(t["ci:chatbridge"]["depends"])
 print(" ".join(sorted(want - have - {"fmt:swift:check", "fmt:kotlin:check"})))
 PY
 )"; then
-  [ -z "$missing" ] || flag "in lint or fmt:check but in neither ci:lint nor ci:lint:go: ${missing}"
+  [ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:chatbridge: ${missing}"
 else
   flag "the lint jobs' coverage was not checked: $(cat "$tmp/lint-jobs.err")"
 fi
@@ -587,9 +588,11 @@ esac
 # is by its description every suite that wants a database. A line is split
 # into commands at `&&`, `||`, `;` and `|` outside quotes, because the slot
 # wraps one command and a -short on one `go test` says nothing of the next,
-# and an `sh -c` payload is read as the commands it runs.
+# and an `sh -c` payload is read as the commands it runs. A task whose `dir`
+# is another module (cmd/chatbridge) tests that module's packages, which hold
+# no database suite.
 cat >"$tmp/dbslot.py" <<'PY'
-import re, shlex, sys, tomllib
+import os, re, shlex, sys, tomllib
 
 tasks = tomllib.load(open(sys.argv[1], "rb"))["tasks"]
 module = "github.com/geoah/substrate/"
@@ -664,6 +667,8 @@ def database(pkg):
 
 
 for name, task in sorted(tasks.items()):
+    if task.get("dir") and os.path.exists(os.path.join(task["dir"], "go.mod")):
+        continue
     for words in commands(task):
         at = next((i for i, w in enumerate(words) if w.endswith(".mise/dbshard.sh")), None)
         if at is None:
@@ -1387,7 +1392,7 @@ tcseed="$tmp/toolchain-seed"
 mkdir -p "$tcseed"
 shopt -s nullglob
 {
-  printf '%s\n' Dockerfile .mise.toml go.mod compose.yaml web/console/package.json \
+  printf '%s\n' Dockerfile .mise.toml go.mod cmd/chatbridge/go.mod compose.yaml web/console/package.json \
     .github/workflows/*.yml .github/workflows/*.yaml \
     .mise/android.sh apps/gradle/gradle/libs.versions.toml apps/gradle/gradle/wrapper/gradle-wrapper.properties \
     apps/gradle/gradle/verification-metadata.xml
@@ -1446,6 +1451,8 @@ toolchain gomod-toolchain 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
 toolchain go0.0.1 // upgrade|'
 toolchain gomod-toolchain-indented 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
   toolchain go0.0.1|'
+# The chat bridge's module is held to the same pin.
+toolchain chatbridge-gomod-go 1 'cmd/chatbridge/go.mod says go 0.0.1' cmd/chatbridge/go.mod 's/^go .*/go 0.0.1/'
 # The console's pnpm and the image's uv, each moved alone, and uv taken
 # from apk instead of the pinned release.
 toolchain pnpm 1 'activates pnpm 0.0.1, but .mise.toml pins' web/console/package.json \

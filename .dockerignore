@@ -28,3 +28,5 @@ bin/
 # release build reads the console from a context goreleaser lays out, which
 # this file never applies to.
 web/console/dist
+# A chat bridge store run from the tree holds linked sessions; never context.
+cmd/chatbridge/data/

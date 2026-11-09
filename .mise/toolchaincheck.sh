@@ -111,21 +111,28 @@ check_pin go golang
 # the pin (a `go get`, a Dependabot gomod bump) makes every CI job and the
 # release download and build with that Go instead, with nothing red. Only the
 # image, whose golang base sets GOTOOLCHAIN=local, would notice, and with a
-# toolchain error instead of a pin mismatch.
+# toolchain error instead of a pin mismatch. The chat bridge's module builds
+# on the same pin and in the same image stage family, so it is held too.
 go_pin="$(mise_pin go)"
 if [ -n "$go_pin" ]; then
-  # Read as Go reads it: leading space trimmed, a `//` comment after the
-  # directive dropped.
-  go_line="$(sed -e 's|//.*||' go.mod | sed -n 's/^[[:space:]]*go[[:space:]]\{1,\}\([^[:space:]]*\)[[:space:]]*$/\1/p')"
-  toolchain_line="$(sed -e 's|//.*||' go.mod | sed -n 's/^[[:space:]]*toolchain[[:space:]]\{1,\}go\([^[:space:]]*\)[[:space:]]*$/\1/p')"
-  if [ -z "$go_line" ]; then
-    flag "go.mod has no go line; nothing holds the module to the go pin"
-  elif [ "$go_line" != "$go_pin" ]; then
-    flag "go.mod says go ${go_line}, but .mise.toml pins go ${go_pin}"
-  fi
-  if [ -n "$toolchain_line" ] && [ "$toolchain_line" != "$go_pin" ]; then
-    flag "go.mod says toolchain go${toolchain_line}, but .mise.toml pins go ${go_pin}"
-  fi
+  for mod in go.mod cmd/chatbridge/go.mod; do
+    if [ ! -f "$mod" ]; then
+      flag "${mod} is missing; this guard checked nothing for it"
+      continue
+    fi
+    # Read as Go reads it: leading space trimmed, a `//` comment after the
+    # directive dropped.
+    go_line="$(sed -e 's|//.*||' "$mod" | sed -n 's/^[[:space:]]*go[[:space:]]\{1,\}\([^[:space:]]*\)[[:space:]]*$/\1/p')"
+    toolchain_line="$(sed -e 's|//.*||' "$mod" | sed -n 's/^[[:space:]]*toolchain[[:space:]]\{1,\}go\([^[:space:]]*\)[[:space:]]*$/\1/p')"
+    if [ -z "$go_line" ]; then
+      flag "${mod} has no go line; nothing holds the module to the go pin"
+    elif [ "$go_line" != "$go_pin" ]; then
+      flag "${mod} says go ${go_line}, but .mise.toml pins go ${go_pin}"
+    fi
+    if [ -n "$toolchain_line" ] && [ "$toolchain_line" != "$go_pin" ]; then
+      flag "${mod} says toolchain go${toolchain_line}, but .mise.toml pins go ${go_pin}"
+    fi
+  done
 fi
 
 # --- pnpm, pinned in two places for two different readers ----------------

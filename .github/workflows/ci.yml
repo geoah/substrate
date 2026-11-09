@@ -253,6 +253,48 @@ jobs:
             ~/.cache/golangci-lint
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
+  # The chat bridge (cmd/chatbridge) is its own Go module, outside the
+  # root's `./...`, so no other job reaches it: this one lints and tests it.
+  # It links C, which the runner's compiler builds. Its caches are keyed on
+  # its own go.sum.
+  chatbridge:
+    name: chatbridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_key_prefix: mise-v2
+          cache_save: ${{ github.event_name == 'push' }}
+          install_args: go golangci-lint
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: ${{ runner.os }}-go-chatbridge-${{ hashFiles('cmd/chatbridge/go.sum')
+            }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-chatbridge-${{ hashFiles('cmd/chatbridge/go.sum') }}-
+            ${{ runner.os }}-go-chatbridge-
+      - run: mise run ci:chatbridge
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
   cross:
     name: cross compile
     runs-on: ubuntu-latest
