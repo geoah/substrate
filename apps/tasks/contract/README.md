@@ -39,7 +39,10 @@ that is on:
 
 The collection record of a kind is the `substrate.reamde.dev/tasks/collection`
 record whose `kind` names it. Its id is the UUIDv8 of the sha256 of
-`collection:` + the kind, but a case reads it by `kind`.
+`collection:` + the kind. Where two devices left two records for one kind,
+the one under that derived id wins; with none under it, the oldest
+`createdAt`, then the smallest id. The same rule picks the preference: the
+derived id of `preference` first. Every write goes to the winner.
 
 The **grant** reads a kind when a `read:` or `write:` scope covers it and
 writes it when a `write:` scope does. A scope covers a kind by:
@@ -51,7 +54,10 @@ writes it when a `write:` scope does. A scope covers a kind by:
   whose `purpose` is not `internal`.
 
 Each reading is the collection record's property where it holds one (`-`
-means none), else the guess:
+means none), else the guess. A property the record names that the
+declaration does not hold, or holds with another type or repeated, is
+ignored as if the record named none, so a renamed property falls back to the
+guess and nothing is written under the old name:
 
 | Reading  | Guess                                                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -105,10 +111,14 @@ Every record of a collection that is not deleted is an item.
 ## Order
 
 - **lateOrUrgent:** dated first, by due ascending (an instant itself; a day
-  alone at its start in `timeZone`); then undated by priority, highest first.
+  alone at its start in `timeZone`); then undated by priority: nearest the
+  top of its own collection's values first (the top is 0, the one under it
+  1), so the highest of a two-value ladder ranks with the highest of a
+  five-value one.
 - **comingUp, later:** by due ascending.
 - **Ties, in any band:** the order reading where both are of one kind and
-  hold one, as numbers; then `createdAt`; then the path.
+  hold one, compared as exact decimals, never as floating-point numbers;
+  then `createdAt`; then the path.
 - **suggestions:** every proposed item, newest `createdAt` first, ties by
   path.
 

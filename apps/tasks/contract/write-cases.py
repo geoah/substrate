@@ -302,6 +302,64 @@ CASES["view-only-and-pins"] = {
     ],
 }
 
+# 5. The edges a review found the two platforms reading apart: priority
+#    ladders of different lengths, positions beyond a float's precision, two
+#    settings records for one kind, and a reading override naming a property
+#    the declaration no longer holds.
+ERRAND = "ada.example.com/home/errand"
+ERRAND_DECL = {
+    "identity": ERRAND,
+    "definition": {
+        "authority": "ada.example.com", "package": "home", "names": {"singular": "errand"},
+        "traits": ["substrate.reamde.dev/core/lifecycle"],
+        "displayTemplate": "{name}",
+        "properties": {
+            "name": {"type": "string"},
+            "status": {"type": "enum", "values": ["todo", "done"], "done": ["done"]},
+            "priority": {"type": "enum", "values": ["normal", "high"]},
+        },
+    },
+}
+E = lambda rid: f"{ERRAND}/{rid}"
+CASES["edges"] = {
+    "name": "uneven priority ladders, exact positions, two settings records for one kind, and a stale override",
+    "now": NOW, "timeZone": ZONE,
+    "grant": BASE_GRANT + [f"write:{ERRAND}"],
+    "declarations": OWN + [ERRAND_DECL],
+    "records": [
+        # The older record, under another id, says off; the one under the
+        # derived id says on, and names `dueOld`, which the errand does not
+        # declare, as its due.
+        rec(COLLECTION, "c-errand-old", "2026-10-01T08:00:00Z", kind=ERRAND, enabled=False),
+        rec(COLLECTION, "d4226584-6472-859a-b734-bf13f599b8cc", "2026-11-01T08:00:00Z",
+            kind=ERRAND, enabled=True, due="dueOld"),
+        task("u1", "2026-11-01T08:00:00Z", "Renew the passport", priority="high"),
+        rec(ERRAND, "e1", "2026-11-02T08:00:00Z", name="Collect the dry cleaning", title="Collect the dry cleaning",
+            status="todo", priority="high"),
+        task("p1", "2026-11-03T08:00:00Z", "Book the dentist", dueDay="2026-11-10", position="9007199254740993"),
+        task("p2", "2026-11-04T08:00:00Z", "Book the optician", dueDay="2026-11-10", position="9007199254740992"),
+    ],
+    "expect": {
+        "collections": [
+            OWN_COLLECTION,
+            collection(ERRAND, True, False, False, "name", None, None, "priority", None, None),
+        ],
+        "items": {
+            T("u1"): item("open", OPEN_OWN, "none", "lateOrUrgent"),
+            E("e1"): item("open", acts(complete=["done"]), None, "lateOrUrgent"),
+            T("p1"): item("open", OPEN_OWN, "none", "comingUp"),
+            T("p2"): item("open", OPEN_OWN, "none", "comingUp"),
+        },
+        "needsYou": {"lateOrUrgent": [E("e1"), T("u1")], "comingUp": [T("p2"), T("p1")], "later": [],
+                     "noDate": 0, "suggestions": 0, "badge": 2},
+        "suggestions": [],
+        "groups": [{"collection": TASK, "kind": LIST, "rows": [{"group": "none", "open": 3}]}],
+    },
+    "commands": [
+        {"do": {"complete": E("e1")}, "writes": [patch(E("e1"), 1, status="done")]},
+    ],
+}
+
 for name, case in CASES.items():
     (HERE / f"{name}.json").write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n")
 print("\n".join(sorted(CASES)))
