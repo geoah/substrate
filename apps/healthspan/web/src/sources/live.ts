@@ -5,12 +5,7 @@
 // every step of an import through the client, each followed by an
 // invalidation of what it changed.
 
-import {
-  SubstrateError,
-  describe,
-  uuidv7,
-  type SubstrateClient,
-} from "@substrate/client"
+import { describe, uuidv7, type SubstrateClient } from "@substrate/client"
 import {
   useInvalidate,
   useListed,
@@ -41,6 +36,11 @@ import {
   pointingAt,
 } from "../import/store"
 import { Import, KIND, type LabImport } from "../kinds"
+import {
+  convert as convertUnit,
+  parseUnitGraph,
+  type UnitGraph,
+} from "../labs/units"
 import { refPath } from "../import/records"
 import { metricPath } from "./groups"
 import { buildSourceList } from "./list"
@@ -277,6 +277,26 @@ function useLiveStillPointing(id: string, enabled: boolean): Read<number> {
 
 const registries = new WeakMap<SubstrateClient, RunRegistry>()
 
+// The repository's unit graph, read once per session: the import converts
+// a lab's units through it rather than asking the server pair by pair,
+// where every pair that does not convert is a refused request.
+const graphs = new WeakMap<SubstrateClient, Promise<UnitGraph>>()
+
+function graphFor(client: SubstrateClient): Promise<UnitGraph> {
+  let g = graphs.get(client)
+  if (!g) {
+    g = client
+      .json<unknown>("GET", "api/v1/units")
+      .then(parseUnitGraph)
+      .catch((e: unknown) => {
+        graphs.delete(client)
+        throw e
+      })
+    graphs.set(client, g)
+  }
+  return g
+}
+
 function registryFor(client: SubstrateClient): RunRegistry {
   let r = registries.get(client)
   if (!r) {
@@ -302,21 +322,8 @@ function useLiveImportActions(): ImportActions {
     const registry = registryFor(client)
     return {
       convert: async (value, from, to) => {
-        try {
-          const r = await client.json<{ value: string }>(
-            "GET",
-            "api/v1/units/convert",
-            { query: { value, from, to } }
-          )
-          return r.value
-        } catch (e) {
-          if (
-            e instanceof SubstrateError &&
-            (e.status === 422 || e.status === 400)
-          )
-            return undefined
-          throw e
-        }
+        const v = convertUnit(await graphFor(client), Number(value), from, to)
+        return v === undefined ? undefined : String(v)
       },
       held: async (metrics, days) => {
         if (!metrics.length || !days.length) return []

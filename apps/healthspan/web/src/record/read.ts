@@ -228,6 +228,14 @@ export async function readRecord(
   client: SubstrateClient,
   signal: AbortSignal
 ): Promise<ClinicalRecord> {
+  // The clinical kinds come in one package: where its patient kind is
+  // refused, none is installed, and nine more refusals would say nothing.
+  try {
+    await client.list({ kinds: [`${CLINICAL}/patient`], first: 1 }, signal)
+  } catch (e) {
+    if (refused(e)) return toRecord({})
+    throw e
+  }
   const lists = await Promise.all(
     RECORD_KINDS.map(async (k) => {
       try {

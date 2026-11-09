@@ -95,3 +95,30 @@ describe("through an analyte", () => {
     ).toBeUndefined()
   })
 })
+
+describe("a unit as a lab writes it", () => {
+  const written = parseUnitGraph({
+    units: [
+      {
+        id: "percent",
+        code: "%",
+        aliases: ["pct"],
+        root: "1",
+        factor: "1/100",
+      },
+      { id: "1", code: "1", root: "1", factor: "1" },
+      { id: "mg/dL", code: "mg/dL", root: "kg/m3", factor: "1/100" },
+      { id: "g/L", code: "g/L", root: "kg/m3", factor: "1" },
+    ],
+  })
+
+  it("resolves through a unit's code and its aliases", () => {
+    expect(convert(written, 50, "%", "1")).toBeCloseTo(0.5)
+    expect(convert(written, 50, "pct", "1")).toBeCloseTo(0.5)
+    expect(convert(written, 100, "mg/dL", "g/L")).toBeCloseTo(1)
+  })
+
+  it("converts nothing between units of two roots", () => {
+    expect(convert(written, 1, "%", "g/L")).toBeUndefined()
+  })
+})

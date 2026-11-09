@@ -376,7 +376,17 @@ class Run {
       ...Array.from({ length: 20 }, (_, i) => labSourceId(name, i + 1)),
     ]
     let taken: string | undefined
-    for (const id of ids) {
+    // The source the plan named was a live lab when it was planned: read it
+    // before any create, so taking it is no refused write.
+    if (this.imp.source) {
+      await this.guard()
+      const named = this.imp.source
+      const found = await this.request((s) =>
+        this.opts.store.record(KIND.source, named, s)
+      )
+      if (found?.properties.class === "lab") taken = named
+    }
+    for (const id of taken ? [] : ids) {
       await this.guard()
       try {
         await this.request((s) =>

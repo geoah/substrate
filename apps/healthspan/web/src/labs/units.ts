@@ -19,9 +19,18 @@ export interface GraphUnit {
 
 export interface UnitGraph {
   units: ReadonlyMap<string, GraphUnit>
+  /** A unit as a lab writes it (its code or an alias) to its id. Symbols
+   * are left out: annotated units share them (`mmol/L` for glucose). */
+  names?: ReadonlyMap<string, string>
 }
 
 export const EMPTY_GRAPH: UnitGraph = { units: new Map() }
+
+/** The unit a written name stands for: its id, else the id whose code or
+ * alias it is. */
+function unitOf(graph: UnitGraph, name: string): GraphUnit | undefined {
+  return graph.units.get(name) ?? graph.units.get(graph.names?.get(name) ?? "")
+}
 
 /** An exact rational as the server writes one, digits or a fraction. */
 export function parseRational(v: unknown): number | undefined {
@@ -46,7 +55,8 @@ export function parseUnitGraph(answer: unknown): UnitGraph {
       ? answer.units
       : undefined
   const units = new Map<string, GraphUnit>()
-  if (!Array.isArray(list)) return { units }
+  const names = new Map<string, string>()
+  if (!Array.isArray(list)) return { units, names }
   for (const raw of list) {
     if (!raw || typeof raw !== "object") continue
     const u = raw as Record<string, unknown>
@@ -59,8 +69,14 @@ export function parseUnitGraph(answer: unknown): UnitGraph {
       factor: f,
       offset: parseRational(u.offset) ?? 0,
     })
+    for (const name of [
+      u.code,
+      ...(Array.isArray(u.aliases) ? (u.aliases as unknown[]) : []),
+    ])
+      if (typeof name === "string" && name && !names.has(name))
+        names.set(name, u.id)
   }
-  return { units }
+  return { units, names }
 }
 
 /** `value` in `from` expressed in `to`, or undefined when no ordinary
@@ -72,8 +88,8 @@ export function convert(
   to: string | undefined
 ): number | undefined {
   if (!from || !to || from === to) return from === to ? value : undefined
-  const a = graph.units.get(from)
-  const b = graph.units.get(to)
+  const a = unitOf(graph, from)
+  const b = unitOf(graph, to)
   if (a && b)
     return a.root === b.root
       ? (value * a.factor + a.offset - b.offset) / b.factor
