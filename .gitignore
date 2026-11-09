@@ -81,3 +81,6 @@ __pycache__/
 # The tree's own Python environment, which .mise/python.sh makes from
 # .mise/python/uv.lock on its first run.
 /.mise/python/.venv/
+
+# A chat bridge store run from the tree: linked sessions, never committed.
+/cmd/chatbridge/data/

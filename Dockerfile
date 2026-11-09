@@ -169,6 +169,43 @@ EXPOSE 8080
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/slack-socket"]
 
+# ---- chatbridge ---------------------------------------------------------
+# The chat bridge (cmd/chatbridge), a third image built from this file:
+# `docker build --target chatbridge .`. It is its own Go module under the
+# AGPL-3.0 (decision 0249), so its build copies that module and nothing of
+# the server's. It links C (SQLite, and libwebp inside the WhatsApp
+# connector), so it compiles for the target on the target's platform rather
+# than cross-compiling as `build` does: a multi-arch build of it runs the
+# compiler under emulation. Same pinned Go and alpine as the other stages.
+# The image carries the module's LICENSE and NOTICE, and its revision label
+# names the commit of this public repository the source is at.
+FROM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS chatbridge-build
+ARG VERSION=""
+RUN apk add --no-cache build-base
+WORKDIR /src
+COPY cmd/chatbridge/go.mod cmd/chatbridge/go.sum ./
+RUN go mod download
+COPY cmd/chatbridge/ ./
+RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/chatbridge .
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS chatbridge
+ARG COMMIT=""
+LABEL org.opencontainers.image.source="https://github.com/geoah/substrate" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="The chat bridge: chat networks to a substrate, as the owner. Source: cmd/chatbridge at the revision."
+# ca-certificates for the networks and an https substrate. The store holds
+# every linked network's session keys, so it is the bridge user's alone.
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates \
+ && mkdir -p /var/lib/chatbridge && chown 65532:65532 /var/lib/chatbridge && chmod 0700 /var/lib/chatbridge
+COPY --from=chatbridge-build /out/chatbridge /usr/local/bin/chatbridge
+COPY cmd/chatbridge/LICENSE cmd/chatbridge/NOTICE /usr/share/doc/chatbridge/
+ENV CHATBRIDGE_DATA=/var/lib/chatbridge
+EXPOSE 8080
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/chatbridge"]
+CMD ["run"]
+
 # ---- runtime ------------------------------------------------------------
 # The shared function runner executes inline bundle code as child processes, so
 # the image must carry the language it runs: python3, the host every function

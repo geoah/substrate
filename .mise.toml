@@ -115,12 +115,12 @@ description = "Load .dev/synth into a running substrate: -server, -authority, SY
 run = "go run ./cmd/synth load"
 
 [tasks.test]
-description = "The whole Go suite, sequential"
+description = "The whole Go suite, sequential, and the chat bridge's"
 # SEQUENTIAL, not `depends`. mise runs dependencies in PARALLEL, and running
 # the short suite alongside the container suite starves the pgvector container
 # on a small machine — it dies mid-run and every remaining case fails with
 # `connection refused`, which reads like a code failure and is not one.
-run = ["mise run test:short", "mise run test:db"]
+run = ["mise run test:short", "mise run test:db", "mise run chatbridge:test"]
 
 [tasks.cross]
 description = "Compile for every platform the project ships or is developed on"
@@ -358,7 +358,7 @@ run = [
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate, the CI workflows and scripts, and the apps' layering"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate, the CI workflows and scripts, the apps' layering, and the chat bridge's module"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -370,6 +370,7 @@ depends = [
   "lint:toolchain",
   "lint:ci",
   "lint:apps",
+  "chatbridge:lint",
 ]
 
 [tasks."lint:go"]
@@ -585,8 +586,8 @@ run = ".mise/commitscheck.sh"
 # CI job, and `lint` stays something a laptop can run on a plane.
 
 [tasks.audit]
-description = "Every vulnerability scan: Go, the console, the function bodies' Python dependencies and the image"
-depends = ["audit:go", "audit:console", "audit:python", "audit:image"]
+description = "Every vulnerability scan: Go, the console, the function bodies' Python dependencies, the image and the chat bridge"
+depends = ["audit:go", "audit:console", "audit:python", "audit:image", "chatbridge:audit"]
 
 [tasks."audit:go"]
 description = "govulncheck over the module — advisories the code actually reaches"
@@ -631,6 +632,75 @@ run = '''
     docker build --iidfile "$iid" -t "$IMAGE:audit" .
     grype "docker:$(cat "$iid")" --fail-on high --only-fixed
     '''
+
+# =============================================================================
+# The chat bridge
+# =============================================================================
+# cmd/chatbridge is its own Go module under the AGPL-3.0 (decision 0249), so
+# the root's `./...` never reaches it: `test`, `lint:go` and `audit:go` do not
+# see it, and these tasks are its, each joined to its family's aggregate.
+# `fmt:go` does reach it, since golangci-lint formats files rather than
+# packages, and the two configurations format alike. It links C (SQLite, and
+# libwebp in the WhatsApp connector), so its build and its tests need cgo and
+# a C compiler, and no C library.
+
+[tasks."chatbridge:build"]
+description = "Build the chat bridge -> bin/chatbridge"
+dir = "cmd/chatbridge"
+env = { CGO_ENABLED = "1" }
+run = "go build -trimpath -o ../../bin/chatbridge ."
+
+[tasks."chatbridge:test"]
+description = "The chat bridge's tests, under the race detector; no network"
+dir = "cmd/chatbridge"
+env = { CGO_ENABLED = "1" }
+run = "go test -race -count=1 ./..."
+
+[tasks."chatbridge:lint"]
+description = "The chat bridge's module: its lint config, module files, golangci-lint, the import boundary and NOTICE"
+# In order, each failing the task: the module's own .golangci.yml (the
+# root's, with its depguard rule holding the server's packages out), the
+# module files, the license boundary over the binary's whole closure (depguard
+# sees one file's imports), golangci-lint, and NOTICE against what the linux
+# build links.
+dir = "cmd/chatbridge"
+env = { CGO_ENABLED = "1" }
+run = [
+  "golangci-lint config verify",
+  "go mod tidy -diff",
+  "go mod verify",
+  '''
+    deps=$(GOOS=linux go list -deps . ./tools/... && GOOS=darwin go list -deps .) || exit 1
+    status=0
+    leaked=$(printf '%s\n' "$deps" | grep '^github\.com/geoah/substrate/' | grep -v '^github\.com/geoah/substrate/cmd/chatbridge\(/\|$\)') || status=$?
+    if [ "$status" -gt 1 ]; then
+      echo "grep exited $status, so the boundary check checked nothing" >&2
+      exit 1
+    fi
+    if [ -n "$leaked" ]; then
+      echo "the chat bridge links the server's packages, which its license keeps apart:" >&2
+      printf '%s\n' "$leaked" | sort -u >&2
+      exit 1
+    fi
+    ''',
+  "golangci-lint run",
+  "go run ./tools/notice -check",
+]
+
+[tasks."chatbridge:audit"]
+description = "govulncheck over the chat bridge's module"
+dir = "cmd/chatbridge"
+env = { CGO_ENABLED = "1" }
+run = "govulncheck ./..."
+
+[tasks."chatbridge:notice"]
+description = "Write cmd/chatbridge/NOTICE again from the modules the bridge links"
+dir = "cmd/chatbridge"
+run = "go run ./tools/notice"
+
+[tasks."ci:chatbridge"]
+description = "CI job `chatbridge`: the chat bridge's lint and tests"
+depends = ["chatbridge:lint", "chatbridge:test"]
 
 # =============================================================================
 # Formatting
@@ -1369,7 +1439,7 @@ description = "CI job `audit`: every vulnerability scan but the image's"
 # Every pull request runs this one, so it leaves out `audit:image`: building
 # the whole image would make the job several times longer for a scan whose
 # answer moves with Alpine's advisories far more often than with a diff.
-depends = ["audit:go", "audit:console", "audit:python"]
+depends = ["audit:go", "audit:console", "audit:python", "chatbridge:audit"]
 
 [tasks."ci:audit:image"]
 description = "CI job `audit image`: grype over the built image, on main and weekly"
@@ -1451,6 +1521,7 @@ depends = [
   "ci:console:test",
   "ci:apps:web",
   "ci:image",
+  "ci:chatbridge",
 ]
 
 [tasks."ci:quick"]
