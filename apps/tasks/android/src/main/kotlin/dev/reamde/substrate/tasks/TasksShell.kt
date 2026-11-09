@@ -46,6 +46,7 @@ class TasksShell(context: Context, val start: StartResult) {
     private var connect: BridgeHandle? = null
     private var connectFollowing: Job? = null
     private var signedInSeen = 0L
+    private var approving = false
 
     /** Whether this process has seen the link signed in: a sign-out after it shows the sign-in again. */
     private var wasSignedIn = false
@@ -67,7 +68,7 @@ class TasksShell(context: Context, val start: StartResult) {
         if (start is StartResult.Started) openLink()
     }
 
-    private fun opening(address: String? = prefs.getString(ADDRESS, null)) =
+    private fun opening(address: String? = prefs.getString(ADDRESS, null), scopes: List<String>? = null) =
         TasksOpening(
             fingerprint = ProtocolFingerprint.VALUE,
             debug = BuildConfig.DEBUG,
@@ -77,6 +78,7 @@ class TasksShell(context: Context, val start: StartResult) {
             channel = BuildConfig.CHANNEL.ifEmpty { null },
             device = if (app.resources.configuration.smallestScreenWidthDp >= 600) "this tablet" else "this phone",
             address = address,
+            scopes = scopes,
         )
 
     private fun settings(opening: TasksOpening): JsonElement = BridgeJson.encodeToJsonElement(TasksOpening.serializer(), opening)
@@ -103,10 +105,10 @@ class TasksShell(context: Context, val start: StartResult) {
     }
 
     /** The connect screen, opened once; [address] is what its field starts with. */
-    private fun openConnect(address: String? = null) {
+    private fun openConnect(address: String? = null, scopes: List<String>? = null) {
         if (connect != null) return
         val handle =
-            Bridge.open("tasks.connect", settings(opening(address ?: prefs.getString(ADDRESS, null)))).getOrElse {
+            Bridge.open("tasks.connect", settings(opening(address ?: prefs.getString(ADDRESS, null), scopes))).getOrElse {
                 _problem.value = it.message
                 return
             }
@@ -182,14 +184,21 @@ class TasksShell(context: Context, val start: StartResult) {
         }
     }
 
-    /** The whole request again on the same server: a change of access, or signing in after it ended. */
-    fun changeAccess() {
-        openConnect(_frame.value?.link?.snapshot?.server)
+    /**
+     * The whole request again on the same server: a change of access, or signing in after it ended. It carries what the session holds beyond the manifest, so
+     * approving it again takes nothing back, and [asking], an approval the app asks for.
+     */
+    fun changeAccess(asking: List<String> = emptyList()) {
+        val held = _frame.value?.link?.snapshot?.scopes ?: emptyList()
+        approving = asking.isNotEmpty()
+        openConnect(_frame.value?.link?.snapshot?.server, (held + asking).distinct())
     }
 
-    /** The connect screen's own way back, where a session is still there. */
+    /** The connect screen's own way back, where a session is still there; an approval the app asked for is then not given. */
     fun dismissSignIn() {
         if (_frame.value?.link?.snapshot?.phase != LinkSnapshot.Phase.signedOut) closeConnect()
+        if (approving) send(TasksApp.Command.ApprovalAnswered(completed = false))
+        approving = false
     }
 
     /** The app came to the front: what the system may have changed is read again. */

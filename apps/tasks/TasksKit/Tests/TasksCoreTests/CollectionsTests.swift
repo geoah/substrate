@@ -212,6 +212,105 @@ struct CollectionsTests {
         #expect(sidebar.ungrouped.map(\.title) == ["Chores"])
     }
 
+    @Test func eachTabKeepsItsOwnStack() async throws {
+        let harness = try await loaded([taskRecord("a", "A", status: "proposed"), listRecord("home", "Home")])
+        await harness.send(.show(.suggestions))
+        await harness.send(.select(section: TasksMenu.lists))
+        // Lists opens on its own stack, the queue left with Needs you.
+        #expect(await harness.presentation.queue == nil)
+        #expect(await harness.state.selection == nil)
+        await harness.send(.show(.list("home")))
+        await harness.send(.select(section: TasksMenu.needsYou))
+        #expect(await harness.state.selection == .suggestions)
+        #expect(await harness.presentation.queue != nil)
+        await harness.send(.select(section: TasksMenu.lists))
+        #expect(await harness.state.selection == .list("home"))
+    }
+
+    @Test func aViewOnlyCollectionSaysSoAndAsksToChangeIt() async throws {
+        let harness = try await loaded(
+            [choreRecord("fence", "Fix the fence", state: "suggested", area: "a1"), choreRecord("gutters", "Clean the gutters", state: "todo")],
+            scopes: TasksManifest.scopes, selection: .suggestions)
+        let row = try #require(await harness.presentation.queue?.rows.rows.first)
+        #expect(row.decisions.isEmpty)
+        #expect(row.viewOnly == "View only")
+        // Said once, in the page's words.
+        #expect(row.spoken == "Fix the fence, Suggestion in Chores · written yesterday, View only")
+        await harness.send(.open(task: c("fence")))
+        let page = try #require(await harness.presentation.suggestion)
+        let line = try #require(page.approval)
+        #expect(line.message == "Substrate Tasks needs your approval to change your Chores.")
+        #expect(line.approve == "Approve")
+        #expect(line.scopes == ["write:\(chore)"])
+        // Areas are out of reach: never the reference's label.
+        #expect(page.details.first { $0.label == "Area" }?.value == "Out of reach")
+        await harness.send(.open(task: c("gutters")))
+        #expect(await harness.presentation.detail?.approval == line)
+        await harness.send(.showSettings(.collection(chore)))
+        #expect(await harness.presentation.collection?.approval == line)
+        // Approve asks whether or not the collection is on, and the owner is
+        // on the approval page at once.
+        await harness.send(.requestApproval(chore, group: nil))
+        let asked = try #require(await harness.state.approval)
+        #expect(asked.scopes == ["write:\(chore)"])
+        #expect(asked.answered)
+        #expect(await harness.presentation.approval?.waiting == true)
+    }
+
+    @Test func aGroupingOutOfReachStaysChosenAndAsksToReadIt() async throws {
+        let harness = try await loaded(
+            [choreRecord("gutters", "Clean the gutters", state: "todo", area: "a1")],
+            settings: [
+                Record(
+                    id: DerivedIDs.collection(chore), kind: TasksKinds.collection,
+                    properties: ["kind": .string(chore), "enabled": true, "group": "area"], version: 1, createdAt: "2026-11-01T10:00:00Z")
+            ], scopes: TasksManifest.scopes + ["write:\(chore)"], selection: .collection(chore))
+        #expect(await harness.presentation.list?.open.rows.first?.listName == "Out of reach")
+        await harness.send(.showSettings(.collection(chore)))
+        let page = try #require(await harness.presentation.collection)
+        #expect(page.groups.map(\.selected) == [true, false])
+        #expect(page.approval?.message == "Substrate Tasks needs your approval to read your areas.")
+        #expect(page.approval?.scopes == ["read:\(area)"])
+        #expect(page.approval?.group == area)
+    }
+
+    @Test func newTasksGoToTheChosenCollectionThroughItsReadingsOrAreRefused() async throws {
+        let harness = try await loaded(
+            [],
+            settings: [
+                collectionRecord(chore, enabled: true),
+                Record(
+                    id: DerivedIDs.preference, kind: TasksKinds.preference, properties: ["newTasks": .string(chore)], version: 1,
+                    createdAt: "2026-11-01T10:00:00Z"),
+            ])
+        await harness.send(.quickAdd("Mow the lawn"))
+        let entry = try #require(enqueued(harness).first)
+        #expect(entry.kind == chore)
+        #expect(entry.method == .put)
+        // Its title through its own property, and no day alone: it has none.
+        #expect(entry.properties == ["summary": "Mow the lawn"])
+        await harness.send(.newTask)
+        let editor = try #require(await harness.presentation.editors.first?.value)
+        #expect(editor.list?.label == "Area")
+        #expect(editor.due?.kinds.map(\.id) == ["none", "time"])
+        #expect(editor.priority?.options.map(\.title) == ["None", "Low", "Normal", "High"])
+        #expect(editor.notes != nil)
+        #expect(editor.link == nil)
+        // A collection it cannot write: refused, and why.
+        let viewOnly = try await loaded(
+            [],
+            settings: [
+                collectionRecord(chore, enabled: true),
+                Record(
+                    id: DerivedIDs.preference, kind: TasksKinds.preference, properties: ["newTasks": .string(chore)], version: 1,
+                    createdAt: "2026-11-01T10:00:00Z"),
+            ], scopes: TasksManifest.scopes + ["read:\(area)"])
+        await viewOnly.send(.quickAdd("Mow the lawn"))
+        #expect(enqueued(viewOnly).isEmpty)
+        #expect(
+            await viewOnly.presentation.problem == ProblemPresentation(title: "Can't add a task", message: "New tasks go to Chores, which is view only here."))
+    }
+
     @Test func aHeldSettingsRecordIsPatchedOnTheVersionRead() async throws {
         let harness = try await loaded([])
         await harness.send(.setGrouping(chore, property: nil))

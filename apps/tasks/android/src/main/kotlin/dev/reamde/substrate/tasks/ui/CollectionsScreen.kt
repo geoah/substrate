@@ -35,6 +35,7 @@ import dev.reamde.substrate.kit.ui.KitValueRow
 import dev.reamde.substrate.kit.ui.brandAccent
 import dev.reamde.substrate.kit.ui.kitRowPadding
 import dev.reamde.substrate.kit.ui.style
+import dev.reamde.substrate.tasks.bridge.ApprovalLine
 import dev.reamde.substrate.tasks.bridge.ApprovalPresentation
 import dev.reamde.substrate.tasks.bridge.ChoicePresentation
 import dev.reamde.substrate.tasks.bridge.CollectionPresentation
@@ -122,6 +123,7 @@ internal fun CollectionScreen(collection: CollectionPresentation, actions: Tasks
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = KitSpacing.screen),
             )
+            collection.approval?.let { ApprovalLineRow(it, actions) }
             KitSection(collection.groupTitle) {
                 collection.groups.forEachIndexed { index, choice ->
                     if (index > 0) KitRowDivider()
@@ -157,6 +159,16 @@ internal fun CollectionScreen(collection: CollectionPresentation, actions: Tasks
                 }
             }
         }
+    }
+}
+
+/** A page's approval line and its Approve (`TasksActions.request`). */
+@Composable
+internal fun ApprovalLineRow(line: ApprovalLine, actions: TasksActions) {
+    KitSection(null) {
+        Text(line.message, style = KitText.body.style, modifier = Modifier.kitRowPadding().padding(vertical = KitSpacing.small))
+        KitRowDivider()
+        TextButton(onClick = { actions.request(line) }, modifier = Modifier.kitRowPadding()) { Text(line.approve) }
     }
 }
 

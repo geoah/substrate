@@ -239,6 +239,9 @@ public struct TaskRow: Bridged, Hashable, Sendable, Identifiable {
     public var toggle: String?
     /// Its collection and when it was written, on a suggestion's row.
     public var written: String?
+    /// "View only", in place of Dismiss and Accept, on a suggestion's row
+    /// whose collection the grant does not write.
+    public var viewOnly: String?
     public var due: DueBadge?
     public var priority: PriorityBadge?
     /// The group it is in, where the column mixes groups.
@@ -297,6 +300,8 @@ public struct TaskDetailPresentation: Bridged, Equatable, Sendable {
     public var actions: [ActionButton<TaskAction>]
     /// The toolbar's button that opens the editor; nil where there is none.
     public var edit: String?
+    /// The approval that would make a view-only task's collection writable.
+    public var approval: ApprovalLine?
 }
 
 /// One fact of the open task: read only, or a choice that changes it.
@@ -375,6 +380,9 @@ public struct SuggestionPresentation: Bridged, Equatable, Sendable {
     /// Dismiss and Accept where the collection is writable; Undo while
     /// decided.
     public var actions: [ActionButton<TaskAction>]
+    /// The approval that would let the owner decide it, where its
+    /// collection is view only.
+    public var approval: ApprovalLine?
 }
 
 /// A decision with several values: a sheet of each by its declared label.
@@ -422,6 +430,21 @@ public struct CollectionPresentation: Bridged, Equatable, Sendable {
     public var states: [LabeledValue]
     public var fieldsTitle: String
     public var fields: [LabeledValue]
+    /// The approval it waits on: to change it, where it is view only, else
+    /// to read the group kind it is grouped by, where that is out of reach.
+    public var approval: ApprovalLine?
+}
+
+/// A page's line asking for the owner's approval, and its button
+/// (`TasksApp.Command.requestApproval`).
+public struct ApprovalLine: Bridged, Hashable, Sendable {
+    public var message: String
+    public var approve: String
+    public var collection: String
+    /// The group kind it asks to read; nil to change the collection.
+    public var group: String?
+    /// The scopes it asks for beside the app's own.
+    public var scopes: [String]
 }
 
 /// One way to group a collection: a single reference by its label with its

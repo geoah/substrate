@@ -31,7 +31,7 @@ struct TabRoot: View {
     private func content(_ section: String) -> some View {
         switch section {
         case TasksMenu.needsYou:
-            NavigationStack(path: path(home: .needsYou)) {
+            NavigationStack(path: path(home: .needsYou, section: TasksMenu.needsYou)) {
                 if let list = app.list, list.selection == .needsYou {
                     TaskListView(list: list, app: app, link: link)
                         .navigationDestination(for: PhoneRoute.self) { route in pushed(route) }
@@ -53,7 +53,7 @@ struct TabRoot: View {
                     }
             }
         default:
-            NavigationStack(path: path(home: nil)) {
+            NavigationStack(path: path(home: nil, section: TasksMenu.lists)) {
                 SidebarView(sidebar: app.sidebar, link: link, app: app, select: { shell.send(.show($0)) })
                     .navigationDestination(for: PhoneRoute.self) { route in pushed(route) }
             }
@@ -71,8 +71,11 @@ struct TabRoot: View {
     /// The stack the presentation holds: the list shown over the tab's home
     /// (Needs you's, or none for Lists), then the task open. A pop the
     /// system makes (a back swipe) is the command that closes what it took
-    /// off.
-    private func path(home: ListSelection?) -> Binding<[PhoneRoute]> {
+    /// off. Each section keeps its own stack in the state, which holds the
+    /// selected one's alone: a tab not shown pushes nothing and pops
+    /// nothing.
+    private func path(home: ListSelection?, section: String) -> Binding<[PhoneRoute]> {
+        guard app.menu.selected == section else { return .constant([]) }
         let shown = app.queue != nil ? ListSelection.suggestions : app.list?.selection
         let list = shown.flatMap { $0 == home ? nil : PhoneRoute.list($0) }
         let task = (app.detail?.id ?? app.suggestion?.id).map(PhoneRoute.task)
@@ -143,7 +146,7 @@ private struct LiveCollections: View {
     @Environment(TasksShell.self) private var shell
 
     var body: some View {
-        if let collections = shell.presentation.app?.collections { CollectionsView(collections: collections) }
+        if let app = shell.presentation.app { CollectionsView(collections: app.collections, approval: app.approval) }
     }
 }
 
@@ -151,6 +154,6 @@ private struct LiveCollection: View {
     @Environment(TasksShell.self) private var shell
 
     var body: some View {
-        if let collection = shell.presentation.app?.collection { CollectionView(collection: collection) }
+        if let app = shell.presentation.app, let collection = app.collection { CollectionView(collection: collection, approval: app.approval) }
     }
 }

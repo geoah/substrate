@@ -36,25 +36,22 @@ struct SuggestionsView: View {
                 Section {
                     ForEach(queue.rows.rows) { row in
                         let selected = app.suggestion?.id == row.id
-                        Group {
-                            if sizeClass == .compact {
-                                TaskRowView(row: row, open: { open(row) }, selected: selected)
-                            } else {
-                                TaskRowView(row: row, selected: selected).tag(row.id)
+                        // The row opens its suggestion itself, its words a
+                        // button beside its own Dismiss and Accept.
+                        TaskRowView(row: row, open: { open(row) }, selected: selected)
+                            .tag(row.id)
+                            .listRowBackground(selected ? Color.brandAccent.opacity(0.08) : TasksSymbols.card)
+                            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+                            .swipeActions(edge: .leading) {
+                                if !row.pending, row.decisions.contains(where: { $0.action == .accept }) {
+                                    Button(app.list?.rowMenu.accept ?? "Accept") { shell.send(.accept(row.id)) }.tint(Color.brandAccent)
+                                }
                             }
-                        }
-                        .listRowBackground(selected ? Color.brandAccent.opacity(0.08) : TasksSymbols.card)
-                        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 6))
-                        .swipeActions(edge: .leading) {
-                            if !row.pending, row.decisions.contains(where: { $0.action == .accept }) {
-                                Button(app.list?.rowMenu.accept ?? "Accept") { shell.send(.accept(row.id)) }.tint(Color.brandAccent)
+                            .swipeActions(edge: .trailing) {
+                                if !row.pending, row.decisions.contains(where: { $0.action == .dismiss }) {
+                                    Button(app.list?.rowMenu.dismiss ?? "Dismiss") { shell.send(.dismiss(row.id)) }
+                                }
                             }
-                        }
-                        .swipeActions(edge: .trailing) {
-                            if !row.pending, row.decisions.contains(where: { $0.action == .dismiss }) {
-                                Button(app.list?.rowMenu.dismiss ?? "Dismiss") { shell.send(.dismiss(row.id)) }
-                            }
-                        }
                     }
                 }
             }
@@ -139,6 +136,7 @@ struct SuggestionView: View {
                 }
                 .padding(.vertical, 4)
             }
+            if let line = suggestion.approval { ApprovalLineSection(line: line) }
             if !suggestion.fields.isEmpty {
                 Section {
                     ForEach(suggestion.fields) { field in

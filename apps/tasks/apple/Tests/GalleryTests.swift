@@ -54,11 +54,11 @@ import Testing
             // The system's sheet: drawn over the suggestions it is asked from.
             return app.queue.map { queue in AnyView(NavigationStack { SuggestionsView(queue: queue, app: app, link: link) }) }
         case .collections:
-            return AnyView(NavigationStack { CollectionsView(collections: app.collections) })
+            return AnyView(NavigationStack { CollectionsView(collections: app.collections, approval: app.approval) })
         case .collection:
-            return app.collection.map { collection in AnyView(NavigationStack { CollectionView(collection: collection) }) }
+            return app.collection.map { collection in AnyView(NavigationStack { CollectionView(collection: collection, approval: app.approval) }) }
         case .approval:
-            return AnyView(NavigationStack { CollectionsView(collections: app.collections) })
+            return AnyView(NavigationStack { CollectionsView(collections: app.collections, approval: app.approval) })
         }
     }
 

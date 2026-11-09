@@ -55,13 +55,21 @@ public extension TasksApp {
         // task.
         case let .sectionSelected(section):
             guard section != state.section else { break }
-            next.openTask = nil
+            // Each section keeps its own stack: what it showed and had open
+            // when the owner left it comes back with it.
+            next.stacks[state.section] = SectionStack(selection: state.selection, openTask: state.openTask)
+            let kept = state.stacks[section]
             next.section = section
             next.tapped = nil
             next.picked = nil
-            if section == TasksMenu.needsYou { next.selection = .needsYou }
+            next.selection = kept?.selection ?? (section == TasksMenu.needsYou ? .needsYou : nil)
+            next.openTask = kept?.openTask
+            if section == TasksMenu.settings {
+                next.selection = state.selection
+                next.openTask = nil
+            }
             if section == TasksMenu.lists, next.selection == .needsYou { next.selection = nil }
-            if section != TasksMenu.settings { next.settingsPage = nil }
+            if section == TasksMenu.needsYou, next.selection == nil { next.selection = .needsYou }
         case let .shown(selection):
             guard selection != state.selection || state.openTask != nil else { break }
             next.selection = selection
@@ -103,6 +111,8 @@ public extension TasksApp {
             next.approval = ask
         case let .approvalAnswered(completed):
             if completed { next.approval?.answered = true } else { next.approval?.refused = true }
+        case let .refused(words):
+            next.refusal = words
         case let .settingsChanged(settings):
             next.settings = settings
         case let .permission(permission):
@@ -117,6 +127,7 @@ public extension TasksApp {
             next.offered = version
         case .problemDismissed:
             next.problem = nil
+            next.refusal = nil
         }
         rekind(&next, from: previous)
         openTapped(&next)

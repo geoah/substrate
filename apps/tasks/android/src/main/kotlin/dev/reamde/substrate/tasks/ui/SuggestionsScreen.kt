@@ -187,6 +187,7 @@ internal fun SuggestionScreen(suggestion: SuggestionPresentation, actions: Tasks
                     Text(it, color = MaterialTheme.brandAccent, modifier = Modifier.padding(horizontal = KitSpacing.screen))
                 }
             }
+            suggestion.approval?.let { ApprovalLineRow(it, actions) }
             if (suggestion.fields.isNotEmpty()) {
                 KitSection(null) {
                     suggestion.fields.forEachIndexed { index, field ->

@@ -69,6 +69,9 @@ public struct TasksApp: LinkedRecordsApp {
         /// A collection grouped by one of its references, or by nothing.
         case setGrouping(String, property: String?)
         case setNewTasks(String)
+        /// Approve, from a page's line: `write:` on the collection, or with
+        /// `group` `read:` on that group kind.
+        case requestApproval(String, group: String?)
         case showSettings(SettingsPage?)
         /// The owner went to the approval page (`completed`), whose answer the
         /// next scopes the link holds then give; or it closed with none.
@@ -117,6 +120,8 @@ public struct TasksApp: LinkedRecordsApp {
         case settingsShown(SettingsPage?)
         case approvalAsked(ApprovalAsk?)
         case approvalAnswered(completed: Bool)
+        /// A task could not be added, and why.
+        case refused(String)
         case settingsChanged(SettingsValues)
         case permission(NotificationPermission)
         case scheduled([NotificationRequest])
@@ -262,33 +267,44 @@ public struct TasksApp: LinkedRecordsApp {
     // MARK: Composition
 
     /// The editors, each made from the task as it stands, read in the
-    /// device's time zone (a moment's day is the device's).
+    /// device's time zone (a moment's day is the device's), over the task's
+    /// collection, or for a new one the collection new tasks go to.
     public func children(in state: TasksState, environment: AppEnvironment) -> [ChildKey: TaskEditor] {
         guard !state.editors.isEmpty else { return [:] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = environment.timeZone
         let model = model(state, calendar: calendar)
-        guard let collection = model.collection(TasksKinds.task) else { return [:] }
-        let lists = model.arrangedLists.map { EditorOption(id: $0.recordID, title: $0.name) }
-        var last: [String: Decimal] = [:]
-        for task in model.tasks.values where task.kind == TasksKinds.task {
-            guard let position = task.position else { continue }
-            last[task.list ?? ""] = max(last[task.list ?? ""] ?? position, position)
-        }
         var out: [ChildKey: TaskEditor] = [:]
         for (key, seed) in state.editors {
             switch seed {
             case let .task(path):
                 // A task deleted while it was being edited closes its editor.
-                guard let task = model.tasks[path] else { continue }
+                guard let task = model.tasks[path], let collection = model.collection(task.kind) else { continue }
+                let (lists, last) = Self.groups(of: collection, in: model)
                 out[key] = TaskEditor(original: task, collection: collection, lists: lists, lastPositions: last, saving: state.saves[key])
             case let .new(list, day):
+                guard let collection = model.newTasksTarget else { continue }
+                let (lists, last) = Self.groups(of: collection, in: model)
                 out[key] = TaskEditor(
                     original: nil, collection: collection, seedList: list, seedDay: day, lists: lists, lastPositions: last,
                     saving: state.saves[key])
             }
         }
         return out
+    }
+
+    /// A collection's groups as the editor offers them, by path, and the
+    /// highest position of its tasks in each ("" for none).
+    static func groups(of collection: TaskCollection, in model: TasksModel) -> ([EditorOption], [String: Decimal]) {
+        let kind = collection.group?.kind ?? ""
+        let lists = model.ordered(model.groups.values.filter { $0.kind == kind }, of: kind).map { EditorOption(id: $0.id, title: $0.name) }
+        var last: [String: Decimal] = [:]
+        for task in model.tasks.values where task.kind == collection.kind {
+            guard let position = task.position else { continue }
+            let path: String = if case let .record(path)? = task.group { path } else { "" }
+            last[path] = max(last[path] ?? position, position)
+        }
+        return (lists, last)
     }
 
     // MARK: The presenter

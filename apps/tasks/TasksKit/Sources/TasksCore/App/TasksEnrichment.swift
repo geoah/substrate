@@ -32,21 +32,26 @@ public extension TasksApp {
             return [.filtered(filter)]
         case let .quickAdd(name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, let own, own.creatable else { return [] }
-            // On Needs you a task goes into the list it is narrowed to and is
-            // due today, so it lands where the owner is looking.
-            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
-            let list = selection.listID
+            guard !name.isEmpty, let target = model.newTasksTarget else { return [] }
+            if let refusal = model.refusal(target) { return [.refused(refusal)] }
+            // On Needs you a task goes into the group it is narrowed to and is
+            // due today, where the collection takes a day alone, so it lands
+            // where the owner is looking.
+            let group = Self.group(for: state, in: target)
             let task = TaskItem(
-                recordID: writes.newID(), name: name, group: list.map { .record(ListSelection.list($0).listPath) } ?? TaskGroupLink.none,
-                position: Position.between(model.lastPosition(inList: list), nil), due: state.selection == .needsYou ? .day(today) : nil)
-            return [wrote(writes.create(task, in: own))]
+                kind: target.kind, recordID: writes.newID(), name: name, group: group.map(TaskGroupLink.record) ?? TaskGroupLink.none,
+                position: target.order == nil ? nil : Position.between(Self.lastPosition(of: target, in: group, model: model), nil),
+                due: state.selection == .needsYou && target.dueDay != nil ? .day(today) : nil)
+            return [wrote(writes.create(task, in: target))]
         case .newTask:
-            guard own?.creatable == true else { return [] }
-            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
-            return [.editorOpened(ChildKey(writes.newID()), .new(list: selection.listID, day: state.selection == .needsYou ? today : nil))]
+            guard let target = model.newTasksTarget else { return [] }
+            if let refusal = model.refusal(target) { return [.refused(refusal)] }
+            return [
+                .editorOpened(ChildKey(writes.newID()), .new(list: Self.group(for: state, in: target), day: state.selection == .needsYou ? today : nil))
+            ]
         case let .edit(path):
-            guard let task = model.tasks[path], task.kind == TasksKinds.task, own?.writable == true else { return [] }
+            guard let task = model.tasks[path], let collection = model.collection(task.kind), collection.writable, collection.title != nil
+            else { return [] }
             return [.editorOpened(ChildKey(writes.newID()), .task(path))]
         case let .complete(path):
             return decide(.complete, path, to: nil, state: state, model: model, writes: writes)
@@ -229,6 +234,15 @@ public extension TasksApp {
                         ApprovalAsk(collection: kind, scopes: ["read:\(reference.kind)"], held: state.linked.link?.scopes, group: reference.kind)))
             }
             return events
+        case let .requestApproval(kind, group):
+            guard let collection = model.collection(kind) else { return [] }
+            let scopes = group.map { ["read:\($0)"] } ?? ["write:\(kind)"]
+            let grant = Self.grant(state.linked.link)
+            guard !scopes.allSatisfy({ grant.covers($0) }) else { return [] }
+            // Asked from a page's line: the owner is on the approval page at once.
+            var ask = ApprovalAsk(collection: collection.kind, scopes: scopes, held: state.linked.link?.scopes, group: group)
+            ask.answered = true
+            return [.approvalAsked(ask)]
         case let .showSettings(page):
             if case let .collection(kind)? = page, model.collection(kind) == nil { return [] }
             return page == state.settingsPage ? [] : [.settingsShown(page)]
@@ -253,6 +267,27 @@ public extension TasksApp {
         case .dismissProblem:
             return [.problemDismissed]
         }
+    }
+
+    /// The group a task added here goes in, by path: the one shown, or the
+    /// one Needs you is narrowed to, where it is of the collection's group
+    /// kind.
+    static func group(for state: TasksState, in collection: TaskCollection) -> String? {
+        let selection = state.selection == .needsYou ? state.filter : state.selection
+        guard case let .group(path)? = selection, let kind = collection.group?.kind,
+            RecordReference(path: path)?.kind == kind
+        else { return nil }
+        return path
+    }
+
+    /// The highest position among a collection's tasks in a group (nil: in
+    /// none).
+    static func lastPosition(of collection: TaskCollection, in group: String?, model: TasksModel) -> Decimal? {
+        model.tasks.values.filter { task in
+            guard task.kind == collection.kind else { return false }
+            let path: String? = if case let .record(path)? = task.group { path } else { nil }
+            return path == group
+        }.compactMap(\.position).max()
     }
 
     /// The properties a suggestion's page sets before it is accepted: the

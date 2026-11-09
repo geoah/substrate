@@ -509,12 +509,13 @@ struct AppTests {
         #expect(shared.map(\.field) == [.list, .due, .priority, .notes, .link])
         for field in shared { #expect(field.label == editor.labels[field.field], "\(field.field)") }
         for field in detail.fields { if let choice = field.choice { #expect(choice.label == editor.labels[field.field]) } }
-        #expect(editor.list.selected == "home")
-        #expect(editor.due.kind == .day)
+        // The list by its record's path, as every group is.
+        #expect(editor.list?.selected == ListSelection.list("home").listPath)
+        #expect(editor.due?.kind == .day)
 
         // Edited and saved: one patch on the version the owner saw.
         try await harness.runtime.send(TaskEditor.Command.setName("Pay the rent"), to: [key])
-        try await harness.runtime.send(TaskEditor.Command.setPriority(.urgent), to: [key])
+        try await harness.runtime.send(TaskEditor.Command.setPriority("urgent"), to: [key])
         try await harness.runtime.send(TaskEditor.Command.save, to: [key])
         let entry = try #require(enqueued(harness).last)
         #expect(entry.method == .patch)

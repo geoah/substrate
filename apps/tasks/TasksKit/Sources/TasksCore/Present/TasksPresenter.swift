@@ -53,7 +53,8 @@ public enum TasksPresenter {
             settingsPage: state.settingsPage,
             approval: state.approval.map { approval($0, model: model) },
             notices: notices,
-            problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) },
+            problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }
+                ?? state.refusal.map { ProblemPresentation(title: "Can't add a task", message: $0) },
             reminders: plan,
             nextChange: [midnight, nextDue].compactMap { $0 }.min())
     }
@@ -179,6 +180,9 @@ public enum TasksPresenter {
         var queue: CountedRow?
         // A row names its collection where this list mixes collections.
         var mixed = Set(tasks.map(\.kind)).count > 1
+        // A task is added here where the collection new tasks go to holds
+        // what is shown; one that takes none says why when asked.
+        let target = model.newTasksTarget
         var adds = false
         switch selection {
         case let .group(path):
@@ -188,8 +192,8 @@ public enum TasksPresenter {
             detail = [kindLabel, group?.status].compactMap { $0 }.joined(separator: " · ")
             if let group, group.kind == TasksKinds.list {
                 actions = [ActionButton("Rename List…", .rename(group.recordID)), ActionButton("Delete List…", .delete(group.recordID))]
-                adds = true
             }
+            adds = group != nil && group?.kind == target?.group?.kind
             if group != nil { pin = model.preference.pins.contains(path) ? ActionButton("Unpin", .unpin(path)) : ActionButton("Pin", .pin(path)) }
             queue = queueRow(model.tasks(in: selection).filter(\.isSuggestion).count)
         case let .ungrouped(kind):
@@ -197,7 +201,7 @@ public enum TasksPresenter {
             let reference = collection?.group?.label ?? "list"
             title = "No \(reference)"
             detail = collection.map { _ in "Tasks with no \(reference)" }
-            adds = kind == TasksKinds.task
+            adds = kind == target?.kind
             mixed = false
         case let .missing(kind):
             let reference = model.collection(kind)?.group?.label ?? "list"
@@ -207,7 +211,7 @@ public enum TasksPresenter {
         case let .collection(kind):
             title = model.collection(kind)?.label ?? kindDisplayPlural(kind)
             detail = kind
-            adds = kind == TasksKinds.task
+            adds = kind == target?.kind
             mixed = false
         case .noDate:
             title = "No date"
@@ -215,7 +219,7 @@ public enum TasksPresenter {
         case .needsYou, .suggestions:
             title = "Needs you"
         }
-        adds = adds && model.collection(TasksKinds.task)?.creatable == true
+
         let empty: EmptyPresentation? =
             if !open.isEmpty { nil } else {
                 selection == .inbox
@@ -235,7 +239,7 @@ public enum TasksPresenter {
                 showsClosed ? closed.map { row($0, state: state, words: words, mixed: mixed, grouped: !isGroup(selection)) } : [], revision: revision),
             closedTitle: "Done",
             showsClosed: showsClosed, toggleClosed: showsClosed ? "Hide Completed" : "Show Completed",
-            quickAdd: adds ? (selection.listID == nil ? "Add a task" : "Add a task to \(title)") : nil, newTask: "New Task",
+            quickAdd: adds ? (isGroup(selection) ? "Add a task to \(title)" : "Add a task") : nil, newTask: "New Task",
             reorders: reorders, orderNote: order == .due ? "Sorted by due date" : nil, empty: empty, actions: actions, pin: pin,
             rowMenu: menu)
     }
@@ -277,11 +281,12 @@ public enum TasksPresenter {
             }
         let summary = ListSummary(
             headline: needing ? "\(bands[0].count) need you" : "Nothing needs you", detail: dayTitle(today, words: words), overdue: nil)
+        let target = model.newTasksTarget
         let narrowed = state.filter.flatMap { filter -> String? in
-            guard filter.listID != nil, case let .group(path) = filter else { return nil }
+            guard case let .group(path) = filter, RecordReference(path: path)?.kind == target?.group?.kind else { return nil }
             return model.groups[path]?.name
         }
-        let adds = model.collection(TasksKinds.task)?.creatable == true
+        let adds = target != nil
         return ListPresentation(
             selection: .needsYou, title: "Needs you", summary: summary, chips: chips.count > 1 ? chips : [], queue: queueRow(suggestions),
             bands: bands, clear: !rows.isEmpty && !needing ? "Nothing needs you right now." : nil,
@@ -361,13 +366,19 @@ public enum TasksPresenter {
         let title = task.name.isEmpty ? "Untitled task" : task.name
         let written =
             task.isSuggestion ? [collection?.label, task.createdAt.map { words.ago($0, short: true) }].compactMap { $0 }.joined(separator: " · ") : nil
+        let viewOnly = task.isSuggestion && collection?.viewOnly == true ? "View only" : nil
         var spoken = [title]
         if let pending {
             spoken.append("\(pendingWords(pending.decision).lowercased()), tap to undo")
-        } else if !task.isOpen {
+        } else if task.isClosed {
             spoken.append(words.model.label(of: task.status ?? "", for: task))
         }
-        if let written { spoken.append("suggested, \(written)") }
+        // A suggestion says so once, in its page's words.
+        if task.isSuggestion {
+            let page = ["Suggestion in \(collection?.label ?? kindDisplayPlural(task.kind))", task.createdAt.map { "written \(words.ago($0, short: false))" }]
+            spoken.append(page.compactMap { $0 }.joined(separator: " · "))
+        }
+        if let viewOnly { spoken.append(viewOnly) }
         if let due { spoken.append(due.tone == .overdue && band == .lateOrUrgent ? due.text : "due \(due.text)") }
         if let priority { spoken.append("priority \(priority.text)") }
         if let listName { spoken.append("in \(listName)") }
@@ -389,7 +400,8 @@ public enum TasksPresenter {
             { "Reopen" } else { nil }
         return TaskRow(
             id: task.id, title: title, standing: task.standing, suggestion: task.isSuggestion, pending: pending != nil,
-            pendingWords: pending.map { pendingWords($0.decision) }, toggle: toggle, written: written, due: due, priority: priority,
+            pendingWords: pending.map { pendingWords($0.decision) }, toggle: toggle, written: written, viewOnly: viewOnly, due: due,
+            priority: priority,
             listName: listName, collection: collectionName, band: band,
             reschedule: deciding && !task.isSuggestion ? today.flatMap { reschedule(task, today: $0, words: words) } : nil,
             decisions: decisions, picked: task.isSuggestion ? state.picked.map { $0.contains(task.id) } : nil,
@@ -451,7 +463,25 @@ public enum TasksPresenter {
             title: task.name.isEmpty ? "Untitled task" : task.name, fields: fields,
             description: description(task, collection: collection), detailsTitle: "Details",
             details: details(task, collection: collection, model: model, state: state), place: place, pending: pending != nil,
-            pendingWords: pending.map { pendingWords($0.decision) }, actions: actions)
+            pendingWords: pending.map { pendingWords($0.decision) }, actions: actions,
+            approval: collection.flatMap { $0.viewOnly ? changeLine($0) : nil })
+    }
+
+    /// The line that asks to change a view-only collection.
+    static func changeLine(_ collection: TaskCollection) -> ApprovalLine {
+        ApprovalLine(
+            message: "Substrate Tasks needs your approval to change your \(collection.label).", approve: "Approve",
+            collection: collection.kind, group: nil, scopes: ["write:\(collection.kind)"])
+    }
+
+    /// The line that asks to read the group kind a collection is grouped
+    /// by, where the grant does not read it.
+    static func readLine(_ collection: TaskCollection, model: TasksModel) -> ApprovalLine? {
+        guard let chosen = collection.chosenGroup, !model.grant.reads(chosen.kind) else { return nil }
+        let groups = model.declarations[chosen.kind]?.pluralLabel ?? kindDisplayPlural(chosen.kind)
+        return ApprovalLine(
+            message: "Substrate Tasks needs your approval to read your \(groups.lowercasedFirst).", approve: "Approve",
+            collection: collection.kind, group: chosen.kind, scopes: ["read:\(chosen.kind)"])
     }
 
     /// The readings a suggestion's page sets before it is accepted, each as
@@ -520,7 +550,14 @@ public enum TasksPresenter {
             }
             let words: String
             if let reference = RecordReference(value), collection.declaration.type(of: name) == "reference" {
-                words = model.groups[reference.path]?.name ?? state.records[reference.path]?["title"]?.text ?? fallbackName(reference)
+                // A kind the grant does not read is out of reach, never its
+                // label; one it reads and holds no record of is missing.
+                let target = collection.declaration.property(name)?["kind"]?.text ?? reference.kind
+                if !model.grant.reads(target) {
+                    words = "Out of reach"
+                } else {
+                    words = model.groups[reference.path]?.name ?? state.records[reference.path]?["title"]?.text ?? "Missing"
+                }
             } else if collection.declaration.type(of: name) == "enum" || collection.declaration.type(of: name) == "state", let text = value.text {
                 words = collection.declaration.label(of: text, in: name)
             } else {
@@ -607,7 +644,8 @@ public enum TasksPresenter {
         return TaskDetailPresentation(
             id: task.id, title: task.name.isEmpty ? "Untitled task" : task.name, standing: task.standing, pending: pending != nil,
             fields: fields, detailsTitle: "Details", details: own ? [] : details(task, collection: collection, model: model, state: state),
-            actions: actions, edit: own ? "Edit" : nil)
+            actions: actions, edit: collection?.writable == true && collection?.title != nil ? "Edit" : nil,
+            approval: collection.flatMap { $0.viewOnly ? changeLine($0) : nil })
     }
 
     /// Every priority of the app's own kind, as the detail and the editor
@@ -647,9 +685,9 @@ public enum TasksPresenter {
         var groups = collection.allReferences.map { reference in
             GroupChoice(
                 id: reference.property, title: propertyLabel(reference.property), detail: reference.kind,
-                selected: collection.group == reference)
+                selected: collection.chosenGroup == reference)
         }
-        groups.append(GroupChoice(id: "", title: "Nothing", detail: "One list of every task", selected: collection.group == nil))
+        groups.append(GroupChoice(id: "", title: "Nothing", detail: "One list of every task", selected: collection.chosenGroup == nil))
         let status = collection.status
         let open = status.values.filter { status.standing(of: $0) == .open }
         let values = { (list: [String]) in list.isEmpty ? "None" : list.joined(separator: ", ") }
@@ -665,7 +703,8 @@ public enum TasksPresenter {
             fields: [
                 field("Title", collection.title), field("Due", collection.due), field("Due day", collection.dueDay),
                 field("Priority", collection.priority), field("Order", collection.order),
-            ])
+            ],
+            approval: collection.viewOnly ? changeLine(collection) : readLine(collection, model: model))
     }
 
     static func approval(_ ask: ApprovalAsk, model: TasksModel) -> ApprovalPresentation {
@@ -734,13 +773,16 @@ public enum TasksPresenter {
         }
 
         /// The group a task is in, as a row names it: its name, "No list",
-        /// or "Missing"; nil where its collection groups by nothing.
+        /// "Missing", or "Out of reach"; nil where its collection groups by
+        /// nothing.
         func groupWords(_ task: TaskItem) -> String? {
             switch task.group {
             case let .record(path)?: model.groups[path]?.name
             case .none?: "No \(model.collection(task.kind)?.group?.label ?? "list")"
             case .missing?: "Missing"
-            case nil: nil
+            // Grouped by a kind the grant does not read: out of reach until
+            // the owner approves reading it.
+            case nil: model.collection(task.kind)?.chosenGroup.map { _ in "Out of reach" }
             }
         }
 

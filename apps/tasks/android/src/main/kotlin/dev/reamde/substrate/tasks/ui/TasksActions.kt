@@ -2,6 +2,7 @@ package dev.reamde.substrate.tasks.ui
 
 import dev.reamde.substrate.kit.bridge.AccessAction
 import dev.reamde.substrate.kit.bridge.SettingsCommand
+import dev.reamde.substrate.tasks.bridge.ApprovalLine
 import dev.reamde.substrate.tasks.bridge.ApprovalPresentation
 import dev.reamde.substrate.tasks.bridge.TaskEditor
 import dev.reamde.substrate.tasks.bridge.TasksApp
@@ -19,11 +20,11 @@ interface TasksActions {
 
     fun perform(action: AccessAction)
 
-    /**
-     * The approval the app asks for to change a collection. Android's sign-in (`tasks.connect`) asks for the manifest's scopes alone, so the approval of a kind
-     * beside them is not asked here yet, and the question is answered as not given.
-     */
+    /** The approval the app asks for to change a collection or read a group kind, through the sign-in with its scopes beside the manifest's. */
     fun approve(approval: ApprovalPresentation) = send(TasksApp.Command.ApprovalAnswered(completed = false))
+
+    /** A page's approval line: the owner goes to the approval page at once. */
+    fun request(line: ApprovalLine) = send(TasksApp.Command.ApprovalAnswered(completed = false))
 
     object None : TasksActions {
         override fun send(command: TasksApp.Command) = Unit

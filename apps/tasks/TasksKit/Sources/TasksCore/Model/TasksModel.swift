@@ -18,12 +18,15 @@ public struct TasksModel: Equatable, Sendable {
     public var declarations: [String: TaskKindDeclaration]
     /// The device's calendar, in its time zone: a moment's day is its day.
     public var calendar: Calendar
+    /// What the token reads and writes.
+    public var grant: Grants
 
     public init(
         collections: [TaskCollection] = [], tasks: [String: TaskItem] = [:], groups: [String: TaskGroup] = [:],
         preference: TasksPreference = TasksPreference(), declarations: [String: TaskKindDeclaration] = [:],
-        calendar: Calendar = Calendar(identifier: .gregorian)
+        calendar: Calendar = Calendar(identifier: .gregorian), grant: Grants = Grants([ScopeWords.full])
     ) {
+        self.grant = grant
         self.collections = collections
         self.tasks = tasks
         self.groups = groups
@@ -71,7 +74,9 @@ public struct TasksModel: Equatable, Sendable {
                 groups[group.id] = group
             }
         }
-        self.init(collections: collections, tasks: tasks, groups: groups, preference: chosen, declarations: byKind, calendar: calendar)
+        self.init(
+            collections: collections, tasks: tasks, groups: groups, preference: chosen, declarations: byKind, calendar: calendar,
+            grant: grant)
     }
 
     // MARK: Reading a record
@@ -142,6 +147,24 @@ public struct TasksModel: Equatable, Sendable {
 
     /// The collection new tasks go to, where it takes them.
     public var newTasks: TaskCollection? { enabled.first(where: \.creatable) }
+
+    /// The collection the preference sends new tasks to, the app's own where
+    /// it names none or one that is off: whether it takes them or not.
+    public var newTasksTarget: TaskCollection? {
+        enabled.first { $0.kind == preference.newTasks } ?? collection(TasksKinds.task)
+    }
+
+    /// Why `collection` takes no new task, in words; nil where it does.
+    public func refusal(_ collection: TaskCollection) -> String? {
+        guard !collection.takesNew else { return nil }
+        if collection.viewOnly { return "New tasks go to \(collection.label), which is view only here." }
+        if !collection.enabled { return "New tasks go to \(collection.label), which is turned off." }
+        let edited = Set(
+            [collection.title, collection.due, collection.dueDay, collection.priority, collection.order, collection.group?.property]
+                .compactMap { $0 })
+        let missing = collection.declaration.required.filter { !edited.contains($0) }.map(propertyLabel)
+        return "New tasks go to \(collection.label), which needs \(joinWords(missing).lowercased()), which Substrate Tasks does not set."
+    }
 
     /// Whether more than one collection is on: a row then names its
     /// collection.

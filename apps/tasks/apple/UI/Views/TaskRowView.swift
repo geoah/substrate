@@ -24,20 +24,98 @@ struct TaskRowView: View {
     @State private var markedAt: Date?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            if let picked = row.picked {
-                Button {
-                    shell.send(.picked(row.id))
-                } label: {
-                    Image(systemName: picked ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(picked ? Color.brandAccent : Color.secondary)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
+        if row.suggestion { suggestion } else { line(trailing: true) }
+    }
+
+    /// A suggestion: its title at the row's full width, then its meta with
+    /// Dismiss and Accept at the trailing end of the meta's line, or on a
+    /// line of their own under it where the column is too narrow.
+    private var suggestion: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if row.picked != nil { pickMark }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(row.title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(row.pending ? Color.secondary : Color.primary)
+                    .strikethrough(row.pending)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                    .onTapGesture { openOrPick() }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 8) {
+                        meta
+                        Spacer(minLength: 8)
+                        trailing.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        meta
+                        trailing.fixedSize().frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
-                .buttonStyle(.borderless)
-                .accessibilityAddTraits(picked ? .isSelected : [])
             }
+            .padding(.vertical, 8)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(row.spoken)
+        .accessibilityAction(.default) { openOrPick() }
+        .onChange(of: row.pending, initial: true) { _, pending in
+            markedAt = pending ? Date() : nil
+        }
+        .sensoryFeedback(.impact(weight: .light), trigger: row.pending)
+    }
+
+    /// A suggestion's meta: its collection and when it was written, View
+    /// only where it cannot be decided here, its decision while its window
+    /// is open, then its due and its group.
+    private var meta: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let written = row.written {
+                Label(written, systemImage: "sparkle")
+                    .labelStyle(TightLabelStyle(spacing: 4))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            if let viewOnly = row.viewOnly {
+                Text(viewOnly).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+            if let pending = row.pendingWords, row.pending {
+                Text(pending).font(.caption.weight(.semibold)).foregroundStyle(Color.brandAccent)
+            }
+            if hasChips {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 6) { chips }
+                } else {
+                    ChipsFlow(spacing: 6, lineSpacing: 6) { chips }
+                }
+            }
+        }
+        .contentShape(.rect)
+        .onTapGesture { openOrPick() }
+    }
+
+    private func openOrPick() {
+        if row.picked != nil { shell.send(.picked(row.id)) } else { open?() }
+    }
+
+    private var pickMark: some View {
+        Button {
+            shell.send(.picked(row.id))
+        } label: {
+            Image(systemName: row.picked == true ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(row.picked == true ? Color.brandAccent : Color.secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(row.title)
+        .accessibilityAddTraits(row.picked == true ? .isSelected : [])
+    }
+
+    private func line(trailing shown: Bool) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            if row.picked != nil { pickMark }
             if let open {
                 Button(action: open) { content }
                     .buttonStyle(.plain)
@@ -49,7 +127,11 @@ struct TaskRowView: View {
                     .accessibilityLabel(row.spoken)
                     .accessibilityAction(named: Text(row.toggle ?? ""), toggle)
             }
-            trailing
+            if shown {
+                trailing
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
         .opacity(row.band == .later || !isOpen ? 0.62 : 1)
         .onChange(of: row.pending, initial: true) { _, pending in
@@ -146,6 +228,9 @@ struct TaskRowView: View {
                     .labelStyle(TightLabelStyle(spacing: 4))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+            }
+            if let viewOnly = row.viewOnly {
+                Text(viewOnly).font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
             if let pending = row.pendingWords, row.pending, pending != "Done" {
                 Text(pending).font(.caption.weight(.semibold)).foregroundStyle(Color.brandAccent)

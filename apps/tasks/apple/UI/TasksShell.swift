@@ -58,6 +58,15 @@ extension AppShell where App == TasksApp {
         }
     }
 
+    /// A page's approval line: the app hears the owner went to the page, and
+    /// the scopes the link then holds say whether it was granted.
+    func request(_ line: ApprovalLine) {
+        send(.requestApproval(line.collection, group: line.group))
+        Task {
+            if (try? await changeAccess(adding: line.scopes)) == nil { send(.approvalAnswered(completed: false)) }
+        }
+    }
+
     /// A row's decision or action, by what it is.
     func perform(_ action: TaskAction, on task: String) {
         switch action {

@@ -31,14 +31,14 @@ struct AppView: View {
             }
             Button(choice.cancel, role: .cancel) { shell.send(.dismissChoice) }
         }
+        // Asked from Settings, an approval is said there; turned down after
+        // a page's line, it is said over whatever is shown.
         .alert(
-            app.approval?.refused ?? app.approval?.message ?? "",
-            isPresented: Binding(get: { app.approval.map { !$0.waiting } ?? false }, set: { _ in }),
+            app.approval?.refused ?? "",
+            isPresented: Binding(
+                get: { app.approval?.refused != nil && app.menu.selected != TasksMenu.settings }, set: { _ in }),
             presenting: app.approval
         ) { approval in
-            if approval.refused == nil {
-                Button(approval.approve) { shell.approve(approval) }
-            }
             Button(approval.cancel, role: .cancel) { shell.send(.dismissApproval) }
         }
     }

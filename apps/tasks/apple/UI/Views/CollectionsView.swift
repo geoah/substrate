@@ -10,33 +10,38 @@ struct CollectionsView: View {
     @Environment(TasksShell.self) private var shell
     let collections: CollectionsPresentation
 
+    var approval: ApprovalPresentation?
+
     var body: some View {
         Form {
             Section {
                 Text(collections.intro).font(.subheadline).foregroundStyle(.secondary)
             }
+            if let approval { ApprovalAskSection(approval: approval) }
             Section {
                 ForEach(collections.rows) { row in
+                    // One switch, labelled by the row's words, and one button
+                    // that opens the collection's page.
                     HStack(alignment: .center, spacing: 12) {
+                        Toggle(isOn: Binding(get: { row.on }, set: { shell.send(.setCollection(row.id, on: $0)) })) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(row.title).foregroundStyle(Color.primary)
+                                Text(row.reference).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                if let meta = row.meta {
+                                    Text(meta).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                         Button {
                             shell.send(.showSettings(.collection(row.id)))
                         } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.title).foregroundStyle(Color.primary)
-                                    Text(row.reference).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                    if let meta = row.meta {
-                                        Text(meta).font(.subheadline).foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer(minLength: 8)
-                            }
-                            .contentShape(.rect)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                .frame(minWidth: 32, minHeight: 44)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        Toggle(row.title, isOn: Binding(get: { row.on }, set: { shell.send(.setCollection(row.id, on: $0)) }))
-                            .labelsHidden()
-                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        .accessibilityLabel(row.title)
+                        .accessibilityHint(row.reference)
                     }
                     .padding(.vertical, 2)
                 }
@@ -66,11 +71,17 @@ struct CollectionsView: View {
 struct CollectionView: View {
     @Environment(TasksShell.self) private var shell
     let collection: CollectionPresentation
+    var approval: ApprovalPresentation?
 
     var body: some View {
         Form {
             Section {
                 Text(collection.reference).font(.callout.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            if let approval, approval.collection == collection.kind {
+                ApprovalAskSection(approval: approval)
+            } else if let line = collection.approval {
+                ApprovalLineSection(line: line)
             }
             Section(collection.groupTitle) {
                 ForEach(collection.groups) { choice in
@@ -117,5 +128,42 @@ struct CollectionView: View {
         }
         .formStyle(.grouped)
         .navigationTitle(collection.title)
+    }
+}
+
+/// A page's approval line and its Approve.
+struct ApprovalLineSection: View {
+    @Environment(TasksShell.self) private var shell
+    let line: ApprovalLine
+
+    var body: some View {
+        Section {
+            Label(line.message, systemImage: "lock")
+                .fixedSize(horizontal: false, vertical: true)
+            Button(line.approve) { shell.request(line) }
+                .font(.body.weight(.semibold))
+        }
+    }
+}
+
+/// The approval the app asked for when a collection was turned on or
+/// grouped, or that it was not given: said where it was asked, on the
+/// Collections pages.
+struct ApprovalAskSection: View {
+    @Environment(TasksShell.self) private var shell
+    let approval: ApprovalPresentation
+
+    var body: some View {
+        if !approval.waiting {
+            Section {
+                Label(approval.refused ?? approval.message, systemImage: approval.refused == nil ? "lock" : "exclamationmark.triangle")
+                    .fixedSize(horizontal: false, vertical: true)
+                if approval.refused == nil {
+                    Button(approval.approve) { shell.approve(approval) }
+                        .font(.body.weight(.semibold))
+                }
+                Button(approval.cancel, role: .cancel) { shell.send(.dismissApproval) }
+            }
+        }
     }
 }

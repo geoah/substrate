@@ -54,8 +54,10 @@ is the kit's ([its README](../kit/README.md)):
   patched in the same batch, so a device that lost the race patches the
   winner; turning a collection on asks for `write:` on it, and grouping by a
   kind out of reach for `read:` on that, through the approval page
-  (`AppShell.changeAccess(adding:)`; Android answers it as not given, its
-  sign-in asking for the manifest's scopes alone). A change made offline
+  (`AppShell.changeAccess(adding:)`; on Android the connect root's
+  `TasksOpening.scopes`), from Collections or from the line a view-only
+  page shows. New tasks go to the collection the preference names, through
+  its readings, and one that takes none says why. A change made offline
   shows at once and stays shown until its record is read again, and
   only a write the outbox says landed is shown as landed. Every write goes
   through the outbox (`TaskWrites`, over the kit's `RecordWrites`): a create

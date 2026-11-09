@@ -308,7 +308,8 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
         ListItem(
             leadingContent =
                 picked?.let { on -> { Icon(if (on) TasksMarks.mark(KindStatus.Standing.done) else TasksMarks.mark(KindStatus.Standing.open), null) } },
-            trailingContent = { Trailing(row, actions, open, marked) },
+            // A suggestion's title takes the row's width; its controls sit on its meta's line.
+            trailingContent = if (row.suggestion) null else ({ Trailing(row, actions, open, marked) }),
             headlineContent = {
                 Text(
                     row.title,
@@ -319,6 +320,7 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
             supportingContent =
                 if (
                     row.written != null ||
+                        row.viewOnly != null ||
                         row.pendingWords != null ||
                         row.due != null ||
                         row.priority != null ||
@@ -329,11 +331,15 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
                         row.decisions.any { !row.suggestion }
                 ) {
                     {
-                        Column(verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
-                            row.written?.let { Fact(TasksMarks.symbol("suggestion"), it, MaterialTheme.colorScheme.onSurfaceVariant) }
-                            if (row.pending) row.pendingWords?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.brandAccent) }
-                            if (row.due != null || row.priority != null || row.listName != null || row.collection != null || row.hasNotes) Facts(row)
-                            if (!row.suggestion && (row.reschedule != null || row.decisions.isNotEmpty())) Decisions(row, actions)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                                row.written?.let { Fact(TasksMarks.symbol("suggestion"), it, MaterialTheme.colorScheme.onSurfaceVariant) }
+                                row.viewOnly?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                if (row.pending) row.pendingWords?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.brandAccent) }
+                                if (row.due != null || row.priority != null || row.listName != null || row.collection != null || row.hasNotes) Facts(row)
+                                if (!row.suggestion && (row.reschedule != null || row.decisions.isNotEmpty())) Decisions(row, actions)
+                            }
+                            if (row.suggestion) Trailing(row, actions, open, marked)
                         }
                     }
                 } else {

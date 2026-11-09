@@ -53,6 +53,10 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
     /// An approval the app asked for to change a collection or read its
     /// groups, until it is granted or turned down.
     public var approval: ApprovalAsk?
+    /// What each section showed and had open when the owner left it.
+    public var stacks: [String: SectionStack] = [:]
+    /// Why a task could not be added, until dismissed.
+    public var refusal: String?
     /// A reminder's task, tapped before its record was read (a cold
     /// launch): opened as soon as the record is there, unless the owner
     /// went elsewhere first.
@@ -120,7 +124,14 @@ public struct ApprovalAsk: Codable, Hashable, Sendable {
     public var refused = false
 }
 
-/// What an editor opened on.
+/// What a section's stack holds.
+public struct SectionStack: Codable, Hashable, Sendable {
+    public var selection: ListSelection?
+    public var openTask: String?
+}
+
+/// What an editor opened on: a task by its path, or a new one in the group
+/// it names, by path.
 public enum EditorSeed: Codable, Hashable, Sendable {
     case task(String)
     case new(list: String?, day: CivilDay?)

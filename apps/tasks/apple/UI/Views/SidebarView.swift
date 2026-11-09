@@ -67,7 +67,7 @@ struct SidebarView: View {
                 } header: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(section.title)
-                        Text(section.reference).font(.caption2.monospaced()).foregroundStyle(.tertiary).textCase(nil)
+                        ReferenceText(reference: section.reference).textCase(nil)
                     }
                 }
             }
@@ -150,7 +150,13 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(row.title).foregroundStyle(Color.primary)
                 if let detail = row.detail, !detail.isEmpty {
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                    if KindReference(detail) != nil {
+                        ReferenceText(reference: detail)
+                    } else {
+                        // The secondary colour itself: a button would tint
+                        // the secondary style.
+                        Text(detail).font(.caption).foregroundStyle(Color.secondary)
+                    }
                 }
             }
         } icon: {
@@ -172,9 +178,13 @@ struct SidebarView: View {
             }
             .accessibilityValue(row.openWords)
         } else {
+            // One element, the selectable row, so VoiceOver selects it as a
+            // tap does.
             label
                 .badge(row.open)
+                .accessibilityElement(children: .combine)
                 .accessibilityValue(row.openWords)
+                .accessibilityAddTraits(.isButton)
                 .tag(Item.list(row.selection))
         }
     }
@@ -201,6 +211,20 @@ extension View {
     @ViewBuilder
     func searching(_ text: Binding<String>, prompt: String, if on: Bool) -> some View {
         if on { searchable(text: text, prompt: prompt) } else { self }
+    }
+}
+
+/// A full reference on a line of its own: the secondary colour, and a line
+/// broken only after a `/`.
+struct ReferenceText: View {
+    let reference: String
+
+    var body: some View {
+        Text(reference.replacingOccurrences(of: "/", with: "/\u{200B}"))
+            .font(.caption2.monospaced())
+            .foregroundStyle(Color.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(reference)
     }
 }
 

@@ -11,8 +11,17 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "6ee481d6260a98b2c4c91d863009f592e13b96018a91fe04078f8cd5bb8bcbf6"
+    public const val VALUE: String = "0f8e4346a8c626f66a564d20ad672c9c0f7443ac3a009ed2e23cb014a248d7af"
 }
+
+@Serializable
+public data class ApprovalLine(
+    val message: String,
+    val approve: String,
+    val collection: String,
+    val group: String? = null,
+    val scopes: List<String>,
+)
 
 @Serializable
 public data class ApprovalPresentation(
@@ -52,6 +61,7 @@ public data class CollectionPresentation(
     val states: List<LabeledValue>,
     val fieldsTitle: String,
     val fields: List<LabeledValue>,
+    val approval: ApprovalLine? = null,
 )
 
 @Serializable
@@ -402,6 +412,7 @@ public data class SuggestionPresentation(
     val pending: Boolean,
     val pendingWords: String? = null,
     val actions: List<ActionButton<TaskAction>>,
+    val approval: ApprovalLine? = null,
 )
 
 @Serializable(with = TaskAction.Serializer::class)
@@ -469,17 +480,18 @@ public data class TaskDetailPresentation(
     val details: List<DetailFact>,
     val actions: List<ActionButton<TaskAction>>,
     val edit: String? = null,
+    val approval: ApprovalLine? = null,
 )
 
 @Serializable
 public data class TaskEditorPresentation(
     val title: String,
     val name: EditorText,
-    val notes: EditorText,
-    val link: EditorText,
-    val list: EditorChoice,
-    val due: EditorDue,
-    val priority: EditorChoice,
+    val notes: EditorText? = null,
+    val link: EditorText? = null,
+    val list: EditorChoice? = null,
+    val due: EditorDue? = null,
+    val priority: EditorChoice? = null,
     val save: String,
     val canSave: Boolean,
     val cancel: String,
@@ -534,6 +546,7 @@ public data class TaskRow(
     val pendingWords: String? = null,
     val toggle: String? = null,
     val written: String? = null,
+    val viewOnly: String? = null,
     val due: DueBadge? = null,
     val priority: PriorityBadge? = null,
     val listName: String? = null,
@@ -590,6 +603,7 @@ public data class TasksOpening(
     val channel: String? = null,
     val device: String,
     val address: String? = null,
+    val scopes: List<String>? = null,
 )
 
 @Serializable
@@ -672,7 +686,7 @@ public object TaskEditor {
 
         @Serializable
         public data class SetPriority(
-            @SerialName("_0") val value: TaskPriority,
+            @SerialName("_0") val value: String? = null,
         ) : Command
 
         @Serializable
@@ -876,6 +890,12 @@ public object TasksApp {
         ) : Command
 
         @Serializable
+        public data class RequestApproval(
+            @SerialName("_0") val value: String,
+            val group: String? = null,
+        ) : Command
+
+        @Serializable
         public data class ShowSettings(
             @SerialName("_0") val value: SettingsPage? = null,
         ) : Command
@@ -958,6 +978,7 @@ public object TasksApp {
                 SwiftEnumSerializer.Case("setCollection", SetCollection::class, SetCollection.serializer()),
                 SwiftEnumSerializer.Case("setGrouping", SetGrouping::class, SetGrouping.serializer()),
                 SwiftEnumSerializer.Case("setNewTasks", SetNewTasks::class, SetNewTasks.serializer()),
+                SwiftEnumSerializer.Case("requestApproval", RequestApproval::class, RequestApproval.serializer()),
                 SwiftEnumSerializer.Case("showSettings", ShowSettings::class, ShowSettings.serializer()),
                 SwiftEnumSerializer.Case("approvalAnswered", ApprovalAnswered::class, ApprovalAnswered.serializer()),
                 SwiftEnumSerializer.Case("dismissApproval", DismissApproval::class, DismissApproval.serializer()),
@@ -977,6 +998,7 @@ public object TasksApp {
 
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
+    "ApprovalLine" to ApprovalLine.serializer(),
     "ApprovalPresentation" to ApprovalPresentation.serializer(),
     "BandHeading" to BandHeading.serializer(),
     "ChoicePresentation" to ChoicePresentation.serializer(),

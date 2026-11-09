@@ -22,7 +22,8 @@ public struct TaskEditor: Controller, Equatable {
         case setDueKind(DueKind)
         /// The picker's value: a day, or a day and time, by the due kind.
         case setDueDate(Date)
-        case setPriority(TaskPriority)
+        /// A value of the collection's priority; nil for none.
+        case setPriority(String?)
         case save
         case cancel
     }
@@ -33,7 +34,7 @@ public struct TaskEditor: Controller, Equatable {
         case linked(String)
         case listed(String?)
         case dueSet(DueKind, day: CivilDay?, at: Date?)
-        case prioritized(TaskPriority)
+        case prioritized(String?)
         /// What saving writes, and the task it writes.
         case saved(LocalWrite, task: String)
         case cancelled
@@ -53,15 +54,18 @@ public struct TaskEditor: Controller, Equatable {
     /// The task as it stands, read again with each change to it; nil for a
     /// new one.
     public let original: TaskItem?
-    /// The app's own collection, whose readings a save writes through.
+    /// The task's collection, or the one new tasks go to: a save writes
+    /// through its readings, and the form shows the fields they name.
     public let collection: TaskCollection
-    /// The list a new task goes in, and the day it is due on (Needs you's).
+    /// The group a new task goes in, by path, and the day it is due on
+    /// (Needs you's).
     public let seedList: String?
     public let seedDay: CivilDay?
-    /// Every list, in the owner's order, as `(id, name)`.
+    /// Every group of the collection's group kind, in its order, as
+    /// `(path, name)`.
     public let lists: [EditorOption]
-    /// The highest position in each list ("" for no list): a new or moved
-    /// task goes after it.
+    /// The highest position in each group, by path ("" for none): a new or
+    /// moved task goes after it.
     public let lastPositions: [String: Decimal]
     /// The last save, as the root follows it to the outbox; nil before one.
     public let saving: EditorSave?
@@ -82,7 +86,8 @@ public struct TaskEditor: Controller, Equatable {
 
     public var initialState: State {
         State(
-            draft: original.map(TaskDraft.init) ?? TaskDraft(list: seedList, dueKind: seedDay == nil ? .none : .day, day: seedDay),
+            draft: original.map(TaskDraft.init)
+                ?? TaskDraft(list: seedList, dueKind: seedDay == nil || collection.dueDay == nil ? .none : .day, day: seedDay),
             seen: original)
     }
 
@@ -135,12 +140,15 @@ public struct TaskEditor: Controller, Equatable {
     func save(_ state: State, writes: TaskWrites) -> Event {
         let draft = state.draft
         guard let seen = state.seen else {
-            var task = draft.applied(to: TaskItem(recordID: writes.newID(), name: ""))
+            var task = draft.applied(to: TaskItem(kind: collection.kind, recordID: writes.newID(), name: ""))
             task.position = Position.between(lastPositions[draft.list ?? ""], nil)
             return .saved(writes.create(task, in: collection), task: task.id)
         }
         var task = draft.applied(to: seen, changedFrom: TaskDraft(seen))
-        if task.list != seen.list { task.position = Position.between(lastPositions[task.list ?? ""], nil) }
+        if task.group != seen.group {
+            let path: String = if case let .record(path)? = task.group { path } else { "" }
+            task.position = Position.between(lastPositions[path], nil)
+        }
         return .saved(writes.edit(seen, to: task, in: collection), task: seen.id)
     }
 
@@ -176,21 +184,34 @@ public struct TaskEditor: Controller, Equatable {
             }
         let named = !draft.trimmedName.isEmpty
         let notKept: String? = if case let .notKept(words) = saving { words } else { nil }
+        let reference = collection.group
+        let none = reference.map { collection.isOwn ? InboxWords.title : "No \($0.label)" } ?? InboxWords.title
+        let dueKinds = DueKind.allCases.filter { kind in
+            switch kind {
+            case .none: true
+            case .day: collection.dueDay != nil
+            case .time: collection.due != nil
+            }
+        }
+        var priorities = collection.priorities.map { EditorOption(id: $0, title: collection.declaration.label(of: $0, in: collection.priority ?? "")) }
+        if !collection.priorities.contains("none") { priorities.insert(EditorOption(id: "", title: "None"), at: 0) }
         return TaskEditorPresentation(
             title: original == nil ? "New Task" : "Edit Task",
             name: EditorText(label: TaskField.taskName.label, value: draft.name, prompt: "What to do"),
-            notes: EditorText(label: TaskField.notes.label, value: draft.notes, prompt: "Details"),
-            link: EditorText(label: TaskField.link.label, value: draft.link, prompt: "https://example.com"),
-            list: EditorChoice(
-                label: TaskField.list.label, selected: draft.list ?? "",
-                options: [EditorOption(id: "", title: InboxWords.title)] + lists),
-            due: EditorDue(
-                label: TaskField.due.label, kind: draft.dueKind,
-                kinds: DueKind.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }, date: date,
-                dateLabel: draft.dueKind == .none ? nil : draft.dueKind == .day ? "Day" : "Day and Time"),
-            priority: EditorChoice(
-                label: TaskField.priority.label, selected: draft.priority.rawValue,
-                options: TasksPresenter.priorities),
+            notes: collection.notes.map { _ in EditorText(label: TaskField.notes.label, value: draft.notes, prompt: "Details") },
+            link: collection.link.map { _ in EditorText(label: TaskField.link.label, value: draft.link, prompt: "https://example.com") },
+            list: reference.map { reference in
+                EditorChoice(
+                    label: propertyLabel(reference.property), selected: draft.list ?? "", options: [EditorOption(id: "", title: none)] + lists)
+            },
+            due: dueKinds.count > 1
+                ? EditorDue(
+                    label: TaskField.due.label, kind: draft.dueKind,
+                    kinds: dueKinds.map { EditorOption(id: $0.rawValue, title: $0.words) }, date: date,
+                    dateLabel: draft.dueKind == .none ? nil : draft.dueKind == .day ? "Day" : "Day and Time") : nil,
+            priority: collection.priority.map { _ in
+                EditorChoice(label: TaskField.priority.label, selected: draft.priority ?? "", options: priorities)
+            },
             save: notKept != nil ? "Retry" : original == nil ? "Add" : "Save", canSave: named && !sending, cancel: "Cancel",
             problem: input.state.touched && !named ? "A task needs a name." : nil,
             notKept: notKept.map { ProblemPresentation(title: "A change was not kept", message: $0) })

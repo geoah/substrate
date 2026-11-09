@@ -4966,6 +4966,7 @@
           }
         ],
         "detailsTitle": "Details",
+        "edit": "Edit",
         "fields": [
           {
             "field": "status",
@@ -5711,15 +5712,15 @@
                 "title": "No List"
               },
               {
-                "id": "groceries",
+                "id": "substrate.reamde.dev/tasks/list/groceries",
                 "title": "Groceries"
               },
               {
-                "id": "home",
+                "id": "substrate.reamde.dev/tasks/list/home",
                 "title": "Home"
               }
             ],
-            "selected": "home"
+            "selected": "substrate.reamde.dev/tasks/list/home"
           },
           "name": {
             "label": "Name",
@@ -6561,15 +6562,15 @@
                 "title": "No List"
               },
               {
-                "id": "groceries",
+                "id": "substrate.reamde.dev/tasks/list/groceries",
                 "title": "Groceries"
               },
               {
-                "id": "home",
+                "id": "substrate.reamde.dev/tasks/list/home",
                 "title": "Home"
               }
             ],
-            "selected": "home"
+            "selected": "substrate.reamde.dev/tasks/list/home"
           },
           "name": {
             "label": "Name",
@@ -7308,11 +7309,11 @@
                 "title": "No List"
               },
               {
-                "id": "groceries",
+                "id": "substrate.reamde.dev/tasks/list/groceries",
                 "title": "Groceries"
               },
               {
-                "id": "home",
+                "id": "substrate.reamde.dev/tasks/list/home",
                 "title": "Home"
               }
             ],
@@ -7352,7 +7353,7 @@
                 "title": "Urgent"
               }
             ],
-            "selected": "none"
+            "selected": ""
           },
           "save": "Add",
           "title": "New Task"
@@ -9664,7 +9665,7 @@
               "listName": "No list",
               "notes": "Maya Chen, a recruiter at Northwind, asked whether you are open to a call about a platform role.",
               "pending": false,
-              "spoken": "Reply to Maya Chen about the platform role, Proposed, suggested, Tasks · 2h ago, in No list, has notes",
+              "spoken": "Reply to Maya Chen about the platform role, Suggestion in Tasks · written 2 hours ago, in No list, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Reply to Maya Chen about the platform role",
@@ -9691,7 +9692,7 @@
               "listName": "Garden",
               "notes": "Two panels blew down in the storm.",
               "pending": false,
-              "spoken": "Fix the fence, Suggested, suggested, Chores · yesterday, in Garden, has notes",
+              "spoken": "Fix the fence, Suggestion in Chores · written yesterday, in Garden, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Fix the fence",
@@ -10206,7 +10207,7 @@
               "notes": "Maya Chen, a recruiter at Northwind, asked whether you are open to a call about a platform role.",
               "pending": false,
               "picked": false,
-              "spoken": "Reply to Maya Chen about the platform role, Proposed, suggested, Tasks · 2h ago, in No list, has notes",
+              "spoken": "Reply to Maya Chen about the platform role, Suggestion in Tasks · written 2 hours ago, in No list, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Reply to Maya Chen about the platform role",
@@ -10234,7 +10235,7 @@
               "notes": "Two panels blew down in the storm.",
               "pending": false,
               "picked": true,
-              "spoken": "Fix the fence, Suggested, suggested, Chores · yesterday, in Garden, has notes",
+              "spoken": "Fix the fence, Suggestion in Chores · written yesterday, in Garden, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Fix the fence",
@@ -10745,7 +10746,7 @@
               "listName": "No list",
               "notes": "Maya Chen, a recruiter at Northwind, asked whether you are open to a call about a platform role.",
               "pending": false,
-              "spoken": "Reply to Maya Chen about the platform role, Proposed, suggested, Tasks · 2h ago, in No list, has notes",
+              "spoken": "Reply to Maya Chen about the platform role, Suggestion in Tasks · written 2 hours ago, in No list, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Reply to Maya Chen about the platform role",
@@ -10772,7 +10773,7 @@
               "listName": "Garden",
               "notes": "Two panels blew down in the storm.",
               "pending": false,
-              "spoken": "Fix the fence, Suggested, suggested, Chores · yesterday, in Garden, has notes",
+              "spoken": "Fix the fence, Suggestion in Chores · written yesterday, in Garden, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Fix the fence",
@@ -11388,7 +11389,7 @@
               "listName": "No list",
               "notes": "Maya Chen, a recruiter at Northwind, asked whether you are open to a call about a platform role.",
               "pending": false,
-              "spoken": "Reply to Maya Chen about the platform role, Proposed, suggested, Tasks · 2h ago, in No list, has notes",
+              "spoken": "Reply to Maya Chen about the platform role, Suggestion in Tasks · written 2 hours ago, in No list, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Reply to Maya Chen about the platform role",
@@ -11415,7 +11416,7 @@
               "listName": "Garden",
               "notes": "Two panels blew down in the storm.",
               "pending": false,
-              "spoken": "Fix the fence, Suggested, suggested, Chores · yesterday, in Garden, has notes",
+              "spoken": "Fix the fence, Suggestion in Chores · written yesterday, in Garden, has notes",
               "standing": "proposed",
               "suggestion": true,
               "title": "Fix the fence",

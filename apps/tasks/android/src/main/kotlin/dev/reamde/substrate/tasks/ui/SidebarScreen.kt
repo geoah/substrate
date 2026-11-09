@@ -155,7 +155,12 @@ private fun SidebarRowView(row: SidebarRow, chosen: Boolean, onOpen: () -> Unit,
     Box {
         ListItem(
             headlineContent = { Text(row.title) },
-            supportingContent = row.detail?.takeIf { it.isNotEmpty() }?.let { detail -> { Text(detail) } },
+            supportingContent =
+                row.detail
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { detail ->
+                        { Text(detail, style = if (detail.count { it == '/' } == 2) referenceStyle else KitText.secondary.style) }
+                    },
             leadingContent = { Icon(TasksMarks.symbol(row.symbol), contentDescription = null) },
             trailingContent = { Text("${row.open}", style = KitText.body.style, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             colors = ListItemDefaults.colors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface),

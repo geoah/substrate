@@ -69,6 +69,7 @@ struct TaskDetailView: View {
                     }
                 }
             }
+            if let line = detail.approval { ApprovalLineSection(line: line) }
             if !detail.details.isEmpty {
                 Section(detail.detailsTitle) {
                     ForEach(detail.details) { fact in DetailFactRow(fact: fact) }

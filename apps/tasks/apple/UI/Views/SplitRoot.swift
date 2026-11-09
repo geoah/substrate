@@ -29,9 +29,9 @@ struct SplitRoot: View {
         } detail: {
             if app.menu.selected == TasksMenu.settings {
                 if let collection = app.collection {
-                    NavigationStack { CollectionView(collection: collection) }
+                    NavigationStack { CollectionView(collection: collection, approval: app.approval) }
                 } else if app.settingsPage == .collections {
-                    NavigationStack { CollectionsView(collections: app.collections) }
+                    NavigationStack { CollectionsView(collections: app.collections, approval: app.approval) }
                 }
             } else if let suggestion = app.suggestion {
                 SuggestionView(suggestion: suggestion)

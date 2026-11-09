@@ -83,6 +83,7 @@ internal fun TaskDetailScreen(detail: TaskDetailPresentation, actions: TasksActi
                     FactRow(field) { id -> choose(detail.id, field.field, id, actions) }
                 }
             }
+            detail.approval?.let { ApprovalLineRow(it, actions) }
             if (detail.details.isNotEmpty()) {
                 KitSection(detail.detailsTitle) {
                     detail.details.forEachIndexed { index, fact ->

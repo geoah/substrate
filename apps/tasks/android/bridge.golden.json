@@ -2,6 +2,18 @@
   "version": 1,
   "types": [
     {
+      "name": "ApprovalLine",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "message", "type": "String"},
+        {"name": "approve", "type": "String"},
+        {"name": "collection", "type": "String"},
+        {"name": "group", "type": "String?"},
+        {"name": "scopes", "type": "[String]"}
+      ]
+    },
+    {
       "name": "ApprovalPresentation",
       "module": "TasksCore",
       "kind": "struct",
@@ -50,7 +62,8 @@
         {"name": "statesTitle", "type": "String"},
         {"name": "states", "type": "[LabeledValue]"},
         {"name": "fieldsTitle", "type": "String"},
-        {"name": "fields", "type": "[LabeledValue]"}
+        {"name": "fields", "type": "[LabeledValue]"},
+        {"name": "approval", "type": "ApprovalLine?"}
       ]
     },
     {
@@ -459,7 +472,8 @@
         {"name": "place", "type": "String?"},
         {"name": "pending", "type": "Bool"},
         {"name": "pendingWords", "type": "String?"},
-        {"name": "actions", "type": "[ActionButton<TaskAction>]"}
+        {"name": "actions", "type": "[ActionButton<TaskAction>]"},
+        {"name": "approval", "type": "ApprovalLine?"}
       ]
     },
     {
@@ -533,7 +547,8 @@
         {"name": "detailsTitle", "type": "String"},
         {"name": "details", "type": "[DetailFact]"},
         {"name": "actions", "type": "[ActionButton<TaskAction>]"},
-        {"name": "edit", "type": "String?"}
+        {"name": "edit", "type": "String?"},
+        {"name": "approval", "type": "ApprovalLine?"}
       ]
     },
     {
@@ -580,7 +595,7 @@
         {
           "name": "setPriority",
           "fields": [
-            {"name": "_0", "type": "TaskPriority"}
+            {"name": "_0", "type": "String?"}
           ]
         },
         {
@@ -600,11 +615,11 @@
       "fields": [
         {"name": "title", "type": "String"},
         {"name": "name", "type": "EditorText"},
-        {"name": "notes", "type": "EditorText"},
-        {"name": "link", "type": "EditorText"},
-        {"name": "list", "type": "EditorChoice"},
-        {"name": "due", "type": "EditorDue"},
-        {"name": "priority", "type": "EditorChoice"},
+        {"name": "notes", "type": "EditorText?"},
+        {"name": "link", "type": "EditorText?"},
+        {"name": "list", "type": "EditorChoice?"},
+        {"name": "due", "type": "EditorDue?"},
+        {"name": "priority", "type": "EditorChoice?"},
         {"name": "save", "type": "String"},
         {"name": "canSave", "type": "Bool"},
         {"name": "cancel", "type": "String"},
@@ -671,6 +686,7 @@
         {"name": "pendingWords", "type": "String?"},
         {"name": "toggle", "type": "String?"},
         {"name": "written", "type": "String?"},
+        {"name": "viewOnly", "type": "String?"},
         {"name": "due", "type": "DueBadge?"},
         {"name": "priority", "type": "PriorityBadge?"},
         {"name": "listName", "type": "String?"},
@@ -899,6 +915,13 @@
           ]
         },
         {
+          "name": "requestApproval",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "group", "type": "String?"}
+          ]
+        },
+        {
           "name": "showSettings",
           "fields": [
             {"name": "_0", "type": "SettingsPage?"}
@@ -1011,7 +1034,8 @@
         {"name": "version", "type": "String"},
         {"name": "channel", "type": "String?"},
         {"name": "device", "type": "String"},
-        {"name": "address", "type": "String?"}
+        {"name": "address", "type": "String?"},
+        {"name": "scopes", "type": "[String]?"}
       ]
     },
     {

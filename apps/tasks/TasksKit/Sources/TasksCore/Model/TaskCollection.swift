@@ -124,6 +124,10 @@ public struct TaskCollection: Hashable, Sendable {
     public var references: [GroupReading]
     /// Every single reference, read or not, in declared order.
     public var allReferences: [GroupReading]
+    /// The reference the owner chose to group by, read or not: the group
+    /// reading once the grant reads its kind, and until then a grouping out
+    /// of reach, which the collection's page keeps chosen and asks to read.
+    public var chosenGroup: GroupReading?
 
     public var kind: String { declaration.identity }
     public var viewOnly: Bool { !writable }
@@ -198,8 +202,10 @@ public struct TaskCollection: Hashable, Sendable {
         var readings = TaskReadings(
             due: chosen(setting?.due, guess.due), dueDay: chosen(setting?.dueDay, guess.dueDay),
             priority: chosen(setting?.priority, guess.priority), order: chosen(setting?.order, guess.order), group: guess.group)
+        chosenGroup = guess.group
         if let group = setting?.group {
             readings.group = group == CollectionSetting.none ? nil : references.first { $0.property == group }
+            chosenGroup = group == CollectionSetting.none ? nil : allReferences.first { $0.property == group }
         }
         self.readings = readings
 
