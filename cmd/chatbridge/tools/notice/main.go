@@ -33,6 +33,7 @@ type module struct {
 
 type pkg struct {
 	ImportPath string
+	Dir        string
 	Standard   bool
 	Module     *module
 }
@@ -41,13 +42,12 @@ type pkg struct {
 // order.
 var licenseFiles = []string{"LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING", "LICENSE-MIT", "MIT-LICENSE"}
 
-// classify names a license from its text.
+// classify names a license from its text. A file carrying several
+// permissive licenses (klauspost/compress: BSD-3-Clause, with Apache-2.0
+// and MIT for some of its directories) is named by all of them.
 func classify(text string) string {
 	t := strings.Join(strings.Fields(text), " ")
 	switch {
-	case strings.Contains(t, "Permission is hereby granted, free of charge") && strings.Contains(t, "Apache License") &&
-		strings.Contains(t, "Version 2.0"):
-		return "MIT AND Apache-2.0"
 	case strings.Contains(t, "GNU AFFERO GENERAL PUBLIC LICENSE") && strings.Contains(t, "Version 3"):
 		return "AGPL-3.0"
 	case strings.Contains(t, "GNU LESSER GENERAL PUBLIC LICENSE") && strings.Contains(t, "Version 3"):
@@ -56,21 +56,29 @@ func classify(text string) string {
 		return "GPL-3.0"
 	case strings.Contains(t, "Mozilla Public License Version 2.0"), strings.Contains(t, "Mozilla Public License, version 2.0"):
 		return "MPL-2.0"
-	case strings.Contains(t, "Apache License") && strings.Contains(t, "Version 2.0"):
-		return "Apache-2.0"
-	case strings.Contains(t, "Permission is hereby granted, free of charge"):
-		return "MIT"
-	case strings.Contains(t, "Redistribution and use in source and binary forms") && regexp.MustCompile(`(?i)neither the name|names of (its|the) contributors`).MatchString(t):
-		return "BSD-3-Clause"
-	case strings.Contains(t, "Redistribution and use in source and binary forms"):
-		return "BSD-2-Clause"
-	case strings.Contains(t, "Permission to use, copy, modify, and/or distribute this software"),
-		strings.Contains(t, "Permission to use, copy, modify, and distribute this software for any purpose with or without fee"):
-		return "ISC"
-	case strings.Contains(t, "This is free and unencumbered software released into the public domain"):
-		return "Unlicense"
 	}
-	return ""
+	var ids []string
+	if strings.Contains(t, "Permission is hereby granted, free of charge") {
+		ids = append(ids, "MIT")
+	}
+	if strings.Contains(t, "Apache License") && strings.Contains(t, "Version 2.0") {
+		ids = append(ids, "Apache-2.0")
+	}
+	if strings.Contains(t, "Redistribution and use in source and binary forms") {
+		if regexp.MustCompile(`(?i)neither the name|names of (its|the) contributors`).MatchString(t) {
+			ids = append(ids, "BSD-3-Clause")
+		} else {
+			ids = append(ids, "BSD-2-Clause")
+		}
+	}
+	if strings.Contains(t, "Permission to use, copy, modify, and/or distribute this software") ||
+		strings.Contains(t, "Permission to use, copy, modify, and distribute this software for any purpose with or without fee") {
+		ids = append(ids, "ISC")
+	}
+	if strings.Contains(t, "This is free and unencumbered software released into the public domain") {
+		ids = append(ids, "Unlicense")
+	}
+	return strings.Join(ids, " AND ")
 }
 
 func main() {
@@ -97,7 +105,7 @@ func main() {
 }
 
 func build() ([]byte, error) {
-	cmd := exec.Command("go", "list", "-deps", "-json=ImportPath,Standard,Module", ".")
+	cmd := exec.Command("go", "list", "-deps", "-json=ImportPath,Dir,Standard,Module", ".")
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1")
 	cmd.Stderr = os.Stderr
 	raw, err := cmd.Output()
@@ -105,6 +113,7 @@ func build() ([]byte, error) {
 		return nil, fmt.Errorf("listing the binary's packages: %w", err)
 	}
 	mods := map[string]*module{}
+	nested := map[string]nestedText{}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	for {
 		var p pkg
@@ -121,6 +130,12 @@ func build() ([]byte, error) {
 			m = &module{Path: m.Path, Version: m.Replace.Version, Dir: m.Replace.Dir}
 		}
 		mods[m.Path] = m
+		// A directory inside a module may carry code under a license of
+		// its own (mautrix-telegram's fork of gotd), which ships too.
+		if dir, file, text := nestedLicense(p.Dir, m.Dir); text != "" {
+			rel, _ := filepath.Rel(m.Dir, dir)
+			nested[m.Path+"/"+filepath.ToSlash(rel)] = nestedText{version: m.Version, file: file, text: text}
+		}
 	}
 	paths := make([]string, 0, len(mods))
 	for p := range mods {
@@ -147,6 +162,23 @@ func build() ([]byte, error) {
 		texts[sum] = strings.TrimSpace(text)
 		textModules[sum] = append(textModules[sum], p+" "+m.Version)
 		entries = append(entries, entry{p, m.Version, id, file})
+	}
+	nestedPaths := make([]string, 0, len(nested))
+	for p := range nested {
+		nestedPaths = append(nestedPaths, p)
+	}
+	sort.Strings(nestedPaths)
+	for _, p := range nestedPaths {
+		n := nested[p]
+		id := classify(n.text)
+		if id == "" {
+			unknown = append(unknown, p)
+			continue
+		}
+		sum := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(n.text))))
+		texts[sum] = strings.TrimSpace(n.text)
+		textModules[sum] = append(textModules[sum], p+" "+n.version)
+		entries = append(entries, entry{p, n.version, id, n.file})
 	}
 	// The standard library is linked into every Go binary.
 	goroot, err := exec.Command("go", "env", "GOROOT").Output()
@@ -218,4 +250,22 @@ func findLicense(dir string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// nestedText is a license file below a module's root.
+type nestedText struct {
+	version, file, text string
+}
+
+// nestedLicense finds a license file between a package's directory and its
+// module's root, the root excluded.
+func nestedLicense(pkgDir, modDir string) (dir, file, text string) {
+	for d := pkgDir; d != modDir && strings.HasPrefix(d, modDir+string(filepath.Separator)); d = filepath.Dir(d) {
+		for _, name := range licenseFiles {
+			if raw, err := os.ReadFile(filepath.Join(d, name)); err == nil {
+				return d, name, string(raw)
+			}
+		}
+	}
+	return "", "", ""
 }

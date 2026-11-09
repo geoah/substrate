@@ -152,17 +152,39 @@ func (a *App) webhookURL() string {
 	return ""
 }
 
+// options are what every network's connector is built with. A history
+// left empty is each network's deepest recorded one.
+func (a *App) options(history networks.History) networks.Options {
+	return networks.Options{
+		DeviceName: a.Cfg.DeviceName,
+		History:    history,
+		Telegram:   networks.TelegramApp{APIID: a.Cfg.TelegramAPIID, APIHash: a.Cfg.TelegramAPIHash},
+	}
+}
+
+// historyKey records the deepest history an account of a network asked for.
+func historyKey(network string) string { return "history." + network }
+
 // OpenNetworks builds the bridge of every configured network.
 func (a *App) OpenNetworks(opts networks.Options, only ...string) error {
 	want := a.Cfg.Networks
 	if len(only) > 0 {
 		want = only
 	}
-	for _, spec := range networks.Registry() {
+	for _, spec := range networks.Registry(opts) {
 		if len(want) > 0 && !slices.Contains(want, spec.ID) {
 			continue
 		}
-		run, err := networks.Open(spec, a.Store, a.Settings, opts, a.Log, a.ZLog)
+		o := opts
+		if o.History == "" {
+			o.History = networks.HistoryRecent
+			if raw, ok, _ := a.Store.Get(context.Background(), historyKey(spec.ID)); ok {
+				if h, err := networks.ParseHistory(raw); err == nil {
+					o.History = h
+				}
+			}
+		}
+		run, err := networks.Open(spec, a.Store, a.Settings, o, a.Log, a.ZLog)
 		if err != nil {
 			return err
 		}
@@ -170,6 +192,9 @@ func (a *App) OpenNetworks(opts networks.Options, only ...string) error {
 	}
 	for _, id := range want {
 		if _, ok := a.Nets[id]; !ok {
+			if id == "telegram" && !opts.Telegram.Set() {
+				return networks.ErrTelegramUnregistered
+			}
 			return fmt.Errorf("this build carries no network %q", id)
 		}
 	}
@@ -237,7 +262,7 @@ func (a *App) actionNetworks() map[string]*actions.Network {
 
 // Run runs the bridge until ctx ends.
 func (a *App) Run(ctx context.Context) error {
-	if err := a.OpenNetworks(networks.Options{DeviceName: a.Cfg.DeviceName, History: networks.HistoryRecent}); err != nil {
+	if err := a.OpenNetworks(a.options("")); err != nil {
 		return err
 	}
 	if a.currentAuth() == nil {

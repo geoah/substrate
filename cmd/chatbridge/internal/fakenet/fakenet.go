@@ -238,7 +238,7 @@ var _ localmatrix.Network = Hooks{}
 
 func (h Hooks) UserExtras(_ context.Context, _ *bridgev2.UserLogin, user networkid.UserID) localmatrix.Extras {
 	name, ok := h.C.Contacts[user]
-	return localmatrix.Extras{Known: true, ContactName: name, IsContact: ok}
+	return localmatrix.Extras{Known: true, IsContact: ok, NameKnown: true, ContactName: name}
 }
 
 func (Hooks) SelfUserID(*bridgev2.UserLogin) networkid.UserID { return Self }
@@ -247,7 +247,20 @@ func (Hooks) StateWarnings(_ *status.BridgeState, st localmatrix.AccountStatus, 
 	return st
 }
 
-func (Hooks) ChatCategory(string) string { return "" }
+func (Hooks) ChatCategory(*bridgev2.Portal) string { return "" }
+
+func (Hooks) BeforeRead(context.Context, *bridgev2.UserLogin, *bridgev2.Portal) {}
+
+// Throttle reads the fake's own rate limit as a wait on the account.
+func (h Hooks) Throttle(err error, now time.Time) (contract.Warning, bool) {
+	if errors.Is(err, ErrRateLimited) {
+		return contract.Warning{Code: contract.WarningFloodWait, Message: "slow down", Until: contract.AtPtr(now.Add(time.Minute))}, true
+	}
+	return contract.Warning{}, false
+}
+
+// ErrRateLimited is the fake network asking the account to slow down.
+var ErrRateLimited = errors.New("fakenet: rate limited")
 
 func (Hooks) SentMessageIDs(_ *bridgev2.UserLogin, chat, txn string) []networkid.MessageID {
 	return []networkid.MessageID{messageID(networkid.PortalID(chat), txn)}

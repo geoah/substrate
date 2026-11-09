@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -27,6 +28,10 @@ type Config struct {
 	// Debug logs bridgev2 and the network libraries at debug level, which
 	// includes message text.
 	Debug bool
+	// TelegramAPIID and TelegramAPIHash are the operator's application at
+	// my.telegram.org; Telegram is offered only with both.
+	TelegramAPIID   int
+	TelegramAPIHash string
 }
 
 // The environment variables.
@@ -37,6 +42,9 @@ const (
 	EnvNetworks   = "CHATBRIDGE_NETWORKS"
 	EnvDeviceName = "CHATBRIDGE_DEVICE_NAME"
 	EnvDebug      = "CHATBRIDGE_DEBUG"
+
+	EnvTelegramAPIID   = "CHATBRIDGE_TELEGRAM_API_ID"
+	EnvTelegramAPIHash = "CHATBRIDGE_TELEGRAM_API_HASH"
 )
 
 // FromEnv reads the configuration.
@@ -58,6 +66,17 @@ func FromEnv() (Config, error) {
 		if n = strings.TrimSpace(n); n != "" {
 			c.Networks = append(c.Networks, n)
 		}
+	}
+	if raw := os.Getenv(EnvTelegramAPIID); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil || id <= 0 {
+			return c, fmt.Errorf("%s is not a positive number", EnvTelegramAPIID)
+		}
+		c.TelegramAPIID = id
+	}
+	c.TelegramAPIHash = os.Getenv(EnvTelegramAPIHash)
+	if (c.TelegramAPIID == 0) != (c.TelegramAPIHash == "") {
+		return c, fmt.Errorf("the telegram network needs both %s and %s", EnvTelegramAPIID, EnvTelegramAPIHash)
 	}
 	switch v := strings.ToLower(os.Getenv(EnvDebug)); v {
 	case "", "0", "false", "no":

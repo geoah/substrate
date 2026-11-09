@@ -616,3 +616,37 @@ func TestUnlinkLogsOutAndForgetsOnlyADeletedAccount(t *testing.T) {
 func bridgeState(state string) status.BridgeState {
 	return status.BridgeState{StateEvent: status.BridgeStateEvent(state)}
 }
+
+func TestAWaitTheNetworkImposesStopsSendingUntilItEnds(t *testing.T) {
+	h := newHarness(t)
+	h.env.Conn.Before = func(_ context.Context, c fakenet.Call) error {
+		if c.Kind == "send" {
+			return fakenet.ErrRateLimited
+		}
+		return nil
+	}
+	h.run(h.action("first", map[string]any{"action": "send", "text": "one"}))
+	if got := h.outcome("first"); got.Outcome != contract.OutcomeFailed {
+		t.Fatalf("outcome %+v", got)
+	}
+	st, _ := h.env.Run.Matrix.AccountStatusOf(fakenet.Login)
+	if stopped, _ := st.Stopped(time.Now()); !stopped {
+		t.Fatalf("the wait did not stop sending: %+v", st)
+	}
+	h.env.Conn.Before = nil
+	h.r.Action(context.Background(), h.action("second", map[string]any{"action": "send", "text": "two"}))
+	if got := h.outcome("second"); got.Outcome != contract.OutcomeFailed || got.ErrorCode != contract.ErrBlocked || got.Claimed {
+		t.Fatalf("an action during the wait: %+v", got)
+	}
+	var warned bool
+	for _, e := range h.events(contract.TypeAccountState) {
+		for _, w := range e["warnings"].([]any) {
+			if w.(map[string]any)["code"] == contract.WarningFloodWait {
+				warned = true
+			}
+		}
+	}
+	if !warned {
+		t.Fatal("the wait was not reported on the account")
+	}
+}

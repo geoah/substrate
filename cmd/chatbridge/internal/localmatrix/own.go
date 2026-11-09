@@ -249,7 +249,15 @@ func (c *Connector) Execute(ctx context.Context, req Request) Outcome {
 	if raw, err := json.Marshal(evt.Content.Parsed); err == nil {
 		evt.Content.VeryRaw = raw
 	}
+	if req.Kind == ActionMarkRead && c.net != nil {
+		c.net.BeforeRead(ctx, c.br.GetCachedUserLoginByID(portal.Receiver), portal)
+	}
 	res := c.br.QueueMatrixEvent(ctx, evt)
+	if res.Error != nil && c.net != nil {
+		if w, ok := c.net.Throttle(res.Error, c.store.Now()); ok {
+			c.warn(ctx, req.Account, w)
+		}
+	}
 	return c.outcome(ctx, portal, req, evt, res)
 }
 

@@ -21,10 +21,19 @@ import (
 type Terminal struct {
 	In  io.Reader
 	Out io.Writer
-	// Answers fill input fields by id before the terminal asks.
+	// Answers fill input fields before the terminal asks, by the field's id
+	// or by its type (phone_number), which is the same on every network.
 	Answers map[string]string
 	// InvertQR draws the QR for a light terminal background.
 	InvertQR bool
+	// Secret reads a password or a token without echoing it. Without one,
+	// such a field is read like any other.
+	Secret func(prompt string) (string, error)
+}
+
+// secret reports a field whose value must not be echoed.
+func secret(t bridgev2.LoginInputFieldType) bool {
+	return t == bridgev2.LoginInputFieldTypePassword || t == bridgev2.LoginInputFieldTypeToken
 }
 
 // Run drives one login flow to its end and returns the new login.
@@ -96,15 +105,27 @@ func ask(term Terminal, reader *bufio.Reader, step *bridgev2.LoginStep) (map[str
 		return values, nil
 	}
 	for _, f := range step.UserInputParams.Fields {
-		if v, ok := term.Answers[f.ID]; ok && v != "" {
+		if v := term.Answers[f.ID]; v != "" {
 			values[f.ID] = v
 			continue
 		}
-		if f.Description != "" {
-			fmt.Fprintf(term.Out, "%s (%s): ", f.Name, f.Description)
-		} else {
-			fmt.Fprintf(term.Out, "%s: ", f.Name)
+		if v := term.Answers[string(f.Type)]; v != "" {
+			values[f.ID] = v
+			continue
 		}
+		prompt := f.Name + ": "
+		if f.Description != "" {
+			prompt = fmt.Sprintf("%s (%s): ", f.Name, f.Description)
+		}
+		if secret(f.Type) && term.Secret != nil {
+			v, err := term.Secret(prompt)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s: %w", f.Name, err)
+			}
+			values[f.ID] = strings.TrimSpace(v)
+			continue
+		}
+		fmt.Fprint(term.Out, prompt)
 		line, err := reader.ReadString('\n')
 		if err != nil && line == "" {
 			return nil, fmt.Errorf("reading %s: %w", f.Name, err)
