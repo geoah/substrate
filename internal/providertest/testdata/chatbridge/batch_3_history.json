@@ -1,0 +1,29 @@
+{
+  "_fixture": {
+    "note": "A page of history arriving after the live events: an older copy of Ben's message from before his edit, which must not undo it, a message from August the mirror did not hold, and the direct chat as it stood then, which must not move its last activity back.",
+    "files": []
+  },
+  "batch": {
+    "version": 1,
+    "instance": "0b3f6f2e-6d8c-4c47-9a7e-2d8b1f5d9c11",
+    "first": 22,
+    "last": 24,
+    "events": [
+      {"seq": 22, "at": "2026-11-09T10:11:00.000Z", "type": "message.upsert",
+       "network": "whatsapp", "account": "447700900123", "chat": "447700900456@s.whatsapp.net",
+       "backfill": true,
+       "message": {"id": "3EB0C1F2A9", "sender": "lid:113920541", "fromOwner": false,
+                   "at": "2026-11-09T09:59:58.000Z", "content": "text", "text": "see you at 7"}},
+      {"seq": 23, "at": "2026-11-09T10:11:00.010Z", "type": "message.upsert",
+       "network": "whatsapp", "account": "447700900123", "chat": "447700900456@s.whatsapp.net",
+       "backfill": true,
+       "message": {"id": "3EB0000001", "sender": "447700900123@s.whatsapp.net", "fromOwner": true,
+                   "at": "2026-08-12T18:30:00.000Z", "content": "text", "text": "hello from August",
+                   "forwarded": false}},
+      {"seq": 24, "at": "2026-11-09T10:11:00.020Z", "type": "chat.upsert",
+       "network": "whatsapp", "account": "447700900123",
+       "chat": {"id": "447700900456@s.whatsapp.net", "archived": false,
+                "lastActivityAt": "2026-08-12T18:30:00.000Z"}}
+    ]
+  }
+}

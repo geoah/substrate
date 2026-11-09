@@ -165,6 +165,9 @@ linters:
         - "catalogues"
         # The health sample's metric id, spelled as the sample declares it.
         - "haemoglobin"
+        # The chat bridge's action outcome and state, spelled as its
+        # contract spells them on the wire and in the stored row.
+        - "cancelled"
   exclusions:
     generated: lax
     presets:

@@ -1,0 +1,45 @@
+{
+  "_fixture": {
+    "note": "The same afternoon, live: Ben edits his message, Ada reacts, a new member joins the book club while Ben leaves it, Ben deletes the photo for everyone, the phone drops offline for a moment and comes back, and history completes.",
+    "files": []
+  },
+  "batch": {
+    "version": 1,
+    "instance": "0b3f6f2e-6d8c-4c47-9a7e-2d8b1f5d9c11",
+    "first": 14,
+    "last": 21,
+    "events": [
+      {"seq": 14, "at": "2026-11-09T10:05:00.000Z", "type": "message.upsert",
+       "network": "whatsapp", "account": "447700900123", "chat": "447700900456@s.whatsapp.net",
+       "backfill": false,
+       "message": {"id": "3EB0C1F2A9", "sender": "lid:113920541", "fromOwner": false,
+                   "at": "2026-11-09T09:59:58.000Z", "content": "text", "text": "see you at 8",
+                   "editedAt": "2026-11-09T10:04:59.000Z", "editCount": 1}},
+      {"seq": 15, "at": "2026-11-09T10:05:01.000Z", "type": "message.reactions",
+       "network": "whatsapp", "account": "447700900123", "chat": "447700900456@s.whatsapp.net",
+       "message": "3EB0C1F2A9",
+       "reactions": [{"key": "❤️", "user": "447700900123@s.whatsapp.net", "at": "2026-11-09T10:05:00.500Z"}]},
+      {"seq": 16, "at": "2026-11-09T10:06:00.000Z", "type": "user.upsert",
+       "network": "whatsapp", "account": "447700900123",
+       "user": {"id": "lid:2001", "fullName": "Cleo", "emails": ["cleo@example.com"]}},
+      {"seq": 17, "at": "2026-11-09T10:06:00.010Z", "type": "chat.upsert",
+       "network": "whatsapp", "account": "447700900123",
+       "chat": {"id": "120363025246125486@g.us",
+                "members": {"complete": false, "items": [
+                  {"user": "lid:2001", "membership": "join", "role": "member"},
+                  {"user": "lid:113920541", "membership": "leave"}]},
+                "lastActivityAt": "2026-11-09T10:06:00.000Z"}},
+      {"seq": 18, "at": "2026-11-09T10:06:59.000Z", "type": "message.delete",
+       "network": "whatsapp", "account": "447700900123", "chat": "120363025246125486@g.us",
+       "message": "3EB0AA11", "scope": "everyone", "by": "lid:113920541"},
+      {"seq": 19, "at": "2026-11-09T10:08:00.000Z", "type": "account.state",
+       "network": "whatsapp", "account": "447700900123", "state": "transient_disconnect",
+       "warnings": [{"code": "phone_offline", "message": "Your phone has not been online for a while."}]},
+      {"seq": 20, "at": "2026-11-09T10:09:00.000Z", "type": "account.state",
+       "network": "whatsapp", "account": "447700900123", "state": "connected"},
+      {"seq": 21, "at": "2026-11-09T10:10:00.000Z", "type": "backfill.progress",
+       "network": "whatsapp", "account": "447700900123",
+       "oldestAt": "2026-08-01T08:00:00.000Z", "complete": true, "pendingChats": 0}
+    ]
+  }
+}
