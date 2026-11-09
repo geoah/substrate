@@ -1,4 +1,4 @@
-import { cx } from "@substrate/react"
+import { cx, useWriteState } from "@substrate/react"
 import {
   CalendarDays,
   Check,
@@ -173,14 +173,16 @@ export function TaskRow(
   const suggestion = view.suggestion
   const open = t.status === "open" || !!suggestion
   const struck = (!open || view.pending) && !suggestion
+  const refused = useWriteState(t.kind, t.recordID) === "parked"
   const chips =
-    open &&
-    (view.due ||
-      view.priority ||
-      view.priorityLabel ||
-      view.listName ||
-      view.collection ||
-      suggestion)
+    refused ||
+    (open &&
+      (view.due ||
+        view.priority ||
+        view.priorityLabel ||
+        view.listName ||
+        view.collection ||
+        suggestion))
   const toggle = () =>
     t.status === "open" && !view.pending
       ? actions.complete(t.id)
@@ -366,6 +368,14 @@ export function TaskRow(
                     text={view.listName}
                     className="text-secondary"
                   />
+                )}
+                {refused && (
+                  <span
+                    title={words.notSavedDetail}
+                    className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[12px] leading-4 font-semibold text-danger"
+                  >
+                    {words.notSaved}
+                  </span>
                 )}
                 {suggestion?.viewOnly && (
                   <span className="text-[12px] leading-4 font-medium text-secondary">

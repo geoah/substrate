@@ -688,4 +688,29 @@ describe("the linked records", () => {
     await tick()
     expect(fake.requests.length).toBe(asked)
   })
+
+  it("shows a held write as not made until its moment, then as made", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    const outbox = new Outbox({
+      client,
+      storage,
+      connectivity: steadyConnectivity,
+    })
+    stops.push(() => outbox.close())
+    const linked = link({ outbox })
+    await until(() => linked.getSnapshot().status === "live")
+    fake.offline = true
+    await outbox.write(
+      RecordWrites.edit(kind, "a1", { name: "Oat milk" }, 1, {
+        until: Date.now() + 120,
+      })
+    )
+    await tick()
+    expect(linked.recordSnapshot(kind, "a1")?.properties.name).toBe("Milk")
+    await until(
+      () => linked.recordSnapshot(kind, "a1")?.properties.name === "Oat milk",
+      2000,
+      "the moment"
+    )
+  })
 })

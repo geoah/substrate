@@ -324,6 +324,13 @@ stop the send, which is tried again with backoff (a fifth of jitter, and the
 server's Retry-After), at once when the browser is back online or the page
 back in front.
 
+An edit may be **held** (`hold: {until, tag}` in the write's options): it
+is kept at once, shown as not made and not sent until `until`, holding
+back its record's later writes, and `Outbox.withdraw(id)` takes it back
+without a request until then. A page closed meanwhile loses nothing: the
+next open sends it once its moment has passed. Tasks keeps its decisions'
+undo window this way.
+
 A create that meets its own row never sends its properties again, so it
 cannot write over an edit another device made in between. The edits queued
 on it before it landed (on version 0) are sent at version 1, the version a

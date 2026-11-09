@@ -29,6 +29,18 @@ export interface OutboxEntry {
   conflict: boolean
   /** Epoch ms. */
   queuedAt: number
+  /** Not sent before this moment (epoch ms): an owner's decision waiting out
+   * its undo window, kept here so a closed page or a crash loses nothing.
+   * Until then it is shown as not made, holds back its batch, and
+   * `Outbox.withdraw` takes it back without a request. */
+  holdUntil?: number
+  /** What the app calls the write, for its own screens: Tasks' "accept". */
+  tag?: string
+}
+
+/** Whether an entry still waits out its hold at `now`. */
+export function isHeld(e: { holdUntil?: number }, now: number): boolean {
+  return e.holdUntil !== undefined && e.holdUntil > now
 }
 
 /** The outbox as it is kept: its writes in order, and the app's own
@@ -128,11 +140,18 @@ export const RecordWrites = {
     kind: string,
     id: string,
     properties: Record<string, unknown>,
-    seen: number
+    seen: number,
+    hold?: { until: number; tag?: string }
   ): LocalWrite {
     if (!Object.keys(properties).length) return { entries: [] }
     return {
-      entries: [entry("PATCH", kind, id, { properties, baseVersion: seen })],
+      entries: [
+        entry("PATCH", kind, id, {
+          properties,
+          baseVersion: seen,
+          ...(hold ? { holdUntil: hold.until, tag: hold.tag } : {}),
+        }),
+      ],
     }
   },
 

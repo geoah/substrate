@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { derivedUUID, uuidv7 } from "./ids"
+import { derivedUUID, sha256, uuidv7 } from "./ids"
 
 describe("uuidv7", () => {
   it("is a lowercase version 7, variant 10 UUID", () => {
@@ -22,23 +22,45 @@ describe("uuidv7", () => {
   })
 })
 
+describe("sha256", () => {
+  const hex = (b: Uint8Array) =>
+    Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
+  it("is FIPS 180-4's, across one and several blocks", () => {
+    expect(hex(sha256(new TextEncoder().encode("abc")))).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
+    expect(hex(sha256(new Uint8Array()))).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+    expect(
+      hex(
+        sha256(
+          new TextEncoder().encode(
+            "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+          )
+        )
+      )
+    ).toBe("248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+  })
+})
+
 describe("derivedUUID", () => {
   // The vectors TasksKit holds too: the settings records' ids.
-  it("is the sha256's first 16 bytes as a lowercase version 8 UUID", async () => {
-    expect(
-      await derivedUUID("collection:substrate.reamde.dev/tasks/task")
-    ).toBe("2fb86e45-0509-8ec1-837f-efb918705f0b")
-    expect(await derivedUUID("collection:ada.example.com/work/chore")).toBe(
+  it("is the sha256's first 16 bytes as a lowercase version 8 UUID", () => {
+    expect(derivedUUID("collection:substrate.reamde.dev/tasks/task")).toBe(
+      "2fb86e45-0509-8ec1-837f-efb918705f0b"
+    )
+    expect(derivedUUID("collection:ada.example.com/work/chore")).toBe(
       "8efb1c53-6e28-829b-b6e1-977f8479830d"
     )
-    expect(await derivedUUID("preference")).toBe(
+    expect(derivedUUID("preference")).toBe(
       "bc5ece60-fff8-8ba4-a305-bc10aebbf972"
     )
   })
 
-  it("names one text alike every time", async () => {
-    expect(await derivedUUID("x")).toBe(await derivedUUID("x"))
-    expect(await derivedUUID("x")).toMatch(
+  it("names one text alike every time", () => {
+    expect(derivedUUID("x")).toBe(derivedUUID("x"))
+    expect(derivedUUID("x")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     )
   })

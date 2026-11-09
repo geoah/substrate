@@ -11,7 +11,7 @@ import {
 } from "@substrate/client"
 import type { RecordCache } from "./cache"
 import { browserConnectivity, type Connectivity } from "./connectivity"
-import { entryKey, type OutboxEntry } from "./entry"
+import { entryKey, isHeld, type OutboxEntry } from "./entry"
 import { applyEntry } from "./fold"
 import type { Outbox } from "./outbox"
 
@@ -436,8 +436,10 @@ export class LinkedRecords {
     const server = this.server.of(kind)
     const out = new Map(server)
     const byId = new Map<string, OutboxEntry[]>()
+    const now = Date.now()
     for (const e of this.queue.get(kind) ?? []) {
-      if (e.parked) continue
+      // A write waiting out its hold is shown as not made yet.
+      if (e.parked || isHeld(e, now)) continue
       const writes = byId.get(e.recordID)
       if (writes) writes.push(e)
       else byId.set(e.recordID, [e])
@@ -469,7 +471,10 @@ export class LinkedRecords {
    * folded again, and no other. */
   private takeQueue(): void {
     const entries = this.outbox?.getSnapshot().entries ?? []
-    if (entries === this.queueEntries) return
+    const now = Date.now()
+    // A held write's moment passing changes what is shown, not the queue.
+    if (entries === this.queueEntries && !entries.some((e) => e.holdUntil))
+      return
     this.queueEntries = entries
     const byKind = new Map<string, OutboxEntry[]>()
     for (const e of entries) {
@@ -482,7 +487,9 @@ export class LinkedRecords {
     for (const kind of this.kinds) {
       const list = byKind.get(kind) ?? []
       const signature = list
-        .map((e) => (e.parked ? `${e.id}!` : e.id))
+        .map((e) =>
+          e.parked ? `${e.id}!` : isHeld(e, now) ? `${e.id}~` : e.id
+        )
         .join(",")
       if (signature === (this.queueSignature.get(kind) ?? "")) continue
       this.queueSignature.set(kind, signature)

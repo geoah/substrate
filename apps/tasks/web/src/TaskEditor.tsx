@@ -54,7 +54,7 @@ export function TaskEditor(props: {
   )
   const [touched, setTouched] = useState(false)
   const [sending, setSending] = useState(false)
-  const [notKept, setNotKept] = useState<string>()
+  const [notKept, setNotKept] = useState<{ title: string; words: string }>()
 
   // A task deleted while it was being edited closes its editor.
   const gone = props.seed.kind === "task" && !props.task
@@ -72,11 +72,22 @@ export function TaskEditor(props: {
   const save = async () => {
     if (!named || sending) return
     setSending(true)
-    let words: string | undefined
-    const kept = await actions.save(seen, draft, (w) => (words = w))
+    let said: { title: string; words: string } | undefined
+    const kept = await actions.save(
+      seen,
+      draft,
+      (w, title) =>
+        (said = { title: title ?? "A change was not kept", words: w })
+    )
     setSending(false)
     if (kept) props.onClose()
-    else setNotKept(words ?? "Your server did not take it. Try again.")
+    else
+      setNotKept(
+        said ?? {
+          title: "A change was not kept",
+          words: "Your server did not take it. Try again.",
+        }
+      )
   }
 
   const setDueKind = (kind: DueKind) => {
@@ -141,8 +152,8 @@ export function TaskEditor(props: {
           >
             <CircleAlert className="mt-0.5 size-5 shrink-0 text-danger" />
             <div className="min-w-0">
-              <p className="text-[17px] font-semibold">A change was not kept</p>
-              <p className="text-[15px] text-secondary">{notKept}</p>
+              <p className="text-[17px] font-semibold">{notKept.title}</p>
+              <p className="text-[15px] text-secondary">{notKept.words}</p>
             </div>
           </div>
         )}

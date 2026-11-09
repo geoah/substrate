@@ -13,6 +13,7 @@ import {
 import { ownDeclarations } from "./package"
 import {
   collectionKind,
+  kindDeclaration,
   ownListKind,
   ownTaskKind,
   preferenceKind,
@@ -62,6 +63,40 @@ export const discoveredStore = store<readonly Declaration[] | undefined>(
   undefined
 )
 
+/** The declarations of the group kinds the token reads that bind no
+ * lifecycle, which the implementors route never lists: read one by one,
+ * for their labels and their `position` order. */
+export const groupDeclarationsStore = store<ReadonlyMap<string, Declaration>>(
+  new Map()
+)
+
+let lastMerge:
+  | {
+      a: readonly Declaration[] | undefined
+      b: ReadonlyMap<string, Declaration>
+      out: readonly Declaration[] | undefined
+    }
+  | undefined
+
+/** The two answers as one list, the same array while neither moves. */
+function merged(
+  a: readonly Declaration[] | undefined,
+  b: ReadonlyMap<string, Declaration>
+): readonly Declaration[] | undefined {
+  if (lastMerge && lastMerge.a === a && lastMerge.b === b) return lastMerge.out
+  const out =
+    b.size === 0
+      ? a
+      : [
+          ...(a ?? []),
+          ...[...b.values()].filter(
+            (d) => !a?.some((x) => x.identity === d.identity)
+          ),
+        ]
+  lastMerge = { a, b, out }
+  return out
+}
+
 /** The device's zone, which days fall in. */
 export const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -94,7 +129,10 @@ export function useTasks(): TasksModel {
   const { linked, session } = useSubstrate()
   const kinds = useStore(linkKindsStore)
   const records = useKindRecords(kinds)
-  const discovered = useStore(discoveredStore)
+  const discovered = merged(
+    useStore(discoveredStore),
+    useStore(groupDeclarationsStore)
+  )
   const now = useNow()
   const listed = useSyncExternalStore(linked.subscribe, () =>
     kinds.every((k) => linked.hasListed(k))
@@ -200,8 +238,40 @@ export function useLinkKinds(model: TasksModel) {
  * approval (each a new session, so a new client), and again whenever the
  * page comes back to the front, since the change feed an app's token
  * follows carries no declarations. */
-export function useDiscovery() {
+export function useDiscovery(model: TasksModel) {
   const { client } = useSubstrate()
+  // The group kinds a collection that is on reads, wanting a declaration:
+  // read again after an approval (a new client) or a grouping change.
+  const wanted = [
+    ...new Set(
+      model.sources.enabled.flatMap((c) =>
+        c.group && !model.declaration(c.group.kind) ? [c.group.kind] : []
+      )
+    ),
+  ]
+    .sort()
+    .join(" ")
+  useEffect(() => {
+    if (!wanted) return
+    let current = true
+    for (const kind of wanted.split(" "))
+      void client.record(kindDeclaration, kind).then(
+        (r) => {
+          if (!current || !r) return
+          const definition = r.properties
+          const label = definition.label as Declaration["label"]
+          groupDeclarationsStore.set((m) =>
+            new Map(m).set(kind, { identity: kind, label, definition })
+          )
+        },
+        () => {
+          // Unread, the kind is named in words and ordered by title.
+        }
+      )
+    return () => {
+      current = false
+    }
+  }, [client, wanted])
   useEffect(() => {
     let current = true
     const ask = () => {

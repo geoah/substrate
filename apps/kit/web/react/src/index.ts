@@ -23,6 +23,10 @@ export {
 } from "@substrate/auth"
 export type { AppManifest } from "@substrate/auth"
 
+// The outbox's entries, for an app that reads its own held writes back.
+export { isHeld } from "@substrate/local"
+export type { Outbox, OutboxEntry, OutboxSummary } from "@substrate/local"
+
 export { SubstrateApp, Spinner } from "./SubstrateApp"
 export type { SubstrateAppProps } from "./SubstrateApp"
 export { SubstrateProvider } from "./provider"

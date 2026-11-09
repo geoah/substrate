@@ -53,12 +53,23 @@ what the web matches and does not.
 A decision on a task of any collection (accept, dismiss, complete, won't
 do, reopen) is the contract's one patch: the status set to the action's
 value, a suggestion's edited fields beside it, and on a reopen every
-property the move into the closed state stamped set to null. Where the
-move has several values the owner picks one. The settings records,
-`tasks/collection` and `tasks/preference`, are created with a PUT on an
-id every device derives (a UUIDv8 of the sha256 of `collection:<kind>`
-or `preference`) at `ifVersion: 0`, and patched right after, so the device
-that lost the race writes its choice over the winner's row.
+property the move into the closed state stamped set to null. It is an edit
+on the version the owner saw, so a change another device made meanwhile
+parks it as a conflict rather than being written over, and its row says
+"Not saved" until Settings resolves it. Accept, dismiss, complete and won't
+do are kept in the outbox the moment they are made, held through their
+3 s undo window: Undo withdraws the entry, and a page closed within the
+window sends it at the next open (offline, when the network is back).
+Where the move has several values the owner picks one. A new task goes to
+the collection "Save new tasks to" names, from quick add and the editor
+alike, written through its readings; where it cannot take one (off, view
+only, or a required property the app does not fill in), "Can't add a task"
+says why. The settings records, `tasks/collection` and `tasks/preference`,
+are created with a PUT on an id every device derives (a UUIDv8 of the
+sha256 of `collection:<kind>` or `preference`) at `ifVersion: 0`, and
+patched right after, so the device that lost the race writes its choice
+over the winner's row; where two records stand for one kind, the one under
+the derived id is read and written, else the oldest.
 
 The app's own tasks and lists, as TasksKit's (`TaskWrites`, `TasksEnrichment`): a task or list is created
 with a PUT on a lowercase UUIDv7 the app chose (`ifVersion: 0`); a toggle,

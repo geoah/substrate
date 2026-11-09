@@ -7,7 +7,7 @@ import {
 } from "@substrate/react"
 import { CircleCheck, ListChecks, Plus, Settings } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { extraScopes, lastPendingStore, undo, useTaskActions } from "./actions"
+import { heldScopes, useTaskActions } from "./actions"
 import { Chooser } from "./Chooser"
 import { CollectionScreen, CollectionsScreen } from "./CollectionsScreen"
 import { ListsMenu } from "./ListsMenu"
@@ -49,13 +49,9 @@ export function App() {
   const model = useTasks()
   const actions = useTaskActions()
   const { askScopes, session, manifest } = useSubstrate()
-  useDiscovery()
+  useDiscovery(model)
   useLinkKinds(model)
-  const asked = extraScopes(
-    model.sources.collections,
-    session.scopes,
-    manifest.scopes
-  ).join(" ")
+  const asked = heldScopes(session.scopes, manifest.scopes).join(" ")
   useEffect(() => {
     askScopes(asked ? asked.split(" ") : [])
   }, [askScopes, asked])
@@ -451,8 +447,7 @@ function useShortcuts(opts: {
       }
       if (typing || covered || mod || e.altKey) return
       if (e.key === "z" || e.key === "Z") {
-        const last = lastPendingStore.get()
-        if (last && undo(last)) e.preventDefault()
+        if (opts.actions.undoLatest()) e.preventDefault()
         return
       }
       if (e.key === "n" || e.key === "N") {

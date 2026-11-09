@@ -136,6 +136,11 @@ describe("the contract's words", () => {
     })
   })
 
+  it("refuses a new task, and says a decision was not saved", () => {
+    expect(words.create.refused).toBe("Can't add a task")
+    expect(words.notSaved).toBe("Not saved")
+  })
+
   it("asks for approval", () => {
     expect(words.approval.ask("Chores")).toBe(
       "Substrate Tasks needs your approval to change your Chores."

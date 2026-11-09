@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { extraScopes } from "./actions"
+import { heldScopes } from "./actions"
 import { presentList, presentLists, row } from "./present"
-import { readCollections, type Declaration, type Envelope } from "./sources"
+import type { Declaration, Envelope } from "./sources"
 import { buildModel, type Settings } from "./state"
 
 interface Case {
@@ -165,54 +165,26 @@ describe("the presenter over the contract's cases", () => {
   })
 })
 
-describe("the scopes the app asks for beyond its first approval", () => {
-  it("asks to write each collection that is on and to read a group kind chosen", () => {
-    const c = second
-    const collections = readCollections(
-      c.declarations,
-      [
-        ...c.records,
-        {
-          kind: "substrate.reamde.dev/tasks/collection",
-          id: "c-ticket",
-          version: 1,
-          createdAt: c.now,
-          properties: {
-            kind: "ada.example.com/work/chore",
-            enabled: true,
-          },
-        },
-      ],
-      ["write:substrate.reamde.dev/tasks/*"]
-    )
-    expect(extraScopes(collections)).toEqual([])
-    const read = readCollections(
-      c.declarations,
-      c.records.map((r) =>
-        r.id === "c-chore"
-          ? { ...r, properties: { ...r.properties, group: "area" } }
-          : r
-      ),
-      [
-        "write:substrate.reamde.dev/tasks/*",
-        "read:implements(substrate.reamde.dev/core/lifecycle)",
-      ]
-    )
-    expect(extraScopes(read)).toEqual([
-      "read:ada.example.com/work/area",
-      "write:ada.example.com/work/chore",
-    ])
-    // A write approved for a collection that is off is asked for again.
-    const request = [
-      "write:substrate.reamde.dev/tasks/*",
-      "read:implements(substrate.reamde.dev/core/lifecycle)",
-    ]
+describe("the scopes a sign-in again asks for beyond the request", () => {
+  const request = [
+    "write:substrate.reamde.dev/tasks/*",
+    "read:implements(substrate.reamde.dev/core/lifecycle)",
+  ]
+
+  it("are the ones the token holds, never one inferred from the settings", () => {
+    expect(heldScopes(request, request)).toEqual([])
     expect(
-      extraScopes(
-        [],
-        [...request, "write:ada.example.com/flow/ticket"],
+      heldScopes(
+        [
+          ...request,
+          "write:ada.example.com/flow/ticket",
+          "read:ada.example.com/work/area",
+        ],
         request
       )
-    ).toEqual(["write:ada.example.com/flow/ticket"])
+    ).toEqual([
+      "read:ada.example.com/work/area",
+      "write:ada.example.com/flow/ticket",
+    ])
   })
 })

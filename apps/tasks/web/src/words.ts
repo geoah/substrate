@@ -117,6 +117,14 @@ export const words = {
   },
   /** A view-only collection's suggestion row, in place of its decisions. */
   viewOnly: "View only",
+  /** A new task "Save new tasks to" cannot take, before the reason. */
+  create: {
+    refused: "Can't add a task",
+  },
+  /** A row whose decision the server refused, waiting in Settings. */
+  notSaved: "Not saved",
+  notSavedDetail:
+    "It changed elsewhere since you saw it, or your server refused it. Settings has what to do.",
   approval: {
     ask: (collection: string) =>
       `Substrate Tasks needs your approval to change your ${collection}.`,

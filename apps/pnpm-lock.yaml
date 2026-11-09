@@ -149,6 +149,12 @@ importers:
         specifier: ^19.3.0
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@substrate/local':
+        specifier: workspace:*
+        version: link:../../kit/web/local
+      '@substrate/testing':
+        specifier: workspace:*
+        version: link:../../kit/web/testing
       '@substrate/vite':
         specifier: workspace:*
         version: link:../../kit/web/vite

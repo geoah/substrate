@@ -1,9 +1,14 @@
 import { positionAfter, uuidv7 } from "@substrate/client"
 import {
   derivedUUID,
+  isHeld,
   useKindWrites,
+  useOutbox,
+  useSubstrate,
+  useToast,
   useWrites,
   type KindWrites,
+  type OutboxEntry,
   type Writes,
 } from "@substrate/react"
 import { useMemo } from "react"
@@ -34,6 +39,7 @@ import {
   command,
   ownTaskKind,
   preferenceKind,
+  propertyLabel,
   referenceValue,
   type ActionName,
   type Collection,
@@ -48,10 +54,10 @@ import {
   settingsStore,
   show,
   store,
-  useStore,
   useTasks,
   type TasksModel,
 } from "./state"
+import { words } from "./words"
 
 /** How a draft is due: not at all, on a day, or at a moment. */
 export type DueKind = "none" | "day" | "time"
@@ -102,27 +108,44 @@ export type Reschedule = "today" | "tomorrow" | "nextWeek" | "pickDay"
  * long enough to see it and take it back. */
 export const undoWindow = 3000
 
-/** The decisions that wait out the window before the outbox has them. */
+/** The decisions that wait out the window before they are sent. */
 export type Undoable = Exclude<ActionName, "reopen">
 
-/** A decision in its window: what it was, the value it writes, and when
- * the window closes. */
+const undoable: readonly string[] = ["accept", "dismiss", "complete", "wontDo"]
+
+/** A decision in its window, as the outbox keeps it: what it was, when the
+ * window closes, and the outbox entry Undo withdraws. It is kept there the
+ * moment it is made, so a closed page or a crash loses nothing: the outbox
+ * sends it once its moment passes, at the next open if the page was
+ * closed, and offline whenever the network is back. */
 export interface Pending {
   action: Undoable
-  value: string
   until: number
+  entry: string
 }
 
-/** Each task with a decision in its window, by its path. */
-export const pendingStore = store<ReadonlyMap<string, Pending>>(new Map())
-/** Each window's write, which its timer or the page closing sends. */
-const windows = new Map<string, { timer: number; write: () => void }>()
+/** The decisions still in their window, by task path: the outbox's held
+ * writes the app tagged with a decision. */
+export function pendingOf(
+  entries: readonly OutboxEntry[],
+  now = Date.now()
+): Map<string, Pending> {
+  const out = new Map<string, Pending>()
+  for (const e of entries)
+    if (e.tag && undoable.includes(e.tag) && isHeld(e, now))
+      out.set(`${e.kind}/${e.recordID}`, {
+        action: e.tag as Undoable,
+        until: e.holdUntil!,
+        entry: e.id,
+      })
+  return out
+}
 
-/** The decision whose Undo the bar offers: the latest taken. */
-export const lastPendingStore = store<string | undefined>(undefined)
-
+/** The decisions in their window, read again whenever the outbox moves,
+ * which it does as each window closes. */
 export function usePending(): ReadonlyMap<string, Pending> {
-  return useStore(pendingStore)
+  const outbox = useOutbox()
+  return useMemo(() => pendingOf(outbox.entries), [outbox])
 }
 
 /** Each task marked done in its window, with when the window closes: what
@@ -137,24 +160,11 @@ export function useCompleting(): ReadonlyMap<string, number> {
   }, [pending])
 }
 
-function settle(path: string) {
-  const w = windows.get(path)
-  if (w) clearTimeout(w.timer)
-  windows.delete(path)
-  pendingStore.set((m) => {
-    if (!m.has(path)) return m
-    const next = new Map(m)
-    next.delete(path)
-    return next
-  })
-  if (lastPendingStore.get() === path) lastPendingStore.set(undefined)
+/** What the actions read and take back of the decisions in their window. */
+export interface Decisions {
+  pending: () => ReadonlyMap<string, Pending>
+  withdraw: (entry: string) => Promise<boolean>
 }
-
-// A page closed within a window still sends what the owner decided.
-if (typeof window !== "undefined")
-  window.addEventListener("pagehide", () => {
-    for (const w of [...windows.values()]) w.write()
-  })
 
 /** An action with several values waiting on the owner's choice. */
 export interface Choosing {
@@ -166,12 +176,9 @@ export interface Choosing {
 
 export const choosingStore = store<Choosing | undefined>(undefined)
 
-/** Takes back a decision still in its window: nothing was written. */
-export function undo(path: string): boolean {
-  if (!windows.has(path)) return false
-  settle(path)
-  return true
-}
+/** Decisions made and not yet kept by the outbox: a second press in that
+ * moment is not a second decision. */
+const deciding = new Set<string>()
 
 /** The kinds the link reads now: a pin of a kind outside them may be of a
  * collection turned off, which hides it and never drops it. */
@@ -192,20 +199,39 @@ export function useTaskActions() {
   const lists = useKindWrites(List)
   const writes = useWrites()
   const model = useTasks()
+  const { outbox } = useSubstrate()
+  const toast = useToast()
   return useMemo(
-    () => makeActions(model, tasks, lists, writes),
-    [tasks, lists, writes, model]
+    () =>
+      makeActions({
+        model,
+        tasks,
+        lists,
+        writes,
+        decisions: {
+          pending: () => pendingOf(outbox.getSnapshot().entries),
+          withdraw: (entry) => outbox.withdraw(entry),
+        },
+        refuse: (title, why) => toast(`${title}: ${why}`, "error"),
+      }),
+    [tasks, lists, writes, model, outbox, toast]
   )
 }
 
-/** The actions over one model and the kit's writes; `useTaskActions` is
- * this under the open repository. */
-export function makeActions(
-  model: TasksModel,
-  tasks: KindWrites<unknown, TaskFields>,
-  lists: KindWrites<unknown, ListFields>,
+/** The actions over one model, the kit's writes and the outbox's held
+ * decisions; `useTaskActions` is this under the open repository. */
+export function makeActions(deps: {
+  model: TasksModel
+  tasks: KindWrites<unknown, TaskFields>
+  lists: KindWrites<unknown, ListFields>
   writes: Writes
-) {
+  decisions: Decisions
+  /** Says why a write was not made, where no form stands to say it. */
+  refuse: (title: string, why: string) => void
+  /** The undo window, in ms; the app's own unless a test says. */
+  undoWindow?: number
+}) {
+  const { model, tasks, lists, writes, decisions } = deps
   const task = (id: string) => model.task(id)
   /** A change to the app's own task through its codec. */
   const change = (t: TaskItem, fields: Partial<TaskFields>) => {
@@ -228,22 +254,25 @@ export function makeActions(
       await writes.change(kind, held.id, patch)
       return
     }
-    const id = await derivedUUID(derivedFrom)
+    const id = derivedUUID(derivedFrom)
     const made = await writes.create(kind, id, { ...create, ...patch })
     if (made.kept) await writes.change(kind, id, patch)
   }
 
   const actions = {
-    /** A decision on a task: accept, dismiss, complete or won't do wait
-     * out the undo window, then write; reopen writes at once. Several
-     * values and no `to` asks the owner which. */
+    /** A decision on a task: the contract's one patch, an edit on the
+     * version the owner saw, so a change another device made meanwhile
+     * parks it as a conflict rather than being written over. Accept,
+     * dismiss, complete and won't do are kept held through the undo
+     * window and sent after it; reopen is sent at once. Several values and
+     * no `to` asks the owner which. */
     act(
       path: string,
       action: ActionName,
       opts: { to?: string; edits?: Record<string, unknown> } = {}
     ) {
       const t = task(path)
-      if (!t || windows.has(path)) return
+      if (!t || deciding.has(path) || decisions.pending().has(path)) return
       const result = command(t.item, { action, path, ...opts })
       if (result.type === "none") return
       if (result.type === "choose") {
@@ -256,26 +285,37 @@ export function makeActions(
         return
       }
       const { write } = result
-      const send = () =>
-        void writes.change(write.kind, write.id, write.properties)
-      if (action === "reopen") return send()
-      const fire = () => {
-        settle(path)
-        send()
+      const edit = (hold?: { until: number; tag: string }) =>
+        writes.edit(
+          write.kind,
+          write.id,
+          write.properties,
+          write.ifVersion,
+          hold ? { hold } : undefined
+        )
+      if (action === "reopen") {
+        void edit()
+        return
       }
-      windows.set(path, {
-        timer: window.setTimeout(fire, undoWindow),
-        write: fire,
-      })
+      deciding.add(path)
+      const until = Date.now() + (deps.undoWindow ?? undoWindow)
+      void edit({ until, tag: action }).finally(() => deciding.delete(path))
       if (action === "complete") navigator.vibrate?.(8)
-      pendingStore.set((m) =>
-        new Map(m).set(path, {
-          action,
-          value: result.value,
-          until: Date.now() + undoWindow,
-        })
-      )
-      lastPendingStore.set(path)
+    },
+    /** Takes back a decision still in its window: nothing is sent. Resolves
+     * whether it was taken back; undefined where none waits. */
+    undo(path: string): Promise<boolean> | undefined {
+      const p = decisions.pending().get(path)
+      return p ? decisions.withdraw(p.entry) : undefined
+    },
+    /** The latest decision still in its window, taken back. */
+    undoLatest(): boolean {
+      let latest: [string, Pending] | undefined
+      for (const entry of decisions.pending())
+        if (!latest || entry[1].until > latest[1].until) latest = entry
+      if (!latest) return false
+      void decisions.withdraw(latest[1].entry)
+      return true
     },
     /** One decision over many suggestions; one with several values takes
      * its first, as the queue's Select offers one decision for all. */
@@ -291,12 +331,13 @@ export function makeActions(
     },
     /** Reopen, or within the window, the mark taken back. */
     reopen(id: string) {
-      if (undo(id)) return
+      if (actions.undo(id)) return
       actions.act(id, "reopen")
     },
     abandon(id: string) {
-      undo(id)
-      actions.act(id, "wontDo")
+      const taken = actions.undo(id)
+      if (taken) void taken.then(() => actions.act(id, "wontDo"))
+      else actions.act(id, "wontDo")
     },
     /** A task's due day moved to a named day, or the editor to pick one. */
     reschedule(id: string, how: Reschedule) {
@@ -374,7 +415,7 @@ export function makeActions(
       void writes.change(t.kind, t.recordID, { [group.property]: list ?? null })
     },
     deleteTask(id: string) {
-      undo(id)
+      void actions.undo(id)
       const t = task(id)
       if (!t || !writable(t)) return
       void writes.remove(t.kind, t.recordID)
@@ -421,15 +462,21 @@ export function makeActions(
     quickAdd(name: string) {
       const trimmed = name.trim()
       if (!trimmed) return
-      // Another collection new tasks go to takes its title alone: it is
-      // creatable only where every property it requires is one of those.
-      const target = model.collection(model.sources.newTasks)
-      if (target && target.kind !== ownTaskKind) {
-        if (target.creatable && target.title)
-          void writes.create(target.kind, uuidv7(), { [target.title]: trimmed })
+      const { list, day } = newTaskSeed(model)
+      const target = newTaskTarget(model)
+      if ("refusal" in target)
+        return deps.refuse(words.create.refused, target.refusal)
+      if (target.collection.kind !== ownTaskKind) {
+        const made = encodeNew(target.collection, {
+          name: trimmed,
+          list,
+          due: day ? { day } : undefined,
+        })
+        if ("refusal" in made)
+          return deps.refuse(words.create.refused, made.refusal)
+        void writes.create(target.collection.kind, uuidv7(), made.properties)
         return
       }
-      const { list, day } = newTaskSeed(model)
       void tasks.create({
         name: trimmed,
         position: nextTaskPosition(model.tasks, list),
@@ -452,14 +499,40 @@ export function makeActions(
     async save(
       seen: TaskItem | undefined,
       d: TaskDraft,
-      notKept: (words: string) => void
+      notKept: (words: string, title?: string) => void
     ): Promise<boolean> {
-      const opts = { onNotKept: notKept }
+      const opts = { onNotKept: (w: string) => notKept(w) }
       const name = d.name.trim()
       const notes = d.notes.trim() ? d.notes : null
       const link = d.link.trim() || null
       const due = draftDue(d) ?? null
       if (!seen) {
+        const target = newTaskTarget(model)
+        if ("refusal" in target) {
+          notKept(target.refusal, words.create.refused)
+          return false
+        }
+        if (target.collection.kind !== ownTaskKind) {
+          const made = encodeNew(target.collection, {
+            name,
+            notes,
+            link,
+            list: d.list,
+            due: due ?? undefined,
+            priority: d.priority === "none" ? undefined : d.priority,
+          })
+          if ("refusal" in made) {
+            notKept(made.refusal, words.create.refused)
+            return false
+          }
+          const written = await writes.create(
+            target.collection.kind,
+            uuidv7(),
+            made.properties,
+            opts
+          )
+          return written.kept
+        }
         const written = await tasks.create(
           {
             name,
@@ -607,26 +680,101 @@ export function listName(lists: TaskList[], id: string | undefined) {
   return id ? lists.find((l) => l.id === id)?.name : undefined
 }
 
-/** The scopes the app asks for beyond its first approval: write access to
- * every collection that is on, read access to each group kind one groups
- * by that the grant does not read yet, and every scope beyond the request
- * the token already holds (write access approved for a collection that is
- * off), so a sign-in again never gives back less. */
-export function extraScopes(
-  collections: Collection[],
-  held: readonly string[] = [],
-  requested: readonly string[] = []
+/** The scopes every sign-in again asks for beyond the app's request: those
+ * the token already holds, so approving more never drops what an earlier
+ * approval gave. Nothing is inferred from the settings records, which
+ * another device may have written: a scope is asked for only by the
+ * owner's own action (an Approve, through `signInAgain`). */
+export function heldScopes(
+  held: readonly string[],
+  requested: readonly string[]
 ): string[] {
-  const out = new Set<string>(held.filter((s) => !requested.includes(s)))
-  for (const c of collections) {
-    if (!c.enabled) continue
-    if (c.kind !== ownTaskKind) out.add(`write:${c.kind}`)
-    const chosen = c.record?.properties.group
-    const ref =
-      typeof chosen === "string"
-        ? c.references.find((r) => r.property === chosen)
-        : undefined
-    if (ref && !ref.readable) out.add(`read:${ref.kind}`)
+  return held.filter((s) => !requested.includes(s)).sort()
+}
+
+/** Where a new task is written: the collection "Save new tasks to" names,
+ * else the app's own task; or why a task cannot be added there. */
+export function newTaskTarget(
+  model: TasksModel
+): { collection: Collection } | { refusal: string } {
+  const kind = model.sources.newTasks
+  const c = model.collection(kind)
+  if (!c) return { refusal: `Substrate Tasks does not read ${kind}.` }
+  const name = c.label.plural
+  if (!c.enabled) return { refusal: `${name} is turned off in Collections.` }
+  if (c.viewOnly)
+    return { refusal: `Substrate Tasks can't change your ${name}.` }
+  if (!c.title)
+    return { refusal: `${name} has no title Substrate Tasks writes.` }
+  const missing = required(c).filter((p) => !edited(c).has(p))
+  if (missing.length) return { refusal: needs(c, missing) }
+  return { collection: c }
+}
+
+function required(c: Collection): string[] {
+  const props = (c.declaration.definition.properties ?? {}) as Record<
+    string,
+    { required?: unknown }
+  >
+  return Object.entries(props)
+    .filter(([, spec]) => spec.required === true)
+    .map(([p]) => p)
+}
+
+function edited(c: Collection): Set<string> {
+  return new Set(
+    [c.title, c.due, c.dueDay, c.priority, c.order, c.group?.property].filter(
+      (p): p is string => !!p
+    )
+  )
+}
+
+function needs(c: Collection, props: string[]): string {
+  const labels = props.map((p) =>
+    propertyLabel(c.declaration.definition, p).toLowerCase()
+  )
+  return `${c.label.plural} needs ${labels.join(" and ")}, which Substrate Tasks does not fill in.`
+}
+
+/** A new task's fields as another collection's properties, through its
+ * readings: the title, the due day and moment (a day alone, where it reads
+ * no due day, is left out rather than made midnight), the priority where
+ * it is one of its values, the group where it is of its group kind, the
+ * notes and link where it declares them. Refused where a property it
+ * requires is left empty. */
+export function encodeNew(
+  c: Collection,
+  f: {
+    name: string
+    notes?: string | null
+    link?: string | null
+    list?: string
+    due?: Due
+    priority?: string
   }
-  return [...out].sort()
+): { properties: Record<string, unknown> } | { refusal: string } {
+  const props = (c.declaration.definition.properties ?? {}) as Record<
+    string,
+    { type?: unknown }
+  >
+  const typed = (p: string, types: string[]) =>
+    typeof props[p]?.type === "string" && types.includes(props[p].type)
+  const out: Record<string, unknown> = {}
+  if (c.title) out[c.title] = f.name
+  if (f.notes && typed("description", ["string", "markdown"]))
+    out.description = f.notes
+  if (f.link && typed("url", ["url", "string"])) out.url = f.link
+  if (f.due) {
+    if (c.dueDay) out[c.dueDay] = f.due.day
+    if (c.due && f.due.at) out[c.due] = timestamp(f.due.at)
+  }
+  if (f.priority && c.priority && c.priorities.includes(f.priority))
+    out[c.priority] = f.priority
+  if (f.list && c.group && f.list.startsWith(`${c.group.kind}/`))
+    out[c.group.property] = f.list
+  const empty = required(c).filter(
+    (p) => out[p] === undefined || out[p] === null || out[p] === ""
+  )
+  if (empty.length) return { refusal: needs(c, empty) }
+  return { properties: out }
 }

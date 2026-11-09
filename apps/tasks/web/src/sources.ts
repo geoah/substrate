@@ -1,5 +1,7 @@
 import {
   boundTrait,
+  comparePositions,
+  derivedUUID,
   kindStatus,
   movesFrom,
   parseReference,
@@ -20,6 +22,9 @@ export const ownTaskKind = "substrate.reamde.dev/tasks/task"
 export const ownListKind = "substrate.reamde.dev/tasks/list"
 export const collectionKind = "substrate.reamde.dev/tasks/collection"
 export const preferenceKind = "substrate.reamde.dev/tasks/preference"
+/** The kind a declaration is a record of: an app's token reads the
+ * declaration of a kind it reads at `core/kind/<kind>`. */
+export const kindDeclaration = "substrate.reamde.dev/core/kind"
 
 /** A kind as the implementors route serves it, or as a case gives it. */
 export interface Declaration {
@@ -394,17 +399,23 @@ function isLive(r: Envelope): boolean {
   return !r.deletedAt
 }
 
-/** The record of a settings kind for `matches`: the oldest live one, so
- * every device reads the same one where two raced. */
+/** The record of a settings kind for `matches` every device reads, where
+ * two devices left two: the one under the id each derives, else the oldest,
+ * then the smallest id. Every write goes to it. */
 function settingsRecord(
   records: readonly Envelope[],
   kind: string,
+  derived: string,
   matches: (r: Envelope) => boolean
 ): Envelope | undefined {
+  const id = derivedUUID(derived)
   return records
     .filter((r) => r.kind === kind && isLive(r) && matches(r))
     .sort(
-      (a, b) => a.createdAt.localeCompare(b.createdAt) || compare(a.id, b.id)
+      (a, b) =>
+        Number(b.id === id) - Number(a.id === id) ||
+        compare(a.createdAt, b.createdAt) ||
+        compare(a.id, b.id)
     )[0]
 }
 
@@ -415,6 +426,7 @@ export function collectionRecordOf(
   return settingsRecord(
     records,
     collectionKind,
+    `collection:${kind}`,
     (r) => r.properties.kind === kind
   )
 }
@@ -422,7 +434,7 @@ export function collectionRecordOf(
 export function preferenceRecordOf(
   records: readonly Envelope[]
 ): Envelope | undefined {
-  return settingsRecord(records, preferenceKind, () => true)
+  return settingsRecord(records, preferenceKind, "preference", () => true)
 }
 
 /** Every candidate: a declaration the grant reads that binds `lifecycle`
@@ -737,10 +749,11 @@ function compare(a: string, b: string): number {
 }
 
 /** Ties in any band: the order reading where both are of one kind and hold
- * one, as numbers; then creation; then the path. */
+ * one, as exact decimals (a float cannot tell 2^53 from 2^53 + 1); then
+ * creation; then the path. */
 export function byTies(a: Item, b: Item): number {
   if (a.kind === b.kind && a.order !== undefined && b.order !== undefined) {
-    const d = Number(a.order) - Number(b.order)
+    const d = comparePositions(a.order, b.order)
     if (d) return d
   }
   return compare(a.createdAt, b.createdAt) || compare(a.path, b.path)
@@ -780,34 +793,31 @@ export function bySuggested(a: Item, b: Item): number {
 }
 
 /** How a group kind's records are ordered: by its order reading, a
- * `decimal` named `position`, where it declares one (as numbers, a group
- * holding none after those that do), then by title, then by path. */
+ * `decimal` named `position`, where it declares one (as exact decimals, a
+ * group holding none after those that do), then by title, then by path. */
 export function groupOrder(
   definition: Record<string, unknown> | undefined,
   held: ReadonlyMap<string, Envelope>
 ): (a: string, b: string) => number {
   const order = definition ? named(definition, "position", "decimal") : null
-  const at = (path: string): number | undefined => {
+  const at = (path: string): string | undefined => {
     const v = order ? held.get(path)?.properties[order] : undefined
-    const n =
-      typeof v === "string" && v !== ""
-        ? Number(v)
-        : typeof v === "number"
-          ? v
-          : NaN
-    return Number.isFinite(n) ? n : undefined
+    return typeof v === "string" && v !== ""
+      ? v
+      : typeof v === "number" && Number.isFinite(v)
+        ? String(v)
+        : undefined
   }
   const title = (path: string) => {
     const r = held.get(path)
     return r ? recordTitle(r) : path
   }
   return (a, b) => {
-    const x = at(a)
-    const y = at(b)
-    if (x !== undefined && y !== undefined && x !== y) return x - y
-    if (x !== undefined && y === undefined) return -1
-    if (x === undefined && y !== undefined) return 1
-    return title(a).localeCompare(title(b)) || compare(a, b)
+    return (
+      comparePositions(at(a), at(b)) ||
+      title(a).localeCompare(title(b)) ||
+      compare(a, b)
+    )
   }
 }
 
