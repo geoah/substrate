@@ -25,6 +25,7 @@
 # is an error frame the engine parks — never a host crash. Isolation is the
 # process boundary (user code never loads into the substrate); tightening
 # placement is a later dial on the same protocol.
+import builtins
 import datetime
 import decimal
 import hashlib
@@ -1479,10 +1480,17 @@ def _said(e):
     parked views show as its first line. A body that raises a sentence with
     its technical detail on the lines after it means that sentence, so the
     message is kept whole and in order; the traceback's last line would be
-    the detail. A plain `RuntimeError`/`Exception` is how a body says a
-    sentence, so its class name is noise; any other class names the bug."""
+    the detail. A plain `Exception`, `RuntimeError` or `ValueError`, or a
+    class the body defines for its own refusals, is how a body says a
+    sentence, so its class name is noise; any other built-in class names the
+    bug."""
     msg = str(e).strip()
-    if msg and type(e) in (Exception, RuntimeError):
+    # A body runs in a bare namespace, so its own classes report the module
+    # "builtins" too; a real built-in is one the builtins module names.
+    cls = type(e)
+    said = cls in (Exception, RuntimeError, ValueError) or (
+        cls.__module__ == "builtins" and getattr(builtins, cls.__name__, None) is not cls)
+    if msg and said:
         return msg
     return "".join(traceback.format_exception_only(type(e), e)).strip()
 

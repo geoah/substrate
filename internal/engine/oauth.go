@@ -1139,9 +1139,12 @@ func (e *refusedRepeatedly) Error() string {
 
 func (e *refusedRepeatedly) Unwrap() error { return e.last }
 
-// errCannotRefresh is a due token with no refresh token, or a facility with
-// no OAuth client to refresh it through.
-type errCannotRefresh struct{ account string }
+// errCannotRefresh is a due token with no refresh token, or, with
+// noFacility, a deployment whose OAuth facility is off.
+type errCannotRefresh struct {
+	account    string
+	noFacility bool
+}
 
 func (e errCannotRefresh) Error() string {
 	return fmt.Sprintf("token for %s expired and cannot refresh", e.account)
@@ -1156,10 +1159,10 @@ var errOtherAccountsGrant = errors.New("the stored credential reference belongs 
 // code. reasonOAuthClientChanged is compared whole
 // (saysClientChanged), so it stays exactly itself.
 func tokenReason(cause error) string {
-	raw := firstLine(cause.Error())
-	if raw == reasonOAuthClientChanged {
-		return raw
+	if errors.Is(cause, errOAuthClientChanged) {
+		return reasonOAuthClientChanged
 	}
+	raw := firstLine(cause.Error())
 	return tokenSentence(cause) + "\n" + boundText(raw, syncErrorMax)
 }
 
@@ -1180,6 +1183,8 @@ func tokenSentence(cause error) string {
 		return "The provider refused to renew this sign-in. Reconnect the account if this keeps happening."
 	case errors.As(cause, &te):
 		return "The provider couldn't renew this sign-in just now. It tries again on its own."
+	case errors.As(cause, &cannot) && cannot.noFacility:
+		return "This sign-in expired, and this server has no OAuth facility to renew it. The server's operator has to turn it on."
 	case errors.As(cause, &cannot):
 		return "This sign-in expired and can't be renewed on its own. Reconnect the account."
 	case errors.Is(cause, errOtherAccountsGrant):
@@ -1251,7 +1256,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 		return tok.AccessToken, nil
 	}
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {
-		return "", errCannotRefresh{account: account.ID}
+		return "", errCannotRefresh{account: account.ID, noFacility: ds.svc.oauth == nil}
 	}
 	out, err := ds.refreshCredential(ctx, ref, account, g.gen, meta, client)
 	if err != nil {

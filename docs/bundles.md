@@ -748,8 +748,10 @@ the pair.
 `message` and a per-item status are read by the owner, so their first line is
 a sentence: what failed, why, and what to do about it, in the provider's own
 terms ("Notion no longer accepts the token. Paste a new one on the Notion
-settings."). It carries no error code, exception name, URL path or bare
-status number, and a failure that passes on its own says so. Whatever the
+settings."). It carries no error code, exception name or URL path, a status
+number appears only in parentheses where it adds something ("Slack had a
+problem on its side (HTTP 503)"), and a failure that passes on its own says
+so. Whatever the
 provider or the library said goes on the lines after it: the console shows the
 first line and folds the rest under Technical details. A cap on the field cuts
 the technical part, never the sentence. A connect the sandbox refused (the

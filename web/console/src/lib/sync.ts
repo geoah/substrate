@@ -344,6 +344,24 @@ export function accountViewOf(
   }
 }
 
+/** accountViewOf over every account, with a label two accounts share told
+ * apart by number in record order ("your Google account (2)"): the label is
+ * how the accounts table, a problem and a confirmation name one account. */
+export function accountViewsOf(
+  records: SubstrateRecord[],
+  kinds: KindInfo[]
+): AccountView[] {
+  const views = records.map((r) => accountViewOf(r, kinds))
+  const seen = new Map<string, number>()
+  for (const v of views) {
+    const key = `${v.provider} ${v.label}`
+    const n = (seen.get(key) ?? 0) + 1
+    seen.set(key, n)
+    if (n > 1) v.label = `${v.label} (${n})`
+  }
+  return views
+}
+
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
  * `syncPaused` is Pause, and the sync panel's buttons are their controls. An
  * account form on a kind binding the trait leaves them out for that reason.
@@ -394,6 +412,18 @@ export function credentialHelp(
   if (oauth && declared.clientId)
     out.clientId = `From the app you created ${where}.`
   return out
+}
+
+/** A failure a sync body or the OAuth facility wrote: its first line is the
+ * owner's sentence, and what follows is the provider's or the library's own
+ * text, shown folded (docs/bundles.md, "How a failure is worded"). */
+export function splitFailure(text: string): {
+  line: string
+  technical: string
+} {
+  const i = text.indexOf("\n")
+  if (i < 0) return { line: text.trim(), technical: "" }
+  return { line: text.slice(0, i).trim(), technical: text.slice(i + 1).trim() }
 }
 
 /** An account's label where it opens a sentence: a plain name ("work")

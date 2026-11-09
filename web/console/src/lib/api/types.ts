@@ -1554,7 +1554,8 @@ export interface SyncStatus {
   paused: boolean
   /** The OAuth facility's `tokenStatus` on the same record (`connected`,
    * `erroring`, or a bundle's seeded `pending`), absent on a kind that
-   * carries none. `tokenError` is the last refresh failure's first line and
+   * carries none. `tokenError` is the last refresh failure, a sentence saying
+   * what to do with the provider's answer on the lines after it, and
    * `tokenErrorAt` when that reason first appeared, absent while the sign-in
    * works. A 4xx refusal needs a reconnect; a 5xx clears on its own. */
   tokenStatus?: string

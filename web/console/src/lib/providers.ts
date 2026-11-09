@@ -25,6 +25,7 @@ import { refId, toolName, writeKinds } from "@/lib/tools"
 import {
   requestPending,
   requestUnstarted,
+  splitFailure,
   syncFailing,
   type AccountView,
   type ProviderView,
@@ -573,6 +574,10 @@ export function connectionWords(
       }
     case "erroring": {
       const why = firstLine(tokenError ?? "")
+      // The facility's reason is a sentence that says what to do, so it
+      // stands alone; one written before it was (a protocol answer) still
+      // gets the ask.
+      if (/[.!?]$/.test(why)) return { text: why, tone: "bad" }
       return {
         text: why
           ? `Its sign-in stopped working: ${why} · reconnect it`
@@ -873,12 +878,11 @@ export function firstSentence(text: string | undefined): string {
 }
 
 function firstLine(text: string): string {
-  return text.split("\n")[0].trim()
+  return splitFailure(text).line
 }
 
 function restLines(text: string): string {
-  const i = text.indexOf("\n")
-  return i < 0 ? "" : text.slice(i + 1).trim()
+  return splitFailure(text).technical
 }
 
 function capitalise(text: string): string {

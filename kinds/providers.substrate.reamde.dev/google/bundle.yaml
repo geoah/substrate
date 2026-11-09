@@ -570,7 +570,8 @@ data:
       writer: oauth
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
-        token, as the provider's status and error code; empty while it works
+        token, as a sentence saying what to do with the provider's answer
+        on the next line; empty while it works
     tokenErrorAt:
       type: datetime
       writer: oauth
@@ -5777,10 +5778,7 @@ data:
         # the error (the directory walk asks three questions of one refusal)
         # passes the body it read; only a caller that has not reads here.
         if body is None:
-            try:
-                body = _json.loads(e.read().decode("utf-8", "replace"))
-            except Exception:
-                return False
+            body = {"error": _error_doc(e)}
         err = (body or {}).get("error") or {}
         for d in (err.get("details") or []) + (err.get("errors") or []):
             if not isinstance(d, dict):
@@ -5812,10 +5810,10 @@ data:
 
 
     def _error_body(e):
-        try:
-            return _json.loads(e.read().decode("utf-8", "replace")) or {}
-        except Exception:
-            return {}
+        # Through `_error_doc`, which keeps what it read for the failure's
+        # own sentence.
+        doc = _error_doc(e)
+        return {"error": doc} if doc else {}
 
 
     def _reason_of(body, e, verdict=""):
@@ -8486,15 +8484,9 @@ data:
         return one. A 400 is only a stale page token when Google SAYS so, and
         saying so is what distinguishes it from a request bug this sync should
         surface rather than paper over (Codex §4.4.8)."""
-        try:
-            body = e.read()
-        except Exception:
-            return {}
-        try:
-            doc = _json.loads((body or b"").decode("utf-8", "replace"))
-        except (ValueError, AttributeError):
-            return {}
-        return doc.get("error") if isinstance(doc.get("error"), dict) else {}
+        # Through `_error_doc`, which keeps what it read: the failure's own
+        # sentence reads the same body after this.
+        return _error_doc(e)
 
 
     def _bad_page_token(e):
@@ -17763,15 +17755,9 @@ data:
     def _detail(e):
         """The error document Google returned, as a dict — `{}` when it did not
         return one. The body of an HTTPError reads ONCE."""
-        try:
-            body = e.read()
-        except Exception:
-            return {}
-        try:
-            doc = _json.loads((body or b"").decode("utf-8", "replace"))
-        except (ValueError, AttributeError):
-            return {}
-        return doc.get("error") if isinstance(doc.get("error"), dict) else {}
+        # Through `_error_doc`, which keeps what it read: the failure's own
+        # sentence reads the same body after this.
+        return _error_doc(e)
 
 
     def _scope_refused(err):

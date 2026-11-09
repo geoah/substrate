@@ -293,7 +293,8 @@ data:
       writer: oauth
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
-        token, as the provider's status and error code; empty while it works
+        token, as a sentence saying what to do with the provider's answer
+        on the next line; empty while it works
     tokenErrorAt:
       type: datetime
       writer: oauth
@@ -4892,18 +4893,19 @@ data:
         else:
             pending = _pending(cur)
             notes = []
+            if pending:
+                # `deferred: <queue> xN` is the grammar the runner's
+                # continuation reads (tools/e2e.py, `_DEFERRED_RE`), and the
+                # counts SHRINK round on round now that the backlog is durable. It
+                # leads, so the 400-character cap cuts the longer notes after it.
+                notes.append("deferred: " + ", ".join(
+                    "%s x%d" % (k, len(v)) for k, v in sorted(pending.items())))
             if cur.get("partial"):
                 notes.append("GitHub returned incomplete results for %s, read "
                              "again next run" % ", ".join(cur["partial"]))
             if cur.get("stalled"):
                 notes.append("some results could not all be listed: "
                              + ", ".join(cur["stalled"]))
-            if pending:
-                # `deferred: <queue> xN` is the grammar the runner's
-                # continuation reads (tools/e2e.py, `_DEFERRED_RE`), and the
-                # counts SHRINK round on round now that the backlog is durable.
-                notes.append("deferred: " + ", ".join(
-                    "%s x%d" % (k, len(v)) for k, v in sorted(pending.items())))
             if cur.get("missing"):
                 notes.append("%d items GitHub would not return (%s)"
                              % (len(cur["missing"]), ", ".join(cur["missing"][:4])))

@@ -905,7 +905,8 @@ data:
       writer: oauth
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
-        token, as the provider's status and error code; empty while it works
+        token, as a sentence saying what to do with the provider's answer
+        on the next line; empty while it works
     tokenErrorAt:
       type: datetime
       writer: oauth

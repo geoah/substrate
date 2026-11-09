@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest"
 import type { BundleStatus, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   accountViewOf,
+  accountViewsOf,
+  splitFailure,
   countPhrase,
   credentialHelp,
   cursorText,
@@ -315,6 +317,35 @@ describe("healthOf", () => {
     expect(healthOf("connected", ok)).toBe("healthy")
     expect(healthOf("connected", syncFieldsOf({}), "ok")).toBe("healthy")
     expect(healthOf("connected", syncFieldsOf({}))).toBe("idle")
+  })
+})
+
+describe("accountViewsOf", () => {
+  it("tells apart two accounts of one provider that share a label", () => {
+    const kinds = [kind(ACCOUNT, ["accountconfig"])]
+    const labels = accountViewsOf(
+      [
+        record("a", {}),
+        record("b", {}),
+        record("c", { email: "x@example.com" }),
+      ],
+      kinds
+    ).map((v) => v.label)
+    expect(labels).toEqual([
+      "your Google account",
+      "your Google account (2)",
+      "x@example.com",
+    ])
+  })
+})
+
+describe("splitFailure", () => {
+  it("splits the sentence from the technical text", () => {
+    expect(splitFailure("Slack had a problem.\nHTTP 503\n<html>")).toEqual({
+      line: "Slack had a problem.",
+      technical: "HTTP 503\n<html>",
+    })
+    expect(splitFailure("ok")).toEqual({ line: "ok", technical: "" })
   })
 })
 

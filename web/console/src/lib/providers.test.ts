@@ -868,6 +868,15 @@ describe("connectionWords", () => {
     expect(connectionWords("erroring", "Google").text).toBe(
       "Its sign-in stopped working · reconnect it"
     )
+    expect(
+      connectionWords(
+        "erroring",
+        "Google",
+        "The provider couldn't renew this sign-in just now. It tries again on its own.\nprovider answered 502"
+      ).text
+    ).toBe(
+      "The provider couldn't renew this sign-in just now. It tries again on its own."
+    )
   })
 })
 

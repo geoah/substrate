@@ -356,7 +356,7 @@ func (t *txn) syncPark(s *syncStamp, cause error) error {
 		}
 		_, err = t.patch(s.ref, substrate.PatchInput{Properties: map[string]any{
 			propSyncState:          substrate.SyncStateErroring,
-			propSyncError:          boundText(firstLine(cause.Error()), syncErrorMax),
+			propSyncError:          boundText(failureText(cause.Error()), syncErrorMax),
 			propSyncErrorAt:        t.now.Format(time.RFC3339Nano),
 			propLastSyncDurationMs: s.durationMs(t.now),
 		}})
@@ -823,6 +823,16 @@ func firstLine(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return s
+}
+
+// failureText is a failed run's message without the traceback a Python body's
+// error carries after it: the sentence on the first line, and the technical
+// lines a body raised beneath it, which the console folds.
+func failureText(s string) string {
+	if i := strings.Index(s, "\nTraceback (most recent call last):"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
 // boundText cuts a message to at most n bytes on a rune boundary.
