@@ -1,15 +1,16 @@
 @import "tailwindcss";
 @import "@substrate/react/theme.css";
 
-/* Healthspan's accent, app.json's `accent`: the fill in the icon's green,
- * the text tone a shade darker in light mode so it reads at 4.5:1. */
+/* Healthspan's accent, app.json's `accent`: a fill white text reads on at
+ * 4.5:1 (the kit's prominent buttons draw white on it) in both modes, and a
+ * text tone that reads at 4.5:1 on each mode's backgrounds. */
 :root {
-  --sx-accent: #4a9416;
+  --sx-accent: #408513;
   --sx-accent-text: #3b7a10;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --sx-accent: #a9de6c;
+    --sx-accent: #408513;
     --sx-accent-text: #a9de6c;
   }
 }

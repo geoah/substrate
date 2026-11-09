@@ -17,6 +17,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@substrate/testing": "workspace:*",
     "@substrate/vite": "workspace:*",
     "@tailwindcss/vite": "^4",
     "@types/react": "^19",

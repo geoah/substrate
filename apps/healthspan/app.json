@@ -1,12 +1,8 @@
 {
   "id": "healthspan",
   "name": "Substrate Healthspan",
-  "platforms": [
-    "web"
-  ],
-  "publishes": [
-    "substrate.reamde.dev/healthspan"
-  ],
+  "platforms": ["web"],
+  "publishes": ["substrate.reamde.dev/healthspan"],
   "asks": [
     {
       "package": "substrate.reamde.dev/healthspan",
@@ -36,8 +32,8 @@
   ],
   "icon": "icon-1024.png",
   "accent": {
-    "light": "#4A9416",
-    "dark": "#A9DE6C",
+    "light": "#408513",
+    "dark": "#408513",
     "text": {
       "light": "#3B7A10",
       "dark": "#A9DE6C"
