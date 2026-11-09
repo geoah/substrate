@@ -7,7 +7,8 @@ import Testing
 @Suite(.timeLimit(.minutes(10))) struct KindStatusTests {
     static func declaration(_ json: String) throws -> Record {
         try JSONDecoder().decode(
-            Record.self, from: Data(#"{"id":"ada.example.com/work/chore","kind":"substrate.reamde.dev/core/kind","properties":"#.utf8 + Data(json.utf8) + Data("}".utf8)))
+            Record.self,
+            from: Data(#"{"id":"ada.example.com/work/chore","kind":"substrate.reamde.dev/core/kind","properties":"#.utf8 + Data(json.utf8) + Data("}".utf8)))
     }
 
     @Test func aMachineReadsItsStandingsAndMoves() throws {

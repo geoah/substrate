@@ -111,7 +111,7 @@ extension KindDeclaration {
     public static func renames(in entry: String) -> [String: String] {
         guard let open = entry.firstIndex(of: "("), let close = entry.lastIndex(of: ")"), open < close else { return [:] }
         var out: [String: String] = [:]
-        for part in entry[entry.index(after: open)..<close].split(separator: ",") {
+        for part in entry[entry.index(after: open) ..< close].split(separator: ",") {
             let pair = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
             if pair.count == 2, !pair[0].isEmpty, !pair[1].isEmpty { out[pair[0]] = pair[1] }
         }

@@ -306,6 +306,16 @@ public final class AppShell<App: LinkedApp> {
     /// The browser sign-in on the server the connect screen found; the
     /// session replaces the one before, which is kept to be revoked.
     public func signIn(_ probe: ServerProbe.Result) async throws {
+        try await signIn(probe, adding: [])
+    }
+
+    /// The sign-in asking for `scopes` beside the manifest's, and keeping
+    /// what the session in use holds beyond them on the same repository.
+    private func signIn(_ probe: ServerProbe.Result, adding scopes: [String]) async throws {
+        let current = await sessions.load()
+        let same = current.map { $0.server == probe.origin && (probe.repository ?? $0.repository) == $0.repository } ?? false
+        let kept = same ? current.map(manifest.beyond) ?? [] : []
+        let manifest = manifest.asking(kept + scopes)
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
         let session = try await oauth.signIn(
             server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
@@ -317,9 +327,16 @@ public final class AppShell<App: LinkedApp> {
     /// The whole request again on the same server: a change of access, a
     /// renewal, or signing in after the access ended.
     public func changeAccess() async throws {
+        try await changeAccess(adding: [])
+    }
+
+    /// The whole request again, asking for `scopes` beside it: the approval
+    /// an app asks for when the owner chooses something its manifest does not
+    /// name (a kind to change), on the page every approval uses.
+    public func changeAccess(adding scopes: [String]) async throws {
         guard let session = await sessions.load() else { return }
         let probe = try await ServerProbe().probe(session.server, requirement: manifest.requirement, app: manifest.appName)
-        try await signIn(probe)
+        try await signIn(probe, adding: scopes)
     }
 
     /// The link reads the session again over the same folder, or the app is
