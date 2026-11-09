@@ -124,7 +124,8 @@ data:
           description: the number as written, such as 5.2
         comparator:
           type: string
-          description: a bound the lab reported instead of a value, such as <
+          description: the bound the lab reported in place of a value (<,
+            >)
         unit:
           type: string
           description: the unit's code as written, such as mmol/L

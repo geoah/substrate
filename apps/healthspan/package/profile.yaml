@@ -20,9 +20,9 @@ data:
   package: healthspan
   description: >-
     What Substrate Healthspan needs to know about you that no other record
-    holds: which reference curves and lab targets apply, your birth date
-    where your contact has none, and the order your nights and workouts are
-    read in.
+    holds: which reference curves and lab targets apply, your birth date where
+    your contact has none, and the order your nights and workouts are read
+    in.
   purpose: primary
   ids:
     type: named
