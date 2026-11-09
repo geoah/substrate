@@ -1,0 +1,1770 @@
+{
+  "importer": "nhs",
+  "name": "example",
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/observations/source",
+      "namespace": "source",
+      "key": "nhs",
+      "mode": "create",
+      "properties": {
+        "name": "The Example Surgery",
+        "class": "service"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "ods",
+      "key": "A12345",
+      "mode": "merge",
+      "properties": {
+        "name": "The Example Surgery",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/ods-organization-code",
+            "value": "A12345",
+            "label": "ODS code"
+          }
+        ],
+        "type": "gppractice",
+        "address": {
+          "lines": ["1 EXAMPLE STREET"],
+          "city": "EXAMPLETOWN",
+          "postalCode": "EX1 1AA"
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "ods",
+      "key": "FA001",
+      "mode": "merge",
+      "properties": {
+        "name": "Example Chemist",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/ods-organization-code",
+            "value": "FA001",
+            "label": "ODS code"
+          }
+        ],
+        "type": "pharmacy",
+        "address": {
+          "lines": ["2 High Street"],
+          "city": "Exampletown",
+          "postalCode": "EX1 2BB"
+        },
+        "phone": "01234 567890",
+        "url": "https://www.example-chemist.test"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "ods",
+      "key": "FB002",
+      "mode": "merge",
+      "properties": {
+        "name": "Second Pharmacy Ltd",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/ods-organization-code",
+            "value": "FB002",
+            "label": "ODS code"
+          }
+        ],
+        "type": "pharmacy",
+        "address": {
+          "lines": ["3 Market Square, Othertown"],
+          "postalCode": "OT1 1CC"
+        },
+        "url": "https://second-pharmacy.test"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/organization",
+      "namespace": "ods",
+      "key": "RXX",
+      "mode": "merge",
+      "properties": {
+        "name": "Example Hospitals NHS Trust",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/ods-organization-code",
+            "value": "RXX",
+            "label": "ODS code"
+          }
+        ],
+        "type": "hospital"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-fbc",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "Full blood count",
+        "at": "2026-03-30T09:15:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-afc51c7da90b5f2c2f3d65c0069931ec5dbbb7c1cd746ce2cf581bedfd4b3a73"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-fbc/Haemoglobin estimation",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/haemoglobin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-fbc"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "152",
+          "unit": "g/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "130",
+              "unit": "g/L"
+            },
+            "high": {
+              "value": "170",
+              "unit": "g/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1022431000000105",
+          "display": "Haemoglobin estimation"
+        },
+        "upstreamId": "t-fbc/Haemoglobin estimation",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-fbc/Total white cell count",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/wbc",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-fbc"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "6.10",
+          "unit": "10*9/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "4.0",
+              "unit": "10*9/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1022541000000102",
+          "display": "Total white cell count"
+        },
+        "upstreamId": "t-fbc/Total white cell count",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-fbc/Percentage nucleated RBCs",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/nucleated_red_cells_per_100_wbc",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-fbc"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "0",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1022621000000107",
+          "display": "Percentage nucleated RBCs"
+        },
+        "upstreamId": "t-fbc/Percentage nucleated RBCs",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-kidney",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "Kidney function",
+        "at": "2026-03-30T09:15:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-66b7bd430a667976eb22375847edbf1ad5b5a82f1f3c5359b5e0a4cfab0a9281"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-kidney/eGFRcreat (CKD-EPI)/1.73 m*2",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/egfr",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-kidney"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "90",
+          "unit": "mL/min/{1.73_m2}",
+          "comparator": ">"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1011481000000105",
+          "display": "eGFRcreat (CKD-EPI)/1.73 m*2"
+        },
+        "upstreamId": "t-kidney/eGFRcreat (CKD-EPI)/1.73 m*2",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-kidney/Serum creatinine",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/creatinine",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-kidney"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "72.0",
+          "unit": "umol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "59",
+              "unit": "umol/L"
+            },
+            "high": {
+              "value": "104",
+              "unit": "umol/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1000731000000107",
+          "display": "Serum creatinine"
+        },
+        "upstreamId": "t-kidney/Serum creatinine",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-aki",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "AKI warning stage",
+        "at": "2026-03-30T09:15:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-ecbfc75ec438a043d7d4d242e7993b204f72d42546807f5dee4694142f7ae61f"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-aki/AKI warning stage",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/aki_warning_stage",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-aki"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-30T09:15:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": "none",
+        "codedValue": {
+          "display": "No flag"
+        },
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1032021000000103",
+          "display": "AKI warning stage"
+        },
+        "upstreamId": "t-aki/AKI warning stage",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-bp",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "Blood pressure",
+        "at": "2026-02-01T00:00:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-82c79af3ee9622037e739fe11bdcf90622a7172f4b3e1a78e8a50e32551ccb1f"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-bp/Self reported systolic blood pressure",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/systolic_blood_pressure",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-bp"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-01T00:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "128",
+          "unit": "mm[Hg]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "Self reported systolic blood pressure",
+          "display": "Self reported systolic blood pressure"
+        },
+        "upstreamId": "t-bp/Self reported systolic blood pressure",
+        "specimen": null,
+        "method": "self reported",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-bp/Self reported diastolic blood pressure",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/diastolic_blood_pressure",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-bp"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-01T00:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "82",
+          "unit": "mm[Hg]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "Self reported diastolic blood pressure",
+          "display": "Self reported diastolic blood pressure"
+        },
+        "upstreamId": "t-bp/Self reported diastolic blood pressure",
+        "specimen": null,
+        "method": "self reported",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-ratio",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "Lipids",
+        "at": "2025-11-03T08:30:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-c8065e0d42616efb6fb5dabc696a57af1126cc107b8803b6e03e3eb63803e8ae"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-ratio/Serum cholesterol/HDL ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/cholesterol_hdl_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-ratio"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-03T08:30:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "3.2",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1015681000000109",
+          "display": "Serum cholesterol/HDL ratio"
+        },
+        "upstreamId": "t-ratio/Serum cholesterol/HDL ratio",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "nhs",
+      "key": "t-2019",
+      "mode": "maintain",
+      "properties": {
+        "lab": "The Example Surgery",
+        "accession": "Vitamin D",
+        "at": "2019-06-01T10:00:00+00:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-eb05d702b709fced55fc035a878cf762b421350c80d15acfab77b1b59f96861b"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "nhs",
+      "key": "t-2019/Serum total 25-OH vit D level",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/vitamin_d",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "nhs"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "nhs",
+            "key": "t-2019"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2019-06-01T10:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "60",
+          "unit": "nmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "emis",
+          "code": "1018751000000107",
+          "display": "Serum total 25-OH vit D level"
+        },
+        "upstreamId": "t-2019/Serum total 25-OH vit D level",
+        "specimen": null,
+        "method": null,
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/patient",
+      "namespace": "nhs",
+      "key": "patient",
+      "mode": "maintain",
+      "properties": {
+        "service": "NHS England",
+        "name": "Alex EXAMPLE",
+        "identifiers": [
+          {
+            "system": "https://fhir.nhs.uk/Id/nhs-number",
+            "value": "9990000000",
+            "label": "NHS number"
+          }
+        ],
+        "birthDate": "1990-01-02",
+        "gender": "male",
+        "address": {
+          "lines": ["10 Example Road", "Exampletown"],
+          "postalCode": "EX1 3DD"
+        },
+        "practice": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "pharmacy": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "FA001"
+          }
+        },
+        "about": "substrate.reamde.dev/core/contact/c-owner"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "nhs",
+      "key": "041aa2be3ede197d51c711c86f694d73254cdc2d4a5ea844f327860ebe295e29",
+      "mode": "maintain",
+      "properties": {
+        "at": "2026-03-30T09:20:00.917+00:00",
+        "precision": "time",
+        "summary": "Full blood count",
+        "status": "finished",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "location": "Main surgery",
+        "participants": [
+          {
+            "name": "EXAMPLE, Sam",
+            "role": "Dr"
+          }
+        ],
+        "entries": [
+          {
+            "section": "History",
+            "term": "Full blood count",
+            "coding": {
+              "system": "http://snomed.info/sct",
+              "descriptionId": "14990931000006116",
+              "display": "Full blood count"
+            },
+            "text": "Normal",
+            "upstreamId": "t-fbc"
+          },
+          {
+            "section": "History",
+            "term": "Mystery panel",
+            "coding": {
+              "system": "emis",
+              "code": "1234567",
+              "display": "Mystery panel"
+            },
+            "upstreamId": "t-unknown"
+          },
+          {
+            "section": "History",
+            "text": "Feeling well"
+          },
+          {
+            "section": "Comment",
+            "term": "Seen in clinic",
+            "coding": {
+              "system": "http://snomed.info/sct",
+              "descriptionId": "2534664018",
+              "display": "Seen in clinic"
+            },
+            "upstreamId": "e-2"
+          }
+        ],
+        "text": "**History**\n\n- Full blood count: Normal\n\n- Mystery panel\n\nFeeling well\n\n**Comment**\n\n- Seen in clinic",
+        "reports": [
+          {
+            "$ref": {
+              "kind": "substrate.reamde.dev/labs/labreport",
+              "namespace": "nhs",
+              "key": "t-fbc"
+            }
+          }
+        ]
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "nhs",
+      "key": "041aa2be3ede197d51c711c86f694d73254cdc2d4a5ea844f327860ebe295e29-2",
+      "mode": "maintain",
+      "properties": {
+        "at": "2026-03-30T09:20:00.917+00:00",
+        "precision": "time",
+        "summary": "Kidney function",
+        "status": "finished",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "location": "Main surgery",
+        "participants": [
+          {
+            "name": "EXAMPLE, Sam",
+            "role": "Dr"
+          }
+        ],
+        "entries": [
+          {
+            "term": "Kidney function",
+            "coding": {
+              "system": "http://snomed.info/sct",
+              "code": "1000731000000107",
+              "display": "Kidney function"
+            },
+            "upstreamId": "t-kidney"
+          }
+        ],
+        "text": "**Entry**\n\n- Kidney function",
+        "reports": [
+          {
+            "$ref": {
+              "kind": "substrate.reamde.dev/labs/labreport",
+              "namespace": "nhs",
+              "key": "t-kidney"
+            }
+          }
+        ]
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "nhs",
+      "key": "8eeecd8f6d42290e3290d741d672be2a5d7cef443297e981f4f663990b437b86",
+      "mode": "maintain",
+      "properties": {
+        "at": "2026-05-05T00:00:00+00:00",
+        "precision": "day",
+        "summary": "Line one",
+        "status": "finished",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "location": "Main surgery",
+        "participants": [
+          {
+            "name": "Nurse Example",
+            "role": null
+          }
+        ],
+        "entries": [
+          {
+            "section": "Comment",
+            "text": "Line one\nLine two"
+          }
+        ],
+        "text": "**Comment**\n\nLine one\nLine two",
+        "reports": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/encounter",
+      "namespace": "nhs",
+      "key": "87b96d89ac4d2df70cc5133e6e8e7f86636702b0925515d84b61e95585ab55c0",
+      "mode": "maintain",
+      "properties": {
+        "at": "2026-06-01T15:21:00+00:00",
+        "precision": "time",
+        "summary": "Consultation",
+        "status": "finished",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "location": "Main surgery",
+        "participants": null,
+        "entries": null,
+        "text": null,
+        "reports": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/condition",
+      "namespace": "nhs",
+      "key": "648c805ef7a1902dc00595411d1ed8287217498706c79c9d357bee5909dbd3c0",
+      "mode": "maintain",
+      "properties": {
+        "name": "Asthma",
+        "at": "2020-05-01T00:00:00+00:00",
+        "precision": "month",
+        "endsAt": null,
+        "clinicalStatus": "active",
+        "category": "problemlistitem",
+        "significance": "major",
+        "sourceStatus": "Active",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "notes": "Uses an inhaler\nReviewed yearly"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/condition",
+      "namespace": "nhs",
+      "key": "d01591be27868629ae858bd619637ce631b26bc079f8837f3b65d47c5a5dc2b3",
+      "mode": "maintain",
+      "properties": {
+        "name": "Sprained ankle",
+        "at": "2021-04-12T00:00:00+00:00",
+        "precision": "day",
+        "endsAt": "2021-06-03T00:00:00Z",
+        "clinicalStatus": "resolved",
+        "category": "problemlistitem",
+        "significance": "minor",
+        "sourceStatus": "Past",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "notes": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/condition",
+      "namespace": "nhs",
+      "key": "3dfbc4845225d7efa09f89a91eba756eae871daff4dd4dc1eae49002006b65c8",
+      "mode": "maintain",
+      "properties": {
+        "name": "Back pain",
+        "at": "2018-01-01T00:00:00+00:00",
+        "precision": "year",
+        "endsAt": null,
+        "clinicalStatus": "inactive",
+        "category": "problemlistitem",
+        "significance": null,
+        "sourceStatus": "Past",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "notes": "Ended: some time in 2019"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/allergy",
+      "namespace": "nhs",
+      "key": "b34c4e612526d27a2865de8867acac2781459b98a351cbe1160fd1d4dcdb0499",
+      "mode": "maintain",
+      "properties": {
+        "name": "Penicillin allergy",
+        "at": "2015-01-01T00:00:00+00:00",
+        "precision": "year",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "reactions": null,
+        "substance": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/immunization",
+      "namespace": "nhs",
+      "key": "b6f1324cdaae507bfe0b297e2cd127256d79c2eb2d0b931c12abc6175ae7ccde",
+      "mode": "maintain",
+      "properties": {
+        "name": "Rabies vaccination",
+        "at": "2026-03-30T10:00:00+00:00",
+        "precision": "time",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "nextDueAt": "2029-03-30",
+        "notes": "Batch EX123"
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/immunization",
+      "namespace": "nhs",
+      "key": "88ebeb218cdef4cd2820b0ad1fcf8d2fc87ac2b39238cbdfba1c4568f988231b",
+      "mode": "maintain",
+      "properties": {
+        "name": "Japanese encephalitis vaccination",
+        "at": "2025-02-10T11:00:00+00:00",
+        "precision": "time",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "nextDueAt": null,
+        "notes": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/immunization",
+      "namespace": "nhs",
+      "key": "0776759befc0491e15deb10e78f5b5bafd79d61f1a62c7244a0c5340ade2f220",
+      "mode": "maintain",
+      "properties": {
+        "name": "Requires a cholera vaccination",
+        "at": "2026-03-30T10:05:00+00:00",
+        "precision": "time",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "nextDueAt": null,
+        "notes": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "course-1",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Exampleol 10mg tablets",
+        "dosage": "one daily",
+        "quantity": "28 tablet",
+        "course": "continuous",
+        "status": "active",
+        "intent": "plan",
+        "at": "2026-01-10T00:00:00+00:00",
+        "lastIssuedAt": "2026-10-20T00:00:00Z",
+        "nextIssueAt": "2026-11-24T00:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "d910f5c3f21b8b8bf621c6f082df3a5515e6e1242f84cbcc034b50d301f6ca72",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Oldmed 1mg tablets",
+        "dosage": "as directed",
+        "quantity": null,
+        "course": "continuous",
+        "status": "stopped",
+        "intent": "plan",
+        "at": "2025-01-01T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "a86df71f6aeed961d2340f7a4091250c62c4e63feda3151148c73a8643530172",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Rabipur vaccine powder and solvent",
+        "dosage": "Use as directed",
+        "quantity": "1 x 0.5ml",
+        "course": "acute",
+        "status": "completed",
+        "intent": "order",
+        "at": "2026-03-30T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "5fdacefa2f2326e4f1abddbe7e43c0e0e0eb170a4d07579d8fc9ee2523d8636c",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Newmed 2mg tablets",
+        "dosage": "one daily",
+        "quantity": null,
+        "course": "acute",
+        "status": "active",
+        "intent": "order",
+        "at": "2026-10-27T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "c59b3edaa62a936c3ae97ddac8a271b288a4a90b256d79f83929e91dce85f699",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Pastmed 3mg tablets",
+        "dosage": null,
+        "quantity": null,
+        "course": "acute",
+        "status": "unknown",
+        "intent": "order",
+        "at": "2025-01-15T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "63ca01f02b91abfdcf749526fe81f542fdcb5155bda63ff2080b6b603c97c734",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Ixiaro suspension for injection",
+        "dosage": "Use as directed",
+        "quantity": null,
+        "course": "acute",
+        "status": "completed",
+        "intent": "order",
+        "at": "2025-02-10T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationrequest",
+      "namespace": "nhs",
+      "key": "0df92b26c6dfcf717dde28812af3de19d9477b5b22d478f5a007b91f723c867b",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Otherine 5mg capsules",
+        "dosage": "two daily",
+        "quantity": "14 capsule",
+        "course": "acute",
+        "status": "active",
+        "intent": "order",
+        "at": "2026-10-19T00:00:00+00:00",
+        "lastIssuedAt": null,
+        "nextIssueAt": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationdispense",
+      "namespace": "nhs",
+      "key": "EX0001-A12345-00001A/1",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Exampleol 10mg tablets",
+        "quantity": "28 tablet",
+        "status": "preparation",
+        "sourceStatus": "WithDispenser",
+        "statusAt": "2026-10-20T10:00:00+01:00",
+        "prescription": "EX0001-A12345-00001A",
+        "at": "2026-10-20T00:00:00Z",
+        "issuedAt": "2026-10-20T00:00:00Z",
+        "request": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/medicationrequest",
+            "namespace": "nhs",
+            "key": "course-1"
+          }
+        },
+        "pharmacy": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "FA001"
+          }
+        },
+        "prescriber": "Dr Sam Example",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationdispense",
+      "namespace": "nhs",
+      "key": "EX0001-A12345-00001A/2",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Otherine 5mg capsules",
+        "quantity": "14 capsule",
+        "status": "unknown",
+        "sourceStatus": "NotTracked",
+        "statusAt": "2026-10-20T10:00:00+01:00",
+        "prescription": "EX0001-A12345-00001A",
+        "at": "2026-10-20T00:00:00Z",
+        "issuedAt": "2026-10-20T00:00:00Z",
+        "request": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/medicationrequest",
+            "namespace": "nhs",
+            "key": "0df92b26c6dfcf717dde28812af3de19d9477b5b22d478f5a007b91f723c867b"
+          }
+        },
+        "pharmacy": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "FA001"
+          }
+        },
+        "prescriber": "Dr Sam Example",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/medicationdispense",
+      "namespace": "nhs",
+      "key": "EX0002-A12345-00002B/1",
+      "mode": "maintain",
+      "properties": {
+        "medication": "Rabipur vaccine powder and solvent",
+        "quantity": "1 x 0.5ml",
+        "status": "completed",
+        "sourceStatus": "Collected",
+        "statusAt": "2026-04-01T09:30:00+01:00",
+        "prescription": "EX0002-A12345-00002B",
+        "at": "2026-04-01T09:30:00+01:00",
+        "issuedAt": "2026-03-30T00:00:00Z",
+        "request": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/medicationrequest",
+            "namespace": "nhs",
+            "key": "a86df71f6aeed961d2340f7a4091250c62c4e63feda3151148c73a8643530172"
+          }
+        },
+        "pharmacy": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "FB002"
+          }
+        },
+        "prescriber": "Dr Sam Example",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "nhs",
+      "key": "ap-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Telephone consultation with Dr Sam Example",
+        "type": "Telephone consultation",
+        "status": null,
+        "channel": "telephone",
+        "service": "Morning clinic",
+        "location": "Main surgery",
+        "phone": "01234 000000",
+        "participants": [
+          {
+            "name": "Dr Sam Example"
+          }
+        ],
+        "at": "2026-06-01T15:20:00+01:00",
+        "endsAt": "2026-06-01T15:30:00+01:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/appointment",
+      "namespace": "nhs",
+      "key": "ap-2",
+      "mode": "maintain",
+      "properties": {
+        "name": "Face to face",
+        "type": "Face to face",
+        "status": "booked",
+        "channel": "inperson",
+        "service": "Nurse clinic",
+        "location": "Main surgery",
+        "phone": null,
+        "participants": null,
+        "at": "2026-11-02T09:00:00+00:00",
+        "endsAt": "2026-11-02T09:10:00+00:00",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/referral",
+      "namespace": "nhs",
+      "key": "b6ef75303a5f41c29e3f9434f9f602c2cc92c96d3d8670166b99af099747620e",
+      "mode": "maintain",
+      "properties": {
+        "name": "Dermatology at Example Hospitals NHS Trust",
+        "specialty": "Dermatology",
+        "provider": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "RXX"
+          }
+        },
+        "status": "active",
+        "at": "2026-08-01T00:00:00+00:00",
+        "plannedWait": "P126D",
+        "typicalWait": "P140D",
+        "estimatedTreatmentAt": "2026-12-05",
+        "waitsAsOf": "2026-09-30",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "nhs",
+      "key": "doc-1",
+      "mode": "maintain",
+      "properties": {
+        "name": "Letter, 2026-04-02",
+        "type": "Letter",
+        "coding": {
+          "system": "http://snomed.info/sct",
+          "descriptionId": "123456010",
+          "display": "Letter"
+        },
+        "at": "2026-04-02T11:00:00+00:00",
+        "precision": "time",
+        "status": "current",
+        "notes": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "text": null,
+        "file": {
+          "$doc": "blob-sha256-9879a54b23a427f0572f379114a4a2419a93acbda87f7755682b5149174e37eb"
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "nhs",
+      "key": "doc-2",
+      "mode": "maintain",
+      "properties": {
+        "name": "Summary from the ward",
+        "type": "Discharge summary",
+        "coding": {
+          "system": "http://snomed.info/sct",
+          "descriptionId": "14990931000006116",
+          "display": "Discharge summary"
+        },
+        "at": "2026-05-06T12:00:00+00:00",
+        "precision": "time",
+        "status": "current",
+        "notes": "Summary from the ward",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "text": "{\\rtf1 Example summary}",
+        "file": {
+          "$doc": "blob-sha256-5c682f235cae131e8fbfa9d7a4257b6312d6935272441bbc0b694de9314800a2"
+        }
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/document",
+      "namespace": "nhs",
+      "key": "doc-3",
+      "mode": "maintain",
+      "properties": {
+        "name": "Document, 2026-07-14",
+        "type": null,
+        "coding": null,
+        "at": "2026-07-14T00:00:00+00:00",
+        "precision": "day",
+        "status": "current",
+        "notes": null,
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        },
+        "text": null,
+        "file": null
+      },
+      "revision": 1793607330
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "nhs",
+      "key": "m-1",
+      "mode": "maintain",
+      "properties": {
+        "sender": "The Example Surgery",
+        "topic": "Your results are ready",
+        "body": "<p>Your results are ready</p>",
+        "at": "2026-04-01T09:33:35.806Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 4
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "nhs",
+      "key": "m-2",
+      "mode": "maintain",
+      "properties": {
+        "sender": "NHS App",
+        "topic": "Welcome to the NHS App",
+        "body": "Welcome to the NHS App",
+        "at": "2026-01-01T12:00:00Z",
+        "organization": null
+      },
+      "revision": 1
+    },
+    {
+      "kind": "substrate.reamde.dev/clinical/communication",
+      "namespace": "nhs",
+      "key": "m-3",
+      "mode": "maintain",
+      "properties": {
+        "sender": "The Example Surgery",
+        "topic": null,
+        "body": "",
+        "at": "2026-05-01T08:00:00Z",
+        "organization": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/clinical/organization",
+            "namespace": "ods",
+            "key": "A12345"
+          }
+        }
+      },
+      "revision": 1793607330
+    }
+  ],
+  "documents": [
+    {
+      "digest": "blob-sha256-afc51c7da90b5f2c2f3d65c0069931ec5dbbb7c1cd746ce2cf581bedfd4b3a73",
+      "name": "NHS test result 2026-03-30.json",
+      "mediaType": "application/json",
+      "size": 1500
+    },
+    {
+      "digest": "blob-sha256-66b7bd430a667976eb22375847edbf1ad5b5a82f1f3c5359b5e0a4cfab0a9281",
+      "name": "NHS test result 2026-03-30.json",
+      "mediaType": "application/json",
+      "size": 889
+    },
+    {
+      "digest": "blob-sha256-ecbfc75ec438a043d7d4d242e7993b204f72d42546807f5dee4694142f7ae61f",
+      "name": "NHS test result 2026-03-30.json",
+      "mediaType": "application/json",
+      "size": 591
+    },
+    {
+      "digest": "blob-sha256-82c79af3ee9622037e739fe11bdcf90622a7172f4b3e1a78e8a50e32551ccb1f",
+      "name": "NHS test result 2026-02-01.json",
+      "mediaType": "application/json",
+      "size": 885
+    },
+    {
+      "digest": "blob-sha256-c8065e0d42616efb6fb5dabc696a57af1126cc107b8803b6e03e3eb63803e8ae",
+      "name": "NHS test result 2025-11-03.json",
+      "mediaType": "application/json",
+      "size": 892
+    },
+    {
+      "digest": "blob-sha256-eb05d702b709fced55fc035a878cf762b421350c80d15acfab77b1b59f96861b",
+      "name": "NHS test result 2019-06-01.json",
+      "mediaType": "application/json",
+      "size": 573
+    },
+    {
+      "digest": "blob-sha256-9879a54b23a427f0572f379114a4a2419a93acbda87f7755682b5149174e37eb",
+      "name": "NHS document 2026-04-02.pdf",
+      "mediaType": "application/pdf",
+      "size": 16
+    },
+    {
+      "digest": "blob-sha256-5c682f235cae131e8fbfa9d7a4257b6312d6935272441bbc0b694de9314800a2",
+      "name": "NHS document 2026-05-06.rtf",
+      "mediaType": "text/plain",
+      "size": 23
+    }
+  ],
+  "left": [
+    {
+      "what": "responses/0013-api-v1-patient-historic-test-results-2018.json",
+      "why": "its test results are not where the importer looks for a year's results"
+    },
+    {
+      "what": "Serum cholesterol/HDL ratio, Lipids",
+      "why": "a second value under the same key; the first is kept"
+    },
+    {
+      "what": "the GP record's Mystery index",
+      "why": "no metric for it (2 values)"
+    },
+    {
+      "what": "a document of 2026-07-14",
+      "why": "the export holds no file for it, so it is written without one"
+    }
+  ],
+  "source": {
+    "kind": "substrate.reamde.dev/observations/source",
+    "namespace": "source",
+    "key": "nhs"
+  }
+}
