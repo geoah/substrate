@@ -177,7 +177,11 @@ data:
   # issued to, which the OAuth facility writes at connect and checks before
   # a refresh. The adapter's stamp follows the package to `whoop@26`; what
   # it writes is unchanged. ADDITIVE.
-  version: 26
+  #
+  # 27: every failure the sync and the webhook write or raise opens with a
+  # plain sentence saying what failed and what to do, the technical detail
+  # on the line after it; a connection failure says which kind it was.
+  version: 27
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -287,6 +291,8 @@ data:
       object either body reads is therefore written as one shape.
       """
       import datetime as _dt
+      import errno as _errno
+      import ssl
       import re as _re
       from urllib.parse import urlsplit as _urlsplit
 
@@ -458,6 +464,102 @@ data:
           # WHOOP's published limit is 100 requests a minute, so a 429 with no
           # header we can read is a minute away, not an unknown.
           return (now + _dt.timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+      # THE OWNER READS LINE ONE. Every failure text this closure writes onto an
+      # account is a plain sentence saying what failed, why and what to do,
+      # optionally followed by a newline and the technical detail (a status, the
+      # library's own words). The console shows the first line and folds the
+      # rest, so a cap trims the detail and never the sentence.
+      MESSAGE_MAX = 400
+      DETAIL_MAX = 300
+
+      _SANDBOX_ERRNOS = (_errno.EACCES, _errno.EPERM)
+      _REFUSED_ERRNOS = (_errno.ECONNREFUSED, _errno.ECONNRESET)
+      _NO_ROUTE_ERRNOS = tuple(getattr(_errno, n) for n in (
+          "EHOSTUNREACH", "ENETUNREACH", "EHOSTDOWN", "ENETDOWN",
+          "EADDRNOTAVAIL") if hasattr(_errno, n))
+
+
+      def message(line, detail=""):
+          """One owner-facing text: the sentence, then the detail on its own
+          line, the detail cut to fit and the sentence kept whole."""
+          line = " ".join(str(line or "").split())
+          if len(line) > MESSAGE_MAX:
+              line = line[:MESSAGE_MAX - 1].rsplit(" ", 1)[0] + "\u2026"
+          detail = str(detail or "").strip()
+          room = min(DETAIL_MAX, MESSAGE_MAX - len(line) - 1)
+          if not detail or room < 20:
+              return line
+          if len(detail) > room:
+              detail = detail[:room - 1] + "\u2026"
+          return line + "\n" + detail
+
+
+      def first_line(text):
+          return str(text or "").split("\n", 1)[0]
+
+
+      def _causes(err):
+          """The exception and everything it wraps: `__cause__`, `__context__`,
+          urllib3's `reason`, and exceptions carried in `args`."""
+          out, todo, seen = [], [err], set()
+          while todo:
+              e = todo.pop(0)
+              if not isinstance(e, BaseException) or id(e) in seen:
+                  continue
+              seen.add(id(e))
+              out.append(e)
+              todo.extend([e.__cause__, e.__context__, getattr(e, "reason", None)])
+              todo.extend(a for a in e.args if isinstance(a, BaseException))
+          return out
+
+
+      def _where(err):
+          """`host:port` of the request that failed, from the exception's own
+          request where the library attached one."""
+          for e in _causes(err):
+              req = getattr(e, "request", None)
+              url = getattr(req, "url", None) or ""
+              if url:
+                  u = _urlsplit(url)
+                  port = u.port or (443 if u.scheme == "https" else 80)
+                  return (u.hostname or "?"), "%s:%d" % (u.hostname or "?", port)
+          return "WHOOP's server", "WHOOP's server"
+
+
+      def connection_reason(err):
+          """The sentence for a request that never got an answer from WHOOP, or
+          None when `err` is not that. Classified on the cause chain, because the
+          outermost exception (`requests.ConnectionError`) says nothing about
+          which of these it was."""
+          chain = _causes(err)
+          names = {type(e).__name__ for e in chain}
+          host, where = _where(err)
+          for e in chain:
+              if isinstance(e, OSError) and not isinstance(e, ssl.SSLError) and e.errno in _SANDBOX_ERRNOS:
+                  return ("This server's sandbox blocked the connection to %s. "
+                          "The server's operator can allow it with "
+                          "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % where)
+          if names & {"gaierror", "NameResolutionError"}:
+              return ("The sync could not look up %s, so it could not reach "
+                      "WHOOP. The next sync tries again." % host)
+          if names & {"SSLError", "SSLCertVerificationError"}:
+              return ("The secure connection to %s failed. The next sync tries "
+                      "again." % host)
+          if names & {"ConnectTimeout", "ReadTimeout", "Timeout", "timeout",
+                      "TimeoutError", "ConnectTimeoutError", "ReadTimeoutError"}:
+              return "WHOOP did not answer in time. The next sync tries again."
+          for e in chain:
+              if isinstance(e, OSError) and e.errno in _REFUSED_ERRNOS:
+                  return ("WHOOP's server at %s refused the connection. The next "
+                          "sync tries again." % where)
+              if isinstance(e, OSError) and e.errno in _NO_ROUTE_ERRNOS:
+                  return ("This server has no route to WHOOP at %s. The next "
+                          "sync tries again." % where)
+          if any("Connection" in n for n in names):
+              return "The sync could not reach WHOOP. The next sync tries again."
+          return None
 
 
       def rid(host, aid, prefix, key):
@@ -2058,6 +2160,9 @@ data:
 
     # The bundle's shared module (`modules:` on the bundle document): the row
     # mapping, the origin pin and the 429 hold `whoopwebhook` uses too.
+    from whoop_mirror import connection_reason as _connection_reason
+    from whoop_mirror import first_line as _first_line
+    from whoop_mirror import message as _message
     from whoop_mirror import (ACCOUNT_KIND, CYCLE_KIND, RECOVERY_KIND, SLEEP_KIND,
                               USER_KIND, WORKOUT_KIND, cycle_row, recovery_row,
                               sleep_row, workout_row)
@@ -2111,8 +2216,6 @@ data:
     # WHOOP re-scores for hours after a record appears, and the provider-keyed puts
     # make the overlap converge instead of duplicate.
     OVERLAP_HOURS = 48
-    # A status line, never a body.
-    REASON_MAX = 200
 
 
     # Per stream: the mirror kind it writes, the collection field its row id is
@@ -2166,7 +2269,12 @@ data:
 
     class _Permanent(Exception):
         """An answer asking again cannot change: a revoked grant, a missing scope,
-        a malformed request. Recorded once; the stream is not retried this run."""
+        a malformed request. Recorded once; the stream is not retried this run.
+        `str()` is the owner's sentence; `detail` is WHOOP's own answer."""
+
+        def __init__(self, message, detail=""):
+            super().__init__(message)
+            self.detail = detail
 
 
     class _NotFound(_Permanent):
@@ -2190,27 +2298,59 @@ data:
             "Accept": "application/json",
         }, timeout=20)
         if resp.status_code == 429:
-            raise _RateLimited(_retry_at(resp), "rate limited by WHOOP")
+            raise _RateLimited(_retry_at(resp), "WHOOP asked the sync to slow down")
+        said = "HTTP %d %s" % (resp.status_code, (resp.text or "").strip()[:200])
         if resp.status_code == 401:
-            raise _Permanent("unauthorized (was the grant revoked at WHOOP?)")
+            raise _Permanent("WHOOP no longer accepts this account's sign-in. "
+                             "Reconnect the account.", said)
         if resp.status_code == 403:
-            raise _Permanent("forbidden (a scope this grant does not carry)")
+            raise _Permanent("WHOOP would not share some of this account's data: "
+                             "the sign-in was not given permission for it. "
+                             "Reconnect the account and approve every kind of "
+                             "data you want synced.", said)
         if resp.status_code == 404:
-            raise _NotFound("whoop returned HTTP 404")
+            raise _NotFound("WHOOP has no record of something the sync asked "
+                            "for.", said)
         if 400 <= resp.status_code < 500 and resp.status_code != 408:
-            raise _Permanent("whoop returned HTTP %d" % resp.status_code)
+            raise _Permanent("WHOOP turned down a request the sync made, so this "
+                             "part of the sync stopped. The next sync tries "
+                             "again.", said)
         resp.raise_for_status()
         return resp.json()
 
 
     def _err_msg(e):
+        """The owner's text for a failure: the sentence, then the detail."""
         if isinstance(e, _RateLimited):
-            return "rate limited; retry after %s" % (e.retry_at or "the window resets")
+            return _message("WHOOP asked the sync to slow down. It picks up again "
+                            "on its own after %s."
+                            % (e.retry_at or "WHOOP's limit resets"))
         if isinstance(e, _Permanent):
-            return str(e)
+            return _message(str(e), e.detail)
         if isinstance(e, requests.HTTPError) and e.response is not None:
-            return "whoop returned HTTP %d" % e.response.status_code
-        return str(e) or type(e).__name__
+            return _message("WHOOP had a problem on its side (HTTP %d). The next "
+                            "sync tries again." % e.response.status_code,
+                            (e.response.text or "").strip())
+        reason = _connection_reason(e)
+        if reason:
+            return _message(reason, str(e))
+        return _message("The WHOOP sync stopped on an unexpected error. The next "
+                        "sync tries again.", str(e) or type(e).__name__)
+
+
+    # What a `failed` entry's key names, in the words a status reads.
+    FAILED_WHAT = {"cycle": "cycles", "recovery": "recoveries", "sleep": "sleeps",
+                   "workout": "workouts", "body": "body measurements"}
+
+
+    def _failed_what(key):
+        base, _, tail = key.partition(" ")
+        what = FAILED_WHAT.get(base, base)
+        if tail == "read-back":
+            return "re-reading %s" % what
+        if tail == "deleted row":
+            return "checking deleted %s" % what
+        return what
 
 
     class _Budget:
@@ -2523,16 +2663,23 @@ data:
         """
         patch = {"lastSyncedAt": _now()}
         if error is not None:
-            patch["syncStatus"] = ("erroring: " + str(error))[:REASON_MAX + 20]
+            # `error` is already the owner's text, capped with its sentence
+            # whole (`_err_msg`), so it is not cut again here.
+            patch["syncStatus"] = "erroring: " + str(error)
         else:
             notes = []
             if cur.get("skipped"):
-                notes.append("%d skipped" % cur["skipped"])
+                notes.append("%d records WHOOP sent could not be read and were "
+                             "skipped" % cur["skipped"])
             if cur.get("failed"):
-                notes.append("failed: " + ", ".join(
-                    "%s (%s)" % (k, why) for k, why in cur["failed"][:3]))
-            patch["syncStatus"] = ("ok" if not notes
-                                   else "ok (" + "; ".join(notes) + ")")[:400]
+                whats = []
+                for k, _ in cur["failed"]:
+                    if _failed_what(k) not in whats:
+                        whats.append(_failed_what(k))
+                notes.append("%s stopped early: %s" % (
+                    ", ".join(whats[:4]), cur["failed"][0][1]))
+            patch["syncStatus"] = _message("ok" if not notes
+                                           else "ok (" + "; ".join(notes) + ")")
             # `lastCompletedAt` means ONE thing: a walk ran out of work with
             # nothing left behind. A run that abandoned a stream on a permanent
             # failure, or skipped a record it could not read, did not — and
@@ -2580,7 +2727,7 @@ data:
             # limited` — the one place the two shapes deliberately disagree, and
             # the reason the trait exists is that `throttled` is a word a console
             # can render and a prefixed sentence is not.
-            state, message = "throttled", str(error or "rate limited by WHOOP")
+            state, message = "throttled", str(error or "WHOOP asked the sync to slow down.")
         elif error is not None:
             state, message = "erroring", str(error)
         elif not completed:
@@ -2779,7 +2926,7 @@ data:
             # stream never drains this run and `_stamp` keeps its cursor; the
             # rest of its read-backs would get the same answer.
             cur["failed"] = list(cur.get("failed") or []) + \
-                [[key + " read-back", str(e)[:60]]]
+                [[key + " read-back", _first_line(e)]]
             cur["orphans"] = [o for o in cur["orphans"] if o[0] != key]
             if (cur.get("scan") or {}).get("key") == key:
                 cur["scan"] = None
@@ -2855,7 +3002,10 @@ data:
                 profile = _get(base, token, PROFILE_PATH)
                 user_id = profile.get("user_id")
                 if user_id in (None, ""):
-                    raise _Permanent("the basic profile carries no user_id")
+                    raise _Permanent("WHOOP sent a profile without the member's "
+                                     "id, so the sync cannot tell whose data "
+                                     "this is. The next sync tries again.",
+                                     "the basic profile carries no user_id")
                 body = None
                 if BODY_SCOPE in (props.get("grantedScopes") or []):
                     try:
@@ -2866,7 +3016,7 @@ data:
                         host.log("whoop: %s body measurement unavailable: %s"
                                  % (aid, e))
                         cur["failed"] = list(cur.get("failed") or []) + \
-                            [["body", str(e)[:60]]]
+                            [["body", _first_line(e)]]
                 user_rid = sink.user_row(user_id, profile, body)
                 # The account's own identity, as a reference (§1).
                 host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid,
@@ -2909,7 +3059,7 @@ data:
                 # pending forever.
                 host.log("whoop: %s %s stream is permanently failing: %s"
                          % (aid, key, e))
-                cur["failed"] = list(cur.get("failed") or []) + [[key, str(e)[:60]]]
+                cur["failed"] = list(cur.get("failed") or []) + [[key, _first_line(e)]]
                 streams = streams[1:]
                 cur.update({"streams": streams, "nextToken": ""})
                 continue
@@ -2981,7 +3131,7 @@ data:
                 host.log("whoop: %s %s stream: a deleted row's read-back was "
                          "refused: %s" % (aid, key, refused))
                 cur["failed"] = list(cur.get("failed") or []) + \
-                    [[key + " deleted row", str(refused)[:60]]]
+                    [[key + " deleted row", _first_line(refused)]]
                 streams = streams[1:]
                 cur.update({"streams": streams, "nextToken": ""})
                 continue
@@ -3069,7 +3219,9 @@ data:
             if terr or not acct.get("token"):
                 if terr:
                     host.log("whoop: skip %s: %s" % (queue[0], terr))
-                    want = ("erroring: " + str(terr))[:REASON_MAX]
+                    said = _message("The WHOOP sign-in stopped working. "
+                                    "Reconnect the account.", terr)
+                    want = "erroring: " + said
                     if (props.get("syncStatus") or "") != want:
                         # The trait says it too: an account whose grant is gone
                         # renders as `erroring` with the reason, not as one that
@@ -3078,8 +3230,8 @@ data:
                             (acct.get("kind") or ACCOUNT_KIND), queue[0],
                             properties={"syncStatus": want,
                                         "syncState": "erroring",
-                                        "syncMessage": str(terr)[:400],
-                                        "syncError": str(terr)[:400],
+                                        "syncMessage": said,
+                                        "syncError": said,
                                         "syncErrorAt": _now()})
                 queue = queue[1:]
                 cur = _fresh(queue, cur.get("dispatch"))
@@ -3239,6 +3391,7 @@ data:
 
     # The bundle's shared module: the row mapping, the origin pin and the 429
     # hold are `whoopsync`'s, so an object either body reads lands as one shape.
+    from whoop_mirror import connection_reason as _connection_reason
     from whoop_mirror import (ACCOUNT_KIND, RECOVERY_KIND, REFRESH_MARK,
                               SLEEP_KIND, USER_KIND, WORKOUT_KIND,
                               recovery_row, sleep_row, workout_row)
@@ -3298,24 +3451,29 @@ data:
                 "Accept": "application/json",
             }, timeout=10)
         except requests.RequestException as e:
-            raise _Transient("WHOOP could not be reached (%s)"
-                             % type(e).__name__) from None
+            raise _Transient(_connection_reason(e)
+                             or "The sync could not reach WHOOP.") from None
         if resp.status_code == 404:
             raise _NotFound(path)
         if resp.status_code == 429:
             at = _retry_at(resp)
-            raise _RateLimited(at, "rate limited by WHOOP until %s" % at)
+            raise _RateLimited(at, "WHOOP asked the sync to slow down until %s"
+                               % at)
+        # The status stays at the end of the sentence: a caller's output names
+        # a refusal by it.
         if resp.status_code == 401:
-            raise _Refused("WHOOP answered 401 for %s (was the grant revoked "
-                           "at WHOOP?)" % path)
+            raise _Refused("WHOOP no longer accepts this account's sign-in; "
+                           "reconnect the account (401)")
         if resp.status_code == 403:
-            raise _Refused("WHOOP answered 403 for %s (a scope this grant "
-                           "does not carry; reconnect the account)" % path)
+            raise _Refused("WHOOP would not share this data because the sign-in "
+                           "was not given permission for it; reconnect the "
+                           "account and approve it (403)")
         if resp.status_code == 408 or resp.status_code >= 500:
-            raise _Transient("WHOOP answered %d for %s" % (resp.status_code, path))
+            raise _Transient("WHOOP had a problem on its side (HTTP %d)"
+                             % resp.status_code)
         if resp.status_code >= 400:
-            raise RuntimeError("whoop webhook: whoop returned HTTP %d"
-                               % resp.status_code)
+            raise RuntimeError("WHOOP turned down the read this event needed "
+                               "(HTTP %d)" % resp.status_code)
         return resp.json()
 
 

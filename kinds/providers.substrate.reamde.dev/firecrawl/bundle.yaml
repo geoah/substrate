@@ -32,7 +32,10 @@ data:
   # 2: a webdocument is kept under host.ids.minted(url), which an agent's
   #    tool may name (decision 0228), and its content is markdown, which the
   #    record page reads as the document's body.
-  version: 2
+  # 3: a refused or unreachable call says what went wrong and what to do
+  #    (a rejected key, no credits, a rate limit, the sandbox), Firecrawl's
+  #    own words on the line after it.
+  version: 3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -68,7 +71,10 @@ data:
       operator's key with no `baseUrl` beside it, so only a person's own key
       can be pointed there.
       """
+      import errno
+      import ssl
       import json
+      import socket
       import urllib.error
       import urllib.request
       from urllib.parse import urlsplit
@@ -136,8 +142,59 @@ data:
               method="POST",
               headers={"Authorization": "Bearer " + key,
                        "Content-Type": "application/json"})
-          with _OPENER.open(req, timeout=TIMEOUT) as resp:
-              return json.loads(resp.read().decode("utf-8"))
+          try:
+              with _OPENER.open(req, timeout=TIMEOUT) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              raise RuntimeError(_refusal(e)) from None
+          except (urllib.error.URLError, OSError) as e:
+              raise RuntimeError(_unreached(e)) from None
+
+
+      # The caller (an agent, or the person reading a failed call) reads the
+      # first line; the provider's own words follow it for whoever debugs.
+      def _refusal(e):
+          said = ""
+          try:
+              said = e.read().decode("utf-8", "replace").strip()[:300]
+          except Exception:                                    # noqa: BLE001
+              said = ""
+          said = said or str(e.reason or "")
+          code = e.code
+          if 300 <= code < 400:
+              line = ("Firecrawl answered with a redirect, and the API key is "
+                      "never sent on to another address.")
+          elif code == 401:
+              line = ("Firecrawl did not accept the API key. Check the "
+                      "bundle's apiKey setting.")
+          elif code == 402:
+              line = ("The Firecrawl account has run out of credits. Add "
+                      "credits or change plans at firecrawl.dev.")
+          elif code == 429:
+              line = "Firecrawl asked to slow down. Try again in a minute."
+          elif code >= 500:
+              line = ("Firecrawl had a problem on its side (HTTP %d). Try "
+                      "again later." % code)
+          else:
+              line = "Firecrawl turned the request down (HTTP %d)." % code
+          return line + ("\n" + said if said else "")
+
+
+      def _unreached(e):
+          reason = getattr(e, "reason", e)
+          if isinstance(reason, OSError) and not isinstance(reason, ssl.SSLError) and reason.errno in (
+                  errno.EACCES, errno.EPERM):
+              line = ("This server's sandbox blocked the connection to "
+                      "Firecrawl. The server's operator can allow it with "
+                      "SUBSTRATE_SANDBOX_EGRESS_ALLOW.")
+          elif isinstance(reason, (TimeoutError, socket.timeout)):
+              line = "Firecrawl did not answer in time. Try again."
+          elif isinstance(reason, socket.gaierror):
+              line = ("This server could not look up Firecrawl's address. "
+                      "Try again.")
+          else:
+              line = "This server could not reach Firecrawl. Try again."
+          return line + "\n" + str(e)[:300]
 ---
 # ---- the webdocument kind: what a scrape leaves behind ---------------------
 # webscrape's durable output, owned by THIS package (a bundle's effects stay
@@ -244,7 +301,7 @@ data:
         payload = post(settings(input), "/v2/search",
                        {"query": query, "limit": limit, "sources": ["web"]})
         if not payload.get("success"):
-            raise RuntimeError("firecrawl search failed: "
+            raise RuntimeError("Firecrawl could not run the search: "
                                + str(payload.get("error") or "unknown error"))
         results = []
         for hit in (payload.get("data") or {}).get("web") or []:
@@ -334,7 +391,7 @@ data:
         payload = post(settings(input), "/v2/scrape",
                        {"url": url, "formats": ["markdown"]})
         if not payload.get("success"):
-            raise RuntimeError("firecrawl scrape failed: "
+            raise RuntimeError("Firecrawl could not read the page: "
                                + str(payload.get("error") or "unknown error"))
         data = payload.get("data") or {}
         content = str(data.get("markdown") or "").strip()

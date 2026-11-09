@@ -743,6 +743,20 @@ pair). A record-sourced run that meets a failure it already recorded still
 writes the failing `syncState`, and leaves an error pair the account holds as
 it stands: the settle reads a `running` it finds as a healthy run and clears
 the pair.
+
+**How a failure is worded.** `syncMessage`, `syncError`, a stream's
+`message` and a per-item status are read by the owner, so their first line is
+a sentence: what failed, why, and what to do about it, in the provider's own
+terms ("Notion no longer accepts the integration token. Paste a new one on the
+Notion settings."). It carries no error code, exception name, URL path or bare
+status number, and a failure that passes on its own says so. Whatever the
+provider or the library said goes on the lines after it: the console shows the
+first line and folds the rest under Technical details. A cap on the field cuts
+the technical part, never the sentence. A connect the sandbox refused (the
+body sees `EACCES`) names the address and the operator's variable,
+`SUBSTRATE_SANDBOX_EGRESS_ALLOW`, because the gate's own explanation reaches
+only the server's log when the body records the failure without raising. The
+OAuth facility's `tokenError` follows the same rule.
 A write to `syncStreams` merges one stream at a time: each entry it
 names replaces that stream's entry, a null entry removes one, and the rest
 stand, so two functions that keep separate streams of one account write

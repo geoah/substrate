@@ -105,7 +105,11 @@ data:
   # 34: the account declares `oauthClient`, the client its grant was
   # issued to, which the OAuth facility writes at connect and checks before
   # a refresh. ADDITIVE.
-  version: 34
+  #
+  # 35: every failure the owner reads opens with a sentence saying what
+  # failed and what to do, with GitHub's own words on a second line; a
+  # rate limit reads `throttled` from the exception, not the wording.
+  version: 35
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -2827,7 +2831,10 @@ data:
     `lastSyncStartedAt` / `lastSyncDurationMs`. `syncPaused` holds the schedule.
     """
     import datetime as _dt
+    import errno
+    import ssl
     import re
+    import socket
     from urllib.parse import urlparse
 
     import requests
@@ -2912,7 +2919,8 @@ data:
     RESTRICTION_MARKS = ("oauth app access restrictions", "saml enforcement")
     RESTRICTION_DOCS = ("oauth-app-access-restrictions",
                         "restricting-access-to-your-organization")
-    RESTRICTION_ADVICE = "approve it in the org's third-party access settings"
+    RESTRICTION_ADVICE = ("an owner of the organization can approve it in the "
+                          "organization's third-party access settings")
     MAX_RESTRICTED_PROBES = 8   # remembered repositories re-asked per run
 
 
@@ -3179,10 +3187,21 @@ data:
         # means.
         if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
             return
-        raise RuntimeError(
-            "github: refusing to send credentials to %s://%s:%s — only "
-            "https://api.github.com or loopback"
-            % (u.scheme, host or "?", u.port or "-"))
+        raise _Said(
+            "The GitHub sign-in is only ever sent to https://api.github.com, and "
+            "this provider's API base points somewhere else. Clear the API base "
+            "on the GitHub client settings.",
+            "refused origin %s://%s:%s" % (u.scheme, host or "?", u.port or "-"))
+
+
+    class _Said(Exception):
+        """A failure already worded for the owner: `line` is the sentence the
+        account shows, `detail` the technical text folded under it."""
+
+        def __init__(self, line, detail=""):
+            super().__init__(line + ("\n" + detail if detail else ""))
+            self.line = line
+            self.detail = detail
 
 
     class _RateLimited(Exception):
@@ -3307,6 +3326,13 @@ data:
             ", ".join(names[:-1]), names[-1])
 
 
+    def _orgs_named(orgs):
+        names = sorted(orgs)
+        if len(names) == 1:
+            return "the %s organization" % names[0]
+        return "the %s and %s organizations" % (", ".join(names[:-1]), names[-1])
+
+
     def _restricted_note(props, cur):
         """The status clause for a run that met (or still carries) a refusal."""
         orgs = list(cur.get("restricted") or [])
@@ -3314,14 +3340,15 @@ data:
             return ""
         run = sum(int(v) for v in (cur.get("restrictedSkipped") or {}).values())
         if run:
-            return "%d items skipped: %s the OAuth app — %s" % (
-                run, _orgs_phrase(orgs), RESTRICTION_ADVICE)
+            return ("%d items skipped: %s this substrate's GitHub app, so they "
+                    "were not read; %s" % (run, _orgs_phrase(orgs),
+                                           RESTRICTION_ADVICE))
         # Probed and still refused, but nothing of the org's turned up in this
         # window: the mirror is still short of what earlier runs skipped.
         before = sum(int(r.get("items") or 0)
                      for o, r in _restricted_held(props).items() if o in orgs)
-        return "%s the OAuth app (%d items skipped in earlier runs) — %s" % (
-            _orgs_phrase(orgs), before, RESTRICTION_ADVICE)
+        return ("%s this substrate's GitHub app (%d items skipped in earlier "
+                "runs); %s" % (_orgs_phrase(orgs), before, RESTRICTION_ADVICE))
 
 
     def _skipped_after(props, cur, now):
@@ -3358,7 +3385,8 @@ data:
                 continue
             break
         else:
-            raise RuntimeError("github: too many redirects")
+            raise _Said("GitHub kept redirecting a request this sync made. The next "
+                        "sync tries again on its own.", "too many redirects")
         if allow_404 and resp.status_code == 404:
             return None
         # A rate limit is not a failure to report and forget: it is work to
@@ -3388,35 +3416,163 @@ data:
         return resp.json()
 
 
+    # THE OWNER READS LINE ONE. Every message below is a sentence saying what
+    # failed and what to do, then optionally "\n" and the technical text
+    # (GitHub's own words, a status, an exception), which the console folds.
+    # The detail is the part that gets cut, so line one survives the 400
+    # characters `syncStatus` holds after its "erroring: " prefix.
+    def _detailed(line, detail=""):
+        detail = " ".join(str(detail or "").split())
+        room = min(300, 385 - len(line))
+        if not detail or room < 20:
+            return line
+        return line + "\n" + detail[:room]
+
+
+    def _clock(iso):
+        """A stored instant as the minute a person reads, in UTC."""
+        try:
+            when = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            return str(iso)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        return when.astimezone(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+    def _causes(err):
+        """The exception and everything it wraps: `__cause__`, `__context__`,
+        urllib3's `reason`, and exceptions carried in `args`."""
+        out, seen, todo = [], set(), [err]
+        while todo:
+            e = todo.pop(0)
+            if e is None or id(e) in seen:
+                continue
+            seen.add(id(e))
+            out.append(e)
+            nexts = [getattr(e, "__cause__", None), getattr(e, "__context__", None),
+                     getattr(e, "reason", None)] + list(getattr(e, "args", ()) or ())
+            todo.extend(n for n in nexts if isinstance(n, BaseException))
+        return out
+
+
+    def _thing(url):
+        """What a GitHub URL reads, in words."""
+        path = urlparse(url or "").path
+        repo = _repo_of(url) if "/repos/" in path else ""
+        if repo:
+            return "the %s repository" % repo
+        if "/orgs/" in path and _owner_of(url):
+            return "the %s organization" % _owner_of(url)
+        if path.startswith("/search/"):
+            return "GitHub search"
+        if path == "/user" or path.startswith("/user/"):
+            return "this account's own profile"
+        return "something this sync reads"
+
+
+    def _transport_msg(e):
+        """A failure to reach GitHub at all, in words; "" when `e` is not one."""
+        exc = requests.exceptions
+        if not isinstance(e, exc.RequestException) or isinstance(e, exc.HTTPError):
+            return ""
+        u = urlparse(getattr(getattr(e, "request", None), "url", None) or "")
+        host = u.hostname or API_HOST
+        port = u.port or (80 if u.scheme == "http" else 443)
+        chain = _causes(e)
+        # The sandbox's connect gate answers a refused destination with EACCES;
+        # nothing else a connect meets says that, and it is the operator's fix.
+        if any(isinstance(c, OSError) and not isinstance(c, ssl.SSLError) and c.errno in (errno.EACCES, errno.EPERM)
+               for c in chain):
+            return ("This server's sandbox blocked the connection to %s:%d, so "
+                    "GitHub could not be reached. The server's operator can allow "
+                    "it with SUBSTRATE_SANDBOX_EGRESS_ALLOW." % (host, port))
+        if isinstance(e, exc.SSLError):
+            return ("The secure connection to %s failed, so GitHub could not be "
+                    "reached. The next sync tries again on its own." % host)
+        if isinstance(e, exc.Timeout):
+            return ("GitHub did not answer in time. The next sync tries again on "
+                    "its own.")
+        if any(isinstance(c, socket.gaierror)
+               or type(c).__name__ == "NameResolutionError" for c in chain):
+            return ("This server could not look up %s, so GitHub could not be "
+                    "reached. The next sync tries again on its own." % host)
+        if isinstance(e, exc.ConnectionError):
+            return ("GitHub is not answering at %s. The next sync tries again on "
+                    "its own." % host)
+        return ""
+
+
     def _err_msg(e):
         if isinstance(e, _RateLimited):
-            return "rate limited on %s; retry after %s" % (
-                e.resource, e.retry_at or "the window resets")
+            until = ("until %s" % _clock(e.retry_at)) if e.retry_at \
+                else "until GitHub's limit resets"
+            return _detailed(
+                "GitHub asked this substrate to slow down. Syncing waits %s and "
+                "then resumes on its own." % until,
+                "rate limited on %s; retry after %s"
+                % (e.resource, e.retry_at or "the window resets"))
         if isinstance(e, _Restricted):
             # Only a NON-item read reaches here (a listing, a search): the
             # per-item ones are skipped and counted where they happen.
-            who = _orgs_phrase([e.owner]) if e.owner \
-                else "an organization restricts"
-            return "%s the OAuth app — %s (GitHub: %s)" % (
-                who, RESTRICTION_ADVICE, str(e)[:160])
+            org = ("the %s organization" % e.owner) if e.owner \
+                else "an organization"
+            if "saml" in str(e).lower():
+                line = ("%s requires single sign-on, and this account's GitHub "
+                        "sign-in is not authorized for it. Authorize it at GitHub "
+                        "(Settings, Applications), or reconnect the account."
+                        % (org[0].upper() + org[1:]))
+            else:
+                line = ("%s has not approved this substrate's GitHub app, so its "
+                        "data cannot be read. An owner of the organization can "
+                        "approve the app in its third-party access settings."
+                        % (org[0].upper() + org[1:]))
+            return _detailed(line, "GitHub: " + str(e))
         if isinstance(e, requests.HTTPError) and e.response is not None:
             code = e.response.status_code
-            if code == 401:
-                # GitHub OAuth tokens do not expire, so a revoked-at-GitHub
-                # grant keeps "refreshing" fine and only fails HERE.
-                return "unauthorized (was the token revoked at GitHub?)"
             # GitHub's own `message` says WHICH 403 this is — "Resource protected
             # by organization SAML enforcement", "Must have admin rights", a
-            # blocked search — and a bare status code sent the owner reading logs
-            # (T-077). Bounded, and never the body of anything else.
+            # blocked search — so it rides in the detail (T-077).
             why = ""
             try:
                 body = e.response.json()
-                why = str((body or {}).get("message") or "")[:160]
+                why = str((body or {}).get("message") or "")[:200]
             except Exception:
                 why = ""
-            return "github returned HTTP %d%s" % (code, (": " + why) if why else "")
-        return str(e) or type(e).__name__
+            detail = "HTTP %d%s" % (code, (": " + why) if why else "")
+            what = _thing(getattr(e.response, "url", "") or "")
+            if code == 401:
+                # GitHub OAuth tokens do not expire, so a revoked-at-GitHub
+                # grant keeps "refreshing" fine and only fails HERE.
+                return _detailed(
+                    "GitHub no longer accepts this account's sign-in: it was "
+                    "revoked at GitHub or has expired. Reconnect the account to "
+                    "sync again.", "unauthorized; " + detail)
+            if code == 403:
+                return _detailed(
+                    "GitHub refused this account access to %s. Check what the "
+                    "account may see at GitHub, or reconnect it." % what, detail)
+            if code == 404:
+                return _detailed(
+                    "GitHub could not find %s: it was deleted or renamed, or this "
+                    "account can no longer see it. The next sync tries again on "
+                    "its own." % what, detail)
+            if code >= 500:
+                return _detailed(
+                    "GitHub had a problem on its side (HTTP %d). The next sync "
+                    "tries again on its own." % code, detail)
+            return _detailed(
+                "GitHub turned down a request this sync made (HTTP %d). The next "
+                "sync tries again on its own; if it keeps happening, reconnect "
+                "the account." % code, detail)
+        if isinstance(e, _Said):
+            return _detailed(e.line, e.detail)
+        said = _transport_msg(e)
+        if said:
+            return _detailed(said, "%s: %s" % (type(e).__name__, e))
+        return _detailed(
+            "The GitHub sync stopped on an unexpected error. The next sync tries "
+            "again on its own.", "%s: %s" % (type(e).__name__, e))
 
 
     # ---------------------------------------------------------------- ids
@@ -4702,7 +4858,7 @@ data:
         return out
 
 
-    def _stamp(host, acct, aid, cur, error, walk=None):
+    def _stamp(host, acct, aid, cur, error, walk=None, throttled=False):
         # The connector stamp — the writer: connector properties. EVERY path
         # writes syncStatus, and lastSyncedAt marks the attempt finished either
         # way: it anchors the cadence AND drops the on-connect trigger's guard, so
@@ -4719,9 +4875,10 @@ data:
             # A rate limit is WORK TO RESUME, not a fault: 0085 spells it
             # `throttled` and the Connections page renders it as a wait rather
             # than a break. GitHub signals both its primary and its secondary
-            # limit as 403 or 429 with headers, and `_err_msg` has already turned
-            # either into "rate limited on <resource>; retry after <instant>".
-            state = "throttled" if error.startswith("rate limited") else "erroring"
+            # limit as 403 or 429 with headers, `_get` raises either as
+            # `_RateLimited`, and the caller says so in `throttled`: the state
+            # keys on the exception, never on how the sentence is worded.
+            state = "throttled" if throttled else "erroring"
             # The backlog an erroring run reports is the one the ACCOUNT still
             # holds, not the one this cursor happens to carry: the error path
             # deliberately leaves `syncPending` alone so the work survives the
@@ -4736,9 +4893,11 @@ data:
             pending = _pending(cur)
             notes = []
             if cur.get("partial"):
-                notes.append("partial: " + ", ".join(cur["partial"]))
+                notes.append("GitHub returned incomplete results for %s, read "
+                             "again next run" % ", ".join(cur["partial"]))
             if cur.get("stalled"):
-                notes.append("capped: " + ", ".join(cur["stalled"]))
+                notes.append("some results could not all be listed: "
+                             + ", ".join(cur["stalled"]))
             if pending:
                 # `deferred: <queue> xN` is the grammar the runner's
                 # continuation reads (tools/e2e.py, `_DEFERRED_RE`), and the
@@ -4746,7 +4905,7 @@ data:
                 notes.append("deferred: " + ", ".join(
                     "%s x%d" % (k, len(v)) for k, v in sorted(pending.items())))
             if cur.get("missing"):
-                notes.append("unreachable: %d (%s)"
+                notes.append("%d items GitHub would not return (%s)"
                              % (len(cur["missing"]), ", ".join(cur["missing"][:4])))
             # T-077: a restricted org is named with what to do about it, and the
             # run it happened in still ends `ok` — the rest of the mirror landed.
@@ -4755,10 +4914,10 @@ data:
             if restricted:
                 notes.append(restricted)
             if cur.get("lifted"):
-                notes.append("restriction lifted: %s — re-walked from the "
-                             "backfill floor" % ", ".join(sorted(cur["lifted"])))
+                notes.append("%s now allows the app, so its data was read "
+                             "again" % _orgs_named(cur["lifted"]))
             if walk:
-                notes.append("stopped on the drain budget: %s next run"
+                notes.append("paused to keep this run short; %s next run"
                              % _resume_phrase(walk))
             status = ("ok" if not notes
                       else "ok (" + "; ".join(notes) + ")")[:400]
@@ -5127,7 +5286,9 @@ data:
             me = fetch("/user")
             login = me.get("login") or ""
             if not login:
-                raise RuntimeError("github: /user returned no login for " + aid)
+                raise _Said("GitHub did not say which user this account signs in "
+                            "as. Reconnect the account.",
+                            "/user returned no login for " + aid)
             sink = _Sink(host, aid, cur, fetch)
             # The connected user's row is the fullest payload GitHub has: patched,
             # not minted, and the account POINTS at it — "me" is a reference, not
@@ -5668,7 +5829,9 @@ data:
             if terr or not acct.get("token"):
                 if terr:
                     host.log("github: skip %s: %s" % (queue[0], terr))
-                    want = ("erroring: " + str(terr))[:400]
+                    said = _detailed("The GitHub sign-in stopped working. "
+                                     "Reconnect the account.", terr)
+                    want = ("erroring: " + said)[:400]
                     if (props.get("syncStatus") or "") != want:
                         # The trait moves with the legacy string: an account the
                         # host could not hand a token to is `erroring` on the
@@ -5677,8 +5840,8 @@ data:
                             (acct.get("kind") or ACCOUNT_TYPE), queue[0],
                             properties={"syncStatus": want,
                                         "syncState": "erroring",
-                                        "syncMessage": str(terr)[:400],
-                                        "syncError": str(terr)[:400],
+                                        "syncMessage": said,
+                                        "syncError": said,
                                         "syncErrorAt": _now()})
                 queue = queue[1:]
                 cur = _fresh(queue, cur.get("sched"), cur.get("chainStart"))
@@ -5709,8 +5872,10 @@ data:
             res = _sync_account(host, api, acct, aid, props, acct["token"], cur, queue)
         except Exception as e:  # noqa: BLE001 — per-account isolation
             msg = _err_msg(e)
-            host.log("github: account %s failed: %s" % (aid, msg))
-            _stamp(host, acct, aid, cur, error=msg)
+            host.log("github: account %s failed: %s"
+                     % (aid, msg.replace("\n", " | ")))
+            _stamp(host, acct, aid, cur, error=msg,
+                   throttled=isinstance(e, _RateLimited))
             rest = queue[1:]
             if rest:
                 res = {"more": host.page.more(
@@ -6255,15 +6420,40 @@ data:
         u = urllib.parse.urlsplit(url)
         host = (u.hostname or "").lower()
         if u.password or u.username:
-            raise RuntimeError("github: the API base embeds credentials")
+            raise RuntimeError(
+                "The GitHub client's API base carries a user name or password. "
+                "Remove them from the API base setting.")
         if host in LOOPBACK_HOSTS:
             return
         if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
             return
         raise RuntimeError(
-            "github: refusing to send credentials to %s://%s:%s; only "
-            "https://api.github.com or loopback"
+            "The GitHub sign-in is only ever sent to https://api.github.com, and "
+            "this provider's API base points somewhere else. Clear the API base "
+            "on the GitHub client settings.\nrefused origin %s://%s:%s"
             % (u.scheme, host or "?", u.port or "-"))
+
+
+    def _review_refusal(code, repo, number):
+        """Why GitHub turned a review down, in words."""
+        if code == 401:
+            return ("GitHub no longer accepts this account's sign-in, so the "
+                    "review of %s#%d was not posted. Reconnect the account."
+                    % (repo, number))
+        if code == 403:
+            return ("GitHub did not let this account review %s#%d: it lacks "
+                    "permission on the repository." % (repo, number))
+        if code == 404:
+            return ("GitHub could not find pull request %s#%d, or this account "
+                    "cannot see it." % (repo, number))
+        if code == 422:
+            return ("GitHub refused the review of %s#%d as written; GitHub's "
+                    "reason follows." % (repo, number))
+        if code >= 500:
+            return ("GitHub had a problem on its side, so the review of %s#%d was "
+                    "not posted. Try again in a moment." % (repo, number))
+        return ("GitHub refused the review of %s#%d (HTTP %d)."
+                % (repo, number, code))
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -6277,15 +6467,17 @@ data:
             for a in accounts:
                 if a.get("id") == want:
                     return a
-            raise ValueError("github: no account %r; the accounts are %s"
+            raise ValueError("No GitHub account %r is connected. The connected "
+                             "accounts are %s."
                              % (want, sorted(str(a.get("id")) for a in accounts)))
         live = [a for a in accounts if a.get("token")]
         if len(live) == 1:
             return live[0]
         if not live:
-            raise RuntimeError("github: no connected account carries a token")
-        raise ValueError("github: %d accounts are connected; name one in "
-                         "`account`: %s"
+            raise RuntimeError("No GitHub account is connected with a working "
+                               "sign-in. Connect or reconnect one first.")
+        raise ValueError("%d GitHub accounts are connected; say which one in "
+                         "`account`: %s."
                          % (len(live), sorted(str(a.get("id")) for a in live)))
 
 
@@ -6298,28 +6490,32 @@ data:
         text = str(args.get("body") or "")
         number = args.get("number")
         if not REPO_RE.match(repo):
-            raise ValueError("github: repository must be owner/name, got %r" % repo)
+            raise ValueError("The repository must be written owner/name, such "
+                             "as octocat/hello-world; got %r." % repo)
         if isinstance(number, bool) or not isinstance(number, (int, float)) \
                 or int(number) != number or number < 1:
-            raise ValueError("github: number must be a positive integer")
+            raise ValueError("The pull request number must be a whole number "
+                             "above zero.")
         if event not in EVENTS:
-            raise ValueError("github: event must be approve or comment, got %r"
+            raise ValueError("The review must be `approve` or `comment`; got %r."
                              % event)
         if event == "comment" and not text.strip():
-            raise ValueError("github: a comment review needs a body")
+            raise ValueError("A comment review needs some text in `body`.")
 
         cfg = input.get("config") or {}
         acct = _account(cfg, str(args.get("account") or "").strip())
         aid = acct.get("id")
         token = acct.get("token") or ""
         if not token:
-            raise RuntimeError("github: account %s has no live token: %s"
-                               % (aid, acct.get("tokenError") or "not connected"))
+            raise RuntimeError(
+                "The GitHub sign-in of account %s is not working. Reconnect the "
+                "account.\n%s" % (aid, acct.get("tokenError") or "not connected"))
         scopes = (acct.get("properties") or {}).get("grantedScopes") or []
         if scopes and not any(s in scopes for s in WRITE_SCOPES):
             raise RuntimeError(
-                "github: account %s was granted %s; a review needs `repo` (turn "
-                "on enabledPullRequests and reconnect)" % (aid, sorted(scopes)))
+                "GitHub account %s may not review pull requests: its sign-in only "
+                "reads. Turn on pull requests for the account and reconnect it to "
+                "grant the `repo` permission.\ngranted %s" % (aid, sorted(scopes)))
 
         client = ((cfg.get("inputs") or {}).get("client") or {})
         base = (((client.get("properties") or {}).get("apiBase") or "").strip()
@@ -6349,10 +6545,18 @@ data:
                                       else str(item.get("message") or item))
             except ValueError:
                 detail = raw
-            raise RuntimeError("github: reviewing %s#%d failed: HTTP %d %s"
-                               % (repo, int(number), e.code, detail[:300])) from e
+            raise RuntimeError("%s\nHTTP %d %s" % (
+                _review_refusal(e.code, repo, int(number)), e.code,
+                " ".join(detail.split())[:300])) from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                "GitHub could not be reached, so the review of %s#%d was not "
+                "posted. Try again in a moment.\n%s"
+                % (repo, int(number), e.reason)) from e
         if not isinstance(body.get("id"), int):
-            raise RuntimeError("github: the review answered no id")
+            raise RuntimeError("GitHub accepted the review of %s#%d but did not "
+                               "say which review it made; check the pull request "
+                               "on GitHub." % (repo, int(number)))
         out = {"id": body["id"], "state": str(body.get("state") or "")}
         if body.get("html_url"):
             out["url"] = body["html_url"]

@@ -1101,7 +1101,7 @@ func TestWhoopSyncHoldsAStreamsCursorWhenAReadBackIsRefused(t *testing.T) {
 	if _, completed := stamp["lastCompletedAt"]; completed {
 		t.Fatal("a run with a refused read-back stamped lastCompletedAt")
 	}
-	if !strings.Contains(fmt.Sprint(stamp["syncStatus"]), "workout read-back") {
+	if !strings.Contains(fmt.Sprint(stamp["syncStatus"]), "re-reading workouts stopped early") {
 		t.Fatalf("the syncStatus %q does not name the refused read-back", stamp["syncStatus"])
 	}
 	if !live(t, ds, whoopWorkoutKind, gone) {

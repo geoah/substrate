@@ -432,7 +432,7 @@ def main():
     ok(not acct.get("syncPending"),
        "the hydration backlog drained to nothing (%s)"
        % (acct.get("syncPending") or "empty"))
-    ok("capped" not in str(acct.get("syncStatus") or ""),
+    ok("could not all be listed" not in str(acct.get("syncStatus") or ""),
        "nothing is capped, and the status does not say it is")
     ok("login" not in acct,
        "the account carries no login scalar — the owner is a reference")
@@ -1055,6 +1055,10 @@ def main():
            "syncError carries the cause (%s)"
            % str(limited.get("syncError"))[:70])
         ok(bool(limited.get("syncErrorAt")), "and syncErrorAt says when")
+        ok(str(limited.get("syncError") or "").startswith(
+            "GitHub asked this substrate to slow down"),
+           "and its first line is the owner's sentence, not the code (%s)"
+           % str(limited.get("syncError"))[:90])
         ok("retry after 20" in status or "retry after 2" in status
            or "retry after" in status,
            "and it carries the instant GitHub named, not a bare failure")
@@ -1072,6 +1076,11 @@ def main():
         ok("unauthorized" in str(revoked.get("syncError") or ""),
            "syncError reads the same way (%s)"
            % str(revoked.get("syncError"))[:70])
+        ok(str(revoked.get("syncError") or "").startswith(
+            "GitHub no longer accepts this account's sign-in")
+           and "Reconnect the account" in str(revoked.get("syncError") or ""),
+           "and its first line says what happened and what to do (%s)"
+           % str(revoked.get("syncError"))[:120])
 
         # ------------------------------- T-077: a backlog does not eat the walk
         # Production, 2026-09-20 (github 20): a failed run had parked its
@@ -1169,7 +1178,7 @@ def main():
                "%s: the run completes `ok`, the refusal did not stop it (%s)"
                % (where, status[:100]))
             ok("items skipped" in status and org in status
-               and "restricts the OAuth app" in status
+               and "restricts this substrate's GitHub app" in status
                and "third-party access" in status,
                "%s: and the status counts the skip, names the org and says "
                "what to do (%s)" % (where, status[:200]))
@@ -1273,7 +1282,7 @@ def main():
         ok((healed.get("syncErrorAt") or "") <= (healed.get("lastSyncedAt") or ""),
            "syncError is the LAST error, not a live one: syncErrorAt is "
            "older than the run that just finished ok")
-        ok("restriction lifted" not in str(healed.get("syncStatus") or ""),
+        ok("now allows the app" not in str(healed.get("syncStatus") or ""),
            "#649: the next run did not find the lift a second time (%s)"
            % str(healed.get("syncStatus"))[:120])
         ok(not ((healed.get("syncSkipped") or {}).get("restricted") or {}),
@@ -1425,7 +1434,8 @@ def submitreview(api, server, token, mock_url, recdir, ckind, aid):
     try:
         st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
                                        "event": "approve"})
-        ok(st >= 400 and "refusing to send credentials" in error_text(reply),
+        ok(st >= 400 and "only ever sent to https://api.github.com"
+           in error_text(reply),
            "an apiBase off api.github.com did not refuse: %s %s"
            % (st, error_text(reply)[:200]))
     finally:
@@ -1468,7 +1478,7 @@ def submitreview(api, server, token, mock_url, recdir, ckind, aid):
         before = len(w.requests("POST", route))
         st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
                                        "event": "approve", "account": readonly})
-        ok(st >= 400 and "a review needs `repo`" in error_text(reply)
+        ok(st >= 400 and "the `repo` permission" in error_text(reply)
            and "read:user" in error_text(reply),
            "an account granted only read:user did not refuse: %s %s"
            % (st, error_text(reply)[:300]))

@@ -174,7 +174,12 @@ data:
   # trigger record, enabled and keyless, and a POST to it starts a walk:
   # `substratectl delete substrate.reamde.dev/core/trigger slack-events`
   # (README.md, "Upgrading from version 21").
-  version: 22
+  #
+  # 23: every failure an owner reads (syncError, syncMessage,
+  # historyStatus, the `erroring:` status, postmessage's error) is a plain
+  # sentence saying what to do, with Slack's method and error word on a
+  # second line; token_revoked and token_expired are permanent.
+  version: 23
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -443,8 +448,8 @@ data:
       displayName: Sync status
       description: >-
         the last sync outcome — ok, ok (N pending), ok (N pending, rate limited),
-        erroring: <reason>, ignored: duplicate account, and a trailing [N
-        failed] when work has exhausted its retries
+        erroring: <reason>, ignored: <why> for a second account, and a trailing
+        [N failed: …] when work has exhausted its retries
     # --- the core `sync` trait's connector hands (decision 0085) -------------
     # The ten properties the trait contracts that the CONNECTOR writes; the
     # owner's two (`syncRequestedAt`, `syncPaused`) are above. The sync body
@@ -2861,9 +2866,9 @@ data:
       writer: connector
       displayName: History status
       description: >-
-        the last outcome for THIS conversation — ok, or the Slack error that
-        stopped it (not_in_channel, channel_not_found). One bad channel never
-        stops the rest
+        the last outcome for THIS conversation — ok, or a sentence saying
+        why Slack would not share it, with Slack's error word on a second
+        line. One bad channel never stops the rest
 ---
 # ---- the sync function -----------------------------------------------------
 # A PEP 723 Python body speaking Slack's Web API over requests. Per invocation
@@ -2997,8 +3002,11 @@ data:
     list the row already holds.
     """
     import datetime as _dt
+    import errno
+    import ssl
     import http.cookiejar
     import re
+    import socket
     import time
     import urllib.parse
 
@@ -3060,8 +3068,9 @@ data:
     # the overlap. A first reply to a message more than a day older than the
     # conversation's newest one is still missed.
     RESCAN_SECONDS = 86400
-    IGNORED_STATUS = ("ignored: duplicate account (one pasted token addresses "
-                      "one workspace)")
+    IGNORED_STATUS = ("ignored: another Slack account already syncs this "
+                      "workspace, and one pasted token syncs one workspace. "
+                      "Remove this account.")
 
     BACKFILL_DAYS = {"none": 0, "last2d": 2, "last30d": 30, "last90d": 90,
                      "last1y": 365, "all": -1}
@@ -3410,6 +3419,17 @@ data:
             self.error = error
 
 
+    class SlackHTTP(RuntimeError):
+        """Slack answered with an HTTP failure status. The message keeps the
+        `slack <method>: HTTP <status>` shape `_permanent` and `_why_class`
+        match on; `status` is what `_say` words."""
+
+        def __init__(self, method, status, body=""):
+            super().__init__("slack %s: HTTP %d %s" % (method, status, body))
+            self.method = method
+            self.status = status
+
+
     class RateLimited(Exception):
         """Slack asked us to come back later, and SAID WHEN.
 
@@ -3464,8 +3484,7 @@ data:
         if resp.status_code == 429:
             raise RateLimited(method, _retry_after(resp))
         if resp.status_code >= 400:
-            raise RuntimeError("slack %s: HTTP %d %s"
-                               % (method, resp.status_code, resp.text[:200]))
+            raise SlackHTTP(method, resp.status_code, resp.text[:200])
         body = resp.json()
         if not body.get("ok"):
             err = body.get("error") or "unknown"
@@ -3493,6 +3512,251 @@ data:
             return int((resp.headers or {}).get("Retry-After") or 0)
         except (TypeError, ValueError):
             return 0
+
+
+    # ---------------------------------------------------- what the owner reads
+    # Every failure text an owner sees (syncError, syncMessage, historyStatus)
+    # is ONE line of plain sentences: what failed, why, and what to do. The
+    # Slack method, its error word and the raw text follow on a second line,
+    # which the console folds under "Technical details". Only that second line
+    # is ever cut short.
+
+    TECHNICAL_MAX = 300
+    FIX_TOKEN = "Paste a new Slack user token (xoxp-…) in this provider's settings."
+    RETRIES = "The next sync tries again on its own."
+
+    # What a Slack error word means, as the owner reads it. Words naming ONE
+    # conversation, message, file or person are per-item answers; the rest stop
+    # the whole run.
+    SLACK_WORDS = {
+        "invalid_auth": "Slack no longer accepts the pasted token: it was "
+                        "revoked, expired or replaced. " + FIX_TOKEN,
+        "not_authed": "Slack received no token from this sync. " + FIX_TOKEN,
+        "token_revoked": "The Slack token was revoked. " + FIX_TOKEN,
+        "token_expired": "The Slack token expired. " + FIX_TOKEN,
+        "account_inactive": "The Slack user this token belongs to was "
+                            "deactivated, so Slack refuses the token. Paste a "
+                            "token of an active user in this provider's settings.",
+        "not_allowed_token_type": "Slack refused this kind of token. Paste a "
+                                  "user token (it starts with xoxp-) in this "
+                                  "provider's settings.",
+        "team_access_not_granted": "This Slack workspace has not approved the "
+                                   "app the token belongs to. Ask a workspace "
+                                   "admin to approve it, then sync again.",
+        "channel_not_found": "Slack says this conversation no longer exists, "
+                             "or the token's user cannot see it.",
+        "not_in_channel": "The token's user is not a member of this "
+                          "conversation, so Slack will not share it. Join it "
+                          "in Slack to sync it.",
+        "is_archived": "This conversation is archived in Slack.",
+        "method_not_supported_for_channel_type": "Slack does not offer this "
+                                                 "kind of conversation's "
+                                                 "messages to a token.",
+        "no_permission": "This workspace's settings do not let the token's "
+                         "user read this.",
+        "restricted_action": "This workspace's settings do not let the "
+                             "token's user read this.",
+        "thread_not_found": "The thread was deleted in Slack.",
+        "message_not_found": "The message was deleted in Slack.",
+        "file_not_found": "The file was deleted in Slack, or the token's user "
+                          "cannot see it.",
+        "file_deleted": "The file was deleted in Slack.",
+        "user_not_found": "Slack no longer knows this person.",
+        "users_not_found": "Slack no longer knows this person.",
+        "bot_not_found": "Slack no longer knows this bot.",
+        "invalid_cursor": "Slack rejected the saved place in a list, so the "
+                          "next full walk starts that list from the top.",
+        "invalid_arguments": "Slack rejected a request this sync made. That "
+                             "is a bug in the Slack provider; report it with "
+                             "the technical details.",
+        "fatal_error": "Slack had a problem on its side. " + RETRIES,
+        "internal_error": "Slack had a problem on its side. " + RETRIES,
+        "service_unavailable": "Slack is temporarily unavailable. " + RETRIES,
+        "request_timeout": "Slack did not answer in time. " + RETRIES,
+        "ratelimited": "Slack asked this sync to slow down. It resumes on its own.",
+    }
+
+    # The scopes a `missing_scope` most often names, as the permission a person
+    # recognises. The scope itself stays beside it: it is what gets added to
+    # the Slack app.
+    SCOPE_WORDS = {
+        "team:read": "read the workspace's name and details",
+        "users:read": "list the workspace's people",
+        "users:read.email": "read people's email addresses",
+        "channels:read": "list public channels",
+        "groups:read": "list private channels",
+        "im:read": "list direct messages",
+        "mpim:read": "list group direct messages",
+        "channels:history": "read public channel messages",
+        "groups:history": "read private channel messages",
+        "im:history": "read direct messages",
+        "mpim:history": "read group direct messages",
+        "files:read": "read files",
+        "chat:write": "post messages",
+    }
+
+    # A word an ok run counts its skipped work by, as a few plain words.
+    WORD_PHRASES = {
+        "channel_not_found": "conversation gone",
+        "not_in_channel": "not a member",
+        "is_archived": "archived",
+        "missing_scope": "missing permission",
+        "no_permission": "not permitted",
+        "restricted_action": "not permitted",
+        "thread_not_found": "thread deleted",
+        "message_not_found": "message deleted",
+        "file_not_found": "file gone",
+        "file_deleted": "file deleted",
+        "user_not_found": "person gone",
+        "users_not_found": "person gone",
+        "bot_not_found": "bot gone",
+        "method_not_supported_for_channel_type": "not readable",
+        "team_access_not_granted": "workspace not approved",
+    }
+    # The units of work, as the owner names them.
+    WORK_NOUNS = {
+        "conversation": "conversation", "info": "conversation",
+        "history": "conversation history", "thread": "thread",
+        "roster": "member list", "user": "person", "file": "file",
+        "bot": "bot", "hydrate": "message",
+    }
+
+
+    def _causes(err):
+        """The exception and every cause and context under it, outermost
+        first, each once."""
+        out, seen, todo = [], set(), [err]
+        while todo:
+            e = todo.pop(0)
+            if e is None or id(e) in seen:
+                continue
+            seen.add(id(e))
+            out.append(e)
+            for attr in ("__cause__", "__context__", "reason"):
+                nxt = getattr(e, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+            for a in getattr(e, "args", ()) or ():
+                if isinstance(a, BaseException):
+                    todo.append(a)
+        return out
+
+
+    def _where(err):
+        """The host and port a connection failure was dialling."""
+        url = getattr(getattr(err, "request", None), "url", None) or ""
+        u = urllib.parse.urlsplit(url)
+        host = u.hostname or "slack.com"
+        port = u.port or (80 if u.scheme == "http" else 443)
+        return host, port
+
+
+    def _connection_words(err):
+        """A failure to reach Slack at all, worded by its cause."""
+        exc = requests.exceptions
+        host, port = _where(err)
+        if isinstance(err, exc.Timeout):
+            return "Slack did not answer in time. " + RETRIES
+        if isinstance(err, exc.SSLError):
+            return ("The secure connection to %s failed, so nothing was sent. "
+                    "%s If it keeps failing, check this server's clock and "
+                    "network." % (host, RETRIES))
+        if isinstance(err, exc.ProxyError):
+            return ("The proxy between this server and Slack refused the "
+                    "connection. Check the server's proxy settings.")
+        for e in _causes(err)[1:]:
+            if isinstance(e, OSError) and not isinstance(e, ssl.SSLError) and e.errno in (errno.EACCES, errno.EPERM):
+                return ("This server's sandbox blocked the connection to %s:%d. "
+                        "The server's operator can allow it with "
+                        "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % (host, port))
+            if isinstance(e, socket.gaierror) or \
+                    type(e).__name__ == "NameResolutionError":
+                return ("This server could not look up %s. Check its DNS and "
+                        "network connection. %s" % (host, RETRIES))
+            if isinstance(e, OSError) and e.errno == errno.ECONNREFUSED:
+                return "%s refused the connection. %s" % (host, RETRIES)
+            if isinstance(e, OSError) and e.errno in (errno.ENETUNREACH,
+                                                      errno.EHOSTUNREACH):
+                return ("This server has no network route to %s. Check its "
+                        "network connection. %s" % (host, RETRIES))
+            if isinstance(e, (socket.timeout, TimeoutError)) or \
+                    type(e).__name__ == "ConnectTimeoutError":
+                return "Slack did not answer in time. " + RETRIES
+        return "This server could not connect to Slack. " + RETRIES
+
+
+    def _scope_words(needed):
+        names = [n.strip() for n in str(needed or "").split(",") if n.strip()]
+        said = ['"%s" (%s)' % (SCOPE_WORDS[n], n) if n in SCOPE_WORDS else n
+                for n in names]
+        return " and ".join(said)
+
+
+    def _say(err):
+        """The text an owner reads for this failure: plain sentences on the
+        first line, the technical detail on the second."""
+        if isinstance(err, str):
+            return err
+        technical = "%s: %s" % (type(err).__name__, err)
+        if isinstance(err, Slack):
+            technical = str(err)
+            word = err.error
+            if word == "missing_scope":
+                m = re.search(r"needed ([^,)]+(?:,[^,)]+)*?)(?:, provided|\))",
+                              technical)
+                needed = m.group(1).split(",") if m else []
+                some = "permissions" if len(needed) > 1 else "a permission"
+                needs = (" to %s" % _scope_words(m.group(1))) if m else ""
+                line = ("The Slack token is missing %s this sync needs%s. Add "
+                        "%s to the Slack app, reinstall the app, and paste the "
+                        "new token in this provider's settings."
+                        % (some, needs, "them" if len(needed) > 1 else "it"))
+            else:
+                line = SLACK_WORDS.get(word) or (
+                    "Slack refused a request this sync made. %s If it keeps "
+                    "happening, check the token in this provider's settings."
+                    % RETRIES)
+        elif isinstance(err, SlackHTTP):
+            technical = str(err)
+            if err.status >= 500:
+                line = ("Slack had a problem on its side (HTTP %d). %s"
+                        % (err.status, RETRIES))
+            elif err.status in (401, 403):
+                line = ("Slack refused the token (HTTP %d). %s"
+                        % (err.status, FIX_TOKEN))
+            elif err.status == 404:
+                line = ("Slack did not recognise a request this sync made "
+                        "(HTTP 404).")
+            else:
+                line = ("Slack refused a request this sync made (HTTP %d)."
+                        % err.status)
+        elif isinstance(err, RateLimited):
+            line = SLACK_WORDS["ratelimited"]
+        elif isinstance(err, requests.exceptions.ConnectionError) or \
+                isinstance(err, requests.exceptions.Timeout):
+            line = _connection_words(err)
+        elif isinstance(err, ValueError) and "JSON" in type(err).__name__:
+            line = ("Slack answered with something that is not JSON, so the "
+                    "sync stopped. " + RETRIES)
+        else:
+            line = ("The Slack sync stopped on an unexpected error. %s If it "
+                    "keeps happening, report it with the technical details."
+                    % RETRIES)
+        technical = " ".join(technical.split())
+        if len(technical) > TECHNICAL_MAX:
+            technical = technical[:TECHNICAL_MAX - 1] + "…"
+        return line + ("\n" + technical if technical else "")
+
+
+    def _work_phrase(key):
+        """`history/not_in_channel` as `conversation history (not a
+        member)`, for the ok run's counts."""
+        kind, _, why = key.partition("/")
+        permanent = why.startswith("permanent: ")
+        why = why[len("permanent: "):] if permanent else why
+        m = re.match(r"([a-zA-Z.]+) HTTP (\d{3})$", why)
+        what = ("HTTP %s" % m.group(2)) if m else WORD_PHRASES.get(why, why)
+        return "%s (%s)" % (WORK_NOUNS.get(kind, kind), what)
 
 
     def _cursor_of(body):
@@ -4633,7 +4897,8 @@ data:
                 by_why[key] = by_why.get(key, 0) + 1
             top = sorted(by_why.items(), key=lambda kv: -kv[1])[:3]
             status += " [%d failed: %s]" % (
-                len(failed), ", ".join("%s x%d" % (k, n) for k, n in top))
+                len(failed), ", ".join("%s x%d" % (_work_phrase(k), n)
+                                       for k, n in top))
         # The log names what failed IN THIS RUN only. Logging the whole list
         # at every stamp repeated one walk's failures on every run of it.
         new = min(int((run or {}).get("newFailed") or 0), len(failed))
@@ -4655,10 +4920,17 @@ data:
                 word = "%s/%s" % (key.split(" ")[0], (entry or {}).get("why") or "")
                 by_word[word] = by_word.get(word, 0) + 1
             top = sorted(by_word.items(), key=lambda kv: -kv[1])[:2]
-            status += " [%d refused: %s]" % (
-                len(refused), ", ".join("%s x%d" % (k, n) for k, n in top))
+            status += " [%d refused by Slack and skipped: %s]" % (
+                len(refused), ", ".join("%s x%d" % (_work_phrase(k), n)
+                                        for k, n in top))
         status = status[:REASON_MAX]
         now = _now_iso()
+        # A held run's message is what the console prints after "Waiting for
+        # Slack:", so it is a sentence; the status grammar rides under it.
+        message = status
+        if not_before:
+            message = ("Slack asked this sync to slow down. It resumes on its "
+                       "own at %s.\n%s" % (_clock(not_before), status))
         props = {
             # `lastSyncedAt` is the last ATTEMPT — it is what the cadence reads.
             # Whether the walk finished is a different fact and has its own
@@ -4675,16 +4947,27 @@ data:
         # facts (T-084). A rate-limited stop is the trait's `throttled`; a bounded
         # one is `ok` with the count in `syncProgress`.
         props.update(_trait(((acct or {}).get("properties") or {}), cursors,
-                            "throttled" if not_before else "ok", status, now,
+                            "throttled" if not_before else "ok", message, now,
                             run=run))
         host.effects.patch(typ, aid, properties=props)
+
+
+    def _clock(iso):
+        """An instant as the minute a person reads, in UTC."""
+        try:
+            when = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            return str(iso)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        return when.astimezone(_dt.timezone.utc).strftime("%H:%M UTC")
 
 
     def _erroring(host, acct, aid, reason, cursors=None, run=None, at_phase=None):
         # A provider failure stamps THIS account erroring — bounded reason, no
         # lastSyncedAt, since the run did not complete — and the delivery
         # completes instead of parking.
-        why = str(reason)[:REASON_MAX]
+        why = _say(reason)
         props = {"syncStatus": "erroring: " + why}
         if cursors is not None:
             props["streamCursors"] = cursors
@@ -4731,6 +5014,7 @@ data:
         "account_inactive", "invalid_arguments", "method_not_supported_for_channel_type",
         "team_access_not_granted", "restricted_action", "file_not_found",
         "file_deleted", "bot_not_found", "not_authed", "invalid_auth",
+        "token_revoked", "token_expired",
         # An EXPIRED OR MALFORMED CURSOR. Slack has already said the token is no
         # good; asking with the same token again gets the same answer, and the
         # walk that holds it restarts from the top on the next cold pass.
@@ -5089,7 +5373,7 @@ data:
             raise
         except Exception as e:  # noqa: BLE001
             _state_patch(host, aid, team, cid,
-                         {"historyStatus": str(getattr(e, "error", e))[:REASON_MAX]})
+                         {"historyStatus": _say(e)})
             return _failed(resume, "info", cid, e, info=info[1:])
         c = body.get("channel") or {}
         if c.get("id"):
@@ -5151,7 +5435,7 @@ data:
             # One channel's failure is that channel's business. The queue moves
             # on, and the reason lands on the STATE row, not the mirror.
             _state_patch(host, aid, team, cid,
-                         {"historyStatus": str(getattr(e, "error", e))[:REASON_MAX]})
+                         {"historyStatus": _say(e)})
             return _failed(resume, "history", cid, e, queue=queue[1:], work=None)
         domain = resume.get("domain") or ""
         floor = resume.get("floor")
@@ -5314,7 +5598,7 @@ data:
             raise
         except Exception as e:  # noqa: BLE001
             _state_patch(host, aid, team, cid,
-                         {"historyStatus": str(getattr(e, "error", e))[:REASON_MAX]})
+                         {"historyStatus": _say(e)})
             return _failed(resume, "thread", [cid, parent_ts], e,
                            reply=None, **{key: threads[1:]})
         domain = resume.get("domain") or ""
@@ -5778,8 +6062,11 @@ data:
             return {"output": {"skipped": "sealed-token"}}
         if not _pinned(base):
             raise RuntimeError(
-                "slack: apiBase %r is not a pinned origin (https on a slack.com "
-                "host, or loopback); refusing to send the user token" % base)
+                "The Slack settings' API base is not a Slack address, so the "
+                "token was not sent. Clear the API base in this provider's "
+                "settings.\nslack: apiBase %r is not a pinned origin (https on "
+                "a slack.com host, or loopback); refusing to send the user "
+                "token" % base)
 
         resume = host.page.resume() or None
         if resume:
@@ -5877,7 +6164,10 @@ data:
         owner = auth.get("user_id") or ""
         domain = urllib.parse.urlsplit(auth.get("url") or "").hostname or ""
         if not team:
-            _erroring(host, acct, aid, "auth.test returned no team_id", run=run)
+            _erroring(host, acct, aid,
+                      "Slack accepted the token but did not say which workspace "
+                      "it belongs to, so nothing was synced. %s\n"
+                      "auth.test returned no team_id" % RETRIES, run=run)
             return {"output": {"account": aid, "erroring": True}}
         # What the token turned out to be, as REFERENCES: the workspace and the
         # user are mirrored rows, and their names and ids are theirs to hold. Both
@@ -6056,12 +6346,16 @@ data:
     (config.inputs.connector.properties.userToken) and leaves this body only
     toward https on a slack.com host, or loopback (the test seam). One call,
     `chat.postMessage`, as a form POST with the token in the Authorization
-    header. A Slack refusal (`ok: false`) fails the call with Slack's own
-    error code, so `missing_scope` or `not_in_channel` reaches the caller,
-    and a `missing_scope` names the `needed` and `provided` scopes Slack
-    sends beside it.
+    header. A Slack refusal (`ok: false`) fails the call with a sentence
+    saying what to do, and the error still carries Slack's own code, so
+    `missing_scope` or `not_in_channel` reaches the caller, and a
+    `missing_scope` names the `needed` and `provided` scopes Slack sends
+    beside it.
     """
+    import errno
+    import ssl
     import json
+    import socket
     import urllib.error
     import urllib.parse
     import urllib.request
@@ -6095,6 +6389,62 @@ data:
         return "%s (%s)" % (err, ", ".join(scopes)) if scopes else err
 
 
+    FIX_TOKEN = "Paste a new Slack user token (xoxp-…) in this provider's settings."
+
+    # What a refusal of chat.postMessage means, as the caller reads it.
+    POST_WORDS = {
+        "not_in_channel": "The token's user is not a member of this "
+                          "conversation, so Slack will not post there. Join "
+                          "it in Slack first.",
+        "channel_not_found": "Slack cannot find this conversation, or the "
+                             "token's user cannot see it.",
+        "is_archived": "This conversation is archived in Slack, so nothing "
+                       "can be posted in it.",
+        "msg_too_long": "The message is too long for Slack.",
+        "no_text": "The message is empty.",
+        "thread_not_found": "The thread to reply in no longer exists.",
+        "restricted_action": "This workspace's settings do not let the "
+                             "token's user post here.",
+        "invalid_auth": "Slack no longer accepts the pasted token. " + FIX_TOKEN,
+        "not_authed": "Slack received no token. " + FIX_TOKEN,
+        "token_revoked": "The Slack token was revoked. " + FIX_TOKEN,
+        "token_expired": "The Slack token expired. " + FIX_TOKEN,
+        "account_inactive": "The Slack user this token belongs to was "
+                            "deactivated. " + FIX_TOKEN,
+        "ratelimited": "Slack asked to slow down. Try again in a minute.",
+    }
+
+
+    def _fail(line, technical):
+        """The error a refused post raises: the sentence first, Slack's own
+        words on the next line."""
+        return RuntimeError("%s\n%s" % (line, technical))
+
+
+    def _post_words(body):
+        err = str(body.get("error") or "unknown")
+        if err == "missing_scope":
+            return ("The Slack token is missing a permission posting needs. "
+                    "Add it to the Slack app, reinstall the app, and paste the "
+                    "new token in this provider's settings.")
+        return POST_WORDS.get(err) or "Slack refused to post the message."
+
+
+    def _unreachable_words(err):
+        for e in (err, getattr(err, "reason", None), err.__cause__,
+                  err.__context__):
+            if isinstance(e, OSError) and not isinstance(e, ssl.SSLError) and e.errno in (errno.EACCES, errno.EPERM):
+                return ("This server's sandbox blocked the connection to Slack. "
+                        "The server's operator can allow it with "
+                        "SUBSTRATE_SANDBOX_EGRESS_ALLOW.")
+            if isinstance(e, socket.gaierror):
+                return ("This server could not look up Slack's address. Check "
+                        "its DNS and network connection, then try again.")
+            if isinstance(e, (socket.timeout, TimeoutError)):
+                return "Slack did not answer in time. Try again."
+        return "This server could not connect to Slack. Try again."
+
+
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
         # urllib would follow a redirect as a GET to any host and carry the
         # Authorization header along; refuse it so the token stays pinned.
@@ -6108,12 +6458,13 @@ data:
         text = str(args.get("text") or "")
         thread = str(args.get("threadTs") or "").strip()
         if not channel:
-            raise ValueError("slack: channel is required")
+            raise ValueError("Say which Slack conversation to post in: the "
+                             "channel argument is required.")
         if not text.strip():
-            raise ValueError("slack: text is empty")
+            raise ValueError("The message is empty: give it some text.")
         if len(text) > TEXT_MAX:
-            raise ValueError("slack: text is %d characters; Slack takes at most %d"
-                             % (len(text), TEXT_MAX))
+            raise ValueError("The message is %d characters long; Slack takes at "
+                             "most %d." % (len(text), TEXT_MAX))
 
         cfg = input.get("config") or {}
         conf = (((cfg.get("inputs") or {}).get("connector") or {})
@@ -6121,14 +6472,22 @@ data:
         token = conf.get("userToken") or ""
         base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
         if not token:
-            raise RuntimeError("slack: the config record carries no userToken")
+            raise _fail("No Slack user token is set. Paste one (xoxp-…) in this "
+                        "provider's settings.",
+                        "slack: the config record carries no userToken")
         if token.startswith(SEALED_PREFIX):
-            raise RuntimeError("slack: userToken arrived sealed; paste it on the "
-                               "config, not the account")
+            raise _fail("The Slack token was pasted on the account instead of the "
+                        "provider's settings. Paste it in this provider's "
+                        "settings.",
+                        "slack: userToken arrived sealed; paste it on the config, "
+                        "not the account")
         if not _pinned(base):
             raise RuntimeError(
-                "slack: apiBase %r is not a pinned origin (https on a slack.com "
-                "host, or loopback); refusing to send the user token" % base)
+                "The Slack settings' API base is not a Slack address, so the "
+                "token was not sent. Clear the API base in this provider's "
+                "settings.\nslack: apiBase %r is not a pinned origin (https on "
+                "a slack.com host, or loopback); refusing to send the user "
+                "token" % base)
 
         form = {"channel": channel, "text": text}
         if thread:
@@ -6145,14 +6504,31 @@ data:
                 body = json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                raise RuntimeError("slack chat.postMessage: rate limited; retry "
-                                   "after %ss" % (e.headers.get("Retry-After") or "?")) from e
-            raise RuntimeError("slack chat.postMessage: HTTP %d %s"
-                               % (e.code, e.read()[:200].decode("utf-8", "replace"))) from e
+                after = e.headers.get("Retry-After") or "?"
+                raise _fail("Slack asked to slow down. Try again in %s seconds."
+                            % after,
+                            "slack chat.postMessage: rate limited; retry after "
+                            "%ss" % after) from e
+            technical = ("slack chat.postMessage: HTTP %d %s"
+                         % (e.code, e.read()[:200].decode("utf-8", "replace")))
+            if e.code >= 500:
+                line = ("Slack had a problem on its side (HTTP %d), so the "
+                        "message was not posted. Try again." % e.code)
+            elif e.code in (401, 403):
+                line = "Slack refused the token (HTTP %d). %s" % (e.code, FIX_TOKEN)
+            else:
+                line = "Slack refused to post the message (HTTP %d)." % e.code
+            raise _fail(line, " ".join(technical.split())) from e
+        except (urllib.error.URLError, OSError) as e:
+            raise _fail(_unreachable_words(e),
+                        "slack chat.postMessage: %s: %s"
+                        % (type(e).__name__, e)) from e
         if not body.get("ok"):
-            raise RuntimeError("slack chat.postMessage refused: %s"
-                               % _refusal(body))
+            raise _fail(_post_words(body),
+                        "slack chat.postMessage refused: %s" % _refusal(body))
         if not body.get("ts"):
-            raise RuntimeError("slack chat.postMessage answered ok with no ts")
+            raise _fail("Slack said the message was posted but returned no "
+                        "message id, so it cannot be linked.",
+                        "slack chat.postMessage answered ok with no ts")
         return {"output": {"channel": body.get("channel") or channel,
                            "ts": str(body.get("ts") or "")}}
