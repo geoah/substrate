@@ -28,6 +28,12 @@ import (
 // refused at connect(2) and never reaches it. A host that cannot filter a
 // body's connects refuses to start the body, so such a test fails there
 // instead of reaching the internet.
+//
+// ZONEINFO is an empty directory of this binary's own, so a test can make a
+// time zone appear while the engine runs by writing its file there
+// (testZone). The time package reads the variable once, at the first zone
+// anything loads, so it is set before the run; every other zone falls
+// through to the system's zoneinfo and the embedded copy.
 func TestMain(m *testing.M) {
 	runner.Shared.ConfineBodyEgress(netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128"))
 	if os.Getenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW") == "" {
@@ -37,7 +43,14 @@ func TestMain(m *testing.M) {
 		_ = os.Setenv("SUBSTRATE_EGRESS_ALLOW", "127.0.0.0/8,::1/128")
 	}
 	engine.WidenAggregateSlots(64)
+	zoneinfo, err := os.MkdirTemp("", "substrate-zoneinfo-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("ZONEINFO", zoneinfo)
 	// testdb.Main: the data roots on tmpfs, the run, then every database the
 	// run made dropped (the migrated template among them).
-	os.Exit(testdb.Main(m))
+	code := testdb.Main(m)
+	_ = os.RemoveAll(zoneinfo)
+	os.Exit(code)
 }

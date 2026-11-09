@@ -2307,8 +2307,8 @@ func (ds *dataset) scopeKinds(scope queryScope) []string {
 // of a kind outside it is dropped from `included`.
 //
 // parseQueryCall checks the arguments first, and only its refusals are
-// invalid: every refusal after it reads the repository or the budget, and a
-// write or the next call can lift it.
+// invalid: every refusal after it reads the repository, the budget or the
+// zone database, and a write, the next call or a zone file can lift it.
 func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
 	call, msg := parseQueryCall(scope, args)
 	if msg != "" {
@@ -2431,8 +2431,8 @@ type queryCall struct {
 // holds, which is what lets the loop answer an exact repeat from the refusal.
 // What it reads beside the arguments is the scope's allowlist being set and
 // requireKinds, both fixed for an agent's run. A kind, metric or record that
-// is not there, a kind outside the allowlist, the rows left and a read that
-// fails are the run stage's to refuse.
+// is not there, a kind outside the allowlist, the rows left, a time zone the
+// server cannot load and a read that fails are the run stage's to refuse.
 func parseQueryCall(scope queryScope, args map[string]any) (queryCall, string) {
 	if argSet(args["aggregate"]) {
 		// The aggregate read takes none of the other arms' arguments, refused
@@ -2617,7 +2617,9 @@ func (ds *dataset) allowKind(scope queryScope, kind string) string {
 // parseAggregateCall is parseQueryCall's aggregate arm: the records route's
 // `aggregate` parameter as an argument, with `filter`, `kind` and
 // `downsample` beside it, and the body checked by the read's own plan
-// (checkAggregate), which reads nothing stored either.
+// (checkAggregate), which reads nothing stored either. The plan loads the
+// zones a bucket names, and a zone it cannot load is the read's to refuse
+// (unloadedZone): a zone file can appear within the run.
 func parseAggregateCall(scope queryScope, args map[string]any) (queryCall, string) {
 	q := substrate.AggregateQuery{Aggregate: &substrate.Aggregate{}}
 	buf, err := jsonArgument(args, "aggregate")
@@ -2654,7 +2656,7 @@ func parseAggregateCall(scope queryScope, args map[string]any) (queryCall, strin
 	// The run stage fills the kinds a read names none of and lowers the
 	// budget to the rows left, and the plan reads neither the kinds nor a
 	// budget it lowers, so its verdict here is the read's.
-	if err := checkAggregate(q); err != nil {
+	if err := checkAggregate(q); err != nil && !errors.As(err, new(unloadedZone)) {
 		return queryCall{}, err.Error()
 	}
 	return queryCall{agg: &q}, ""

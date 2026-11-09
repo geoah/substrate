@@ -14,7 +14,8 @@ import (
 // refusal of anything stored (a kind, metric or record that is not there, a
 // kind outside the allowlist, a budget, a timeout, an index still being
 // re-derived) is never kept: a write or the next call can lift it, and no
-// position in the changelog says reliably whether one has.
+// position in the changelog says reliably whether one has. Nor is a time
+// zone the server cannot load, which a zone file appearing lifts.
 
 // repeatedCallNote rides the answer to a repeat.
 const repeatedCallNote = "this exact call was refused earlier in this run for its arguments alone, so it was not run again: " +

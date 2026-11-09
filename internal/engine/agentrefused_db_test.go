@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -224,6 +225,78 @@ func TestAgentReadsARefusalOfWhatIsStoredAgain(t *testing.T) {
 	}
 	if after := content(2); tools[2]["ok"] != true || after["error"] != nil {
 		t.Fatalf("once the metric was committed, the call did not read it: %v", after)
+	}
+}
+
+// A TIME ZONE THE SERVER CANNOT LOAD IS NEVER KEPT. A read bucketed in a zone
+// the zone database lacks is refused by the read, not by the arguments'
+// check, so the refusal names the zone, claims nothing of a repeat, and the
+// identical call reads again. The zone's file then appears while the model
+// decides its next call, as a host's zoneinfo gains one, and the identical
+// call answers in the same run.
+func TestAgentReadsAZoneItCouldNotLoadAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openShelfDataset(t)
+	const zone = "Substrate_Test/Shelf"
+	appear := testZone(t, zone, 3*time.Hour)
+	metric := obsPackage + "/metric"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
+	}); err != nil {
+		t.Fatalf("put the metric: %v", err)
+	}
+	daily := toolArgs(t, map[string]any{
+		"aggregate": map[string]any{
+			"metric":   map[string]any{"ref": metric + "/" + fid("bolts")},
+			"range":    map[string]any{"gte": "2026-01-01T00:00:00Z", "lt": "2026-01-03T00:00:00Z"},
+			"bucket":   map[string]any{"calendar": "day", "timezone": zone},
+			"reducers": []any{"count"},
+		},
+	})
+	deciding, decided := make(chan struct{}), make(chan struct{})
+	fake.script("clerk",
+		fakeTurn{calls: []fakeCall{{"query", daily}}},
+		fakeTurn{calls: []fakeCall{{"query", daily}}},
+		fakeTurn{calls: []fakeCall{{"query", daily}}, arrived: deciding, release: decided},
+		fakeTurn{content: "counted"},
+	)
+	appeared := make(chan error, 1)
+	go func() {
+		defer close(decided)
+		<-deciding
+		appeared <- appear()
+	}()
+	res, err := ds.CallAgent(ctx, shelfPackage+"/clerk", "how many bolts a day")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("result: %+v", res)
+	}
+	tools := toolRowsByTurn(t, ds, res.Thread)
+	if len(tools) != 3 {
+		t.Fatalf("%d tool rows, want 3: %v", len(tools), tools)
+	}
+	if err := <-appeared; err != nil {
+		t.Fatalf("write the zone's file: %v", err)
+	}
+	content := func(i int) map[string]any {
+		t.Helper()
+		s, _ := tools[i]["content"].(string)
+		return toolResult(t, s)
+	}
+	for _, i := range []int{0, 1} {
+		got := content(i)
+		if msg, _ := got["error"].(string); tools[i]["ok"] != false || !strings.Contains(msg, `aggregate.bucket.timezone: "`+zone+`" is not a time zone the server knows`) {
+			t.Fatalf("tool row %d: the read in a zone the server cannot load was not refused: %v", i, got)
+		}
+		if got["invalid"] != nil || got["note"] != nil || got["repeated"] != nil {
+			t.Fatalf("tool row %d: a zone the server cannot load was answered as a refusal of the arguments: %v", i, got)
+		}
+	}
+	if after := content(2); tools[2]["ok"] != true || after["error"] != nil {
+		t.Fatalf("once the zone's file appeared, the call did not read: %v", after)
 	}
 }
 

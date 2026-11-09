@@ -322,8 +322,8 @@ entry could name only a function.
   no write lifts it. Every other refusal is a plain `{error}` and is never
   kept, since a write or a later call may lift it (a kind, metric or record
   that is not there, a kind outside the allowlist, the row budget, a
-  timeout, an index still being re-derived), so the identical call reads
-  again.
+  timeout, an index still being re-derived, a time zone the server cannot
+  load until its zone file appears), so the identical call reads again.
 
   An agent holding `query` gets a **kinds list** in its system prompt,
   after its own `prompt`: the `primary` and `supporting` kinds its

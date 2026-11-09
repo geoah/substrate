@@ -1,13 +1,20 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -69,6 +76,86 @@ func TestParseQueryCallRefusesOnlyWhatTheArgumentsSay(t *testing.T) {
 			t.Errorf("%s: refused by its arguments alone: %s", name, msg)
 		} else if call.agg == nil && call.id == "" && len(call.q.Filter.Kinds) != 1 {
 			t.Errorf("%s: the kind shorthand was not folded into the filter: %+v", name, call.q.Filter)
+		}
+	}
+}
+
+// testZone names a zone of a fixed offset east of UTC that no zone database
+// holds, and returns what makes it appear: its file written into this
+// binary's ZONEINFO (TestMain), as a host's zoneinfo gains one. The file goes
+// when the test ends.
+func testZone(t *testing.T, name string, offset time.Duration) (appear func() error) {
+	t.Helper()
+	dir := os.Getenv("ZONEINFO")
+	if dir == "" {
+		t.Fatal("ZONEINFO is unset; TestMain points it at a directory of the binary's own")
+	}
+	if _, err := time.LoadLocation(name); err == nil {
+		t.Fatalf("%s loads before its file is written", name)
+	}
+	path := filepath.Join(dir, filepath.FromSlash(name))
+	t.Cleanup(func() { _ = os.Remove(path) })
+	// A version 1 TZif file: no transitions and one local time type.
+	var b bytes.Buffer
+	b.WriteString("TZif")
+	b.Write(make([]byte, 16))
+	// isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt.
+	for _, n := range []uint32{0, 0, 0, 0, 1, 4} {
+		_ = binary.Write(&b, binary.BigEndian, n)
+	}
+	_ = binary.Write(&b, binary.BigEndian, int32(offset/time.Second))
+	b.Write([]byte{0, 0})
+	b.WriteString("TST\x00")
+	return func() error {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+			return err
+		}
+		if _, err := time.LoadLocation(name); err != nil {
+			return fmt.Errorf("%s does not load from ZONEINFO, so the time package read the variable before TestMain set it: "+
+				"a zone loaded at package init, which must load on first use instead: %w", name, err)
+		}
+		return nil
+	}
+}
+
+// A time zone the server cannot load is the read's to refuse, never the
+// arguments' check's: the plan loads it from the zone database, which can
+// gain it within the run, so its refusal is no invalid one and the loop
+// keeps none of it. The refusal still names the zone, and once the zone's
+// file appears the same body plans.
+func TestParseQueryCallLeavesAZoneItCannotLoadToTheRead(t *testing.T) {
+	const zone = "Substrate_Test/Parse"
+	appear := testZone(t, zone, 3*time.Hour)
+	scope := queryScope{kinds: []string{"substrate.reamde.dev/observations/*"}, rows: 100, requireKinds: true}
+	window := map[string]any{"gte": "2026-01-01T00:00:00Z", "lt": "2026-01-03T00:00:00Z"}
+	var calls []queryCall
+	for at, bucket := range map[string]map[string]any{
+		"aggregate.bucket.timezone":         {"calendar": "day", "timezone": zone},
+		"aggregate.bucket.fallbackTimezone": {"calendar": "day", "fallbackTimezone": zone},
+	} {
+		call, msg := parseQueryCall(scope, map[string]any{"aggregate": map[string]any{
+			"metric": map[string]any{"ref": "substrate.reamde.dev/observations/metric/bolts"},
+			"range":  window, "bucket": bucket, "reducers": []any{"count"},
+		}})
+		if msg != "" || call.agg == nil {
+			t.Fatalf("%s: refused by its arguments alone: %q", at, msg)
+		}
+		err := checkAggregate(*call.agg)
+		if !errors.As(err, new(unloadedZone)) || !errors.Is(err, substrate.ErrValidation) ||
+			!strings.Contains(err.Error(), at+`: "`+zone+`" is not a time zone the server knows`) {
+			t.Fatalf("%s: the read's refusal of a zone it cannot load: %v", at, err)
+		}
+		calls = append(calls, call)
+	}
+	if err := appear(); err != nil {
+		t.Fatalf("write the zone's file: %v", err)
+	}
+	for _, call := range calls {
+		if err := checkAggregate(*call.agg); err != nil {
+			t.Fatalf("once the zone's file appeared: %v", err)
 		}
 	}
 }
