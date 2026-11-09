@@ -19,8 +19,10 @@
 # steps, written for the person or agent who follows them literally.
 #
 # A release pull request (`chore(release): vX.Y.Z`, opened by release-please)
-# may touch CHANGELOG.md and the release-please manifest and nothing else: it
-# is the one pull request whose diff nobody reviews line by line.
+# may touch CHANGELOG.md, the release-please manifest and the `extra-files`
+# release-please-config.json names, read from the base so a release pull
+# request cannot widen its own list, and nothing else: it is the one pull
+# request whose diff nobody reviews line by line.
 #
 # PR_TITLE is the title, from the workflow's env and never interpolated into
 # the script. Unset on a laptop, where only the commits are checked.
@@ -90,9 +92,13 @@ if [ "$is_break" -eq 1 ] && [ "$has_steps" -eq 0 ]; then
 fi
 
 if [ -n "${PR_TITLE:-}" ] && [[ "$PR_TITLE" =~ $release_title ]]; then
-  extra="$(git diff --name-only "${base_commit}" HEAD | grep -vxF -e CHANGELOG.md -e .release-please-manifest.json || true)"
+  allowed="$(printf '%s\n' CHANGELOG.md .release-please-manifest.json)"
+  if config="$(git show "${base_commit}:release-please-config.json" 2>/dev/null)"; then
+    allowed+=$'\n'"$(jq -r '.packages[]."extra-files"[]? | if type == "string" then . else .path end' <<<"$config")"
+  fi
+  extra="$(git diff --name-only "${base_commit}" HEAD | grep -vxF -f <(printf '%s\n' "$allowed") || true)"
   [ -z "$extra" ] ||
-    flag "a release pull request may change CHANGELOG.md and .release-please-manifest.json only; this one also changes: $(tr '\n' ' ' <<<"$extra")"
+    flag "a release pull request may change CHANGELOG.md, .release-please-manifest.json and the extra-files release-please-config.json names only; this one also changes: $(tr '\n' ' ' <<<"$extra")"
 fi
 
 exit "$fail"
