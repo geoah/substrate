@@ -15,9 +15,9 @@ later. The app applies no vocabulary itself.
 Everything else the app reads is the shared catalogues' (`health`, `labs`,
 `observations`, `clinical`) and the owner's contact (`core/contact`, named
 by the setting `substrate.reamde.dev/core/ownerContact`). What an import
-creates (lab reports and results, the clinical record, and the providers'
-sources and organizations, which it never rewrites or undoes) points at the
-import through `origin` where the kind declares one. How each importer reads
+creates (lab reports and results and the clinical record) points at the
+import through `origin`; a provider's source, written once, and an
+organization, merged by every importer that meets it, are never undone. How each importer reads
 its provider is in [../docs/importers/](../docs/importers/).
 
 ## Changing it
