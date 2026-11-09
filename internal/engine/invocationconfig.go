@@ -168,7 +168,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 						// and decides. A credential in backoff answers with
 						// its last refusal, so a refused grant costs no
 						// provider call per delivery.
-						entry["tokenError"] = err.Error()
+						entry["tokenError"] = tokenReason(err)
 					} else {
 						entry["token"] = token
 						secrets = append(secrets, token)

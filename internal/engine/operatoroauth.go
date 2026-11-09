@@ -273,7 +273,7 @@ func (ds *dataset) refuseOtherClient(ctx context.Context, g credentialGrant, now
 // client from the file, needs a reconnect, and the account is stamped so;
 // any other failure is the bundle's configuration.
 func (ds *dataset) noClientTokenError(ctx context.Context, ref string, account eref, clientErr error) string {
-	const missing = "the bundle configuration is missing its client credentials"
+	const missing = "The provider's sign-in details (its client ID and secret) are not set. Add them in the provider's settings, then reconnect the account.\nthe bundle configuration is missing its client credentials"
 	if !isNoClient(clientErr) {
 		return missing
 	}

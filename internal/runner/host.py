@@ -1474,6 +1474,19 @@ def deregister(req):
     return {"ok": True}
 
 
+def _said(e):
+    """The words a failed invocation leads with, which the sync status and the
+    parked views show as its first line. A body that raises a sentence with
+    its technical detail on the lines after it means that sentence, so the
+    message is kept whole and in order; the traceback's last line would be
+    the detail. A plain `RuntimeError`/`Exception` is how a body says a
+    sentence, so its class name is noise; any other class names the bug."""
+    msg = str(e).strip()
+    if msg and type(e) in (Exception, RuntimeError):
+        return msg
+    return "".join(traceback.format_exception_only(type(e), e)).strip()
+
+
 def invoke(req, req_id):
     fn = FUNCS.get(req["id"])
     if fn is None:
@@ -1486,9 +1499,9 @@ def invoke(req, req_id):
         out = fn(inp, host) or {}
     except HostError as e:
         return {"ok": False, "error": str(e)}
-    except Exception:
+    except Exception as e:
         tb = traceback.format_exc(limit=3)
-        return {"ok": False, "error": tb.strip().splitlines()[-1] + "\n" + tb}
+        return {"ok": False, "error": _said(e) + "\n" + tb}
     finally:
         CAPTURE.logs = None
         logs.close()
