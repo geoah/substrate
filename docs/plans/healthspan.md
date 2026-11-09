@@ -359,12 +359,11 @@ both win a transition.
   as above (waiting out a live one, which the page shows), moves the import
   to `undoing` in that patch, and waits until the previous lease's `until`
   has passed by 30 seconds, a heuristic for a write still in flight to land
-  first. Then it deletes what the import created: for a CSV or a hand
-  entry, every report and result the plan names (its ids are the import's
-  own, a 404 is already gone); for a provider import, every record the plan
-  names whose `origin` is this import, each read first and deleted held to
-  the version read, so a record another import created and this one only
-  updated is never deleted. Then everything that still points at the
+  first. Then it deletes what the import created: every record the plan
+  names whose `origin` is this import (for a CSV or a hand entry, every
+  report and result, its ids the import's own), each read first and
+  deleted held to the version read, so a record another import created and
+  this one only updated is never deleted. Then everything that still points at the
   import through `origin` (listed for every kind the importer may create,
   so it is found when the plan cannot be read), each read again and held
   to its version in the same way, and the import moves to `undone`.
@@ -1028,6 +1027,8 @@ One pull request, built in this order:
   revision, the test server merging a restore as the server does; Undo's
   second pass reads each record again and holds its delete to the version
   read; and that pass lists every kind the importer may create, so a plan
-  that cannot be read still leaves no clinical record behind. Left: an Undo
+  that cannot be read still leaves no clinical record behind. Its re-check
+  took the same path for a CSV's and a hand entry's own ids, whose report
+  another writer's result may name. Left: an Undo
   running while another import of the same provider writes can still race
   it on a report, which only a server-side rule would close.

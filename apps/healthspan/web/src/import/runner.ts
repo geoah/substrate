@@ -1289,12 +1289,9 @@ class Run {
       .reverse()
     let done = 0
     for (const r of planned) {
-      const id = recordId(r, this.id)
-      if (r.namespace === OWN) {
-        // Its id is the import's own: a 404 is already gone.
-        await this.guard()
-        await this.request((s) => this.store.delete(r.kind, id, undefined, s))
-      } else await this.deleteIfCreated(r.kind, id)
+      // An id of the import's own too: another writer's result may name
+      // its report.
+      await this.deleteIfCreated(r.kind, recordId(r, this.id))
       this.progress({ phase: "deleting", done: ++done, total: planned.length })
     }
     // Every kind the importer may create, whether or not the plan could be

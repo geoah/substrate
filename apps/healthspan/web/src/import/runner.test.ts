@@ -443,6 +443,28 @@ describe("the runner on a file's plan", () => {
     )
   })
 
+  it("keeps a report another writer's result names, so the collector leaves that result, and Undo again changes nothing", async () => {
+    seedPlanned()
+    await a().resume(ID)
+    // Written by hand in another app: it names the import's report and no
+    // import.
+    server.fake.seed(KIND.labresult, "by-hand", {
+      metric: `${KIND.metric}/labs/ferritin`,
+      report: `${KIND.labreport}/${reportId("1")}`,
+    })
+    expect(await a().undo(ID)).toEqual({ state: "undone", remaining: 0 })
+    const kept = server.live(KIND.labreport, reportId("1"))
+    expect(kept).toBeDefined()
+    expect(kept?.properties.origin).toBeUndefined()
+    expect(server.live(KIND.labreport, reportId("2"))).toBeUndefined()
+    expect(live(KIND.labresult).map((r) => r.id)).toEqual(["by-hand"])
+    server.sweep()
+    expect(server.live(KIND.labresult, "by-hand")).toBeDefined()
+    expect(await a().undo(ID)).toEqual({ state: "undone", remaining: 0 })
+    expect(server.live(KIND.labreport, reportId("1"))).toBeDefined()
+    expect(server.live(KIND.labresult, "by-hand")).toBeDefined()
+  })
+
   it("reads the plan from its blob on a browser that did not stage it", async () => {
     seedPlanned()
     const out = await b().resume(ID)
