@@ -65,7 +65,7 @@ func TestTokenReasonKeepsTheClientChangeStamp(t *testing.T) {
 func TestFailureTextDropsOnlyTheTraceback(t *testing.T) {
 	for in, want := range map[string]string{
 		"Notion no longer accepts the token.\nHTTP 401 unauthorized\nTraceback (most recent call last):\n  File \"x\"": "Notion no longer accepts the token.\nHTTP 401 unauthorized",
-		"RuntimeError: mail: HTTP 403\nTraceback (most recent call last):": "RuntimeError: mail: HTTP 403",
+		"RuntimeError: mail: HTTP 403\nTraceback (most recent call last):":                                             "RuntimeError: mail: HTTP 403",
 		"run: context deadline exceeded": "run: context deadline exceeded",
 	} {
 		if got := failureText(in); got != want {
