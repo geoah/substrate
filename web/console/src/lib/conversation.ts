@@ -9,6 +9,8 @@ import type { ListParams } from "@/lib/api/records"
 import { readReference, type Cond, type SubstrateRecord } from "@/lib/api/types"
 import { RECORD_PATCH_REQUEST_KIND } from "@/lib/agent-grants"
 import { proposedDiff } from "@/lib/changerequests"
+import { lowerFirst } from "@/lib/kind-names"
+import type { PropSpec } from "@/lib/record-schema"
 import type { ComposeSpec, ConversationBlock } from "@/lib/record-view"
 
 /** How many of the newest requests the composer lists. */
@@ -154,7 +156,9 @@ export interface MessageView {
   replyTo?: string
   /** When it was last edited, or `true` where the property is a flag. */
   edited?: string | true
-  /** The value that marks it withdrawn, as stored. */
+  /** The value that marks it withdrawn, as stored. A withdrawn message
+   * keeps what it said: the mark says it is withdrawn, never the absence
+   * of its text. */
   deleted?: string
   status?: string
   reactions: ReactionGroup[]
@@ -199,12 +203,27 @@ export function messageViewOf(
       : edited === true || (typeof edited === "number" && edited > 0)
         ? { edited: true as const }
         : {}),
-    ...(deleted !== undefined && deleted !== null && deleted !== false
+    ...(deleted !== undefined &&
+    deleted !== null &&
+    deleted !== false &&
+    deleted !== ""
       ? { deleted: typeof deleted === "string" ? deleted : "yes" }
       : {}),
     status: block.status ? text(p[block.status]) : undefined,
     reactions: block.reactions ? reactionGroups(p[block.reactions]) : [],
   }
+}
+
+/** How a withdrawn message is marked, in the declaration's own words: the
+ * property's label with its value's ("Deleted" and "For everyone" read
+ * "Deleted for everyone"), the value's alone where it already starts with
+ * the property's, and the property's alone where its values carry none. */
+export function deletedMark(spec: PropSpec | undefined, value: string): string {
+  const property = spec?.label ?? "Deleted"
+  const label = spec?.values?.find((v) => v.value === value)?.label
+  if (!label) return property
+  if (label.toLowerCase().startsWith(property.toLowerCase())) return label
+  return `${property} ${lowerFirst(label)}`
 }
 
 function instant(v: string | undefined): number {
@@ -342,6 +361,17 @@ export function askAgain(
       ? { reaction: text(p[compose.reaction]) }
       : {}),
   }
+}
+
+/** Who asked for a request: the actor that wrote its verb, which nothing
+ * but its writer sets. An agent's request a rule held and the owner then
+ * added was written by the owner. Read off `propertyMeta`, which only a
+ * single record's read carries. */
+export function requesterOf(
+  compose: ComposeSpec,
+  request: SubstrateRecord
+): string | undefined {
+  return request.propertyMeta?.[compose.verb]?.manager
 }
 
 /** The request's state, as stored. */

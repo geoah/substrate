@@ -177,15 +177,20 @@ const ADA = (isContact: boolean) =>
 
 const message = (id: string, props: Record<string, unknown>) =>
   record(MESSAGE, id, { chat: { ref: pathOf(CHAT) }, ...props })
+/** Withdrawn by its sender for everyone, and kept: the archive holds what
+ * it said. */
 const M0 = message("m0", {
   sentAt: "2026-11-08T18:00:00Z",
   sender: { ref: `${USER}/ada` },
+  text: "running late, sorry",
   deleted: "everyone",
+  reactions: [{ key: "😢", user: { ref: `${USER}/me` } }],
 })
 const M1 = message("m1", {
   sentAt: "2026-11-09T10:00:00Z",
   sender: { ref: `${USER}/ada` },
   text: "dinner?",
+  replyTo: { ref: `${MESSAGE}/m0` },
 })
 const M2 = message("m2", {
   sentAt: "2026-11-09T10:02:00Z",
@@ -253,6 +258,12 @@ const THREAD = record("substrate.reamde.dev/llm/thread", "t1", {
     ref: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss",
   },
 })
+
+/** Who wrote each request: the owner through this console, and the
+ * reaction an agent added unasked. */
+const REQUESTERS: Record<string, string> = {
+  r1: "agent:substrate.reamde.dev:assistant:moss",
+}
 
 const declaration = (k: KindInfo) => ({ ref: `${DECLARATION}/${k.identity}` })
 
@@ -339,6 +350,16 @@ function mount({
         )
       }
       if (url.pathname === `/api/v1/${USER}/ada`) return ok(ADA(contact))
+      if (url.pathname.startsWith(`/api/v1/${ACTION_KIND.identity}/`)) {
+        const id = url.pathname.split("/").pop()!
+        const found = requests.find((r) => r.id === id)
+        return ok({
+          ...found,
+          propertyMeta: {
+            action: { manager: REQUESTERS[id] ?? "console" },
+          },
+        })
+      }
       if (url.pathname === "/api/v1/substrate.reamde.dev/llm/thread/t1")
         return ok(THREAD)
       if (url.pathname.startsWith(`/api/v1/${CR_KIND}/`)) {
@@ -412,10 +433,19 @@ it("draws the messages oldest first, each with its sender, reply, attachments, r
     "message-m2",
     "message-m3",
   ])
-  // A withdrawn message says so, with the value's own label.
-  expect(within(rows[0]).getByText(/Deleted/).textContent).toContain(
-    "For everyone"
-  )
+  // A withdrawn message keeps what it said, under a mark in the
+  // declaration's own words, and its reactions are no longer buttons.
+  const withdrawn = rows[0].querySelector("[data-deleted=true]")!
+  expect(
+    withdrawn.querySelector("[data-slot=conversation-deleted]")?.textContent
+  ).toBe("Deleted for everyone")
+  expect(withdrawn.textContent).toContain("running late, sorry")
+  expect(within(rows[0]).getByText("😢 1").tagName).toBe("SPAN")
+  expect(rows[1].querySelector("[data-deleted]")).toBeNull()
+  // An answer to it quotes it marked.
+  expect(
+    rows[1].querySelector("[data-slot=conversation-reply]")?.textContent
+  ).toContain("Deleted for everyone: running late, sorry")
   // The answered message's text, the edit and the attachment's name.
   expect(
     rows[2].querySelector("[data-slot=conversation-reply]")?.textContent
@@ -446,6 +476,32 @@ it("draws the messages oldest first, each with its sender, reply, attachments, r
     "conversation-read-mark",
     "conversation-message",
   ])
+})
+
+it("offers no reply or reaction on a withdrawn message, and still marks read up to it", async () => {
+  const { writes } = mount()
+  const list = await messages()
+  const withdrawn = list
+    .getAllByRole("listitem")
+    .find((li) => li.id === "message-m0")!
+  fireEvent.click(
+    within(withdrawn).getByRole("button", {
+      name: "Act on “running late, sorry”",
+    })
+  )
+  const read = await screen.findByRole("menuitem", {
+    name: "Mark read up to here",
+  })
+  expect(
+    screen.getAllByRole("menuitem").map((item) => item.textContent?.trim())
+  ).toEqual(["Mark read up to here"])
+  fireEvent.click(read)
+  await waitFor(() => expect(writes).toHaveLength(1))
+  expect(writes[0].body.properties).toEqual({
+    action: "markread",
+    chat: pathOf(CHAT),
+    target: pathOf(M0),
+  })
 })
 
 it("sends as the owner in the view's names, asking first for someone outside the contacts", async () => {
@@ -533,6 +589,16 @@ it("lists the requests written here with their state, cancels a queued one and s
   expect(rows[1].textContent).toContain("Why it failed: The network refused it")
   expect(rows[3].textContent).toContain("👍")
   expect(rows[3].textContent).toContain("see you at 7")
+  // Each says who asked: the owner, or an agent no rule held.
+  expect(group.textContent).toContain("What you and your agents asked for here")
+  await waitFor(() =>
+    expect(
+      rows[3].querySelector("[data-slot=conversation-requester]")?.textContent
+    ).toContain("Moss")
+  )
+  expect(
+    rows[0].querySelector("[data-slot=conversation-requester]")?.textContent
+  ).toContain("You")
   // Only the queued one can be cancelled; only the failed and the
   // uncertain one sent again.
   expect(
@@ -581,6 +647,10 @@ it("still asks before sending a request again where the messages did not load", 
 it("shows what a gate holds for this chat alone, with the agent that asked, to apply or dismiss", async () => {
   mount()
   const group = await screen.findByRole("group", { name: "Waiting for you" })
+  // What a rule holds, never a claim that every agent request waits.
+  expect(group.textContent).toContain(
+    "Asked by an agent and held by a rule until you decide."
+  )
   const rows = within(group).getAllByRole("listitem")
   expect(rows).toHaveLength(1)
   expect(rows[0].textContent).toContain("asks to")

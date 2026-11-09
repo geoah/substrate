@@ -2,10 +2,12 @@
  * this one, read as a conversation in time order (a chat's messages), with
  * each message's sender, time, text, attachments, reactions and its edited,
  * deleted and send marks, and, where the view names a composer, a box to
- * reply, react and mark read. Each of those writes a request record of the
- * composer's kind as the owner; the requests are listed with their state,
- * a queued one can be cancelled and a failed one sent again as a new
- * request, and the ones a gate holds for the owner (an agent's) can be
+ * reply, react and mark read. A withdrawn message keeps what it said, under
+ * a mark that says it was withdrawn, and takes no reply or reaction. Each
+ * of those writes a request record of the composer's kind as the owner; the
+ * requests are listed with who asked and their state, a queued one can be
+ * cancelled and a failed one sent again as a new request, and the ones a
+ * rule holds for the owner (an agent's, whichever the rule holds) can be
  * applied or dismissed here. Every kind and property is the view's
  * (lib/conversation.ts); the console knows none of them. */
 
@@ -21,6 +23,7 @@ import {
   CornerUpLeftIcon,
   EllipsisIcon,
   SmilePlusIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react"
 
@@ -82,15 +85,18 @@ import {
   canCancel,
   canRetry,
   conversationOrder,
+  deletedMark,
   heldFor,
   heldParams,
   messagesParams,
+  messageViewOf,
   newestMessage,
   offerOf,
   pathOf,
   referencePath,
   requestProperties,
   requestState,
+  requesterOf,
   requestsParams,
   sendNeedsConfirm,
   type Ask,
@@ -604,29 +610,36 @@ function MessageRow({
         )}
       >
         <div
+          data-deleted={m.deleted ? "true" : undefined}
           className={cn(
             "min-w-0 rounded-lg px-3 py-2 text-[13.5px]",
-            m.mine ? "bg-primary-soft" : "border bg-panel"
+            m.deleted
+              ? "border border-dashed bg-transparent text-muted-foreground"
+              : m.mine
+                ? "bg-primary-soft"
+                : "border bg-panel"
           )}
         >
-          {m.replyTo && (
-            <ReplyQuote path={m.replyTo} block={block} included={included} />
-          )}
-          {m.deleted ? (
+          {m.deleted && (
             <p
               data-slot="conversation-deleted"
-              className="flex flex-wrap items-center gap-1.5 text-muted-foreground italic"
+              className="mb-1 flex items-center gap-1 text-[12px] font-medium"
             >
-              Deleted
-              {specs.deleted?.values?.length ? (
-                <span className="text-[12px] not-italic">
-                  · {valueLabel(specs.deleted, m.deleted)}
-                </span>
-              ) : null}
+              <Trash2Icon aria-hidden className="size-3.5 shrink-0" />
+              {deletedMark(specs.deleted, m.deleted)}
             </p>
-          ) : m.text ? (
+          )}
+          {m.replyTo && (
+            <ReplyQuote
+              path={m.replyTo}
+              block={block}
+              included={included}
+              deletedSpec={specs.deleted}
+            />
+          )}
+          {m.text && (
             <p className="break-words whitespace-pre-wrap">{m.text}</p>
-          ) : null}
+          )}
           {attachments.length > 0 && (
             <ul aria-label="Attachments" className="mt-1.5 flex flex-col gap-1">
               {attachments.map((a) => (
@@ -637,11 +650,11 @@ function MessageRow({
             </ul>
           )}
         </div>
-        {compose && !m.deleted && (
+        {compose && (
           <MessageMenu
             message={m}
             compose={compose}
-            onReply={onReply}
+            onReply={m.deleted ? undefined : onReply}
             onReact={react}
             onMarkRead={() => asker.ask({ offer: "markRead", target: m.path })}
           />
@@ -707,17 +720,16 @@ function ReplyQuote({
   path,
   block,
   included,
+  deletedSpec,
 }: {
   path: string
   block: ConversationBlock
   included: ReadonlyMap<string, SubstrateRecord>
+  deletedSpec?: PropSpec
 }) {
   const answered = included.get(path)
-  const said = excerpt(
-    block.text && answered
-      ? (answered.properties?.[block.text] as string | undefined)
-      : undefined
-  )
+  const view = answered ? messageViewOf(block, answered) : undefined
+  const said = excerpt(view?.text)
   const parts = splitRecordPath(path)
   return (
     <div
@@ -725,6 +737,11 @@ function ReplyQuote({
       className="mb-1.5 border-l-2 pl-2 text-[12.5px] text-muted-foreground"
     >
       <span className="sr-only">In reply to: </span>
+      {view?.deleted && (
+        <span className="italic">
+          {deletedMark(deletedSpec, view.deleted)}:{" "}
+        </span>
+      )}
       {said ? (
         <a
           href={`#message-${parts?.id ?? ""}`}
@@ -777,7 +794,9 @@ function MessageMenu({
   onReact: (key: string) => void
   onMarkRead: () => void
 }) {
-  const react = Boolean(compose.react)
+  // Nobody answers or reacts to what its sender withdrew; reading up to it
+  // is still the reader's own.
+  const react = Boolean(compose.react) && !message.deleted
   const read = Boolean(compose.markRead)
   if (!onReply && !react && !read) return null
   const what = excerpt(message.text) ?? "this message"
@@ -1058,7 +1077,8 @@ function Requests({
     >
       <h4 className="text-[13px] font-medium">{title}</h4>
       <p className="text-[12.5px] text-muted-foreground">
-        What was asked from here, newest first, and how each went.
+        What you and your agents asked for here, newest first, with who asked
+        and how each went.
       </p>
       {page.error ? (
         <Failed error={page.error} onRetry={() => void page.refetch()} />
@@ -1099,6 +1119,7 @@ function Requests({
                       <span>Cancelling</span>
                     )}
                     <span title={r.createdAt}>Asked {ago(r.createdAt)}</span>
+                    <Requester compose={compose} request={r} />
                   </span>
                   {error && (
                     <span className="text-[12.5px] break-words">
@@ -1141,6 +1162,29 @@ function Requests({
   )
 }
 
+/** Who asked for one request: the owner, or the agent whose request no rule
+ * held. The list read carries no provenance, so each row reads its own. */
+function Requester({
+  compose,
+  request,
+}: {
+  compose: ComposeSpec
+  request: SubstrateRecord
+}) {
+  const { authority, pkg, name } = splitKind(request.kind)
+  const single = useQuery(recordQueryOptions(authority, pkg, name, request.id))
+  const actor = single.data ? requesterOf(compose, single.data) : undefined
+  if (!actor) return null
+  return (
+    <span
+      data-slot="conversation-requester"
+      className="inline-flex items-center gap-1"
+    >
+      by <ActorRef actor={actor} />
+    </span>
+  )
+}
+
 // ── held for the owner ──────────────────────────────────────────────────────
 
 function Held({
@@ -1171,8 +1215,8 @@ function Held({
     >
       <h4 className="text-[13px] font-medium">Waiting for you</h4>
       <p className="text-[12.5px] text-muted-foreground">
-        Asked by an agent and held until you decide. Nothing is sent until you
-        apply it.
+        Asked by an agent and held by a rule until you decide. None of these
+        happens until you add it.
       </p>
       <ul className="flex flex-col divide-y rounded-[10px] border border-warning/40">
         {held.map(({ request, properties }) => (

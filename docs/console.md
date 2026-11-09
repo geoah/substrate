@@ -795,9 +795,13 @@ section of its own. Then come its
   point at it through `attachmentVia` (its `attachmentFile`, else its title),
   its `reactions` (a list of objects each holding a `key` and the `user`
   who reacted, one chip per key with how many and who), **Edited** where
-  `edited` holds a value, **Deleted** with the value's label where
-  `deleted` holds one, and, on your own (`mine`), its `status` by its
-  label. Every one of those is a property name the view gives, so the
+  `edited` holds a value, and, on your own (`mine`), its `status` by its
+  label. A message whose `deleted` holds a value was withdrawn, and keeps
+  what it said: its text and attachments stay, in a dashed, muted bubble
+  under a mark in the declaration's words (the property's label with the
+  value's, "Deleted for everyone"), a quote of it carries the same mark,
+  and its menu offers no reply or reaction, only **Mark read up to here**.
+  Every one of those is a property name the view gives, so the
   console knows nothing about a chat but what the view says. With
   `compose`, a box under the messages writes, as you, a record of the
   request kind it names, pointing here through its own `via`, with its
@@ -810,15 +814,20 @@ section of its own. Then come its
   one other person in it) and that person's `peerKnown` flag, a send to
   someone it does not mark as one of your contacts asks first and sets the
   request's `confirm` property. Under the box, the newest ten requests
-  written here, each with what it asked, its `state`, why it failed
-  (`error`) and when it was asked: **Cancel** stamps its `cancel` time
+  written here, by you or by an agent no rule held, each with what it
+  asked, its `state`, why it failed (`error`), when it was asked and who
+  asked (the writer of its `verb`, read off each request's own
+  `propertyMeta`; an agent's request you added from **Waiting for you** is
+  yours): **Cancel** stamps its `cancel` time
   where its state is one of `cancelIn`, and **Send again** writes a new
   request with the same values where its state is one of `retryIn`, asking
   first and saying, for one whose outcome is not known, that it may
   already have been sent. Above them, **Waiting for you** lists the change
-  requests a gate holds that would create a request here (an agent's), each
-  with who asked (the agent and its full actor reference), what it would
-  send and why, and **Add it**, **Review** and **Dismiss**.
+  requests a gate holds that would create a request here: an agent's, of
+  whichever kinds of request the rule holds (a request a rule lets an
+  agent make unasked lands in the list below instead), each with who asked
+  (the agent and its full actor reference), what it would do and why, and
+  **Add it**, **Review** and **Dismiss**.
 - **request**: one button, worded by its `label`, that stamps the record's
   own datetime `property` with now once you confirm, the confirmation
   saying `confirm`, as a patch carrying the version the page read; a

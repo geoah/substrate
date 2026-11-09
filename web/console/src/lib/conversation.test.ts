@@ -14,6 +14,7 @@ import {
   canCancel,
   canRetry,
   conversationOrder,
+  deletedMark,
   heldFor,
   heldParams,
   messagesParams,
@@ -22,9 +23,11 @@ import {
   offerOf,
   reactionGroups,
   requestProperties,
+  requesterOf,
   requestsParams,
   sendNeedsConfirm,
 } from "@/lib/conversation"
+import type { PropSpec } from "@/lib/record-schema"
 import type { ComposeSpec, ConversationBlock } from "@/lib/record-view"
 
 const CHAT = "ada.example.com/chat/chat"
@@ -201,13 +204,21 @@ describe("the messages", () => {
     expect(m).not.toHaveProperty("deleted")
   })
 
-  it("marks a withdrawn message by any value, and an edit count as edited", () => {
+  it("marks a withdrawn message by any value and keeps what it said, and an edit count as edited", () => {
     const m = messageViewOf(
       { ...BLOCK, edited: "editCount" },
-      record(MESSAGE, "m2", { deleted: "everyone", editCount: 2 })
+      record(MESSAGE, "m2", {
+        deleted: "everyone",
+        editCount: 2,
+        text: "see you at 7",
+      })
     )
     expect(m.deleted).toBe("everyone")
+    expect(m.text).toBe("see you at 7")
     expect(m.edited).toBe(true)
+    expect(
+      messageViewOf(BLOCK, record(MESSAGE, "m4", { deleted: "" }))
+    ).not.toHaveProperty("deleted")
     expect(
       messageViewOf(
         { ...BLOCK, edited: "editCount" },
@@ -215,6 +226,32 @@ describe("the messages", () => {
       )
     ).not.toHaveProperty("edited")
     expect(reactionGroups("not a list")).toEqual([])
+  })
+
+  it("marks a withdrawn message in the declaration's own words", () => {
+    const spec = (more: Partial<PropSpec>): PropSpec =>
+      ({ name: "deleted", label: "Deleted", kind: "enum", ...more }) as PropSpec
+    const values = [
+      { value: "everyone", label: "For everyone" },
+      { value: "owner", label: "For you" },
+    ]
+    expect(deletedMark(spec({ values }), "everyone")).toBe(
+      "Deleted for everyone"
+    )
+    expect(deletedMark(spec({ values }), "owner")).toBe("Deleted for you")
+    // A label that already says it stands alone.
+    expect(
+      deletedMark(
+        spec({ values: [{ value: "all", label: "Deleted for all" }] }),
+        "all"
+      )
+    ).toBe("Deleted for all")
+    // A flag or a time, or a value its declaration does not list.
+    expect(
+      deletedMark(spec({ kind: "datetime" }), "2026-11-09T10:00:00Z")
+    ).toBe("Deleted")
+    expect(deletedMark(spec({ values }), "elsewhere")).toBe("Deleted")
+    expect(deletedMark(undefined, "yes")).toBe("Deleted")
   })
 
   it("orders pages read newest first oldest first, each message once", () => {
@@ -329,6 +366,26 @@ describe("what the composer writes", () => {
     })
     expect(offerOf(COMPOSE, { action: "markread" })).toBe("markRead")
     expect(offerOf(COMPOSE, { action: "edit" })).toBeUndefined()
+  })
+
+  it("names who asked for a request by the writer of its verb", () => {
+    const request = record(
+      ACTION,
+      "a1",
+      { action: "react" },
+      {
+        propertyMeta: {
+          action: { manager: "agent:substrate.reamde.dev:assistant:moss" },
+          state: { manager: "function:ada.example.com:chat:events" },
+        },
+      }
+    )
+    expect(requesterOf(COMPOSE, request)).toBe(
+      "agent:substrate.reamde.dev:assistant:moss"
+    )
+    expect(
+      requesterOf(COMPOSE, record(ACTION, "a2", { action: "send" }))
+    ).toBeUndefined()
   })
 
   it("asks first where the chat's other person is not among the contacts", () => {
