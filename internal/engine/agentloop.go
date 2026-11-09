@@ -907,9 +907,10 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 // context its stop and the service shutdown cancel; its writes outlive that
 // cancellation, so it settles `stopped` instead of leaving the thread
 // `running` under its lease.
-func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
+func (l *agentLoop) run(ctx context.Context) (res *substrate.AgentResult, err error) {
 	ds, ag := l.ds, l.ag
 	defer ds.svc.invocationEnded()
+	defer func() { l.countRun(res, err) }()
 	if l.spend != nil {
 		defer ds.spend.finish(l.spend)
 	}
@@ -1169,7 +1170,7 @@ loop:
 	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
 		status, reason = threadStopped, why
 	}
-	res := &substrate.AgentResult{
+	res = &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
 		Effects: l.in.tally.effectsTotal(), Mentions: l.mentions,
@@ -1403,6 +1404,7 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	l.cacheRead += usage.CacheReadTokens
 	l.cacheWrite += usage.CacheWriteTokens
 	l.cost += turnCost
+	l.countUsage(usage, turnCost)
 	t := l.in.tally
 	t.mu.Lock()
 	t.prompt += usage.PromptTokens

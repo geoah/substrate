@@ -1490,7 +1490,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// reopened publishes its live pool and not the one it let go.
 	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
 	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
-	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool() }
+	unregisterInventory := metrics.RegisterInventory(repo.ID, ds.inventory)
+	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory() }
 	return ds, nil
 }
 

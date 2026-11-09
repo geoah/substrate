@@ -154,7 +154,7 @@ func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in 
 // surfaced: a non-nil *runner.Continuation means the body finished a PAGE and
 // wants re-invoking (the drain loop in functions.go). The delivery paths use
 // this; everyone else takes runCallable and ignores paging.
-func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, *runner.Continuation, error) {
+func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) (_ []effect, _ any, _ *runner.Continuation, err error) {
 	// THE BACKSTOP. A host function has no body to invoke: the engine implements
 	// it, under the grants of whoever called it. Every door that can reach one
 	// branches before here (CallFunction, the agent loop, trigger admission), so
@@ -209,6 +209,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// yields to it (segmentdigest.go); deferred, so a panic a recoverer
 	// upstream contains does not leave the count raised and every digest
 	// paused for the life of the process.
+	started := time.Now()
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
@@ -219,6 +220,12 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		ran = !errors.Is(err, runner.ErrNotStarted)
 		return res, err
 	}()
+	// Counted with the outcome the caller gets, so a body whose effects are
+	// refused below counts as the failure it is.
+	if ran {
+		elapsed := time.Since(started)
+		defer func() { ds.countInvocation(fn, in.Mode, elapsed, err) }()
+	}
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
 		backend.failed(err)
