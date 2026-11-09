@@ -4,7 +4,10 @@ import { kindStatus, moveTo, movesFrom, renames, standing } from "./status"
 describe("kindStatus", () => {
   it("reads a machine's standings and moves, as the Swift kit does", () => {
     const status = kindStatus({
-      traits: ["substrate.reamde.dev/core/temporal(point: dueAt)", "substrate.reamde.dev/core/lifecycle"],
+      traits: [
+        "substrate.reamde.dev/core/temporal(point: dueAt)",
+        "substrate.reamde.dev/core/lifecycle",
+      ],
       properties: {
         status: {
           type: "state",
@@ -36,7 +39,13 @@ describe("kindStatus", () => {
   it("reads a renamed enum, which takes any of its values", () => {
     const status = kindStatus({
       traits: ["substrate.reamde.dev/core/lifecycle(status: state)"],
-      properties: { state: { type: "enum", values: ["todo", { value: "closed", label: "Closed" }], done: ["closed"] } },
+      properties: {
+        state: {
+          type: "enum",
+          values: ["todo", { value: "closed", label: "Closed" }],
+          done: ["closed"],
+        },
+      },
     })!
     expect(status.property).toBe("state")
     expect(status.values).toEqual(["todo", "closed"])
@@ -44,7 +53,11 @@ describe("kindStatus", () => {
   })
 
   it("answers nothing for a kind without the trait", () => {
-    expect(kindStatus({ properties: { status: { type: "enum", values: ["a"] } } })).toBeUndefined()
-    expect(renames("substrate.reamde.dev/core/temporal(point: dueAt)")).toEqual({ point: "dueAt" })
+    expect(
+      kindStatus({ properties: { status: { type: "enum", values: ["a"] } } })
+    ).toBeUndefined()
+    expect(renames("substrate.reamde.dev/core/temporal(point: dueAt)")).toEqual(
+      { point: "dueAt" }
+    )
   })
 })

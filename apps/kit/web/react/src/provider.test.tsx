@@ -9,8 +9,12 @@ import { FakeLocks, FakeSubstrate, until } from "@substrate/testing"
 import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { StrictMode, useContext, useEffect } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { SubstrateContext, useConnection } from "./context"
-import { useRecords } from "./hooks"
+import {
+  SubstrateContext,
+  useConnection,
+  type SubstrateContextValue,
+} from "./context"
+import { useKindRecords, useRecords } from "./hooks"
 import { SubstrateProvider } from "./provider"
 import { ToastHost } from "./toast"
 
@@ -169,6 +173,45 @@ afterEach(() => {
 })
 
 describe("SubstrateProvider", () => {
+  it("takes another set of kinds on the open link: the outbox, its waiting writes and the records still read stay", async () => {
+    const note = "substrate.reamde.dev/template/note"
+    fake.seed(kind, "a1", { name: "Milk" })
+    fake.seed(note, "n1", { name: "Call" })
+    localStorage.setItem(sessionKey, JSON.stringify(session("tok-a")))
+    let value: SubstrateContextValue | null = null
+    let read: ReadonlyMap<string, ReadonlyMap<string, unknown>> = new Map()
+    function Kinds() {
+      const context = useContext(SubstrateContext)
+      const records = useKindRecords([kind, note])
+      useEffect(() => {
+        value = context
+        read = records
+      })
+      return null
+    }
+    const tree = (kinds: string[]) => (
+      <SubstrateProvider manifest={manifest} kinds={kinds}>
+        <Probe />
+        {seen.open && <Kinds />}
+      </SubstrateProvider>
+    )
+    const view = render(tree([kind]))
+    await waitFor(() => expect(names).toEqual(["Milk"]), { timeout: 3000 })
+    view.rerender(tree([kind]))
+    await waitFor(() => expect(value).not.toBeNull())
+    const opened = value!
+    expect(read.get(note)?.size ?? 0).toBe(0)
+
+    view.rerender(tree([kind, note]))
+    await waitFor(() => expect(read.get(note)?.size).toBe(1), {
+      timeout: 3000,
+    })
+    expect(value!.outbox).toBe(opened.outbox)
+    expect(value!.linked).toBe(opened.linked)
+    expect(names).toEqual(["Milk"])
+    expect(opened.linked.kinds).toEqual([kind, note])
+  })
+
   it("closes the repository when another tab signs out, and opens the one another tab signs in", async () => {
     localStorage.setItem(sessionKey, JSON.stringify(session("tok-a")))
     render(

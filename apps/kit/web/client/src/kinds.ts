@@ -1,5 +1,20 @@
 import { recordKey, referencePath, type SubstrateRecord } from "./records"
 
+/** A kind as the server describes it (internal/substrate's `KindInfo`):
+ * its reference, its declared label where it has one, and its declaration's
+ * data map. */
+export interface KindInfo {
+  identity: string
+  name?: string
+  authority?: string
+  package?: string
+  version?: number
+  source?: string
+  description?: string
+  label?: { singular: string; plural: string }
+  definition: Record<string, unknown>
+}
+
 /** A kind reference split on its two slashes: the authority is the one
  * segment carrying a dot. */
 export interface KindName {

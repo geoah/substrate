@@ -628,4 +628,64 @@ describe("the linked records", () => {
     await until(() => linked.statusSnapshot().cached, 2000, "the kept records")
     expect(linked.statusSnapshot().limitReached).toBe(2)
   })
+
+  it("takes another set of kinds with the outbox's waiting writes kept and the records still read shown", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    fake.seed(note, "n1", { name: "Call" })
+    const outbox = new Outbox({
+      client,
+      storage,
+      connectivity: steadyConnectivity,
+    })
+    stops.push(() => outbox.close())
+    const cache = new RecordCache(storage, 0)
+    const linked = link({ outbox, cache })
+    await until(() => linked.getSnapshot().status === "live")
+    const milk = linked.recordSnapshot(kind, "a1")
+    fake.offline = true
+    await outbox.write(RecordWrites.change(note, "n1", { name: "Call Ada" }))
+    fake.offline = false
+
+    linked.setKinds([kind, note])
+    expect(linked.kinds).toEqual([kind, note])
+    // Still shown while the new set is read, the same object.
+    expect(linked.recordSnapshot(kind, "a1")).toBe(milk)
+    expect(linked.hasListed(note)).toBe(false)
+    await until(() => linked.hasListed(note), 2000, "the added kind")
+    expect(linked.recordSnapshot(kind, "a1")).toBe(milk)
+    await until(
+      () => linked.recordSnapshot(note, "n1")?.properties.name === "Call Ada",
+      2000,
+      "the waiting write, laid over"
+    )
+    const watch = fake.requests
+      .filter((r) => r.path === "/api/v1/changes")
+      .at(-1)
+    expect(watch?.query.getAll("kinds")).toEqual([kind, note])
+
+    linked.setKinds([note])
+    expect(linked.recordSnapshot(kind, "a1")).toBeUndefined()
+    expect(linked.hasListed(kind)).toBe(false)
+    await until(() => linked.getSnapshot().status === "live")
+    fake.change(kind, "a1", { name: "Oat milk" })
+    fake.change(note, "n1", { name: "Call Ada now" })
+    await until(
+      () =>
+        linked.recordSnapshot(note, "n1")?.properties.name === "Call Ada now"
+    )
+    expect(linked.recordSnapshot(kind, "a1")).toBeUndefined()
+    await cache.save()
+    expect((await storage.readRecords()).records.map((r) => r.kind)).toEqual([
+      note,
+    ])
+  })
+
+  it("does nothing for the same kinds", async () => {
+    const linked = link()
+    await until(() => linked.getSnapshot().status === "live")
+    const asked = fake.requests.length
+    linked.setKinds([kind])
+    await tick()
+    expect(fake.requests.length).toBe(asked)
+  })
 })

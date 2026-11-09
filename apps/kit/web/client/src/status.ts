@@ -50,7 +50,9 @@ const strings = (v: Json): string[] =>
     ? v.flatMap((x) =>
         typeof x === "string"
           ? [x]
-          : x && typeof x === "object" && typeof (x as { value?: unknown }).value === "string"
+          : x &&
+              typeof x === "object" &&
+              typeof (x as { value?: unknown }).value === "string"
             ? [(x as { value: string }).value]
             : []
       )
@@ -60,20 +62,30 @@ const strings = (v: Json): string[] =>
  * data map (a `core/kind` record's properties, or the `definition` a trait's
  * implementors route serves); undefined where it binds no such trait or its
  * status is no enum or machine. */
-export function kindStatus(definition: Record<string, Json>): KindStatus | undefined {
-  const entries = Array.isArray(definition.traits) ? definition.traits.filter((e): e is string => typeof e === "string") : []
+export function kindStatus(
+  definition: Record<string, Json>
+): KindStatus | undefined {
+  const entries = Array.isArray(definition.traits)
+    ? definition.traits.filter((e): e is string => typeof e === "string")
+    : []
   const entry = entries.find((e) => boundTrait(e) === lifecycleTrait)
   if (entry === undefined) return undefined
   const property = renames(entry).status ?? "status"
-  const props = definition.properties as Record<string, Record<string, Json>> | undefined
+  const props = definition.properties as
+    Record<string, Record<string, Json>> | undefined
   const spec = props?.[property]
   if (!spec || typeof spec !== "object") return undefined
-  const lists = { done: strings(spec.done), dropped: strings(spec.dropped), proposed: strings(spec.proposed) }
+  const lists = {
+    done: strings(spec.done),
+    dropped: strings(spec.dropped),
+    proposed: strings(spec.proposed),
+  }
   if (spec.type === "state") {
     const moves: Record<string, string[]> = {}
     for (const t of Array.isArray(spec.transitions) ? spec.transitions : []) {
       const { from, to } = (t ?? {}) as { from?: unknown; to?: unknown }
-      if (typeof from === "string" && typeof to === "string") (moves[from] ??= []).push(to)
+      if (typeof from === "string" && typeof to === "string")
+        (moves[from] ??= []).push(to)
     }
     return {
       property,
@@ -83,11 +95,15 @@ export function kindStatus(definition: Record<string, Json>): KindStatus | undef
       initial: typeof spec.initial === "string" ? spec.initial : undefined,
     }
   }
-  if (spec.type === "enum") return { property, values: strings(spec.values), ...lists }
+  if (spec.type === "enum")
+    return { property, values: strings(spec.values), ...lists }
   return undefined
 }
 
-export function standing(status: KindStatus, value: string | undefined | null): Standing {
+export function standing(
+  status: KindStatus,
+  value: string | undefined | null
+): Standing {
   if (value == null) return "open"
   if (status.done.includes(value)) return "done"
   if (status.dropped.includes(value)) return "dropped"
@@ -97,7 +113,10 @@ export function standing(status: KindStatus, value: string | undefined | null): 
 
 /** The values a record standing at `value` may move to: a machine's declared
  * moves, or every other value of an enum. */
-export function movesFrom(status: KindStatus, value: string | undefined | null): string[] {
+export function movesFrom(
+  status: KindStatus,
+  value: string | undefined | null
+): string[] {
   if (!status.moves) return status.values.filter((v) => v !== value)
   if (value == null) return []
   return status.moves[value] ?? []
@@ -106,6 +125,10 @@ export function movesFrom(status: KindStatus, value: string | undefined | null):
 /** The first move from `value` to a value standing `to`: accepting a
  * suggestion is its first move to an open value, dismissing it the first to
  * a dropped one, completing a task the first to a done one. */
-export function moveTo(status: KindStatus, value: string | undefined | null, to: Standing): string | undefined {
+export function moveTo(
+  status: KindStatus,
+  value: string | undefined | null,
+  to: Standing
+): string | undefined {
   return movesFrom(status, value).find((v) => standing(status, v) === to)
 }

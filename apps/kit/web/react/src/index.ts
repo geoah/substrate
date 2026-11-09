@@ -7,7 +7,14 @@ export {
   refProp,
   stringProp,
 } from "@substrate/client"
-export type { Kind, SubstrateRecord } from "@substrate/client"
+export { derivedUUID, kindStatus, movesFrom, standing } from "@substrate/client"
+export type {
+  Kind,
+  KindInfo,
+  KindStatus,
+  Standing,
+  SubstrateRecord,
+} from "@substrate/client"
 export {
   NotSignedIn,
   NotSignedOut,
@@ -24,6 +31,7 @@ export { useConnection, useSubstrate } from "./context"
 export type { Connection, SubstrateContextValue } from "./context"
 export {
   useAppStatus,
+  useKindRecords,
   useLinkedStatus,
   useListed,
   useOutbox,

@@ -4,7 +4,6 @@ import {
   List,
   Task,
   addDays,
-  banded,
   civilDay,
   dueWords,
   lateWords,
@@ -17,7 +16,10 @@ import { deleteListQuestion } from "./present"
 const now = new Date(2026, 10, 8, 12, 0)
 const today = civilDay(now)
 
-function task(id: string, properties: Record<string, unknown>): TaskItem {
+function task(
+  id: string,
+  properties: Record<string, unknown>
+): Omit<TaskItem, "item"> {
   const r: SubstrateRecord = {
     id,
     kind: Task.kind,
@@ -29,29 +31,12 @@ function task(id: string, properties: Record<string, unknown>): TaskItem {
   return readTask(r)
 }
 
-describe("Needs you's bands", () => {
-  it("bands and ranks as TaskBand does", () => {
-    const tasks = [
-      task("later", { dueDay: addDays(today, 20) }),
-      task("undated-urgent", { priority: "urgent" }),
-      task("late-1", { dueDay: addDays(today, -1) }),
-      task("late-4", { dueDay: addDays(today, -4) }),
-      task("tomorrow", { dueDay: addDays(today, 1) }),
-      task("undated", {}),
-      task("undated-high", { priority: "high" }),
-      task("done", { dueDay: addDays(today, -2), status: "done" }),
-    ]
-    expect(
-      banded(tasks, undefined, now).map((r) => `${r.band}:${r.task.id}`)
-    ).toEqual([
-      "needsYou:late-4",
-      "needsYou:late-1",
-      "needsYou:undated-urgent",
-      "needsYou:undated-high",
-      "upcoming:tomorrow",
-      "later:later",
-      "later:undated",
-    ])
+describe("the app's own task", () => {
+  it("is named by its record path, and its list by the list's", () => {
+    const t = task("a", { list: { ref: List.ref("l") } })
+    expect(t.id).toBe(`${Task.kind}/a`)
+    expect(t.recordID).toBe("a")
+    expect(t.list).toBe(List.ref("l"))
   })
 })
 
@@ -85,8 +70,8 @@ describe("words", () => {
   })
 
   it("asks before a list goes, naming its tasks", () => {
-    const list = { id: "l", name: "Home", version: 1 }
-    const one = [task("a", { list: List.ref("l") })]
+    const list = { id: List.ref("l"), name: "Home", version: 1 }
+    const one = [task("a", { list: List.ref("l") }) as TaskItem]
     expect(deleteListQuestion(list, [])).toMatchObject({
       title: "Delete “Home”?",
       message: "The list has no tasks.",

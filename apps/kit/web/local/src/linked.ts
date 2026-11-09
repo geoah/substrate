@@ -173,7 +173,7 @@ function sameRecords(
  * none. `subscribe` hears every change, once per turn. */
 export class LinkedRecords {
   readonly client: SubstrateClient
-  readonly kinds: string[]
+  private kindList: string[]
   private readonly outbox?: Outbox
   private readonly cache?: RecordCache
   private readonly connectivity: Connectivity
@@ -249,7 +249,7 @@ export class LinkedRecords {
 
   constructor(opts: LinkedRecordsOptions) {
     this.client = opts.client
-    this.kinds = [...opts.kinds]
+    this.kindList = [...new Set(opts.kinds)]
     this.outbox = opts.outbox
     this.cache = opts.cache
     this.connectivity = opts.connectivity ?? browserConnectivity
@@ -259,6 +259,52 @@ export class LinkedRecords {
     this.readRetryDelays = opts.readRetryDelays ?? defaultReadRetryDelays
     this.takeQueue()
     this.statusShot = this.makeStatus()
+  }
+
+  /** The kinds read and followed now. */
+  get kinds(): readonly string[] {
+    return this.kindList
+  }
+
+  /** Reads and follows another set of kinds, the outbox and its waiting
+   * writes untouched: a kind still in the set keeps its records shown,
+   * each the same object, while every kind is read again under a new
+   * watch; a kind left out goes from what is shown and kept; a kind added
+   * is not listed until that read lands. */
+  setKinds(kinds: readonly string[]): void {
+    const next = [...new Set(kinds)]
+    if (
+      next.length === this.kindList.length &&
+      next.every((k) => this.kindList.includes(k))
+    )
+      return
+    const dropped = this.kindList.filter((k) => !next.includes(k))
+    this.kindList = next
+    const gone = (key: string) => dropped.includes(splitKey(key)[0])
+    for (const kind of dropped) {
+      this.server.replace(kind, new Map())
+      this.coverage.delete(kind)
+      this.queue.delete(kind)
+      this.queueSignature.delete(kind)
+      this.folds.delete(kind)
+    }
+    for (const key of [...this.wanted]) if (gone(key)) this.wanted.delete(key)
+    for (const key of [...this.inflight.keys()])
+      if (gone(key)) this.inflight.delete(key)
+    for (const key of [...this.readErrors.keys()])
+      if (gone(key)) this.clearReadError(key)
+    for (const key of [...this.absentKeys])
+      if (gone(key)) this.absentKeys.delete(key)
+    this.cache?.drop(dropped)
+    // The waiting writes of a kind added are laid over its records too.
+    this.queueEntries = undefined
+    this.takeQueue()
+    // A watch over the new set from the old cursor would miss what changed
+    // in an added kind before it: every kind is read again after it opens.
+    this.cursor = undefined
+    this.cache?.relist()
+    if (this.abort) this.connect()
+    this.emit()
   }
 
   subscribe = (fn: () => void): (() => void) => {
@@ -664,7 +710,7 @@ export class LinkedRecords {
     }
     follow(
       this.client,
-      this.kinds,
+      this.kindList,
       this.cursor ?? null,
       onEvent,
       watch.signal,
@@ -685,7 +731,7 @@ export class LinkedRecords {
     this.listRetry = undefined
     try {
       const page = await this.client.listAll(
-        { kinds: this.kinds, first: Math.min(500, this.limit) },
+        { kinds: this.kindList, first: Math.min(500, this.limit) },
         this.limit,
         signal
       )
@@ -839,6 +885,7 @@ export class LinkedRecords {
     try {
       const record = await this.client.record(kind, id, signal)
       if (this.inflight.get(key) !== ticket || signal?.aborted) return
+      if (!this.kinds.includes(kind)) return
       this.inflight.delete(key)
       this.clearReadError(key)
       const before = Math.max(this.listedAt, this.landedAt.get(key) ?? 0)

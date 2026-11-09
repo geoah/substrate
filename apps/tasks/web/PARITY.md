@@ -13,7 +13,13 @@ when it was first deployed (the MVP) and where it stands now:
 - **n/a**: a browser has no such thing, and the row says why.
 
 The web's words are written once, in `src/present.ts`, `src/model.ts` and
-`src/state.ts`, from the same state the presenter reads.
+`src/state.ts`, from the same state the presenter reads; the words of the
+screens over every collection are the contract's
+([apps/tasks/contract/README.md](../contract/README.md), Words), in
+`src/words.ts`, which `src/words.test.ts` holds to it. What the app reads
+from any task-like kind and writes back is the contract's model,
+`src/sources.ts`, which `src/contract.test.ts` runs over every case in
+`apps/tasks/contract/`.
 
 ## The App menu
 
@@ -23,22 +29,64 @@ The web's words are written once, in `src/present.ts`, `src/model.ts` and
 | Needs you's badge              | the count of open tasks that need you, hidden at 0                                                                                                              | partial: Today's due count          | present                                                      |
 | Phone                          | a tab per section, and the round + at the bar's trailing end that opens New Task, seeded with the list shown (and today on Needs you)                           | partial                             | present                                                      |
 | Tablet, desktop                | the sections and the lists in one sidebar, Settings last; the list beside it, the open task in a third column ("No task open", "Choose a task to see it here.") | partial: three columns from 1180 px | present: three columns from 1000 px, as an iPad in landscape |
-| Nothing chosen in Lists (wide) | "Choose a list"                                                                                                                                                 | missing                             | present                                                      |
+| Nothing chosen in Lists (wide) | "Choose a list"                                                                                                                                                 | missing                             | present: the whole of Lists in the list column               |
+| Wide sidebar                   | Needs you, Suggestions, No date, Pinned, each group kind's busiest groups with "All N…", Settings                                                               | missing                             | present: from 768 px, the five busiest of each kind          |
+
+## Collections (`docs/plans/tasks-sources.md`)
+
+| What                              | Native                                                                                                                          | MVP     | Now                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| The contract's cases              | TasksKit's tests run every `apps/tasks/contract/*.json`                                                                         | missing | present: `src/contract.test.ts`                                                                             |
+| Candidates                        | every kind binding `core/lifecycle` the token reads, from the implementors route                                                | missing | present: at sign-in, after an approval, and when the page comes back to the front                           |
+| A collection's readings           | title, due, due day, priority, order and group read from the declaration, the owner's choice from its collection record         | missing | present                                                                                                     |
+| A task's identity                 | its record path, `<kind>/<id>`                                                                                                  | missing | present: in the address bar too (`#/list/<group path>/<task path>`)                                         |
+| The data link                     | closed and opened again over the collections that are on and their group kinds; the outbox and the selection kept               | missing | present: the open link takes the new kinds (`LinkedRecords.setKinds`), the settings kinds always among them |
+| Settings records                  | `tasks/collection` and `tasks/preference` on derived ids, created with `ifVersion: 0`, patched by the device that lost the race | missing | present                                                                                                     |
+| Scopes                            | `write:substrate.reamde.dev/tasks/*` and `read:implements(substrate.reamde.dev/core/lifecycle)`                                 | missing | present                                                                                                     |
+| Turning a collection on           | asks for `write:<kind>`; grouping by a kind the grant does not read asks for `read:<kind>`                                      | missing | present: through the kit's sign-in again, with every collection's scope in the request                      |
+| Refused approval                  | "Not approved. Chores stays view only."                                                                                         | missing | present                                                                                                     |
+| Discovery on a `core/kind` change | the watch reports one                                                                                                           | missing | n/a: an app's token cannot follow `core/kind`; the page asks again when it comes back to the front          |
+
+## Suggestions
+
+| What                   | Native                                                                                                                                        | MVP     | Now                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------- |
+| Needs you's queue row  | "6 suggestions", "Tasks waiting for you to accept or dismiss"                                                                                 | missing | present, on a group too                                                     |
+| The queue              | Suggestions, newest first, Dismiss and Accept on each row; a phone's row swipes either way                                                    | missing | present: the buttons, and a finger's swipe                                  |
+| Select                 | picks several for one decision: "2 selected", Accept, Dismiss, Cancel                                                                         | missing | present: Select (S), then Dismiss (D) or Accept (A) for all picked          |
+| A suggestion's row     | its title, `{collection} · {written}`, its due and its group, Dismiss and Accept                                                              | missing | present                                                                     |
+| A suggestion's page    | "Suggestion in Chores · written 2 hours ago", the title, the fields set before accepting, the description, Details, Dismiss and Accept docked | missing | present: A and D from the keyboard; what is set goes in the accept's patch  |
+| Several destinations   | "Accept as" or "Reopen as", each value by its label, Cancel                                                                                   | missing | present; "Dismiss as", "Done as" and "Won't do as" where those have several |
+| The undo window        | Accept, Dismiss, Done and Won't Do wait 3 s; "Accepted", "Dismissed", "Done", "Won't do", Undo                                                | missing | present: Undo in the row and on the page, and Z                             |
+| A view-only collection | its suggestions show, with no decision                                                                                                        | missing | present                                                                     |
+
+## Groups and pins
+
+| What                   | Native                                                                                                                                                                             | MVP     | Now                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------- |
+| Lists                  | search; Pinned; a section per group kind with its label and full reference                                                                                                         | missing | present                                                         |
+| A section's rows       | the groups with open tasks in the kind's `position` order where it has one, else by title; "No list" or "No project" ("Tasks with no list"), "Missing", "N more with nothing open" | missing | present: "N more" opens in place; the own lists drag into order |
+| A group                | "Area · Active", "3 open", the queue row, To Do, Done, Pin or Unpin                                                                                                                | missing | present: P pins and unpins                                      |
+| Needs you's chips      | All, then the pinned groups                                                                                                                                                        | partial | present: the pins with their open counts                        |
+| A pin gone             | hidden; dropped at the next write of the preference, unless its collection is off                                                                                                  | missing | present                                                         |
+| No date                | its own screen: open tasks with no due date, the most urgent first                                                                                                                 | missing | present                                                         |
+| Settings → Collections | each candidate with label, reference, counts and a switch; View only; Save new tasks to                                                                                            | missing | present                                                         |
+| A collection           | Group by, how its states read, the fields the app shows                                                                                                                            | missing | present                                                         |
 
 ## The lists column (`SidebarPresentation`)
 
-| What                                    | Native                                                                                                        | MVP     | Now                                        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------ |
-| Title                                   | Lists                                                                                                         | present | present                                    |
-| Fixed rows                              | Needs you (wide only) and No List, each with its open count                                                   | partial | present                                    |
-| Heading                                 | My Lists                                                                                                      | present | present                                    |
-| A list with no name                     | "Untitled list"                                                                                               | missing | present                                    |
-| No lists                                | "No lists yet. Add one to sort your tasks."                                                                   | partial | present                                    |
-| New List                                | the bar's folder-plus button; "New List", "A task list's name, such as Groceries or Home.", Name, Cancel, Add | partial | present                                    |
-| Rename                                  | "Rename List", Cancel, Rename                                                                                 | partial | present                                    |
-| A list's menu (right click, long press) | Rename…, Delete…                                                                                              | missing | present                                    |
-| Drag to reorder lists                   | `reorderList`: `Position.moves` over the arranged lists                                                       | missing | present: a mouse, a finger's hold, Alt ↑ ↓ |
-| Count read aloud                        | "1 open task", "3 open tasks"                                                                                 | missing | present                                    |
+| What                                    | Native                                                                                                        | MVP     | Now                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------- |
+| Title                                   | Lists                                                                                                         | present | present                                                                                 |
+| Fixed rows                              | Needs you (wide only) and No List, each with its open count                                                   | partial | present                                                                                 |
+| Heading                                 | My Lists                                                                                                      | present | present                                                                                 |
+| A list with no name                     | "Untitled list"                                                                                               | missing | present                                                                                 |
+| No lists                                | "No lists yet. Add one to sort your tasks."                                                                   | partial | present                                                                                 |
+| New List                                | the bar's folder-plus button; "New List", "A task list's name, such as Groceries or Home.", Name, Cancel, Add | partial | present                                                                                 |
+| Rename                                  | "Rename List", Cancel, Rename                                                                                 | partial | present                                                                                 |
+| A list's menu (right click, long press) | Rename…, Delete…                                                                                              | missing | present                                                                                 |
+| Drag to reorder lists                   | `reorderList`: `Position.moves` over the arranged lists                                                       | missing | present: in the app's own Task lists section, the order the contract reads (`position`) |
+| Count read aloud                        | "1 open task", "3 open tasks"                                                                                 | missing | present                                                                                 |
 
 ## A list (`ListPresentation`)
 
@@ -169,6 +217,6 @@ The web's words are written once, in `src/present.ts`, `src/model.ts` and
 | Moving a task              | `list` and `position` in one patch, after the new list's last                                                | present             | present                                                                                                                                                                    |
 | Reopen                     | clears `completedAt` in the same write                                                                       | present             | present                                                                                                                                                                    |
 | Words at midnight          | presented again when "Tomorrow" becomes "Today", and as a timed task falls due                               | partial: every 30 s | present: at each minute                                                                                                                                                    |
-| A task in a deleted list   | hidden until the server's pass                                                                               | present             | present                                                                                                                                                                    |
+| A task in a deleted list   | under "Missing" until the server's pass, as the contract reads a group gone                                  | present             | present                                                                                                                                                                    |
 | Haptics                    | a light tap as a task is marked                                                                              | missing             | present where the browser vibrates (Android); a hold buzzes too                                                                                                            |
 | Notes                      | plain text                                                                                                   |                     | the web draws them as markdown (`src/markdown.tsx`): paragraphs, headings, lists and their check marks, quotes, code, emphasis and links, as React elements and never HTML |

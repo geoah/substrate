@@ -1,9 +1,17 @@
-import { Alert, TabItem, cx, useListed, useMediaQuery } from "@substrate/react"
+import {
+  Alert,
+  TabItem,
+  cx,
+  useMediaQuery,
+  useSubstrate,
+} from "@substrate/react"
 import { CircleCheck, ListChecks, Plus, Settings } from "lucide-react"
-import { useEffect, useState } from "react"
-import { useTaskActions } from "./actions"
+import { useEffect, useMemo, useState } from "react"
+import { extraScopes, lastPendingStore, undo, useTaskActions } from "./actions"
+import { Chooser } from "./Chooser"
+import { CollectionScreen, CollectionsScreen } from "./CollectionsScreen"
 import { ListsMenu } from "./ListsMenu"
-import { Task, type Selection } from "./model"
+import { selectionKey, type Selection } from "./model"
 import { deleteListQuestion, needsYouBadge } from "./present"
 import { useReminders } from "./reminders"
 import { SettingsScreen } from "./SettingsScreen"
@@ -12,9 +20,12 @@ import {
   editorStore,
   go,
   namingStore,
+  openSettings,
   openTask,
   selectSection,
   show,
+  useDiscovery,
+  useLinkKinds,
   useNow,
   useRoute,
   useSettings,
@@ -22,6 +33,7 @@ import {
   useTasks,
   type Section,
 } from "./state"
+import { SuggestionDetail } from "./SuggestionDetail"
 import { TaskDetail } from "./TaskDetail"
 import { TaskEditor } from "./TaskEditor"
 import { TaskListScreen } from "./TaskListScreen"
@@ -35,14 +47,22 @@ export function App() {
   const route = useRoute()
   const model = useTasks()
   const actions = useTaskActions()
+  const { askScopes } = useSubstrate()
+  useDiscovery()
+  useLinkKinds(model)
+  const asked = extraScopes(model.sources.collections).join(" ")
+  useEffect(() => {
+    askScopes(asked ? asked.split(" ") : [])
+  }, [askScopes, asked])
   const [settings] = useSettings()
   const now = useNow()
   const wide = useMediaQuery("(min-width: 768px)")
   const threeColumns = useMediaQuery("(min-width: 1000px)")
   const keyboard = useMediaQuery("(hover: hover) and (pointer: fine)") && wide
-  const reminders = useReminders(model.tasks, model.lists, settings, now)
+  const groupList = useMemo(() => [...model.groups.values()], [model.groups])
+  const reminders = useReminders(model.tasks, groupList, settings, now)
   // Whether the tasks were read: a task missing before then may come yet.
-  const listed = useListed(Task)
+  const listed = model.listed
 
   const { section, selection } = route
   const task = route.task ? model.task(route.task) : undefined
@@ -60,7 +80,9 @@ export function App() {
       go(
         {
           section: "lists",
-          selection: t.list ? { kind: "list", id: t.list } : { kind: "inbox" },
+          selection: t.list
+            ? { kind: "list", id: t.list }
+            : { kind: "inbox", collection: t.kind },
           task: t.id,
         },
         true
@@ -74,20 +96,51 @@ export function App() {
   const onSection = (s: Section) => selectSection(s, wide)
   const onSelect = (s: Selection) => show(s)
 
-  const detail = task && (
-    <TaskDetail
-      key={task.id}
-      task={task}
-      lists={model.lists}
-      now={now}
-      onBack={threeColumns ? undefined : () => openTask(undefined)}
-      beside={threeColumns}
-    />
-  )
+  const queue = model.sources.suggestions
+  const place =
+    task?.status === "proposed" && selection?.kind === "suggestions"
+      ? `${queue.indexOf(task.id) + 1} of ${queue.length}`
+      : undefined
+  const detail =
+    task &&
+    (task.status === "proposed" ? (
+      <SuggestionDetail
+        key={task.id}
+        task={task}
+        model={model}
+        now={now}
+        place={place}
+        overTabBar={!wide}
+        onBack={threeColumns ? undefined : () => openTask(undefined)}
+        beside={threeColumns}
+      />
+    ) : (
+      <TaskDetail
+        key={task.id}
+        task={task}
+        model={model}
+        now={now}
+        onBack={threeColumns ? undefined : () => openTask(undefined)}
+        beside={threeColumns}
+      />
+    ))
+
+  const settingsScreen =
+    route.settings?.page === "collections" ? (
+      <CollectionsScreen onBack={() => openSettings()} />
+    ) : route.settings?.page === "collection" ? (
+      <CollectionScreen
+        key={route.settings.kind}
+        kind={route.settings.kind}
+        onBack={() => openSettings({ page: "collections" })}
+      />
+    ) : (
+      <SettingsScreen {...reminders} keyboard={keyboard} />
+    )
 
   const listScreen = selection && section !== "settings" && (
     <TaskListScreen
-      key={selection.kind === "list" ? selection.id : selection.kind}
+      key={selectionKey(selection)}
       selection={selection}
       selectedTask={threeColumns ? route.task : undefined}
       now={now}
@@ -98,14 +151,14 @@ export function App() {
   )
 
   const overlays = <Overlays wide={wide} />
-  const badge = needsYouBadge(model, now)
+  const badge = needsYouBadge(model)
 
   if (!wide) {
     return (
       <div className="min-h-full bg-grouped">
         {detail ??
           (section === "settings" ? (
-            <SettingsScreen {...reminders} keyboard={keyboard} />
+            settingsScreen
           ) : section === "lists" && !selection ? (
             <ListsMenu
               section={section}
@@ -147,14 +200,20 @@ export function App() {
       </aside>
       {section === "settings" ? (
         <main className="h-full flex-1 overflow-y-auto bg-grouped">
-          <SettingsScreen {...reminders} keyboard={keyboard} />
+          {settingsScreen}
         </main>
       ) : !selection ? (
         <main className="h-full flex-1 overflow-y-auto bg-grouped">
-          <Unavailable
-            icon={<ListChecks className="size-10" strokeWidth={1.5} />}
-            title="Choose a list"
-          />
+          <div className="mx-auto w-full max-w-2xl">
+            <ListsMenu
+              section={section}
+              now={now}
+              sidebar={false}
+              column
+              onSection={onSection}
+              onSelect={onSelect}
+            />
+          </div>
         </main>
       ) : threeColumns ? (
         <>
@@ -257,6 +316,7 @@ function Overlays({ wide }: { wide: boolean }) {
 
   return (
     <>
+      <Chooser />
       {editor && (
         <TaskEditor
           key={editor.key}
@@ -379,6 +439,11 @@ function useShortcuts(opts: {
         return
       }
       if (typing || covered || mod || e.altKey) return
+      if (e.key === "z" || e.key === "Z") {
+        const last = lastPendingStore.get()
+        if (last && undo(last)) e.preventDefault()
+        return
+      }
       if (e.key === "n" || e.key === "N") {
         e.preventDefault()
         opts.actions.newTask()

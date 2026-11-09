@@ -32,6 +32,10 @@ export interface SubstrateContextValue {
   /** The server's sign-in and approval page again, for this repository: to
    * review more access, renew it, or sign in after it ended. */
   signInAgain: () => Promise<void>
+  /** The scopes the app asks for now beyond its manifest's, such as write
+   * access to a kind the owner chose: every later `signInAgain` asks for
+   * them with the manifest's. */
+  askScopes: (scopes: readonly string[]) => void
 }
 
 /** Where the app stands with its server, signed in or not: what the connect
