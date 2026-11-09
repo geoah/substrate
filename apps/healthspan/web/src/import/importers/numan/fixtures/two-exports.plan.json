@@ -1523,26 +1523,53 @@
         "at": "2026-02-03T09:15:00.000+00:00",
         "utcOffset": 0,
         "channel": null,
-        "value": null,
+        "value": {
+          "value": "2.10",
+          "unit": "u[IU]/mL"
+        },
         "code": null,
         "codedValue": null,
         "text": null,
-        "sourceValue": "2.10",
-        "sourceUnit": "µIU/mL",
-        "normalizationFailure": "unknown-unit",
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
         "referenceRanges": [
           {
+            "low": {
+              "value": "0.27",
+              "unit": "u[IU]/mL"
+            },
+            "high": {
+              "value": "4.2",
+              "unit": "u[IU]/mL"
+            },
             "text": "normal"
           },
           {
+            "high": {
+              "value": "0.27",
+              "unit": "u[IU]/mL"
+            },
             "text": "low",
             "tone": "poor"
           },
           {
+            "low": {
+              "value": "4.2",
+              "unit": "u[IU]/mL"
+            },
             "text": "high",
             "tone": "poor"
           },
           {
+            "low": {
+              "value": "0.27",
+              "unit": "u[IU]/mL"
+            },
+            "high": {
+              "value": "4.2",
+              "unit": "u[IU]/mL"
+            },
             "text": "normal: Numan clinical range"
           }
         ],
@@ -2043,10 +2070,6 @@
     {
       "what": "Zinc, NMN001-00000001",
       "why": "the repository has no metric for Zinc"
-    },
-    {
-      "what": "Thyroid Stimulating Hormone, NMN001-00000002",
-      "why": "its value is kept as received: its unit, µIU/mL, is not one the repository knows"
     },
     {
       "what": "Folate, NMN001-00000002",

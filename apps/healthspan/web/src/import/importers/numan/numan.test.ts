@@ -480,12 +480,26 @@ describe("Numan's clinical range", () => {
     })
   })
 
-  it("keeps its words beside a value kept as received", async () => {
+  it("reads a TSH in μIU/mL as a value, the same number in mIU/L", async () => {
     const plan = await read(one(HURDLE_TEST))
+    expect(result(plan, `${HURDLE_TEST.shortId}/TSH`)).toMatchObject({
+      value: { value: "2.10" },
+    })
+  })
+
+  it("keeps its words beside a value kept as received", async () => {
+    // A unit no table and no unit record knows.
+    const odd: TestSpec = {
+      ...HURDLE_TEST,
+      raw: JSON.parse(
+        JSON.stringify(HURDLE_TEST.raw).replaceAll("µIU/mL", "μIU/dram")
+      ) as unknown,
+    }
+    const plan = await read(one(odd))
     expect(result(plan, `${HURDLE_TEST.shortId}/TSH`)).toMatchObject({
       value: null,
       sourceValue: "2.10",
-      sourceUnit: "µIU/mL",
+      sourceUnit: "μIU/dram",
       normalizationFailure: "unknown-unit",
       referenceRanges: [
         { text: "normal" },
