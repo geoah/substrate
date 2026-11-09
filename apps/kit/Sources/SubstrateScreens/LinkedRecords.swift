@@ -141,9 +141,13 @@ public struct LinkedRecords: Equatable, Sendable {
             // one the server refused for its own reasons, with the network
             // back. The network's first report, at every launch, is no new
             // access.
-            let newAccess = link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+            let newAccess = Self.newAccess(from: before, to: link)
             let networkBack = before?.online != true && link.online == true
+            let running = state.phase.running
             startOrStop(&next, restarting: { newAccess || (networkBack && $0 == .refused) })
+            // A read or a watch holds the token it opened with, which a new
+            // one replaces and may revoke: it starts again with the new one.
+            if newAccess, running, next.phase.running, next.loaded { next.phase = next.cursor == nil ? .reading : .following }
         case let .loaded(records, cursor, stale, queue):
             next.server = keyed(records, in: state)
             next.cursor = cursor
@@ -225,6 +229,12 @@ public struct LinkedRecords: Equatable, Sendable {
             if next.link?.signedIn == true, next.loaded { next.phase = .reading }
         }
         return next
+    }
+
+    /// Whether `link` carries a token `before` did not: a sign-in, or a new
+    /// approval, which moves its scopes or when its access ends.
+    static func newAccess(from before: LinkSnapshot?, to link: LinkSnapshot) -> Bool {
+        link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
     }
 
     private func keyed(_ records: [Record], in state: State) -> [String: Record] {
@@ -312,6 +322,15 @@ public struct LinkedRecords: Equatable, Sendable {
             if !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
         case let .linked(link):
             if link.online == true, previous.link?.online != true, !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
+            // A new token while the phase stays: the running read or watch is
+            // replaced (they share a key) by one that reads the new token.
+            if Self.newAccess(from: previous.link, to: link), previous.phase.running, state.phase == previous.phase {
+                switch state.phase {
+                case .reading: out.append(.read(over: kinds(in: state)))
+                case .following: out.append(.follow(state.cursor, over: kinds(in: state)))
+                default: break
+                }
+            }
         case .relistNeeded where previous.phase == .reading:
             out.append(.read(over: kinds(in: state)))
         case .rekinded where state.kinds != previous.kinds:

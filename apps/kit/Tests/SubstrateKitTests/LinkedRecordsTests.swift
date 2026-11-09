@@ -100,6 +100,31 @@ struct LinkedRecordsTests {
         #expect(stepper.step(.relistNeeded) == [.read(over: [noteKind])])
     }
 
+    @Test func aNewTokenReplacesTheRunningWatchAndRead() {
+        var stepper = Stepper()
+        let cursor = WatchCursor(seq: 3, generation: "g")
+        _ = stepper.step(.loaded([], cursor: cursor, queue: []))
+        #expect(stepper.step(.linked(online)) == [.follow(cursor, over: [noteKind])])
+        // An approval: a new token, which the old watch does not carry.
+        var approved = online
+        approved.scopes = ["write:example.com/notes/*", "read:example.com/people/*"]
+        #expect(stepper.step(.linked(approved)) == [.follow(cursor, over: [noteKind])])
+        #expect(stepper.state.phase == .following)
+        // Interrupted, it follows again at once with the new one.
+        _ = stepper.step(.watchInterrupted("The connection dropped."))
+        approved.accessEnds = Date(timeIntervalSince1970: 2_000_000_000)
+        #expect(stepper.step(.linked(approved)) == [.follow(cursor, over: [noteKind])])
+        // A read with no cursor yet starts over as a read.
+        var reading = Stepper()
+        _ = reading.step(.loaded([], cursor: nil, queue: []))
+        _ = reading.step(.linked(online))
+        #expect(reading.step(.linked(approved)) == [.read(over: [noteKind])])
+        // The same token moving nothing else starts nothing.
+        var moved = approved
+        moved.waiting = 3
+        #expect(stepper.step(.linked(moved)).isEmpty)
+    }
+
     @Test func newKindsCloseTheReadAndOpenItAgainKeepingWhatIsStillRead() {
         let taskKind = "example.com/notes/task"
         var stepper = Stepper()
