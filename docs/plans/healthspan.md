@@ -114,7 +114,11 @@ such). Nothing in it references outside `core`, `labs` and `observations`.
 ### `profile`
 
 What the age score, the targets and the session reads need that no other
-record holds. One record per repository, under the id `owner`.
+record holds. One record per repository, under the id `owner`: the kind
+declares `ids: {type: named}`, because an app creates a record of a minted
+kind only under a minted id
+([0228](../decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)),
+and a minted id cannot be the one row every device names.
 
 | Property | Type | What |
 | --- | --- | --- |
@@ -158,6 +162,7 @@ device and to undo.
 | `format` | enum `csv`, `manual` | how it came in |
 | `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; `planned`, `importing`, `stopped`, `imported` → `undoing` → `undone`; `undone` → `undoing`, to clean up what landed late |
 | `runner` | object | the lease of the browser running it: a device id the browser minted, and `until`, a datetime |
+| `lab` | string | the lab's name as the file or the owner gave it, which names its source where none exists yet |
 | `source` | reference to `observations/source` | the lab it is from |
 | `rows` | repeated object | the normalized plan, one entry per result: its key, metric, time, value or text, unit, comparator, range, flag, and the key of its report |
 | `reports` | repeated object | one entry per report: its key, its date, its lab's accession |
@@ -168,8 +173,10 @@ device and to undo.
 
 At most 2,000 rows a record (a request body is capped at 1 MiB): a larger
 file becomes several imports, split between reports. Every id an import
-writes derives from the import's id and a key in its plan
-(`<import id>/report/<key>`, `<import id>/<key>`), and every `labreport` and
+writes derives from the import's id and a key in its plan, in the minted
+shape a writer may compute (0228: `DerivedMintedID` of
+`<import id>/report/<key>` and `<import id>/<key>`, the server's own
+derivation), and every `labreport` and
 `labresult` carries `origin` set to the import, so the plan alone says what
 the import writes, and what points at it says what it wrote.
 
@@ -218,7 +225,10 @@ profile's order, then every other source holding such records in a default
 order (the class order watch, ring, service, app, then by name), at most the
 server's cap. A group with one source shows no rank. The page says that the
 metric ranks are the repository's, so every app reading those metrics
-follows them, and the session ranks are this app's.
+follows them, and the session ranks are this app's. A patch replaces a keyed
+map whole, so a rank writes the source's `priorities` as read plus the
+group's; a rank another device writes for another metric of the same source
+at the same moment can be lost to the resend.
 
 **One device** is a `sourcelink`: the owner picks two or more sources that
 are the same device (a scale synced to its maker's app and to Apple
@@ -265,10 +275,11 @@ both win a transition.
   bounds when (What is left, below). A renewal refused (the version moved:
   another browser took over, or the owner pressed Undo) stops it at once. A Web Lock per import keeps
   two tabs of one browser from contending.
-- **Setup** (from `planned`): the lab's source is a PUT at `ifVersion: 0`
-  under `lab/<the lab's name, lowercased and hyphenated>`; a 409 reads the
-  row and takes it where it is of class `lab`, and otherwise suffixes the id.
-  Then the import moves to `importing`.
+- **Setup** (from `planned`): the lab's source is a lab source already
+  named as the import's `lab`, else a PUT at `ifVersion: 0` under the id
+  derived from the lab's name (lowercased and hyphenated); a 409 reads the
+  row and takes it where it is of class `lab`, and otherwise derives the
+  next id. Then the import moves to `importing`.
 - **Writing** (in `importing`): each report, then each of its results, in
   plan order, each a PUT at `ifVersion: 0` under its derived id. A 409
   reads the row and compares it with what the plan writes: the same is a
