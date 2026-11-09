@@ -489,9 +489,19 @@ as `message.status`, and a group's per-member receipts are left out.
 A `chataction` is a request the owner or an agent writes. Its life:
 
 1. **Queued.** Written without a `state`; the state machine starts it at
-   `queued`, and only the function moves it from there (`state` is `writer:
-   connector`). The request properties are the owner's or the agent's; the
-   outcome properties are the function's.
+   `queued`, and its transitions are only the bridge's path: `queued` to
+   `sending`, `failed`, `expired` or `cancelled`; `sending` to `done`,
+   `failed` or `uncertain`. The loader takes no `writer:` on a state machine,
+   so nothing at the door stops the owner moving it: the console never does,
+   an agent's write is held by the gate, and the function moves it from the
+   bridge's reports. The request properties are the owner's or the agent's;
+   the other outcome properties are the function's (`writer: connector`).
+   An action the bridge refuses before claiming it (the chat's `features`
+   lack it, the account is not one it runs or is not connected, a rule of
+   [section 9](#9-as-the-owner-not-as-a-bot) refuses it) is reported as
+   `action.result` with outcome `failed` and no `action.claimed` first; the
+   function applies it to a row that is still `queued` and carries no
+   attempt.
 2. **Claimed.** The worker for the action's account reads the record at
    version `v`, checks the request (the chat belongs to an account it runs, the
    account is connected, the chat's `features` allow the action,
@@ -515,9 +525,9 @@ A `chataction` is a request the owner or an agent writes. Its life:
 5. **Stale reports are ignored.** The function applies an `action.result` only
    when its `attempt` matches the row's, so a late report from an attempt the
    row no longer carries changes nothing.
-6. **Cancelled and expired.** The owner sets `cancelRequestedAt`; a worker
-   that has not claimed the action reports `cancelled`, and one that has
-   claimed it finishes the attempt. `notAfter` (an hour after creation for
+6. **Cancelled and expired.** The owner sets `cancelRequestedAt`, never the
+   state; a worker that has not claimed the action reports `cancelled`, and
+   one that has claimed it finishes the attempt. `notAfter` (an hour after creation for
    `send` and `edit` when absent) makes a queued action `expired` instead of
    sending "see you at 7" the next morning. `notBefore` holds it.
 7. **The echo links back.** The owner's own message comes back as a
@@ -562,8 +572,15 @@ The property lists, each `writer: connector` unless it says otherwise:
 - **`account`**: binds `substrate.reamde.dev/core/accountconfig` and
   `substrate.reamde.dev/core/sync`, redeclaring their properties as Apple
   Health's account does (the OAuth trio declared and unwritten; the function
-  stamps the sync properties itself, because a webhook fire names no record).
-  `network`, `loginId`, `instance` (reference), `remoteName`, `handle`,
+  stamps the sync properties itself, because a webhook fire names no record:
+  `connected` is `syncState: ok`, `connecting` is `running`,
+  `transient_disconnect` is `throttled` with the network's message in
+  `syncMessage`, the other states are `erroring` with the message in
+  `syncError` and `syncErrorAt`, the first warning's message goes in
+  `syncMessage`, and `lastSyncedAt` moves when a batch touching the account
+  applies, at most every five minutes). `network` and `loginId` (both
+  required, so the console never offers the owner an account to create:
+  the bridge adds them), `instance` (reference), `remoteName`, `handle`,
   `phoneNumber`, `user` (reference to the owner's own `user` row),
   `connectionState` (enum as in `account.state`), `connectionMessage`,
   `warnings` (repeated object: `code`, `message`, `until`). Owner's
@@ -599,15 +616,33 @@ The property lists, each `writer: connector` unless it says otherwise:
   required), `chat` (reference, required), `target` (reference to
   `message`), `text`, `replyTo` (reference to `message`), `reactionKey`,
   `forEveryone` (bool), `notBefore`, `notAfter`. Owner's alone (`writer:
-  owner`): `allowNewChat` (bool), `cancelRequestedAt`. Outcome properties
-  (`writer: connector`): `state` (a state machine: `queued` to `sending`,
-  `expired` or `cancelled`; `sending` to `done`, `failed` or `uncertain`),
-  `attempt`, `claimedVersion`, `result` (reference to `message`), `errorCode`,
-  `errorMessage`. Sending a file is phase 2: it adds a top-level `file`
-  (`blobref`), which the bridge reads under 0219.
+  owner`): `allowNewChat` (bool), `cancelRequestedAt`. Outcome properties:
+  `state` (a state machine with the transitions of
+  [section 6.5](#65-actions-the-execution-protocol), which takes no
+  `writer:`), and, `writer: connector`, `attempt`, `claimedVersion`,
+  `result` (reference to `message`), `errorCode`, `errorMessage`. Sending a
+  file is phase 2: it adds a top-level `file` (`blobref`), which the bridge
+  reads under 0219.
 
 A `blobref` is always a property of its own, never a field of an object
-(`internal/vocabulary/load.go`), which is why attachments are a kind.
+(`internal/vocabulary/load.go`), which is why attachments are a kind. Every
+enum carries labels the console shows as written (`message.sendStatus`:
+Sent, Delivered, Read, Failed; `message.deleted`: For everyone, For you;
+`chataction.action`: Send, React, Remove reaction, Edit, Delete, Mark read).
+
+**Disconnect and unlink.** `user`, `chat` and `message` cascade from their
+`account`, so deleting the account row (the Providers page's Disconnect)
+deletes every chat and message it brought in, and the bridge reads the
+delete as an unlink. `unlinkRequestedAt` signs the account out of its
+network and keeps them.
+
+**Record views.** The console names no provider's kinds (decision 0166), so
+the chat's page (its messages, the composer that writes `chataction` rows,
+the owner's recent actions, the agent actions waiting on the gate) and the
+account's page (its connection, instance and the owner's settings) are
+`substrate.reamde.dev/console/recordview` records the package ships in
+`views.yaml`. They use the `conversation` and `request` blocks the console
+PR adds in console package version 7, so the package lands with or after it.
 
 **Function `chatevents`** applies one delivery per [section 6.1](#61-transport-and-delivery):
 Python, `PT60S`, `permissions.writes` the seven kinds, `permissions.reads`
@@ -955,7 +990,8 @@ built at once from [section 6](#6-the-contract) and
 [section 7](#7-the-package):
 
 1. **The package**: the seven kinds, `chatevents`, the trigger, the gate
-   policy, the six agent tools, the contact mapping (with core's version
+   policy, the six agent tools, the record views (`views.yaml`, on top of the
+   console PR), the contact mapping (with core's version
    bumped), the README carrying the contract and a JSON Schema of the batch,
    golden fixture batches and the id test vectors, the catalog entry, and
    Python body tests in `internal/providertest` (reversed and resent batches,
@@ -969,10 +1005,13 @@ built at once from [section 6](#6-the-contract) and
    and CI job, the `NOTICE`, and tests over a fake network connector and an
    `httptest` server, plus the action crash tests of
    [section 6.5](#65-actions-the-execution-protocol). Decision record for D1.
-3. **The console**: the chat bridge's provider page (instances, accounts,
-   their state, warnings and the owner's toggles), each chat's messages with
-   reply, react and mark-read rows that write `chataction` records, and each
-   action's state.
+3. **The console**: record-view blocks any package can use, since the
+   console names no provider's kinds (0166): a `conversation` block (a
+   chat's messages, a composer that writes request records, the owner's
+   recent requests with their state, the agent requests waiting on the gate)
+   and a `request` block (a button that stamps one owner property), in
+   console package version 7; the Providers page's account details and a
+   Disconnect that says what it deletes.
 4. **Beeper writes**: the six callables, without `offer:`, their e2e
    fixtures and the catalog.
 5. **The webhook rule**: refuse enabling a package-shipped webhook trigger
