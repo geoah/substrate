@@ -2,13 +2,14 @@
 # records of core's `unit` and `conversion` kinds (decision record 0186) that
 # this package adds to the repository's unit graph. A metric's `unit` and a
 # value's unit must name a unit the repository holds, so the metrics written
-# in fL, pg, ng/dL, kIU/L, mL/min/1.73m2, mg/mmol and arbU/mL need these
+# in fL, pg, ng/dL, kIU/L, uIU/mL, mL/min/1.73m2, mg/mmol and arbU/mL need these
 # first, and a result a lab reports in ng/L or ug/mL resolves only through
 # them.
 #
 # Each conversion joins its unit to a seeded one of the same measure, so a
 # value converts to every unit of that linear component: a vitamin B12 in
-# ng/L reads in pg/mL, an anti-TPO in kIU/L in IU/mL, a TBG in ug/mL in
+# ng/L reads in pg/mL, an anti-TPO in kIU/L in IU/mL, a TSH in uIU/mL in
+# mIU/L, a TBG in ug/mL in
 # mg/L. None joins a mass and an amount concentration; that takes an
 # analyte's molar mass (metrics_analytes.yaml). Three units have none: an
 # eGFR's mL/min/1.73m2 is per 1.73 square metres of body surface, which no
@@ -76,6 +77,15 @@ data:
     name: kilo international unit per liter
     symbol: kIU/L
     code: k[IU]/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: uIU/mL
+data:
+  properties:
+    name: micro international unit per milliliter
+    symbol: μIU/mL
+    code: u[IU]/mL
 ---
 kind: substrate.reamde.dev/core/unit
 metadata:
@@ -160,6 +170,18 @@ data:
     to:
       ref: substrate.reamde.dev/core/unit/IU/L
     factor: "1000"
+---
+# A TSH a lab prints in μIU/mL is the same number in mIU/L.
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: uIU/mL-mIU/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/uIU/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/mIU/L
+    factor: "1"
 ---
 kind: substrate.reamde.dev/core/conversion
 metadata:
