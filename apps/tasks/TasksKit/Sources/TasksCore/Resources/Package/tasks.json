@@ -1,6 +1,6 @@
 {
   "package": "substrate.reamde.dev/tasks",
-  "version": 1,
+  "version": 2,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "substrate.reamde.dev",
         "package": "tasks",
-        "version": 1
+        "version": 2
       }
     },
     {
@@ -42,7 +42,8 @@
           "singular": "task"
         },
         "traits": [
-          "substrate.reamde.dev/core/temporal(point: dueAt)"
+          "substrate.reamde.dev/core/temporal(point: dueAt)",
+          "substrate.reamde.dev/core/lifecycle"
         ],
         "displayTemplate": "{name}",
         "properties": {
@@ -88,14 +89,32 @@
           },
           "status": {
             "type": "state",
-            "description": "open until you mark it done or abandon it; either can be undone",
+            "description": "open until you mark it done or abandon it; either can be undone. A suggested task waits as proposed until you add or dismiss it",
             "states": [
+              "proposed",
               "open",
               "done",
               "abandoned"
             ],
             "initial": "open",
+            "done": [
+              "done"
+            ],
+            "dropped": [
+              "abandoned"
+            ],
+            "proposed": [
+              "proposed"
+            ],
             "transitions": [
+              {
+                "from": "proposed",
+                "to": "open"
+              },
+              {
+                "from": "proposed",
+                "to": "abandoned"
+              },
               {
                 "from": "open",
                 "to": "done",

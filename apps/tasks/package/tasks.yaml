@@ -28,7 +28,9 @@ data:
   package: tasks
   # 1: task and list. Each change ships as the next version, additive only;
   # a published version never changes.
-  version: 1
+  # 2: task binds core's `lifecycle` and gains `proposed`, the state an
+  # agent's suggestion waits in (decision records 0226 and 0247).
+  version: 2
 ---
 # ---- the bundle document -----------------------------------------------------
 #
