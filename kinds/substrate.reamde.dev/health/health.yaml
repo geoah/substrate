@@ -20,12 +20,21 @@ data:
   # 2: mindful minutes, water, eleven nutrients and basal body temperature, as
   # 13 metrics (46).
   # 3: fat-free mass, lean mass, visceral fat rating, waist circumference and
-  # waist-to-hip ratio, as 5 metrics (51).
+  # waist-to-hip ratio, as 5 metrics (51); and the rest of what a body
+  # composition scale, a DXA scan and a GP record measure, as 22 metrics
+  # (73): hip circumference, tissue fat share, body water and its parts,
+  # protein mass, basal metabolic rate, metabolic age, phase angle, leg
+  # muscle score, bone mineral density with its T and Z scores, the fat
+  # centile and four fat distribution ratios, alcohol units a day and a
+  # week, and planned travel, with the unit g/cm2 (body_units.yaml). A body
+  # region is the `channel` of the whole-body metric's value, which the
+  # body metrics' descriptions now say.
   version: 3
 ---
 # ---- the bundle document: the install unit ------------------------------------
 # Two kinds, and the metric catalogue (metrics.yaml) with the glucose units
-# (analyte_units.yaml) and the record views (views.yaml) as data. An upgrade
+# (analyte_units.yaml), the bone density unit (body_units.yaml) and the
+# record views (views.yaml) as data. An upgrade
 # replaces a shipped record only where its owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
 metadata:

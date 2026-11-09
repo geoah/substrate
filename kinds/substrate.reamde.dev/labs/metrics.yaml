@@ -4,6 +4,14 @@
 # two metrics (`labs/ldl_cholesterol` in mmol/L, `labs/ldl_cholesterol_mass`
 # in mg/dL), because no linear conversion joins an amount and a mass
 # concentration; the analytes (metrics_analytes.yaml) say how they convert.
+#
+# A urine test strip reads most of its pads as a band, so its metrics are
+# coded: a `codeSet` and no unit, and a result is the code (`negative`), or
+# the number a lab prints for the band in the unit it prints it in. The
+# scores a lab or a practice computes (FIB-4, HOMA-IR, the cardiovascular
+# risk, the AKI warning stage) are metrics like the analytes they come from.
+# A LOINC code is listed only where it was checked against LOINC itself; a
+# description says where none is.
 kind: substrate.reamde.dev/observations/metric
 metadata:
   id: labs/ldl_cholesterol
@@ -2573,4 +2581,1061 @@ data:
       - max
       - count
     displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apob_apoa1_ratio
+data:
+  properties:
+    name: Apolipoprotein B to A1 ratio
+    description: >-
+      Apolipoprotein B over apolipoprotein A-I in serum or plasma, a bare
+      ratio in the unit 1: the atherogenic particles against the main protein
+      of HDL.
+    codes:
+      - system: "http://loinc.org"
+        code: "1874-7"
+        display: "Apolipoprotein B/Apolipoprotein A-I [Mass Ratio] in Serum
+          or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apolipoprotein_c2
+data:
+  properties:
+    name: Apolipoprotein C-II
+    description: >-
+      Apolipoprotein C-II in serum or plasma, as a mass concentration, the
+      activator of the lipoprotein lipase that clears triglycerides.
+    codes:
+      - system: "http://loinc.org"
+        code: "1876-2"
+        display: "Apolipoprotein C-II [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/small_dense_ldl_cholesterol
+data:
+  properties:
+    name: Small dense LDL cholesterol
+    description: >-
+      Cholesterol carried in small dense LDL particles, as a mass concentration
+      in serum or plasma. A result in mmol/L does not convert to it: no analyte
+      pairs the two.
+    codes:
+      - system: "http://loinc.org"
+        code: "90364-1"
+        display: "Cholesterol.in LDL.small dense [Mass/volume] in Serum or
+          Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/fabp3
+data:
+  properties:
+    name: Heart-type fatty acid binding protein
+    description: >-
+      Fatty acid binding protein 3 (H-FABP) in serum or plasma, which heart
+      muscle releases when it is injured. No LOINC code is listed: none was
+      found.
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/cardiovascular_risk
+data:
+  properties:
+    name: Cardiovascular risk (10 years)
+    description: >-
+      The chance of a heart attack or a stroke in the next ten years, as a
+      percentage, by the method of whoever computed it: QRISK3 at a GP practice,
+      a lab's own score beside its panel. The methods' results pool here,
+      so a change between two of them may be the methods' and not the person's.
+    codes:
+      - system: "http://loinc.org"
+        code: "99055-6"
+        display: "Cardiovascular disease 10Y risk [Likelihood]"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/homa_ir
+data:
+  properties:
+    name: HOMA-IR
+    description: >-
+      The homeostatic model assessment of insulin resistance, a bare index
+      in the unit 1 a lab computes from fasting glucose and fasting insulin;
+      higher is more resistant. No LOINC code is listed: LOINC's homeostasis
+      model assessment (47214-2) does not say which of the model's indices
+      it is.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/leptin
+data:
+  properties:
+    name: Leptin
+    description: >-
+      Leptin in serum or plasma, the hormone fat tissue makes, as a mass concentration:
+      a lab's ng/mL is the same value.
+    codes:
+      - system: "http://loinc.org"
+        code: "21365-2"
+        display: "Leptin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ug/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/resistin
+data:
+  properties:
+    name: Resistin
+    description: >-
+      Resistin in serum or plasma, an inflammatory signal fat tissue and white
+      cells make, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "75632-0"
+        display: "Resistin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_albumin_creatinine_ratio
+data:
+  properties:
+    name: Urine albumin to creatinine ratio
+    description: >-
+      Albumin over creatinine in a urine sample, in milligrams of albumin
+      per millimole of creatinine (mg/mmol), an early sign of kidney damage.
+      A result in mg/g is a mass ratio and does not convert to it: the factor
+      is creatinine's molar mass, which no conversion here carries. A lab
+      that finds no albumin writes the code not-detected.
+    codes:
+      - system: "http://loinc.org"
+        code: "32294-1"
+        display: "Albumin/Creatinine [Ratio] in Urine"
+      - system: "http://loinc.org"
+        code: "30000-4"
+        display: "Microalbumin/Creatinine [Ratio] in Urine"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/mmol
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/aki_warning_stage
+data:
+  properties:
+    name: AKI warning stage
+    description: >-
+      The acute kidney injury warning stage the NHS England algorithm flags
+      from a creatinine result against the person's earlier ones, as a code:
+      none where it flags nothing, else stage1, stage2 or stage3. No LOINC
+      code is listed: none was found.
+    codeSet:
+      - none
+      - stage1
+      - stage2
+      - stage3
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_ph
+data:
+  properties:
+    name: Urine pH
+    description: >-
+      The acidity of a urine sample, by test strip or meter.
+    codes:
+      - system: "http://loinc.org"
+        code: "5803-2"
+        display: "pH of Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "2756-5"
+        display: "pH of Urine"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pH
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_glucose
+data:
+  properties:
+    name: Urine glucose
+    description: >-
+      Glucose in a urine sample by test strip, as a code: negative, trace
+      or positive. A number a lab prints for the band, such as 100 mg/dL,
+      is the value in its own unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "25428-4"
+        display: "Glucose [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "5792-7"
+        display: "Glucose [Mass/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_protein
+data:
+  properties:
+    name: Urine protein
+    description: >-
+      Protein in a urine sample by test strip, as a code: negative, trace
+      or positive. A number a lab prints for the band, such as 30 mg/dL, is
+      the value in its own unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "20454-5"
+        display: "Protein [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "5804-0"
+        display: "Protein [Mass/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_ketones
+data:
+  properties:
+    name: Urine ketones
+    description: >-
+      Ketones in a urine sample by test strip, as a code: negative, trace
+      or positive. A number a lab prints for the band, such as 15 mg/dL, is
+      the value in its own unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "2514-8"
+        display: "Ketones [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "5797-6"
+        display: "Ketones [Mass/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_bilirubin
+data:
+  properties:
+    name: Urine bilirubin
+    description: >-
+      Bilirubin in a urine sample by test strip, as a code: negative, trace
+      or positive. A number a lab prints for the band, such as 1 mg/dL, is
+      the value in its own unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "5770-3"
+        display: "Bilirubin.total [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "20505-4"
+        display: "Bilirubin.total [Mass/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_urobilinogen
+data:
+  properties:
+    name: Urine urobilinogen
+    description: >-
+      Urobilinogen in a urine sample by test strip, as a code: negative, normal
+      or positive; a little is normal. A number a lab prints for the band,
+      such as 1 mg/dL, is the value in its own unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "5818-0"
+        display: "Urobilinogen [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "20405-7"
+        display: "Urobilinogen [Mass/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - normal
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_blood
+data:
+  properties:
+    name: Urine blood
+    description: >-
+      Blood in a urine sample by test strip, whose pad reads haemoglobin and
+      red cells, as a code: negative, trace or positive. Some labs label it
+      red blood cells and print a count per microlitre for the band, which
+      is the value in 1/uL.
+    codes:
+      - system: "http://loinc.org"
+        code: "5794-3"
+        display: "Hemoglobin [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "20409-9"
+        display: "Erythrocytes [#/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_leukocytes
+data:
+  properties:
+    name: Urine leukocytes
+    description: >-
+      White cells in a urine sample by test strip, whose pad reads their esterase,
+      as a code: negative, trace or positive. Some labs label it white blood
+      cells and print a count per microlitre for the band, which is the value
+      in 1/uL.
+    codes:
+      - system: "http://loinc.org"
+        code: "5799-2"
+        display: "Leukocyte esterase [Presence] in Urine by Test strip"
+      - system: "http://loinc.org"
+        code: "20408-1"
+        display: "Leukocytes [#/volume] in Urine by Test strip"
+    codeSet:
+      - negative
+      - trace
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urine_nitrite
+data:
+  properties:
+    name: Urine nitrite
+    description: >-
+      Nitrite in a urine sample by test strip, a sign of some bacteria, as
+      a code: negative or positive.
+    codes:
+      - system: "http://loinc.org"
+        code: "5802-4"
+        display: "Nitrite [Presence] in Urine by Test strip"
+    codeSet:
+      - negative
+      - positive
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - count
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/fib4
+data:
+  properties:
+    name: FIB-4 score
+    description: >-
+      The fibrosis-4 index, an estimate of liver scarring a lab computes from
+      age, AST, ALT and the platelet count, a score on its own scale.
+    codes:
+      - system: "http://loinc.org"
+        code: "98488-0"
+        display: "Liver fibrosis score in Serum Calculated by FIB4"
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/iga
+data:
+  properties:
+    name: Immunoglobulin A
+    description: >-
+      IgA in serum or plasma, as a mass concentration, the antibody of the
+      mucous membranes.
+    codes:
+      - system: "http://loinc.org"
+        code: "2458-8"
+        display: "IgA [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/igg
+data:
+  properties:
+    name: Immunoglobulin G
+    description: >-
+      IgG in serum or plasma, as a mass concentration, the most plentiful
+      antibody in the blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "2465-3"
+        display: "IgG [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/igm
+data:
+  properties:
+    name: Immunoglobulin M
+    description: >-
+      IgM in serum or plasma, as a mass concentration, the first antibody
+      an infection raises.
+    codes:
+      - system: "http://loinc.org"
+        code: "2472-9"
+        display: "IgM [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ige
+data:
+  properties:
+    name: Immunoglobulin E (total)
+    description: >-
+      Total IgE in serum or plasma, the antibody of allergy, in international
+      units: a lab's kU/L is kIU/L, the same value as IU/mL.
+    codes:
+      - system: "http://loinc.org"
+        code: "19113-0"
+        display: "IgE [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/kIU/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/complement_c3
+data:
+  properties:
+    name: Complement C3
+    description: >-
+      Complement component 3 in serum or plasma, as a mass concentration,
+      a protein of the immune system that inflammation uses up.
+    codes:
+      - system: "http://loinc.org"
+        code: "4485-9"
+        display: "Complement C3 [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/complement_c4
+data:
+  properties:
+    name: Complement C4
+    description: >-
+      Complement component 4 in serum or plasma, as a mass concentration,
+      a protein of the immune system that inflammation uses up.
+    codes:
+      - system: "http://loinc.org"
+        code: "4498-2"
+        display: "Complement C4 [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 3
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/aso
+data:
+  properties:
+    name: Antistreptolysin O
+    description: >-
+      Antibodies to streptolysin O in serum or plasma, a sign of a recent
+      streptococcal infection, in international units per millilitre.
+    codes:
+      - system: "http://loinc.org"
+        code: "5370-2"
+        display: "Streptolysin O Ab [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/h_pylori_antibody
+data:
+  properties:
+    name: Helicobacter pylori antibodies
+    description: >-
+      Antibodies to Helicobacter pylori in serum, in the assay's arbitrary
+      units per millilitre (a lab's U/mL), which convert to nothing: two assays'
+      results do not compare. The code is LOINC's for an antibody of any class,
+      because labs seldom say which their assay reads.
+    codes:
+      - system: "http://loinc.org"
+        code: "7900-4"
+        display: "Helicobacter pylori Ab [Units/volume] in Serum"
+    unit:
+      ref: substrate.reamde.dev/core/unit/arbU/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/total_antioxidant_status
+data:
+  properties:
+    name: Total antioxidant status
+    description: >-
+      The antioxidant capacity of serum or plasma, in mmol/L of the assay's
+      reference antioxidant (Trolox for most).
+    codes:
+      - system: "http://loinc.org"
+        code: "55219-0"
+        display: "Antioxidants [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/tbg
+data:
+  properties:
+    name: Thyroxine-binding globulin
+    description: >-
+      Thyroxine-binding globulin in serum or plasma, the protein that carries
+      most thyroid hormone in the blood, as a mass concentration: a lab's
+      ug/mL is the same value.
+    codes:
+      - system: "http://loinc.org"
+        code: "3021-3"
+        display: "Thyroxine binding globulin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/reticulocytes
+data:
+  properties:
+    name: Reticulocytes
+    description: >-
+      Young red cells per litre of blood, how fast the marrow is making red
+      cells; a share of the red cells is reticulocytes_fraction.
+    codes:
+      - system: "http://loinc.org"
+        code: "60474-4"
+        display: "Reticulocytes [#/volume] in Blood by Automated count"
+      - system: "http://loinc.org"
+        code: "14196-0"
+        display: "Reticulocytes [#/volume] in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/reticulocytes_fraction
+data:
+  properties:
+    name: Reticulocytes (share of red cells)
+    description: >-
+      Reticulocytes as a share of all red cells in the blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "17849-1"
+        display: "Reticulocytes/Erythrocytes in Blood by Automated count"
+      - system: "http://loinc.org"
+        code: "4679-7"
+        display: "Reticulocytes/Erythrocytes in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/immature_granulocytes_fraction
+data:
+  properties:
+    name: Immature granulocytes (share of white cells)
+    description: >-
+      Immature granulocytes (metamyelocytes, myelocytes and promyelocytes)
+      as a share of all white cells in the blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "71695-1"
+        display: "Immature granulocytes/Leukocytes in Blood by Automated count"
+      - system: "http://loinc.org"
+        code: "38518-7"
+        display: "Immature granulocytes/Leukocytes in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/nucleated_red_cells_per_100_wbc
+data:
+  properties:
+    name: Nucleated red cells per 100 white cells
+    description: >-
+      Nucleated red cells counted per 100 white cells, written as a percentage;
+      a count per litre of blood is nucleated_red_cells.
+    codes:
+      - system: "http://loinc.org"
+        code: "58413-6"
+        display: "Nucleated erythrocytes/Leukocytes [Ratio] in Blood by Automated
+          count"
+      - system: "http://loinc.org"
+        code: "19048-8"
+        display: "Nucleated erythrocytes/Leukocytes [Ratio] in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/prothrombin_time
+data:
+  properties:
+    name: Prothrombin time
+    description: >-
+      How long citrated plasma takes to clot once tissue factor is added,
+      in seconds: the extrinsic pathway of coagulation. The ratio that compares
+      labs is inr.
+    codes:
+      - system: "http://loinc.org"
+        code: "5902-2"
+        display: "Prothrombin time (PT)"
+    unit:
+      ref: substrate.reamde.dev/core/unit/s
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/inr
+data:
+  properties:
+    name: INR
+    description: >-
+      The international normalised ratio: the prothrombin time over the lab's
+      normal mean, raised to its reagent's sensitivity index so labs compare,
+      a bare ratio in the unit 1.
+    codes:
+      - system: "http://loinc.org"
+        code: "6301-6"
+        display: "INR in Platelet poor plasma by Coagulation assay"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/aptt
+data:
+  properties:
+    name: APTT
+    description: >-
+      The activated partial thromboplastin time: how long citrated plasma
+      takes to clot through the intrinsic pathway, in seconds.
+    codes:
+      - system: "http://loinc.org"
+        code: "14979-9"
+        display: "aPTT in Platelet poor plasma by Coagulation assay"
+    unit:
+      ref: substrate.reamde.dev/core/unit/s
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/aptt_ratio
+data:
+  properties:
+    name: APTT ratio
+    description: >-
+      The APTT over the lab's normal mean APTT, a bare ratio in the unit 1.
+    codes:
+      - system: "http://loinc.org"
+        code: "63561-5"
+        display: "aPTT actual/normal in Platelet poor plasma by Coagulation
+          assay"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/d_dimer
+data:
+  properties:
+    name: D-dimer (FEU)
+    description: >-
+      Fibrin breakdown fragments in plasma, as a mass concentration in fibrinogen
+      equivalent units (FEU); a lab's ug/L or mg/L FEU converts. A result
+      in D-dimer units (DDU) reads about half as high for one sample, so it
+      is not this metric. Labs often report only a bound, such as <190.
+    codes:
+      - system: "http://loinc.org"
+        code: "48065-7"
+        display: "Fibrin D-dimer FEU [Mass/volume] in Platelet poor plasma"
+      - system: "http://loinc.org"
+        code: "48067-3"
+        display: "Fibrin D-dimer [Mass/volume] in Platelet poor plasma by
+          Immunoassay.FEU"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
     category: labs

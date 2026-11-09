@@ -1,7 +1,7 @@
 # The `labs` catalogue: blood tests and what a lab reports (decision record
 # 0192). A lab report and its results are typed kinds, and a result binds
 # core's `observed(single)` beside its own properties, so the observed index
-# reads it like any observation. The 98 lab metrics (metrics.yaml, ids
+# reads it like any observation. The 137 lab metrics (metrics.yaml, ids
 # `labs/<name>`), the analytes that say how each pair converts between unit
 # systems (metrics_analytes.yaml) and the units the seed lacks that some of
 # them are written in (lab_units.yaml) are data, and `convertlab` writes a
@@ -23,7 +23,13 @@ data:
   # lipid, thyroid, hormone, liver, iron, blood count, electrolyte and other
   # markers), as 76 metrics (98), nine of them the mass twins of urea,
   # testosterone, vitamin B12, folate, magnesium, iron, calcium, phosphate
-  # and uric acid with their analytes, and six units (lab_units.yaml).
+  # and uric acid with their analytes, and six units (lab_units.yaml); and
+  # the rest of the panels health importers read, as 39 metrics (137): the
+  # urine strip and its albumin to creatinine ratio, coagulation,
+  # immunoglobulins and complement, reticulocytes and the other blood
+  # counts, more lipid, metabolic and antibody markers, and the scores a lab
+  # or a practice computes (FIB-4, HOMA-IR, cardiovascular risk, the AKI
+  # warning stage), with three more units and a conversion.
   version: 2
 ---
 # ---- the bundle document: the install unit ------------------------------------

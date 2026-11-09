@@ -2,15 +2,19 @@
 # records of core's `unit` and `conversion` kinds (decision record 0186) that
 # this package adds to the repository's unit graph. A metric's `unit` and a
 # value's unit must name a unit the repository holds, so the metrics written
-# in fL, pg, ng/dL and mL/min/1.73m2 need these first, and a result a lab
-# reports in ng/L or kIU/L resolves only through them.
+# in fL, pg, ng/dL, kIU/L, mL/min/1.73m2, mg/mmol and arbU/mL need these
+# first, and a result a lab reports in ng/L or ug/mL resolves only through
+# them.
 #
 # Each conversion joins its unit to a seeded one of the same measure, so a
 # value converts to every unit of that linear component: a vitamin B12 in
-# ng/L reads in pg/mL, an anti-TPO in kIU/L in IU/mL. None joins a mass and
-# an amount concentration; that takes an analyte's molar mass
-# (metrics_analytes.yaml). An eGFR's mL/min/1.73m2 has none: the rate is per
-# 1.73 square metres of body surface, which no plain flow in mL/min is.
+# ng/L reads in pg/mL, an anti-TPO in kIU/L in IU/mL, a TBG in ug/mL in
+# mg/L. None joins a mass and an amount concentration; that takes an
+# analyte's molar mass (metrics_analytes.yaml). Three units have none: an
+# eGFR's mL/min/1.73m2 is per 1.73 square metres of body surface, which no
+# plain flow in mL/min is; a mass of albumin per amount of creatinine
+# (mg/mmol) joins no seeded unit; and an arbitrary unit per millilitre is
+# the assay's own, so two assays' never compare.
 #
 # Each id is the unit's plain spelling, the one a repository that added the
 # unit itself most likely chose: the install leaves a record another hand
@@ -73,6 +77,35 @@ data:
     symbol: kIU/L
     code: k[IU]/L
 ---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ug/mL
+data:
+  properties:
+    name: microgram per milliliter
+    symbol: μg/mL
+    code: ug/mL
+---
+# A urine albumin to creatinine ratio: milligrams of albumin per millimole
+# of creatinine, which UK labs print as "mg/mmol creatinine".
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mg/mmol
+data:
+  properties:
+    name: milligram per millimole
+    symbol: mg/mmol
+    code: mg/mmol
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: arbU/mL
+data:
+  properties:
+    name: arbitrary unit per milliliter
+    symbol: arb. U/mL
+    code: "[arb'U]/mL"
+---
 kind: substrate.reamde.dev/core/conversion
 metadata:
   id: fL-mL
@@ -127,3 +160,14 @@ data:
     to:
       ref: substrate.reamde.dev/core/unit/IU/L
     factor: "1000"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ug/mL-mg/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ug/mL
+    to:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    factor: "1"

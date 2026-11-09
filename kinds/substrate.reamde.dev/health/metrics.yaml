@@ -19,7 +19,17 @@
 # history reads as one series. Lab analytes are the `labs` catalogue's. A
 # vendor's own score (WHOOP's recovery) is not here: it ships with that
 # vendor's provider (`whoop/recovery`), so a repository without the vendor
-# holds none of its vocabulary.
+# holds none of its vocabulary. A body composition scale's own ratings
+# (Tanita's visceral fat rating, metabolic age and leg muscle score) are here
+# all the same: no provider ships the scale, whose printout reaches a
+# repository beside a lab's report.
+#
+# A body region is no metric of its own. A DXA scan's or a segmental
+# scale's value for the trunk or one limb is the whole-body metric's value
+# with the region in its `channel` (`health/fat_mass` with channel `trunk`;
+# a DXA scan's `android` and `gynoid`, a bone density's `spine`), so a read
+# of the whole body selects the values with no channel, and a read across
+# channels mixes regions and means nothing.
 #
 # Code systems: `http://loinc.org` (LOINC), `healthkit` (an Apple HealthKit
 # type identifier), `healthconnect` (an Android Health Connect record type),
@@ -702,10 +712,13 @@ data:
   properties:
     name: Body fat
     description: >-
-      The share of the body's weight that is fat. A writer copies the hold,
-      PT0S, onto each value: a weighing is a point in time, so an average
-      is the mean of the weighings it covers, and no weighing stands for the
-      days after it.
+      The share of the body's weight that is fat, bone included in the weight;
+      a DXA scan's tissue %fat, which leaves bone out, is tissue_fat_fraction.
+      A region's share, a DXA region %fat or a segmental scale's fat % for
+      one limb, is a value with the region in its channel (trunk, left_arm).
+      A writer copies the hold, PT0S, onto each value: a weighing is a point
+      in time, so an average is the mean of the weighings it covers, and no
+      weighing stands for the days after it.
     codes:
       - system: "http://loinc.org"
         code: "41982-0"
@@ -738,10 +751,11 @@ data:
   properties:
     name: Fat mass
     description: >-
-      The weight of the body's fat, as a scale estimates it. A writer copies
-      the hold, PT0S, onto each value: a weighing is a point in time, so an
-      average is the mean of the weighings it covers, and no weighing stands
-      for the days after it.
+      The weight of the body's fat, as a scale or a DXA scan estimates it.
+      A region's fat is a value with the region in its channel (trunk, left_arm).
+      A writer copies the hold, PT0S, onto each value: a weighing is a point
+      in time, so an average is the mean of the weighings it covers, and no
+      weighing stands for the days after it.
     codes:
       - system: withings
         code: "8"
@@ -765,10 +779,12 @@ data:
   properties:
     name: Muscle mass
     description: >-
-      The weight of the body's muscle, as a scale estimates it. A writer copies
-      the hold, PT0S, onto each value: a weighing is a point in time, so an
-      average is the mean of the weighings it covers, and no weighing stands
-      for the days after it.
+      The weight of the body's muscle, as a scale estimates it. A segmental
+      scale's muscle for the trunk or one limb is a value with the region
+      in its channel (trunk, left_leg). A writer copies the hold, PT0S, onto
+      each value: a weighing is a point in time, so an average is the mean
+      of the weighings it covers, and no weighing stands for the days after
+      it.
     codes:
       - system: withings
         code: "76"
@@ -822,7 +838,9 @@ data:
   properties:
     name: Bone mass
     description: >-
-      The weight of the body's bone mineral, as a scale estimates it. A writer
+      The weight of the body's bone mineral, as a scale estimates it or a
+      DXA scan measures it (its bone mineral content). A region's bone mineral
+      is a value with the region in its channel (trunk, left_arm). A writer
       copies the hold, PT0S, onto each value: a weighing is a point in time,
       so an average is the mean of the weighings it covers, and no weighing
       stands for the days after it.
@@ -945,8 +963,9 @@ data:
       The weight of the body's lean soft tissue, the fat-free mass without
       its bone mineral, as a DXA scan reports it beside fat and bone mineral
       content; a scale's lean body mass, which counts bone, is fat_free_mass.
-      No LOINC code is listed: none was verified. A writer copies the hold,
-      PT0S, onto each value: a scan is a point in time.
+      A region's lean mass is a value with the region in its channel (trunk,
+      left_arm). No LOINC code is listed: none was verified. A writer copies
+      the hold, PT0S, onto each value: a scan is a point in time.
     unit:
       ref: substrate.reamde.dev/core/unit/kg
     form: gauge
@@ -1021,6 +1040,460 @@ data:
       Waist circumference over hip circumference, a bare ratio in the unit
       1. No LOINC code is listed: none was found. A writer copies the hold,
       PT0S, onto each value: a measurement is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hip_circumference
+data:
+  properties:
+    name: Hip circumference
+    description: >-
+      The circumference of the hips at their widest, measured with a tape.
+      No LOINC code is listed: LOINC has only PhenX's protocol for it. A writer
+      copies the hold, PT0S, onto each value: a measurement is a point in
+      time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/cm
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/tissue_fat_fraction
+data:
+  properties:
+    name: Body fat (share of soft tissue)
+    description: >-
+      Fat as a share of the body's soft tissue, fat and lean without bone,
+      the headline %fat a DXA scan prints as tissue %fat; body_fat_fraction
+      counts bone in the weight and reads a little lower. A region's share
+      (the trunk, an arm, the android and gynoid regions of the belly and
+      hips) is a value with the region in its channel. No LOINC code is listed:
+      LOINC's body fat percentage is of the whole weight. A writer copies
+      the hold, PT0S, onto each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/body_water_mass
+data:
+  properties:
+    name: Total body water
+    description: >-
+      The weight of the body's water, as a bioimpedance scale estimates it;
+      its share of the body's weight is body_water_fraction. A writer copies
+      the hold, PT0S, onto each value: a weighing is a point in time.
+    codes:
+      - system: "http://loinc.org"
+        code: "101683-1"
+        display: Body water mass
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/extracellular_water
+data:
+  properties:
+    name: Extracellular water
+    description: >-
+      The weight of the body's water outside the cells, as a bioimpedance
+      scale estimates it. No LOINC code is listed: none was found. A writer
+      copies the hold, PT0S, onto each value: a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/intracellular_water
+data:
+  properties:
+    name: Intracellular water
+    description: >-
+      The weight of the body's water inside the cells, as a bioimpedance scale
+      estimates it. No LOINC code is listed: none was found. A writer copies
+      the hold, PT0S, onto each value: a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/extracellular_water_fraction
+data:
+  properties:
+    name: Extracellular water share
+    description: >-
+      Extracellular water as a share of the body's total water (a scale's
+      ECW/TBW), a sign of fluid balance and inflammation. No LOINC code is
+      listed: none was found. A writer copies the hold, PT0S, onto each value:
+      a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/protein_mass
+data:
+  properties:
+    name: Protein mass
+    description: >-
+      The weight of the body's protein, as a bioimpedance scale estimates
+      it. No LOINC code is listed: none was found. A writer copies the hold,
+      PT0S, onto each value: a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/basal_metabolic_rate
+data:
+  properties:
+    name: Basal metabolic rate
+    description: >-
+      The energy the body spends at rest in a day, as a scale or a clinic
+      estimates it, in kcal/d; the energy spent at rest over a span, which
+      a watch sums, is basal_energy. No LOINC code is listed: LOINC's resting
+      metabolic rate is per kilogram of body weight. A writer copies the hold,
+      PT0S, onto each value: an estimate is a point in time.
+    codes:
+      - system: healthconnect
+        code: BasalMetabolicRateRecord
+    unit:
+      ref: substrate.reamde.dev/core/unit/kcal/d
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/metabolic_age
+data:
+  properties:
+    name: Metabolic age
+    description: >-
+      The age whose average basal metabolic rate matches this body's, in years,
+      as a bioimpedance scale computes it on its maker's own method (Tanita
+      coined it), so two makers' ages never compare. No LOINC code is listed:
+      none was found. A writer copies the hold, PT0S, onto each value: a weighing
+      is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/a
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/phase_angle
+data:
+  properties:
+    name: Phase angle
+    description: >-
+      The bioimpedance phase angle at 50 kHz, in degrees, a sign of the cells'
+      health and mass: higher is better. The whole body's is measured from
+      hand to foot; one limb's, or between the feet, is a value with the limb
+      in its channel (left_arm, right_leg, leg_to_leg). No LOINC code is listed:
+      LOINC's phase angle by bioimpedance (107160-4) is a ratio in percent,
+      not an angle. A writer copies the hold, PT0S, onto each value: a weighing
+      is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/deg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/leg_muscle_score
+data:
+  properties:
+    name: Leg muscle score
+    description: >-
+      The muscle in the legs against the body's weight, as a Tanita scale
+      scores it, a dimensionless number on its maker's own scale. No LOINC
+      code is listed: none was found. A writer copies the hold, PT0S, onto
+      each value: a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/bone_mineral_density
+data:
+  properties:
+    name: Bone mineral density
+    description: >-
+      Bone mineral per area of bone from a DXA scan, in g/cm2, the unit scanners
+      print. The whole body's has no channel; a region's or a site's (spine,
+      pelvis, left_arm) is a value with it in its channel. The code is LOINC's
+      for a DXA density of a bone it does not name. A writer copies the hold,
+      PT0S, onto each value: a scan is a point in time.
+    codes:
+      - system: "http://loinc.org"
+        code: "46383-6"
+        display: "DXA Bone [Mass/Area] Bone density"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/cm2
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 3
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/bmd_t_score
+data:
+  properties:
+    name: Bone density T-score
+    description: >-
+      A DXA bone mineral density in standard deviations from a young adult
+      reference population, as the scanner computes it; -2.5 or below reads
+      as osteoporosis. The whole body's has no channel; a site's (spine, left_hip)
+      is a value with it in its channel. No LOINC code is listed: LOINC's
+      T-scores name a site each, and none the whole body. A writer copies
+      the hold, PT0S, onto each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/bmd_z_score
+data:
+  properties:
+    name: Bone density Z-score
+    description: >-
+      A DXA bone mineral density in standard deviations from a reference population
+      of the same age and sex, as the scanner computes it. The whole body's
+      has no channel; a site's (spine, left_hip) is a value with it in its
+      channel. No LOINC code is listed: LOINC's Z-scores name a site each,
+      and none the whole body. A writer copies the hold, PT0S, onto each value:
+      a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/body_fat_centile
+data:
+  properties:
+    name: Body fat centile
+    description: >-
+      Where the body's fat ranks against the scanner's reference population,
+      as a centile from 1 to 99. No LOINC code is listed: none was found.
+      A writer copies the hold, PT0S, onto each value: a scan is a point in
+      time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/android_gynoid_ratio
+data:
+  properties:
+    name: Android to gynoid fat ratio
+    description: >-
+      The android region's fat share over the gynoid region's, the belly's
+      over the hips', from a DXA scan, a bare ratio in the unit 1. No LOINC
+      code is listed: none was found. A writer copies the hold, PT0S, onto
+      each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/trunk_to_total_fat_ratio
+data:
+  properties:
+    name: Trunk to total fat ratio
+    description: >-
+      The trunk's fat mass over the whole body's from a DXA scan, a bare ratio
+      in the unit 1. No LOINC code is listed: none was found. A writer copies
+      the hold, PT0S, onto each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/legs_to_total_fat_ratio
+data:
+  properties:
+    name: Legs to total fat ratio
+    description: >-
+      The legs' fat mass over the whole body's from a DXA scan, a bare ratio
+      in the unit 1. No LOINC code is listed: none was found. A writer copies
+      the hold, PT0S, onto each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/limbs_to_trunk_fat_ratio
+data:
+  properties:
+    name: Limbs to trunk fat ratio
+    description: >-
+      The arms' and legs' fat mass over the trunk's from a DXA scan, a bare
+      ratio in the unit 1. No LOINC code is listed: none was found. A writer
+      copies the hold, PT0S, onto each value: a scan is a point in time.
     unit:
       ref: substrate.reamde.dev/core/unit/1
     form: gauge
@@ -1461,3 +1934,77 @@ data:
       - count
     displayPrecision: 2
     category: temperature
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/alcohol_units_per_day
+data:
+  properties:
+    name: Alcohol units a day
+    description: >-
+      UK units of alcohol (8 g, or 10 mL, of pure alcohol each) drunk on a
+      typical day, as the person tells a clinician. No LOINC code is listed:
+      LOINC counts drinks, whose size is not a UK unit's. A writer copies
+      the hold, PT0S, onto each value: a statement is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/d
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: lifestyle
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/alcohol_units_per_week
+data:
+  properties:
+    name: Alcohol units a week
+    description: >-
+      UK units of alcohol (8 g, or 10 mL, of pure alcohol each) drunk in a
+      typical week, as the person tells a clinician. A typical day's units
+      are alcohol_units_per_day, and a week is seldom seven of them. No LOINC
+      code is listed: LOINC counts drinks, whose size is not a UK unit's.
+      A writer copies the hold, PT0S, onto each value: a statement is a point
+      in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1/wk
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: lifestyle
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/planned_travel_duration
+data:
+  properties:
+    name: Planned travel abroad
+    description: >-
+      How long a planned trip abroad lasts, as a GP practice or a travel clinic
+      records it before advising on vaccines, in days. No LOINC code is listed:
+      none was found. A writer copies the hold, PT0S, onto each value: a record
+      is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/d
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: lifestyle

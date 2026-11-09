@@ -368,8 +368,9 @@ func shippedRecords(t *testing.T, kind string, packages ...string) map[string]ma
 
 // loincAxes are the LOINC parts of the lab codes the health and labs
 // catalogues list, as the LOINC terminology publishes them (a FHIR CodeSystem
-// $lookup against http://loinc.org, 2026-10-13): what is measured, the kind
-// of quantity, and the specimen.
+// $lookup against http://loinc.org, 2026-10-13, and LOINC 2.83 on
+// 2026-11-09 for the codes from 1876-2 on): what is measured, the kind of
+// quantity, and the specimen.
 var loincAxes = map[string]struct{ component, property, system string }{
 	"22748-8": {"Cholesterol.in LDL", "SCnc", "Ser/Plas"},
 	"2089-1":  {"Cholesterol.in LDL", "MCnc", "Ser/Plas"},
@@ -442,6 +443,19 @@ var loincAxes = map[string]struct{ component, property, system string }{
 	"2857-1":  {"Prostate specific Ag", "MCnc", "Ser/Plas"},
 	"14933-6": {"Urate", "SCnc", "Ser/Plas"},
 	"3084-1":  {"Urate", "MCnc", "Ser/Plas"},
+	"1876-2":  {"Apolipoprotein C-II", "MCnc", "Ser/Plas"},
+	"90364-1": {"Cholesterol.in LDL.small dense", "MCnc", "Ser/Plas"},
+	"21365-2": {"Leptin", "MCnc", "Ser/Plas"},
+	"75632-0": {"Resistin", "MCnc", "Ser/Plas"},
+	"55219-0": {"Antioxidants", "SCnc", "Ser/Plas"},
+	"2458-8":  {"IgA", "MCnc", "Ser/Plas"},
+	"2465-3":  {"IgG", "MCnc", "Ser/Plas"},
+	"2472-9":  {"IgM", "MCnc", "Ser/Plas"},
+	"4485-9":  {"Complement C3", "MCnc", "Ser/Plas"},
+	"4498-2":  {"Complement C4", "MCnc", "Ser/Plas"},
+	"3021-3":  {"Thyroxine binding globulin", "MCnc", "Ser/Plas"},
+	"48065-7": {"Fibrin D-dimer", "MCnc", "PPP"},
+	"48067-3": {"Fibrin D-dimer", "MCnc", "PPP"},
 }
 
 // loincConcentration is the measure a concentration's LOINC property names.
