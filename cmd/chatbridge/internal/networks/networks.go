@@ -34,6 +34,19 @@ const (
 	HistoryAll    History = "all"
 )
 
+// Deeper reports whether h asks for more history than o.
+func (h History) Deeper(o History) bool { return h.rank() > o.rank() }
+
+func (h History) rank() int {
+	switch h {
+	case HistoryAll:
+		return 2
+	case HistoryYear:
+		return 1
+	}
+	return 0
+}
+
 // ParseHistory reads a depth.
 func ParseHistory(s string) (History, error) {
 	switch History(s) {
@@ -48,9 +61,22 @@ type Options struct {
 	// DeviceName is the name the owner sees in the network's list of linked
 	// devices.
 	DeviceName string
-	// History is what a link made in this run asks for.
+	// History is what a link made in this run asks for, or the deepest any
+	// account of the network asked for, which bounds its backfill.
 	History History
+	// Telegram is the operator's app registration at my.telegram.org.
+	Telegram TelegramApp
 }
+
+// TelegramApp is an application registered at my.telegram.org: Telegram's
+// API takes a client only under one, and its terms bind whoever holds it.
+type TelegramApp struct {
+	APIID   int
+	APIHash string
+}
+
+// Set reports a registration with both halves.
+func (a TelegramApp) Set() bool { return a.APIID > 0 && a.APIHash != "" }
 
 // Spec is one network this build carries.
 type Spec struct {
@@ -62,16 +88,23 @@ type Spec struct {
 	New func(Options) (bridgev2.NetworkConnector, localmatrix.Network, error)
 	// TxnID is an action's transaction id in the network's own format.
 	TxnID func(action string) string
+	// Tune adjusts the bridge's configuration for the network.
+	Tune func(Options, *bridgeconfig.BridgeConfig)
 }
 
-// Registry is every network this build carries.
-func Registry() []Spec {
-	return []Spec{whatsAppSpec()}
+// Registry is every network this build carries and this configuration can
+// run: Telegram only with an app registration.
+func Registry(opts Options) []Spec {
+	specs := []Spec{whatsAppSpec()}
+	if opts.Telegram.Set() {
+		specs = append(specs, telegramSpec())
+	}
+	return specs
 }
 
 // Find returns the network with an id.
-func Find(id string) (Spec, bool) {
-	for _, s := range Registry() {
+func Find(id string, opts Options) (Spec, bool) {
+	for _, s := range Registry(opts) {
 		if s.ID == id {
 			return s, true
 		}
@@ -146,7 +179,11 @@ func Open(spec Spec, st *store.Store, settings localmatrix.Settings, opts Option
 	matrix := localmatrix.New(spec.ID, st, settings, hooks, log)
 	// The WhatsApp connector adds its handlers to bridgev2's own command
 	// processor, so the bridge carries one; no event ever reaches it.
-	br := bridgev2.NewBridge(networkid.BridgeID(spec.ID), db, zlog, BridgeConfig(), matrix, conn,
+	cfg := BridgeConfig()
+	if spec.Tune != nil {
+		spec.Tune(opts, cfg)
+	}
+	br := bridgev2.NewBridge(networkid.BridgeID(spec.ID), db, zlog, cfg, matrix, conn,
 		func(br *bridgev2.Bridge) bridgev2.CommandProcessor { return commands.NewProcessor(br) })
 	return &Running{Spec: spec, Bridge: br, Matrix: matrix}, nil
 }

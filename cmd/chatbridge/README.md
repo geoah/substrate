@@ -1,9 +1,9 @@
 # chatbridge
 
 Connects the owner's chat networks to a substrate as the owner, never as a
-bot. Phase 1 carries WhatsApp. The bridge runs the mautrix
+bot. It carries WhatsApp and Telegram. The bridge runs the mautrix
 [bridgev2](https://github.com/mautrix/go/tree/main/bridgev2) framework with
-the WhatsApp connector against a local Matrix side instead of a homeserver,
+each network's connector against a local Matrix side instead of a homeserver,
 pushes what happens on the network to the substrate's webhook door one
 ordered batch at a time, and carries out the chat actions the owner asks for
 (send, react, unreact, edit, delete, mark read) by following the change
@@ -12,7 +12,8 @@ the package it delivers to is `providers.substrate.reamde.dev/chatbridge`.
 
 It is its own program and its own Go module, under the
 [GNU Affero General Public License, version 3](LICENSE), because the network
-connectors it links are AGPL-3.0 and whatsmeow links the GPL-3.0
+connectors it links (mautrix-whatsapp, mautrix-telegram) are AGPL-3.0 and
+whatsmeow links the GPL-3.0
 `go.mau.fi/libsignal` ([NOTICE](NOTICE) lists every dependency and its
 license). It imports no package of the substrate server and talks to it
 only over the server's public HTTP API
@@ -53,6 +54,12 @@ Three steps on the bridge's host, each with the store in `CHATBRIDGE_DATA`
    ahead, and `--invert-qr` draws for a light terminal. The device shows as
    "Substrate" under the phone's linked devices.
 
+   `chatbridge login telegram` asks for the phone number, the code Telegram
+   sends, and the two-step verification password when the account has one,
+   read without echo; `--qr` links by scanning a QR in the Telegram app
+   instead. See [Telegram](#telegram) first: it needs the operator's app
+   registration.
+
 3. **Run** it:
 
    ```sh
@@ -69,9 +76,11 @@ accounts, and works while the bridge runs.
 | `CHATBRIDGE_DATA`        | `data`         | The store directory                                                  |
 | `CHATBRIDGE_LISTEN_ADDR` | `:8080`        | Where `/healthz` and `/metrics` are served                           |
 | `CHATBRIDGE_NAME`        | the host name  | The instance's name, as the console shows it                         |
-| `CHATBRIDGE_NETWORKS`    | every network  | The networks to run, comma-separated (`whatsapp`)                    |
+| `CHATBRIDGE_NETWORKS`    | every network  | The networks to run, comma-separated (`whatsapp`, `telegram`)        |
 | `CHATBRIDGE_DEVICE_NAME` | `Substrate`    | The name a network shows in the owner's linked devices               |
 | `CHATBRIDGE_DEBUG`       | `false`        | Debug logs from bridgev2 and the connectors, which include message text |
+| `CHATBRIDGE_TELEGRAM_API_ID`   | none     | The operator's Telegram app id, from my.telegram.org; Telegram is offered only with both |
+| `CHATBRIDGE_TELEGRAM_API_HASH` | none     | That app's hash                                                      |
 
 The server address comes from the store, which `authorize` fills. The token
 and the webhook URL are never logged.
@@ -153,6 +162,74 @@ minutes; one that is not coming back refuses them.
 A deleted `account` row unlinks the login and forgets what was sent for it,
 so a new link sends its chats and users again; `unlinkRequestedAt` unlinks
 and keeps the row.
+
+## Telegram
+
+Telegram is carried by mautrix-telegram's Go connector, on its MIT fork of
+gotd, beside WhatsApp in the same binary and on the same mautrix-go.
+
+**Setup.** Telegram's API takes a client only under an application
+registered at [my.telegram.org](https://my.telegram.org): its `api_id` and
+`api_hash` go in `CHATBRIDGE_TELEGRAM_API_ID` and
+`CHATBRIDGE_TELEGRAM_API_HASH`, and the network is offered only when both
+are set. The account's active sessions list the device as "Substrate",
+beside the registered app's name.
+
+**The terms.** Telegram's API terms bind whoever holds the `api_id`, which
+on a shared deployment is its operator. Since about February 2026 they
+forbid using Telegram data for the deployment of artificial intelligence
+without the participants' explicit, continuing consent (section 1.5), and an
+assistant that searches the mirrored chats plausibly falls inside that; the
+owner chose to mirror Telegram knowing it, and no agent grant can keep one
+network's rows out of a kind. Section 1.4 forbids clients that hide reads,
+presence or typing, and section 3.3 requires sponsored messages in channels.
+None of this is legal advice.
+
+**How it behaves**, against section 1.4:
+
+- Reading marks something read only through a `markread` action, as a
+  person's client does after they read. Mirroring and backfill mark nothing:
+  the connector reads history without marking it, and increments no view
+  counter.
+- Presence stays offline, as an idle official client's does: the connector
+  never sets the account online, and nothing types.
+- Before a `markread` action, the bridge reports the chat viewed, as a client
+  does when the owner opens it. In a broadcast channel the connector then
+  fetches the channel's sponsored message (at most every five minutes, when
+  the newest post changed), and the read that follows reports it viewed. The
+  connector posts it as a notice from its bridge bot, which carries no
+  network message id or sender, so the mirror does not carry it, and the
+  owner reading a channel in the console does not see it: a gap against
+  section 3.3 until the contract can carry one.
+- One process owns a session. Two bridges over one store are refused by the
+  store's lock. A copy of the store running elsewhere makes Telegram close the
+  session (`AUTH_KEY_DUPLICATED`); the account then reads `bad_credentials`
+  with a message saying so, nothing reconnects it, and the owner links again
+  after stopping the copy. An unknown error waits for a restart for the same
+  reason.
+- A `FLOOD_WAIT` stops sending on the account until it ends, and
+  `PEER_FLOOD` (Telegram's limit on writing to people who have not written
+  first) for a day, since Telegram does not say how long it lasts (its
+  @SpamBot tells the owner). Both show as a `flood_wait` warning with its
+  end. The wait lives in the running bridge, so a restart forgets it and the
+  next send meets Telegram's again.
+
+**History.** Telegram keeps everything, so the depth `login` asks for bounds
+the first backfill: `recent` fetches the latest 1,000 messages of each chat
+and creates the 50 most recent chats at login, `year` 5,000 and 200, `all`
+everything. The deepest depth any linked account asked for bounds the
+network from then on.
+
+**What is mapped.** Users by their numeric id, with their own name, their
+username as `handle`, their number when Telegram shares it, and whether they
+are in the owner's contacts as the owner's own session last saw them; the
+owner's address book names are not read (`contactName` stays unset).
+Direct chats are direct, groups and supergroups are groups, broadcast
+channels are channels. Messages, edits, deletions, reactions, read markers
+and files map as for WhatsApp. Not mapped: secret chats, which live only on
+the device that started them, and sponsored messages (above). A send that
+left before a crash cannot be found afterwards, because Telegram numbers
+messages on its server, so it settles as `uncertain`.
 
 ## Endpoints
 

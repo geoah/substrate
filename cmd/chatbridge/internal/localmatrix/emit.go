@@ -180,6 +180,10 @@ func (c *Connector) buildUser(ctx context.Context, tx *store.Tx, sc *roomScope, 
 				u.PhoneNumbers = append(u.PhoneNumbers, strings.TrimPrefix(ident, "tel:"))
 			case strings.HasPrefix(ident, "mailto:"):
 				u.Emails = append(u.Emails, strings.TrimPrefix(ident, "mailto:"))
+			case strings.HasPrefix(ident, c.network+":") && u.Handle == nil:
+				// A network's own identifier is its user name there
+				// (telegram:ada).
+				u.Handle = contract.Ptr(strings.TrimPrefix(ident, c.network+":"))
 			}
 		}
 		u.IsBot = contract.Ptr(g.IsBot)
@@ -195,8 +199,10 @@ func (c *Connector) buildUser(ctx context.Context, tx *store.Tx, sc *roomScope, 
 	if c.net != nil && sc.login != nil {
 		x := c.net.UserExtras(ctx, sc.login, networkid.UserID(userID))
 		if x.Known {
-			u.ContactName = contract.SetOrClear(x.ContactName)
 			u.IsContact = contract.Ptr(x.IsContact)
+		}
+		if x.NameKnown {
+			u.ContactName = contract.SetOrClear(x.ContactName)
 		}
 		if x.Handle != "" {
 			u.Handle = contract.Ptr(x.Handle)
@@ -736,7 +742,7 @@ func (c *Connector) portalChat(chat *contract.Chat, portal *bridgev2.Portal, cat
 		category = contract.CategorySpace
 	}
 	if c.net != nil {
-		if cat := c.net.ChatCategory(string(portal.ID)); cat != "" {
+		if cat := c.net.ChatCategory(portal); cat != "" {
 			category = cat
 		}
 	}

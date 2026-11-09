@@ -31,6 +31,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"github.com/geoah/substrate/cmd/chatbridge/internal/contract"
 	"github.com/geoah/substrate/cmd/chatbridge/internal/store"
 )
 
@@ -59,9 +60,13 @@ type Settings interface {
 // the owner's address book there, and under which name. Known is false when
 // the network cannot tell, which leaves both fields as the server has them.
 type Extras struct {
-	Known       bool
+	Known     bool
+	IsContact bool
+	// NameKnown says ContactName is the address book's name, or that there
+	// is none when empty; a network that knows who is a contact but not
+	// under which name leaves it false.
+	NameKnown   bool
 	ContactName string
-	IsContact   bool
 	Handle      string
 }
 
@@ -77,7 +82,13 @@ type Network interface {
 	StateWarnings(state *status.BridgeState, st AccountStatus, now time.Time) AccountStatus
 	// ChatCategory names a chat's category where only the network can tell
 	// (a channel), else "".
-	ChatCategory(portalID string) string
+	ChatCategory(portal *bridgev2.Portal) string
+	// BeforeRead runs before a markread action reaches the network: what an
+	// official client does when the owner opens the chat.
+	BeforeRead(ctx context.Context, login *bridgev2.UserLogin, portal *bridgev2.Portal)
+	// Throttle reads an action's error as the network telling the account
+	// to stop sending for a while, as a warning on the account.
+	Throttle(err error, now time.Time) (contract.Warning, bool)
 	// SentMessageIDs are the ids a message the owner sent under a
 	// transaction id may carry: on a network where the sender chooses the
 	// id, the transaction id is in it.

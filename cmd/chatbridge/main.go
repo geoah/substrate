@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/term"
 
 	"github.com/geoah/substrate/cmd/chatbridge/internal/app"
 	"github.com/geoah/substrate/cmd/chatbridge/internal/config"
@@ -56,6 +57,7 @@ Usage:
   chatbridge run                          run the bridge
   chatbridge authorize --server URL       get the bridge's token through the approval page
   chatbridge login whatsapp [--phone N]   link a WhatsApp account (stop the bridge first)
+  chatbridge login telegram [--qr]        link a Telegram account (needs CHATBRIDGE_TELEGRAM_API_ID and _HASH)
   chatbridge status                       show what the store holds
   chatbridge version                      print the version
 
@@ -194,13 +196,14 @@ func loginCmd(args []string) error {
 		return err
 	}
 	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
-		return errors.New("login needs a network: chatbridge login whatsapp")
+		return errors.New("login needs a network: chatbridge login whatsapp, or telegram")
 	}
 	network := args[0]
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	dataFlag(fs, &cfg)
-	phone := fs.String("phone", "", "link with a pairing code typed on the phone, for this number in international format, instead of a QR")
-	history := fs.String("history", "", "how much history to ask for: recent (about 3 months), year, or all; asked when absent")
+	phone := fs.String("phone", "", "the phone number, in international format: WhatsApp links with a pairing code typed on the phone instead of a QR; Telegram skips asking for it")
+	qr := fs.Bool("qr", false, "Telegram: link by scanning a QR in the app instead of a code sent to the phone")
+	history := fs.String("history", "", "how much history to ask for: recent, year or all; asked when absent")
 	invert := fs.Bool("invert-qr", false, "draw the QR for a terminal with a light background")
 	_ = fs.Parse(args[1:])
 	log, zlog := loggers(cfg)
@@ -210,16 +213,7 @@ func loginCmd(args []string) error {
 	in := bufio.NewReader(os.Stdin)
 	depth := *history
 	if depth == "" {
-		fmt.Fprintln(os.Stderr, "How much history should the phone send? The network fixes this when the device links; changing it later means linking again.")
-		fmt.Fprintln(os.Stderr, "  recent  about the last three months (the network's default)")
-		fmt.Fprintln(os.Stderr, "  year    about a year")
-		fmt.Fprintln(os.Stderr, "  all     everything the phone holds, up to about three years")
-		fmt.Fprint(os.Stderr, "History [recent]: ")
-		line, _ := in.ReadString('\n')
-		depth = strings.TrimSpace(line)
-		if depth == "" {
-			depth = string(networks.HistoryRecent)
-		}
+		depth = askHistory(network, in)
 	}
 	h, err := networks.ParseHistory(depth)
 	if err != nil {
@@ -232,11 +226,60 @@ func loginCmd(args []string) error {
 	defer a.Close()
 	flow := ""
 	answers := map[string]string{}
-	if *phone != "" {
+	switch {
+	case *qr:
+		flow = "qr"
+	case *phone != "" && network == "whatsapp":
 		flow = "phone"
+	}
+	if *phone != "" {
 		answers["phone_number"] = *phone
 	}
-	return a.Login(ctx, network, flow, h, signin.Terminal{In: in, Out: os.Stderr, Answers: answers, InvertQR: *invert})
+	return a.Login(ctx, network, flow, h, signin.Terminal{
+		In: in, Out: os.Stderr, Answers: answers, InvertQR: *invert,
+		Secret: func(prompt string) (string, error) { return readSecret(prompt, in) },
+	})
+}
+
+// askHistory asks how far back a new link's history goes. WhatsApp fixes it
+// when the device links; Telegram serves everything, and the answer bounds
+// how much of it the first backfill fetches.
+func askHistory(network string, in *bufio.Reader) string {
+	switch network {
+	case "telegram":
+		fmt.Fprintln(os.Stderr, "How much history should the first backfill fetch? Telegram keeps everything; this bounds each chat.")
+		fmt.Fprintln(os.Stderr, "  recent  the latest 1,000 messages of each chat, from the 50 most recent chats")
+		fmt.Fprintln(os.Stderr, "  year    the latest 5,000 messages of each chat, from the 200 most recent chats")
+		fmt.Fprintln(os.Stderr, "  all     every message of every chat")
+	default:
+		fmt.Fprintln(os.Stderr, "How much history should the phone send? The network fixes this when the device links; changing it later means linking again.")
+		fmt.Fprintln(os.Stderr, "  recent  about the last three months (the network's default)")
+		fmt.Fprintln(os.Stderr, "  year    about a year")
+		fmt.Fprintln(os.Stderr, "  all     everything the phone holds, up to about three years")
+	}
+	fmt.Fprint(os.Stderr, "History [recent]: ")
+	line, _ := in.ReadString('\n')
+	if depth := strings.TrimSpace(line); depth != "" {
+		return depth
+	}
+	return string(networks.HistoryRecent)
+}
+
+// readSecret reads a password or a token without echoing it on a terminal,
+// and as a plain line from a pipe.
+func readSecret(prompt string, in *bufio.Reader) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		b, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		return string(b), err
+	}
+	line, err := in.ReadString('\n')
+	if err != nil && line == "" {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
 
 func statusCmd(args []string) error {

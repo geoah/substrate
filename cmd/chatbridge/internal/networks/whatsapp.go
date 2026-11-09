@@ -129,7 +129,7 @@ func (waHooks) UserExtras(ctx context.Context, login *bridgev2.UserLogin, user n
 	if name == "" {
 		name = contact.FirstName
 	}
-	return localmatrix.Extras{Known: true, ContactName: name, IsContact: name != ""}
+	return localmatrix.Extras{Known: true, IsContact: name != "", NameKnown: true, ContactName: name}
 }
 
 // SelfUserID is the owner's LID, else the phone number id.
@@ -202,8 +202,8 @@ func (waHooks) SentMessageIDs(login *bridgev2.UserLogin, chat, txn string) []net
 }
 
 // ChatCategory reads a WhatsApp channel from its JID's server.
-func (waHooks) ChatCategory(portalID string) string {
-	if strings.HasSuffix(portalID, "@"+types.NewsletterServer) {
+func (waHooks) ChatCategory(portal *bridgev2.Portal) string {
+	if strings.HasSuffix(string(portal.ID), "@"+types.NewsletterServer) {
 		return contract.CategoryChannel
 	}
 	return ""
@@ -224,3 +224,10 @@ func (waHooks) Classify(err error) (localmatrix.Outcome, bool) {
 	}
 	return localmatrix.Outcome{}, false
 }
+
+// BeforeRead does nothing: the connector's viewing hook sets the owner's
+// presence available, which section 9 keeps unavailable.
+func (waHooks) BeforeRead(context.Context, *bridgev2.UserLogin, *bridgev2.Portal) {}
+
+// Throttle is never: WhatsApp's limits arrive as the account's state.
+func (waHooks) Throttle(error, time.Time) (contract.Warning, bool) { return contract.Warning{}, false }

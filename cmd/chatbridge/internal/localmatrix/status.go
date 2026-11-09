@@ -91,6 +91,22 @@ func (c *Connector) accountStatus(ctx context.Context, state *status.BridgeState
 	if st.Warnings == nil {
 		st.Warnings = []contract.Warning{}
 	}
+	// A wait the network imposed on an action outlives a reconnect.
+	c.stateMu.Lock()
+	if prev, ok := c.states[state.RemoteID]; ok {
+		now := c.store.Now()
+		for _, w := range prev.Warnings {
+			if (w.Code != contract.WarningFloodWait && w.Code != contract.WarningCheckpoint) || w.Until == nil {
+				continue
+			}
+			until, err := time.Parse(time.RFC3339Nano, string(*w.Until))
+			if err != nil || !until.After(now) || slices.ContainsFunc(st.Warnings, func(n contract.Warning) bool { return n.Code == w.Code }) {
+				continue
+			}
+			st.Warnings = append(st.Warnings, w)
+		}
+	}
+	c.stateMu.Unlock()
 
 	upsert := &contract.AccountUpsert{Head: c.head(account, contract.TypeAccountUpsert, time.Time{})}
 	if state.RemoteName != "" {
@@ -174,4 +190,45 @@ func (c *Connector) AccountRemoved(ctx context.Context, account string, forget b
 	delete(c.states, networkid.UserLoginID(account))
 	c.stateMu.Unlock()
 	return err
+}
+
+// warn adds a warning the network gave on an action to an account's state,
+// replacing one of the same code, and appends the state: a flood wait, a
+// rate limit or a captcha stops sending on the account until it ends.
+func (c *Connector) warn(ctx context.Context, account string, w contract.Warning) {
+	c.stateMu.Lock()
+	st, ok := c.states[networkid.UserLoginID(account)]
+	if !ok {
+		st = AccountStatus{State: contract.StateConnected}
+	}
+	warnings := make([]contract.Warning, 0, len(st.Warnings)+1)
+	for _, old := range st.Warnings {
+		if old.Code != w.Code {
+			warnings = append(warnings, old)
+		}
+	}
+	st.Warnings = append(warnings, w)
+	c.states[networkid.UserLoginID(account)] = st
+	c.stateMu.Unlock()
+	ev := &contract.AccountState{Head: c.head(account, contract.TypeAccountState, time.Time{}), State: st.State, Warnings: st.Warnings}
+	if st.Message != "" {
+		ev.Message = contract.Ptr(st.Message)
+	}
+	err := c.store.Do(ctx, func(tx *store.Tx) error {
+		key := "account.state." + c.network + "." + account
+		d := digest(ev)
+		if d == tx.GetKV(ctx, key) {
+			return nil
+		}
+		if _, err := tx.Append(ctx, ev); err != nil {
+			return err
+		}
+		return tx.SetKV(ctx, key, d)
+	})
+	if err != nil {
+		c.log.Error("recording an account warning failed", "error", err)
+	}
+	if l := c.statusListener(); l != nil {
+		l.AccountState(c.network, account, st)
+	}
 }
