@@ -1,0 +1,3842 @@
+{
+  "importer": "randox",
+  "name": "randox",
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/observations/source",
+      "namespace": "source",
+      "key": "randox",
+      "mode": "create",
+      "properties": {
+        "name": "Randox",
+        "class": "lab",
+        "manufacturer": "Randox Laboratories"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "randox",
+      "key": "RH9-00000007",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox Health",
+        "accession": "RH9-00000007",
+        "at": "2025-07-15T08:30:00+01:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": null,
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1770967815,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000007/Waist Circumference",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/waist_circumference",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000007"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-07-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "92",
+          "unit": "cm"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "94",
+              "unit": "cm"
+            },
+            "text": "healthy: under 94"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Waist Circumference",
+          "display": "Waist Circumference"
+        },
+        "upstreamId": "RH9-00000007/Waist Circumference",
+        "specimen": null,
+        "method": "measured at the clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770967815
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000007/Glucose",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/fasting_glucose",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000007"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-07-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "5.4",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "3.9",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "5.5",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Glucose",
+          "display": "Glucose"
+        },
+        "upstreamId": "RH9-00000007/Glucose",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2025-07-15T08:30:00+01:00",
+          "fasting": false
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770967815
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "randox",
+      "key": "RH9-00000101",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox Health",
+        "accession": "RH9-00000101",
+        "at": "2026-02-10T09:00:00+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-02-12T21:34:00+00:00",
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-6df079e0282b833b25e52bfdc78866e9b8b92598f21f4dea3c7026b1bca5185e"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1770804000,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Height",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/height",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "1.80",
+          "unit": "m"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox-health",
+          "code": "Height",
+          "display": "Height"
+        },
+        "upstreamId": "RH9-00000101/Height",
+        "specimen": null,
+        "method": "measured at the clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Body Mass Index (BMI)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bmi",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "25.1",
+          "unit": "kg/m2"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "18.5",
+              "unit": "kg/m2"
+            },
+            "high": {
+              "value": "24.9",
+              "unit": "kg/m2"
+            },
+            "text": "healthy"
+          },
+          {
+            "low": {
+              "value": "25.0",
+              "unit": "kg/m2"
+            },
+            "high": {
+              "value": "29.9",
+              "unit": "kg/m2"
+            },
+            "text": "overweight",
+            "tone": "fair"
+          },
+          {
+            "low": {
+              "value": "30",
+              "unit": "kg/m2"
+            },
+            "text": "obese: at least 30",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "High"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Body Mass Index (BMI)",
+          "display": "Body Mass Index (BMI)"
+        },
+        "upstreamId": "RH9-00000101/Body Mass Index (BMI)",
+        "specimen": null,
+        "method": "measured at the clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Systolic Blood pressure",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/systolic_blood_pressure",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "128",
+          "unit": "mm[Hg]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "130",
+              "unit": "mm[Hg]"
+            },
+            "text": "normal: under 130"
+          },
+          {
+            "low": {
+              "value": "130",
+              "unit": "mm[Hg]"
+            },
+            "text": "high: at least 130",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Systolic Blood pressure",
+          "display": "Systolic Blood pressure"
+        },
+        "upstreamId": "RH9-00000101/Systolic Blood pressure",
+        "specimen": null,
+        "method": "measured at the clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Pulse",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/heart_rate",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "62",
+          "unit": "/min"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox-health",
+          "code": "Pulse",
+          "display": "Pulse"
+        },
+        "upstreamId": "RH9-00000101/Pulse",
+        "specimen": null,
+        "method": "measured at the clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/LDL Cholesterol",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/ldl_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "2.9",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "optimal: at most 3.0"
+          },
+          {
+            "low": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "high: over 3.0",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "LDL Cholesterol",
+          "display": "LDL Cholesterol"
+        },
+        "upstreamId": "RH9-00000101/LDL Cholesterol",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/HDL Cholesterol",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/hdl_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "1.4",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "1.0",
+              "unit": "mmol/L"
+            },
+            "text": "optimal: at least 1.0"
+          },
+          {
+            "high": {
+              "value": "1.0",
+              "unit": "mmol/L"
+            },
+            "text": "risk: under 1.0",
+            "tone": "poor"
+          },
+          {
+            "low": {
+              "value": "1.03",
+              "unit": "mmol/L"
+            },
+            "text": "normal: at least 1.03, metabolic syndrome"
+          },
+          {
+            "high": {
+              "value": "1.03",
+              "unit": "mmol/L"
+            },
+            "text": "risk: under 1.03, metabolic syndrome",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "HDL Cholesterol",
+          "display": "HDL Cholesterol"
+        },
+        "upstreamId": "RH9-00000101/HDL Cholesterol",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Triglycerides",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/triglycerides",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "1.9",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "1.7",
+              "unit": "mmol/L"
+            },
+            "text": "optimal: under 1.7"
+          },
+          {
+            "low": {
+              "value": "1.7",
+              "unit": "mmol/L"
+            },
+            "text": "raised: at least 1.7",
+            "tone": "fair"
+          },
+          {
+            "low": {
+              "value": "1.7",
+              "unit": "mmol/L"
+            },
+            "text": "risk: over 1.7, metabolic syndrome",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "High"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Triglycerides",
+          "display": "Triglycerides"
+        },
+        "upstreamId": "RH9-00000101/Triglycerides",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Total Cholesterol / HDL Cholesterol Ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/cholesterol_hdl_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "3.2",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "4.0",
+              "unit": "1"
+            },
+            "text": "optimal: under 4.0"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Total Cholesterol / HDL Cholesterol Ratio",
+          "display": "Total Cholesterol / HDL Cholesterol Ratio"
+        },
+        "upstreamId": "RH9-00000101/Total Cholesterol / HDL Cholesterol Ratio",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Glucose",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/fasting_glucose",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "5.1",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "3.9",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "5.5",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "5.6",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "6.9",
+              "unit": "mmol/L"
+            },
+            "text": "raised",
+            "tone": "fair"
+          },
+          {
+            "low": {
+              "value": "7.0",
+              "unit": "mmol/L"
+            },
+            "text": "high: at least 7.0",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Glucose",
+          "display": "Glucose"
+        },
+        "upstreamId": "RH9-00000101/Glucose",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/HbA1c",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/hba1c_ifcc",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "35",
+          "unit": "mmol/mol"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox-health",
+          "code": "HbA1c",
+          "display": "HbA1c"
+        },
+        "upstreamId": "RH9-00000101/HbA1c",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Microalbumin / Creatinine Ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/urine_albumin_creatinine_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": "not-detected",
+        "codedValue": {
+          "system": "http://snomed.info/sct",
+          "code": "260415000",
+          "display": "not detected"
+        },
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "text": "normal: not detected"
+          },
+          {
+            "low": {
+              "value": "3.5",
+              "unit": "mg/mmol"
+            },
+            "text": "raised: at least 3.5",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Microalbumin / Creatinine Ratio",
+          "display": "Microalbumin / Creatinine Ratio"
+        },
+        "upstreamId": "RH9-00000101/Microalbumin / Creatinine Ratio",
+        "specimen": {
+          "material": "urine",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Protein (Urine)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/urine_protein",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": "negative",
+        "codedValue": {
+          "system": "http://snomed.info/sct",
+          "code": "260385009",
+          "display": "Negative"
+        },
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "text": "normal: negative"
+          },
+          {
+            "text": "abnormal: trace",
+            "tone": "poor"
+          },
+          {
+            "low": {
+              "value": "30",
+              "unit": "mg/dL"
+            },
+            "text": "abnormal: at least 30",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Protein (Urine)",
+          "display": "Protein (Urine)"
+        },
+        "upstreamId": "RH9-00000101/Protein (Urine)",
+        "specimen": {
+          "material": "urine",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/pH (Urine)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/urine_ph",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "6.0",
+          "unit": "[pH]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "5.0",
+              "unit": "[pH]"
+            },
+            "high": {
+              "value": "8.0",
+              "unit": "[pH]"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "pH (Urine)",
+          "display": "pH (Urine)"
+        },
+        "upstreamId": "RH9-00000101/pH (Urine)",
+        "specimen": {
+          "material": "urine",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Red Blood Cells (Urine)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/urine_blood",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": "negative",
+        "codedValue": {
+          "system": "http://snomed.info/sct",
+          "code": "260385009",
+          "display": "Negative"
+        },
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "text": "normal: negative"
+          },
+          {
+            "text": "abnormal: at least 10",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Red Blood Cells (Urine)",
+          "display": "Red Blood Cells (Urine)"
+        },
+        "upstreamId": "RH9-00000101/Red Blood Cells (Urine)",
+        "specimen": {
+          "material": "urine",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Urobilinogen (Urine)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/urine_urobilinogen",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": null,
+        "codedValue": null,
+        "text": "Normal",
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "text": "normal: normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Urobilinogen (Urine)",
+          "display": "Urobilinogen (Urine)"
+        },
+        "upstreamId": "RH9-00000101/Urobilinogen (Urine)",
+        "specimen": {
+          "material": "urine",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Fibrosis-4 Score (FIB-4)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/fib4",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "0.62",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "1.3",
+              "unit": "{score}"
+            },
+            "text": "low risk: under 1.3"
+          },
+          {
+            "low": {
+              "value": "1.3",
+              "unit": "{score}"
+            },
+            "high": {
+              "value": "2.67",
+              "unit": "{score}"
+            },
+            "text": "indeterminate",
+            "tone": "fair"
+          },
+          {
+            "low": {
+              "value": "2.67",
+              "unit": "{score}"
+            },
+            "text": "high risk: at least 2.67",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Fibrosis-4 Score (FIB-4)",
+          "display": "Fibrosis-4 Score (FIB-4)"
+        },
+        "upstreamId": "RH9-00000101/Fibrosis-4 Score (FIB-4)",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Vitamin D",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/vitamin_d",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "20",
+          "unit": "nmol/L",
+          "comparator": "<"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "50",
+              "unit": "nmol/L"
+            },
+            "high": {
+              "value": "200",
+              "unit": "nmol/L"
+            },
+            "text": "optimal"
+          },
+          {
+            "low": {
+              "value": "25",
+              "unit": "nmol/L"
+            },
+            "high": {
+              "value": "50",
+              "unit": "nmol/L"
+            },
+            "text": "insufficiency",
+            "tone": "fair"
+          },
+          {
+            "high": {
+              "value": "25",
+              "unit": "nmol/L"
+            },
+            "text": "deficiency: under 25",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "L",
+            "display": "Low"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Vitamin D",
+          "display": "Vitamin D"
+        },
+        "upstreamId": "RH9-00000101/Vitamin D",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Folic acid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/folate_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "9.1",
+          "unit": "ug/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox-health",
+          "code": "Folic acid",
+          "display": "Folic acid"
+        },
+        "upstreamId": "RH9-00000101/Folic acid",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Ferritin",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/ferritin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": "<20",
+        "sourceUnit": "furlongs/L",
+        "normalizationFailure": "unknown-unit",
+        "referenceRanges": [
+          {
+            "text": "deficiency: under 25",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "A",
+            "display": "Abnormal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Ferritin",
+          "display": "Ferritin"
+        },
+        "upstreamId": "RH9-00000101/Ferritin",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Follicle Stimulating Hormone",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/fsh",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "4.2",
+          "unit": "[IU]/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "1.5",
+              "unit": "[IU]/L"
+            },
+            "high": {
+              "value": "12.4",
+              "unit": "[IU]/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Follicle Stimulating Hormone",
+          "display": "Follicle Stimulating Hormone"
+        },
+        "upstreamId": "RH9-00000101/Follicle Stimulating Hormone",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/Estimated Glomerular Filtration Rate (eGFR)",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/egfr",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:00:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "90",
+          "unit": "mL/min/{1.73_m2}",
+          "comparator": ">"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "90",
+              "unit": "mL/min/{1.73_m2}"
+            },
+            "text": "normal: at least 90"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox-health",
+          "code": "Estimated Glomerular Filtration Rate (eGFR)",
+          "display": "Estimated Glomerular Filtration Rate (eGFR)"
+        },
+        "upstreamId": "RH9-00000101/Estimated Glomerular Filtration Rate (eGFR)",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-02-10T09:00:00+00:00",
+          "fasting": true
+        },
+        "method": "Vitality programme, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox Health (Tanita MC-780)",
+        "accession": "4242 2026-02-10 09:20",
+        "at": "2026-02-10T09:20:00+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-02-10T09:20:00+00:00",
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-7f9e769afeefe9bf7084ca74461cfcf8dfdb94285a0eed271b147fc6ec928474"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1770804000,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Weight",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "81.6",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "68.0",
+              "unit": "kg"
+            },
+            "high": {
+              "value": "83.0",
+              "unit": "kg"
+            },
+            "text": "optimal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Within desirable range"
+          }
+        ],
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Weight",
+          "display": "Weight"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Weight",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "22.4",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "11.0",
+              "unit": "%"
+            },
+            "high": {
+              "value": "21.9",
+              "unit": "%"
+            },
+            "text": "optimal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "Above desirable range"
+          }
+        ],
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat %",
+          "display": "Fat %"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat %",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "18.3",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass",
+          "display": "Fat Mass"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/FFM",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "63.3",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "FFM",
+          "display": "FFM"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/FFM",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "60.1",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "52.0",
+              "unit": "kg"
+            },
+            "high": {
+              "value": "66.0",
+              "unit": "kg"
+            },
+            "text": "optimal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Within desirable range"
+          }
+        ],
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass",
+          "display": "Muscle Mass"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Metabolic Age",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/metabolic_age",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "41",
+          "unit": "a"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Metabolic Age",
+          "display": "Metabolic Age"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Metabolic Age",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/BMR",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/basal_metabolic_rate",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "1795",
+          "unit": "kcal/d"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "BMR",
+          "display": "BMR"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/BMR",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Visceral Fat Rating",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/visceral_fat_rating",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "8",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Visceral Fat Rating",
+          "display": "Visceral Fat Rating"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Visceral Fat Rating",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/TBW",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_water_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "45.0",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "TBW",
+          "display": "TBW"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/TBW",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/TBW %",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_water_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "55.1",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "TBW %",
+          "display": "TBW %"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/TBW %",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/ECW",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/extracellular_water",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "19.2",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "ECW",
+          "display": "ECW"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/ECW",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/ICW",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/intracellular_water",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "25.8",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "ICW",
+          "display": "ICW"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/ICW",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/ECW/TBW",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/extracellular_water_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "42.7",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "ECW/TBW",
+          "display": "ECW/TBW"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/ECW/TBW",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Bone Mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "3.3",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Bone Mass",
+          "display": "Bone Mass"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Bone Mass",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Protein",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/protein_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "12.4",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Protein",
+          "display": "Protein"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Protein",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Leg Muscle Score",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/leg_muscle_score",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "95",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Leg Muscle Score",
+          "display": "Leg Muscle Score"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Leg Muscle Score",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass/trunk",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "trunk",
+        "value": {
+          "value": "31.2",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass Trunk",
+          "display": "Muscle Mass Trunk"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass Trunk",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %/trunk",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "trunk",
+        "value": {
+          "value": "24.1",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat % Trunk",
+          "display": "Fat % Trunk"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat % Trunk",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass/trunk",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "trunk",
+        "value": {
+          "value": "10.2",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass Trunk",
+          "display": "Fat Mass Trunk"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass Trunk",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass/left_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_arm",
+        "value": {
+          "value": "3.4",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass Left Arm",
+          "display": "Muscle Mass Left Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass Left Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %/left_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_arm",
+        "value": {
+          "value": "19.8",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat % Left Arm",
+          "display": "Fat % Left Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat % Left Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass/left_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_arm",
+        "value": {
+          "value": "0.9",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass Left Arm",
+          "display": "Fat Mass Left Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass Left Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass/right_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_arm",
+        "value": {
+          "value": "3.5",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass Right Arm",
+          "display": "Muscle Mass Right Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass Right Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %/right_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_arm",
+        "value": {
+          "value": "19.5",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat % Right Arm",
+          "display": "Fat % Right Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat % Right Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass/right_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_arm",
+        "value": {
+          "value": "0.9",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass Right Arm",
+          "display": "Fat Mass Right Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass Right Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass/left_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_leg",
+        "value": {
+          "value": "10.6",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass Left Leg",
+          "display": "Muscle Mass Left Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass Left Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %/left_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_leg",
+        "value": {
+          "value": "18.7",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat % Left Leg",
+          "display": "Fat % Left Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat % Left Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass/left_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_leg",
+        "value": {
+          "value": "2.6",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass Left Leg",
+          "display": "Fat Mass Left Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass Left Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Muscle Mass/right_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/muscle_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_leg",
+        "value": {
+          "value": "10.8",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Muscle Mass Right Leg",
+          "display": "Muscle Mass Right Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Muscle Mass Right Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat %/right_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_leg",
+        "value": {
+          "value": "18.9",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat % Right Leg",
+          "display": "Fat % Right Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat % Right Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Fat Mass/right_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_leg",
+        "value": {
+          "value": "2.7",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Fat Mass Right Leg",
+          "display": "Fat Mass Right Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Fat Mass Right Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "6.2",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle H-L (50 kHz)",
+          "display": "Phase Angle H-L (50 kHz)"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle H-L (50 kHz)",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle/right_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_leg",
+        "value": {
+          "value": "6.5",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle Right Leg",
+          "display": "Phase Angle Right Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle Right Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle/left_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_leg",
+        "value": {
+          "value": "6.4",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle Left Leg",
+          "display": "Phase Angle Left Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle Left Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle/right_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "right_arm",
+        "value": {
+          "value": "5.9",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle Right Arm",
+          "display": "Phase Angle Right Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle Right Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle/left_arm",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "left_arm",
+        "value": {
+          "value": "5.8",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle Left Arm",
+          "display": "Phase Angle Left Arm"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle Left Arm",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "randox",
+      "key": "RH9-00000101/bia/Phase Angle/leg_to_leg",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/phase_angle",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "randox"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "randox",
+            "key": "RH9-00000101/bia"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-10T09:20:00+00:00",
+        "utcOffset": 0,
+        "channel": "leg_to_leg",
+        "value": {
+          "value": "7.1",
+          "unit": "deg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "tanita-mc-780",
+          "code": "Phase Angle Leg-Leg",
+          "display": "Phase Angle Leg-Leg"
+        },
+        "upstreamId": "4242/2026-02-10T09:20/Phase Angle Leg-Leg",
+        "specimen": null,
+        "method": "BIA, Tanita MC-780",
+        "status": "final",
+        "provenance": {
+          "page": 1
+        }
+      },
+      "revision": 1770804000
+    }
+  ],
+  "documents": [
+    {
+      "digest": "blob-sha256-6df079e0282b833b25e52bfdc78866e9b8b92598f21f4dea3c7026b1bca5185e",
+      "name": "Randox health report 2026-02-10.pdf",
+      "mediaType": "application/pdf",
+      "size": 37
+    },
+    {
+      "digest": "blob-sha256-7f9e769afeefe9bf7084ca74461cfcf8dfdb94285a0eed271b147fc6ec928474",
+      "name": "Randox body composition 2026-02-10.pdf",
+      "mediaType": "application/pdf",
+      "size": 2256
+    }
+  ],
+  "left": [
+    {
+      "what": "items/visit-reports/101.json: the biomarker tracking report",
+      "why": "it repeats the visits' results as charts; it is not read"
+    },
+    {
+      "what": "Blood pressure, RH9-00000101",
+      "why": "it repeats the systolic value and its bands beside the systolic and diastolic rows"
+    },
+    {
+      "what": "Estimated Glomerular Filtration Rate (eGFR), RH9-00000101",
+      "why": "the Pituitary & Adrenal Health panel's second reference range is not read"
+    },
+    {
+      "what": "Weight, RH9-00000101",
+      "why": "the body composition sheet gives the same measurement with its desirable range; the sheet's is kept"
+    },
+    {
+      "what": "BMI, 4242 2026-02-10 09:20",
+      "why": "the visit's results give the same measurement; theirs is kept"
+    },
+    {
+      "what": "Ferritin, RH9-00000101",
+      "why": "its value is kept as received: its unit, furlongs/L, is not one the repository knows"
+    },
+    {
+      "what": "Glorbin Index, RH9-00000101",
+      "why": "the repository has no metric for Glorbin Index"
+    },
+    {
+      "what": "Vitamin B12, RH9-00000101",
+      "why": "it has no value"
+    },
+    {
+      "what": "items/visit/101.json: order RH9-00000102",
+      "why": "it is not reported yet"
+    }
+  ],
+  "source": {
+    "kind": "substrate.reamde.dev/observations/source",
+    "namespace": "source",
+    "key": "randox"
+  }
+}
