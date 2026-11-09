@@ -403,3 +403,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0244](0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md) | An applet names its runtime, and a2ui is the one the server runs | accepted |
 | [0245](0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | A stale revision is a validation refusal narrowed by the reason `stale_revision` | proposed |
 | [0246](0246-a-declared-property-a-derived-only-token-shadows-is-spelled-with-a-leading-dot.md) | A declared property a derived-only token shadows is spelled with a leading dot | accepted |
+| [0250](0250-a-chat-bridge-is-an-app-whose-instances-trust-each-other-and-delivers-one-ordered-stream-per-instance.md) | A chat bridge is an app whose instances trust each other, and delivers one ordered stream per instance with an applied watermark | proposed |
+| [0251](0251-one-provider-package-carries-every-chat-network-and-the-network-is-a-property.md) | One provider package carries every chat network, and the network is a property | proposed |
+| [0252](0252-what-the-owner-or-an-agent-does-in-a-chat-is-a-chataction-the-bridge-carries-out-behind-a-shipped-gate.md) | What the owner or an agent does in a chat is a `chataction` the bridge carries out, behind a shipped gate | proposed |

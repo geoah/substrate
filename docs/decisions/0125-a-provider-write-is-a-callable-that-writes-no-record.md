@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-644 agent session)
+amended-by: 0252
 ---
 
 # 0125. A provider write is a callable that writes no record
