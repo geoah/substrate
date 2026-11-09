@@ -108,8 +108,23 @@ describe("the server's unit spelling key", () => {
     ["10\u00b3/\u03bcL", "10*3/uL"],
     ["ug", "ug"],
     ["  ", ""],
+    // Go trims Unicode's White_Space: U+0085 goes, U+FEFF stays.
+    ["\u0085kg\u0085", "kg"],
+    ["\u00a0kg\u3000", "kg"],
+    ["\ufeffx", "\ufeffx"],
   ])("keys %j as %j", (spelling, key) => {
     expect(unitSpellingKey(spelling)).toBe(key)
+  })
+
+  it("keeps two units apart whose codes differ only by U+FEFF", () => {
+    const g = parseUnitGraph({
+      units: [
+        { id: "a", code: "\ufeffx", root: "a", factor: "1" },
+        { id: "b", code: "x", root: "b", factor: "1" },
+      ],
+    })
+    expect(unitId(g, "x")).toBe("b")
+    expect(unitId(g, "\ufeffx")).toBe("a")
   })
 
   it("finds a unit by any spelling of its id, code or alias", () => {

@@ -45,12 +45,16 @@ function tenEnds(before: string[]): boolean {
   return n === 2 || "./(".includes(before[n - 3])
 }
 
+// Go's strings.TrimSpace trims Unicode's White_Space set, which holds
+// U+0085 and not U+FEFF; String.prototype.trim does the opposite on both.
+const EDGE_SPACE = /^\p{White_Space}+|\p{White_Space}+$/gu
+
 /** The one key the server matches a stored unit spelling by: trimmed, both
  * micro signs as `u`, the superscript digits as ASCII, and a superscript
  * power of a bare 10 as UCUM's `10*`. The server stores a spelling it
  * resolves this way normalized, so a row written `kg/m²` reads `kg/m2`. */
 export function unitSpellingKey(s: string): string {
-  const runes = [...s.trim()]
+  const runes = [...s.replace(EDGE_SPACE, "")]
   let out = ""
   runes.forEach((r, i) => {
     const to = UNIT_CHARACTERS[r]
