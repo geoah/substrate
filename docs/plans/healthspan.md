@@ -469,10 +469,10 @@ Two additions every health app needs, made in the kit rather than the app:
     `@substrate/client`) watches the kinds the mounted reads name. It starts
     from a bookmark taken before any read it covers: a list of those kinds
     with `first=1`, whose `head` and `generation` are the watch's `from`
-    (the list-then-watch handoff
-    [the list read promises](../api.md#counting-the-filtered-set)), so a change after a read began is never missed. When the set
-    of kinds grows it restarts from the last cursor it saw, not the live
-    head. On `relist` (the history moved on) it invalidates every followed
+    (the handoff [the list read](../api.md#counting-the-filtered-set)
+    promises), so a change after a read began is never missed. When the
+    set of kinds grows it restarts from the last cursor it saw, not the
+    live head. On `relist` (the history moved on) it invalidates every followed
     read, takes a new bookmark and starts again; on `ended` it stops,
     and the reads fall back to `staleAfter`.
   - It follows only kinds the repository holds: the kinds of the packages
