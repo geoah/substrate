@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.123.0](https://github.com/geoah/substrate/compare/v0.122.0...v0.123.0) (2026-11-09)
+
+
+### Added
+
+* **metrics:** usage series per repository, anonymized unless SUBSTRATE_METRICS_ANONYMIZE=false ([#1294](https://github.com/geoah/substrate/issues/1294)) ([a92776f](https://github.com/geoah/substrate/commit/a92776f9fa4d84e63bb3b48a196cdfe0dd560de7))
+* **providers:** let agents mail, schedule and search Drive through Google, each send waiting for the owner's approval in chat ([#1308](https://github.com/geoah/substrate/issues/1308)) ([e9c8f24](https://github.com/geoah/substrate/commit/e9c8f24b7dbbdccdfab8d33742b231605fb169c6))
+* **tasks:** Tasks over any kind with a status, with suggestions and groups per collection ([#1296](https://github.com/geoah/substrate/issues/1296)) ([799e8a1](https://github.com/geoah/substrate/commit/799e8a1f7eee82047d5d3444a04e52de2e665c92))
+
+
+### Fixed
+
+* **notion:** skip the workspace roster when the token cannot list users ([#1297](https://github.com/geoah/substrate/issues/1297)) ([4a123a1](https://github.com/geoah/substrate/commit/4a123a195e4ef6ae380eda4fd421b4b8c4f7c55e))
+* word every sync and sign-in failure as a sentence with the fix ([#1301](https://github.com/geoah/substrate/issues/1301)) ([5465543](https://github.com/geoah/substrate/commit/546554315123e0a92d5b7c2a2ff5ed53e28966a4))
+
 ## [0.122.0](https://github.com/geoah/substrate/compare/v0.121.0...v0.122.0) (2026-11-09)
 
 
