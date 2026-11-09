@@ -6,6 +6,8 @@ import {
   parseRational,
   parseUnitGraph,
   throughAnalyte,
+  unitId,
+  unitSpellingKey,
 } from "./units"
 
 // The shape `GET /api/v1/units` answers.
@@ -93,6 +95,30 @@ describe("through an analyte", () => {
         "mmol/mol"
       )
     ).toBeUndefined()
+  })
+})
+
+describe("the server's unit spelling key", () => {
+  // internal/vocabulary/unitgraph_test.go's TestUnitSpellingKey, case by case.
+  it.each([
+    [" kg ", "kg"],
+    ["\u00b5g", "ug"],
+    ["\u03bcg", "ug"],
+    ["m\u00b2", "m2"],
+    ["10\u00b3/\u03bcL", "10*3/uL"],
+    ["ug", "ug"],
+    ["  ", ""],
+  ])("keys %j as %j", (spelling, key) => {
+    expect(unitSpellingKey(spelling)).toBe(key)
+  })
+
+  it("finds a unit by any spelling of its id, code or alias", () => {
+    const g = parseUnitGraph({
+      units: [{ id: "ug/L", code: "ug/L", root: "kg/m3", factor: "1/1000000" }],
+    })
+    expect(unitId(g, "\u00b5g/L")).toBe("ug/L")
+    expect(unitId(g, "\u03bcg/L ")).toBe("ug/L")
+    expect(unitId(g, "mg/L")).toBeUndefined()
   })
 })
 

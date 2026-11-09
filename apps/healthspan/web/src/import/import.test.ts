@@ -476,6 +476,19 @@ describe("the plan", () => {
         withValue({ value: "0.6", unit: "mg/dL", comparator: "<" })
       )
     ).toBe(false)
+    // A unit no record holds is stored under the server's spelling key, so
+    // a result written `kg/m²` and read back `kg/m2` is the one written.
+    const bmi = {
+      ...props,
+      value: { value: "24.1", unit: "kg/m\u00b2" },
+    }
+    expect(
+      sameAsPlanned(
+        KIND.labresult,
+        bmi,
+        withValue({ value: "24.1", unit: "kg/m2" })
+      )
+    ).toBe(true)
     // Two names of one unit are one unit, as the graph says.
     const key = (u: string) => (u === "milligram per liter" ? "mg/L" : u)
     expect(

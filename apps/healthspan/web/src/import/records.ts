@@ -5,6 +5,7 @@
 
 import type { SubstrateRecord } from "@substrate/client"
 import { KIND, type ImportReport, type ImportRow } from "../kinds"
+import { unitSpellingKey } from "../labs/units"
 import { reportId, resultId } from "./ids"
 import { offsetOf } from "./values"
 
@@ -131,7 +132,7 @@ function sameInstant(a: unknown, b: unknown): boolean {
  * alias) give one key. */
 export type UnitKey = (name: string) => string
 
-const spelled: UnitKey = (name) => name
+const spelled: UnitKey = unitSpellingKey
 
 function sameQuantity(a: unknown, b: unknown, unitKey: UnitKey): boolean {
   if (!a || !b || typeof a !== "object" || typeof b !== "object") return a === b

@@ -6,7 +6,12 @@ import type {
   SubstrateClient,
   SubstrateRecord,
 } from "@substrate/client"
-import { parseUnitGraph, unitId, type UnitGraph } from "../labs/units"
+import {
+  parseUnitGraph,
+  unitId,
+  unitSpellingKey,
+  type UnitGraph,
+} from "../labs/units"
 import { refPath } from "./records"
 import type { RunnerStore } from "./runner"
 
@@ -96,15 +101,17 @@ export function clientStore(client: SubstrateClient): RunnerStore {
     patch: (kind, id, props, ifVersion, signal) =>
       client.patch(kind, id, props, ifVersion, signal),
     delete: (kind, id, signal) => client.delete(kind, id, signal),
-    // Without the graph, units compare as spelled: a row found in the same
-    // unit under another name then stops the import, which a resume after
-    // the graph answers settles; it never takes another unit for this one.
+    // A unit the graph does not hold, or every unit when the graph cannot
+    // be read, compares by the server's spelling key, which is how it was
+    // stored: a row found in the same unit under another name then stops
+    // the import, which a resume after the graph answers settles; it never
+    // takes another unit for this one.
     unitKey: async () => {
       try {
         const graph = await unitGraph(client)
-        return (name) => unitId(graph, name) ?? name
+        return (name) => unitId(graph, name) ?? unitSpellingKey(name)
       } catch {
-        return (name) => name
+        return unitSpellingKey
       }
     },
     pointingAt: async (kinds, path, signal) =>

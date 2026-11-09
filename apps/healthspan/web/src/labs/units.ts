@@ -26,10 +26,51 @@ export interface UnitGraph {
 
 export const EMPTY_GRAPH: UnitGraph = { units: new Map() }
 
+// The characters a spelling is normalized by, as the server's
+// vocabulary.UnitSpellingKey does (internal/vocabulary/unitgraph.go): both
+// micro signs, which look alike and are two code points, and the
+// superscript digits.
+const UNIT_CHARACTERS: Record<string, string> = {
+  "\u00b5": "u", // MICRO SIGN
+  "\u03bc": "u", // GREEK SMALL LETTER MU
+  "\u00b2": "2",
+  "\u00b3": "3",
+}
+
+/** Whether the text before a superscript run ends in a component that is
+ * the bare number 10, whose power the run is (`10³/μL` is `10*3/uL`). */
+function tenEnds(before: string[]): boolean {
+  const n = before.length
+  if (n < 2 || before[n - 2] !== "1" || before[n - 1] !== "0") return false
+  return n === 2 || "./(".includes(before[n - 3])
+}
+
+/** The one key the server matches a stored unit spelling by: trimmed, both
+ * micro signs as `u`, the superscript digits as ASCII, and a superscript
+ * power of a bare 10 as UCUM's `10*`. The server stores a spelling it
+ * resolves this way normalized, so a row written `kg/m²` reads `kg/m2`. */
+export function unitSpellingKey(s: string): string {
+  const runes = [...s.trim()]
+  let out = ""
+  runes.forEach((r, i) => {
+    const to = UNIT_CHARACTERS[r]
+    if (to === undefined) {
+      out += r
+      return
+    }
+    if ((r === "\u00b2" || r === "\u00b3") && tenEnds(runes.slice(0, i)))
+      out += "*"
+    out += to
+  })
+  return out
+}
+
 /** The unit a written name stands for: its id, else the id whose code or
- * alias it is. */
+ * alias it is, each tried as written and then by its spelling key. */
 function unitOf(graph: UnitGraph, name: string): GraphUnit | undefined {
-  return graph.units.get(name) ?? graph.units.get(graph.names?.get(name) ?? "")
+  const byName = (n: string) =>
+    graph.units.get(n) ?? graph.units.get(graph.names?.get(n) ?? "")
+  return byName(name) ?? byName(unitSpellingKey(name))
 }
 
 /** The id of the unit a written name stands for, or undefined where the
@@ -76,11 +117,13 @@ export function parseUnitGraph(answer: unknown): UnitGraph {
       offset: parseRational(u.offset) ?? 0,
     })
     for (const name of [
+      u.id,
       u.code,
       ...(Array.isArray(u.aliases) ? (u.aliases as unknown[]) : []),
     ])
-      if (typeof name === "string" && name && !names.has(name))
-        names.set(name, u.id)
+      if (typeof name === "string" && name)
+        for (const n of new Set([name, unitSpellingKey(name)]))
+          if (n && !names.has(n)) names.set(n, u.id)
   }
   return { units, names }
 }
