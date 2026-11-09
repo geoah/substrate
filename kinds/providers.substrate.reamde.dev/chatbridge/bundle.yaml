@@ -2665,7 +2665,9 @@ data:
 # Six functions offered to agents, each writing one `chataction` and returning
 # its id. None declares `confirmation: always`, which would also hold the
 # owner's own calls and which no allow can lift: the shipped gate holds every
-# agent write instead, and the owner lifts it per agent and tool.
+# agent write instead, and allows lift it per agent and tool, the shipped ones
+# for the owner's assistant's `react`, `unreact` and `markread`
+# (policies.yaml).
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/chatbridge/send
@@ -2731,9 +2733,10 @@ data:
   package: chatbridge
   description: >-
     Ask the chat bridge to react to one message as the owner. Writes one chataction
-    record, which the bridge carries out once; an agent's request waits for
-    the owner's approval unless the owner lets this agent react unasked. Returns
-    the action's id: read its state to see how it ended.
+    record, which the bridge carries out once. By default the owner's assistant
+    reacts unasked and another agent's request waits for the owner's approval;
+    the owner may change either. Returns the action's id: read its state to
+    see how it ended.
   runtime: python
   timeout: PT10S
   effect: write
@@ -2780,9 +2783,10 @@ data:
   package: chatbridge
   description: >-
     Ask the chat bridge to remove the owner's reaction from one message. Writes
-    one chataction record, which the bridge carries out once; an agent's request
-    waits for the owner's approval unless the owner lets this agent do it
-    unasked. Returns the action's id: read its state to see how it ended.
+    one chataction record, which the bridge carries out once. By default the
+    owner's assistant does it unasked and another agent's request waits for
+    the owner's approval; the owner may change either. Returns the action's
+    id: read its state to see how it ended.
   runtime: python
   timeout: PT10S
   effect: write
@@ -2934,9 +2938,9 @@ data:
   description: >-
     Ask the chat bridge to mark one chat read as the owner, which the other
     people in it may see. Writes one chataction record, which the bridge carries
-    out once; an agent's request waits for the owner's approval unless the
-    owner lets this agent do it unasked. Returns the action's id: read its
-    state to see how it ended.
+    out once. By default the owner's assistant does it unasked and another
+    agent's request waits for the owner's approval; the owner may change either.
+    Returns the action's id: read its state to see how it ended.
   runtime: python
   timeout: PT10S
   effect: write

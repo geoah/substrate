@@ -46,29 +46,38 @@ the version it claimed, reports `uncertain` rather than resending when it
 cannot tell whether the network took it, and a report for another attempt
 changes nothing.
 
-**A shipped gate.** The package ships the `recordpatchpolicy`
-`chatbridge-agent-actions`, gating every agent write of a `chataction`
-(put, patch and delete, directly or through a tool), so each lands as a
-change request for the owner. The owner lets one agent do one thing unasked
-with an allow naming the gate
-([0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md)). Six tools are
-offered to agents, each writing one action under an id minted from the
-call's idempotency key, and none declares `confirmation: always`, which
-would hold the owner's own calls too and which no allow lifts.
+**A shipped gate, and three shipped allows.** The package ships the
+`recordpatchpolicy` `chatbridge-agent-actions`, gating every agent write of
+a `chataction` (put, patch and delete, directly or through a tool), so each
+lands as a change request for the owner. Three allows ship beside it, each
+naming the gate ([0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md))
+and one tool, for the owner's assistant
+(`substrate.reamde.dev/assistant/moss`) alone: its `react`, `unreact` and
+`markread` pass unasked, and everything else waits, its sends, edits and
+deletes, its direct writes of an action and every other agent's. The owner widens or narrows that per agent and
+tool, with allows of their own and by disabling or deleting a shipped one.
+Six tools are offered to agents, each writing one action under an id minted
+from the call's idempotency key, and none declares `confirmation: always`,
+which would hold the owner's own calls too and which no allow lifts.
 
 A callable cannot be reviewed and needs the server to reach the bridge.
 `confirmation: always` holds the owner along with the agents, for good.
 
 ### Consequences
 
-- Good, because every agent action waits for the owner by default, and the
-  owner lifts that per agent and per tool.
+- Good, because an agent's send, edit or delete waits for the owner by
+  default, while the assistant's reactions and read marks, which say little
+  and are easily taken back, do not; the owner moves that line per agent and
+  per tool.
 - Good, because an action's whole life is a record: the console shows it,
   the owner cancels it, and a retried tool call names the same one.
 - Good, because the bridge needs no inbound reach: it follows the change feed
   for queued actions and reports through its webhook.
-- Bad, because an agent cannot hold a conversation unasked until the owner
-  writes an allow for each thing it may do.
+- Bad, because an agent cannot send unasked until the owner writes an allow
+  for it, and an agent other than the assistant cannot even react unasked.
+- Bad, because the assistant's reactions and read marks reach other people
+  unasked: a read mark tells the chat the owner read it. Disabling the allow
+  stops that tool.
 - Bad, because the gate is a record the owner may edit or delete, and an
   install leaves an edited one alone: a deleted gate ungates every agent.
 - Bad, because a state machine takes no `writer:`, so nothing at the write
@@ -82,8 +91,13 @@ A callable cannot be reviewed and needs the server to reach the bridge.
 
 ### Confirmation
 
-`TestChatBridgeInstallAdmitsTheGateWithTheKinds` (the gate lands in the
-install's apply and survives the owner's edit), `TestChatBridgeActionLife`,
+`TestChatBridgeInstallAdmitsTheGateWithTheKinds` (the gate and the three
+allows land in the install's one apply, and the gate survives the owner's
+edit), `TestChatBridgeAssistantReactsAndMarksReadUnasked` (through a real
+agent loop: the assistant's react, unreact and mark-read land unasked; its
+send, edit and delete, its direct write of a reaction and another agent's
+reaction are held; the owner's writes are not; and a shipped allow the owner
+disabled stays disabled across an install), `TestChatBridgeActionLife`,
 `TestChatBridgeStaleResult`, `TestChatBridgeToolsWriteOneQueuedAction` and
 `TestBodyHelpersChatBridge` in `internal/providertest`; the policy door's
 own tests (`internal/engine/agentpolicy_db_test.go`) hold what a gate does

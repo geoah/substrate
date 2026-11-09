@@ -12,8 +12,9 @@ The server never reaches the bridge.
 
 `bundle.yaml` is the closure (seven kinds, the `chatevents` function and six
 agent tools), `triggers.yaml` the webhook, `policies.yaml` the gate that
-holds agents' requests, and `views.yaml` how a chat and an account read in
-the console. They are the contract; this file says how to speak to them, and
+holds agents' requests and the allows that let your assistant react and mark
+read unasked, and `views.yaml` how a chat and an account read in the
+console. They are the contract; this file says how to speak to them, and
 `internal/providertest` holds both to it.
 
 ## What lands where
@@ -617,15 +618,24 @@ names the action it already wrote. An agent that takes them needs
 
 The shipped `chatbridge-agent-actions` policy gates every agent write of a
 `chataction`, direct or through a tool, so each lands as a change request
-for you to accept. Your own writes, the console's and the function's are not
-held. None of the tools declares `confirmation: always`, which would hold
-your own calls too and which nothing lifts. To let one agent react unasked,
-write an allow that names the gate:
+for you to accept. Three shipped allows override it for your assistant,
+`substrate.reamde.dev/assistant/moss`, one tool each:
+`chatbridge-assistant-react`, `chatbridge-assistant-unreact` and
+`chatbridge-assistant-markread`. So by default your assistant reacts, takes
+a reaction back and marks a chat read unasked, and everything else waits:
+its sends, edits and deletes, its direct writes of a `chataction`, and every
+other agent's requests. Your own writes, the console's and the function's
+are not held. None of the tools declares `confirmation: always`, which
+would hold your own calls too and which nothing lifts.
+
+You widen or narrow that per agent and tool. An allow names one agent, the
+kind, `put`, the tool, and the gate it lifts; this one lets your assistant
+send unasked:
 
 ```yaml
 kind: substrate.reamde.dev/core/recordpatchpolicy
 metadata:
-  id: moss-reacts-unasked
+  id: moss-sends-unasked
 data:
   properties:
     selector:
@@ -635,7 +645,7 @@ data:
       agents:
         - substrate.reamde.dev/assistant/moss
       functions:
-        - providers.substrate.reamde.dev/chatbridge/react
+        - providers.substrate.reamde.dev/chatbridge/send
     action: allow
     overrides: chatbridge-agent-actions
 ```
@@ -643,9 +653,11 @@ data:
 Naming the function lifts the gate for writes through that tool, never for
 the agent's direct writes
 ([0108](../../../docs/decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)).
-The gate may also name a judge agent with criteria, which accepts what fits
-its threshold. The policy is yours to edit once installed: an install or an
-upgrade writes it only where no other hand wrote or deleted it.
+To narrow it, set `disabled: true` on a shipped allow, or delete it, and
+that tool waits again. The gate may also name a judge agent with criteria,
+which accepts what fits its threshold. Each policy is yours to edit once
+installed: an install or an upgrade writes one only where no other hand
+wrote or deleted it.
 
 ## Accounts
 

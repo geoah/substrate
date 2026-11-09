@@ -238,9 +238,11 @@ func cbInstanceRow(t *testing.T, ds substrate.Dataset) *substrate.Record {
 
 // The install lands the gate policy in the same apply as the kinds it names
 // (validatePolicyRow resolves its selector against that apply's candidate
-// registry), beside the webhook trigger shipped off and keyless and the
-// record views a chat and an account read through. An install over a policy
-// the owner edited leaves the edit alone.
+// registry), and after it the three allows that override it, whose
+// `overrides` is checked against the gate the apply has just stored; beside
+// them the webhook trigger shipped off and keyless and the record views a
+// chat and an account read through. An install over a policy the owner
+// edited leaves the edit alone.
 func TestChatBridgeInstallAdmitsTheGateWithTheKinds(t *testing.T) {
 	ds := newChatBridge(t)
 	ctx := context.Background()
@@ -266,6 +268,17 @@ func TestChatBridgeInstallAdmitsTheGateWithTheKinds(t *testing.T) {
 	}
 	if len(asList(sel["agents"])) != 0 || len(asList(sel["functions"])) != 0 {
 		t.Fatalf("the shipped policy names agents or functions: %v", sel)
+	}
+	for _, fn := range []string{"react", "unreact", "markread"} {
+		allow := mustGet(t, ds, vocabulary.KindRecordPatchPolicy, "chatbridge-assistant-"+fn)
+		sel, _ := allow.Properties["selector"].(map[string]any)
+		if allow.Properties["action"] != "allow" || !slices.Equal(refIDs(allow, "overrides"), []string{cbPolicy}) ||
+			!reflect.DeepEqual(sel, map[string]any{
+				"kinds": []any{cbAction}, "ops": []any{"put"},
+				"agents": []any{cbMoss}, "functions": []any{chatBridgePkg + "/" + fn},
+			}) {
+			t.Fatalf("the shipped allow for %s is %v", fn, allow.Properties)
+		}
 	}
 	trigger := mustGet(t, ds, vocabulary.TriggerKind, cbTrigger)
 	if trigger.Properties["enabled"] != false || vocabulary.TriggerKey(trigger.Properties) != "" ||

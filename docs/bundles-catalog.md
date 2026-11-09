@@ -93,7 +93,7 @@ thing, and the Records column counts them.
 | WHOOP         | Published | OAuth          | 7     | 3         | 10      | 0      |
 | Notion        | Published | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Published | Pasted token   | 9     | 2         | 3       | 0      |
-| Chat bridge   | Published | App token      | 7     | 7         | 4       | 0      |
+| Chat bridge   | Published | App token      | 7     | 7         | 7       | 0      |
 | Slack         | Published | User token     | 9     | 2         | 3       | 0      |
 | Slack live events | Published | User token | 0     | 1         | 2       | 0      |
 | Apple         | Published | Owner token    | 10    | 0         | 0       | 0      |
@@ -1396,8 +1396,11 @@ events, the ids, the merge rules and the action protocol.
   (offered as `chatbridge_send` and so on) each write one `chataction`.
 - **Triggers (1)**: `chatbridge-events`, a webhook shipped disabled and
   without a key.
-- **Other records (3)**: the `chatbridge-agent-actions` gate policy, and the
-  record views of a chat and an account.
+- **Other records (6)**: the `chatbridge-agent-actions` gate policy, the three
+  allows that override it for the owner's assistant
+  (`chatbridge-assistant-react`, `chatbridge-assistant-unreact` and
+  `chatbridge-assistant-markread`), and the record views of a chat and an
+  account.
 - **Mappings**: core's `chatbridgeuser` maps a `user` onto a contact, by its
   numbers, then its addresses, then its name
   ([0232](decisions/0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md)).
@@ -1429,9 +1432,13 @@ sign-in moved to a new instance keeps its chats.
 edit, a delete or a read mark is a `chataction` row: the bridge claims it,
 carries it out once, and reports `done`, `failed`, `uncertain` or `expired`,
 or refuses it before a claim as `failed`, `expired` or `cancelled`. The shipped gate holds every agent
-write of one as a change request for the owner, and the owner lets one agent
-do one thing unasked with an allow that names the gate
-([0108](decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)).
+write of one as a change request for the owner, and three shipped allows that
+name it ([0108](decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md))
+let the owner's assistant react, take a reaction back and mark a chat read
+through those tools unasked. So by default those pass and everything else
+waits: the assistant's sends, edits and deletes, its direct writes, and every
+other agent's. The owner widens or narrows that per agent and tool with allows
+of their own, or by disabling a shipped one.
 `allowNewChat` and `cancelRequestedAt`, like the account's settings, are
 `writer: owner`.
 

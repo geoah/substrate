@@ -2,12 +2,12 @@
 # delete, made directly or through one of this package's tools (decision
 # record 0252). Empty `agents` and `functions` mean every agent and only
 # agents' writes, so the owner's own, the console's and `chatevents`' are not
-# held. The owner lets one agent do one thing unasked with an allow naming
-# the agent, the kind and one op, and `overrides: chatbridge-agent-actions`
-# (decision record 0108).
+# held. An allow naming the agent, the kind, one op and this gate in
+# `overrides` lifts it for the writes it matches (decision record 0108); the
+# three below are the ones the package ships.
 #
-# The owner's to edit once installed: an install or an upgrade writes it only
-# where no other hand wrote or deleted it.
+# Each policy here is the owner's to edit once installed: an install or an
+# upgrade writes one only where no other hand wrote or deleted it.
 kind: substrate.reamde.dev/core/recordpatchpolicy
 metadata:
   id: chatbridge-agent-actions
@@ -18,3 +18,56 @@ data:
         - providers.substrate.reamde.dev/chatbridge/chataction
       ops: [put, patch, delete]
     action: gate
+---
+# The owner's assistant reacts, takes a reaction back and marks a chat read
+# unasked. Each allow names its tool, so the assistant's direct writes of a
+# `chataction`, its sends, edits and deletes, and every other agent still
+# wait. They follow the gate because an install writes these documents in
+# order, and an allow's `overrides` must name a gate already stored.
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: chatbridge-assistant-react
+data:
+  properties:
+    selector:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      ops: [put]
+      agents:
+        - substrate.reamde.dev/assistant/moss
+      functions:
+        - providers.substrate.reamde.dev/chatbridge/react
+    action: allow
+    overrides: chatbridge-agent-actions
+---
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: chatbridge-assistant-unreact
+data:
+  properties:
+    selector:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      ops: [put]
+      agents:
+        - substrate.reamde.dev/assistant/moss
+      functions:
+        - providers.substrate.reamde.dev/chatbridge/unreact
+    action: allow
+    overrides: chatbridge-agent-actions
+---
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: chatbridge-assistant-markread
+data:
+  properties:
+    selector:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      ops: [put]
+      agents:
+        - substrate.reamde.dev/assistant/moss
+      functions:
+        - providers.substrate.reamde.dev/chatbridge/markread
+    action: allow
+    overrides: chatbridge-agent-actions
