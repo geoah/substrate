@@ -247,7 +247,7 @@
           "singular": "chore"
         },
         "traits": [
-          "substrate.reamde.dev/core/temporal(point: due)",
+          "substrate.reamde.dev/core/temporal(point: dueAt)",
           "substrate.reamde.dev/core/lifecycle(status: state)"
         ],
         "displayTemplate": "{summary} · {code}",
@@ -258,9 +258,6 @@
           },
           "code": {
             "type": "string"
-          },
-          "due": {
-            "type": "datetime"
           },
           "state": {
             "type": "enum",
@@ -398,7 +395,7 @@
         "viewOnly": true,
         "creatable": false,
         "title": null,
-        "due": "due",
+        "due": "dueAt",
         "dueDay": null,
         "priority": "priority",
         "order": null,

@@ -56,7 +56,7 @@ means none), else the guess:
 | Reading  | Guess                                                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | title    | shown: `properties.title`, else the id. Editable: the property `displayTemplate` names when it is exactly `{name}` and `name` is a string; else none |
-| due      | the property a `temporal(point: <name>)` binding names, declared or supplied by the trait as a datetime; else a declared `datetime` named `dueAt`; else none |
+| due      | the property a `temporal(point: <name>)` binding names (the trait admits `at`, `endsAt` and `dueAt`), declared or supplied by the trait; else a declared `datetime` named `dueAt`; else none |
 | dueDay   | a `date` named `dueDay`; else none                                                                                              |
 | priority | an `enum` named `priority`; else none                                                                                           |
 | order    | a `decimal` named `position`; else none                                                                                         |
@@ -125,8 +125,9 @@ needsYou     {lateOrUrgent, comingUp, later: [paths], noDate, suggestions, badge
 suggestions  [paths]
 groups       [{collection, kind, rows: [{group: path|none|missing, open}]}]
              one per collection with a group reading, in collections' order;
-             rows are groups holding open items by their title, then none, then
-             missing, each only when its count is above 0
+             rows are groups holding open items, in the group kind's order
+             reading (a decimal named position) where it has one, else by
+             title; then none, then missing; each only when its count is above 0
 pins         [paths], where a case says it: the preference's pins that show, in
              its order: a record held and not deleted, of the group kind of an
              enabled collection's group reading
@@ -164,11 +165,14 @@ takes the singular.
 | The queue                 | title `Suggestions`; under it `Accept one to put it on your list, or dismiss it.`; `Select`; empty: `No suggestions`, `Suggested tasks show here until you accept or dismiss them.` |
 | A suggestion's row        | its title; meta `{collection} · {written}` then its due and its group; `Dismiss`, `Accept`              |
 | A suggestion's page       | `Suggestion in {collection} · written {written}`; the description under the property's label; `Details`; `Collection`; docked `Dismiss`, `Accept` |
-| Several destinations      | a sheet titled `Accept as` or `Reopen as`, each value by its declared label, and `Cancel`               |
+| Several destinations      | a sheet titled `Accept as`, `Dismiss as`, `Done as`, `Won't do as` or `Reopen as`, each value by its declared label, and `Cancel` |
+| Select                    | `Select`; while selecting `{n} selected`, `Accept`, `Dismiss`, `Cancel`                                 |
 | Undo                      | `Accepted`, `Dismissed`, `Done`, `Won't do`, each with `Undo`                                           |
-| Lists                     | `Search lists and projects` (the group kinds' plural labels, lower case, joined); `Pinned`; a section per group kind headed by its plural label with its full reference under it; `No {reference label}` (`No list`, `No project`) with `{collection} tasks in no {reference label}` under it; `Missing`, with `Tasks whose {reference label} is gone or out of reach`; `{n} more with nothing open` |
+| Lists                     | `Search lists and projects` (the group kinds' plural labels, lower case, joined); `Pinned`; a section per group kind headed by its plural label with its full reference under it; `No {reference label}` (`No list`, `No project`) with `Tasks with no {reference label}` under it; `Missing`, with `Tasks whose {reference label} is gone or out of reach`; `{n} more with nothing open` |
 | A group                   | `{kind label} · {status}` and `{n} open` under the title; the queue row as on Needs you; `To Do`; `Done`; `Pin`, `Unpin` |
 | Settings                  | a row `Collections`, `{n} on`                                                                           |
 | Collections               | title `Collections`; `Every collection of yours with a done state. Turn one on to see its tasks here; Substrate Tasks then asks to change them.`; section `Show tasks from`; a row's meta `{n} open`, `{n} suggested`, `grouped by {reference label}`, `View only`; footer `Turning a collection off only hides it here. Its tasks stay where they are.`; section `Save new tasks to`, row `New tasks` |
 | A collection              | its label as the title and its full reference under it; `Group by`, each single reference by its label with its target kind under it, and `Nothing`, `One list of every task`; `How its states read`: `Suggestion`, `Open`, `Done`, `Dropped`, each with its values; `Fields the app shows`: `Title`, `Due`, `Due day`, `Priority`, `Order`, each with its property or `None` |
-| Approval                  | turning a collection on: `Substrate Tasks needs your approval to change your {collection}.` and `Approve`; refused: `Not approved. {collection} stays view only.` |
+| Approval                  | turning a collection on: `Substrate Tasks needs your approval to change your {collection}.` and `Approve`; refused: `Not approved. {collection} stays view only.` Grouping by a kind out of reach: `Substrate Tasks needs your approval to read your {group kind plural}.` and `Approve`; refused: `Not approved. {collection} stays ungrouped.` |
+| Lists, ungrouped          | a section `Collections` holding each on collection that groups by nothing, with its open count          |
+| A group kind's label      | its declared label where the token reads its declaration, else its name in words (`area` gives `Area`, `Areas`) |

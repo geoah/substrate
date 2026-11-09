@@ -249,7 +249,7 @@
           "singular": "chore"
         },
         "traits": [
-          "substrate.reamde.dev/core/temporal(point: due)",
+          "substrate.reamde.dev/core/temporal(point: dueAt)",
           "substrate.reamde.dev/core/lifecycle(status: state)"
         ],
         "displayTemplate": "{summary} · {code}",
@@ -260,9 +260,6 @@
           },
           "code": {
             "type": "string"
-          },
-          "due": {
-            "type": "datetime"
           },
           "state": {
             "type": "enum",
@@ -367,7 +364,7 @@
         "code": "C-1",
         "title": "Clean the gutters · C-1",
         "state": "todo",
-        "due": "2026-11-08T12:00:00Z",
+        "dueAt": "2026-11-08T12:00:00Z",
         "area": "ada.example.com/work/area/a1"
       }
     },
@@ -448,7 +445,7 @@
         "viewOnly": false,
         "creatable": false,
         "title": null,
-        "due": "due",
+        "due": "dueAt",
         "dueDay": null,
         "priority": "priority",
         "order": null,

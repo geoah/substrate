@@ -32,12 +32,11 @@ CHORE_DECL = {
     "label": {"singular": "Chore", "plural": "Chores"},
     "definition": {
         "authority": "ada.example.com", "package": "work", "names": {"singular": "chore"},
-        "traits": ["substrate.reamde.dev/core/temporal(point: due)", "substrate.reamde.dev/core/lifecycle(status: state)"],
+        "traits": ["substrate.reamde.dev/core/temporal(point: dueAt)", "substrate.reamde.dev/core/lifecycle(status: state)"],
         "displayTemplate": "{summary} · {code}",
         "properties": {
             "summary": {"type": "string", "required": True},
             "code": {"type": "string"},
-            "due": {"type": "datetime"},
             "state": {"type": "enum", "values": ["suggested", "todo", "doing", "closed", "skipped"],
                       "done": ["closed"], "dropped": ["skipped"], "proposed": ["suggested"]},
             "priority": {"type": "enum", "values": ["low", "normal", "high"]},
@@ -145,7 +144,7 @@ CASES["own-tasks"] = {
     "expect": {
         "collections": [
             OWN_COLLECTION,
-            collection(CHORE, False, True, False, None, "due", None, "priority", None, None),
+            collection(CHORE, False, True, False, None, "dueAt", None, "priority", None, None),
         ],
         "items": {
             T("t1"): item("open", OPEN_OWN, L("l1"), "lateOrUrgent"),
@@ -162,7 +161,7 @@ CASES["own-tasks"] = {
                      "noDate": 2, "suggestions": 1, "badge": 3},
         "suggestions": [T("t7")],
         "groups": [{"collection": TASK, "kind": LIST, "rows": [
-            {"group": L("l2"), "open": 1}, {"group": L("l1"), "open": 4},
+            {"group": L("l1"), "open": 4}, {"group": L("l2"), "open": 1},
             {"group": "none", "open": 1}, {"group": "missing", "open": 1}]}],
     },
     "commands": [
@@ -188,7 +187,7 @@ CASES["second-collection"] = {
         rec(AREA, "a1", "2026-10-01T08:00:00Z", name="Garden", title="Garden"),
         task("x1", "2026-11-01T08:00:00Z", "Pay rent", dueDay="2026-11-05"),
         rec(CHORE, "x1", "2026-11-02T08:00:00Z", summary="Clean the gutters", code="C-1", title="Clean the gutters · C-1",
-            state="todo", due="2026-11-08T12:00:00Z", area=f"{AREA}/a1"),
+            state="todo", dueAt="2026-11-08T12:00:00Z", area=f"{AREA}/a1"),
         rec(CHORE, "x2", "2026-11-09T06:00:00Z", summary="Fix the fence", code="C-2", title="Fix the fence · C-2",
             state="suggested", area=f"{AREA}/a1"),
         rec(CHORE, "x3", "2026-11-03T08:00:00Z", summary="Sharpen the mower", code="C-3", title="Sharpen the mower · C-3",
@@ -201,7 +200,7 @@ CASES["second-collection"] = {
     "expect": {
         "collections": [
             OWN_COLLECTION,
-            collection(CHORE, True, False, False, None, "due", None, "priority", None, {"property": "area", "kind": AREA}),
+            collection(CHORE, True, False, False, None, "dueAt", None, "priority", None, {"property": "area", "kind": AREA}),
         ],
         "items": {
             T("x1"): item("open", OPEN_OWN, "none", "lateOrUrgent"),
@@ -286,7 +285,7 @@ CASES["view-only-and-pins"] = {
     "expect": {
         "collections": [
             OWN_COLLECTION,
-            collection(CHORE, True, True, False, None, "due", None, "priority", None, None),
+            collection(CHORE, True, True, False, None, "dueAt", None, "priority", None, None),
         ],
         "items": {
             T("t1"): item("open", OPEN_OWN, L("l1"), "noDate"),
