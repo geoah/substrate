@@ -17,17 +17,20 @@ package engine
 //     `name` the header spelled, which is how the sync writes a relay now;
 //   - each contact those rows ALONE made goes with them.
 //
-// A contact goes only when the engine wrote all of it: every source linking
-// to it is a relay row this removes, nothing else points at it, every
-// property is held at the machine tier, it carries no label, annotation,
-// finalizer or merge trail and no reference of its own, and every state is
-// still its declared initial value. An owner's edit, a hide or a promotion, a
-// label, an agent's write, a merge, another provider's mirror of the same
-// contact, or a record of the owner's pointing at it keeps the contact, and
-// with it every relay row linking to it: the migration runs before the stored
-// vocabulary loads, so it cannot recompute a contact that loses one source
-// and keeps another, and a source deleted without that recompute would leave
-// the contact an address and an offer no live record makes. A relay row that
+// A contact goes only when the engine wrote all of it, or the owner only hid
+// it: every source linking to it is a relay row this removes, nothing else
+// points at it, every property is held at the machine tier, it carries no
+// label, annotation, finalizer or merge trail and no reference of its own,
+// and every state is still its declared initial value, but for a
+// `prominence` the owner moved to `hidden`. Hiding a relay's contact is the
+// owner calling it noise, so it goes like one nobody touched. An owner's
+// edit, a promotion, a label, an agent's write, a merge, another provider's
+// mirror of the same contact, or a record of the owner's pointing at it
+// keeps the contact, and with it every relay row linking to it: the
+// migration runs before the stored vocabulary loads, so it cannot recompute
+// a contact that loses one source and keeps another, and a source deleted
+// without that recompute would leave the contact an address and an offer no
+// live record makes. A relay row that
 // any record but a Gmail message points at (a calendar attendee, an
 // address-book entry) stays too, because the sync that wrote that record
 // writes the row again. So does one whose subject slot names a record other
@@ -65,6 +68,11 @@ const (
 	relayEntryAddress = "address"
 	// relayMessagePage bounds the messages read and rewritten at a time.
 	relayMessagePage = 500
+	// relayContactProminence is the contact's state the owner hides one
+	// with, and relayContactHidden the hiding: the one state a relay's
+	// contact may hold off its initial value and still go.
+	relayContactProminence = "prominence"
+	relayContactHidden     = "hidden"
 )
 
 // relayHeaders are the message properties whose entries name a hub row.
@@ -267,7 +275,8 @@ func (t *txn) relayHubs() (map[string]*relayNode, error) {
 }
 
 // relayContacts reads the live contacts the relay rows link to, each marked
-// kept unless the engine wrote all of it and only relay rows point at it.
+// kept unless the engine wrote all of it, the owner's hide aside, and only
+// relay rows point at it.
 func (t *txn) relayContacts(hubs map[string]*relayNode) (map[string]*relayNode, error) {
 	contacts := map[string]*relayNode{}
 	for _, h := range hubs {
@@ -306,7 +315,7 @@ func (t *txn) relayContacts(hubs map[string]*relayNode) (map[string]*relayNode, 
 		c := contacts[id]
 		c.keep = !bare
 		for name, value := range states {
-			if initial[name] != value {
+			if initial[name] != value && (name != relayContactProminence || value != relayContactHidden) {
 				c.keep = true
 			}
 		}
@@ -487,8 +496,9 @@ func withoutRelayAddresses(v any, gone map[string]bool) ([]any, bool) {
 
 // migrateTombstone deletes one record as the system, as the delete verb does.
 // The registry is empty while a migration runs, so afterTombstone clears
-// neither mark; the row's are cleared here, because a tombstone carries none
-// and a rebuild derives none for it.
+// neither mark; the row's are cleared here, through the passes that derive
+// them, because a tombstone carries none and a rebuild derives none for it.
+// Neither pass reads the registry to clear a tombstone's mark.
 func (t *txn) migrateTombstone(ref eref) error {
 	changed, err := t.tombstone(ref, "")
 	if err != nil || !changed {
@@ -501,7 +511,8 @@ func (t *txn) migrateTombstone(ref eref) error {
 	if err := t.afterTombstone(ref); err != nil {
 		return err
 	}
-	_, err = t.exec(`UPDATE records SET orphaned_at = NULL, ambiguous_at = NULL
-		WHERE kind = $1 AND id = $2 AND (orphaned_at IS NOT NULL OR ambiguous_at IS NOT NULL)`, ref.Kind, ref.ID)
-	return err
+	if err := t.syncOrphaned(ref); err != nil {
+		return err
+	}
+	return t.markAmbiguous(ref, false)
 }

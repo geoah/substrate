@@ -199,11 +199,12 @@ func relayHead(t *testing.T, db *sql.DB, repo string) int64 {
 
 // The contacts a GitHub reply relay alone made go with their hub rows, and a
 // message names no hub row for a relay any more, keeping what the header
-// spelled. A contact anything else holds stays, and so do the relay rows
-// linking to it: a second source, an owner's edit, a hide, a merge, an
-// owner's record naming the contact, a calendar event naming the row. A GitHub commit address is a person and is
-// not a relay. A second run finds nothing, and a rebuild of the changelog
-// reproduces the store.
+// spelled. So does one the owner only hid: hiding a relay's contact is
+// calling it noise. A contact anything else holds stays, and so do the relay
+// rows linking to it: a second source, an owner's edit, a promotion, a merge,
+// an owner's record naming the contact, a calendar event naming the row. A
+// GitHub commit address is a person and is not a relay. A second run finds
+// nothing, and a rebuild of the changelog reproduces the store.
 func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -231,6 +232,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 		shared  = "reply+AAEXAMPLESHARED0@reply.github.com"
 		edited  = "reply+AAEXAMPLEEDITED0@reply.github.com"
 		hidden  = "reply+AAEXAMPLEHIDDEN0@reply.github.com"
+		known   = "reply+AAEXAMPLEKNOWN00@reply.github.com"
 		merged  = "reply+AAEXAMPLEMERGED0@reply.github.com"
 		invite  = "reply+AAEXAMPLEINVITE0@reply.github.com"
 		member  = "reply+AAEXAMPLEMEMBER0@reply.github.com"
@@ -238,7 +240,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	relaySync(t, ds,
 		effect{Action: effectPut, Type: relayAccount, ID: fid("acct"), Properties: map[string]any{"email": "owner@example.com"}},
 		relayHub(notif), relayHub(repoA), relayHub(mention), relayHub(relayA), relayHub(relayB),
-		relayHub(commit), relayHub(ada), relayHub(grace), relayHub(edited), relayHub(hidden), relayHub(merged), relayHub(invite), relayHub(member),
+		relayHub(commit), relayHub(ada), relayHub(grace), relayHub(edited), relayHub(hidden), relayHub(known), relayHub(merged), relayHub(invite), relayHub(member),
 		relayMessage("m1", map[string][]any{
 			"from": {relayEntry(notif, "Grace")}, "to": {relayEntry(repoA, "owner/repo")},
 			"replyTo": {relayEntry(relayA, "owner/repo")},
@@ -253,6 +255,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 		}),
 		relayMessage("m5", map[string][]any{"replyTo": {relayEntry(hidden, "")}, "bcc": {relayEntry(merged, "")}}),
 		relayMessage("m6", map[string][]any{"replyTo": {relayEntry(invite, ""), relayEntry(member, "")}}),
+		relayMessage("m8", map[string][]any{"replyTo": {relayEntry(known, "")}}),
 		effect{Action: effectPut, Type: relayCalendar, ID: fid("e1"), Properties: map[string]any{
 			"account": relayRef(relayAccount, fid("acct")), "summary": "Review",
 			"organizer": map[string]any{"address": relayRef(relayHubKind, fid(invite))},
@@ -269,8 +272,8 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 		t.Fatalf("the shared relay links %s, want Ada's contact %s", got, adaContact)
 	}
 
-	// The owner names one relay contact, hides another and merges a third
-	// into Grace's.
+	// The owner names one relay contact, hides another, promotes a third and
+	// merges a fourth into Grace's.
 	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, edited),
 		substrate.PatchInput{Properties: map[string]any{"name": "Review thread"}}); err != nil {
 		t.Fatalf("name: %v", err)
@@ -278,6 +281,10 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, hidden),
 		substrate.PatchInput{Properties: map[string]any{"prominence": "hidden"}}); err != nil {
 		t.Fatalf("hide: %v", err)
+	}
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, known),
+		substrate.PatchInput{Properties: map[string]any{"prominence": "known"}}); err != nil {
+		t.Fatalf("promote: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindContact, Properties: map[string]any{
 		"name": "Linus", "memberOf": []any{relayRef(vocabulary.KindContact, relayContactOf(t, ds, member))},
@@ -292,18 +299,18 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	}
 
 	contactsBefore := map[string]string{}
-	for _, a := range []string{notif, repoA, mention, relayA, relayB, commit, ada, edited, hidden, invite, member} {
+	for _, a := range []string{notif, repoA, mention, relayA, relayB, commit, ada, edited, hidden, known, invite, member} {
 		contactsBefore[a] = relayContactOf(t, ds, a)
 	}
 	versions := map[string]int64{}
-	for _, m := range []string{"m3", "m5", "m6", "m7"} {
+	for _, m := range []string{"m3", "m6", "m7", "m8"} {
 		versions[m] = relayRow(t, ds, relayMessageKind, fid(m)).Version
 	}
 
 	s, ds = relayRerun(t, s, dsn, root, repo)
 	DrainIndexReprojection(t, ds)
 
-	for _, a := range []string{repoA, mention, relayA, relayB} {
+	for _, a := range []string{repoA, mention, relayA, relayB, hidden} {
 		if hub := relayRow(t, ds, relayHubKind, fid(a)); hub == nil || !hub.Deleted {
 			t.Errorf("the hub row of %s is %v, want deleted", a, hub)
 		}
@@ -317,7 +324,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 		ada:    "a real address",
 		shared: "its contact has a real address's source too",
 		edited: "the owner named its contact",
-		hidden: "the owner hid its contact",
+		known:  "the owner promoted its contact",
 		merged: "the owner merged its contact",
 		invite: "a calendar event names the row",
 		member: "an owner's record names its contact",
@@ -329,7 +336,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	}
 	for a, c := range map[string]string{
 		notif: contactsBefore[notif], commit: contactsBefore[commit], ada: adaContact, edited: contactsBefore[edited],
-		hidden: contactsBefore[hidden], invite: contactsBefore[invite], member: contactsBefore[member], grace: graceContact,
+		known: contactsBefore[known], invite: contactsBefore[invite], member: contactsBefore[member], grace: graceContact,
 	} {
 		if row := relayRow(t, ds, vocabulary.KindContact, c); row == nil || row.Deleted {
 			t.Errorf("the contact of %s is gone, want kept", a)
@@ -365,6 +372,8 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 		{"m2", "replyTo", 0, relayB, false},
 		{"m4", "to", 0, repoA, false},
 		{"m4", "replyTo", 0, edited, true},
+		{"m5", "replyTo", 0, hidden, false},
+		{"m5", "bcc", 0, merged, true},
 	} {
 		e := header(c.m, c.name, c.i)
 		if e["value"] != c.value {
