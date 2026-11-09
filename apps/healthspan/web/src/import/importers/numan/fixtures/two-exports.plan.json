@@ -1,0 +1,2065 @@
+{
+  "importer": "numan",
+  "name": "Numan exports",
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/observations/source",
+      "namespace": "source",
+      "key": "numan",
+      "mode": "create",
+      "properties": {
+        "name": "Numan",
+        "class": "service"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000006",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox (ordered through Numan)",
+        "accession": "NMN001-00000006",
+        "at": "2026-09-02T08:00:00+01:00",
+        "orderedAt": null,
+        "issuedAt": "2026-09-04T08:00:00.000Z",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-70d61ca57ee08028ce2dcc52cc49b21a23fc8b513e4d8415202ec739711bddad"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1788249600
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000006/Hb A1C",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/hba1c_ifcc",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000006"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-09-02T08:00:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "36",
+          "unit": "mmol/mol"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "42",
+              "unit": "mmol/mol"
+            },
+            "text": "normal"
+          },
+          {
+            "high": {
+              "value": "42",
+              "unit": "mmol/mol"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "Hb A1C",
+          "display": "HbA1c"
+        },
+        "upstreamId": "tst-ffff/Hb A1C",
+        "specimen": {
+          "material": "blood",
+          "collectedAt": "2026-09-02T08:00:00+01:00"
+        },
+        "method": "capillary, Tasso+ device",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1788249600
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000006/Cholesterol / HDL Ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/cholesterol_hdl_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000006"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-09-02T08:00:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "3.2",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox",
+          "code": "Cholesterol / HDL Ratio",
+          "display": "Cholesterol / HDL Ratio"
+        },
+        "upstreamId": "tst-ffff/Cholesterol / HDL Ratio",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-09-02T08:00:00+01:00"
+        },
+        "method": "capillary, Tasso+ device",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1788249600
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000003",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox (ordered through Numan)",
+        "accession": "NMN001-00000003",
+        "at": "2026-06-27T07:10:00+01:00",
+        "orderedAt": null,
+        "issuedAt": "2026-06-29T11:00:00+01:00",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-c8eb838cce00148cf9589900d46a7d0c081094bed429f302dccd7b3a2a66a022"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1785661200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000003/Ferritin",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/ferritin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000003"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-27T07:10:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "85",
+          "unit": "ug/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "30",
+              "unit": "ug/L"
+            },
+            "high": {
+              "value": "400",
+              "unit": "ug/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "30",
+              "unit": "ug/L"
+            },
+            "high": {
+              "value": "400",
+              "unit": "ug/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "Ferritin",
+          "display": "Ferritin"
+        },
+        "upstreamId": "tst-cccc/Ferritin",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-27T07:10:00+01:00"
+        },
+        "method": "capillary, Tasso+ device",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1785661200
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000001",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox (ordered through Numan)",
+        "accession": "NMN001-00000001",
+        "at": "2026-06-15T08:30:00+01:00",
+        "orderedAt": "2026-06-14T19:45:10+01:00",
+        "issuedAt": "2026-06-17T14:05:00+01:00",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-df795babe4288aba08225a2636bd3b5ceedee0d3b7904ccca933f9911f36769a"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/LDLCholesterol",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/ldl_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "2.9",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "0.0",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "0.0",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "LDLCholesterol",
+          "display": "LDL Cholesterol"
+        },
+        "upstreamId": "tst-aaaa/LDLCholesterol",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/HDLCholesterol",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/hdl_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "1.40",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "1.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "1.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "HDLCholesterol",
+          "display": "HDL Cholesterol"
+        },
+        "upstreamId": "tst-aaaa/HDLCholesterol",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/TotalCholesterol",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/total_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "5.6",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "5.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          },
+          {
+            "high": {
+              "value": "5.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "High"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "TotalCholesterol",
+          "display": "Total Cholesterol"
+        },
+        "upstreamId": "tst-aaaa/TotalCholesterol",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/Testosterone",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/testosterone",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "8.1",
+          "unit": "nmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "8.6",
+              "unit": "nmol/L"
+            },
+            "high": {
+              "value": "29.0",
+              "unit": "nmol/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "L",
+            "display": "Low"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "Testosterone",
+          "display": "Testosterone"
+        },
+        "upstreamId": "tst-aaaa/Testosterone",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/25-OHVitaminD",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/vitamin_d",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "10",
+          "unit": "nmol/L",
+          "comparator": "<"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "50",
+              "unit": "nmol/L"
+            },
+            "high": {
+              "value": "175",
+              "unit": "nmol/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "L",
+            "display": "Low"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "25-OHVitaminD",
+          "display": "Vitamin D"
+        },
+        "upstreamId": "tst-aaaa/25-OHVitaminD",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/FolicAcid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/folate_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "6.2",
+          "unit": "ug/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "3.9",
+              "unit": "ug/L"
+            },
+            "high": {
+              "value": "26.8",
+              "unit": "ug/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "FolicAcid",
+          "display": "Folate"
+        },
+        "upstreamId": "tst-aaaa/FolicAcid",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/VitaminB12",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/vitamin_b12_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "420",
+          "unit": "ng/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "197",
+              "unit": "ng/L"
+            },
+            "high": {
+              "value": "771",
+              "unit": "ng/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "200",
+              "unit": "ng/L"
+            },
+            "high": {
+              "value": "900",
+              "unit": "ng/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "VitaminB12",
+          "display": "Vitamin B12"
+        },
+        "upstreamId": "tst-aaaa/VitaminB12",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/FollicleStimulatingHormone",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/fsh",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "4.2",
+          "unit": "[IU]/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "1.5",
+              "unit": "[IU]/L"
+            },
+            "high": {
+              "value": "12.4",
+              "unit": "[IU]/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "1.5",
+              "unit": "[IU]/L"
+            },
+            "high": {
+              "value": "12.4",
+              "unit": "[IU]/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "FollicleStimulatingHormone",
+          "display": "FSH"
+        },
+        "upstreamId": "tst-aaaa/FollicleStimulatingHormone",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/FreeAndrogenIndex",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/free_androgen_index",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "45.0",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "35.0",
+              "unit": "%"
+            },
+            "high": {
+              "value": "92.6",
+              "unit": "%"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "FreeAndrogenIndex",
+          "display": "Free Androgen Index"
+        },
+        "upstreamId": "tst-aaaa/FreeAndrogenIndex",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/eGFR",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/egfr",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "90",
+          "unit": "mL/min/{1.73_m2}",
+          "comparator": ">"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "90",
+              "unit": "mL/min/{1.73_m2}"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "90",
+              "unit": "mL/min/{1.73_m2}"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "eGFR",
+          "display": "eGFR"
+        },
+        "upstreamId": "tst-aaaa/eGFR",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/MeanCellHaemConc",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/mchc",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "335",
+          "unit": "g/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "320",
+              "unit": "g/L"
+            },
+            "high": {
+              "value": "360",
+              "unit": "g/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "320",
+              "unit": "g/L"
+            },
+            "high": {
+              "value": "360",
+              "unit": "g/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "MeanCellHaemConc",
+          "display": "MCHC"
+        },
+        "upstreamId": "tst-aaaa/MeanCellHaemConc",
+        "specimen": {
+          "material": "whole blood",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/HGB",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/haemoglobin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": null,
+        "code": null,
+        "codedValue": null,
+        "text": "Haemolysed",
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "text": "normal"
+          }
+        ],
+        "interpretation": null,
+        "coding": {
+          "system": "randox",
+          "code": "HGB",
+          "display": "Haemoglobin"
+        },
+        "upstreamId": "tst-aaaa/HGB",
+        "specimen": {
+          "material": "whole blood",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/SerumIron",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/iron",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "18",
+          "unit": "umol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "10",
+              "unit": "umol/L"
+            },
+            "high": {
+              "value": "30",
+              "unit": "umol/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "SerumIron",
+          "display": "Iron"
+        },
+        "upstreamId": "tst-aaaa/SerumIron",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-06-15T08:30:00+01:00"
+        },
+        "method": "venous, in clinic",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/patientSystolicBloodPressure",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/systolic_blood_pressure",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "118",
+          "unit": "mm[Hg]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox",
+          "code": "patientSystolicBloodPressure",
+          "display": "patientSystolicBloodPressure"
+        },
+        "upstreamId": "tst-aaaa/patientSystolicBloodPressure",
+        "specimen": null,
+        "method": "measured at the clinic, sent with the order",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000001/patientDiastolicBloodPressure",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/diastolic_blood_pressure",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000001"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-06-15T08:30:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "76",
+          "unit": "mm[Hg]"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "randox",
+          "code": "patientDiastolicBloodPressure",
+          "display": "patientDiastolicBloodPressure"
+        },
+        "upstreamId": "tst-aaaa/patientDiastolicBloodPressure",
+        "specimen": null,
+        "method": "measured at the clinic, sent with the order",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1781776800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000005",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Randox (ordered through Numan)",
+        "accession": "NMN001-00000005",
+        "at": "2026-05-02T09:00:00+01:00",
+        "orderedAt": null,
+        "issuedAt": "2026-05-04T10:00:00+01:00",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-0f65b5f9510d4b76757270fc68f1fd67dde6e449a4b2131041e8427f204c7a38"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1778054400
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000005/Albumin",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/albumin",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000005"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-05-02T09:00:00+01:00",
+        "utcOffset": 60,
+        "channel": null,
+        "value": {
+          "value": "45",
+          "unit": "g/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "35",
+              "unit": "g/L"
+            },
+            "high": {
+              "value": "50",
+              "unit": "g/L"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "randox",
+          "code": "Albumin",
+          "display": "Albumin"
+        },
+        "upstreamId": "tst-eeee/Albumin",
+        "specimen": {
+          "material": "serum",
+          "collectedAt": "2026-05-02T09:00:00+01:00"
+        },
+        "method": "capillary, Tasso+ device",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1778054400
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000002",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Hurdle (ordered through Numan)",
+        "accession": "NMN001-00000002",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-02-04T16:20:00.000Z",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-735edf426a76617dce84bdffd9513a8346cbd487897152dd1c60f45f954a665b"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000002/TSH",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/tsh",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000002"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": null,
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": "2.10",
+        "sourceUnit": "µIU/mL",
+        "normalizationFailure": "unknown-unit",
+        "referenceRanges": [
+          {
+            "text": "normal"
+          },
+          {
+            "text": "low",
+            "tone": "poor"
+          },
+          {
+            "text": "high",
+            "tone": "poor"
+          },
+          {
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "TSH",
+          "display": "Thyroid Stimulating Hormone"
+        },
+        "upstreamId": "hd-test-0001",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-02-03T09:15:00.000+00:00"
+        },
+        "method": "capillary microtainer, home kit",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000002/LDL",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/ldl_cholesterol",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000002"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "3.4",
+          "unit": "mmol/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "high",
+            "tone": "poor"
+          },
+          {
+            "low": {
+              "value": "0.0",
+              "unit": "mmol/L"
+            },
+            "high": {
+              "value": "3.0",
+              "unit": "mmol/L"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "H",
+            "display": "High"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "LDL",
+          "display": "LDL Cholesterol"
+        },
+        "upstreamId": "hd-test-0001",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-02-03T09:15:00.000+00:00"
+        },
+        "method": "capillary microtainer, home kit",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000002/B12",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/vitamin_b12_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000002"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "150",
+          "unit": "pg/mL"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "180",
+              "unit": "pg/mL"
+            },
+            "text": "normal"
+          },
+          {
+            "high": {
+              "value": "180",
+              "unit": "pg/mL"
+            },
+            "text": "low: deficient",
+            "tone": "poor"
+          },
+          {
+            "low": {
+              "value": "180",
+              "unit": "pg/mL"
+            },
+            "high": {
+              "value": "900",
+              "unit": "pg/mL"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "L",
+            "display": "Deficient"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "B12",
+          "display": "Vitamin B12"
+        },
+        "upstreamId": "hd-test-0001",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-02-03T09:15:00.000+00:00"
+        },
+        "method": "capillary microtainer, home kit",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000002/FOL",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/folate_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000002"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "5.1",
+          "unit": "ng/mL"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "3.9",
+              "unit": "ng/mL"
+            },
+            "text": "normal"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "FOL",
+          "display": "Folate"
+        },
+        "upstreamId": "hd-test-0001",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-02-03T09:15:00.000+00:00"
+        },
+        "method": "capillary microtainer, home kit",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000002/EGFR",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/egfr",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000002"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-02-03T09:15:00.000+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "90",
+          "unit": "mL/min/{1.73_m2}",
+          "comparator": ">"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "low": {
+              "value": "90",
+              "unit": "mL/min/{1.73_m2}"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "90",
+              "unit": "mL/min/{1.73_m2}"
+            },
+            "text": "normal: Numan clinical range"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "EGFR",
+          "display": "eGFR"
+        },
+        "upstreamId": "hd-test-0001",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-02-03T09:15:00.000+00:00"
+        },
+        "method": "capillary microtainer, home kit",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1770292800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "numan",
+      "key": "NMN001-00000004",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Hurdle (ordered through Numan)",
+        "accession": "NMN001-00000004",
+        "at": "2026-01-10T07:45:00+00:00",
+        "orderedAt": null,
+        "issuedAt": "2026-01-11T15:00:00.000Z",
+        "status": "completed",
+        "file": {
+          "$doc": "blob-sha256-c85d210d8dce04be0b224085cda6157d7c877609ca55703444b4076b336085fb"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        }
+      },
+      "revision": 1768204800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "numan",
+      "key": "NMN001-00000004/ALT",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/labs/alt",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "numan"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "numan",
+            "key": "NMN001-00000004"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-01-10T07:45:00+00:00",
+        "utcOffset": 0,
+        "channel": null,
+        "value": {
+          "value": "22",
+          "unit": "U/L"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": [
+          {
+            "high": {
+              "value": "40",
+              "unit": "U/L"
+            },
+            "text": "normal"
+          },
+          {
+            "low": {
+              "value": "40",
+              "unit": "U/L"
+            },
+            "text": "high",
+            "tone": "poor"
+          }
+        ],
+        "interpretation": [
+          {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            "code": "N",
+            "display": "Normal"
+          }
+        ],
+        "coding": {
+          "system": "hurdle",
+          "code": "ALT",
+          "display": "ALT"
+        },
+        "upstreamId": "hd-test-0004",
+        "specimen": {
+          "material": "capillary blood",
+          "collectedAt": "2026-01-10T07:45:00+00:00"
+        },
+        "method": "capillary, finger prick",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1768204800
+    }
+  ],
+  "documents": [
+    {
+      "digest": "blob-sha256-70d61ca57ee08028ce2dcc52cc49b21a23fc8b513e4d8415202ec739711bddad",
+      "name": "Numan test 2026-09-02.json",
+      "mediaType": "application/json",
+      "size": 2271
+    },
+    {
+      "digest": "blob-sha256-c8eb838cce00148cf9589900d46a7d0c081094bed429f302dccd7b3a2a66a022",
+      "name": "Numan test 2026-06-27.json",
+      "mediaType": "application/json",
+      "size": 1838
+    },
+    {
+      "digest": "blob-sha256-df795babe4288aba08225a2636bd3b5ceedee0d3b7904ccca933f9911f36769a",
+      "name": "Numan test 2026-06-15.json",
+      "mediaType": "application/json",
+      "size": 9708
+    },
+    {
+      "digest": "blob-sha256-0f65b5f9510d4b76757270fc68f1fd67dde6e449a4b2131041e8427f204c7a38",
+      "name": "Numan test 2026-05-02.json",
+      "mediaType": "application/json",
+      "size": 1964
+    },
+    {
+      "digest": "blob-sha256-735edf426a76617dce84bdffd9513a8346cbd487897152dd1c60f45f954a665b",
+      "name": "Numan test 2026-02-03.json",
+      "mediaType": "application/json",
+      "size": 5081
+    },
+    {
+      "digest": "blob-sha256-c85d210d8dce04be0b224085cda6157d7c877609ca55703444b4076b336085fb",
+      "name": "Numan test 2026-01-10.json",
+      "mediaType": "application/json",
+      "size": 1562
+    }
+  ],
+  "left": [
+    {
+      "what": "test NMN001-00000007",
+      "why": "it names no time its sample was taken or received"
+    },
+    {
+      "what": "Total Cholesterol, NMN001-00000001",
+      "why": "a second value under the same key; the first is kept"
+    },
+    {
+      "what": "Folate, NMN001-00000001",
+      "why": "the range in nmol/L has no fixed factor to ug/L, so it is left out"
+    },
+    {
+      "what": "Zinc, NMN001-00000001",
+      "why": "the repository has no metric for Zinc"
+    },
+    {
+      "what": "Thyroid Stimulating Hormone, NMN001-00000002",
+      "why": "its value is kept as received: its unit, µIU/mL, is not one the repository knows"
+    },
+    {
+      "what": "Folate, NMN001-00000002",
+      "why": "the range in nmol/L has no fixed factor to ng/mL, so it is left out"
+    },
+    {
+      "what": "Selenium, NMN001-00000002",
+      "why": "the repository has no metric for Selenium"
+    }
+  ],
+  "source": {
+    "kind": "substrate.reamde.dev/observations/source",
+    "namespace": "source",
+    "key": "numan"
+  }
+}
