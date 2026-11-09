@@ -92,6 +92,16 @@ function ProblemRow({
             {line}
           </p>
         ))}
+        {problem.technical && (
+          <details className="pt-1 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none">
+              Technical details
+            </summary>
+            <pre className="mt-1 font-mono break-words whitespace-pre-wrap">
+              {problem.technical}
+            </pre>
+          </details>
+        )}
       </div>
       {problem.fixes.length > 0 && (
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">

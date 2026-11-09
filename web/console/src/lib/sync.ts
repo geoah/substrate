@@ -15,6 +15,7 @@ import type {
   SyncStream,
   TriggerStatus,
 } from "@/lib/api/types"
+import { providerInfo } from "@/lib/actor-identity"
 import { serverNow, splitKind } from "@/lib/api/http"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
 import { kindPackage } from "@/lib/definition"
@@ -281,7 +282,9 @@ export interface AccountView {
   kind: KindInfo | undefined
   /** The bundle id, `<authority>/<package>`: the provider the account is of. */
   provider: string
-  /** `email`, else `displayName`, else the rendered title, else the id. */
+  /** `email`, else `displayName`, else the rendered title, else the login,
+   * else "your <Provider> account": never the record id, which is a
+   * string of characters nobody recognises (#1298). */
   label: string
   tokenStatus?: string
   /** Why the OAuth facility last failed to refresh the token (`tokenError`),
@@ -327,7 +330,7 @@ export function accountViewOf(
       str(p.title) ??
       str(p.login) ??
       str(p.userId) ??
-      record.id,
+      `your ${providerInfo(pkg).name} account`,
     tokenStatus,
     tokenError: str(p.tokenError),
     tokenErrorAt: str(p.tokenErrorAt),

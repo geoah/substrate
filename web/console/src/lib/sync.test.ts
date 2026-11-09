@@ -338,7 +338,7 @@ describe("accountViewOf", () => {
     expect(v.syncable).toBe(true)
     expect(v.health).toBe("healthy")
   })
-  it("falls back through displayName, login and the id, and is not syncable without the trait", () => {
+  it("falls back through displayName, login and the provider's name, and is not syncable without the trait", () => {
     const plain = [kind(ACCOUNT, ["accountconfig"])]
     expect(
       accountViewOf(record("x", { displayName: "Work" }), plain).label
@@ -346,8 +346,8 @@ describe("accountViewOf", () => {
     expect(accountViewOf(record("x", { login: "geoah" }), plain).label).toBe(
       "geoah"
     )
-    const v = accountViewOf(record("x", {}), plain)
-    expect(v.label).toBe("x")
+    const v = accountViewOf(record("01m700z6k8ebmtrjx7rwcf2qd1", {}), plain)
+    expect(v.label).toBe("your Google account")
     expect(v.syncable).toBe(false)
   })
 })

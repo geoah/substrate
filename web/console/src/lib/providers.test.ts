@@ -248,7 +248,7 @@ describe("providerStanding", () => {
     })
   })
 
-  it("says which account fails to sync, with the error and the fixes", () => {
+  it("says which account fails to sync, with the error, its technical text folded, and the fixes", () => {
     const s = providerStanding({
       ...base,
       accounts: [
@@ -271,6 +271,7 @@ describe("providerStanding", () => {
         code: "sync",
         summary: "Syncing ada@example.com is failing",
         detail: ["gmail: HTTP 403"],
+        technical: "trace",
         account: "ada",
         fixes: ["sync-now", "reconnect"],
       },
