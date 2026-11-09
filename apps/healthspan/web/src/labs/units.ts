@@ -32,6 +32,12 @@ function unitOf(graph: UnitGraph, name: string): GraphUnit | undefined {
   return graph.units.get(name) ?? graph.units.get(graph.names?.get(name) ?? "")
 }
 
+/** The id of the unit a written name stands for, or undefined where the
+ * graph holds none. */
+export function unitId(graph: UnitGraph, name: string): string | undefined {
+  return unitOf(graph, name)?.id
+}
+
 /** An exact rational as the server writes one, digits or a fraction. */
 export function parseRational(v: unknown): number | undefined {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined

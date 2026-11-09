@@ -57,6 +57,10 @@ export interface Sample {
 export interface EngineInput {
   /** Every sleep the night order keeps, counted or not. */
   sleeps: SleepSession[]
+  /** Every sleep of every source, before the night order: a resting heart
+   * rate summary's night is its own source's sleep, whichever source the
+   * night order prefers. Absent, `sleeps`. */
+  restingSleeps?: SleepSession[]
   /** Every workout the workout order keeps, counted or not. */
   workouts: WorkoutSession[]
   /** The summaries the priority policy keeps. */

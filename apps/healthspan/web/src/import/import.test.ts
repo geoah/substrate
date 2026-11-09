@@ -463,5 +463,32 @@ describe("the plan", () => {
         },
       })
     ).toBe(false)
+    const withValue = (value: Record<string, unknown>) => ({
+      ...stored,
+      properties: { ...stored.properties, value },
+    })
+    // The same number in another unit is another result: 0.6 mg/dL is ten
+    // times 0.6 mg/L.
+    expect(
+      sameAsPlanned(
+        KIND.labresult,
+        props,
+        withValue({ value: "0.6", unit: "mg/dL", comparator: "<" })
+      )
+    ).toBe(false)
+    // Two names of one unit are one unit, as the graph says.
+    const key = (u: string) => (u === "milligram per liter" ? "mg/L" : u)
+    expect(
+      sameAsPlanned(
+        KIND.labresult,
+        props,
+        withValue({
+          value: "0.6",
+          unit: "milligram per liter",
+          comparator: "<",
+        }),
+        key
+      )
+    ).toBe(true)
   })
 })

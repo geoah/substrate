@@ -429,11 +429,10 @@ const defined = <T>(x: T | undefined): x is T => x !== undefined
 /** The engine's input from the shared kinds. */
 export function inputFromShared(r: SharedRecords): EngineInput {
   const rhr = r.rhr.map(parseResting).filter(defined)
+  const sleeps = r.sleeps.map(parseSleep).filter(defined)
   return {
-    sleeps: keepBySource(
-      r.sleeps.map(parseSleep).filter(defined),
-      r.nightOrder
-    ),
+    sleeps: keepBySource(sleeps, r.nightOrder),
+    restingSleeps: sleeps,
     workouts: keepBySource(
       r.workouts.map(parseWorkout).filter(defined),
       r.workoutOrder

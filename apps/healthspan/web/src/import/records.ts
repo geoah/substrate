@@ -127,24 +127,35 @@ function sameInstant(a: unknown, b: unknown): boolean {
   )
 }
 
-function sameQuantity(a: unknown, b: unknown): boolean {
+/** A unit's identity: the names one unit goes by (its id, its code, an
+ * alias) give one key. */
+export type UnitKey = (name: string) => string
+
+const spelled: UnitKey = (name) => name
+
+function sameQuantity(a: unknown, b: unknown, unitKey: UnitKey): boolean {
   if (!a || !b || typeof a !== "object" || typeof b !== "object") return a === b
-  const x = a as { value?: unknown; comparator?: unknown }
-  const y = b as { value?: unknown; comparator?: unknown }
+  const x = a as { value?: unknown; comparator?: unknown; unit?: unknown }
+  const y = b as { value?: unknown; comparator?: unknown; unit?: unknown }
+  const ux = typeof x.unit === "string" ? unitKey(x.unit) : undefined
+  const uy = typeof y.unit === "string" ? unitKey(y.unit) : undefined
   return (
+    ux === uy &&
     Number(x.value) === Number(y.value) &&
     (x.comparator ?? undefined) === (y.comparator ?? undefined)
   )
 }
 
 /** Whether a row found at an id the plan writes is what the plan writes
- * there: the same import, metric or report, time, and value or words. A
- * unit is stored as the repository spells it, so the value is compared as
- * a number. */
+ * there: the same import, metric or report, time, and value or words. The
+ * server stores a unit under its id and keeps the digits as written, so a
+ * value is the same number in the same unit, the unit compared through
+ * `unitKey` (`%` and `percent` are one unit; `g/dL` and `g/L` are not). */
 export function sameAsPlanned(
   kind: string,
   sent: Record<string, unknown>,
-  found: SubstrateRecord
+  found: SubstrateRecord,
+  unitKey: UnitKey = spelled
 ): boolean {
   const p = found.properties
   if (refPath(p.origin) !== sent.origin) return false
@@ -154,5 +165,5 @@ export function sameAsPlanned(
   if (refPath(p.metric) !== sent.metric) return false
   if (refPath(p.report) !== sent.report) return false
   if (sent.text !== undefined) return p.text === sent.text
-  return sameQuantity(p.value, sent.value)
+  return sameQuantity(p.value, sent.value, unitKey)
 }

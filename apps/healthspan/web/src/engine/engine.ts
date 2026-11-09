@@ -313,7 +313,7 @@ export function buildSeries(data: EngineInput): Series {
   }
   for (const r of data.rhr) {
     if (!Number.isFinite(r.value)) continue
-    const night = restingNight(r, data.sleeps, offset)
+    const night = restingNight(r, data.restingSleeps ?? data.sleeps, offset)
     if (r.value > 0) s.rhr.set(night, r.value)
     s.recoveries.add(night)
     wore(night)

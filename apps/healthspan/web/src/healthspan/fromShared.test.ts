@@ -158,6 +158,26 @@ const series = (r: Partial<SharedRecords>) =>
 const days = (m: Map<number, number> | Set<number>) =>
   [...(m instanceof Map ? m.keys() : m)].map(dayIso).sort()
 
+describe("a resting heart rate's night under a night order", () => {
+  it("is its own source's sleep's night when the order prefers another source's", () => {
+    const from = (r: SubstrateRecord, source: string) => ({
+      ...r,
+      properties: { ...r.properties, source: ref(SRC + source) },
+    })
+    const at = "2026-11-02T13:00:00Z"
+    const end = "2026-11-02T14:00:00Z"
+    const s = series({
+      sleeps: [bandSleep(at, end), from(bandSleep(at, end), PHONE)],
+      rhr: [from(bandResting(at, end, 52), PHONE)],
+    })
+    // The band's sleep is kept for the night's hours; the phone's, dropped
+    // by the order, still dates the phone's resting heart rate.
+    expect(days(s.sleepHours)).toEqual(["2026-11-01"])
+    expect(days(s.rhr)).toEqual(["2026-11-01"])
+    expect(days(s.recoveries)).toEqual(["2026-11-01"])
+  })
+})
+
 describe("which sleeps count", () => {
   it("counts a scored sleep's light, deep and REM, naps added, consistency without naps", () => {
     const s = series({

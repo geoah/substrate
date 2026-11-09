@@ -282,22 +282,30 @@ function useLiveRaw(today: Date): Read<HealthspanRaw> {
   )
   const key = (name: string, ...parts: unknown[]) =>
     d ? `healthspan:${name}:${at}:${parts.join(",")}` : null
+  // A read under the priority policy follows the sources' `priorities` and
+  // the source links too: a rank or a link changed here or on another
+  // device reads it again.
+  const ranked = (...kinds: string[]) => [
+    ...kinds,
+    KIND.source,
+    KIND.sourcelink,
+  ]
   const signals = useRead(
     key("signals", d?.signals),
     r.signals(d?.signals ?? []),
-    { kinds: [KIND.observation] }
+    { kinds: ranked(KIND.observation) }
   )
   const hrvSdnn = useRead(key("sdnn", d?.sdnn), r.hrvSdnn(!!d?.sdnn), {
-    kinds: [KIND.observation],
+    kinds: ranked(KIND.observation),
   })
   const steps = useRead(key("steps", d?.steps), r.steps(!!d?.steps), {
-    kinds: [KIND.observation, KIND.trace],
+    kinds: ranked(KIND.observation, KIND.trace),
   })
   const vo2 = useRead(key("vo2", d?.vo2), r.vo2(!!d?.vo2), {
-    kinds: [KIND.observation],
+    kinds: ranked(KIND.observation),
   })
   const height = useRead(key("height", d?.height), r.height(!!d?.height), {
-    kinds: [KIND.observation],
+    kinds: ranked(KIND.observation),
   })
   const body = useRead(key("body", d?.bodyIds), r.body(d?.bodyIds ?? []), {
     kinds: [KIND.labresult],

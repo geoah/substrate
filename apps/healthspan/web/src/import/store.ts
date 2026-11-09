@@ -6,8 +6,30 @@ import type {
   SubstrateClient,
   SubstrateRecord,
 } from "@substrate/client"
+import { parseUnitGraph, unitId, type UnitGraph } from "../labs/units"
 import { refPath } from "./records"
 import type { RunnerStore } from "./runner"
+
+// The repository's unit graph, read once per session: the import converts
+// a lab's units through it and the runner compares them by it, rather than
+// asking the server pair by pair, where every pair that does not convert is
+// a refused request.
+const graphs = new WeakMap<SubstrateClient, Promise<UnitGraph>>()
+
+export function unitGraph(client: SubstrateClient): Promise<UnitGraph> {
+  let g = graphs.get(client)
+  if (!g) {
+    g = client
+      .json<unknown>("GET", "api/v1/units")
+      .then(parseUnitGraph)
+      .catch((e: unknown) => {
+        graphs.delete(client)
+        throw e
+      })
+    graphs.set(client, g)
+  }
+  return g
+}
 
 /** Every page of a list read through `filter`, as the records route
  * answers it; `limit` caps the rows. */
@@ -74,6 +96,17 @@ export function clientStore(client: SubstrateClient): RunnerStore {
     patch: (kind, id, props, ifVersion, signal) =>
       client.patch(kind, id, props, ifVersion, signal),
     delete: (kind, id, signal) => client.delete(kind, id, signal),
+    // Without the graph, units compare as spelled: a row found in the same
+    // unit under another name then stops the import, which a resume after
+    // the graph answers settles; it never takes another unit for this one.
+    unitKey: async () => {
+      try {
+        const graph = await unitGraph(client)
+        return (name) => unitId(graph, name) ?? name
+      } catch {
+        return (name) => name
+      }
+    },
     pointingAt: async (kinds, path, signal) =>
       (await pointingAt(client, kinds, path, signal)).map((r) => ({
         kind: r.kind,

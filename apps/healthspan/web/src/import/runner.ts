@@ -33,6 +33,7 @@ import {
   reportProps,
   resultProps,
   sameAsPlanned,
+  type UnitKey,
   type ImportTarget,
 } from "./records"
 
@@ -70,6 +71,9 @@ export interface RunnerStore {
     signal?: AbortSignal
   ): Promise<SubstrateRecord>
   delete(kind: string, id: string, signal?: AbortSignal): Promise<void>
+  /** A unit's identity in the repository's unit graph, for comparing a
+   * row found with the row planned; absent, units compare as spelled. */
+  unitKey?(signal?: AbortSignal): Promise<UnitKey>
   /** Every live record of `kinds` whose `origin` is `path`. */
   pointingAt(
     kinds: string[],
@@ -436,7 +440,10 @@ class Run {
           const found = await this.request((s) =>
             this.opts.store.record(kind, id, s)
           )
-          if (found && sameAsPlanned(kind, props, found)) return
+          const unitKey = await this.request(
+            (s) => this.opts.store.unitKey?.(s) ?? Promise.resolve(undefined)
+          )
+          if (found && sameAsPlanned(kind, props, found, unitKey)) return
           throw new Stop(
             found
               ? `${what} is already in the repository with other values.`
