@@ -34,6 +34,8 @@ export type {
   WatchRow,
 } from "./watch"
 export { uuidv7 } from "./ids"
+export { boundTrait, kindStatus, lifecycleTrait, moveTo, movesFrom, renames, standing } from "./status"
+export type { KindStatus, Standing } from "./status"
 export { comparePositions, positionAfter, positionBetween } from "./position"
 export {
   NotASubstrate,
