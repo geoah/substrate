@@ -200,10 +200,23 @@ read the files, which keeps the bytes in its IndexedDB until staging ends:
 3. the plan goes up, and one guarded patch names it as `plan` and moves the
    import to `planned`.
 
-A page closed during staging offers, on its next open in this browser, to
-finish it or to discard it; another device sees a staging import and can
-only discard it (Undo, which deletes the record, and the server then
-collects its blobs). From `planned` on, any device resumes it: the plan and
+The collector's minute runs from a blob's first store, and a PUT of a blob
+already stored changes nothing, so a batch whose patch fails, or a page
+suspended past the minute, may find a blob gone: the patch naming it is
+refused, and the stager uploads it again (stored afresh) and patches again.
+The bytes stay in this browser until the patch naming them is confirmed,
+and the import never moves to `planned` while any document or the plan is
+not named by it. Before staging, the `documents` the plan needs are held to
+the 1 MiB a record write may be (about 79 bytes a digest, so some ten
+thousand documents): a plan with more is refused before anything goes up.
+
+Staging belongs to the browser that read the files, and no other device
+resumes it. A page closed during staging offers, on its next open in this
+browser, to finish it or to discard it. Discarding, from any device, takes
+the lease as the runner does, holds to the version read, and deletes the
+staging import record outright (it has no plan to undo, and the server
+then collects its blobs); a stager that finds its record gone stops and
+drops what it kept. From `planned` on, any device resumes it: the plan and
 every document are named by the record, so none is collected.
 
 Every record an import creates carries `origin` set to the import, but a
@@ -330,7 +343,7 @@ both win a transition.
   revision ([Writing a provider's plan](#importers)). At the end, one
   guarded patch moves it to `imported` and writes `importedAt` and the
   final `counts`, and clears `runner` and `problem`.
-- **Recovery.** Every state but `imported` and `undone` is resumable from
+- **Recovery.** Every state but `staging`, `imported` and `undone` is resumable from
   the import's row on Sources, on any device, once no live lease holds it:
   `planned` runs setup; `stopped` first moves to `importing` in the patch
   that takes the lease, then runs the writing; `importing` runs the writing
@@ -987,3 +1000,10 @@ One pull request, built in this order:
   stale; a provider import's setup takes its own source by id, never by
   the lab's name; `counts` are the latest run's, and what an import created
   is counted by `origin`.
+- **Astra, the importers' third draft: approved, with three changes folded
+  in.** A blob whose patch fails or whose minute ran out is uploaded and
+  attached again, its bytes kept until it is named, and `planned` waits for
+  every attachment; discarding a staging import is its own branch (the
+  lease, then the record deleted outright, and the stager stops), and
+  staging is no other device's to resume; the `documents` list is held to
+  a record's 1 MiB before staging.
