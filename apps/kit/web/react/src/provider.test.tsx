@@ -9,8 +9,12 @@ import { FakeLocks, FakeSubstrate, until } from "@substrate/testing"
 import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { StrictMode, useContext, useEffect } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { SubstrateContext, useConnection } from "./context"
-import { useRecords } from "./hooks"
+import {
+  SubstrateContext,
+  useConnection,
+  type SubstrateContextValue,
+} from "./context"
+import { useKindRecords, useLinkedStatus, useRecords } from "./hooks"
 import { SubstrateProvider } from "./provider"
 import { ToastHost } from "./toast"
 
@@ -66,6 +70,11 @@ function Names() {
     names = records
   })
   return null
+}
+
+/** Its children while the repository is open. */
+function Gate(props: { children: React.ReactNode }) {
+  return useContext(SubstrateContext) ? props.children : null
 }
 
 /** The IndexedDB connections opened from here on and not closed yet. */
@@ -169,6 +178,45 @@ afterEach(() => {
 })
 
 describe("SubstrateProvider", () => {
+  it("takes another set of kinds on the open link: the outbox, its waiting writes and the records still read stay", async () => {
+    const note = "substrate.reamde.dev/template/note"
+    fake.seed(kind, "a1", { name: "Milk" })
+    fake.seed(note, "n1", { name: "Call" })
+    localStorage.setItem(sessionKey, JSON.stringify(session("tok-a")))
+    let value: SubstrateContextValue | null = null
+    let read: ReadonlyMap<string, ReadonlyMap<string, unknown>> = new Map()
+    function Kinds() {
+      const context = useContext(SubstrateContext)
+      const records = useKindRecords([kind, note])
+      useEffect(() => {
+        value = context
+        read = records
+      })
+      return null
+    }
+    const tree = (kinds: string[]) => (
+      <SubstrateProvider manifest={manifest} kinds={kinds}>
+        <Probe />
+        {seen.open && <Kinds />}
+      </SubstrateProvider>
+    )
+    const view = render(tree([kind]))
+    await waitFor(() => expect(names).toEqual(["Milk"]), { timeout: 3000 })
+    view.rerender(tree([kind]))
+    await waitFor(() => expect(value).not.toBeNull())
+    const opened = value!
+    expect(read.get(note)?.size ?? 0).toBe(0)
+
+    view.rerender(tree([kind, note]))
+    await waitFor(() => expect(read.get(note)?.size).toBe(1), {
+      timeout: 3000,
+    })
+    expect(value!.outbox).toBe(opened.outbox)
+    expect(value!.linked).toBe(opened.linked)
+    expect(names).toEqual(["Milk"])
+    expect(opened.linked.kinds).toEqual([kind, note])
+  })
+
   it("closes the repository when another tab signs out, and opens the one another tab signs in", async () => {
     localStorage.setItem(sessionKey, JSON.stringify(session("tok-a")))
     render(
@@ -334,6 +382,62 @@ describe("SubstrateProvider", () => {
     expect(fake.openWatches).toBe(0)
     expect(await databases()).not.toContain(database())
     await waitFor(() => expect([...fake.revoked]).toEqual(["tok-a"]))
+  })
+
+  it("moves every read and the watch to the token another tab's approval minted, and the old token's revocation fails nothing", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    localStorage.setItem(sessionKey, JSON.stringify(session("tok-a")))
+    let status: string | undefined
+    function Status() {
+      const s = useLinkedStatus().status
+      useEffect(() => {
+        status = s
+      })
+      return null
+    }
+    render(
+      <SubstrateProvider manifest={manifest} kinds={[kind]}>
+        <Probe />
+        <Gate>
+          <Status />
+        </Gate>
+      </SubstrateProvider>
+    )
+    await waitFor(() => expect(names).toEqual(["Milk"]), { timeout: 3000 })
+    await waitFor(() => expect(status).toBe("live"))
+
+    // The approval of more scopes mints tok-b in another tab and the server
+    // revokes tok-a.
+    const asked = fake.requests.length
+    act(() =>
+      anotherTab(() =>
+        localStorage.setItem(
+          sessionKey,
+          JSON.stringify({
+            ...session("tok-b"),
+            scopes: [...manifest.scopes, "write:ada.example.com/work/chore"],
+          })
+        )
+      )
+    )
+    fake.revoked.add("tok-a")
+    await waitFor(() => expect(seen.token).toBe("tok-b"), { timeout: 3000 })
+    await waitFor(() => expect(status).toBe("live"), { timeout: 3000 })
+    fake.change(kind, "a1", { name: "Oat milk" })
+    await waitFor(() => expect(names).toEqual(["Oat milk"]), { timeout: 3000 })
+
+    const after = fake.requests
+      .slice(asked)
+      .filter((r) => r.path.startsWith("/api/"))
+    expect(after.some((r) => r.path === "/api/v1/changes")).toBe(true)
+    // The new link resumes from what this browser kept, and reads the
+    // changed record by itself.
+    expect(after.some((r) => r.path === `/api/v1/${kind}/a1`)).toBe(true)
+    expect(after.map((r) => r.headers.get("Authorization") ?? "none")).toEqual(
+      after.map(() => "Bearer tok-b")
+    )
+    expect(seen.phase).toBe("open")
+    expect(status).toBe("live")
   })
 
   it("opens a renewed sign-in without waiting on the old token's revocation", async () => {

@@ -14,6 +14,11 @@ export interface WriteOptions {
   /** Takes the words when the browser could not keep the write, in place
    * of the toast: a form says them beside its fields and keeps its draft. */
   onNotKept?: (words: string) => void
+  /** An edit not sent before `until` (epoch ms), kept in the outbox as
+   * soon as it is made and shown as not made until then, so the owner may
+   * take it back (`Outbox.withdraw`) and a closed page loses nothing.
+   * `tag` names it for the app's own screens. */
+  hold?: { until: number; tag?: string }
 }
 
 /** What a write answers once the browser has it, or could not keep it.
@@ -129,7 +134,8 @@ export function useWrites(): Writes {
         keep(
           kind,
           id,
-          () => RecordWrites.edit(kind, id, properties, seenVersion),
+          () =>
+            RecordWrites.edit(kind, id, properties, seenVersion, opts?.hold),
           opts
         ),
       remove: (kind, id, opts) =>

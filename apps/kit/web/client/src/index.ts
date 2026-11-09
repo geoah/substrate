@@ -24,7 +24,7 @@ export type {
   SubstrateRecord,
 } from "./records"
 export { defineKind, parseKind } from "./kinds"
-export type { Kind, KindCodec, KindName } from "./kinds"
+export type { Kind, KindCodec, KindInfo, KindName } from "./kinds"
 export { follow, parseWatchFrame } from "./watch"
 export type {
   FollowOptions,
@@ -33,7 +33,17 @@ export type {
   WatchFrame,
   WatchRow,
 } from "./watch"
-export { uuidv7 } from "./ids"
+export { derivedUUID, uuidv7 } from "./ids"
+export {
+  boundTrait,
+  kindStatus,
+  lifecycleTrait,
+  moveTo,
+  movesFrom,
+  renames,
+  standing,
+} from "./status"
+export type { KindStatus, Standing } from "./status"
 export { comparePositions, positionAfter, positionBetween } from "./position"
 export {
   NotASubstrate,

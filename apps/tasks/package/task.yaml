@@ -38,8 +38,12 @@ data:
   purpose: primary
   names:
     singular: task
+  # `lifecycle` (decision record 0226) says which states close a task and
+  # which one a suggestion waits in, so an app over every kind with a
+  # status reads this one as it reads any other.
   traits:
     - "substrate.reamde.dev/core/temporal(point: dueAt)"
+    - substrate.reamde.dev/core/lifecycle
   displayTemplate: "{name}"
   properties:
     # ---- what it is ------------------------------------------------------------
@@ -95,21 +99,34 @@ data:
         - medium
         - high
         - urgent
-    # The sample's states, without `proposed`: nothing proposes a task to
-    # this package yet, and a state nothing writes is not declared. Adding it
-    # is additive. `abandoned` is kept, and reachable from `open`, which the
-    # sample's is not: dropping a task is a decision worth keeping, where
-    # deleting it leaves nothing.
+    # The sample's states. `proposed` (version 2) is a suggestion an agent
+    # wrote, waiting for you to add it (to `open`) or dismiss it (to
+    # `abandoned`); a create that names no state is still `open`.
+    # `abandoned` is reachable from `open`, which the sample's is not:
+    # dropping a task is a decision worth keeping, where deleting it leaves
+    # nothing.
     status:
       type: state
       description: open until you mark it done or abandon it; either can be
-        undone
+        undone. A suggested task waits as proposed until you add or dismiss
+        it
       states:
+        - proposed
         - open
         - done
         - abandoned
       initial: open
+      done:
+        - done
+      dropped:
+        - abandoned
+      proposed:
+        - proposed
       transitions:
+        - from: proposed
+          to: open
+        - from: proposed
+          to: abandoned
         - from: open
           to: done
           stamps:

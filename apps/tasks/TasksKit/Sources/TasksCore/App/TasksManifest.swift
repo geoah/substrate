@@ -5,15 +5,18 @@ import SubstrateAuth
 /// What Substrate Tasks asks a substrate for (apps/tasks/app.json, which a
 /// test holds this to): its package as a `package` detail at the version
 /// this build carries or later, which the approval installs from the
-/// publisher's authority document, and `write:` on its kinds, which reads
-/// them too. The app applies no vocabulary.
+/// publisher's authority document, `write:` on its kinds, which reads them
+/// too, and `read:` on every kind with a status, the candidates the owner
+/// may turn on (docs/plans/tasks-sources.md). Turning one on asks for
+/// `write:` on it, beside these, through the same approval
+/// (`AppShell.changeAccess(adding:)`). The app applies no vocabulary.
 public enum TasksManifest {
     public static let clientIDKey = "SubstrateTasksClientID"
     /// A local build's client id: a loopback one, which nothing fetches.
     public static let localClientID = "http://127.0.0.1/substrate-tasks"
     public static let redirectKey = "SubstrateTasksRedirect"
 
-    public static let scopes = ["write:\(TasksKinds.packageID)/*"]
+    public static let scopes = ["write:\(TasksKinds.packageID)/*", "read:implements(\(TasksKinds.lifecycle))"]
 
     /// The version this build was written against: the package's floor. A
     /// build whose resources cannot be read asks for version 1.
@@ -21,7 +24,7 @@ public enum TasksManifest {
 
     public static let details = [AuthorizationDetail.package(TasksKinds.packageID, atLeast: version)]
 
-    public static let requirement = ServerRequirement(scopeVerbs: ["write"], detailTypes: [AuthorizationDetail.Types.package])
+    public static let requirement = ServerRequirement(scopeVerbs: ["write", "read"], detailTypes: [AuthorizationDetail.Types.package])
 
     /// The package each build needs, at its version, as the link checks it.
     public static var packages: [String: Int] { [TasksKinds.packageID: version] }
@@ -39,6 +42,8 @@ public enum TasksManifest {
             kindLabels: [
                 TasksKinds.task: KindLabel(singular: "Task", plural: "Tasks"),
                 TasksKinds.list: KindLabel(singular: "Task list", plural: "Task lists"),
+                TasksKinds.collection: KindLabel(singular: "Task collection", plural: "Task collections", purpose: "supporting"),
+                TasksKinds.preference: KindLabel(singular: "Tasks preference", plural: "Tasks preferences", purpose: "supporting"),
             ],
             softwareVersion: softwareVersion)
     }

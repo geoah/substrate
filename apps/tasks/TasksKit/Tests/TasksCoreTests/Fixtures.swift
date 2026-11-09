@@ -53,6 +53,9 @@ func page(_ records: [Record]) -> String {
 
 func path(_ kind: String, _ id: String) -> String { "/api/v1/\(kind)/\(id)" }
 
+/// An app's own task's record path, its identity everywhere in the app.
+func t(_ id: String) -> String { "\(TasksKinds.task)/\(id)" }
+
 let signedIn = LinkSnapshot(
     phase: .signedIn, server: server, repository: "ada.example.com", scopes: TasksManifest.scopes, online: true,
     packages: [TasksKinds.packageID: 1])

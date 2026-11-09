@@ -504,6 +504,13 @@ func (h *handler) mountResources(r chi.Router) {
 			// name (scopedDataset.CallFunction, decision 0219). Five
 			// segments, so the record path below never shadows it.
 			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
+			// Traits as host-recognized interfaces: the kinds implementing one,
+			// each with its declaration. Their records are `GET
+			// /records?filter={"implements": …}`. An app's token is answered
+			// the implementors its grant reaches (scopedDataset), so an app
+			// over every kind with a status learns them without reading every
+			// declaration (docs/plans/tasks-sources.md). Five segments.
+			r.Get("/"+corePackage+"/trait/{id}/implementors", h.getTraitImplementors)
 			// An applet's runtime (applets.go): its reads and writes are the
 			// token's own, so an app's token reaches the applets its scopes
 			// read, held by the scopedDataset like every route here.
@@ -612,10 +619,6 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get(bundle+"/status", h.getBundleStatuses)
 			r.Get(bundle+"/{id}/status", h.getBundleStatus)
 			r.Post(bundle+"/{id}/bind", h.postBundleBind)
-			// Traits as host-recognized interfaces: the kinds implementing one.
-			// Their records are `GET /records?filter={"implements": …}`.
-			trait := "/" + corePackage + "/trait/{id}"
-			r.Get(trait+"/implementors", h.getTraitImplementors)
 			// The agent call API. Chat, the one loop streaming, and the
 			// thread routes that reach a detached turn again (decision
 			// 0169) sit on the scoped surface above, with the function call.

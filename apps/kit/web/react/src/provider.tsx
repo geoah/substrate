@@ -217,6 +217,14 @@ export function SubstrateProvider({
   )
 
   const [link, setLink] = useState<RepositoryLink | null>(null)
+  // The kinds the link opens over; a change of them later is taken by the
+  // open link (`setKinds`), so the outbox, the cache and every record still
+  // read stay as they are.
+  const latestKinds = useRef(kindRefs)
+  useEffect(() => {
+    latestKinds.current = kindRefs
+    link?.linked.setKinds(kindRefs)
+  }, [link, kindRefs])
   useEffect(() => {
     if (!session || !client) return
     let cancelled = false
@@ -225,7 +233,7 @@ export function SubstrateProvider({
       app: manifest.id,
       repository: session.repository,
       client,
-      kinds: kindRefs,
+      kinds: latestKinds.current,
       kept,
     }).then((l) => {
       if (cancelled) return l.close()
@@ -240,7 +248,7 @@ export function SubstrateProvider({
       void opened?.close()
       setLink(null)
     }
-  }, [session, client, kindRefs, kept, manifest.id])
+  }, [session, client, kept, manifest.id])
 
   // A 401 from the feed, a read or a write ends the session; what waits in
   // the outbox stays kept for the next sign-in to this repository.
@@ -350,24 +358,47 @@ export function SubstrateProvider({
     [manifest]
   )
 
-  const signInAgain = useCallback(async () => {
-    if (!session) return
-    try {
-      const located = await probe(
-        session.server,
-        undefined,
-        requirementOf(manifest)
-      )
-      await beginSignIn({
-        manifest,
-        server: located.server,
-        metadata: located.metadata,
-        repository: session.repository,
-      })
-    } catch (e) {
-      toast(describe(e), "error")
-    }
-  }, [session, manifest, toast])
+  // The scopes the app asks for beyond its manifest, as it stands now: a
+  // sign-in again asks for them too, so approving more never drops what
+  // the app was given before.
+  const [extraScopes, setExtraScopes] = useState<readonly string[]>([])
+  const askScopes = useCallback((scopes: readonly string[]) => {
+    setExtraScopes((was) =>
+      was.length === scopes.length && was.every((s, i) => s === scopes[i])
+        ? was
+        : [...scopes]
+    )
+  }, [])
+
+  const signInAgain = useCallback(
+    async (more: readonly string[] = []) => {
+      if (!session) return
+      try {
+        const located = await probe(
+          session.server,
+          undefined,
+          requirementOf(manifest)
+        )
+        await beginSignIn({
+          manifest:
+            extraScopes.length || more.length
+              ? {
+                  ...manifest,
+                  scopes: [
+                    ...new Set([...manifest.scopes, ...extraScopes, ...more]),
+                  ],
+                }
+              : manifest,
+          server: located.server,
+          metadata: located.metadata,
+          repository: session.repository,
+        })
+      } catch (e) {
+        toast(describe(e), "error")
+      }
+    },
+    [session, manifest, toast, extraScopes]
+  )
 
   // `keeper.signOut` queues the token before it clears the session, and
   // clears it only while it is this tab's: clearing it signs out every
@@ -413,9 +444,10 @@ export function SubstrateProvider({
             kept,
             signOut,
             signInAgain,
+            askScopes,
           }
         : null,
-    [session, client, link, manifest, kept, signOut, signInAgain]
+    [session, client, link, manifest, kept, signOut, signInAgain, askScopes]
   )
 
   const connection = useMemo<Connection>(

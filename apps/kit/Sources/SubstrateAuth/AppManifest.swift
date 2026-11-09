@@ -146,6 +146,24 @@ public struct AppManifest: Sendable {
     /// one, so it keeps the loopback receiver.
     public var signInRedirect: URL? { isLocal ? nil : claimedRedirect }
 
+    /// The manifest asking for `more` beside its own scopes, each once: an
+    /// app that asks for a kind only when the owner chooses it (Tasks'
+    /// collections) asks through the same request and the same review.
+    public func asking(_ more: [String]) -> AppManifest {
+        var out = self
+        for scope in more where !out.scopes.contains(scope) { out.scopes.append(scope) }
+        return out
+    }
+
+    /// The scopes `session` holds beyond the manifest's: ones an earlier
+    /// request added (`asking`), which a request sent again must carry, or
+    /// approving it would take them back.
+    public func beyond(_ session: Session) -> [String] {
+        let resolve = { ScopeWords.resolve($0, authority: session.repository) }
+        let own = Set(scopes.map(resolve))
+        return (session.scopes ?? []).filter { !own.contains(resolve($0)) }
+    }
+
     /// The `scope` parameter.
     public var scope: String { scopes.joined(separator: " ") }
 

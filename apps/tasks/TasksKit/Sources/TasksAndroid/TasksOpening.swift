@@ -26,10 +26,14 @@ public struct TasksOpening: Bridged, Equatable {
     public var device: String
     /// The address the connect screen opens with: the one last signed in to.
     public var address: String?
+    /// The scopes the sign-in asks for beside the manifest's: those the
+    /// session holds beyond them, and an approval the app asks for (a
+    /// collection to change, a group kind to read).
+    public var scopes: [String]?
 
     public init(
         fingerprint: String, debug: Bool = false, clientID: String? = nil, redirect: String? = nil, version: String,
-        channel: String? = nil, device: String, address: String? = nil
+        channel: String? = nil, device: String, address: String? = nil, scopes: [String]? = nil
     ) {
         self.fingerprint = fingerprint
         self.debug = debug
@@ -39,6 +43,7 @@ public struct TasksOpening: Bridged, Equatable {
         self.channel = channel
         self.device = device
         self.address = address
+        self.scopes = scopes
     }
 
     /// The settings `open` carried, refused when the Kotlin is another
@@ -65,7 +70,8 @@ public struct TasksOpening: Bridged, Equatable {
         TasksManifest.manifest(
             clientID: debug ? TasksManifest.localClientID : releaseClientID ?? "",
             claimedRedirect: debug ? nil : claimedRedirect, softwareVersion: version,
-            version: Self.packageVersion(in: environment))
+            version: Self.packageVersion(in: environment)
+        ).asking(scopes ?? [])
     }
 
     /// The stamped client id where it is an https URL with a host.
@@ -82,7 +88,12 @@ public struct TasksOpening: Bridged, Equatable {
     /// resources the bridge copied out (`Bundle.module` cannot be read on
     /// Android); 1 where they cannot be read, as on Apple systems.
     static func packageVersion(in environment: BridgeEnvironment) -> Int {
-        environment.bundle(package: "TasksKit", target: "TasksCore").flatMap { try? TasksPackage.bundled(from: $0).version } ?? 1
+        package(in: environment)?.version ?? 1
+    }
+
+    /// The tasks package's closure from the resources the bridge copied out.
+    static func package(in environment: BridgeEnvironment) -> TasksPackage? {
+        environment.bundle(package: "TasksKit", target: "TasksCore").flatMap { try? TasksPackage.bundled(from: $0) }
     }
 }
 

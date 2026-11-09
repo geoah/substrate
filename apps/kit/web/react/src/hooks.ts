@@ -1,6 +1,7 @@
 import type { AppStatus } from "@substrate/auth"
 import type { Kind, SubstrateRecord } from "@substrate/client"
 import type {
+  LinkedRecords,
   LinkedStatusSnapshot,
   Outbox,
   OutboxEntry,
@@ -48,6 +49,58 @@ export function useRecords<T, D>(kind: Kind<T, D>): readonly T[] {
   return useMemo(
     () => Array.from(records.values(), (r) => readThrough(kind, r)),
     [records, kind]
+  )
+}
+
+const noKinds: ReadonlyMap<
+  string,
+  ReadonlyMap<string, SubstrateRecord>
+> = new Map()
+type KindsSelector = () => ReadonlyMap<
+  string,
+  ReadonlyMap<string, SubstrateRecord>
+>
+const kindsSelectors = new WeakMap<LinkedRecords, Map<string, KindsSelector>>()
+
+/** A link's kinds by `key` (their references joined by spaces), as the
+ * same map while each kind's map is the same. */
+function kindsOf(
+  linked: LinkedRecords,
+  key: string
+): () => ReadonlyMap<string, ReadonlyMap<string, SubstrateRecord>> {
+  let byKey = kindsSelectors.get(linked)
+  if (!byKey)
+    kindsSelectors.set(linked, (byKey = new Map<string, KindsSelector>()))
+  let select = byKey.get(key)
+  if (select) return select
+  const refs = key ? key.split(" ") : []
+  let last = noKinds
+  select = () => {
+    let same = last.size === refs.length
+    const next = new Map<string, ReadonlyMap<string, SubstrateRecord>>()
+    for (const k of refs) {
+      const m = linked.kindSnapshot(k)
+      next.set(k, m)
+      if (last.get(k) !== m) same = false
+    }
+    if (!same) last = next
+    return last
+  }
+  byKey.set(key, select)
+  return select
+}
+
+/** The records of several kinds as the owner sees them, by kind and then
+ * id, for an app whose kinds are chosen as it runs: the same map until a
+ * record of one of them changes, each kind's map the same until one of its
+ * own does. A kind the link does not read answers none. */
+export function useKindRecords(
+  kinds: readonly string[]
+): ReadonlyMap<string, ReadonlyMap<string, SubstrateRecord>> {
+  const { linked } = useSubstrate()
+  return useSyncExternalStore(
+    linked.subscribe,
+    kindsOf(linked, kinds.join(" "))
   )
 }
 

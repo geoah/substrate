@@ -295,6 +295,12 @@ type Property struct {
 	// in neither.
 	Done    []string
 	Dropped []string
+	// Proposed are the open values a record waits in until its owner
+	// accepts it, a suggestion an agent or a sync wrote (decision 0247).
+	// Each is declared and in neither list above, one value at least is in
+	// none of the three, and a machine has a transition from each proposed
+	// state to an open one.
+	Proposed []string
 	// MustExist requires the referent RECORD to exist when the value is written
 	// (a tombstoned row counts as existing); a value naming no record is
 	// refused with the same not-found any addressed read gives. Absent, the

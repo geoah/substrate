@@ -17,7 +17,8 @@ public enum DueKind: String, Bridged, Hashable, Sendable, CaseIterable {
 }
 
 /// A task as the editor holds it while the owner types: every field the
-/// form shows, as typed.
+/// form shows, as typed. The group is the group record's path, nil for
+/// none; the priority is the collection's own value, nil for none.
 public struct TaskDraft: Codable, Hashable, Sendable {
     public var name: String
     public var notes: String
@@ -26,11 +27,11 @@ public struct TaskDraft: Codable, Hashable, Sendable {
     public var dueKind: DueKind
     public var day: CivilDay?
     public var at: Date?
-    public var priority: TaskPriority
+    public var priority: String?
 
     public init(
         name: String = "", notes: String = "", link: String = "", list: String? = nil, dueKind: DueKind = .none,
-        day: CivilDay? = nil, at: Date? = nil, priority: TaskPriority = .none
+        day: CivilDay? = nil, at: Date? = nil, priority: String? = nil
     ) {
         self.name = name
         self.notes = notes
@@ -43,7 +44,8 @@ public struct TaskDraft: Codable, Hashable, Sendable {
     }
 
     public init(_ task: TaskItem) {
-        self.init(name: task.name, notes: task.notes ?? "", link: task.url ?? "", list: task.list, priority: task.priority)
+        let group: String? = if case let .record(path)? = task.group { path } else { nil }
+        self.init(name: task.name, notes: task.notes ?? "", link: task.url ?? "", list: group, priority: task.priorityValue)
         switch task.due {
         case nil: dueKind = .none
         case let .day(day)?: (dueKind, self.day) = (.day, day)
@@ -69,9 +71,10 @@ public struct TaskDraft: Codable, Hashable, Sendable {
         next.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
         let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
         next.url = link.isEmpty ? nil : link
-        next.list = list
+        next.group = list.map(TaskGroupLink.record) ?? TaskGroupLink.none
         next.due = due
-        next.priority = priority
+        next.priority = priority.flatMap(TaskPriority.init(rawValue:)) ?? .none
+        next.priorityValue = priority
         return next
     }
 
@@ -84,9 +87,12 @@ public struct TaskDraft: Codable, Hashable, Sendable {
         if name != opened.name { next.name = changed.name }
         if notes != opened.notes { next.notes = changed.notes }
         if link != opened.link { next.url = changed.url }
-        if list != opened.list { next.list = changed.list }
+        if list != opened.list { next.group = changed.group }
         if due != opened.due { next.due = changed.due }
-        if priority != opened.priority { next.priority = changed.priority }
+        if priority != opened.priority {
+            next.priority = changed.priority
+            next.priorityValue = changed.priorityValue
+        }
         return next
     }
 }

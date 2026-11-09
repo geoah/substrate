@@ -208,8 +208,10 @@ of `open`, anywhere" is one query over every kind that declares one.
 
 **The trait endpoint.** `GET
 /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
-that bind a trait; their records are the `implements` filter above, which is
-how the console lists every provider's `accountconfig` accounts.
+that bind a trait, each with its declaration; their records are the
+`implements` filter above, which is how the console lists every provider's
+`accountconfig` accounts. An app's token is answered the implementors its
+grant reads.
 
 **An app's trait scope.** An app may ask for every implementor at once,
 `read:implements(<trait>)` or `write:implements(<trait>)`: its token reaches
@@ -347,6 +349,10 @@ whose status is called `state`. To work over every implementor, an app:
   the two lists;
 - reads a kind's open records as those whose status is in neither list. A
   record with no status is open;
+- reads the open values the status lists in `proposed:` as suggestions that
+  wait for the owner, offering to accept one (a move to an open value in none
+  of the lists) or dismiss it (a move to a dropped value)
+  ([record 0247](decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md));
 - filters each implementor on its own, under that kind's name for the
   status. A renamed status is not called `status`, and a machine's state is
   stored apart from an enum's value;

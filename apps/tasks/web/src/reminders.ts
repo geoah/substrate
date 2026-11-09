@@ -7,6 +7,7 @@ import {
   type TaskItem,
   type TaskList,
 } from "./model"
+import { ownTaskKind } from "./sources"
 import { go, type Settings } from "./state"
 
 /** What the browser allows: not asked yet, on, refused, or a browser with
@@ -78,7 +79,9 @@ function opened(task: string, tasks: () => TaskItem[]) {
   const t = tasks().find((x) => x.id === task)
   go({
     section: "lists",
-    selection: t?.list ? { kind: "list", id: t.list } : { kind: "inbox" },
+    selection: t?.list
+      ? { kind: "list", id: t.list }
+      : { kind: "inbox", collection: t?.kind ?? ownTaskKind },
     task,
   })
 }

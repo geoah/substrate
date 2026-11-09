@@ -17,6 +17,8 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         public var path: String
         public var query: String?
         public var body: JSONValue?
+        /// The request's `Authorization` header, which says whose token it carried.
+        public var authorization: String?
     }
 
     public typealias Rule = @Sendable (Sent) -> (Int, String)?
@@ -61,7 +63,7 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let sent = Sent(
             method: request.httpMethod ?? "GET", path: components?.percentEncodedPath ?? url.path,
-            query: components?.query, body: body)
+            query: components?.query, body: body, authorization: request.value(forHTTPHeaderField: "Authorization"))
         let held = lock.withLock { holds.removeValue(forKey: "\(sent.method) \(sent.path)") }
         if let held { await held.arriveAndWait() }
         let extra = lock.withLock { headers["\(sent.method) \(sent.path)"] ?? [:] }

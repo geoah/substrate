@@ -409,6 +409,11 @@ func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.Ki
 	if ref == kindPackageRow && s.grant.NamesAnyPackage() {
 		return s.inner.KindByRef(ctx, ref)
 	}
+	// Every repository declares the kind of kind declarations, so naming it
+	// tells a token nothing; Get decides which of its rows it reads.
+	if ref == kindDeclarationRow {
+		return s.inner.KindByRef(ctx, ref)
+	}
 	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
 	} else if !ok {
@@ -448,6 +453,17 @@ func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Rec
 	// owner's.
 	if typ == kindPackageRow && s.grant.NamesPackage(id) {
 		return s.inner.Get(ctx, typ, id)
+	}
+	// The declaration row of a kind the grant reads says what the token
+	// already sees of the kind's records: its label, its properties and their
+	// order. An app over kinds it did not ship (a group kind it was approved
+	// to read) learns them here (docs/plans/tasks-sources.md).
+	if typ == kindDeclarationRow {
+		if ok, err := s.reads(ctx, id); err != nil {
+			return nil, err
+		} else if ok {
+			return s.inner.Get(ctx, typ, id)
+		}
 	}
 	gated, err := s.rowGated(ctx, typ)
 	if err != nil {

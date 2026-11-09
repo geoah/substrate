@@ -1,0 +1,29 @@
+# preference: the owner's choices that span every collection Substrate Tasks
+# shows (docs/plans/tasks-sources.md). One record, its id a UUIDv8 of the
+# sha256 of `preference`, so every device names the same one.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/tasks/preference
+data:
+  authority: substrate.reamde.dev
+  package: tasks
+  description: >-
+    Your choices across every collection Substrate Tasks shows: where new
+    tasks go, and the groups you pinned, in your order.
+  purpose: supporting
+  names:
+    singular: preference
+  label:
+    singular: Tasks preference
+    plural: Tasks preferences
+  properties:
+    newTasks:
+      type: string
+      description: the kind new tasks are written to, by its full reference;
+        absent for substrate.reamde.dev/tasks/task
+    # A group of any kind: a task list, a project, whatever a collection
+    # groups by. One order across every collection.
+    pins:
+      type: reference
+      repeated: true
+      description: the groups you pinned, in your order

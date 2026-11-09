@@ -82,6 +82,14 @@ change the kept records lack. A record's read answered after its removal,
 a list or one of the app's writes landed is dropped, and a read never
 replaces a newer version.
 
+`setKinds(kinds)` changes the kinds an open `LinkedRecords` reads without
+closing it: a kind still read keeps its records shown, each the same
+object; a kind left out goes from what is shown and kept; every kind is
+listed again under a new watch, since a watch from the old cursor would
+miss what changed in an added kind. The outbox is not touched, so a write
+waiting for a kind that comes back is laid over its records again.
+`SubstrateProvider` does this when its `kinds` change.
+
 A list stops at `limit` records (10,000 unless the app says), and one that
 stops with more left reads its kinds **in part**: `limitReached` says how
 many it read, `hasListed` stays false, and the cache keeps the kinds as

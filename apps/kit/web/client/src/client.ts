@@ -3,6 +3,7 @@ import type {
   AuthorizationCheckResult,
 } from "./authorizations"
 import { SubstrateError, failure } from "./errors"
+import type { KindInfo } from "./kinds"
 import type { ListQuery, RecordPage, SubstrateRecord } from "./records"
 
 export type Query = Record<string, string | string[] | undefined>
@@ -172,6 +173,18 @@ export class SubstrateClient {
       accept: [404],
       signal,
     })
+  }
+
+  /** The kinds that bind a trait, each with its declaration: for an app's
+   * token, those its grant reads. `trait` is a trait's reference in full,
+   * or a bare core trait's name. */
+  async implementors(trait: string, signal?: AbortSignal): Promise<KindInfo[]> {
+    const page = await this.json<{ items?: KindInfo[] }>(
+      "GET",
+      `api/v1/substrate.reamde.dev/core/trait/${encodeURIComponent(trait)}/implementors`,
+      { signal }
+    )
+    return page.items ?? []
   }
 
   /** `POST /api/v1/authorizations/check`: what the token lacks of the

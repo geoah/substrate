@@ -7,7 +7,14 @@ export {
   refProp,
   stringProp,
 } from "@substrate/client"
-export type { Kind, SubstrateRecord } from "@substrate/client"
+export { derivedUUID, kindStatus, movesFrom, standing } from "@substrate/client"
+export type {
+  Kind,
+  KindInfo,
+  KindStatus,
+  Standing,
+  SubstrateRecord,
+} from "@substrate/client"
 export {
   NotSignedIn,
   NotSignedOut,
@@ -15,6 +22,10 @@ export {
   webManifest,
 } from "@substrate/auth"
 export type { AppManifest } from "@substrate/auth"
+
+// The outbox's entries, for an app that reads its own held writes back.
+export { isHeld } from "@substrate/local"
+export type { Outbox, OutboxEntry, OutboxSummary } from "@substrate/local"
 
 export { SubstrateApp, Spinner } from "./SubstrateApp"
 export type { SubstrateAppProps } from "./SubstrateApp"
@@ -24,6 +35,7 @@ export { useConnection, useSubstrate } from "./context"
 export type { Connection, SubstrateContextValue } from "./context"
 export {
   useAppStatus,
+  useKindRecords,
   useLinkedStatus,
   useListed,
   useOutbox,

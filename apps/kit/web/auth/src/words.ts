@@ -19,6 +19,9 @@ export function scopeWords(scope: string): string {
     case "read":
     case "write": {
       const action = verb === "read" ? "See" : "See, add, change and delete"
+      const trait = traitOf(pattern)
+      if (trait)
+        return `${action} your records of every kind with the ${traitWord(trait)} trait, including kinds that take it on later`
       const later = glob ? ", including kinds added later" : ""
       if (pattern === "*") return `${action} all your records${later}`
       const parts = pattern.split("/")
@@ -45,6 +48,24 @@ export function scopeWords(scope: string): string {
     default:
       return scope
   }
+}
+
+/** The trait a read or write pattern names, `implements(<trait>)` as the
+ * records filter spells one (decision 0225), or undefined for a kind
+ * pattern. */
+export function traitOf(pattern: string): string | undefined {
+  const open = "implements("
+  if (!pattern.startsWith(open) || !pattern.endsWith(")")) return undefined
+  const trait = pattern.slice(open.length, -1)
+  return trait === "" ? undefined : trait
+}
+
+/** A trait by its name, as a sentence says it: `lifecycle`, and `due date`
+ * for `dueDate`. The Swift kit's `ScopeWords.traitWord`. */
+function traitWord(trait: string): string {
+  const parts = trait.split("/")
+  const name = parts.length === 3 ? parts[2] : trait
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()
 }
 
 /** One thing the owner's approval would change, in the console's words. */

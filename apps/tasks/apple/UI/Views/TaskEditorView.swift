@@ -23,40 +23,50 @@ struct TaskEditorView: View {
                 Section {
                     field(editor.name, lines: 1 ... 3) { shell.send(.setName($0), to: key) }
                         .focused($naming)
-                    field(editor.notes, lines: 2 ... 8) { shell.send(.setNotes($0), to: key) }
-                    field(editor.link, link: true) { shell.send(.setLink($0), to: key) }
+                    if let notes = editor.notes {
+                        field(notes, lines: 2 ... 8) { shell.send(.setNotes($0), to: key) }
+                    }
+                    if let link = editor.link {
+                        field(link, link: true) { shell.send(.setLink($0), to: key) }
+                    }
                 } footer: {
                     if let problem = editor.problem { Text(problem).foregroundStyle(.red) }
                 }
                 Section {
-                    Picker(
-                        editor.list.label,
-                        selection: Binding(
-                            get: { editor.list.selected },
-                            set: { shell.send(.setList($0.isEmpty ? nil : $0), to: key) })
-                    ) {
-                        ForEach(editor.list.options) { Text($0.title).tag($0.id) }
+                    if let list = editor.list {
+                        Picker(
+                            list.label,
+                            selection: Binding(
+                                get: { list.selected },
+                                set: { shell.send(.setList($0.isEmpty ? nil : $0), to: key) })
+                        ) {
+                            ForEach(list.options) { Text($0.title).tag($0.id) }
+                        }
                     }
-                    Picker(
-                        editor.due.label,
-                        selection: Binding(
-                            get: { editor.due.kind },
-                            set: { shell.send(.setDueKind($0), to: key) })
-                    ) {
-                        ForEach(editor.due.kinds) { Text($0.title).tag(DueKind(rawValue: $0.id) ?? .none) }
+                    if let due = editor.due {
+                        Picker(
+                            due.label,
+                            selection: Binding(
+                                get: { due.kind },
+                                set: { shell.send(.setDueKind($0), to: key) })
+                        ) {
+                            ForEach(due.kinds) { Text($0.title).tag(DueKind(rawValue: $0.id) ?? .none) }
+                        }
+                        if let date = due.date, let label = due.dateLabel {
+                            DatePicker(
+                                label, selection: Binding(get: { date }, set: { shell.send(.setDueDate($0), to: key) }),
+                                displayedComponents: due.kind == .time ? [.date, .hourAndMinute] : [.date])
+                        }
                     }
-                    if let date = editor.due.date, let label = editor.due.dateLabel {
-                        DatePicker(
-                            label, selection: Binding(get: { date }, set: { shell.send(.setDueDate($0), to: key) }),
-                            displayedComponents: editor.due.kind == .time ? [.date, .hourAndMinute] : [.date])
-                    }
-                    Picker(
-                        editor.priority.label,
-                        selection: Binding(
-                            get: { editor.priority.selected },
-                            set: { shell.send(.setPriority(TaskPriority(rawValue: $0) ?? .none), to: key) })
-                    ) {
-                        ForEach(editor.priority.options) { Text($0.title).tag($0.id) }
+                    if let priority = editor.priority {
+                        Picker(
+                            priority.label,
+                            selection: Binding(
+                                get: { priority.selected },
+                                set: { shell.send(.setPriority($0.isEmpty ? nil : $0), to: key) })
+                        ) {
+                            ForEach(priority.options) { Text($0.title).tag($0.id) }
+                        }
                     }
                 }
             }

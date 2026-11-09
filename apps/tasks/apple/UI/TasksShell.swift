@@ -32,7 +32,11 @@ public enum Tasks {
         TasksShell.Configuration(
             manifest: TasksManifest.current, keychainService: "dev.reamde.substrate.tasks", folder: "SubstrateTasks",
             packages: TasksManifest.packages, words: TasksApp.words(device:),
-            app: { TasksApp(cache: $0.cache, outbox: $0.outbox, words: $0.words, device: $0.device, build: $0.build) },
+            app: {
+                TasksApp(
+                    cache: $0.cache, outbox: $0.outbox, words: $0.words, device: $0.device, build: $0.build,
+                    settingsCache: TasksApp.settingsCache(in: $0.folder))
+            },
             refresh: .foreground, respond: Reminders.command(for:), settings: { .settings($0) }, clearSaved: .clearSaved,
             settingsScreen: TasksSettings.screen)
     }
@@ -42,5 +46,37 @@ extension AppShell where App == TasksApp {
     /// A command for the editor open under `editor`.
     func send(_ command: TaskEditor.Command, to editor: ChildKey) {
         model.send(command, to: Link.appPath + [editor])
+    }
+
+    /// The approval the app asks for, on the page every approval uses: the
+    /// app hears whether the owner went through it, and the scopes the
+    /// link then holds say whether it was granted.
+    func approve(_ approval: ApprovalPresentation) {
+        send(.approvalAnswered(completed: true))
+        Task {
+            if (try? await changeAccess(adding: approval.scopes)) == nil { send(.approvalAnswered(completed: false)) }
+        }
+    }
+
+    /// A page's approval line: the app hears the owner went to the page, and
+    /// the scopes the link then holds say whether it was granted.
+    func request(_ line: ApprovalLine) {
+        send(.requestApproval(line.collection, group: line.group))
+        Task {
+            if (try? await changeAccess(adding: line.scopes)) == nil { send(.approvalAnswered(completed: false)) }
+        }
+    }
+
+    /// A row's decision or action, by what it is.
+    func perform(_ action: TaskAction, on task: String) {
+        switch action {
+        case .complete: send(.complete(task))
+        case .reopen: send(.reopen(task))
+        case .abandon: send(.abandon(task))
+        case .delete: send(.deleteTask(task))
+        case .accept: send(.accept(task))
+        case .dismiss: send(.dismiss(task))
+        case .undo: send(.undo(task))
+        }
     }
 }

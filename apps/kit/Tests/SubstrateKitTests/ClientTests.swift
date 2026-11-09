@@ -35,6 +35,41 @@ import FoundationNetworking
         #expect(stub.requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer sub_x")
     }
 
+    @Test func aTraitsImplementorsAreReadWithTheirDeclarations() async throws {
+        let stub = StubTransport()
+        stub.on(
+            "GET", "/api/v1/substrate.reamde.dev/core/trait/substrate.reamde.dev%2Fcore%2Flifecycle/implementors",
+            json: #"""
+                {"items":[{"identity":"ada.example.com/work/chore","label":{"singular":"Chore","plural":"Chores"},
+                "definition":{"traits":["substrate.reamde.dev/core/lifecycle(status: state)"],
+                "properties":{"state":{"type":"enum","values":["todo","closed"],"done":["closed"]}}}},
+                {"identity":"substrate.reamde.dev/tasks/task","definition":{}}]}
+                """#)
+        let kinds = try await client(stub).implementors(of: KindStatus.lifecycle)
+        #expect(kinds.map(\.identity) == ["ada.example.com/work/chore", "substrate.reamde.dev/tasks/task"])
+        #expect(kinds[0].label == KindInfo.Label(singular: "Chore", plural: "Chores"))
+        #expect(kinds[1].label == nil)
+        #expect(KindStatus(definition: kinds[0].definition)?.property == "state")
+        let none = StubTransport()
+        none.on("GET", "/api/v1/substrate.reamde.dev/core/trait/lifecycle/implementors", json: "{}")
+        #expect(try await client(none).implementors(of: "lifecycle").isEmpty)
+    }
+
+    @Test func aDerivedIDIsTheSameUUIDv8ForTheSameName() {
+        let id = DerivedID.uuid("collection:substrate.reamde.dev/tasks/task")
+        #expect(id == DerivedID.uuid("collection:substrate.reamde.dev/tasks/task"))
+        #expect(id != DerivedID.uuid("collection:ada.example.com/work/chore"))
+        #expect(id == id.lowercased())
+        #expect(UUID(uuidString: id) != nil)
+        let parts = id.split(separator: "-")
+        #expect(parts.map(\.count) == [8, 4, 4, 4, 12])
+        #expect(parts[2].first == "8")
+        #expect("89ab".contains(parts[3].first!))
+        // RFC 9562's name-based UUIDv8: SHA-256 of the name, its first 128
+        // bits, version and variant set. The web kit is held to this text.
+        #expect(DerivedID.uuid("preference") == "bc5ece60-fff8-8ba4-a305-bc10aebbf972")
+    }
+
     @Test func aMissingOrDeletedRecordIsAbsent() async throws {
         let stub = StubTransport()
         stub.on(

@@ -26,6 +26,8 @@ import dev.reamde.substrate.kit.ui.ConnectScreen
 import dev.reamde.substrate.kit.ui.KitSpacing
 import dev.reamde.substrate.tasks.R
 import dev.reamde.substrate.tasks.TasksShell
+import dev.reamde.substrate.tasks.bridge.ApprovalLine
+import dev.reamde.substrate.tasks.bridge.ApprovalPresentation
 import dev.reamde.substrate.tasks.bridge.TaskEditor
 import dev.reamde.substrate.tasks.bridge.TasksApp
 
@@ -77,6 +79,16 @@ private fun actionsOf(shell: TasksShell): TasksActions =
         override fun settings(command: SettingsCommand) = shell.settings(command)
 
         override fun perform(action: AccessAction) = shell.perform(action)
+
+        override fun approve(approval: ApprovalPresentation) {
+            shell.send(TasksApp.Command.ApprovalAnswered(completed = true))
+            shell.changeAccess(approval.scopes)
+        }
+
+        override fun request(line: ApprovalLine) {
+            shell.send(TasksApp.Command.RequestApproval(line.collection, line.group))
+            shell.changeAccess(line.scopes)
+        }
     }
 
 @Composable

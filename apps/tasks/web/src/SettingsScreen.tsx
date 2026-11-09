@@ -8,9 +8,11 @@ import {
   useSubstrate,
 } from "@substrate/react"
 import { CircleAlert } from "lucide-react"
-import { List, Task, hourWords, type Order } from "./model"
+import { hourWords, type Order } from "./model"
 import type { Permission } from "./reminders"
-import { reminderHours, useSettings } from "./state"
+import { kindLabel } from "./sources"
+import { openSettings, reminderHours, useSettings, useTasks } from "./state"
+import { words } from "./words"
 
 /** What this browser is called where TasksSettings names the device. */
 const device = "This Browser"
@@ -25,6 +27,7 @@ export function SettingsScreen(props: {
 }) {
   const [settings, set] = useSettings()
   const { manifest } = useSubstrate()
+  const model = useTasks()
   const { permission } = props
   const name = manifest.name
 
@@ -33,6 +36,14 @@ export function SettingsScreen(props: {
       <div className="h-[60px]" />
       <LargeTitle>Settings</LargeTitle>
       <div className="px-4">
+        <Section>
+          <Row
+            label={words.settings.collections}
+            value={words.settings.on(model.sources.enabled.length)}
+            chevron
+            onClick={() => openSettings({ page: "collections" })}
+          />
+        </Section>
         <Section
           header="Reminders"
           footer={
@@ -127,7 +138,14 @@ export function SettingsScreen(props: {
           </Section>
         )}
         <SubstrateSettings
-          kindLabels={{ [Task.kind]: "Task", [List.kind]: "Task list" }}
+          kindLabels={Object.fromEntries(
+            [
+              ...model.sources.collections.map((c) => c.kind),
+              ...[...model.groups.keys()].map((p) =>
+                p.split("/").slice(0, 3).join("/")
+              ),
+            ].map((k) => [k, kindLabel(k, model.declaration(k)).singular])
+          )}
         />
       </div>
     </div>
@@ -143,7 +161,12 @@ export const shortcuts: [string, string][] = [
   [mac ? "⌘ ," : "Ctrl ,", "Settings"],
   ["↑ ↓", "Previous or Next Task"],
   ["E", "Edit Task"],
-  [mac ? "⌥ ↑ ↓" : "Alt ↑ ↓", "Move a Task or List Up or Down"],
+  ["A", "Accept a Suggestion"],
+  ["D", "Dismiss a Suggestion"],
+  ["S", "Select Suggestions"],
+  ["P", "Pin or Unpin a Group"],
+  ["Z", "Undo a Decision"],
+  [mac ? "⌥ ↑ ↓" : "Alt ↑ ↓", "Move a Task Up or Down"],
   [mac ? "⌘ ↵" : "Ctrl ↵", "Save in the Editor"],
   ["Esc", "Close"],
 ]

@@ -25,6 +25,12 @@ import SubstrateRuntime
 /// presenter folds nothing. What the read and the watch do next follows from
 /// how an event moved the phase, never from a flag the engine keeps.
 ///
+/// The kinds are the ones it was made with until the app names others
+/// (`rekinded`): the read and the watch are closed and opened again over the
+/// new set, the records of the kinds kept stay shown meanwhile, and the
+/// outbox, which outlives every read, keeps its waiting writes whatever
+/// kinds they are of.
+///
 /// The first read takes at most `limit` records (`LinkedRecords.readLimit`
 /// unless the app names another); past it, the read says there are `more`,
 /// and `notice` puts it in the app's words, so a repository larger than the
@@ -60,13 +66,18 @@ public struct LinkedRecords: Equatable, Sendable {
         case foregrounded
         case clearAsked
         case cleared
+        /// The app's kinds are now these: the read and the watch start over
+        /// over them.
+        case rekinded([String])
     }
 
     public enum Effect: Equatable, Sendable {
         case load
         case followOutbox
-        case read
-        case follow(WatchCursor?)
+        /// The outbox's queue as it stands, once.
+        case reportQueue
+        case read(over: [String])
+        case follow(WatchCursor?, over: [String])
         case stopFollowing
         case reread([String])
         case enqueue(LocalWrite)
@@ -75,6 +86,7 @@ public struct LinkedRecords: Equatable, Sendable {
 
     public typealias State = LinkedRecordsState
 
+    /// The kinds it opens with; `kinds(in:)` is the set it reads now.
     public let kinds: [String]
     /// Nil while no repository is signed in: nothing is read or written.
     public let cache: RecordCache?
@@ -106,6 +118,10 @@ public struct LinkedRecords: Equatable, Sendable {
             && lhs.limit == rhs.limit
     }
 
+    /// The kinds the read and the watch are over in `state`: the app's last
+    /// `rekinded`, else the ones it was made with.
+    public func kinds(in state: State) -> [String] { state.kinds ?? kinds }
+
     /// What the app's event at open asks for: the device's copy read, and
     /// the outbox followed.
     public var openEffects: [Effect] { [.load, .followOutbox] }
@@ -125,21 +141,26 @@ public struct LinkedRecords: Equatable, Sendable {
             // one the server refused for its own reasons, with the network
             // back. The network's first report, at every launch, is no new
             // access.
-            let newAccess = link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+            let newAccess = Self.newAccess(from: before, to: link)
             let networkBack = before?.online != true && link.online == true
+            let running = state.phase.running
             startOrStop(&next, restarting: { newAccess || (networkBack && $0 == .refused) })
+            // A read or a watch holds the token it opened with, which a new
+            // one replaces and may revoke: it starts again with the new one.
+            if newAccess, running, next.phase.running, next.loaded { next.phase = next.cursor == nil ? .reading : .following }
         case let .loaded(records, cursor, stale, queue):
-            next.server = keyed(records)
+            next.server = keyed(records, in: state)
             next.cursor = cursor
             // The watch resumes past the rows that marked these, so only a
             // read again brings them up to date.
+            let kinds = kinds(in: state)
             next.stale = stale.filter { RecordReference(path: $0).map { kinds.contains($0.kind) } ?? false }
             next.queue = queue.filter { kinds.contains($0.kind) }
             next.loaded = true
             fold(&next)
             startOrStop(&next, restarting: { _ in false })
         case let .listed(records, cursor, more):
-            next.server = keyed(records)
+            next.server = keyed(records, in: state)
             next.stale = []
             next.limitReached = more ? records.count : nil
             fold(&next)
@@ -152,7 +173,7 @@ public struct LinkedRecords: Equatable, Sendable {
         case let .readFailed(words, report):
             next.phase = .stopped(Self.stop(report), words)
         case let .changed(key, record):
-            next.server[key] = record.flatMap { $0.deletedAt == nil && kinds.contains($0.kind) ? $0 : nil }
+            next.server[key] = record.flatMap { $0.deletedAt == nil && kinds(in: state).contains($0.kind) ? $0 : nil }
             next.stale.remove(key)
             fold(&next)
         case let .rereadFailed(keys):
@@ -194,11 +215,30 @@ public struct LinkedRecords: Equatable, Sendable {
             fold(&next)
             next.phase = .idle
             startOrStop(&next, restarting: { _ in true })
+        case let .rekinded(kinds):
+            guard kinds != self.kinds(in: state) else { break }
+            next.kinds = kinds
+            // The cursor followed the old set: a kind new to the set has
+            // records written before it, which only a read brings.
+            next.server = state.server.filter { kinds.contains($0.value.kind) }
+            next.stale = state.stale.filter { RecordReference(path: $0).map { kinds.contains($0.kind) } ?? false }
+            next.queue = state.queue.filter { kinds.contains($0.kind) }
+            next.cursor = nil
+            next.limitReached = nil
+            fold(&next)
+            if next.link?.signedIn == true, next.loaded { next.phase = .reading }
         }
         return next
     }
 
-    private func keyed(_ records: [Record]) -> [String: Record] {
+    /// Whether `link` carries a token `before` did not: a sign-in, or a new
+    /// approval, which moves its scopes or when its access ends.
+    static func newAccess(from before: LinkSnapshot?, to link: LinkSnapshot) -> Bool {
+        link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+    }
+
+    private func keyed(_ records: [Record], in state: State) -> [String: Record] {
+        let kinds = kinds(in: state)
         var out: [String: Record] = [:]
         for record in records where kinds.contains(record.kind) && record.deletedAt == nil {
             out[RecordFold.key(record.kind, record.id)] = record
@@ -251,7 +291,7 @@ public struct LinkedRecords: Equatable, Sendable {
         for entry in left where landed.contains(entry.id) && !entry.parked {
             state.server[entry.key] = RecordFold.apply(entry, to: state.server[entry.key])
         }
-        state.queue = entries.filter { kinds.contains($0.kind) } + state.queue.filter { waiting.contains($0.id) }
+        state.queue = entries.filter { kinds(in: state).contains($0.kind) } + state.queue.filter { waiting.contains($0.id) }
         state.unconfirmed = waiting
         fold(&state)
     }
@@ -282,17 +322,31 @@ public struct LinkedRecords: Equatable, Sendable {
             if !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
         case let .linked(link):
             if link.online == true, previous.link?.online != true, !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
+            // A new token while the phase stays: the running read or watch is
+            // replaced (they share a key) by one that reads the new token.
+            if Self.newAccess(from: previous.link, to: link), previous.phase.running, state.phase == previous.phase {
+                switch state.phase {
+                case .reading: out.append(.read(over: kinds(in: state)))
+                case .following: out.append(.follow(state.cursor, over: kinds(in: state)))
+                default: break
+                }
+            }
         case .relistNeeded where previous.phase == .reading:
-            out.append(.read)
+            out.append(.read(over: kinds(in: state)))
+        case .rekinded where state.kinds != previous.kinds:
+            // The queue was kept to the old set: the outbox says what of it
+            // the new set holds. A read already running is replaced.
+            if outbox != nil { out.append(.reportQueue) }
+            if previous.phase == .reading, state.phase == .reading { out.append(.read(over: kinds(in: state))) }
         default:
             break
         }
         if state.phase != previous.phase {
             switch state.phase {
             case .reading:
-                out.append(.read)
+                out.append(.read(over: kinds(in: state)))
             case .following:
-                if case .watchOpened = event {} else { out.append(.follow(state.cursor)) }
+                if case .watchOpened = event {} else { out.append(.follow(state.cursor, over: kinds(in: state))) }
             case .idle where previous.phase.running:
                 out.append(.stopFollowing)
             default:
@@ -309,6 +363,7 @@ public struct LinkedRecords: Equatable, Sendable {
         switch effect {
         case .load: "records.load"
         case .followOutbox: "records.outbox"
+        case .reportQueue: "records.queue"
         case .read, .follow, .stopFollowing: "records.watch"
         case .clear: "records.clear"
         case .reread, .enqueue: nil
@@ -334,13 +389,13 @@ public struct LinkedRecords: Equatable, Sendable {
     }
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
-        let (kinds, cache, outbox, line, words) = (kinds, cache, outbox, line, words)
+        let (cache, outbox, line, words) = (cache, outbox, line, words)
         let source = environment.client
         switch effect {
         case .load:
             return .once {
                 var records: [Record] = []
-                if let cache { for kind in kinds { records += await cache.records(of: kind) } }
+                if let cache { for kind in self.kinds { records += await cache.records(of: kind) } }
                 return .loaded(
                     records, cursor: await cache?.cursor, stale: await cache?.stale ?? [], queue: await outbox?.entries ?? [])
             }
@@ -349,7 +404,10 @@ public struct LinkedRecords: Equatable, Sendable {
             return .relay { continuation in
                 for await _ in await outbox.changes() { continuation.yield(.queueReported(await outbox.entries, landed: await outbox.landed)) }
             }
-        case .read:
+        case .reportQueue:
+            guard let outbox else { return .none }
+            return .once { .queueReported(await outbox.entries, landed: await outbox.landed) }
+        case let .read(kinds):
             let limit = limit
             return .relay { continuation in
                 guard let client = await source.current() else { return }
@@ -392,7 +450,7 @@ public struct LinkedRecords: Equatable, Sendable {
                 guard let bookmark else { return }
                 _ = await list(bookmark)
             }
-        case let .follow(cursor):
+        case let .follow(cursor, kinds):
             return .relay { continuation in
                 guard let client = await source.current() else { return }
                 let follower = WatchFollower(client: client, kinds: kinds, app: words.app)

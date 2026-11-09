@@ -156,6 +156,21 @@ export class RecordCache {
     this.schedule()
   }
 
+  /** Kinds no longer shown: their records go from what is kept, so a
+   * later read of them starts from the server. */
+  drop(kinds: readonly string[]): void {
+    if (this.closed || !kinds.length) return
+    const prefix = (key: string) => kinds.some((k) => key.startsWith(`${k}/`))
+    for (const kind of kinds) this.replace.add(kind)
+    for (const key of [...this.dirty.keys()])
+      if (prefix(key)) this.dirty.delete(key)
+    for (const key of [...this.stale]) if (prefix(key)) this.stale.delete(key)
+    this.covered = this.covered.filter((k) => !kinds.includes(k))
+    this.partial = this.partial.filter((k) => !kinds.includes(k))
+    this.metaDirty = true
+    this.schedule()
+  }
+
   /** The cursor addresses no history the server holds: everything is read
    * again and the watch opens at the new head. The records stay shown
    * until the list replaces them. */

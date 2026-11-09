@@ -24,6 +24,9 @@ const kindFunction = corePackage + "/function"
 // kindPackageRow is the declaration kind a package row is.
 const kindPackageRow = corePackage + "/package"
 
+// kindDeclarationRow is the kind whose rows are kind declarations.
+const kindDeclarationRow = corePackage + "/kind"
+
 // functionReach is one function's resolved reach: the kinds, or globs over
 // kinds, it reads and writes, sorted and unique.
 type functionReach struct {

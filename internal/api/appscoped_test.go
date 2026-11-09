@@ -478,7 +478,7 @@ func TestAnAppReadsTheFeedsHistoryCutToWhatItReads(t *testing.T) {
 }
 
 // An app reads the row of a package its scopes reach into, which says the
-// version the repository holds, and no other declaration row.
+// version the repository holds, and no other package's row.
 func TestAnAppReadsTheRowOfAPackageItsScopesName(t *testing.T) {
 	e := newAppEnv(t)
 	ds := e.svc.datasets[fakeRepository]
@@ -495,4 +495,23 @@ func TestAnAppReadsTheRowOfAPackageItsScopesName(t *testing.T) {
 	}
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/package/substrate.reamde.dev%2Fclinical", tok, nil, ""), http.StatusNotFound)
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/kind/substrate.reamde.dev%2Ftraining%2Fset", tok, nil, ""), http.StatusNotFound)
+}
+
+// An app reads the declaration row of a kind its grant reads, and no other
+// kind's.
+func TestAnAppReadsTheDeclarationOfAKindItReads(t *testing.T) {
+	e := newAppEnv(t)
+	ds := e.svc.datasets[fakeRepository]
+	ds.types = append(ds.types, substrate.KindInfo{Identity: kindDeclarationRow, Name: "kind", Authority: "substrate.reamde.dev", Package: "core"})
+	for _, id := range []string{taskKind, personKind} {
+		ds.records[id] = &substrate.Record{ID: id, Kind: kindDeclarationRow, Properties: map[string]any{"label": map[string]any{"singular": id}}}
+	}
+	scope := "read:" + taskKind
+	tok := e.grant(scope, []string{scope})
+	rec := e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/kind/"+url.PathEscape(taskKind), tok, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.Record](t, rec); got.ID != taskKind {
+		t.Fatalf("the declaration answered %+v", got)
+	}
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/kind/"+url.PathEscape(personKind), tok, nil, ""), http.StatusNotFound)
 }

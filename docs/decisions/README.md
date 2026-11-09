@@ -403,3 +403,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0244](0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md) | An applet names its runtime, and a2ui is the one the server runs | accepted |
 | [0245](0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | A stale revision is a validation refusal narrowed by the reason `stale_revision` | proposed |
 | [0246](0246-a-declared-property-a-derived-only-token-shadows-is-spelled-with-a-leading-dot.md) | A declared property a derived-only token shadows is spelled with a leading dot | accepted |
+| [0247](0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md) | A status names the open states a record waits in until its owner accepts it | proposed |

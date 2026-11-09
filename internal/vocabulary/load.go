@@ -1781,8 +1781,9 @@ var machineKeys = map[string]bool{
 	// picker that stops offering a deprecated property stops offering it
 	// whether the property holds a value or a state.
 	"deprecated": true,
-	// The states that close a record (decision 0226), as on an enum.
-	"done": true, "dropped": true,
+	// The states that close a record (decision 0226), as on an enum, and
+	// the open ones that wait for the owner's acceptance (decision 0247).
+	"done": true, "dropped": true, "proposed": true,
 }
 
 var transitionKeys = map[string]bool{
@@ -1863,27 +1864,44 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 }
 
 // parseClosing reads `done:` and `dropped:`, the values of an enum or the
-// states of a machine that close a record (decision 0226). declared is the
-// property's own values, nil where it holds none: there, either key is
-// refused. Each entry names a declared value, no value is listed twice, and
-// at least one is left open. The lists say when a RECORD is closed, so they
-// sit on one value of the record's own: a field, link data, a list or a map
-// would carry them where nothing reads them.
+// states of a machine that close a record (decision 0226), and `proposed:`,
+// the open ones a record waits in until the owner accepts it (decision
+// 0247). declared is the property's own values, nil where it holds none:
+// there, every key is refused. Each entry names a declared value, no value
+// is listed twice, and at least one is left in none of the lists, so a record
+// has an open state to be accepted into. The lists say where a RECORD
+// stands, so they sit on one value of the record's own: a field, link data,
+// a list or a map would carry them where nothing reads them.
 func (l *loader) parseClosing(where string, d map[string]any, p *Property, declared []string, depth int) {
 	_, hasDone := d["done"]
 	_, hasDropped := d["dropped"]
-	if !hasDone && !hasDropped {
+	_, hasProposed := d["proposed"]
+	if !hasDone && !hasDropped && !hasProposed {
 		return
+	}
+	// The keys the property wrote, so a refusal names what is there.
+	var keys []string
+	for _, k := range []struct {
+		name    string
+		present bool
+	}{{"done", hasDone}, {"dropped", hasDropped}, {"proposed", hasProposed}} {
+		if k.present {
+			keys = append(keys, k.name)
+		}
+	}
+	named, names, belongs := keys[0], "names", "belongs"
+	if len(keys) > 1 {
+		named, names, belongs = strings.Join(keys[:len(keys)-1], ", ")+" and "+keys[len(keys)-1], "name", "belong"
 	}
 	switch {
 	case declared == nil:
-		l.errf("%s: done and dropped name an enum's values or a state machine's states", where)
+		l.errf("%s: %s %s an enum's values or a state machine's states", where, named, names)
 		return
 	case depth > 1:
-		l.errf("%s: done and dropped close a record, so they sit on a kind's own property, never an object field or link data", where)
+		l.errf("%s: %s %s on a kind's own property, never an object field or link data", where, named, belongs)
 		return
 	case p.Repeated || p.Keyed:
-		l.errf("%s: done and dropped close a record by its one status: drop repeated/keyed or drop the lists", where)
+		l.errf("%s: %s %s on a status that holds one value: drop repeated/keyed or drop the lists", where, named, belongs)
 		return
 	}
 	listedIn := map[string]string{}
@@ -1913,13 +1931,37 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 	}
 	p.Done = read("done", hasDone)
 	p.Dropped = read("dropped", hasDropped)
+	p.Proposed = read("proposed", hasProposed)
 	if len(listedIn) >= len(declared) {
-		l.errf("%s: done and dropped leave no value open", where)
+		if hasProposed {
+			l.errf("%s: %s leave no value outside the lists to accept a proposal into", where, named)
+		} else {
+			l.errf("%s: done and dropped leave no value open", where)
+		}
 	}
 	// A creation that names no state lands in the initial one, and a record
-	// nobody placed is not over before it starts.
-	if p.Machine != nil && listedIn[p.Machine.Initial] != "" {
-		l.errf("%s: the initial state %q is listed in %s: a record starts open", where, p.Machine.Initial, listedIn[p.Machine.Initial])
+	// nobody placed is not over before it starts. It may start proposed: an
+	// agent's suggestion is born waiting.
+	if p.Machine != nil {
+		if in := listedIn[p.Machine.Initial]; in == "done" || in == "dropped" {
+			l.errf("%s: the initial state %q is listed in %s: a record starts open", where, p.Machine.Initial, in)
+		}
+	}
+	// Accepting a proposal moves it to an open state, and a machine moves
+	// only along its transitions, so each proposed state has one to take.
+	if p.Machine != nil {
+		for _, s := range p.Proposed {
+			accepted := false
+			for _, tr := range p.Machine.Transitions {
+				if tr.From == s && listedIn[tr.To] == "" {
+					accepted = true
+					break
+				}
+			}
+			if !accepted {
+				l.errf("%s.proposed: %q has no transition to an open state that is not proposed, so nothing can accept it", where, s)
+			}
+		}
 	}
 }
 
@@ -1930,9 +1972,10 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 var propKeys = map[string]bool{
 	"type": true, "repeated": true, "embed": true, "fts": true, "values": true,
 	"pattern": true, "min": true, "max": true,
-	// An enum's values that close a record, done and dropped (decision 0226);
+	// An enum's values that close a record, done and dropped (decision 0226),
+	// and the open ones that wait for acceptance, proposed (decision 0247);
 	// refused on every other datatype (parseClosing).
-	"done": true, "dropped": true,
+	"done": true, "dropped": true, "proposed": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
 	// A quantity's own four (decision 0186): the anchor unit of the

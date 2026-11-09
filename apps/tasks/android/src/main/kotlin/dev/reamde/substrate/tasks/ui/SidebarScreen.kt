@@ -33,7 +33,6 @@ import dev.reamde.substrate.kit.bridge.AccessBanner
 import dev.reamde.substrate.kit.bridge.ActionButton
 import dev.reamde.substrate.kit.ui.KitSpacing
 import dev.reamde.substrate.kit.ui.KitText
-import dev.reamde.substrate.kit.ui.menuIcon
 import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.ListAction
 import dev.reamde.substrate.tasks.bridge.ListSelection
@@ -43,8 +42,10 @@ import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
- * The lists: what needs the owner and the tasks in no list, then the lists in the owner's order, each with how many of its tasks are open, a long press
- * offering its rename and delete. On a phone Needs you is a section of its own in the App menu, so it is left out here.
+ * The lists: the pinned groups, then a section per group kind, headed by its label with its full reference under it, listing the groups with open tasks, the
+ * tasks in no group, those whose group is gone, and how many more hold nothing open; then the collections that group by nothing. Wide, Needs you, Suggestions
+ * and No date come first, and each kind shows its busiest groups with "All N…". Each row says how many of its tasks are open; a long press on one of the app's
+ * own lists offers its rename and delete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,9 +58,18 @@ internal fun SidebarScreen(
     showsNeedsYou: Boolean,
     selected: ListSelection? = null,
 ) {
+    var opened by remember { mutableStateOf(setOf<String>()) }
     val show = { row: SidebarRow ->
         if (showsNeedsYou) actions.send(TasksApp.Command.Select(if (row.selection == ListSelection.NeedsYou) MENU_NEEDS else "lists"))
         actions.send(TasksApp.Command.Show(row.selection))
+    }
+    val rowActions = { row: SidebarRow ->
+        { action: ActionButton<ListAction> ->
+            when (val chosen = action.action) {
+                is ListAction.Rename -> name(ListNaming(chosen.value, row.title))
+                is ListAction.Delete -> actions.send(TasksApp.Command.DeleteList(chosen.value))
+            }
+        }
     }
     Scaffold(
         topBar = { TopAppBar(title = { Text(sidebar.title) }) },
@@ -74,39 +84,66 @@ internal fun SidebarScreen(
         PullToRefreshBox(isRefreshing = false, onRefresh = { actions.send(TasksApp.Command.Refresh) }, modifier = Modifier.padding(padding)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { Notices(banner, app.notices, actions) }
-                items(sidebar.fixed.filter { showsNeedsYou || it.selection != ListSelection.NeedsYou }, key = { it.id }) { row ->
-                    SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {})
+                if (showsNeedsYou) {
+                    items(sidebar.fixed, key = { it.id }) { row -> SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {}) }
                 }
-                item {
-                    Text(
-                        sidebar.listsTitle,
-                        style = KitText.heading.style,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
-                    )
+                if (sidebar.pinned.isNotEmpty()) {
+                    item { Heading(sidebar.pinnedTitle, null) }
+                    items(sidebar.pinned, key = { "pin-" + it.id }) { row ->
+                        SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {})
+                    }
                 }
-                items(sidebar.lists.rows, key = { "list-" + it.id }) { row ->
-                    SidebarRowView(row, row.selection == selected, onOpen = { show(row) }) { action ->
-                        when (val chosen = action.action) {
-                            is ListAction.Rename -> name(ListNaming(chosen.value, row.title))
-                            is ListAction.Delete -> actions.send(TasksApp.Command.DeleteList(chosen.value))
+                for (section in sidebar.sections) {
+                    item(key = "section-" + section.id) { Heading(section.title, section.reference) }
+                    val open = section.id in opened
+                    val rows =
+                        when {
+                            open -> section.rows + section.quiet
+                            showsNeedsYou -> section.rows.take(section.busiest.toInt())
+                            else -> section.rows
+                        }
+                    items(rows, key = { section.id + "-" + it.id }) { row ->
+                        SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = rowActions(row))
+                    }
+                    val more = if (showsNeedsYou) section.all else section.more
+                    if (!open && more != null) {
+                        item(key = "more-" + section.id) {
+                            ListItem(
+                                headlineContent = { Text(more, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                modifier = Modifier.combinedClickable(onClick = { opened = opened + section.id }),
+                            )
+                        }
+                    }
+                    if (section.reorders) {
+                        sidebar.noLists?.let { none ->
+                            item {
+                                Text(
+                                    none,
+                                    style = KitText.footnote.style,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = KitSpacing.content),
+                                )
+                            }
                         }
                     }
                 }
-                sidebar.noLists?.let { none ->
-                    item {
-                        Text(
-                            none,
-                            style = KitText.footnote.style,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = KitSpacing.content),
-                        )
-                    }
+                if (sidebar.ungrouped.isNotEmpty()) {
+                    item { Heading(sidebar.ungroupedTitle, null) }
+                    items(sidebar.ungrouped, key = { it.id }) { row -> SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {}) }
                 }
                 // Room for the button floating over the last row.
                 item { Box(Modifier.padding(KitSpacing.block * 2)) }
             }
         }
+    }
+}
+
+/** A section's heading: a group kind's plural label, and its full reference on a line of its own. */
+@Composable
+private fun Heading(title: String, reference: String?) {
+    androidx.compose.foundation.layout.Column(Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium)) {
+        Text(title, style = KitText.heading.style, color = MaterialTheme.colorScheme.primary)
+        reference?.let { Text(it, style = referenceStyle, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -118,7 +155,13 @@ private fun SidebarRowView(row: SidebarRow, chosen: Boolean, onOpen: () -> Unit,
     Box {
         ListItem(
             headlineContent = { Text(row.title) },
-            leadingContent = { Icon(menuIcon(row.symbol), contentDescription = null) },
+            supportingContent =
+                row.detail
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { detail ->
+                        { Text(detail, style = if (detail.count { it == '/' } == 2) referenceStyle else KitText.secondary.style) }
+                    },
+            leadingContent = { Icon(TasksMarks.symbol(row.symbol), contentDescription = null) },
             trailingContent = { Text("${row.open}", style = KitText.body.style, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             colors = ListItemDefaults.colors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface),
             modifier =

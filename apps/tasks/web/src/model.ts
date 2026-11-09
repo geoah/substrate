@@ -5,9 +5,12 @@ import {
   stringProp,
   type SubstrateRecord,
 } from "@substrate/react"
+import { nameWords, ownTaskKind, type Band, type Item } from "./sources"
 
 export type Priority = "none" | "low" | "medium" | "high" | "urgent"
-export type Status = "open" | "done" | "abandoned"
+/** A task's standing as its row and its mark show it: a dropped value of
+ * any kind is the app's own `abandoned`, a proposed one a suggestion. */
+export type Status = "open" | "done" | "abandoned" | "proposed"
 
 const priorityRank: Record<Priority, number> = {
   none: 0,
@@ -34,17 +37,11 @@ export const statusWords: Record<Status, string> = {
   open: "Open",
   done: "Done",
   abandoned: "Won't do",
+  proposed: "Suggestion",
 }
 
-/** Whether the package moves a task from one state to the other. */
-export function moves(from: Status, to: Status): boolean {
-  return (
-    (from === "open" && to !== "open") || (from !== "open" && to === "open")
-  )
-}
-
-/** What the owner calls a task in no list. */
-export const inboxTitle = "No List"
+/** What the owner calls a task of the app's own in no list. */
+export const inboxTitle = "No list"
 
 /** Each fact's one label, in the read view and the edit view alike. */
 export const fieldLabel = {
@@ -62,20 +59,36 @@ export const fieldLabel = {
  * written. A timed task carries both (the package's `dueDay` and `dueAt`). */
 export type Due = { day: string; at?: Date }
 
+/** A task of any collection as the screens read it. Its `id` is its record
+ * path, `<kind>/<id>`: two kinds may hold one id. */
 export interface TaskItem {
   id: string
+  kind: string
+  /** The record's own id within its kind. */
+  recordID: string
+  /** Of the app's own kind, which the editor edits whole. */
+  own: boolean
+  /** The contract's reading of it: standing, actions, group, band. */
+  item: Item
   name: string
   description?: string
   url?: string
+  /** The group record's path; absent for none, and for a group the token
+   * does not hold (`item.group` says `missing`). */
   list?: string
   position?: string
   due?: Due
   priority: Priority
+  /** A priority of another kind, by its value in words. */
+  priorityLabel?: string
+  pressing: boolean
   status: Status
   completedAt?: Date
   version: number
 }
 
+/** A group record: one of the app's own lists, or a record of any kind a
+ * collection groups by. Its `id` is its record path. */
 export interface TaskList {
   id: string
   name: string
@@ -91,7 +104,7 @@ export interface TaskFields {
   name: string
   notes?: string | null
   link?: string | null
-  /** A list's id; null is No List. */
+  /** A list's record path; null is no list. */
   list?: string | null
   position?: string
   due?: Due | null
@@ -107,7 +120,7 @@ export interface ListFields {
 const isPriority = (v: unknown): v is Priority =>
   typeof v === "string" && v in priorityRank
 const isStatus = (v: unknown): v is Status =>
-  v === "open" || v === "done" || v === "abandoned"
+  v === "open" || v === "done" || v === "abandoned" || v === "proposed"
 
 function moment(text: string | undefined): Date | undefined {
   if (!text) return undefined
@@ -119,10 +132,10 @@ function nonEmpty(text: string | undefined): string | undefined {
   return text && text.trim() ? text : undefined
 }
 
-/** A task read leniently, as TasksCodec reads one: a value the app does
- * not know reads as the kind's default, so a newer build's record never
- * hides a task. */
-export function readTask(r: SubstrateRecord): TaskItem {
+/** The app's own task read leniently, as TasksCodec reads one: a value the
+ * app does not know reads as the kind's default, so a newer build's record
+ * never hides a task. */
+export function readTask(r: SubstrateRecord): Omit<TaskItem, "item"> {
   const p = r.properties
   const at = moment(stringProp(r, "dueAt"))
   const dayText = stringProp(r, "dueDay")
@@ -133,24 +146,72 @@ export function readTask(r: SubstrateRecord): TaskItem {
         ? civilDay(at)
         : undefined
   const list = refProp(r, "list")
+  const priority = isPriority(p.priority) ? p.priority : "none"
   return {
-    id: r.id,
+    id: `${r.kind}/${r.id}`,
+    kind: r.kind,
+    recordID: r.id,
+    own: true,
     name: stringProp(r, "name") ?? "",
     description: nonEmpty(stringProp(r, "description")),
     url: nonEmpty(stringProp(r, "url")),
-    list: list && List.is(list) ? list.id : undefined,
+    list: list && List.is(list) ? List.ref(list.id) : undefined,
     position: positionText(p.position),
     due: day ? { day, at } : undefined,
-    priority: isPriority(p.priority) ? p.priority : "none",
+    priority,
+    pressing: priorityRank[priority] >= priorityRank.high,
     status: isStatus(p.status) ? p.status : "open",
     completedAt: moment(stringProp(r, "completedAt")),
     version: r.version,
   }
 }
 
+const standingStatus: Record<Item["standing"], Status> = {
+  open: "open",
+  done: "done",
+  dropped: "abandoned",
+  proposed: "proposed",
+}
+
+/** Any collection's item as the screens read a task: the app's own through
+ * its codec, any other through the contract's readings. */
+export function taskOf(item: Item): TaskItem {
+  const status = standingStatus[item.standing]
+  const list =
+    item.group && item.group !== "none" && item.group !== "missing"
+      ? item.group
+      : undefined
+  if (item.kind === ownTaskKind) {
+    const t = readTask(item.record as SubstrateRecord)
+    return { ...t, item, status, list }
+  }
+  const p = item.record.properties
+  const description = p.description
+  const url = p.url
+  return {
+    id: item.path,
+    kind: item.kind,
+    recordID: item.id,
+    own: false,
+    item,
+    name: item.title,
+    description:
+      typeof description === "string" ? nonEmpty(description) : undefined,
+    url: typeof url === "string" ? nonEmpty(url) : undefined,
+    list,
+    position: item.order,
+    due: item.due,
+    priority: "none",
+    priorityLabel: item.priority ? nameWords(item.priority) : undefined,
+    pressing: item.pressing,
+    status,
+    version: item.version,
+  }
+}
+
 export function readList(r: SubstrateRecord): TaskList {
   return {
-    id: r.id,
+    id: `${r.kind}/${r.id}`,
     name: stringProp(r, "name") ?? "",
     position: positionText(r.properties.position),
     version: r.version,
@@ -170,7 +231,7 @@ export function writeTask(d: Partial<TaskFields>): Record<string, unknown> {
   if (d.name !== undefined) out.name = d.name
   if (d.notes !== undefined) out.description = d.notes
   if (d.link !== undefined) out.url = d.link
-  if (d.list !== undefined) out.list = d.list === null ? null : List.ref(d.list)
+  if (d.list !== undefined) out.list = d.list
   if (d.position !== undefined) out.position = d.position
   if (d.due !== undefined) Object.assign(out, dueProperties(d.due ?? undefined))
   if (d.priority !== undefined) out.priority = d.priority
@@ -277,17 +338,33 @@ export function isOverdue(due: Due, now: Date): boolean {
 
 // ---- where a task is shown ------------------------------------------------
 
-/** What the list column shows: Needs you (the home screen), the tasks in no
- * list, or one list's. */
+/** What the list column shows: Needs you (the home screen), the suggestion
+ * queue, the open tasks with no date, a collection's tasks in no group (or
+ * every one of them where it groups by nothing), those whose group is gone
+ * or out of reach, or one group's, by its record path. */
 export type Selection =
-  { kind: "needs" } | { kind: "inbox" } | { kind: "list"; id: string }
+  | { kind: "needs" }
+  | { kind: "suggestions" }
+  | { kind: "noDate" }
+  | { kind: "inbox"; collection: string }
+  | { kind: "missing"; collection: string }
+  | { kind: "list"; id: string }
+
+export function selectionKey(s: Selection): string {
+  switch (s.kind) {
+    case "list":
+      return `list:${s.id}`
+    case "inbox":
+    case "missing":
+      return `${s.kind}:${s.collection}`
+    default:
+      return s.kind
+  }
+}
 
 export function sameSelection(a?: Selection, b?: Selection): boolean {
   if (!a || !b) return a === b
-  return (
-    a.kind === b.kind &&
-    (a.kind !== "list" || (b.kind === "list" && a.id === b.id))
-  )
+  return selectionKey(a) === selectionKey(b)
 }
 
 /** The list a task added here goes into; undefined is none. */
@@ -299,16 +376,30 @@ export function isOpen(t: TaskItem): boolean {
   return t.status === "open"
 }
 
-/** The tasks a selection shows, open and closed alike; Needs you's are every
- * open task, whatever its list. */
+/** The tasks a selection shows, open and closed alike, suggestions apart:
+ * Needs you's are every open task, the queue's every suggestion. */
 export function inSelection(t: TaskItem, s: Selection): boolean {
   switch (s.kind) {
-    case "inbox":
-      return t.list === undefined
-    case "list":
-      return t.list === s.id
     case "needs":
       return isOpen(t)
+    case "suggestions":
+      return t.status === "proposed"
+    case "noDate":
+      return t.item.band === "noDate"
+    case "inbox":
+      return (
+        t.kind === s.collection &&
+        t.status !== "proposed" &&
+        (t.item.group === "none" || t.item.group === null)
+      )
+    case "missing":
+      return (
+        t.kind === s.collection &&
+        t.status !== "proposed" &&
+        t.item.group === "missing"
+      )
+    case "list":
+      return t.item.group === s.id && t.status !== "proposed"
   }
 }
 
@@ -358,66 +449,22 @@ export function nextTaskPosition(
   list: string | undefined
 ): string {
   return positionAfter(
-    tasks.filter((t) => t.list === list).map((t) => t.position)
+    tasks.filter((t) => t.own && t.list === list).map((t) => t.position)
   )
 }
 
-// ---- Needs you's bands (TaskBand) -------------------------------------------
+// ---- Needs you's bands --------------------------------------------------------
 
-/** Where an open task falls on Needs you: waiting on a decision, due within
- * the week, or later. */
-export type Band = "needsYou" | "upcoming" | "later"
+export type { Band }
 
-export const bands: Band[] = ["needsYou", "upcoming", "later"]
+/** The bands Needs you lists, in order; No date is one counted row. */
+export const bands: Band[] = ["lateOrUrgent", "comingUp", "later"]
 
 export const bandTitle: Record<Band, string> = {
-  needsYou: "Needs you",
-  upcoming: "Coming up",
+  lateOrUrgent: "Late or urgent",
+  comingUp: "Coming up",
   later: "Later",
-}
-
-/** How far Coming up reaches past today. */
-const horizonDays = 7
-
-/** Late, or high and urgent with no day: waiting on a decision. */
-export function bandOf(t: TaskItem, now: Date): Band {
-  if (t.due) {
-    if (isOverdue(t.due, now)) return "needsYou"
-    return t.due.day <= addDays(civilDay(now), horizonDays)
-      ? "upcoming"
-      : "later"
-  }
-  return priorityRank[t.priority] >= priorityRank.high ? "needsYou" : "later"
-}
-
-/** Every open task, narrowed to `filter`, in its band, ranked: what is late
- * by how late, then what has no day by how urgent; what is coming by when;
- * the rest by when, the undated after by how urgent; ties in my order. */
-export function banded(
-  tasks: TaskItem[],
-  filter: Selection | undefined,
-  now: Date
-): { task: TaskItem; band: Band }[] {
-  return tasks
-    .filter((t) => isOpen(t) && (!filter || inSelection(t, filter)))
-    .map((task) => ({ task, band: bandOf(task, now) }))
-    .sort((a, b) => {
-      if (a.band !== b.band)
-        return bands.indexOf(a.band) - bands.indexOf(b.band)
-      const x = a.task
-      const y = b.task
-      if (x.due && y.due)
-        return dueKey(x.due) - dueKey(y.due) || byPosition(x, y)
-      if (x.due) return -1
-      if (y.due) return 1
-      return (
-        priorityRank[y.priority] - priorityRank[x.priority] || byPosition(x, y)
-      )
-    })
-}
-
-export function needsYouCount(tasks: TaskItem[], now: Date): number {
-  return tasks.filter((t) => isOpen(t) && bandOf(t, now) === "needsYou").length
+  noDate: "No date",
 }
 
 // ---- words -------------------------------------------------------------------
