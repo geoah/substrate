@@ -1,7 +1,7 @@
 # Healthspan: a health app on the web kit
 
-Status: proposal, 2026-11-09, against `main` at `6717954da`. Nothing here is
-built yet.
+Status: proposal, 2026-11-09, against `main` at `6717954da`, second draft
+after one review ([Reviews](#reviews)). Nothing here is built yet.
 
 ## The problem
 
@@ -56,11 +56,15 @@ their own repository.
   `labs/labresult`, from whichever sources the repository holds. A vendor's
   own score (WHOOP's recovery, strain and sleep performance) is shown where
   a source reports it and is never needed.
-- **Which source wins is the repository's, not the app's.** The app reads
-  under the priority policy without naming an order, so the server ranks by
-  each source's `priorities` and takes one device's values once through a
-  `sourcelink` ([observations](../observations.md)). The Sources tab is
-  where the owner sets both, and every other reader then agrees.
+- **Measured values follow the repository's ranking; sessions follow the
+  app's.** A metric read takes the priority policy with no order, so the
+  server ranks by each source's `priorities` per metric and takes one
+  device's values once through a `sourcelink`
+  ([observations](../observations.md)); every reader of those metrics then
+  agrees. A read of `health/sleep` or `health/workout` records must name
+  its order and reads neither `priorities` nor `sourcelink`
+  (`internal/engine/aggregaterecords.go`), so the order of nights and of
+  workouts is the app's own, kept on its profile ([Sources](#sources)).
 - **No deployment in the tree.** No host, source id, person or lab name of
   anyone's. The demo is synthetic.
 
@@ -79,7 +83,7 @@ apps/healthspan/
     src/engine/    the age score: curves, weekly snapshots, focus, report (pure, no I/O)
     src/catalogue/ the lab catalogue: entries, panels, targets, cadence, info content
     src/rules/     the attention rules, one pure function each
-    src/import/    CSV parsing, column and metric matching, the plan, the writes, undo
+    src/import/    CSV parsing, column and metric matching, the plan, the runner, undo
     src/ui/        charts, the scale bar, the chart key, cards, readouts
     src/screens/   one file per screen
     src/demo/      the synthetic member
@@ -87,12 +91,12 @@ apps/healthspan/
 
 | Screen | What it shows |
 | --- | --- |
-| Getting started | The owner's name from their contact, what the app found (a birth date on the contact or a patient record, the sex on a patient record), a field for each value still missing, then where data comes from: the sources already there, and links to connect a provider in the console or import a file. Shown on first open until finished or skipped; Settings opens it again |
+| Getting started | The owner's name from their contact, what the app found (a birth date on the contact or a patient record), a field for each value still missing, the sex the reference curves use (a patient record's value offered, never taken unasked), then where data comes from: the sources already there, and links to connect a provider in the console or import a file. Shown on first open until finished or skipped; Settings opens it again |
 | Today | Every finding, most urgent first: results outside the lab's range or off target, important tests overdue, an age score contributor that slipped, record items due (an appointment in 14 days, a repeat medicine due, a referral past its wait, a document or message since the last visit) |
-| Labs | One card per metric in panels, with the filters, the chart key and the display settings of today's app; a metric's history; the reports and one report |
+| Labs | One card per catalogue entry in panels, with the filters, the chart key and the display settings of today's app; a metric's history; the reports and one report |
 | Healthspan | The age score and pace of aging, what to focus on, the nine contributors, the signals and body readings, each with its scale and suggestion; how the score works; one contributor over time. Without a birth date or sex: the signals, and a link to finish getting started |
 | Record | The clinical record from every provider that writes the `clinical` kinds; hidden from the menu while the repository holds none |
-| Sources | Every source of measured values by class (watch, ring, scale, lab, service, manual), with what it reports, how many values and when last; its rank per group of metrics; duplicates linked as one device; the imports, each with Undo; Import and Enter a result |
+| Sources | Every source of measured values by class (watch, ring, scale, lab, service, manual), with what it reports and when last; its rank per group; duplicates linked as one device; the imports, each with its state, Resume and Undo; Import and Enter a result |
 | Settings | Profile (birth date and sex, where each came from, an edit for the ones the app keeps), display settings (kept per browser), then the kit's sections |
 
 The screens and their arithmetic are today's app's: the card grids, the one
@@ -107,101 +111,161 @@ with the charts and cards ported to them), and the screens added.
 `purpose: primary` (the owner's data, which Moss and the console show as
 such). Nothing in it references outside `core`, `labs` and `observations`.
 
-**`profile`**: what the age score and the targets need about the owner that
-no other record holds. One record per repository, created under the id
-`owner` (a PUT at `ifVersion: 0`, so two devices creating it meet at one
-row).
+### `profile`
+
+What the age score, the targets and the session reads need that no other
+record holds. One record per repository, under the id `owner`.
 
 | Property | Type | What |
 | --- | --- | --- |
 | `name` | string, required | the profile's title, "Healthspan profile" |
 | `contact` | reference to `core/contact` | whose profile it is: the owner's contact when there was one at getting started |
-| `birthDate` | date | written only where neither the contact nor a patient record gives a whole one |
-| `sex` | enum `female`, `male` | the sex the reference curves and the targets are for |
+| `birthDate` | date | written only where the contact gives no whole birthday |
+| `sex` | enum `female`, `male` | the reference basis: which sex's curves the age score and which targets the labs use. Not a statement of identity; the owner chooses it |
+| `nightSources` | repeated reference to `observations/source` | the order `health/sleep` records are read in, first highest |
+| `workoutSources` | repeated reference to `observations/source` | the same for `health/workout` |
 | `startedAt` | datetime | when getting started was finished or skipped |
 | `recordSeenAt` | datetime | the last time the owner marked the record read; a document or message after it is new |
 
-**`import`**: one file or one hand entry taken in, so it can be shown and
-undone.
+**Creating it.** The kit's outbox treats a create that meets an existing row
+as its own retry that landed, and drops what it carried
+(`apps/kit/web/local/src/outbox.ts`), which is right for an id one device
+minted and wrong for a row every device names. So the profile is never
+created through the outbox:
+
+1. Getting started waits until the linked records are listed
+   (`useListed`). Where `owner` is there, it saves with a guarded `edit` on
+   the version shown.
+2. Where it is not, Save sends a PUT at `ifVersion: 0` through the client,
+   with the form kept on screen. A 409 reads the row: where every field the
+   owner filled holds the same value, it is done; where one differs, the page
+   shows both ("Saved from another device") and the owner picks, then an
+   `edit` on that version writes the pick.
+
+Every later write is a kit write on the linked record: an `edit` (held to
+the version seen; a conflict parks with Keep My Edit and Use Theirs) from
+Settings, a `change` (re-read and sent again on top) for `nightSources`,
+`workoutSources` and `recordSeenAt`, which no form holds.
+
+### `import`
+
+One file or one hand entry taken in, durable enough to resume on any
+device and to undo.
 
 | Property | Type | What |
 | --- | --- | --- |
 | `name` | string, required | the file's name, or "Entered by hand" |
 | `format` | enum `csv`, `manual` | how it came in |
-| `status` | state `imported` → `undone` | undone once its results are deleted |
+| `status` | state | `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; any of them → `undoing` → `undone` |
 | `source` | reference to `observations/source` | the lab it is from |
-| `report` | reference to `labs/labreport` | the report it made |
-| `importedAt` | datetime | when |
-| `results` | int | results written |
+| `rows` | repeated object | the normalized plan, one entry per result: its key, metric, time, value or text, unit, comparator, range, flag, and the key of its report |
+| `reports` | repeated object | one entry per report: its key, its date, its lab's accession |
+| `results` | int | results confirmed written |
+| `problem` | string | why it stopped |
+| `importedAt` | datetime | when it finished |
 | `skipped` | markdown | the rows left out and why |
 
-Every `labresult` and `labreport` an import writes carries `origin` set to
-the import record, so Undo lists what points at it, deletes it, and moves
-the import to `undone`.
+At most 2,000 rows a record (a request body is capped at 1 MiB): a larger
+file becomes several imports, split between reports. Every id an import
+writes derives from the import's id and a key in its plan
+(`<import id>/report/<key>`, `<import id>/<key>`), and every `labreport` and
+`labresult` carries `origin` set to the import, so the plan alone says what
+the import writes, and what points at it says what it wrote.
 
 ## The owner's details
-
-The birth date and the sex are read in this order, each on its own:
-
-1. **Birth date:** the owner's contact's `dates.birthday`, where it has a
-   year; then `profile.birthDate`; then a `clinical/patient` record's
-   `birthDate`, where exactly one patient record is about the owner (none
-   names `about`, or it names the owner's contact).
-2. **Sex:** `profile.sex`; then that patient record's `gender`, where it is
-   `female` or `male`.
 
 The owner's contact is the one the core setting
 `substrate.reamde.dev/core/ownerContact` names. No scope writes `core`
 ([0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)),
-so the app never writes the contact or the setting: a birth date typed on
-the getting-started page goes to `profile.birthDate`, with a link to add it
-to the contact in the console. Without an owner's contact the page asks for
-the birth date and links to the console's step that sets one. Settings
-names where each value came from; a value from the contact or a patient
-record is changed there, not here.
+so the app never writes the contact or the setting.
 
-## Sources and import
+- **Birth date:** the contact's `dates.birthday` where it has a year; then
+  `profile.birthDate`. A `clinical/patient` record's `birthDate` (where
+  exactly one patient record is about the owner: none names `about`, or it
+  names the owner's contact) is offered on the getting-started page and
+  saved to the profile once the owner confirms it.
+- **Sex:** `profile.sex` alone. A patient record's `gender` is FHIR's
+  administrative gender, not the reference basis, so where it is `female`
+  or `male` it is offered as the starting choice and saved only once the
+  owner confirms it.
+
+A birth date typed on the getting-started page goes to `profile.birthDate`,
+with a link to add it to the contact in the console. Without an owner's
+contact the page asks for the birth date and links to the console's step
+that sets one. Settings names where each value came from; a value from the
+contact is changed in the console, not here.
+
+## Sources
 
 **The list** reads every `observations/source` record, and for each the
 metrics it reports with the newest value's time, from one latest read
-(`{"latest": true, "groupBy": ["metric", "source"]}`). Lab sources also
-count their reports. The WHOOP and Apple Health adapters create a source
-record only where it is absent, so the `priorities` the owner sets stand.
+(`{"latest": true, "groupBy": ["metric", "source"]}`), and the nights and
+workouts it holds from a count per source. Lab sources also count their
+reports. The WHOOP and Apple Health adapters create a source record only
+where it is absent, so what the owner sets on one stands.
 
-**Rank** is per group of metrics the screens read together (nights,
-workouts, steps and distance, heart, body composition, lab values): the
-owner drags the sources of a group into order and the app writes each
-source's `priorities` for every metric of the group, 1 first. A group with
-one source shows no rank.
+**Rank** is per group the screens read together:
+
+| Group | Read as | Rank kept in |
+| --- | --- | --- |
+| Heart (resting heart rate, HRV), steps and distance, VO2 max, body composition, lab values | metrics, priority policy with no order | each source's `priorities`, for every metric of the group, 1 first |
+| Nights | `health/sleep` records, priority policy | `profile.nightSources` |
+| Workouts | `health/workout` records, priority policy | `profile.workoutSources` |
+
+The owner drags a group's sources into order. A record read names the
+profile's order, then every other source holding such records in a default
+order (the class order watch, ring, service, app, then by name), at most the
+server's cap. A group with one source shows no rank. The page says that the
+metric ranks are the repository's, so every app reading those metrics
+follows them, and the session ranks are this app's.
 
 **One device** is a `sourcelink`: the owner picks two or more sources that
 are the same device (a scale synced to its maker's app and to Apple
 Health; a band re-exported through Apple Health), names it, and the app
-writes the link. A priority read then takes that device's values once.
+writes the link. A metric read then takes that device's values once. A
+session read does not read links, so linking also moves the linked sources
+together in the night and workout orders, the one the owner keeps first and
+the other after it.
 
-**Import** takes a CSV or TSV of lab results, one row per result:
+## Import
+
+**A CSV or TSV of lab results**, one row per result:
 
 1. The file is parsed in the browser. Columns are recognised by header
-   (date, test or analyte, value, unit, range or low and high, flag, lab,
-   accession) and the owner can reassign any of them. A template file can
-   be downloaded.
-2. Each test name is matched to a catalogue entry, by LOINC code where a
-   column holds one, else by the entry's names, then to the repository's
-   metric for that entry ([The catalogue](#the-catalogue)). An unmatched
-   name gets a picker of the repository's lab metrics, or is left out.
-3. Units are checked against the metric's unit through `/api/v1/units/convert`
-   (which no scope limits); a value whose unit does not convert is left out
-   with the reason.
-4. The plan is shown (results per date, left out and why); Import writes
-   the `import` record, a `source` for the lab where none matches its name
-   (class `lab`), one `labreport` per date and the `labresult`s, through the
-   client rather than the outbox, in order, each a PUT at `ifVersion: 0`
-   under an id derived from the import id and the row, so a retry after a
-   lost answer writes nothing twice. Progress shows; a refusal stops the
-   import, which can be resumed or undone.
+   (date, test or analyte, LOINC code, value, unit, range or low and high,
+   flag, lab, accession) and the owner can reassign any of them. A template
+   file can be downloaded.
+2. Each row is resolved to a catalogue entry (by LOINC code where a column
+   holds one, else by the entry's names), then to a metric by the entry and
+   the row's unit ([The catalogue](#the-catalogue)). An unmatched name gets a
+   picker of the repository's lab metrics, or is left out. A value whose
+   unit converts to none of the entry's metrics, through
+   `/api/v1/units/convert` (which no scope limits), is left out with the
+   reason.
+3. The plan is shown: results per report, left out and why. Import writes
+   the `import` record with its plan at `planned`, a `source` for the lab
+   where none of class `lab` has its name, and moves the import to
+   `importing`.
+4. **The runner** writes each report, then each of its results, through the
+   client, in plan order, each a PUT at `ifVersion: 0` under its derived id.
+   A 409 reads the row and compares it with what the plan writes: the same
+   is a write that landed; different stops the import as `stopped` with the
+   problem. Any other refusal stops it too. Every 50 writes it patches
+   `results` and reads `status`, and stops when the import is no longer
+   `importing`. A Web Lock per import keeps one runner a browser; a second
+   device running the same import writes nothing twice, because every write
+   is the same PUT. At the end it patches `imported` and `importedAt`.
+5. **Resume** (on a `stopped` import, or an `importing` one no runner in
+   this browser holds) runs the runner again from the start: a write that
+   landed answers 409 and compares equal.
+6. **Undo** patches `undoing` first, so every runner stops at its next
+   check, then deletes every result and report the plan names (404 is
+   already gone), then everything that points at the import through
+   `origin`, then moves it to `undone`. A result's derived twins in the other
+   unit go with it: `convertlab` deletes the derivations of a deleted input.
 
-**Enter a result** writes one `labresult` (and its report and import) from a
-form: metric, value, unit, date, lab.
+**Enter a result** writes one `labresult`, its report and an import with a
+one-row plan, through the same runner.
 
 A PDF, an Apple Health export and hand-entered body measurements are not in
 this plan ([Later](#later)).
@@ -209,50 +273,82 @@ this plan ([Later](#later)).
 ## The catalogue
 
 Today's catalogue keys each biomarker on a metric id, and 72 of those ids
-are under one owner's authority. Each entry instead carries its LOINC codes
-(one per unit form), its names, its panel, its target bands, its trend goal,
-its cadence and its info content, with no metric id. The app resolves an
-entry against the repository's `observations/metric` records: every metric
-of category `labs` or `body` with one of the entry's codes, then the
-`labs/` or `health/` metric of the entry's name. A card reads all of the
-metrics an entry resolves to as one series, each value converted to the
-first's unit, so a repository that holds the same analyte under two metrics
-(its own and the catalogue's) shows one card.
+are under one owner's authority. Each entry instead carries its LOINC codes,
+its names, its display unit, its panel, its target bands (in the display
+unit), its trend goal, its cadence and its info content, and no metric id.
 
-**The `labs` catalogue grows to cover them.** An import needs a metric to
-point at, and a repository that never had one has none. So `labs` version 2
-adds a metric record for each analyte the Healthspan catalogue names that
-`labs` lacks (about 60; the body composition ones go to `health`), with its
-LOINC codes, unit, precision and description, and the analyte-annotated
-units the mass and molar pairs need. That is first-party data any app can
-use; the app asks for `labs` at version 2.
+**Resolving an entry.** The app reads every `observations/metric` record of
+category `labs` or `body` and every `labs/analyte` record. An entry's
+metrics are those holding one of its codes, then the `labs/` or `health/`
+metric of its name. They fall into unit forms: the metrics whose units
+convert to the display unit through ordinary conversions (one form, however
+many metrics), and the others (a mass form beside a molar one), which
+convert only through the analyte's `molarMass` or formula. Results are
+read in the display form only. `convertlab` writes each result's twin in
+the analyte's other form (`derivedFrom` naming it), so a repository whose
+analyte record converts the two holds every result in both. A result of the
+other form with no twin in the display form (an analyte with no conversion)
+is converted in the app through the same analyte record where it can be,
+and shown apart, in its own unit, where it cannot.
+
+**One specimen once.** Within the display form a result with `derivedFrom`
+naming a result already read is left out, and two originals of one analyte
+on the same day with the same value within the display precision (one
+owner's metric and the catalogue's, written by two imports of one report)
+are one point, the higher-ranked source's.
+
+**Importing** picks the metric of the entry's form whose unit the row's
+unit converts to; `convertlab` then writes the twin.
+
+**The catalogues grow to cover the entries.** An import needs a metric to
+point at, and a repository that never had one has none:
+
+- `labs` version 2 adds a metric record for each lab analyte the catalogue
+  names that `labs` lacks (67 today: renal, lipid, thyroid, hormone, liver,
+  iron, blood count, electrolyte and other markers), each with its LOINC
+  codes, unit, precision and description, and `analyte` records with their
+  conversions where a second unit form is common (testosterone, vitamin D,
+  B12, folate, creatinine, urea, uric acid, calcium, phosphate, magnesium,
+  iron, insulin). Computed scores (cardiovascular risk, FIB-4) and urine pH
+  are left to a later version.
+- `health` version 3 adds the five body metrics it lacks: `fat_free_mass`,
+  `lean_mass`, `visceral_fat_rating`, `waist_circumference` and
+  `waist_hip_ratio`.
+
+The final declarations are held by `mise run kinds:check`. The app asks for
+`labs` at 2 and `health` at 3.
 
 ## The age score from the shared kinds
 
 The engine keeps its curves, its weekly snapshots and its report, and takes
-a new input shape built from the shared kinds instead of the WHOOP mirror:
+a new input built from the shared kinds instead of the WHOOP mirror. The
+choice is compatibility where the shared kinds carry what the engine read,
+and stated changes where they do not:
 
-| Contributor | Read from |
-| --- | --- |
-| Sleep consistency, hours of sleep | `health/sleep` records that are not naps, one per night under the priority policy; the night is the day before the local day it ended |
-| Zone 1–3 and zone 4–5 minutes | `health/workout` `zoneDurations` |
-| Strength training minutes | `health/workout` whose `sport` is a strength sport |
-| Steps | the daily sum of `health/steps` |
-| VO2 max | `health/vo2_max` readings over the last two years |
-| Resting heart rate | the nightly `health/resting_heart_rate` summary |
-| Lean body mass | body composition results in `labs/labresult`: fat-free mass over the same scan's weight, or 100 less its body fat percent |
+| Contributor | Today, from the mirror | On the shared kinds | Kept or changed |
+| --- | --- | --- | --- |
+| Hours of sleep | every scored sleep's light, deep and REM time, naps included, on the night of its cycle | every `health/sleep` record's `light`, `deep` and `rem`, naps included | kept; the night is the local day before the one the sleep ended on (`utcOffsetEnd`), which is the cycle's night but for a sleep that ends after a cycle starts |
+| Sleep consistency | WHOOP's `sleepConsistencyPercentage`, naps excluded | `scores.sleepConsistency` (the WHOOP adapter writes it), naps excluded | kept where a source writes it; a repository with none has no consistency contributor, with the reason, as a missing VO2 max has today |
+| Zone 1–3, zone 4–5 minutes | each scored workout's zone durations | `health/workout` `zoneDurations` | kept |
+| Strength minutes | WHOOP sport names in the white paper's strength list | `sportSource` normalized against the same list where present, else `sport` in the generic strength set (`strength`, `yoga`, `pilates`) | kept for WHOOP; the generic set for other sources |
+| Steps | Apple Health steps, daily sums | the daily sum of `health/steps`, priority policy | kept |
+| VO2 max | Apple Watch readings | `health/vo2_max` readings over two years, priority policy | kept |
+| Resting heart rate | each scored recovery's resting heart rate | the nightly `health/resting_heart_rate` summary, on the night it spans | kept |
+| Lean body mass | two named labs' scans | body composition results (`health/fat_free_mass` over the same scan's `health/body_mass`, or 100 less `health/body_fat_fraction`) in `labs/labresult`, priority policy | kept, without the names |
+| Days worn | a night with a scored sleep or recovery | a night with a sleep or a resting heart rate summary | kept |
 
-"Days worn", which turns weekly minutes into a rate today, becomes the days
-with a night or a resting heart rate. A source that reports zones only for
-some workouts, or no nights, leaves those contributors out with a reason, as
-a missing VO2 max does today. The demo generates one synthetic person as
-both the mirror's rows and the shared kinds, and a test holds the two inputs
-to the same report, so the switch changes no number for the vendor the
-engine was fitted on.
+What differs is said in "How the score works", not hidden. The acceptance
+test is the owner's own data: the old engine on the mirror and the new one
+on the shared kinds, both read from one repository through a read-only
+token, every weekly snapshot of the last year compared (age, pace, each
+contributor's value), with every difference above 0.1 years or one unit of a
+contributor explained in the pull request. Nothing from that run is
+committed. The unit fixtures are written in the shape the WHOOP adapter
+writes (its mapping in `kinds/providers.substrate.reamde.dev/whoop/bundle.yaml`),
+with naps, sleeps missing scores, a time zone change and uncommon sports.
 
 The score is described as an estimate the app computes from published
-reference curves (proposal and sources linked in "How the score works"),
-not as any vendor's product.
+reference curves, with the sources linked, not as any vendor's product.
 
 ## Its access
 
@@ -261,7 +357,7 @@ not as any vendor's product.
 ```json
 "asks": [
   {"package": "substrate.reamde.dev/healthspan", "atLeast": 1},
-  {"package": "substrate.reamde.dev/health", "atLeast": 2},
+  {"package": "substrate.reamde.dev/health", "atLeast": 3},
   {"package": "substrate.reamde.dev/labs", "atLeast": 2}
 ],
 "scopes": [
@@ -280,29 +376,44 @@ not as any vendor's product.
 ```
 
 `clinical` is read, not asked for: the Record tab appears once a provider
-installs it. `core/setting` is read for the one setting that names the
-owner's contact; the scope reaches every setting record (none holds a
-secret), which the approval page shows.
+installs it. `core/setting` is an internal kind, which an exact scope
+reaches and a glob does not; it is read for the one setting that names the
+owner's contact, but reaches every setting record (none holds a secret,
+`core/setting.yaml`), and the README and the getting-started page say so.
 
 ## The kit
 
 Two additions every health app needs, made in the kit rather than the app:
 
-- **`SubstrateClient.aggregate(filter, body)`**, typed after
-  [the aggregate read](../api.md#the-aggregate-read): the request (metric or
-  metrics, range, bucket, reducers, `from`, `statistic`, sources, groupBy,
-  budget) and the answer (units, bucket, rows with group, values, sources,
-  count). Today each app writes its own. Tested against the fake substrate,
+- **`SubstrateClient.aggregate(filter, body, signal)`** in `@substrate/client`,
+  typed after [the aggregate read](../api.md#the-aggregate-read): the
+  request (metric or metrics, latest, range, bucket, reducers, `from`,
+  `statistic`, sources, groupBy, budget) and the answer (units, bucket, rows
+  with group, values, sources, count). Tested against the fake substrate,
   which learns to answer a canned aggregate.
-- **`useRead(key, read, {kinds})`** in `@substrate/react`: a read through
-  the session's client that is not a linked record (an aggregate, a list of
-  a kind the app does not keep), cached per key for the page's life, read
-  again when the outbox lands a write to one of `kinds`, on `refresh()`, and
-  dropped on sign-out.
+- **`useRead(key, read, {kinds, staleAfter})`** in `@substrate/react`: a read
+  through the session's client that is not a linked record (an aggregate,
+  a list of a kind the app does not keep).
+  - Its cache belongs to the session: a sign-out or another session drops
+    it, and each read gets an `AbortSignal` aborted on that, on unmount and
+    when a newer read of its key starts.
+  - It is read again when one of `kinds` changes: through a write the outbox
+    lands; through `invalidate(kinds)`, which the app calls after a write of
+    its own through the client (an import, a rank); or through the change
+    feed, which the provider follows for the kinds the mounted reads name
+    (one follower, `follow` from `@substrate/client`, restarted when the set
+    changes, its events coalesced for two seconds).
+  - Sample kinds that change by the minute (`observations/observation`,
+    `observations/trace`) are not followed: a read of them is read again
+    when the page comes back in front after `staleAfter` (five minutes by
+    default), and on Refresh.
+
+The client keeps the transport and React the hook, as the layering requires
+(`apps/eslint.config.js`).
 
 And `app.json` admits `web` as a platform: `lint:apps` holds that an app
-naming it has a `web/` folder, and the release, which ships `apple/` and
-`android/` builds, skips it.
+naming it has a `web/` folder, counts `web/` as a UI folder and checks its
+icon, and the release, which ships `apple/` and `android/` builds, skips it.
 
 ## The demo
 
@@ -317,16 +428,21 @@ screenshot script captures only the demo.
 
 - The package's kinds held to the codecs (`kinds.ts` names only what the
   YAML declares), as the template's test does.
-- The engine's tests, carried over, and the mirror-to-shared-kinds parity
-  test above.
-- Catalogue resolution: by code, by name, two metrics for one analyte, unit
-  conversion between them.
-- Profile resolution: each order above, a yearless birthday, two patient
-  records, no owner's contact.
+- The engine's tests, carried over, and the adapter-shaped fixtures above.
+- Catalogue resolution: by code, by name, two metrics of one form, a mass
+  and a molar form with and without derived twins, the same specimen under
+  two metrics.
+- Profile: each source of each value, a yearless birthday, two patient
+  records, no owner's contact, the 409 on create with the same and with
+  different values.
 - Import: header detection, every column form of a range, comparators
-  (`<5`), units that do not convert, the derived ids, resume after a
-  refusal, undo.
-- Sources: the priorities written for a group, a link of two sources.
+  (`<5`), units that do not convert, the split at 2,000 rows, the derived
+  ids, a lost answer (409 that compares equal), a conflict (409 that does
+  not), resume, undo while a runner writes, undo of a partial import.
+- Sources: the priorities written for a group, a link of two sources, the
+  record order with ranked and unranked sources.
+- `useRead`: invalidation by the outbox, by `invalidate`, by the feed, and
+  by `staleAfter`; the abort on sign-out.
 - Today's rules, filters, chart maths, scales and suggestions, carried over.
 - End to end on a local substrate (`mise run dev:up` with the authority
   document from this tree): connect, approve (the three packages install),
@@ -338,7 +454,7 @@ screenshot script captures only the demo.
 `SUBSTRATE_WEB_URL=https://<host>/<path>/ pnpm build` in `apps/healthspan/web`,
 as Tasks: the build is static, routes in the hash, and needs `connect-src
 https:` in any CSP. The README says how to serve it anywhere. The owner's
-deployment publishes the closure with the next apps site publish and serves
+deployment publishes the closures with the next apps site publish and serves
 the build beside Tasks on the web.
 
 ## Steps
@@ -346,14 +462,15 @@ the build beside Tasks on the web.
 One pull request, built in this order:
 
 1. The kit's `aggregate`, `useRead` and the `web` platform, with tests.
-2. `labs` version 2: the analytes the catalogue names, with codes and units.
+2. `labs` version 2 and `health` version 3.
 3. `apps/healthspan`: `app.json`, the package, the shell on the template,
-   the store, the demo's skeleton.
+   the store, the demo's skeleton, the shared UI.
 4. In parallel: the engine on the shared kinds with Healthspan's screens;
    the catalogue with Labs, Today and the rules; Record, the profile,
    Getting started and Settings; Sources and Import.
-5. The end-to-end run, the README, `apps/README.md` and the kit's README
-   naming the app, `docs/health-apps.md` linking it.
+5. The parity run on the owner's data, the end-to-end run, the README,
+   `apps/README.md` and the kit's README naming the app,
+   `docs/health-apps.md` linking it.
 
 ## Later
 
@@ -361,14 +478,23 @@ One pull request, built in this order:
 - Hand-entered body measurements (weight, blood pressure), which need a
   write scope on `observations/observation`.
 - The owner's own target bands as records of a `target` kind.
+- Session reads that follow `priorities` and `sourcelink` on the server, so
+  the night and workout orders can leave the profile.
 - A service worker, so the app opens with no network.
 
-## Questions for review
+## Reviews
 
-1. Is one fixed-id `profile` the right shape, or should the sex live where
-   other apps can read it (a property core's contact does not have)?
-2. Is writing `priorities` and `sourcelink`s from an app right, given that
-   every reader then follows them?
-3. Should `labs` version 2 carry the extra analytes, or should the app's own
-   package ship them?
-4. Is `read:substrate.reamde.dev/core/setting` acceptable for one setting?
+- **Astra (gpt-6-astra), first draft: rework.** Taken: a session read needs
+  an explicit order and reads neither `priorities` nor links, so sessions
+  rank on the profile; the parity claim, replaced by a contributor-by-
+  contributor contract and a check on real data; the fixed-id create, which
+  the outbox would have merged silently, now created through the client
+  with a compare; mass and molar forms, read in one form with derived twins
+  left out; the import's durable plan, states, derived report ids, the
+  compare on 409 and an undo that stops the runner first; `useRead`'s
+  invalidation by the feed and by direct writes, with aborts per session;
+  `health` version 3 for the body metrics; a patient record's gender
+  offered, never taken. Answers to the questions: one profile, kept by the
+  app; priorities and links are the repository's to set, said plainly; the
+  analytes in `labs` and the body metrics in `health`; the exact
+  `core/setting` read is admissible, and disclosed.
