@@ -1,0 +1,172 @@
+# import: one file or one hand entry of lab results taken in. The plan
+# (`rows`, `reports`) says everything the import writes: every id it writes
+# derives from the import's id and a key in the plan, in the minted shape a
+# writer may compute (decision 0228: `DerivedMintedID` of `<id>/report/<key>`
+# and `<id>/<key>`), and every report and result carries `origin` pointing
+# here, so a browser on any device can resume it or undo it from this record
+# alone (docs/plans/healthspan.md, Import).
+#
+# `runner` is a lease: a browser writes only while it holds it, taken and
+# renewed by patches held to the version read. No record write carries a
+# cross-record guard, so Undo is best-effort reconciliation, and `undone`
+# goes back to `undoing` to delete what landed late.
+#
+# A request body is capped at 1 MiB, so a plan holds at most 2,000 rows; a
+# larger file is several imports, split between reports.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/healthspan/import
+data:
+  authority: substrate.reamde.dev
+  package: healthspan
+  description: >-
+    Lab results you took in from a file or entered by hand, with what each
+    row became, so the import can be finished on any device or undone.
+  purpose: primary
+  names:
+    singular: import
+  label:
+    singular: Import
+    plural: Imports
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the file's name, or Entered by hand
+    format:
+      type: enum
+      description: how the results came in
+      values:
+        - csv
+        - manual
+    status:
+      type: state
+      description: planned until its writing starts; stopped by a refusal
+        until resumed; undoing while its results are deleted
+      states:
+        - planned
+        - importing
+        - stopped
+        - imported
+        - undoing
+        - undone
+      initial: planned
+      transitions:
+        - from: planned
+          to: importing
+        - from: importing
+          to: imported
+        - from: importing
+          to: stopped
+        - from: stopped
+          to: importing
+        - from: planned
+          to: undoing
+        - from: importing
+          to: undoing
+        - from: stopped
+          to: undoing
+        - from: imported
+          to: undoing
+        - from: undoing
+          to: undone
+        - from: undone
+          to: undoing
+    runner:
+      type: object
+      description: the lease of the browser writing it; absent when none is
+      fields:
+        device:
+          type: string
+          required: true
+          description: an id the browser minted for itself
+        until:
+          type: datetime
+          required: true
+          description: when the lease ends unless renewed
+    lab:
+      type: string
+      description: the lab's name as the file or the owner gave it, which
+        names its source where none exists yet
+    source:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      description: the lab the results are from
+    rows:
+      type: object
+      repeated: true
+      description: the plan, one entry per result to write, in order
+      fields:
+        key:
+          type: string
+          required: true
+          description: the result's key in the plan; its id is the import's
+            id, a slash and this
+        report:
+          type: string
+          required: true
+          description: the key of the report it belongs to
+        name:
+          type: string
+          description: the test's name as the file wrote it
+        metric:
+          type: reference
+          kind: substrate.reamde.dev/observations/metric
+          required: true
+          description: the metric the result is written under
+        takenAt:
+          type: datetime
+          required: true
+          description: when the specimen was taken
+        value:
+          type: string
+          description: the number as written, such as 5.2
+        comparator:
+          type: string
+          description: a bound reported in place of a value, < or >
+        unit:
+          type: string
+          description: the unit's code as written, such as mmol/L
+        text:
+          type: string
+          description: a result that is not a number, such as Not detected
+        low:
+          type: string
+          description: the lab's range, its low end, as written
+        high:
+          type: string
+          description: the lab's range, its high end, as written
+        flag:
+          type: string
+          description: the lab's flag, such as H or L
+    reports:
+      type: object
+      repeated: true
+      description: the reports the plan writes, one per specimen date
+      fields:
+        key:
+          type: string
+          required: true
+          description: the report's key in the plan; its id is the import's
+            id, /report/ and this
+        takenAt:
+          type: datetime
+          required: true
+          description: when the specimen was taken
+        accession:
+          type: string
+          description: the lab's accession number, where the file has one
+    results:
+      type: int
+      min: 0
+      description: how many results are confirmed written
+    problem:
+      type: string
+      description: why the import stopped
+    importedAt:
+      type: datetime
+      description: when the import finished
+    skipped:
+      type: markdown
+      description: the rows left out of the plan, and why

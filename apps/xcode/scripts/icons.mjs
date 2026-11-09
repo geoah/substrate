@@ -1,5 +1,6 @@
 // Draws the Substrate family's app icons: Substrate, Substrate Sync,
-// Substrate Chat, Substrate Workouts, Substrate Tasks and the template's. Apps built on a
+// Substrate Chat, Substrate Workouts, Substrate Tasks, Substrate Healthspan
+// and the template's. Apps built on a
 // substrate elsewhere copy this file and add
 // their own entry to APPS (and a glyph to GLYPHS), so their icons share the
 // frame.
@@ -33,6 +34,7 @@ export const APPS = {
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
   workouts: { name: 'Substrate Workouts', bg: ['#fff8f2', '#ffdfcc'], hi: '#ffab72', lo: '#e3471f', glyph: 'dumbbell' },
   tasks: { name: 'Substrate Tasks', bg: ['#fff5f7', '#ffdbe4'], hi: '#ff9bb2', lo: '#d92c58', glyph: 'checklist' },
+  healthspan: { name: 'Substrate Healthspan', bg: ['#f7fcf0', '#e0f2c9'], hi: '#a9de6c', lo: '#4a9416', glyph: 'pulse' },
   // What `mise run apps:new` copies: grey, so an app nobody has given its own
   // colour yet looks unfinished rather than like Tasks.
   template: { name: 'Substrate Template', bg: ['#f7f8fa', '#e1e5ea'], hi: '#aab4c0', lo: '#5f6b7a', glyph: 'box' },
@@ -78,6 +80,9 @@ const GLYPHS = {
     ['front', rect(510, 330, 202, 60, 30)], ['front', rect(510, 462, 202, 60, 30)], ['front', rect(510, 594, 202, 60, 30)],
     ['front', circle(386, 492, 32)], ['front', circle(386, 624, 32)],
     ['spark', 'M332,364 L370,402 L440,322', 70]],
+  // A heart with a pulse across it: the body's measures over time.
+  pulse: () => [['front', 'M512,712 C330,598 236,500 236,388 C236,300 302,236 384,236 C440,236 486,264 512,306 C538,264 584,236 640,236 C722,236 788,300 788,388 C788,500 694,598 512,712 Z'],
+    ['spark', 'M300,468 L414,468 L456,384 L520,566 L568,420 L600,468 L724,468', 46]],
   // A lidded box with a label: any app's things, until it draws its own.
   box: () => [['back', rect(276, 330, 472, 380, 64)], ['mid', rect(240, 240, 544, 130, 52)],
     ['front', rect(420, 450, 184, 64, 32)]],

@@ -10,6 +10,9 @@ catalogues, which the provider adapters write
 still needs work in the app or a change in the substrate, the section says
 so and links the requirement it falls under in
 [what health apps need](plans/observations/requirements.md).
+[Substrate Healthspan](../apps/healthspan/README.md) is a whole app built on
+these reads: its labs, its age score and its sources screens make them
+through the web kit's typed `aggregate`.
 
 ## The data behind the answers
 

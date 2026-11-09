@@ -61,19 +61,21 @@ that were not kept.
 
 ## Hooks
 
-| Hook                                 | Answers                                                                                                                                                                                                                                            |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `useRecords(Item)`                   | every record of a kind, read through its codec: the same array until a record of that kind changes, each value the same until its record does                                                                                                      |
-| `useRecord(Item, id)`                | one record: `{ state: "loading" }` until it is known absent, `{ state: "absent" }`, `{ state: "failed", words, retry }` when its read failed (read again by itself a few times), or `{ state: "present", value }`; past a read's limit, read alone |
-| `useListed(Item)`                    | whether a kind's records were read whole, or kept from such a read: "none yet" against "none"                                                                                                                                                      |
-| `useWriteState(Item, id)`            | `pending` while a record's write waits to be sent, `parked` while one was refused and waits for the owner                                                                                                                                          |
-| `useKindWrites(Item)`                | `create(draft)`, `change(id, draft)`, `edit(id, draft, seenVersion)`, `remove(id)`, each draft written through the kind's codec                                                                                                                    |
-| `useWrites()`                        | the same writes by kind reference and properties, for a kind the app does not declare                                                                                                                                                              |
-| `useLinkedStatus()`                  | how the reading stands (loading, live, reconnecting and why), and how many records wait or were refused; a new object only when one of these changes                                                                                               |
-| `useOutbox()` / `useParkedWrites()`  | the outbox's summary, and the writes refused                                                                                                                                                                                                       |
-| `useStatusSentence()`                | where the app stands, in Settings' one sentence                                                                                                                                                                                                    |
-| `useAppStatus()`                     | the last status check, and `refresh`                                                                                                                                                                                                               |
-| `useConnection()` / `useSubstrate()` | the connection, signed in or not; the open repository (manifest, session, client, linked records, outbox, `signInAgain`, `signOut`)                                                                                                                |
+| Hook                                        | Answers                                                                                                                                                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useRecords(Item)`                          | every record of a kind, read through its codec: the same array until a record of that kind changes, each value the same until its record does                                                                                                      |
+| `useRecord(Item, id)`                       | one record: `{ state: "loading" }` until it is known absent, `{ state: "absent" }`, `{ state: "failed", words, retry }` when its read failed (read again by itself a few times), or `{ state: "present", value }`; past a read's limit, read alone |
+| `useListed(Item)`                           | whether a kind's records were read whole, or kept from such a read: "none yet" against "none"                                                                                                                                                      |
+| `useWriteState(Item, id)`                   | `pending` while a record's write waits to be sent, `parked` while one was refused and waits for the owner                                                                                                                                          |
+| `useKindWrites(Item)`                       | `create(draft)`, `change(id, draft)`, `edit(id, draft, seenVersion)`, `remove(id)`, each draft written through the kind's codec                                                                                                                    |
+| `useWrites()`                               | the same writes by kind reference and properties, for a kind the app does not declare                                                                                                                                                              |
+| `useLinkedStatus()`                         | how the reading stands (loading, live, reconnecting and why), and how many records wait or were refused; a new object only when one of these changes                                                                                               |
+| `useOutbox()` / `useParkedWrites()`         | the outbox's summary, and the writes refused                                                                                                                                                                                                       |
+| `useStatusSentence()`                       | where the app stands, in Settings' one sentence                                                                                                                                                                                                    |
+| `useAppStatus()`                            | the last status check, and `refresh`                                                                                                                                                                                                               |
+| `useRead(key, read, { kinds, staleAfter })` | a read that is not a linked record (an aggregate, a list of a kind the app does not keep): `{ data, error, loading, refreshing, refresh }`, below                                                                                                  |
+| `useInvalidate()`                           | `(kinds) => void`: every `useRead` naming one of them read again, after a write the app sent through the client itself                                                                                                                             |
+| `useConnection()` / `useSubstrate()`        | the connection, signed in or not; the open repository (manifest, session, client, linked records, outbox, reads, `signInAgain`, `signOut`)                                                                                                         |
 
 A change draws only the components that read it: a record of one kind
 leaves the readers of another alone, and the connection, the app status and
@@ -100,6 +102,48 @@ if (written.kept) setDraft("") // the outbox has it: the draft may go
 for a change to a record not read here; the write is kept all the same. A
 create leaves out properties given null, which hold nothing on a record not
 made yet.
+
+## Reads beside the records
+
+`useRead` is a read through the session's client, kept by its key for the
+session:
+
+```tsx
+const week = useRead(
+  `steps ${from}`,
+  (client, signal) => client.aggregate(stepsPerDay(from), { filter, signal }),
+  { kinds: ["substrate.reamde.dev/observations/observation"] }
+)
+if (week.loading) return <Spinner />
+```
+
+Every component reading one key shares one read, and a null key reads
+nothing. The answer stays while a newer read runs (`refreshing`); `loading`
+is a read with no answer yet, and `error` the last one's failure. A read's
+`signal` is aborted when the session ends, when the last reader of its key
+goes and when a newer read of the key starts. A sign-out or another session
+drops every answer.
+
+A read is read again when one of its `kinds` changes: a write of it the
+outbox lands, `useInvalidate()(kinds)` after a write the app sent through
+the client itself, and the change feed. The feed is one watch in the
+provider over the kinds the mounted reads name. A kind joins it once a list
+of it answered this session, so a kind the repository does not hold (an
+optional package not installed) never ends it, and its reads fall back to
+`staleAfter`. An app's token lists with no head, so the watch's own
+bookmark is where a read is followed from: the first watch starts at the
+live head, and a read of a kind it carries starts once it opened, so a
+change made after the read began is always heard. A watch whose kinds grow
+starts again from the last change it saw; a relist opens a fresh watch,
+and once it opened every followed read is read again. The feed's changes
+are gathered for two seconds before the reads they touch are read again.
+
+The sample kinds (`observations/observation` and `observations/trace`,
+`sampleKinds`) change by the minute and are never followed. A read the feed
+does not keep current (a sample kind, a kind left out, a watch that ended)
+is read again when the page comes back to the front after `staleAfter`
+(five minutes by default), and on `refresh`. A key a reader takes up again
+is read again unless the feed carried its kinds throughout.
 
 ## Settings
 

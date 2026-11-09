@@ -1,10 +1,11 @@
 # The `labs` catalogue: blood tests and what a lab reports (decision record
 # 0192). A lab report and its results are typed kinds, and a result binds
 # core's `observed(single)` beside its own properties, so the observed index
-# reads it like any observation. The 22 lab metrics (metrics.yaml, ids
-# `labs/<name>`) and the analytes that say how each one converts between unit
-# systems (metrics_analytes.yaml) are data, and `convertlab` writes a result
-# in the paired unit system too.
+# reads it like any observation. The 98 lab metrics (metrics.yaml, ids
+# `labs/<name>`), the analytes that say how each pair converts between unit
+# systems (metrics_analytes.yaml) and the units the seed lacks that some of
+# them are written in (lab_units.yaml) are data, and `convertlab` writes a
+# result in the paired unit system too.
 #
 # It requires `health` for one analyte: a meter's `health/blood_glucose`.
 # Labs never edits a base kind: lab-only definition data is an `analyte`
@@ -18,13 +19,18 @@ data:
   # 1: the lab half of the health sample at its version 8 (analyte,
   # labreport, labresult, convertlab and the lab metrics, renamed from
   # `health/<name>` to `labs/<name>`).
-  version: 1
+  # 2: the analytes a health app's catalogue names that 1 lacked (renal,
+  # lipid, thyroid, hormone, liver, iron, blood count, electrolyte and other
+  # markers), as 76 metrics (98), nine of them the mass twins of urea,
+  # testosterone, vitamin B12, folate, magnesium, iron, calcium, phosphate
+  # and uric acid with their analytes, and six units (lab_units.yaml).
+  version: 2
 ---
 # ---- the bundle document: the install unit ------------------------------------
-# Kinds, one function and the lab metrics and analytes as data. The record
-# views (views.yaml: a lab report, a lab result, and a lab trend on the metric
-# kind) are data too, and an upgrade replaces one only where its owner has not
-# edited it.
+# Kinds, one function and the lab metrics, analytes and units as data. The
+# record views (views.yaml: a lab report, a lab result, and a lab trend on the
+# metric kind) are data too, and an upgrade replaces one only where its owner
+# has not edited it.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: substrate.reamde.dev/labs

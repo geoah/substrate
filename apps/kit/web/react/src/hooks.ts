@@ -6,8 +6,20 @@ import type {
   OutboxEntry,
   OutboxSummary,
 } from "@substrate/local"
-import { useEffect, useMemo, useSyncExternalStore } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react"
 import { useConnection, useSubstrate } from "./context"
+import {
+  defaultStaleAfter,
+  type Read,
+  type ReadOptions,
+  type ReadState,
+} from "./reads"
 import {
   deriveLinkStatus,
   statusSentence,
@@ -216,4 +228,63 @@ export function useStatusSentence(): {
       tone: statusTone(status),
     }
   }, [appStatus, outbox, manifest.name, kept])
+}
+
+const noKinds: readonly string[] = []
+const noRead = () => () => {}
+const disabledRead: ReadState<never> = {
+  data: undefined,
+  error: undefined,
+  loading: false,
+  refreshing: false,
+  refresh: () => {},
+}
+
+/** A read through the session's client that is not a linked record (an
+ * aggregate, a list of a kind the app does not keep), kept by `key` for
+ * the session: every component reading one key shares one read, and a
+ * null key reads nothing. It is read again when one of `kinds` changes (a
+ * write the outbox lands, `useInvalidate`, or the change feed), and a read
+ * the feed does not keep current when the page comes back to the front
+ * after `staleAfter`. The last answer stays while a newer read runs
+ * (`refreshing`); `loading` is a read with no answer yet. `read` is called
+ * with the session's client and a signal aborted when the session ends,
+ * the last reader of the key goes, or a newer read of it starts. */
+export function useRead<T>(
+  key: string | null,
+  read: Read<T>,
+  options: ReadOptions = {}
+): ReadState<T> {
+  const { reads } = useSubstrate()
+  const kindKey = (options.kinds ?? noKinds).join(" ")
+  const staleAfter = options.staleAfter ?? defaultStaleAfter
+  // The read as last drawn: a key's next read calls the newest.
+  const latest = useRef(read)
+  useEffect(() => {
+    latest.current = read
+  })
+  const subscribe = useCallback(
+    (changed: () => void) =>
+      key === null
+        ? noRead()
+        : reads.attach(key, {
+            read: (client, signal) => latest.current(client, signal),
+            kinds: kindKey ? kindKey.split(" ") : noKinds,
+            staleAfter,
+            changed,
+          }),
+    [reads, key, kindKey, staleAfter]
+  )
+  const snapshot = useCallback(
+    () => (key === null ? disabledRead : reads.snapshot(key)),
+    [reads, key]
+  )
+  return useSyncExternalStore(subscribe, snapshot) as ReadState<T>
+}
+
+/** Reads again every `useRead` naming one of `kinds`: for a write the app
+ * made through the client itself, which the outbox never saw. */
+export function useInvalidate(): (kinds: readonly string[]) => void {
+  const { reads } = useSubstrate()
+  return useCallback((kinds) => reads.invalidate(kinds), [reads])
 }

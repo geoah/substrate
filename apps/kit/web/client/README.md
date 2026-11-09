@@ -18,6 +18,33 @@ await client.patch(kind, id, { name: "Oat milk" }, 3) // held to version 3
 await client.delete(kind, id) // restorable; one already gone is done
 ```
 
+`aggregate` is [the aggregate read](../../../../docs/api.md#the-aggregate-read),
+typed whole: the request (`metric` or `metrics`, `property`, `latest`,
+`range`, `bucket`, `reducers`, `from`, `sources`, `groupBy`, `budget`,
+`fill`, `rolling`, `unit`) and the answer (`units`, `bucket`, `exact`, rows
+with their group, values, sources and count, and `head`, which is zero
+under an app's token). The filter and the downsample go beside it:
+
+```ts
+const week = await client.aggregate(
+  {
+    metric: { ref: "substrate.reamde.dev/observations/metric/health/steps" },
+    range: {
+      gte: "2026-08-10T00:00:00+03:00",
+      lt: "2026-08-17T00:00:00+03:00",
+    },
+    bucket: { calendar: "day", timezone: "Europe/Athens" },
+    reducers: ["sum"],
+    sources: { policy: "priority" },
+  },
+  {
+    filter: { kinds: ["substrate.reamde.dev/observations/observation"] },
+    signal,
+  }
+)
+week.rows.map((r) => [r.start, r.values[0].value]) // decimal strings, never rounded
+```
+
 A refusal throws a `SubstrateError` with the envelope's `code`, `status`,
 `problems` and `problemDetails`, `words` for a screen, and `conflict`,
 `transient` (429 or 5xx), `retryAfter` and `insufficientScope`. `describe`

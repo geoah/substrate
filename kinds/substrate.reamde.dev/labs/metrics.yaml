@@ -571,3 +571,2006 @@ data:
       - count
     displayPrecision: 0
     category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urea
+data:
+  properties:
+    name: Urea
+    description: >-
+      Urea in serum or plasma, as an amount concentration, a marker of kidney
+      function. A result in mg/dL is urea_mass; a blood urea nitrogen (BUN)
+      counts only the urea's nitrogen and is neither.
+    codes:
+      - system: "http://loinc.org"
+        code: "22664-7"
+        display: "Urea [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/urea_mass
+data:
+  properties:
+    name: Urea (mass)
+    description: >-
+      Urea in serum or plasma, as a mass concentration. A result in mmol/L
+      is urea; a blood urea nitrogen (BUN) counts only the urea's nitrogen
+      and is neither.
+    codes:
+      - system: "http://loinc.org"
+        code: "3091-6"
+        display: "Urea [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/egfr
+data:
+  properties:
+    name: eGFR
+    description: >-
+      The glomerular filtration rate estimated from creatinine, per 1.73 square
+      metres of body surface, so it converts to no plain flow in mL/min. The
+      codes are the CKD-EPI equations' of 2009 and 2021, whose results pool
+      here; an MDRD or a cystatin C estimate's code is not listed.
+    codes:
+      - system: "http://loinc.org"
+        code: "98979-8"
+        display: "Glomerular filtration rate [Volume Rate/Area] in Serum,
+          Plasma or Blood by Creatinine-based formula (CKD-EPI 2021)/1.73
+          sq M"
+      - system: "http://loinc.org"
+        code: "62238-1"
+        display: "Glomerular filtration rate [Volume Rate/Area] in Serum,
+          Plasma or Blood by Creatinine-based formula (CKD-EPI)/1.73 sq M"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mL/min/1.73m2
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/cystatin_c
+data:
+  properties:
+    name: Cystatin C
+    description: >-
+      Cystatin C in serum or plasma, a marker of kidney function that muscle
+      mass sways less than creatinine.
+    codes:
+      - system: "http://loinc.org"
+        code: "33863-2"
+        display: "Cystatin C [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/non_hdl_cholesterol
+data:
+  properties:
+    name: Non-HDL cholesterol
+    description: >-
+      Cholesterol in every lipoprotein but HDL, total minus HDL cholesterol,
+      as an amount concentration in serum or plasma. A result in mg/dL does
+      not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "70204-3"
+        display: "Cholesterol non HDL [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/cholesterol_hdl_ratio
+data:
+  properties:
+    name: Total cholesterol to HDL ratio
+    description: >-
+      Total cholesterol over HDL cholesterol in serum or plasma, a bare ratio
+      in the unit 1.
+    codes:
+      - system: "http://loinc.org"
+        code: "9830-1"
+        display: "Cholesterol.total/Cholesterol in HDL [Mass Ratio] in Serum
+          or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apolipoprotein_b
+data:
+  properties:
+    name: Apolipoprotein B
+    description: >-
+      Apolipoprotein B in serum or plasma, as a mass concentration: one molecule
+      sits on each atherogenic lipoprotein particle.
+    codes:
+      - system: "http://loinc.org"
+        code: "1884-6"
+        display: "Apolipoprotein B [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apolipoprotein_a1
+data:
+  properties:
+    name: Apolipoprotein A1
+    description: >-
+      Apolipoprotein A-I in serum or plasma, as a mass concentration, the
+      main protein of HDL.
+    codes:
+      - system: "http://loinc.org"
+        code: "1869-7"
+        display: "Apolipoprotein A-I [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/lipoprotein_a
+data:
+  properties:
+    name: Lipoprotein(a)
+    description: >-
+      Lipoprotein(a) particles in serum or plasma, as an amount concentration.
+      A result in mg/dL weighs the particles, whose size varies from person
+      to person, so no factor converts it to this one.
+    codes:
+      - system: "http://loinc.org"
+        code: "43583-4"
+        display: "Lipoprotein a [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apolipoprotein_c3
+data:
+  properties:
+    name: Apolipoprotein C-III
+    description: >-
+      Apolipoprotein C-III in serum or plasma, as a mass concentration, which
+      slows the clearance of triglyceride-rich lipoproteins.
+    codes:
+      - system: "http://loinc.org"
+        code: "1877-0"
+        display: "Apolipoprotein C-III [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/apolipoprotein_e
+data:
+  properties:
+    name: Apolipoprotein E
+    description: >-
+      Apolipoprotein E in serum or plasma, as a mass concentration: the protein's
+      level, not the APOE genotype.
+    codes:
+      - system: "http://loinc.org"
+        code: "1886-1"
+        display: "Apolipoprotein E [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/free_t4
+data:
+  properties:
+    name: Free T4
+    description: >-
+      Free thyroxine in serum or plasma, as an amount concentration. A result
+      in ng/dL does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "14920-3"
+        display: "Thyroxine (T4) free [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/free_t3
+data:
+  properties:
+    name: Free T3
+    description: >-
+      Free triiodothyronine in serum or plasma, as an amount concentration.
+      A result in pg/mL does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "14928-6"
+        display: "Triiodothyronine (T3) Free [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/anti_tpo
+data:
+  properties:
+    name: Anti-TPO antibodies
+    description: >-
+      Antibodies to thyroid peroxidase in serum or plasma, in international
+      units: a lab's kU/L is kIU/L, the same value as IU/mL.
+    codes:
+      - system: "http://loinc.org"
+        code: "8099-4"
+        display: "Thyroperoxidase Ab [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/anti_tg
+data:
+  properties:
+    name: Anti-thyroglobulin antibodies
+    description: >-
+      Antibodies to thyroglobulin in serum or plasma, in international units:
+      a lab's kU/L is kIU/L, the same value as IU/mL.
+    codes:
+      - system: "http://loinc.org"
+        code: "8098-6"
+        display: "Thyroglobulin Ab [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/testosterone
+data:
+  properties:
+    name: Testosterone
+    description: >-
+      Total testosterone in serum or plasma, as an amount concentration. A
+      result in ng/dL is testosterone_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14913-8"
+        display: "Testosterone [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/testosterone_mass
+data:
+  properties:
+    name: Testosterone (mass)
+    description: >-
+      Total testosterone in serum or plasma, as a mass concentration. A result
+      in nmol/L is testosterone.
+    codes:
+      - system: "http://loinc.org"
+        code: "2986-8"
+        display: "Testosterone [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/free_testosterone
+data:
+  properties:
+    name: Free testosterone
+    description: >-
+      Testosterone bound to neither SHBG nor albumin in serum or plasma, as
+      an amount concentration; most labs calculate it from total testosterone,
+      SHBG and albumin.
+    codes:
+      - system: "http://loinc.org"
+        code: "14914-6"
+        display: "Testosterone Free [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 3
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/shbg
+data:
+  properties:
+    name: SHBG
+    description: >-
+      Sex hormone binding globulin in serum or plasma, which binds testosterone
+      and estradiol.
+    codes:
+      - system: "http://loinc.org"
+        code: "13967-5"
+        display: "Sex hormone binding globulin [Moles/volume] in Serum or
+          Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/free_androgen_index
+data:
+  properties:
+    name: Free androgen index
+    description: >-
+      Total testosterone over SHBG in serum or plasma, times 100: the bare
+      number a lab reports, even under a ratio's label, is that percentage.
+    codes:
+      - system: "http://loinc.org"
+        code: "24125-7"
+        display: "Androgen free Index in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/prolactin
+data:
+  properties:
+    name: Prolactin
+    description: >-
+      Prolactin in serum or plasma, in international units. A result in ng/mL
+      is a mass concentration and does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "15081-3"
+        display: "Prolactin [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mIU/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/lh
+data:
+  properties:
+    name: LH
+    description: >-
+      Luteinising hormone in serum or plasma, in international units: a lab's
+      U/L is IU/L, not the enzyme activity U/L names.
+    codes:
+      - system: "http://loinc.org"
+        code: "10501-5"
+        display: "Lutropin [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/fsh
+data:
+  properties:
+    name: FSH
+    description: >-
+      Follicle stimulating hormone in serum or plasma, in international units:
+      a lab's U/L is IU/L, not the enzyme activity U/L names.
+    codes:
+      - system: "http://loinc.org"
+        code: "15067-2"
+        display: "Follitropin [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/estradiol
+data:
+  properties:
+    name: Estradiol
+    description: >-
+      Estradiol in serum or plasma, as an amount concentration. A result in
+      pg/mL does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "14715-7"
+        display: "Estradiol (E2) [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/bilirubin
+data:
+  properties:
+    name: Bilirubin
+    description: >-
+      Total bilirubin in serum or plasma, as an amount concentration, a marker
+      of liver function and red cell breakdown. A result in mg/dL does not
+      convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "14631-6"
+        display: "Bilirubin.total [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/alp
+data:
+  properties:
+    name: ALP
+    description: >-
+      Alkaline phosphatase in serum or plasma, an enzyme activity, a marker
+      of the liver and of bone.
+    codes:
+      - system: "http://loinc.org"
+        code: "6768-6"
+        display: "Alkaline phosphatase [Enzymatic activity/volume] in Serum
+          or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/ggt
+data:
+  properties:
+    name: GGT
+    description: >-
+      Gamma-glutamyl transferase in serum or plasma, an enzyme activity, a
+      marker of liver function.
+    codes:
+      - system: "http://loinc.org"
+        code: "2324-2"
+        display: "Gamma glutamyl transferase [Enzymatic activity/volume] in
+          Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/albumin
+data:
+  properties:
+    name: Albumin
+    description: >-
+      Albumin in serum or plasma, the main protein the liver makes.
+    codes:
+      - system: "http://loinc.org"
+        code: "1751-7"
+        display: "Albumin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/globulin
+data:
+  properties:
+    name: Globulin
+    description: >-
+      Globulin in serum, which labs calculate as total protein minus albumin.
+    codes:
+      - system: "http://loinc.org"
+        code: "10834-0"
+        display: "Globulin [Mass/volume] in Serum by calculation"
+      - system: "http://loinc.org"
+        code: "2336-6"
+        display: "Globulin [Mass/volume] in Serum"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/total_protein
+data:
+  properties:
+    name: Total protein
+    description: >-
+      All protein in serum or plasma, albumin and globulin together.
+    codes:
+      - system: "http://loinc.org"
+        code: "2885-2"
+        display: "Protein [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/vitamin_b12
+data:
+  properties:
+    name: Vitamin B12
+    description: >-
+      Cobalamin in serum or plasma, as an amount concentration. A result in
+      pg/mL or ng/L is vitamin_b12_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14685-2"
+        display: "Cobalamin (Vitamin B12) [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/vitamin_b12_mass
+data:
+  properties:
+    name: Vitamin B12 (mass)
+    description: >-
+      Cobalamin in serum or plasma, as a mass concentration; ng/L is the same
+      value. A result in pmol/L is vitamin_b12.
+    codes:
+      - system: "http://loinc.org"
+        code: "2132-9"
+        display: "Cobalamin (Vitamin B12) [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pg/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/folate
+data:
+  properties:
+    name: Folate
+    description: >-
+      Folate in serum or plasma, as an amount concentration. A result in ng/mL
+      or ug/L is folate_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14732-2"
+        display: "Folate [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/folate_mass
+data:
+  properties:
+    name: Folate (mass)
+    description: >-
+      Folate in serum or plasma, as a mass concentration; ug/L is the same
+      value. A result in nmol/L is folate.
+    codes:
+      - system: "http://loinc.org"
+        code: "2284-8"
+        display: "Folate [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/magnesium
+data:
+  properties:
+    name: Magnesium
+    description: >-
+      Magnesium in serum or plasma, as an amount concentration. A result in
+      mg/dL is magnesium_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "2601-3"
+        display: "Magnesium [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/magnesium_mass
+data:
+  properties:
+    name: Magnesium (mass)
+    description: >-
+      Magnesium in serum or plasma, as a mass concentration. A result in mmol/L
+      is magnesium.
+    codes:
+      - system: "http://loinc.org"
+        code: "19123-9"
+        display: "Magnesium [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/iron
+data:
+  properties:
+    name: Iron
+    description: >-
+      Iron in serum or plasma, as an amount concentration. A result in ug/dL
+      is iron_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14798-3"
+        display: "Iron [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/iron_mass
+data:
+  properties:
+    name: Iron (mass)
+    description: >-
+      Iron in serum or plasma, as a mass concentration. A result in umol/L
+      is iron.
+    codes:
+      - system: "http://loinc.org"
+        code: "2498-4"
+        display: "Iron [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ug/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/tibc
+data:
+  properties:
+    name: TIBC
+    description: >-
+      Total iron binding capacity of serum or plasma, the iron its transferrin
+      could carry, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14800-7"
+        display: "Iron binding capacity [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/transferrin
+data:
+  properties:
+    name: Transferrin
+    description: >-
+      Transferrin in serum or plasma, the protein that carries iron in the
+      blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "3034-6"
+        display: "Transferrin [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/transferrin_saturation
+data:
+  properties:
+    name: Transferrin saturation
+    description: >-
+      The share of the iron binding capacity of serum or plasma that iron
+      fills.
+    codes:
+      - system: "http://loinc.org"
+        code: "2502-3"
+        display: "Iron saturation [Mass Fraction] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/rbc
+data:
+  properties:
+    name: Red blood cells
+    description: >-
+      Red blood cells per litre of blood, by automated count.
+    codes:
+      - system: "http://loinc.org"
+        code: "789-8"
+        display: "Erythrocytes [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e12/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/haematocrit
+data:
+  properties:
+    name: Haematocrit
+    description: >-
+      The share of the blood's volume that is red cells; a result in L/L is
+      the same fraction, written in the unit 1.
+    codes:
+      - system: "http://loinc.org"
+        code: "4544-3"
+        display: "Hematocrit [Volume Fraction] of Blood by Automated count"
+      - system: "http://loinc.org"
+        code: "20570-8"
+        display: "Hematocrit [Volume Fraction] of Blood by calculation"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/mcv
+data:
+  properties:
+    name: MCV
+    description: >-
+      Mean cell volume: the average volume of one red cell.
+    codes:
+      - system: "http://loinc.org"
+        code: "787-2"
+        display: "MCV [Entitic mean volume] in Red Blood Cells by Automated
+          count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/fL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/mch
+data:
+  properties:
+    name: MCH
+    description: >-
+      Mean cell haemoglobin: the average mass of haemoglobin in one red cell.
+    codes:
+      - system: "http://loinc.org"
+        code: "785-6"
+        display: "MCH [Entitic mass] by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/mchc
+data:
+  properties:
+    name: MCHC
+    description: >-
+      Mean cell haemoglobin concentration: haemoglobin per volume of red cells;
+      a result in g/dL converts to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "786-4"
+        display: "MCHC [Entitic Mass/volume] in Red Blood Cells by Automated
+          count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/g/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/platelets
+data:
+  properties:
+    name: Platelets
+    description: >-
+      Platelets per litre of blood, by automated count.
+    codes:
+      - system: "http://loinc.org"
+        code: "777-3"
+        display: "Platelets [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/mean_platelet_volume
+data:
+  properties:
+    name: Mean platelet volume
+    description: >-
+      The average volume of one platelet.
+    codes:
+      - system: "http://loinc.org"
+        code: "32623-1"
+        display: "Platelet [Entitic mean volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/fL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/red_cell_distribution_width
+data:
+  properties:
+    name: Red cell distribution width
+    description: >-
+      How much red cells vary in size, as a coefficient of variation (RDW-CV);
+      a width in fL (RDW-SD) is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "788-0"
+        display: "Erythrocyte [DistWidth] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/percent
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/wbc
+data:
+  properties:
+    name: White blood cells
+    description: >-
+      White blood cells per litre of blood, by automated count.
+    codes:
+      - system: "http://loinc.org"
+        code: "6690-2"
+        display: "Leukocytes [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/neutrophils
+data:
+  properties:
+    name: Neutrophils
+    description: >-
+      Neutrophils per litre of blood, an absolute count; a share of the white
+      cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "751-8"
+        display: "Neutrophils [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/lymphocytes
+data:
+  properties:
+    name: Lymphocytes
+    description: >-
+      Lymphocytes per litre of blood, an absolute count; a share of the white
+      cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "731-0"
+        display: "Lymphocytes [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/monocytes
+data:
+  properties:
+    name: Monocytes
+    description: >-
+      Monocytes per litre of blood, an absolute count; a share of the white
+      cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "742-7"
+        display: "Monocytes [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/eosinophils
+data:
+  properties:
+    name: Eosinophils
+    description: >-
+      Eosinophils per litre of blood, an absolute count; a share of the white
+      cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "711-2"
+        display: "Eosinophils [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/basophils
+data:
+  properties:
+    name: Basophils
+    description: >-
+      Basophils per litre of blood, an absolute count; a share of the white
+      cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "704-7"
+        display: "Basophils [#/volume] in Blood by Automated count"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/nucleated_red_cells
+data:
+  properties:
+    name: Nucleated red cells
+    description: >-
+      Red cells that still carry a nucleus, per litre of blood, normally none
+      in an adult; a count per 100 white cells is not this metric.
+    codes:
+      - system: "http://loinc.org"
+        code: "771-6"
+        display: "Nucleated erythrocytes [#/volume] in Blood by Automated
+          count"
+      - system: "http://loinc.org"
+        code: "30392-5"
+        display: "Nucleated erythrocytes [#/volume] in Blood"
+    unit:
+      ref: substrate.reamde.dev/core/unit/1e9/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/insulin
+data:
+  properties:
+    name: Insulin
+    description: >-
+      Insulin in serum or plasma, as an amount concentration. A result in
+      assay units (mIU/L or uIU/mL) does not convert to it: the factor between
+      them is the insulin standard's, which no conversion here carries.
+    codes:
+      - system: "http://loinc.org"
+        code: "14796-7"
+        display: "Insulin [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/hs_crp
+data:
+  properties:
+    name: High-sensitivity CRP
+    description: >-
+      C-reactive protein in serum or plasma by a high-sensitivity assay, which
+      reads the low range cardiovascular risk is judged in; a standard assay's
+      result is crp.
+    codes:
+      - system: "http://loinc.org"
+        code: "30522-7"
+        display: "C reactive protein [Mass/volume] in Serum or Plasma by High
+          sensitivity method"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/c_peptide
+data:
+  properties:
+    name: C-peptide
+    description: >-
+      C-peptide in serum or plasma, as a mass concentration, released with
+      insulin in equal amounts. A result in pmol/L does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "1986-9"
+        display: "C peptide [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/sodium
+data:
+  properties:
+    name: Sodium
+    description: >-
+      Sodium in serum or plasma, the main cation of the fluid outside cells.
+    codes:
+      - system: "http://loinc.org"
+        code: "2951-2"
+        display: "Sodium [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/potassium
+data:
+  properties:
+    name: Potassium
+    description: >-
+      Potassium in serum or plasma, the main cation of the fluid inside cells.
+    codes:
+      - system: "http://loinc.org"
+        code: "2823-3"
+        display: "Potassium [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/chloride
+data:
+  properties:
+    name: Chloride
+    description: >-
+      Chloride in serum or plasma, the main anion of the fluid outside cells.
+    codes:
+      - system: "http://loinc.org"
+        code: "2075-0"
+        display: "Chloride [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/calcium_adjusted
+data:
+  properties:
+    name: Calcium (albumin adjusted)
+    description: >-
+      Total calcium in serum or plasma corrected for the albumin level, as
+      an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "29265-6"
+        display: "Calcium [Moles/volume] corrected for albumin in Serum or
+          Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/calcium
+data:
+  properties:
+    name: Calcium
+    description: >-
+      Total calcium in serum or plasma, as an amount concentration. A result
+      in mg/dL is calcium_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "2000-8"
+        display: "Calcium [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/calcium_mass
+data:
+  properties:
+    name: Calcium (mass)
+    description: >-
+      Total calcium in serum or plasma, as a mass concentration. A result
+      in mmol/L is calcium.
+    codes:
+      - system: "http://loinc.org"
+        code: "17861-6"
+        display: "Calcium [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/phosphate
+data:
+  properties:
+    name: Phosphate
+    description: >-
+      Inorganic phosphate in serum or plasma, as an amount concentration.
+      A result in mg/dL is phosphate_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14879-1"
+        display: "Phosphate [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/phosphate_mass
+data:
+  properties:
+    name: Phosphate (mass)
+    description: >-
+      Inorganic phosphate in serum or plasma, as the mass of the phosphorus
+      it carries, which US labs name phosphorus. A result in mmol/L is phosphate.
+    codes:
+      - system: "http://loinc.org"
+        code: "2777-1"
+        display: "Phosphate [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/pth
+data:
+  properties:
+    name: PTH
+    description: >-
+      Intact parathyroid hormone in serum or plasma, as an amount concentration.
+      A result in pg/mL does not convert to it.
+    codes:
+      - system: "http://loinc.org"
+        code: "14866-8"
+        display: "Parathyrin.intact [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/pmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/psa
+data:
+  properties:
+    name: PSA
+    description: >-
+      Total prostate specific antigen in serum or plasma; ng/mL is the same
+      value.
+    codes:
+      - system: "http://loinc.org"
+        code: "2857-1"
+        display: "Prostate specific Ag [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/ug/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/uric_acid
+data:
+  properties:
+    name: Uric acid
+    description: >-
+      Urate in serum or plasma, as an amount concentration. A result in mg/dL
+      is uric_acid_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "14933-6"
+        display: "Urate [Moles/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/uric_acid_mass
+data:
+  properties:
+    name: Uric acid (mass)
+    description: >-
+      Urate in serum or plasma, as a mass concentration. A result in umol/L
+      is uric_acid.
+    codes:
+      - system: "http://loinc.org"
+        code: "3084-1"
+        display: "Urate [Mass/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/pancreatic_amylase
+data:
+  properties:
+    name: Pancreatic amylase
+    description: >-
+      The pancreatic form of amylase in serum or plasma, an enzyme activity,
+      a marker of the pancreas.
+    codes:
+      - system: "http://loinc.org"
+        code: "1805-1"
+        display: "Amylase.pancreatic [Enzymatic activity/volume] in Serum
+          or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/esr
+data:
+  properties:
+    name: ESR
+    description: >-
+      Erythrocyte sedimentation rate: how far red cells settle in a column
+      of blood in an hour, a marker of inflammation.
+    codes:
+      - system: "http://loinc.org"
+        code: "30341-2"
+        display: "Erythrocyte [Sedimentation Rate] in Blood"
+      - system: "http://loinc.org"
+        code: "4537-7"
+        display: "Erythrocyte [Sedimentation Rate] in Blood by Westergren
+          method"
+    unit:
+      ref: substrate.reamde.dev/core/unit/mm/h
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/lipase
+data:
+  properties:
+    name: Lipase
+    description: >-
+      Lipase in serum or plasma, an enzyme activity, a marker of the pancreas.
+    codes:
+      - system: "http://loinc.org"
+        code: "3040-3"
+        display: "Lipase [Enzymatic activity/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/creatine_kinase
+data:
+  properties:
+    name: Creatine kinase
+    description: >-
+      Creatine kinase in serum or plasma, an enzyme activity that rises with
+      muscle damage, hard exercise included.
+    codes:
+      - system: "http://loinc.org"
+        code: "2157-6"
+        display: "Creatine kinase [Enzymatic activity/volume] in Serum or
+          Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: labs/rheumatoid_factor
+data:
+  properties:
+    name: Rheumatoid factor
+    description: >-
+      Rheumatoid factor in serum or plasma, in international units: a lab's
+      kU/L is kIU/L, the same value as IU/mL.
+    codes:
+      - system: "http://loinc.org"
+        code: "11572-5"
+        display: "Rheumatoid factor [Units/volume] in Serum or Plasma"
+    unit:
+      ref: substrate.reamde.dev/core/unit/IU/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs

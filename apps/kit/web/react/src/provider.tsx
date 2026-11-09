@@ -33,6 +33,7 @@ import {
   type Connection,
   type SubstrateContextValue,
 } from "./context"
+import { ReadCache } from "./reads"
 import { useToast } from "./toast"
 
 const noSubscription = () => () => {}
@@ -217,10 +218,12 @@ export function SubstrateProvider({
   )
 
   const [link, setLink] = useState<RepositoryLink | null>(null)
+  const [reads, setReads] = useState<ReadCache | null>(null)
   useEffect(() => {
     if (!session || !client) return
     let cancelled = false
     let opened: RepositoryLink | undefined
+    let cache: ReadCache | undefined
     void openRepository({
       app: manifest.id,
       repository: session.repository,
@@ -231,14 +234,20 @@ export function SubstrateProvider({
       if (cancelled) return l.close()
       opened = l
       l.start()
+      cache = new ReadCache({ client, outbox: l.outbox })
+      cache.start()
       setLink(l)
+      setReads(cache)
     })
-    // The records go with the link: a session ended in another tab leaves
-    // nothing of it shown here.
+    // The records and the reads go with the link: a session ended in
+    // another tab leaves nothing of it shown here, and every read of it is
+    // aborted.
     return () => {
       cancelled = true
+      cache?.close()
       void opened?.close()
       setLink(null)
+      setReads(null)
     }
   }, [session, client, kindRefs, kept, manifest.id])
 
@@ -401,7 +410,12 @@ export function SubstrateProvider({
   const value = useMemo<SubstrateContextValue | null>(
     () =>
       // A link opened for the session before is not this one's.
-      session && client && link && link.linked.client === client
+      session &&
+      client &&
+      link &&
+      reads &&
+      link.linked.client === client &&
+      reads.client === client
         ? {
             manifest,
             session,
@@ -410,12 +424,13 @@ export function SubstrateProvider({
             outbox: link.outbox,
             cache: link.cache,
             storage: link.storage,
+            reads,
             kept,
             signOut,
             signInAgain,
           }
         : null,
-    [session, client, link, manifest, kept, signOut, signInAgain]
+    [session, client, link, reads, manifest, kept, signOut, signInAgain]
   )
 
   const connection = useMemo<Connection>(

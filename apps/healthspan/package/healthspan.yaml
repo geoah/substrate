@@ -1,0 +1,40 @@
+# healthspan: what Substrate Healthspan keeps in the owner's substrate that no
+# other record holds. An app's package, published under `substrate.reamde.dev`
+# from this folder through the authority document (.mise/closures.py): the
+# app's approval asks for it as a `package` detail at the version the build
+# carries or later, and the server installs it from the document under this
+# very name, the same in every repository. The app applies nothing itself.
+#
+# Two kinds:
+#
+#   profile   the reference basis and the orders the app reads by, one per
+#             repository
+#   import    one file or one hand entry of lab results taken in, with the
+#             plan that says what it writes, so it can resume and be undone
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: substrate.reamde.dev/healthspan
+data:
+  authority: substrate.reamde.dev
+  package: healthspan
+  # 1: profile and import. Each change ships as the next version, additive
+  # only; a published version never changes.
+  version: 1
+---
+# No `requires:`: the kinds point only at core's contact and at the seeded
+# observations package's source and metric, which every repository holds. The
+# catalogues the app reads (health, labs) are asked for by the app's
+# approval, not required here: nothing in this package points into them.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: substrate.reamde.dev/healthspan
+data:
+  authority: substrate.reamde.dev
+  package: healthspan
+  description: >-
+    What Substrate Healthspan keeps for you: the reference basis your age
+    score and lab targets use, and the lab results you imported, so each import
+    can be undone.
+  installs:
+    - substrate.reamde.dev/healthspan/profile
+    - substrate.reamde.dev/healthspan/import

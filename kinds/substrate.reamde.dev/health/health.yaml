@@ -19,7 +19,9 @@ data:
   # (sleep, workout, 33 metrics, the glucose units and two record views).
   # 2: mindful minutes, water, eleven nutrients and basal body temperature, as
   # 13 metrics (46).
-  version: 2
+  # 3: fat-free mass, lean mass, visceral fat rating, waist circumference and
+  # waist-to-hip ratio, as 5 metrics (51).
+  version: 3
 ---
 # ---- the bundle document: the install unit ------------------------------------
 # Two kinds, and the metric catalogue (metrics.yaml) with the glucose units

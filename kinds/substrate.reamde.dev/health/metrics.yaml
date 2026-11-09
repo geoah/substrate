@@ -911,6 +911,130 @@ data:
 ---
 kind: substrate.reamde.dev/observations/metric
 metadata:
+  id: health/fat_free_mass
+data:
+  properties:
+    name: Fat-free mass
+    description: >-
+      The weight of everything in the body that is not fat, lean soft tissue
+      and bone mineral together, as a scale or a scan estimates it; the lean
+      body mass phones and most scales record, the weight less its fat, is
+      this. No LOINC code is listed: none was verified. A writer copies the
+      hold, PT0S, onto each value: a weighing is a point in time, so an average
+      is the mean of the weighings it covers, and no weighing stands for the
+      days after it.
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/lean_mass
+data:
+  properties:
+    name: Lean mass
+    description: >-
+      The weight of the body's lean soft tissue, the fat-free mass without
+      its bone mineral, as a DXA scan reports it beside fat and bone mineral
+      content; a scale's lean body mass, which counts bone, is fat_free_mass.
+      No LOINC code is listed: none was verified. A writer copies the hold,
+      PT0S, onto each value: a scan is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/kg
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/visceral_fat_rating
+data:
+  properties:
+    name: Visceral fat rating
+    description: >-
+      The fat around the organs, as a bioimpedance scale rates it, a dimensionless
+      number on its maker's own scale (Tanita's runs from 1 to 59), so two
+      makers' ratings never compare. No LOINC code is listed: LOINC's visceral
+      fat is an area from imaging. A writer copies the hold, PT0S, onto each
+      value: a weighing is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/score
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/waist_circumference
+data:
+  properties:
+    name: Waist circumference
+    description: >-
+      The circumference of the waist, measured with a tape. LOINC's code is
+      for a tape at the navel; a waist taken elsewhere, such as midway between
+      the lowest rib and the hip bone, is written here all the same. A writer
+      copies the hold, PT0S, onto each value: a measurement is a point in
+      time.
+    codes:
+      - system: "http://loinc.org"
+        code: "8280-0"
+        display: Waist Circumference at umbilicus by Tape measure
+    unit:
+      ref: substrate.reamde.dev/core/unit/cm
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
+  id: health/waist_hip_ratio
+data:
+  properties:
+    name: Waist-to-hip ratio
+    description: >-
+      Waist circumference over hip circumference, a bare ratio in the unit
+      1. No LOINC code is listed: none was found. A writer copies the hold,
+      PT0S, onto each value: a measurement is a point in time.
+    unit:
+      ref: substrate.reamde.dev/core/unit/1
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: substrate.reamde.dev/observations/metric
+metadata:
   id: health/systolic_blood_pressure
 data:
   properties:

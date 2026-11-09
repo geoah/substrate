@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import "@substrate/react/theme.css";
+
+/* Healthspan's accent, app.json's `accent`: a fill white text reads on at
+ * 4.5:1 (the kit's prominent buttons draw white on it) in both modes, and a
+ * text tone that reads at 4.5:1 on each mode's backgrounds. */
+:root {
+  --sx-accent: #408513;
+  --sx-accent-text: #3b7a10;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sx-accent: #408513;
+    --sx-accent-text: #a9de6c;
+  }
+}
+
+/* Healthspan's own colours, what the kit's tokens lack: a blue for
+ * information and the fitted trend line, the lab range's grey band and its
+ * edge, the hatching before a metric's first result, the grey of a neutral
+ * zone, and the surface a chart sits on (its markers' ring and the cover
+ * under the hatching; a chart on the grouped background sets it to that).
+ * A tone's ink is its colour mixed toward the label, so small words and
+ * thin marks read at 4.5:1 in either mode; the zones and washes take the
+ * kit's colours as they are. */
+@theme inline {
+  --color-info: var(--hs-info);
+  --color-ok-ink: var(--hs-ok-ink);
+  --color-warn-ink: var(--hs-warn-ink);
+  --color-danger-ink: var(--hs-danger-ink);
+  --color-info-ink: var(--hs-info-ink);
+  --color-trend: var(--hs-trend);
+  --color-range: var(--hs-range);
+  --color-range-edge: var(--hs-range-edge);
+  --color-hatch: var(--hs-hatch);
+  --color-zone-neutral: var(--hs-zone-neutral);
+  --color-segment: var(--hs-segment);
+}
+
+/* A card pointed at from a link: its ring fades out after three seconds. */
+@theme {
+  --animate-highlight: hs-highlight 3s ease-out forwards;
+  @keyframes hs-highlight {
+    0%,
+    75% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+:root {
+  --hs-info: #007aff;
+  --hs-trend: #0a6ed1;
+  --hs-range: rgb(120 120 128 / 0.14);
+  --hs-range-edge: rgb(60 60 67 / 0.55);
+  --hs-hatch: rgb(60 60 67 / 0.3);
+  --hs-zone-neutral: #d1d1d6;
+  --hs-chart-bg: var(--sx-card);
+  --hs-segment: #ffffff;
+  --hs-ok-ink: color-mix(in srgb, var(--sx-green) 58%, var(--sx-label));
+  --hs-warn-ink: color-mix(in srgb, var(--sx-orange) 62%, var(--sx-label));
+  --hs-danger-ink: color-mix(in srgb, var(--sx-red) 74%, var(--sx-label));
+  --hs-info-ink: color-mix(in srgb, var(--hs-info) 72%, var(--sx-label));
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hs-info: #0a84ff;
+    --hs-trend: #5aa9ff;
+    --hs-range: rgb(118 118 128 / 0.28);
+    --hs-range-edge: rgb(235 235 245 / 0.5);
+    --hs-hatch: rgb(235 235 245 / 0.24);
+    --hs-zone-neutral: #48484a;
+    --hs-segment: #636366;
+  }
+}

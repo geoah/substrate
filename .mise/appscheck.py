@@ -555,7 +555,10 @@ for app in apps:
 # the release reads each platform's ids from them; the scheme the release
 # archives is a target of the app's own apple/targets.yml; and two apps
 # never share a feed folder, where one's releases would replace the other's.
-# `accent` is optional here and held below, with the asset catalogs.
+# `web` is a platform with no block: an app naming it has its web/ package
+# (a package.json in the pnpm workspace), which the release never builds,
+# since a web build is deployed where it is served. `accent` is optional
+# here and held below, with the asset catalogs.
 
 FIELDS = {
     "id": str,
@@ -572,7 +575,10 @@ PLATFORM_FIELDS = {
     "apple": {"bundleID": str, "scheme": str, "extensions": list, "clientIDKey": str, "redirectKey": str},
     "android": {"applicationID": str},
 }
-PLATFORMS = {"ios": "apple", "macos": "apple", "android": "android"}
+# Each platform's block; the web's has none.
+PLATFORMS = {"ios": "apple", "macos": "apple", "android": "android", "web": None}
+# Each platform's UI folder.
+UI_FOLDERS = {"ios": "apple", "macos": "apple", "android": "android", "web": "web"}
 # An Android application id: two or more dot-separated Java identifiers.
 APPLICATION_ID = re.compile(r"[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+")
 feeds = {}
@@ -604,7 +610,9 @@ for app in apps:
     platforms = doc.get("platforms") if isinstance(doc.get("platforms"), list) else []
     if not platforms or set(platforms) - set(PLATFORMS):
         flag(f"{rel(path)}: platforms is {platforms}, and each is one of {sorted(PLATFORMS)}")
-    named = {PLATFORMS[p] for p in platforms if p in PLATFORMS}
+    named = {PLATFORMS[p] for p in platforms if PLATFORMS.get(p)}
+    if "web" in platforms and not os.path.isfile(os.path.join(APPS, app, "web", "package.json")):
+        flag(f"{rel(path)}: platforms names web, and apps/{app}/web has no package.json")
     for block, fields in PLATFORM_FIELDS.items():
         if block not in named:
             if block in doc:
@@ -658,7 +666,7 @@ for app in apps:
     # An app whose UI is not written yet (its package first) has no icon to
     # point at; the icon is held once a UI folder exists.
     icon = doc.get("icon")
-    has_ui = any(os.path.isdir(os.path.join(APPS, app, ui)) for ui in ("apple", "android"))
+    has_ui = any(os.path.isdir(os.path.join(APPS, app, ui)) for ui in set(UI_FOLDERS.values()))
     if isinstance(icon, str) and has_ui and not os.path.isfile(os.path.join(APPS, app, icon)):
         flag(f"{rel(path)}: icon {icon} is not a file in apps/{app}")
 

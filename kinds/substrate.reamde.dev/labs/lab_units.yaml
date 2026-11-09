@@ -1,0 +1,129 @@
+# Units lab reports use that the repository is not seeded with, as DATA:
+# records of core's `unit` and `conversion` kinds (decision record 0186) that
+# this package adds to the repository's unit graph. A metric's `unit` and a
+# value's unit must name a unit the repository holds, so the metrics written
+# in fL, pg, ng/dL and mL/min/1.73m2 need these first, and a result a lab
+# reports in ng/L or kIU/L resolves only through them.
+#
+# Each conversion joins its unit to a seeded one of the same measure, so a
+# value converts to every unit of that linear component: a vitamin B12 in
+# ng/L reads in pg/mL, an anti-TPO in kIU/L in IU/mL. None joins a mass and
+# an amount concentration; that takes an analyte's molar mass
+# (metrics_analytes.yaml). An eGFR's mL/min/1.73m2 has none: the rate is per
+# 1.73 square metres of body surface, which no plain flow in mL/min is.
+#
+# Each id is the unit's plain spelling, the one a repository that added the
+# unit itself most likely chose: the install leaves a record another hand
+# wrote as that hand wrote it, while the same `code` under a second id would
+# answer one spelling twice, which the write path refuses.
+#
+# The file sorts before metrics.yaml on purpose: the install puts a
+# package's data records in file order, and a metric's `unit` must exist.
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: mL/min/1.73m2
+data:
+  properties:
+    name: milliliter per minute per 1.73 square meters
+    symbol: mL/min/1.73 m²
+    code: mL/min/{1.73_m2}
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: fL
+data:
+  properties:
+    name: femtoliter
+    symbol: fL
+    code: fL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: pg
+data:
+  properties:
+    name: picogram
+    symbol: pg
+    code: pg
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ng/dL
+data:
+  properties:
+    name: nanogram per deciliter
+    symbol: ng/dL
+    code: ng/dL
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: ng/L
+data:
+  properties:
+    name: nanogram per liter
+    symbol: ng/L
+    code: ng/L
+---
+kind: substrate.reamde.dev/core/unit
+metadata:
+  id: kIU/L
+data:
+  properties:
+    name: kilo international unit per liter
+    symbol: kIU/L
+    code: k[IU]/L
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: fL-mL
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/fL
+    to:
+      ref: substrate.reamde.dev/core/unit/mL
+    factor: "0.000000000001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: pg-ng
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/pg
+    to:
+      ref: substrate.reamde.dev/core/unit/ng
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ng/dL-ng/mL
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ng/dL
+    to:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    factor: "0.01"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: ng/L-ng/mL
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/ng/L
+    to:
+      ref: substrate.reamde.dev/core/unit/ng/mL
+    factor: "0.001"
+---
+kind: substrate.reamde.dev/core/conversion
+metadata:
+  id: kIU/L-IU/L
+data:
+  properties:
+    from:
+      ref: substrate.reamde.dev/core/unit/kIU/L
+    to:
+      ref: substrate.reamde.dev/core/unit/IU/L
+    factor: "1000"
