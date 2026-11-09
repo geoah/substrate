@@ -44,20 +44,29 @@ public struct TasksModel: Equatable, Sendable {
         var held: [String: Record] = [:]
         for record in live { held[record.reference.path] = record }
 
-        var settings: [String: CollectionSetting] = [:]
-        var preference: TasksPreference?
-        for record in live.sorted(by: { $0.id < $1.id }) {
+        // Where two devices left two records for one thing, the one under
+        // the derived id wins; with none under it, the oldest, then the
+        // smallest id. Every write goes to the winner.
+        var settings: [String: (setting: CollectionSetting, record: Record)] = [:]
+        var preference: (preference: TasksPreference, record: Record)?
+        let wins = { (record: Record, held: Record?, derived: String) -> Bool in
+            guard let held else { return true }
+            if held.id == derived { return false }
+            if record.id == derived { return true }
+            let (a, b) = (record.createdDate, held.createdDate)
+            return a != b ? a < b : record.id < held.id
+        }
+        for record in live {
             if let setting = CollectionSetting(record) {
-                // The record under the derived id wins over one a device
-                // wrote under any other.
-                if settings[setting.kind] == nil || record.id == DerivedIDs.collection(setting.kind) { settings[setting.kind] = setting }
-            } else if record.kind == TasksKinds.preference, preference == nil || record.id == DerivedIDs.preference {
-                preference = TasksPreference(record)
+                if wins(record, settings[setting.kind]?.record, DerivedIDs.collection(setting.kind)) { settings[setting.kind] = (setting, record) }
+            } else if record.kind == TasksKinds.preference, wins(record, preference?.record, DerivedIDs.preference) {
+                preference = (TasksPreference(record), record)
             }
         }
-        let chosen = preference ?? TasksPreference()
+        let chosenSettings = settings.mapValues(\.setting)
+        let chosen = preference?.preference ?? TasksPreference()
 
-        let collections = byKind.values.compactMap { TaskCollection($0, setting: settings[$0.identity], preference: chosen, grant: grant) }
+        let collections = byKind.values.compactMap { TaskCollection($0, setting: chosenSettings[$0.identity], preference: chosen, grant: grant) }
             .sorted { ($0.isOwn ? 0 : 1, $0.kind) < ($1.isOwn ? 0 : 1, $1.kind) }
         let enabled = Dictionary(collections.filter(\.enabled).map { ($0.kind, $0) }) { a, _ in a }
         let groupKinds = Set(enabled.values.compactMap(\.group?.kind))

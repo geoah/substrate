@@ -344,7 +344,9 @@ struct AppTests {
         await harness.send(.complete(t("a")))
         // Within its window the mark is the row's alone: a second complete
         // starts nothing, and the write waits.
-        #expect(harness.effects.contains(.settle(t("a"), try #require(await harness.state.pending[t("a")]?.write))))
+        let pending = try #require(await harness.state.pending[t("a")])
+        #expect(harness.effects.contains(.settle(t("a"), pending.write, pending.deadline)))
+        #expect(pending.deadline == now.addingTimeInterval(TasksApp.undoWindow))
         await harness.send(.complete(t("a")))
         #expect(enqueued(harness).isEmpty)
         try await settle(harness, "a")

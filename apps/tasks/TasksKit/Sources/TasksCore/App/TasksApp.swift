@@ -108,6 +108,11 @@ public struct TasksApp: LinkedRecordsApp {
         case deciding(String, PendingDecision)
         /// Taken back within the window.
         case undone(String)
+        /// The decisions an earlier run left in their windows, from the
+        /// device.
+        case decisionsRead([String: PendingDecision])
+        /// A decision an earlier run already wrote: nothing more to do.
+        case decisionDropped(String)
         case chose(DecisionChoice?)
         case suggestionSet(String, JSONObject)
         case picking([String]?)
@@ -146,8 +151,14 @@ public struct TasksApp: LinkedRecordsApp {
         case saveSettings(SettingsValues)
         case schedule([NotificationRequest])
         case readUsage
-        /// Waits out a decision's undo window, then writes it.
-        case settle(String, LocalWrite)
+        /// The decisions kept on the device, at open.
+        case readDecisions
+        /// Waits out a decision's undo window to its deadline, then writes
+        /// it, once.
+        case settle(String, LocalWrite, Date)
+        /// The decisions whose writes the outbox has (or could not keep), or
+        /// that are over, taken off the device.
+        case forgetDecisions(Set<UUID>, paths: [String])
         /// Stops the wait: the decision was taken back.
         case unsettle(String)
 

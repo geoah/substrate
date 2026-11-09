@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "0f8e4346a8c626f66a564d20ad672c9c0f7443ac3a009ed2e23cb014a248d7af"
+    public const val VALUE: String = "6b26ce1a9d0d6bd4fad0de2ccfb6815e26c54b50491735fa319bff5bc3cc0bba"
 }
 
 @Serializable
@@ -547,6 +547,7 @@ public data class TaskRow(
     val toggle: String? = null,
     val written: String? = null,
     val viewOnly: String? = null,
+    val refused: String? = null,
     val due: DueBadge? = null,
     val priority: PriorityBadge? = null,
     val listName: String? = null,

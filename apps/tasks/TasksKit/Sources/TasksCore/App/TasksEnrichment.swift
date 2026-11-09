@@ -54,20 +54,25 @@ public extension TasksApp {
             else { return [] }
             return [.editorOpened(ChildKey(writes.newID()), .task(path))]
         case let .complete(path):
-            return decide(.complete, path, to: nil, state: state, model: model, writes: writes)
+            return decide(.complete, path, to: nil, state: state, model: model, writes: writes, context: context)
         case let .abandon(path):
-            return decide(.wontDo, path, to: nil, state: state, model: model, writes: writes)
+            return decide(.wontDo, path, to: nil, state: state, model: model, writes: writes, context: context)
         case let .accept(path):
-            return decide(.accept, path, to: nil, state: state, model: model, writes: writes)
+            return decide(.accept, path, to: nil, state: state, model: model, writes: writes, context: context)
         case let .dismiss(path):
-            return decide(.dismiss, path, to: nil, state: state, model: model, writes: writes)
+            return decide(.dismiss, path, to: nil, state: state, model: model, writes: writes, context: context)
         case let .reopen(path):
-            guard state.pending[path] == nil else { return [.undone(path)] }
-            return decide(.reopen, path, to: nil, state: state, model: model, writes: writes)
+            guard state.pending[path] == nil else {
+                DecisionFile.update(context.environment.folder) { $0[path] = nil }
+                return [.undone(path)]
+            }
+            return decide(.reopen, path, to: nil, state: state, model: model, writes: writes, context: context)
         case let .decide(path, decision, value):
-            return decide(decision, path, to: value, state: state, model: model, writes: writes)
+            return decide(decision, path, to: value, state: state, model: model, writes: writes, context: context)
         case let .undo(path):
-            return state.pending[path] == nil ? [] : [.undone(path)]
+            guard state.pending[path] != nil else { return [] }
+            DecisionFile.update(context.environment.folder) { $0[path] = nil }
+            return [.undone(path)]
         case .dismissChoice:
             return state.choice == nil ? [] : [.chose(nil)]
         case let .setSuggestion(path, property, value):
@@ -96,7 +101,7 @@ public extension TasksApp {
             var events: [Event] = []
             for path in state.picked ?? [] {
                 guard let value = model.tasks[path]?.actions[decision].first else { continue }
-                events += decide(decision, path, to: value, state: state, model: model, writes: writes)
+                events += decide(decision, path, to: value, state: state, model: model, writes: writes, context: context)
             }
             return events + [.picking(nil)]
         case let .reschedule(path, how):
@@ -306,7 +311,8 @@ public extension TasksApp {
     /// reopen; with several values and none picked, the choice is asked. A
     /// suggestion's fields as the owner set them go in its accept's patch.
     private func decide(
-        _ decision: TaskDecision, _ path: String, to value: String?, state: TasksState, model: TasksModel, writes: TaskWrites
+        _ decision: TaskDecision, _ path: String, to value: String?, state: TasksState, model: TasksModel, writes: TaskWrites,
+        context: Enrichment<TasksApp>
     ) -> [Event] {
         guard state.pending[path] == nil else { return [] }
         let edits = decision == .accept ? state.edits[path] ?? JSONObject() : JSONObject()
@@ -320,7 +326,11 @@ public extension TasksApp {
             let chosen = properties[model.collection(task.kind)?.status.property ?? ""]?.text ?? ""
             let closing: [Event] = state.choice == nil ? [] : [.chose(nil)]
             if decision == .reopen { return closing + [.records(.wrote(write))] }
-            return [.deciding(path, PendingDecision(decision: decision, value: chosen, write: write))]
+            let pending = PendingDecision(
+                decision: decision, value: chosen, write: write, deadline: context.now.addingTimeInterval(Self.undoWindow))
+            // Kept on the device before the owner sees it made.
+            DecisionFile.update(context.environment.folder) { $0[path] = pending }
+            return [.deciding(path, pending)]
         }
     }
 

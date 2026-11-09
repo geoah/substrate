@@ -16,12 +16,14 @@ public extension TasksApp {
             if Self.shared(records) { next.settingsLinked = settingsLinked.apply(records, to: state.settingsLinked) }
             switch records {
             case let .enqueued(ids, _, _):
+                next.settling.subtract(ids)
                 // The outbox has an editor's write: its editor closes.
                 for (key, save) in state.saves where save.writes(ids) {
                     next.editors[key] = nil
                     next.saves[key] = nil
                 }
             case let .notQueued(ids, words):
+                next.settling.subtract(ids)
                 // An editor's write is said in the editor, beside its draft;
                 // any other in the app's problem.
                 let editors = state.saves.filter { $0.value.writes(ids) }.keys
@@ -29,7 +31,10 @@ public extension TasksApp {
                 if editors.isEmpty { next.problem = words }
             case let .wrote(write):
                 // A decision's write went to the outbox: its window is over.
-                for (path, pending) in state.pending where pending.write == write { next.pending[path] = nil }
+                for (path, pending) in state.pending where pending.write == write {
+                    next.pending[path] = nil
+                    next.settling.formUnion(write.entries.map(\.id))
+                }
                 if let accepted = state.pending.first(where: { $0.value.write == write }), accepted.value.decision == .accept {
                     next.edits[accepted.key] = nil
                 }
@@ -82,6 +87,10 @@ public extension TasksApp {
             next.pending[path] = pending
             next.choice = nil
         case let .undone(path):
+            next.pending[path] = nil
+        case let .decisionsRead(decisions):
+            for (path, decision) in decisions where next.pending[path] == nil { next.pending[path] = decision }
+        case let .decisionDropped(path):
             next.pending[path] = nil
         case let .chose(choice):
             next.choice = choice

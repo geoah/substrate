@@ -41,6 +41,9 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
     /// row shows it decided, Undo takes it back, and nothing reaches the
     /// outbox until the window closes.
     public var pending: [String: PendingDecision] = [:]
+    /// The entries of decisions whose windows closed, on their way to the
+    /// outbox: kept on the device until the outbox has them.
+    public var settling: Set<UUID> = []
     /// A decision with several values, waiting for the owner to pick one.
     public var choice: DecisionChoice?
     /// A suggestion's fields as the owner set them before accepting, by
@@ -86,12 +89,41 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
 public struct PendingDecision: Codable, Equatable, Sendable {
     public var decision: TaskDecision
     public var value: String
+    /// The write the window ends in, its entries' ids stable across launches.
     public var write: LocalWrite
+    /// When the window closes and the write goes.
+    public var deadline: Date
 
-    public init(decision: TaskDecision, value: String, write: LocalWrite) {
+    public init(decision: TaskDecision, value: String, write: LocalWrite, deadline: Date = .distantPast) {
         self.decision = decision
         self.value = value
         self.write = write
+        self.deadline = deadline
+    }
+}
+
+/// The decisions in their windows, kept in the repository's folder before
+/// the owner sees one made, so a decision survives the app being closed
+/// inside its window: the next launch writes it at its deadline, or at once
+/// past it. Every change of the file goes through one lock, whoever makes
+/// it (a command's enrichment, an effect).
+public enum DecisionFile {
+    static let file = SettingsFile<[String: PendingDecision]>(name: "decisions.json")
+    private static let lock = NSLock()
+
+    public static func load(from folder: RepositoryFolder?) -> [String: PendingDecision] {
+        guard let folder else { return [:] }
+        return lock.withLock { file.load(from: folder) ?? [:] }
+    }
+
+    /// The file changed as `change` says, written before it returns.
+    static func update(_ folder: RepositoryFolder?, _ change: (inout [String: PendingDecision]) -> Void) {
+        guard let folder else { return }
+        lock.withLock {
+            var decisions = file.load(from: folder) ?? [:]
+            change(&decisions)
+            try? file.save(decisions, to: folder)
+        }
     }
 }
 

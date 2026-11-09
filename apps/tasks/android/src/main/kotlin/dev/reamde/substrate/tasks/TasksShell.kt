@@ -119,6 +119,8 @@ class TasksShell(context: Context, val start: StartResult) {
                 _signIn.value = presented
                 if (presented.signedIn > signedInSeen) {
                     signedInSeen = presented.signedIn
+                    // The link opens again over the new session, its new token read by every link and watch.
+                    approving = false
                     prefs.edit().putString(ADDRESS, presented.connect.field.text).apply()
                     closeConnect()
                     openLink()

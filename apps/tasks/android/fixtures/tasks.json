@@ -1398,6 +1398,32 @@
             },
             {
               "band": "lateOrUrgent",
+              "collection": "Chores",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "editable": false,
+              "hasNotes": false,
+              "id": "ada.example.com/work/chore/mower",
+              "listName": "Garage",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High, no date"
+              },
+              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
+              "standing": "open",
+              "suggestion": false,
+              "title": "Sharpen the mower",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "lateOrUrgent",
               "collection": "Tasks",
               "decisions": [
                 {
@@ -1441,32 +1467,6 @@
               "standing": "open",
               "suggestion": false,
               "title": "Renew the car insurance",
-              "toggle": "Mark as Done"
-            },
-            {
-              "band": "lateOrUrgent",
-              "collection": "Chores",
-              "decisions": [
-                {
-                  "action": {
-                    "abandon": {}
-                  },
-                  "title": "Won't Do"
-                }
-              ],
-              "editable": false,
-              "hasNotes": false,
-              "id": "ada.example.com/work/chore/mower",
-              "listName": "Garage",
-              "pending": false,
-              "priority": {
-                "priority": "high",
-                "text": "High, no date"
-              },
-              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
-              "standing": "open",
-              "suggestion": false,
-              "title": "Sharpen the mower",
               "toggle": "Mark as Done"
             },
             {
@@ -2224,6 +2224,32 @@
             },
             {
               "band": "lateOrUrgent",
+              "collection": "Chores",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "editable": false,
+              "hasNotes": false,
+              "id": "ada.example.com/work/chore/mower",
+              "listName": "Garage",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High, no date"
+              },
+              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
+              "standing": "open",
+              "suggestion": false,
+              "title": "Sharpen the mower",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "lateOrUrgent",
               "collection": "Tasks",
               "decisions": [
                 {
@@ -2267,32 +2293,6 @@
               "standing": "open",
               "suggestion": false,
               "title": "Renew the car insurance",
-              "toggle": "Mark as Done"
-            },
-            {
-              "band": "lateOrUrgent",
-              "collection": "Chores",
-              "decisions": [
-                {
-                  "action": {
-                    "abandon": {}
-                  },
-                  "title": "Won't Do"
-                }
-              ],
-              "editable": false,
-              "hasNotes": false,
-              "id": "ada.example.com/work/chore/mower",
-              "listName": "Garage",
-              "pending": false,
-              "priority": {
-                "priority": "high",
-                "text": "High, no date"
-              },
-              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
-              "standing": "open",
-              "suggestion": false,
-              "title": "Sharpen the mower",
               "toggle": "Mark as Done"
             },
             {
@@ -12611,6 +12611,32 @@
             },
             {
               "band": "lateOrUrgent",
+              "collection": "Chores",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "editable": false,
+              "hasNotes": false,
+              "id": "ada.example.com/work/chore/mower",
+              "listName": "Garage",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High, no date"
+              },
+              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
+              "standing": "open",
+              "suggestion": false,
+              "title": "Sharpen the mower",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "lateOrUrgent",
               "collection": "Tasks",
               "decisions": [
                 {
@@ -12654,32 +12680,6 @@
               "standing": "open",
               "suggestion": false,
               "title": "Renew the car insurance",
-              "toggle": "Mark as Done"
-            },
-            {
-              "band": "lateOrUrgent",
-              "collection": "Chores",
-              "decisions": [
-                {
-                  "action": {
-                    "abandon": {}
-                  },
-                  "title": "Won't Do"
-                }
-              ],
-              "editable": false,
-              "hasNotes": false,
-              "id": "ada.example.com/work/chore/mower",
-              "listName": "Garage",
-              "pending": false,
-              "priority": {
-                "priority": "high",
-                "text": "High, no date"
-              },
-              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
-              "standing": "open",
-              "suggestion": false,
-              "title": "Sharpen the mower",
               "toggle": "Mark as Done"
             },
             {
@@ -13538,6 +13538,32 @@
             },
             {
               "band": "lateOrUrgent",
+              "collection": "Chores",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "editable": false,
+              "hasNotes": false,
+              "id": "ada.example.com/work/chore/mower",
+              "listName": "Garage",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High, no date"
+              },
+              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
+              "standing": "open",
+              "suggestion": false,
+              "title": "Sharpen the mower",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "lateOrUrgent",
               "collection": "Tasks",
               "decisions": [
                 {
@@ -13581,32 +13607,6 @@
               "standing": "open",
               "suggestion": false,
               "title": "Renew the car insurance",
-              "toggle": "Mark as Done"
-            },
-            {
-              "band": "lateOrUrgent",
-              "collection": "Chores",
-              "decisions": [
-                {
-                  "action": {
-                    "abandon": {}
-                  },
-                  "title": "Won't Do"
-                }
-              ],
-              "editable": false,
-              "hasNotes": false,
-              "id": "ada.example.com/work/chore/mower",
-              "listName": "Garage",
-              "pending": false,
-              "priority": {
-                "priority": "high",
-                "text": "High, no date"
-              },
-              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
-              "standing": "open",
-              "suggestion": false,
-              "title": "Sharpen the mower",
               "toggle": "Mark as Done"
             },
             {
@@ -14406,6 +14406,32 @@
             },
             {
               "band": "lateOrUrgent",
+              "collection": "Chores",
+              "decisions": [
+                {
+                  "action": {
+                    "abandon": {}
+                  },
+                  "title": "Won't Do"
+                }
+              ],
+              "editable": false,
+              "hasNotes": false,
+              "id": "ada.example.com/work/chore/mower",
+              "listName": "Garage",
+              "pending": false,
+              "priority": {
+                "priority": "high",
+                "text": "High, no date"
+              },
+              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
+              "standing": "open",
+              "suggestion": false,
+              "title": "Sharpen the mower",
+              "toggle": "Mark as Done"
+            },
+            {
+              "band": "lateOrUrgent",
               "collection": "Tasks",
               "decisions": [
                 {
@@ -14449,32 +14475,6 @@
               "standing": "open",
               "suggestion": false,
               "title": "Renew the car insurance",
-              "toggle": "Mark as Done"
-            },
-            {
-              "band": "lateOrUrgent",
-              "collection": "Chores",
-              "decisions": [
-                {
-                  "action": {
-                    "abandon": {}
-                  },
-                  "title": "Won't Do"
-                }
-              ],
-              "editable": false,
-              "hasNotes": false,
-              "id": "ada.example.com/work/chore/mower",
-              "listName": "Garage",
-              "pending": false,
-              "priority": {
-                "priority": "high",
-                "text": "High, no date"
-              },
-              "spoken": "Sharpen the mower, priority High, no date, in Garage, from Chores",
-              "standing": "open",
-              "suggestion": false,
-              "title": "Sharpen the mower",
               "toggle": "Mark as Done"
             },
             {

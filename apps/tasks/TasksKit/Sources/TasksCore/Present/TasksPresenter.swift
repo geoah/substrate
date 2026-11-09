@@ -367,6 +367,8 @@ public enum TasksPresenter {
         let written =
             task.isSuggestion ? [collection?.label, task.createdAt.map { words.ago($0, short: true) }].compactMap { $0 }.joined(separator: " · ") : nil
         let viewOnly = task.isSuggestion && collection?.viewOnly == true ? "View only" : nil
+        let parked = state.linked.queue.first { $0.parked && $0.kind == task.kind && $0.recordID == task.recordID }
+        let refused = parked.map { $0.conflict ? "Change refused: it changed on another device" : "Change refused" }
         var spoken = [title]
         if let pending {
             spoken.append("\(pendingWords(pending.decision).lowercased()), tap to undo")
@@ -379,6 +381,7 @@ public enum TasksPresenter {
             spoken.append(page.compactMap { $0 }.joined(separator: " · "))
         }
         if let viewOnly { spoken.append(viewOnly) }
+        if let refused { spoken.append(refused) }
         if let due { spoken.append(due.tone == .overdue && band == .lateOrUrgent ? due.text : "due \(due.text)") }
         if let priority { spoken.append("priority \(priority.text)") }
         if let listName { spoken.append("in \(listName)") }
@@ -400,7 +403,7 @@ public enum TasksPresenter {
             { "Reopen" } else { nil }
         return TaskRow(
             id: task.id, title: title, standing: task.standing, suggestion: task.isSuggestion, pending: pending != nil,
-            pendingWords: pending.map { pendingWords($0.decision) }, toggle: toggle, written: written, viewOnly: viewOnly, due: due,
+            pendingWords: pending.map { pendingWords($0.decision) }, toggle: toggle, written: written, viewOnly: viewOnly, refused: refused, due: due,
             priority: priority,
             listName: listName, collection: collectionName, band: band,
             reschedule: deciding && !task.isSuggestion ? today.flatMap { reschedule(task, today: $0, words: words) } : nil,

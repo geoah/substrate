@@ -79,6 +79,9 @@ struct TaskRowView: View {
             if let viewOnly = row.viewOnly {
                 Text(viewOnly).font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
+            if let refused = row.refused {
+                Label(refused, systemImage: "exclamationmark.triangle").font(.caption.weight(.medium)).foregroundStyle(.red)
+            }
             if let pending = row.pendingWords, row.pending {
                 Text(pending).font(.caption.weight(.semibold)).foregroundStyle(Color.brandAccent)
             }
@@ -231,6 +234,9 @@ struct TaskRowView: View {
             }
             if let viewOnly = row.viewOnly {
                 Text(viewOnly).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+            if let refused = row.refused {
+                Label(refused, systemImage: "exclamationmark.triangle").font(.caption.weight(.medium)).foregroundStyle(.red)
             }
             if let pending = row.pendingWords, row.pending, pending != "Done" {
                 Text(pending).font(.caption.weight(.semibold)).foregroundStyle(Color.brandAccent)

@@ -49,7 +49,10 @@ is the kit's ([its README](../kit/README.md)):
   with a status are read from the lifecycle trait's implementors at every
   sign-in, new approval and return to the front. Accept, dismiss, complete
   and won't do wait `undoWindow` before they reach the outbox, and Undo
-  within it writes nothing; a suggestion's fields set on its page go in its
+  within it writes nothing; each is kept in the repository's folder
+  (`decisions.json`, `DecisionFile`) before it is shown, so the next launch
+  writes one the app was closed on, once; every decision is an edit pinned
+  to the version the owner saw, a conflict parked and said on its row; a suggestion's fields set on its page go in its
   accept's patch; a settings record is created under its derived id and
   patched in the same batch, so a device that lost the race patches the
   winner; turning a collection on asks for `write:` on it, and grouping by a

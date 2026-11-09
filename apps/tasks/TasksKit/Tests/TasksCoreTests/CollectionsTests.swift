@@ -110,7 +110,10 @@ struct CollectionsTests {
         #expect(entry.method == .patch)
         #expect(entry.properties?.keys == ["status", "list", "priority"])
         #expect(entry.properties == ["status": "open", "list": .string(ListSelection.list("home").listPath), "priority": "high"])
-        #expect(entry.guarded)
+        // Pinned to the version the owner saw, never merged over another
+        // device's change.
+        #expect(entry.baseVersion == 3)
+        #expect(!entry.guarded)
         #expect(await harness.state.edits.isEmpty)
     }
 
@@ -309,6 +312,34 @@ struct CollectionsTests {
         #expect(enqueued(viewOnly).isEmpty)
         #expect(
             await viewOnly.presentation.problem == ProblemPresentation(title: "Can't add a task", message: "New tasks go to Chores, which is view only here."))
+    }
+
+    @Test func twoDevicesRecordsForOneCollectionWriteToTheWinner() async throws {
+        let older = Record(
+            id: "b-older", kind: TasksKinds.collection, properties: ["kind": .string(chore), "enabled": true], version: 2,
+            createdAt: "2026-10-01T10:00:00Z")
+        let newer = Record(
+            id: "a-newer", kind: TasksKinds.collection, properties: ["kind": .string(chore), "enabled": false], version: 1,
+            createdAt: "2026-11-01T10:00:00Z")
+        let harness = try await loaded([], settings: [newer, older])
+        // No record under the derived id: the oldest wins, and is written to.
+        #expect(await harness.presentation.collections.rows.last?.on == true)
+        await harness.send(.setGrouping(chore, property: nil))
+        let entry = try #require(enqueued(harness).last)
+        #expect(entry.recordID == "b-older")
+        #expect(entry.method == .patch)
+    }
+
+    @Test func anOverrideNamingAPropertyTheKindNoLongerHoldsFallsBackToTheGuess() async throws {
+        let stale = Record(
+            id: DerivedIDs.collection(chore), kind: TasksKinds.collection,
+            properties: ["kind": .string(chore), "enabled": true, "priority": "urgency", "due": "summary"], version: 1,
+            createdAt: "2026-11-01T10:00:00Z")
+        let harness = try await loaded([], settings: [stale])
+        await harness.send(.showSettings(.collection(chore)))
+        let fields = try #require(await harness.presentation.collection?.fields)
+        // `urgency` is gone and `summary` is no datetime: the guesses stand.
+        #expect(fields.map(\.value) == ["summary", "dueAt", "None", "priority", "None"])
     }
 
     @Test func aHeldSettingsRecordIsPatchedOnTheVersionRead() async throws {

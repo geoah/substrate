@@ -45,8 +45,8 @@ public extension TasksModel {
             case (.some, nil): return true
             case (nil, .some): return false
             case (nil, nil):
-                let (ra, rb) = (rank(a.task), rank(b.task))
-                return ra != rb ? ra > rb : Self.tie(a.task, b.task)
+                let (ra, rb) = (fromTop(a.task), fromTop(b.task))
+                return ra != rb ? ra < rb : Self.tie(a.task, b.task)
             }
         }
     }
@@ -66,8 +66,13 @@ public extension TasksModel {
         return a.id < b.id
     }
 
-    /// A priority's place among its collection's values.
-    func rank(_ task: TaskItem) -> Int { collection(task.kind)?.rank(task.priorityValue) ?? -1 }
+    /// How far a priority is from the top of its own collection's values (the
+    /// top is 0), so ladders of any length rank alike; none is last.
+    func fromTop(_ task: TaskItem) -> Int {
+        guard let collection = collection(task.kind), let value = task.priorityValue, let index = collection.priorities.firstIndex(of: value)
+        else { return Int.max }
+        return collection.priorities.count - 1 - index
+    }
 }
 
 extension TaskBand {

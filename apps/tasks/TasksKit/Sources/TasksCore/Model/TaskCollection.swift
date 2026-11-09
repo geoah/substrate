@@ -195,17 +195,28 @@ public struct TaskCollection: Hashable, Sendable {
         guess.group = named.count == 1 ? named[0] : nil
         self.guess = guess
 
-        func chosen(_ value: String?, _ guess: String?) -> String? {
+        // A property the owner chose that the declaration no longer holds as
+        // the reading needs it (renamed, retyped, made repeated) is no
+        // choice: the guess stands, and nothing is written under the old name.
+        func chosen(_ value: String?, _ guess: String?, type: String) -> String? {
             guard let value else { return guess }
-            return value == CollectionSetting.none ? nil : value
+            if value == CollectionSetting.none { return nil }
+            guard declaration.type(of: value) == type, declaration.property(value)?["repeated"]?.bool != true else { return guess }
+            return value
         }
         var readings = TaskReadings(
-            due: chosen(setting?.due, guess.due), dueDay: chosen(setting?.dueDay, guess.dueDay),
-            priority: chosen(setting?.priority, guess.priority), order: chosen(setting?.order, guess.order), group: guess.group)
+            due: chosen(setting?.due, guess.due, type: "datetime"), dueDay: chosen(setting?.dueDay, guess.dueDay, type: "date"),
+            priority: chosen(setting?.priority, guess.priority, type: "enum"), order: chosen(setting?.order, guess.order, type: "decimal"),
+            group: guess.group)
         chosenGroup = guess.group
         if let group = setting?.group {
-            readings.group = group == CollectionSetting.none ? nil : references.first { $0.property == group }
-            chosenGroup = group == CollectionSetting.none ? nil : allReferences.first { $0.property == group }
+            if group == CollectionSetting.none {
+                readings.group = nil
+                chosenGroup = nil
+            } else if let reference = allReferences.first(where: { $0.property == group }) {
+                readings.group = references.contains(reference) ? reference : nil
+                chosenGroup = reference
+            }
         }
         self.readings = readings
 

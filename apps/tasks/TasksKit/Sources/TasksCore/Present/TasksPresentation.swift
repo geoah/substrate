@@ -242,6 +242,9 @@ public struct TaskRow: Bridged, Hashable, Sendable, Identifiable {
     /// "View only", in place of Dismiss and Accept, on a suggestion's row
     /// whose collection the grant does not write.
     public var viewOnly: String?
+    /// A change of it the server refused, parked for the owner on the Status
+    /// screen: "Change refused", and why where the record moved on.
+    public var refused: String?
     public var due: DueBadge?
     public var priority: PriorityBadge?
     /// The group it is in, where the column mixes groups.

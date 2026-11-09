@@ -687,6 +687,7 @@
         {"name": "toggle", "type": "String?"},
         {"name": "written", "type": "String?"},
         {"name": "viewOnly", "type": "String?"},
+        {"name": "refused", "type": "String?"},
         {"name": "due", "type": "DueBadge?"},
         {"name": "priority", "type": "PriorityBadge?"},
         {"name": "listName", "type": "String?"},

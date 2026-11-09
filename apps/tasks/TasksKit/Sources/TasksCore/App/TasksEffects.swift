@@ -21,7 +21,9 @@ public extension TasksApp {
             }
             switch records {
             case .opened:
-                out += [.readSettings, .readPermission]
+                out += [.readSettings, .readPermission, .readDecisions]
+            case let .enqueued(ids, _, _), let .notQueued(ids, _):
+                if !ids.isDisjoint(with: previous.settling) { out.append(.forgetDecisions(ids, paths: [])) }
             case .foregrounded:
                 out += [.readUsage, .readPermission]
                 if state.linked.link?.signedIn == true { out.append(.discover) }
@@ -42,7 +44,13 @@ public extension TasksApp {
         case let .settings(settings):
             out += settingsLinked.effects(of: settings, on: state.settingsLinked, from: previous.settingsLinked).map(Effect.settings)
         case let .deciding(path, pending):
-            out.append(.settle(path, pending.write))
+            out.append(.settle(path, pending.write, pending.deadline))
+        case let .decisionsRead(decisions):
+            for (path, decision) in decisions.sorted(by: { $0.key < $1.key }) where previous.pending[path] == nil {
+                out.append(.settle(path, decision.write, decision.deadline))
+            }
+        case let .decisionDropped(path):
+            out.append(.forgetDecisions([], paths: [path]))
         case let .undone(path):
             out.append(.unsettle(path))
         case let .settingsChanged(settings):
@@ -82,7 +90,9 @@ public extension TasksApp {
         case .saveSettings: "settings"
         case .schedule: "reminders"
         case .readUsage: "usage"
-        case let .settle(path, _), let .unsettle(path): "decide.\(path)"
+        case let .settle(path, _, _), let .unsettle(path): "decide.\(path)"
+        case .readDecisions: "decisions.read"
+        case .forgetDecisions: nil
         }
     }
 
@@ -96,14 +106,31 @@ public extension TasksApp {
             return settingsLinked.perform(settings, in: environment).map(Event.settings)
         case .discover:
             let source = environment.client
+            let closure = closure
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {
                     let kinds = try await client.implementors(of: TasksKinds.lifecycle)
-                    return .discovered(
-                        kinds.map {
-                            TaskKindDeclaration(identity: $0.identity, singular: $0.label?.singular, plural: $0.label?.plural, definition: $0.definition)
-                        })
+                    var declarations = kinds.map {
+                        TaskKindDeclaration(identity: $0.identity, singular: $0.label?.singular, plural: $0.label?.plural, definition: $0.definition)
+                    }
+                    // A group kind needs no status, so the trait does not
+                    // name it: its declaration (its label, its order) is read
+                    // on its own, where the token reads it; one it does not
+                    // read answers none.
+                    let known = Set(declarations.map(\.identity)).union(closure.map(\.identity))
+                    var targets: [String] = []
+                    for declaration in declarations {
+                        for name in declaration.propertyNames {
+                            guard let target = declaration.singleReference(name), !known.contains(target), !targets.contains(target) else { continue }
+                            targets.append(target)
+                        }
+                    }
+                    for target in targets {
+                        guard let record = try? await client.record(KindDeclaration.kind, target) else { continue }
+                        declarations.append(TaskKindDeclaration(identity: target, definition: record.properties))
+                    }
+                    return .discovered(declarations)
                 } catch {
                     return .discoveryFailed(explain(error, app: Self.appName, server: client.server))
                 }
@@ -134,16 +161,44 @@ public extension TasksApp {
         case .readUsage:
             guard let folder else { return .none }
             return .once { .usage(folder.usage()) }
-        case let .settle(_, write):
-            // The window is the clock's, so a test moves it; a cancelled
-            // wait (the decision taken back) writes nothing.
-            let clock = environment.clock
+        case .readDecisions:
+            return .once { .decisionsRead(DecisionFile.load(from: folder)) }
+        case let .forgetDecisions(ids, paths):
             return .once {
-                try? await clock.sleep(until: clock.now.addingTimeInterval(Self.undoWindow))
-                return Task.isCancelled ? nil : .records(.wrote(write))
+                DecisionFile.update(folder) { decisions in
+                    for path in paths { decisions[path] = nil }
+                    decisions = decisions.filter { $0.value.write.entries.allSatisfy { !ids.contains($0.id) } }
+                }
+                return nil
+            }
+        case let .settle(path, write, deadline):
+            // The window is the clock's, so a test moves it; a cancelled
+            // wait (the decision taken back) writes nothing. A deadline
+            // already past (a launch after the app was closed in the window)
+            // writes at once.
+            let clock = environment.clock
+            let outbox = linked.outbox
+            return .once {
+                try? await clock.sleep(until: deadline)
+                guard !Task.isCancelled else { return nil }
+                // Written once: an earlier run that queued it, or whose
+                // write the server already took, leaves nothing to do.
+                if let outbox, await Self.written(write, in: outbox) { return .decisionDropped(path) }
+                return .records(.wrote(write))
             }
         case .unsettle:
             return .cancel
         }
+    }
+
+    /// Whether the outbox already holds `write`, or has seen its record past
+    /// the version it was pinned to.
+    static func written(_ write: LocalWrite, in outbox: Outbox) async -> Bool {
+        let queued = Set(await outbox.entries.map(\.id))
+        for entry in write.entries {
+            if queued.contains(entry.id) { return true }
+            if let base = entry.baseVersion, base > 0, let seen = await outbox.version(of: entry.kind, entry.recordID), seen > base { return true }
+        }
+        return false
     }
 }

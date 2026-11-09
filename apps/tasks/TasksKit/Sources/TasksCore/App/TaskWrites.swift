@@ -29,9 +29,11 @@ struct TaskWrites {
         writes.change(list.kind, list.recordID, properties: TasksCodec.patch(from: list, to: next), version: list.version)
     }
 
-    /// A decision's patch, on the version the app read.
+    /// A decision's patch, pinned to the version the owner saw: a record
+    /// another device moved meanwhile (dismissed what this one accepts) is a
+    /// conflict the outbox parks for the owner, never written over.
     func decide(_ task: TaskItem, properties: JSONObject) -> LocalWrite {
-        writes.change(task.kind, task.recordID, properties: properties, version: task.version)
+        writes.edit(task.kind, task.recordID, properties: properties, seen: task.version)
     }
 
     /// The owner's edit in the editor: on the version they saw.
