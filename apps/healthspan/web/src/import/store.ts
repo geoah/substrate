@@ -78,20 +78,32 @@ export async function countFiltered(
   return (await listFiltered(client, filter, signal)).filter(keep).length
 }
 
-/** The records of `kinds` whose `origin` is `path`. The server's reverse
- * read finds them; each is checked again here, since a delete follows. */
-export async function pointingAt(
+/** The records of `kinds` whose `property` names `path`. The server's
+ * reverse read finds them; each is checked again here, since a delete
+ * follows. */
+export async function naming(
   client: SubstrateClient,
   kinds: string[],
+  property: string,
   path: string,
   signal?: AbortSignal
 ): Promise<SubstrateRecord[]> {
   const rows = await listFiltered(
     client,
-    { kinds, referencing: { ref: path, property: "origin" } },
+    { kinds, referencing: { ref: path, property } },
     signal
   )
-  return rows.filter((r) => refPath(r.properties.origin) === path)
+  return rows.filter((r) => refPath(r.properties[property]) === path)
+}
+
+/** The records of `kinds` whose `origin` is `path`. */
+export function pointingAt(
+  client: SubstrateClient,
+  kinds: string[],
+  path: string,
+  signal?: AbortSignal
+): Promise<SubstrateRecord[]> {
+  return naming(client, kinds, "origin", path, signal)
 }
 
 /** A blob's bytes up, by their digest: `PUT /api/v1/blobs/{digest}`, the
@@ -184,5 +196,7 @@ export function clientStore(client: SubstrateClient): RunnerStore {
         kind: r.kind,
         id: r.id,
       })),
+    naming: (kind, property, path, signal) =>
+      naming(client, [kind], property, path, signal),
   }
 }

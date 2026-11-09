@@ -59,7 +59,7 @@ import {
   storedPlan,
   type StoredPlan,
 } from "./planfile"
-import { sameAsPlanned, type UnitKey } from "./records"
+import { originKinds, refPath, sameAsPlanned, type UnitKey } from "./records"
 
 export const LEASE_MS = 60_000
 export const RENEW_MS = 20_000
@@ -87,6 +87,16 @@ export const DECISIONS = 3
 export const REUPLOADS = 3
 /** The most of `skipped` an import record holds. */
 const MAX_SKIPPED = 128 << 10
+
+/** The references the catalogues declare `onDelete: cascade`, by the kind
+ * they point at: a result's `report`. The collector takes every live
+ * record pointing at a collected one through these, whatever its
+ * `origin`. */
+const CASCADES: Readonly<
+  Record<string, readonly { kind: string; property: string }[]>
+> = {
+  [KIND.labreport]: [{ kind: KIND.labresult, property: "report" }],
+}
 
 /** The records the runner reads and writes: the client's own calls, the
  * blob store, and the records pointing at an import through `origin`. */
@@ -145,6 +155,13 @@ export interface RunnerStore {
     path: string,
     signal?: AbortSignal
   ): Promise<{ kind: string; id: string }[]>
+  /** Every live record of `kind` whose `property` names `path`. */
+  naming(
+    kind: string,
+    property: string,
+    path: string,
+    signal?: AbortSignal
+  ): Promise<SubstrateRecord[]>
 }
 
 /** Time, injectable so the lease's tests run at once. */
@@ -1022,16 +1039,18 @@ class Run {
   }
 
   /** A record created where absent (a PUT at `ifVersion: 0`), restored
-   * where a tombstone holds its id (a PUT held to the tombstone's version),
-   * and otherwise decided on what is there, every write held to the
-   * version read and decided again where it moved, `DECISIONS` times at
-   * most. */
+   * where a tombstone holds its id (a PUT of `restore` held to the
+   * tombstone's version, which the server merges onto the properties the
+   * tombstone kept), and otherwise decided on what is there, every write
+   * held to the version read and decided again where it moved,
+   * `DECISIONS` times at most. */
   private async writeRecord(
     kind: string,
     id: string,
     create: Resolved,
     decide: (found: SubstrateRecord) => Verdict,
-    what: string
+    what: string,
+    restore: Resolved = create
   ): Promise<Tally> {
     let found: SubstrateRecord | null | undefined
     for (let n = 0; n < DECISIONS; n++) {
@@ -1049,7 +1068,7 @@ class Run {
           found = undefined
           continue
         }
-        if ((await this.put(kind, id, create, tomb.version, what)) === "done")
+        if ((await this.put(kind, id, restore, tomb.version, what)) === "done")
           return "created"
         found = await this.read(kind, id)
         continue
@@ -1160,7 +1179,16 @@ class Run {
               ? { kind: "write", props: d.props }
               : { kind: d.kind }
           },
-          what
+          what,
+          // Restored as this plan creates it: every property the importer
+          // maintains that the plan does not give cleared, so no value an
+          // older export left on the tombstone comes back with it.
+          {
+            ...Object.fromEntries([...mine].map((k) => [k, null])),
+            ...props,
+            revision: rec.revision ?? null,
+            origin,
+          }
         )
       }
       this.counts[tally]++
@@ -1183,21 +1211,53 @@ class Run {
 
   // Undo.
 
+  /** Where a record this import created goes instead of being deleted.
+   * A live record another import or another writer created that points at
+   * it through a cascading reference would be collected with it, so it is
+   * handed to that record's import (its `origin`), or to none where that
+   * record names none. Undefined where nothing else hangs from it. */
+  private async heir(
+    kind: string,
+    id: string
+  ): Promise<string | null | undefined> {
+    const path = `${kind}/${id}`
+    for (const c of CASCADES[kind] ?? []) {
+      await this.guard()
+      const others = (
+        await this.request((s) =>
+          this.store.naming(c.kind, c.property, path, s)
+        )
+      )
+        .filter((r) => !originIs(r, this.path))
+        .sort((a, b) => a.id.localeCompare(b.id))
+      if (others.length) return refPath(others[0].properties.origin) ?? null
+    }
+    return undefined
+  }
+
   /** A provider's record deleted where this import created it: read, and
    * deleted held to the version read only where its `origin` is this
    * import, so a record another import created and this one only updated
-   * is never deleted. */
+   * is never deleted. One another's records hang from is handed over
+   * instead, held to the same version (`heir`). */
   private async deleteIfCreated(kind: string, id: string): Promise<void> {
     for (let n = 0; n < DECISIONS; n++) {
       await this.guard()
       const found = await this.read(kind, id)
       if (!found || !originIs(found, this.path)) return
+      const heir = await this.heir(kind, id)
       try {
-        await this.request((s) => this.store.delete(kind, id, found.version, s))
+        await this.request(async (s) => {
+          if (heir === undefined)
+            await this.store.delete(kind, id, found.version, s)
+          else
+            await this.store.patch(kind, id, { origin: heir }, found.version, s)
+        })
         return
       } catch (e) {
         if (control(e)) throw e
         if (conflict(e)) continue
+        if (notFound(e)) return
         throw e
       }
     }
@@ -1237,11 +1297,12 @@ class Run {
       } else await this.deleteIfCreated(r.kind, id)
       this.progress({ phase: "deleting", done: ++done, total: planned.length })
     }
+    // Every kind the importer may create, whether or not the plan could be
+    // read: a result before its report.
     const order = [
       ...new Set([
         ...planned.map((r) => r.kind),
-        KIND.labresult,
-        KIND.labreport,
+        ...originKinds(plan?.importer ?? this.imp?.importer),
       ]),
     ]
     const pointing = async () => {
@@ -1253,8 +1314,9 @@ class Run {
     )
     done = 0
     for (const r of left) {
-      await this.guard()
-      await this.request((s) => this.store.delete(r.kind, r.id, undefined, s))
+      // Read again and held to its version: another import may have
+      // restored it as its own since the list was read.
+      await this.deleteIfCreated(r.kind, r.id)
       this.progress({ phase: "deleting", done: ++done, total: left.length })
     }
     const remaining = await pointing()

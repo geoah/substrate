@@ -210,6 +210,29 @@ describe("the decision on a record already there", () => {
     expect((restore?.body as { ifVersion: number }).ifVersion).toBe(5)
   })
 
+  it("restores a tombstone as the plan creates it: a value the older export gave and this one does not is not brought back", async () => {
+    await importPlan(
+      A,
+      plan([
+        reportRecord("T1", 200),
+        resultRecord("T1/a", "T1", "1", 200, { note: "Haemolysed" }),
+      ])
+    )
+    await browser(server, "a").undo(A)
+    expect(live(result("T1/a"))).toBeUndefined()
+    // Not yet collected: the tombstone keeps the note and revision 200.
+    expect(
+      await importPlan(
+        B,
+        plan([reportRecord("T1", 100), resultRecord("T1/a", "T1", "1", 100)])
+      )
+    ).toMatchObject({ counts: { created: 2 } })
+    const restored = live(result("T1/a"))!.properties
+    expect(restored.note).toBeUndefined()
+    expect(restored.revision).toBe(100)
+    expect(restored.origin).toBe(originOf(B))
+  })
+
   it("leaves one with the same content at a revision no lower unchanged, and writes nothing", async () => {
     await importPlan(A, plan([reportRecord("T1", 200)]))
     const before = live(report("T1"))!.version
@@ -543,7 +566,6 @@ describe("Undo of a provider's imports", () => {
       state: "undone",
       remaining: 0,
     })
-    expect(live(report("T1"))).toBeUndefined()
     expect(live(result("T1/a"))).toBeUndefined()
     expect(live(result("T1/b"))).toBeUndefined()
     expect(live(result("T1/c"))?.properties.origin).toBe(originOf(B))
@@ -555,5 +577,84 @@ describe("Undo of a provider's imports", () => {
     )
     expect(deletes.length).toBeGreaterThan(0)
     expect(deletes.every((r) => r.query.get("ifVersion"))).toBe(true)
+  })
+
+  it("of the earlier hands a report the later's results still name to the later, so the collector leaves them; the later's Undo then takes both", async () => {
+    await browser(server, "a").undo(A)
+    // Deleted, the report would take T1/c with it when collected.
+    expect(live(report("T1"))?.properties.origin).toBe(originOf(B))
+    server.sweep()
+    expect(live(result("T1/c"))).toBeDefined()
+    expect(live(report("T1"))).toBeDefined()
+    expect(await browser(server, "a").undo(B)).toEqual({
+      state: "undone",
+      remaining: 0,
+    })
+    expect(live(report("T1"))).toBeUndefined()
+    expect(live(result("T1/c"))).toBeUndefined()
+  })
+})
+
+describe("Undo with no plan to read", () => {
+  const CONDITION = "substrate.reamde.dev/clinical/condition"
+  const condition: RecordKey = { kind: CONDITION, namespace: "nhs", key: "C1" }
+  const p = plan([
+    reportRecord("T1", 100),
+    resultRecord("T1/a", "T1", "1", 100),
+    {
+      ...condition,
+      mode: "maintain",
+      revision: 100,
+      properties: { name: "Hay fever", status: "active" },
+    },
+  ])
+
+  /** A browser that cannot read the import's plan, `after` run once the
+   * records pointing at the import have been listed. */
+  function planless(id: string, after: () => void = () => {}) {
+    const digest = imp(id).plan!
+    let listed = false
+    return browser(server, "b", {
+      fetch: async (input, init) => {
+        const url = urlOf(input)
+        if (url.includes(`/blobs/${digest}`))
+          return new Response(
+            JSON.stringify({ error: { code: "internal", message: "down" } }),
+            { status: 500, headers: { "Content-Type": "application/json" } }
+          )
+        const res = await server.fetch(input, init)
+        if (!listed && url.includes("referencing")) {
+          listed = true
+          after()
+        }
+        return res
+      },
+    })
+  }
+
+  it("still finds and deletes every kind the importer creates, clinical records included", async () => {
+    await importPlan(A, p)
+    expect(live(condition)).toBeDefined()
+    expect(await planless(A).undo(A)).toEqual({
+      state: "undone",
+      remaining: 0,
+    })
+    expect(live(condition)).toBeUndefined()
+    expect(live(result("T1/a"))).toBeUndefined()
+    expect(live(report("T1"))).toBeUndefined()
+  })
+
+  it("reads each record again before deleting it, leaving one another import made its own since the list", async () => {
+    await importPlan(A, p)
+    const out = await planless(A, () =>
+      server.fake.change(KIND.labresult, idOf(result("T1/a")), {
+        origin: originOf(B),
+      })
+    ).undo(A)
+    expect(out).toEqual({ state: "undone", remaining: 0 })
+    expect(live(result("T1/a"))?.properties.origin).toBe(originOf(B))
+    // Its report goes to the same import rather than taking it along.
+    expect(live(report("T1"))?.properties.origin).toBe(originOf(B))
+    expect(live(condition)).toBeUndefined()
   })
 })

@@ -111,12 +111,13 @@ export class MemoryStore implements RunnerStore {
     if (ifVersion !== undefined && ifVersion !== (here?.version ?? 0))
       this.refuse(409, "conflict", `${key} is at version ${here?.version ?? 0}`)
     const now = this.stamp()
+    // A put onto a tombstone restores the row: what it kept, merged.
     const next: SubstrateRecord = {
       id,
       kind,
-      properties: { ...(live?.properties ?? {}) },
+      properties: { ...(here?.properties ?? {}) },
       version: (here?.version ?? 0) + 1,
-      createdAt: live?.createdAt ?? now,
+      createdAt: here?.createdAt ?? now,
       updatedAt: now,
     }
     for (const [k, v] of Object.entries(properties)) {
@@ -180,5 +181,20 @@ export class MemoryStore implements RunnerStore {
           refPath(r.properties.origin) === path
       )
       .map((r) => ({ kind: r.kind, id: r.id }))
+  }
+
+  async naming(
+    kind: string,
+    property: string,
+    path: string,
+    signal?: AbortSignal
+  ) {
+    await this.settle(signal)
+    return [...this.rows.values()].filter(
+      (r) =>
+        !r.deletedAt &&
+        r.kind === kind &&
+        refPath(r.properties[property]) === path
+    )
   }
 }

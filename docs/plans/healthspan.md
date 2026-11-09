@@ -365,8 +365,14 @@ both win a transition.
   names whose `origin` is this import, each read first and deleted held to
   the version read, so a record another import created and this one only
   updated is never deleted. Then everything that still points at the
-  import through `origin`, read again, and the import moves to `undone`.
-  Undo never deletes a source or an organization. A
+  import through `origin` (listed for every kind the importer may create,
+  so it is found when the plan cannot be read), each read again and held
+  to its version in the same way, and the import moves to `undone`.
+  A report another import's (or another writer's) results still name is
+  handed over rather than deleted: its `origin` becomes that result's
+  import (none where the result names none), held to the version read,
+  because `labresult.report` cascades and the collector would take those
+  results with it. Undo never deletes a source or an organization. A
   result's derived twins in the other unit go with it: `convertlab` deletes
   the derivations of a deleted input, asynchronously.
 - **What is left.** No record write carries a cross-record guard, and the
@@ -542,7 +548,10 @@ which is each provider's:
 
 - absent: created, `origin` the import, counted `created`;
 - a tombstone (deleted, not yet collected): restored by a PUT held to the
-  tombstone's version, `origin` the import, counted `created`;
+  tombstone's version, `origin` the import, counted `created`; the PUT
+  merges onto what the tombstone kept, so it names every property the
+  importer maintains, null where the plan gives none, and the plan's
+  revision;
 - present with the same content and a revision no lower than the plan's:
   `unchanged`, nothing written;
 - present with the same content and a lower revision: the revision alone
@@ -566,7 +575,8 @@ document's bytes are already up when the records are written (staging).
 runner](#the-runner)): what it updated stays updated, and the screen says so
 before the owner confirms. Undoing an earlier import of a provider takes
 with it the records a later one only updated; importing that later export
-again writes them anew.
+again writes them anew. A report a later import's results still name goes
+to that import instead, so its results stay.
 
 **The owner's existing records.** The owner's repository holds about 1,600
 records the scripts wrote, under their own ids and 143 metrics of the
@@ -1011,3 +1021,13 @@ One pull request, built in this order:
   lease, then the record deleted outright, and the stager stops), and
   staging is no other device's to resume; the `documents` list is held to
   a record's 1 MiB before staging.
+- **Astra, the importers' pull request: approved after four fixes.** Taken:
+  a report a later import's results name is handed to that import, not
+  deleted, since the collector's cascade would take those results; a
+  tombstone restored with nulls for what the plan no longer gives and its
+  revision, the test server merging a restore as the server does; Undo's
+  second pass reads each record again and holds its delete to the version
+  read; and that pass lists every kind the importer may create, so a plan
+  that cannot be read still leaves no clinical record behind. Left: an Undo
+  running while another import of the same provider writes can still race
+  it on a report, which only a server-side rule would close.

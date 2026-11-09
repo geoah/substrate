@@ -14,6 +14,7 @@ import { KIND } from "../kinds"
 import type { StagingKeep } from "./keep"
 import { memoryKeep } from "./keep"
 import { blobDigestOf } from "./planfile"
+import { refPath } from "./records"
 import {
   discardImport,
   finishStaging,
@@ -120,6 +121,30 @@ export class Server {
       }
   }
 
+  /** The record collector's pass: every live result whose `report` names
+   * a tombstoned report is tombstoned with it (`onDelete: cascade`), and
+   * every tombstone purged. */
+  sweep(): void {
+    const records = this.fake.records
+    const gone = new Set(
+      [...records.values()]
+        .filter((r) => r.deletedAt && r.kind === KIND.labreport)
+        .map((r) => `${r.kind}/${r.id}`)
+    )
+    for (const [key, r] of records)
+      if (
+        !r.deletedAt &&
+        r.kind === KIND.labresult &&
+        gone.has(refPath(r.properties.report) ?? "")
+      )
+        records.set(key, {
+          ...r,
+          version: r.version + 1,
+          deletedAt: new Date(this.clock.now()).toISOString(),
+        })
+    for (const [key, r] of records) if (r.deletedAt) records.delete(key)
+  }
+
   /** A live record, as the fake holds it. */
   live(kind: string, id: string): SubstrateRecord | undefined {
     return this.fake.live(kind, id)
@@ -214,12 +239,15 @@ export class Server {
               `validation: props: blob ${d} is unknown — store it before referencing it`
             )
         if (method === "PUT" && here?.deletedAt) {
+          // A restore: the body merged onto what the tombstone kept, a
+          // null deleting, as the server's put does.
           await Promise.resolve()
           if (body.ifVersion !== here.version)
             return refused(409, "conflict", `at version ${here.version}`)
-          const props = Object.fromEntries(
-            Object.entries(body.properties ?? {}).filter(([, v]) => v !== null)
-          )
+          const props = { ...here.properties }
+          for (const [k, v] of Object.entries(body.properties ?? {}))
+            if (v === null) delete props[k]
+            else props[k] = v
           return json(200, this.fake.seed(kind, id, props))
         }
       }
