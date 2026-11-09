@@ -89,7 +89,9 @@ all_apps() {
 	done
 }
 
-# The UI folder a platform is drawn in.
+# The UI folder a platform the release builds is drawn in. The web is not
+# one: a web build is deployed where it is served (apps/<app>/web's
+# README), never by this release.
 ui_folder() {
 	case "$1" in
 	ios | macos) echo apple ;;
@@ -100,12 +102,23 @@ ui_folder() {
 # The platforms an app is released on: the ones its app.json names whose UI
 # folder exists. An app's package can come before its UI (Substrate Tasks'
 # did), and a platform it names but has not drawn yet is not one it ships.
+# `web` is never one, so a web-only app has none.
 app_platforms() {
-	local app="$1" platform
+	local app="$1" platform folder
 	for platform in $(app_get "$app" '.platforms[]'); do
-		[ -d "$APPS_DIR/$app/$(ui_folder "$platform")" ] && echo "$platform"
+		folder="$(ui_folder "$platform")"
+		[ -n "$folder" ] && [ -d "$APPS_DIR/$app/$folder" ] && echo "$platform"
 	done
 	return 0
+}
+
+# Whether an app's app.json names the web.
+app_names_web() { [ "$(app_get "$1" '.platforms | index("web") != null')" = true ]; }
+
+# Why the release ships nothing of a web app's web build, said once per
+# app.
+web_deployed_apart() {
+	say "$1's web build is deployed where it is served (SUBSTRATE_WEB_URL=<its URL> pnpm build in apps/$1/web), not by this release"
 }
 
 app_has() {
@@ -1776,10 +1789,19 @@ release() {
 	else
 		if [ "${#RELEASE_APPS[@]}" -eq 0 ]; then
 			for app in $(ui_apps); do RELEASE_APPS+=("$app"); done
+			# A web-only app has nothing here; its packages are published
+			# with the site all the same.
+			for app in $(all_apps); do
+				if [ -z "$(app_platforms "$app")" ] && app_names_web "$app"; then web_deployed_apart "$app"; fi
+			done
 		fi
 		for app in "${RELEASE_APPS[@]}"; do
 			[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
+			if [ -z "$(app_platforms "$app")" ] && app_names_web "$app"; then
+				die "$app is a web app: its web build is deployed where it is served (SUBSTRATE_WEB_URL=<its URL> pnpm build in apps/$app/web), never by apps:release, which ships Apple and Android builds; the packages it publishes go up with the site (mise run apps:site)"
+			fi
 			[ -n "$(app_platforms "$app")" ] || die "$app has no UI on any platform its app.json names, so there is nothing of it to release"
+			if app_names_web "$app"; then web_deployed_apart "$app"; fi
 		done
 		stamp "$channel"
 		REL_DIR="$(stage_root)/$build"

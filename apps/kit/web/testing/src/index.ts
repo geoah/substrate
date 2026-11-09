@@ -1,4 +1,8 @@
 import type {
+  AggregateAnswer,
+  AggregateDownsample,
+  AggregateFilter,
+  AggregateRequest,
   AuthorizationCheckResult,
   SubstrateRecord,
 } from "@substrate/client"
@@ -20,6 +24,19 @@ interface Failure {
   body?: unknown
   headers?: Record<string, string>
   times: number
+}
+
+/** An aggregate read as the fake took it: its three parameters, parsed. */
+export interface AggregateQuery {
+  aggregate: AggregateRequest
+  filter?: AggregateFilter
+  downsample?: AggregateDownsample
+}
+
+/** A canned answer, for the reads `match` admits. */
+interface CannedAggregate {
+  match: (query: AggregateQuery) => boolean
+  answer: AggregateAnswer | ((query: AggregateQuery) => AggregateAnswer)
 }
 
 interface Row {
@@ -46,8 +63,11 @@ const refused = (status: number, code: string, message: string) =>
  * `ifVersion` held as the server holds it, a plain delete, the list read
  * (without a head, as an app token's is) a page at a time, the change
  * feed's ndjson watch, which stays open and carries each later write, the
- * sign-in's code exchange, and token revocation, after which the token is
- * refused, as a request with none is. `offline` makes every request fail as `fetch` does without a
+ * aggregate read answered from what a test registers (`answerAggregate`),
+ * the sign-in's code exchange, and token revocation, after which the token
+ * is refused, as a request with none is. A kind in `undeclared` is refused
+ * by a list, a watch and an aggregate read as one the repository never
+ * declared. `offline` makes every request fail as `fetch` does without a
  * network. */
 export class FakeSubstrate {
   readonly origin: string
@@ -59,6 +79,11 @@ export class FakeSubstrate {
   readonly mint: string[] = []
   /** The repository a minted token is for. */
   repository = "ada.example.org"
+  /** Kinds the repository never declared: a read naming one is a 404. */
+  readonly undeclared = new Set<string>()
+  /** The aggregate reads the fake took, in order. */
+  readonly aggregates: AggregateQuery[] = []
+  private canned: CannedAggregate[] = []
   private minted = 0
   offline = false
   generation = "g1"
@@ -107,6 +132,17 @@ export class FakeSubstrate {
     properties: Record<string, unknown>
   ): SubstrateRecord {
     return this.write(kind, id, properties, "patch", false)
+  }
+
+  /** Answers the aggregate reads `match` admits with `answer`, or what it
+   * makes of the read; the latest registration that matches answers. A
+   * read nothing matches is refused with a 422, as a read the server could
+   * not answer is. */
+  answerAggregate(
+    match: (query: AggregateQuery) => boolean,
+    answer: AggregateAnswer | ((query: AggregateQuery) => AggregateAnswer)
+  ): void {
+    this.canned.push({ match, answer })
   }
 
   get head(): number {
@@ -234,13 +270,55 @@ export class FakeSubstrate {
       return refused(401, "auth", "the token was revoked")
     if (!bearer && path.startsWith("/api/"))
       return refused(401, "auth", "no token")
+    if (path === "/api/v1/changes" || path === "/api/v1/records") {
+      const unknown = this.unknownKind(url)
+      if (unknown) return refused(404, "not_found", `unknown kind ${unknown}`)
+    }
     if (path === "/api/v1/changes") return this.watch(url, signal)
-    if (path === "/api/v1/records" && method === "GET") return this.list(url)
+    if (path === "/api/v1/records" && method === "GET")
+      return url.searchParams.has("aggregate")
+        ? this.aggregate(url)
+        : this.list(url)
     if (path === "/api/v1/authorizations/check" && method === "POST")
       return json(200, this.checkResult)
     const m = /^\/api\/v1\/([^/]+\/[^/]+\/[^/]+)\/([^/]+)$/.exec(path)
     if (m) return this.record(method, m[1], decodeURIComponent(m[2]), body)
     return refused(404, "not_found", `no route ${method} ${path}`)
+  }
+
+  /** The first undeclared kind a read names: in a watch's `kinds`, or a
+   * list's or an aggregate's `filter.kinds`. */
+  private unknownKind(url: URL): string | undefined {
+    const kinds = url.searchParams.getAll("kinds")
+    const filter = url.searchParams.get("filter")
+    if (filter) {
+      const parsed = JSON.parse(filter) as { kinds?: string[] }
+      kinds.push(...(parsed.kinds ?? []))
+    }
+    return kinds.find((k) => this.undeclared.has(k))
+  }
+
+  private aggregate(url: URL): Response {
+    const parse = (name: string): unknown => {
+      const text = url.searchParams.get(name)
+      return text === null ? undefined : JSON.parse(text)
+    }
+    const query: AggregateQuery = {
+      aggregate: parse("aggregate") as AggregateRequest,
+    }
+    const filter = parse("filter")
+    if (filter !== undefined) query.filter = filter as AggregateFilter
+    const downsample = parse("downsample")
+    if (downsample !== undefined)
+      query.downsample = downsample as AggregateDownsample
+    this.aggregates.push(query)
+    const canned = this.canned.findLast((c) => c.match(query))
+    if (!canned)
+      return refused(422, "validation", "the fake has no answer for this read")
+    return json(
+      200,
+      typeof canned.answer === "function" ? canned.answer(query) : canned.answer
+    )
   }
 
   private list(url: URL): Response {

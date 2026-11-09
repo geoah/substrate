@@ -1185,7 +1185,7 @@ app folder without one, or one missing a field below.
 | --- | --- |
 | `id` | the app's folder name, which is also its bundle id's last label and the name `.mise/apps.sh` knows it by |
 | `name` | its display name, the manifest's `appName`, the feeds' and the client document's |
-| `platforms` | where it runs: `ios`, `macos`, `android`. A release ships a platform once its UI folder exists (`apple/`, `android/`) |
+| `platforms` | where it runs: `ios`, `macos`, `android`, `web`. A release ships an Apple or Android platform once its UI folder exists (`apple/`, `android/`). `web` is the app's `web/` package (its `package.json` in the pnpm workspace), which no release builds: a web build is deployed where it is served, and `apps:release` of a web-only app says so; the packages it publishes go up with the site all the same |
 | `apple` | for an app that names `ios` or `macos`, the five fields below |
 | `apple.bundleID` | the app's bundle id |
 | `apple.scheme` | the scheme a release archives, a target of its `apple/targets.yml`; also its artifacts' name (`<scheme>-<version>-iOS.ipa`) |

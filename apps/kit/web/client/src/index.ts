@@ -1,5 +1,29 @@
 export { SubstrateClient } from "./client"
 export type { Query, RequestOptions } from "./client"
+export type {
+  AggregateAnswer,
+  AggregateBucket,
+  AggregateBudget,
+  AggregateDownsample,
+  AggregateFilter,
+  AggregateForm,
+  AggregateFrom,
+  AggregateGroup,
+  AggregateGroupKey,
+  AggregateMetricRead,
+  AggregateOptions,
+  AggregateProperty,
+  AggregateRange,
+  AggregateRecordSources,
+  AggregateRecordsBucket,
+  AggregateReducer,
+  AggregateRequest,
+  AggregateRolling,
+  AggregateRollingReducer,
+  AggregateRow,
+  AggregateSources,
+  AggregateValue,
+} from "./aggregate"
 export {
   SubstrateError,
   describe,

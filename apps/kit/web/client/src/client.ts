@@ -1,4 +1,9 @@
 import type {
+  AggregateAnswer,
+  AggregateOptions,
+  AggregateRequest,
+} from "./aggregate"
+import type {
   AuthorizationCheck,
   AuthorizationCheckResult,
 } from "./authorizations"
@@ -136,6 +141,24 @@ export class SubstrateClient {
     }
     all.cursor = cursor
     return all
+  }
+
+  /** The aggregate read: `GET /api/v1/records` with `aggregate`, and the
+   * `filter` and `downsample` beside it, each as JSON. A refusal throws
+   * the envelope's `SubstrateError`, a 422 naming the limit, the form or
+   * the unit. */
+  aggregate(
+    aggregate: AggregateRequest,
+    opts: AggregateOptions = {}
+  ): Promise<AggregateAnswer> {
+    return this.json<AggregateAnswer>("GET", "api/v1/records", {
+      query: {
+        aggregate: JSON.stringify(aggregate),
+        filter: opts.filter && JSON.stringify(opts.filter),
+        downsample: opts.downsample && JSON.stringify(opts.downsample),
+      },
+      signal: opts.signal,
+    })
   }
 
   /** A put merges per property and never prunes; `ifVersion: 0` creates only. */

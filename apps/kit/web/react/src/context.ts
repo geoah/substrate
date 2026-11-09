@@ -7,6 +7,7 @@ import type {
   RepositoryStorage,
 } from "@substrate/local"
 import { createContext, useContext } from "react"
+import type { ReadCache } from "./reads"
 
 /** The open repository: what every screen reads records and writes
  * through. It changes only with the session, so a status check or a
@@ -19,6 +20,9 @@ export interface SubstrateContextValue {
   linked: LinkedRecords
   outbox: Outbox
   cache: RecordCache
+  /** The answers of `useRead`, and the feed that keeps them current: the
+   * session's, dropped with it. */
+  reads: ReadCache
   storage: RepositoryStorage
   /** What the app calls its records in a sentence, plural: "tasks". */
   kept: string
