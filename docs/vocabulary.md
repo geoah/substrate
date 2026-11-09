@@ -1003,6 +1003,39 @@ The rules:
 Like `purpose:`, they change no write and no stored record, so editing them
 is not a narrowing.
 
+**`proposed:` says which open values wait for the owner.** A suggestion an
+agent or a sync wrote waits in a proposed value until the owner accepts it
+into an open one or dismisses it into a dropped one
+([record 0247](decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md)):
+
+```yaml
+status:
+  type: state
+  states: [proposed, open, done, abandoned]
+  initial: proposed
+  transitions:
+    - from: proposed
+      to: open
+    - from: proposed
+      to: abandoned
+    - from: open
+      to: done
+  done:
+    - done
+  dropped:
+    - abandoned
+  proposed:
+    - proposed
+```
+
+- Each entry names one of the property's own values, and none is in `done:`
+  or `dropped:`.
+- At least one value is in none of the three lists, the state a proposal is
+  accepted into.
+- A machine's initial state may be proposed, and each proposed state has a
+  transition to an open one.
+- It sits where `done:` and `dropped:` may, and changes no stored record.
+
 ## Reference properties
 
 A link can carry values of its own: where it sits in a list, what role it
