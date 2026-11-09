@@ -79,3 +79,42 @@ func TestTheApprovalPageListsTheKindsATraitScopeReachesAndSaysItGrows(t *testing
 		t.Fatalf("kinds = %v, want the kinds that bind the trait today and no other", kinds)
 	}
 }
+
+// An app's token is answered the implementors of a trait that its grant
+// reaches, each with its declaration, and no other.
+func TestAnAppTokenListsTheImplementorsItsGrantReaches(t *testing.T) {
+	e := newAppEnv(t)
+	traitScope := "write:implements(" + temporalTrait + ")"
+	app := e.grant(traitScope, []string{traitScope})
+	wantStatus(t, e.do(http.MethodGet, recordsOf(t, taskKind), app, nil, ""), http.StatusOK)
+	ds := e.svc.datasets[fakeRepository]
+	ds.mu.Lock()
+	// The person is listed among the implementors but its declaration binds
+	// nothing, so the trait scope does not reach it.
+	ds.traits[temporalTrait] = []string{taskKind, conversationKind, personKind}
+	ds.mu.Unlock()
+
+	route := "/api/v1/substrate.reamde.dev/core/trait/temporal/implementors"
+	rec := e.do(http.MethodGet, route, app, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	got := decodeJSON[substrate.OperationalList[substrate.KindInfo]](t, rec)
+	var ids []string
+	for _, k := range got.Items {
+		ids = append(ids, k.Identity)
+		if k.Definition == nil {
+			t.Fatalf("%s came without its declaration", k.Identity)
+		}
+	}
+	slices.Sort(ids)
+	if want := []string{conversationKind, taskKind}; !slices.Equal(ids, want) {
+		t.Fatalf("implementors %v, want %v", ids, want)
+	}
+
+	narrow := "write:" + taskKind
+	exact := e.grant(narrow, []string{narrow})
+	rec = e.do(http.MethodGet, route, exact, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.OperationalList[substrate.KindInfo]](t, rec); len(got.Items) != 1 || got.Items[0].Identity != taskKind {
+		t.Fatalf("an exact scope's implementors: %+v", got.Items)
+	}
+}

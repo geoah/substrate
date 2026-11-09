@@ -208,8 +208,10 @@ of `open`, anywhere" is one query over every kind that declares one.
 
 **The trait endpoint.** `GET
 /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
-that bind a trait; their records are the `implements` filter above, which is
-how the console lists every provider's `accountconfig` accounts.
+that bind a trait, each with its declaration; their records are the
+`implements` filter above, which is how the console lists every provider's
+`accountconfig` accounts. An app's token is answered the implementors its
+grant reads.
 
 **An app's trait scope.** An app may ask for every implementor at once,
 `read:implements(<trait>)` or `write:implements(<trait>)`: its token reaches

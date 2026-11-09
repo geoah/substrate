@@ -642,7 +642,8 @@ server.
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
 the records route (`GET /api/v1/records` for lists, window and aggregate
 reads and every mode of search, `POST /api/v1/records`), the record path
-(`/api/v1/{authority}/{package}/{kind}/{id}`), the unit reads, the change
+(`/api/v1/{authority}/{package}/{kind}/{id}`), the unit reads, a trait's
+implementors, the change
 feed ([follow changes](#follow-changes)), the set up check, blob storage
 and blob reads under the blob rules below, under a `call:` scope the
 function call ([run functions](#run-functions)), under an `agents:` scope
@@ -676,6 +677,10 @@ door and that trigger's parked list
   records are, and the sources an aggregate names are cut to the kinds it
   reads. Neither carries a changelog head;
 - a list carries no changelog head, in its body or in its cursor;
+- `GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists, with
+  each declaration, only the implementors the token reads, so an app over
+  every kind with a trait learns them without a scope on
+  `substrate.reamde.dev/core/kind`;
 - inbound links, property provenance and expanded referents of other kinds
   are left out of every record it receives;
 - a trigger (`substrate.reamde.dev/core/trigger`, which only an exact scope
