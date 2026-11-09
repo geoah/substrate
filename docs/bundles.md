@@ -747,8 +747,8 @@ the pair.
 **How a failure is worded.** `syncMessage`, `syncError`, a stream's
 `message` and a per-item status are read by the owner, so their first line is
 a sentence: what failed, why, and what to do about it, in the provider's own
-terms ("Notion no longer accepts the integration token. Paste a new one on the
-Notion settings."). It carries no error code, exception name, URL path or bare
+terms ("Notion no longer accepts the token. Paste a new one on the Notion
+settings."). It carries no error code, exception name, URL path or bare
 status number, and a failure that passes on its own says so. Whatever the
 provider or the library said goes on the lines after it: the console shows the
 first line and folds the rest under Technical details. A cap on the field cuts
