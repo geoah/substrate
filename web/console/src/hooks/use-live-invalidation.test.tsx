@@ -251,7 +251,10 @@ describe("useLiveRecords", () => {
   beforeEach(() => {
     watch.calls = []
   })
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
 
   function setup(from?: { head: number; generation: string }) {
     const client = new QueryClient()
@@ -285,7 +288,6 @@ describe("useLiveRecords", () => {
     act(() => watch.calls[0].onCompacted?.())
     expect(watch.calls).toHaveLength(2)
     expect(watch.calls[1].from).toBeUndefined()
-    expect(watch.calls[1].onCompacted).toBeUndefined()
     // A read sent before the stream's head is fixed could answer first.
     act(() => watch.calls[1].onStatus?.("connecting"))
     expect(invalidate).not.toHaveBeenCalled()
@@ -299,6 +301,67 @@ describe("useLiveRecords", () => {
       watch.calls[1].onStatus?.("live")
     })
     expect(invalidate).toHaveBeenCalledOnce()
+  })
+
+  it("recovers again when a replacement's reconnect is refused, re-reading once per recovery", () => {
+    vi.useFakeTimers()
+    const { invalidate } = setup({ head: 7, generation: "old" })
+    act(() => watch.calls[0].onCompacted?.())
+    act(() => watch.calls[1].onStatus?.("live"))
+    expect(invalidate).toHaveBeenCalledOnce()
+    // The replacement's bookmark, refused on a reconnect long after.
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+    act(() => watch.calls[1].onCompacted?.())
+    expect(watch.calls).toHaveLength(3)
+    expect(watch.calls[2].from).toBeUndefined()
+    expect(invalidate).toHaveBeenCalledOnce()
+    act(() => watch.calls[2].onStatus?.("live"))
+    expect(invalidate).toHaveBeenCalledTimes(2)
+    act(() => {
+      watch.calls[2].onStatus?.("retrying")
+      watch.calls[2].onStatus?.("live")
+    })
+    expect(invalidate).toHaveBeenCalledTimes(2)
+  })
+
+  it("follows a server that refuses every stream no faster than once per interval", () => {
+    vi.useFakeTimers()
+    setup({ head: 7, generation: "old" })
+    act(() => watch.calls[0].onCompacted?.())
+    act(() => watch.calls[1].onCompacted?.())
+    expect(watch.calls).toHaveLength(2)
+    act(() => {
+      vi.advanceTimersByTime(2_999)
+    })
+    expect(watch.calls).toHaveLength(2)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(watch.calls).toHaveLength(3)
+    expect(watch.calls[2].from).toBeUndefined()
+  })
+
+  it("recovers a stream that started at the head", () => {
+    const { invalidate } = setup()
+    act(() => watch.calls[0].onCompacted?.())
+    expect(watch.calls).toHaveLength(2)
+    act(() => watch.calls[1].onStatus?.("live"))
+    expect(invalidate).toHaveBeenCalledOnce()
+  })
+
+  it("opens nothing for a paced recovery once unmounted", () => {
+    vi.useFakeTimers()
+    const { hook } = setup({ head: 7, generation: "old" })
+    act(() => watch.calls[0].onCompacted?.())
+    act(() => watch.calls[1].onCompacted?.())
+    hook.unmount()
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(watch.calls).toHaveLength(2)
+    expect(watch.calls[1].stopped).toBe(true)
   })
 
   it("leaves nothing open and re-reads nothing once unmounted mid-recovery", () => {

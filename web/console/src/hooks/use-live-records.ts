@@ -50,6 +50,11 @@ export function createChangeBatcher<T>(
   }
 }
 
+/** How soon a recovery may follow the one before it: a server that refuses
+ * every stream is followed at the pace watchChanges reconnects at, never in
+ * a tight loop. */
+const RECOVER_INTERVAL_MS = 3_000
+
 /** Where a watch resumes: the `head` and `generation` of the list read whose
  * rows the surface shows. Without it the stream starts at the server's head
  * when it opens, and a row committed after the read and before that is never
@@ -85,15 +90,28 @@ export function useLiveRecords(
     const filter = { kinds: JSON.parse(kindsKey) as string[] }
     const onRow = () => batcher.push(true)
     let stopped = false
-    const start = fromRef.current
-    let handle = watchChanges({
-      from: start?.head,
-      generation: start?.generation,
-      filter,
-      onRow,
-      onStatus,
-      onCompacted: start ? () => recover() : undefined,
-    })
+    let lastRecovery = -Infinity
+    let paused: ReturnType<typeof setTimeout> | undefined
+    let handle = follow(fromRef.current, false)
+    // Every stream recovers, a replacement too: watchChanges resumes a
+    // reconnect from the stream's own bookmark, which a later history
+    // replacement refuses just as it refused the list's head.
+    function follow(from: LiveFrom | undefined, relist: boolean) {
+      let pending = relist
+      return watchChanges({
+        from: from?.head,
+        generation: from?.generation,
+        filter,
+        onRow,
+        onStatus: (status, detail) => {
+          onStatus?.(status, detail)
+          if (status !== "live" || stopped || !pending) return
+          pending = false
+          reread()
+        },
+        onCompacted: recover,
+      })
+    }
     // A position the server no longer holds (a restored repository): follow
     // from the head, and re-read once that stream is live. The server fixes
     // a stream's head before it answers, so a read sent after misses nothing,
@@ -101,21 +119,18 @@ export function useLiveRecords(
     // committed between the two unheard.
     function recover() {
       if (stopped) return
-      let relisted = false
-      handle = watchChanges({
-        filter,
-        onRow,
-        onStatus: (status, detail) => {
-          onStatus?.(status, detail)
-          if (status !== "live" || stopped || relisted) return
-          relisted = true
-          reread()
-        },
-      })
+      const wait = lastRecovery + RECOVER_INTERVAL_MS - Date.now()
+      if (wait > 0) {
+        paused = setTimeout(recover, wait)
+        return
+      }
+      lastRecovery = Date.now()
+      handle = follow(undefined, true)
     }
     return () => {
       stopped = true
       batcher.cancel()
+      clearTimeout(paused)
       handle.stop()
     }
     // The kinds and keys travel as strings so a fresh array each render does
