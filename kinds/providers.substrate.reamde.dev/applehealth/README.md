@@ -30,9 +30,12 @@ the contract; this file is not.
    Every `enabled*` toggle is on unless you turn it off.
 3. Arm the trigger. It ships disabled and without a key, because an enabled
    trigger with no key writes health records for anyone who reaches the
-   server. `substratectl get substrate.reamde.dev/core/trigger applehealth-webhook -o yaml`,
+   server, and the server refuses to turn it on without one, so the
+   console's Resume alone is refused
+   ([decision 0248](../../../docs/decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
+   `substratectl get substrate.reamde.dev/core/trigger applehealth-webhook -o yaml`,
    set `enabled: true` and `source.webhook.key` (16 to 128 characters of
-   `[A-Za-z0-9_-]`), and `substratectl apply -f` it back.
+   `[A-Za-z0-9_-]`) together, and `substratectl apply -f` it back.
    `substratectl trigger status` prints the endpoint,
    `/webhooks/<authority>/applehealth-webhook`.
 4. In the app, add a REST API automation:

@@ -1465,6 +1465,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// newer binary's records are of (recordseed.go).
 		ds.ensureShippedRecords,
 		ds.ensureTriggerCursors,
+		ds.reportOpenShippedWebhooks,
 		ds.settleInterruptedSyncs,
 		ds.settleInterruptedAgentRuns,
 		ds.clearDeadReservations,

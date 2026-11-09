@@ -1246,14 +1246,17 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.ds.validateTriggerRow(t.declarations(), sp.id, row.Props, !t.internal); err != nil {
 			return nil, err
 		}
+		tr, err := parseTrigger(sp.id, row.Props)
+		if err != nil {
+			return nil, fmt.Errorf("%w: trigger: %w", substrate.ErrValidation, err)
+		}
 		if !t.internal {
-			tr, err := parseTrigger(sp.id, row.Props)
-			if err != nil {
-				return nil, fmt.Errorf("%w: trigger: %w", substrate.ErrValidation, err)
-			}
 			if err := t.checkTriggerCallableRow(tr); err != nil {
 				return nil, err
 			}
+		}
+		if err := t.refuseOpenShippedWebhook(tr); err != nil {
+			return nil, err
 		}
 	}
 

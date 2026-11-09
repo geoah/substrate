@@ -1664,10 +1664,12 @@ trigger accepted it, and POSTs batches of their payloads to
 ```
 
 **No webhook exists until an operator writes a keyed one.** The webhook door
-checks a key only when the trigger declares one, and nothing in the engine
-refuses a keyless webhook trigger, so the bundle ships no trigger: a shipped
-disabled record would be one Resume click in the console from an open
-endpoint. The operator writes the whole `slack-live-events` record, with
+checks a key only when the trigger declares one. The server refuses to turn
+on a keyless webhook trigger a package shipped
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)),
+but this bundle ships none, so installing it opens nothing, and the trigger
+the operator writes is the operator's own, which that rule does not hold to
+a key. The operator writes the whole `slack-live-events` record, with
 `source.webhook.key` (matching `^[A-Za-z0-9_-]{16,128}$`; `openssl rand -hex
 32` prints one) and `enabled: true`, in one `substratectl apply -f`; the
 bundle's README has the document. It is the operator's record, so a
@@ -1841,9 +1843,12 @@ Nothing here calls out and there is no OAuth.
 
 **Setting it up.** Install it, create an `account` per phone with an id of
 your choosing (`iphone`), then set `source.webhook.key` (16 to 128 characters
-of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger:
-an enabled trigger with no key would write health records for anyone who
-reaches the server. In the app's automation, the URL is
+of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger
+in one write: an enabled trigger with no key would write health records for
+anyone who reaches the server, so the server refuses to turn it on without
+one
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
+In the app's automation, the URL is
 `https://<your-substrate-host>/webhooks/<authority>/applehealth-webhook`
 (`substratectl trigger status` prints the path), the headers are
 `Authorization: Bearer <key>` and `X-Substrate-Account: <account id>`, the
@@ -2209,7 +2214,10 @@ the capture came from the Double click & hold gesture. It requires
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
 `<authority>` is the repository's own authority;
 `substratectl trigger status` prints the path in its `WEBHOOK` column. It is
-open as shipped, and setting `source.webhook.key` on the `pebble-webhook`
+open as shipped: the import makes it the repository's own trigger, which the
+server does not hold to a key the way it holds a provider's
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
+Setting `source.webhook.key` on the `pebble-webhook`
 trigger (16 to 128 characters of `[A-Za-z0-9_-]`) makes the server require that
 key as a trailing path segment, as `?key=<key>`, or as a bearer token
 ([functions](functions.md#triggers)). In the Index app (Settings, Webhook),
