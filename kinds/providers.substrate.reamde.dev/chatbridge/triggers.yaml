@@ -1,0 +1,24 @@
+# The chat bridge's delivery wiring: one webhook trigger, an ordinary data
+# record of core's `trigger` kind.
+#
+#   chat bridge  --POST /webhooks/<authority>/chatbridge-events-->  chatevents
+#
+# It ships DISABLED and without a key, because an enabled trigger with no key
+# writes chat rows for anyone who can reach the server. Approving the bridge's
+# authorization request turns it on and gives it a key (decision record
+# 0202), and the bridge delivers with its own token, which its `webhook:`
+# scope admits in place of the key. A re-install or an upgrade keeps the key
+# and the switch the owner's approval set.
+#
+# `maxBody` is left at the door's 1 MiB default, the bound on the batch JSON;
+# a multipart request may carry 32 MiB, its files in the blob store.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: chatbridge-events
+data:
+  properties:
+    enabled: false
+    label: Chat bridge events
+    source:
+      webhook: {}
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/chatbridge/chatevents

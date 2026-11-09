@@ -291,3 +291,36 @@ data:
     phones:
       path: phoneNumber
       merge: union
+---
+# The number first, as for Beeper: WhatsApp keys a person on an id that moved
+# from their number to a LID, so one person can be two chat bridge rows, and
+# the number is what joins them.
+kind: substrate.reamde.dev/core/recordmapping
+metadata:
+  id: substrate.reamde.dev/core/chatbridgeuser
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    Links someone seen through the chat bridge to the contact they are, found
+    by their numbers, then their addresses, then their full name, and copies
+    the name, the addresses and the numbers.
+  from: providers.substrate.reamde.dev/chatbridge/user
+  to: substrate.reamde.dev/core/contact
+  property: contact
+  match:
+    - from: phoneNumbers
+      to: phones
+    - from: emails
+      to: emails
+    - from: fullName
+      to: name
+  map:
+    name:
+      path: fullName
+    emails:
+      path: emails
+      merge: union
+    phones:
+      path: phoneNumbers
+      merge: union

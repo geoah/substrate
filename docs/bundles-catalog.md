@@ -1,14 +1,14 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-five bundles, in the two tiers
+The catalog in the binary serves twenty-six bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fifteen in the published tier (eleven providers and four well-known
+draws: sixteen in the published tier (twelve providers and four well-known
 catalogues) and ten samples. The tier says only who keeps a package; each
 entry also says whether it is a provider, what it brings and which provider
 an add-on extends
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)),
 so the console lists the providers on Providers and offers the catalogues as
-standard collections under Add a collection. This page covers the eleven
+standard collections under Add a collection. This page covers the twelve
 providers and four of the samples; the catalogues (`health`, `labs`, `environment` and
 `clinical`, under `substrate.reamde.dev`,
 [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md),
@@ -16,11 +16,13 @@ providers and four of the samples; the catalogues (`health`, `labs`, `environmen
 and the vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 `scheduling`) are in [built-in kinds](builtin-kinds.md).
 
-**Eleven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack,
-Slack live events, Apple, Apple Health and Firecrawl. Each is a package its
-publisher owns, installed under `providers.substrate.reamde.dev` and upgraded
-there. Seven sync from the provider into the repository. Firecrawl syncs
-nothing: its two functions are tools an agent calls. Slack live events applies
+**Twelve providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, the chat
+bridge, Slack, Slack live events, Apple, Apple Health and Firecrawl. Each is a
+package its publisher owns, installed under `providers.substrate.reamde.dev`
+and upgraded there. Seven sync from the provider into the repository. Firecrawl
+syncs nothing: its two functions are tools an agent calls. The chat bridge
+applies what its own program, which signs in to each chat network as the
+owner, pushes to a webhook. Slack live events applies
 Slack's pushed events to the Slack bundle's rows and needs that bundle
 ([0168](decisions/0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md)).
 Apple's records are pushed by an app on the owner's device, so its package
@@ -36,7 +38,10 @@ sync spends and writes no record; what it sent reaches the mirror only when
 the sync's own discovery reads it back, which it does not always do (see each
 write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
-Do not treat the mirror as confirmation that a send happened.
+Do not treat the mirror as confirmation that a send happened. The chat
+bridge writes the other way: what the owner or an agent asks is a
+`chataction` record the bridge carries out and reports back on
+([0252](decisions/0252-what-the-owner-or-an-agent-does-in-a-chat-is-a-chataction-the-bridge-carries-out-behind-a-shipped-gate.md)).
 
 **Four samples**: LLM, notes, the reading list and Pebble.
 Garmin and Google Fit providers, with their health adapters, are planned and
@@ -88,10 +93,12 @@ thing, and the Records column counts them.
 | WHOOP         | Published | OAuth          | 7     | 3         | 10      | 0      |
 | Notion        | Published | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Published | Pasted token   | 9     | 2         | 3       | 0      |
+| Chat bridge   | Published | App token      | 7     | 7         | 4       | 0      |
 | Slack         | Published | User token     | 9     | 2         | 3       | 0      |
+| Slack live events | Published | User token | 0     | 1         | 2       | 0      |
 | Apple         | Published | Owner token    | 10    | 0         | 0       | 0      |
 | Apple Health  | Published | Webhook key    | 10    | 2         | 2       | 0      |
-| Firecrawl     | Published | API key        | 1     | 2         | 2       | 0      |
+| Firecrawl     | Published | API key        | 1     | 2         | 3       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 3      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
@@ -1363,6 +1370,75 @@ the network confirms the send. It writes no record: the confirmed message
 reaches the `message` mirror when the sync next reads its chat. A Beeper refusal fails the
 call with Beeper's status and message. Redirects are refused rather than
 followed.
+
+## Chat bridge
+
+Package `providers.substrate.reamde.dev/chatbridge`. Every chat network the
+chat bridge program signs in to as the owner (WhatsApp first), mirrored into
+one set of kinds whatever the network: the network is a property
+([0251](decisions/0251-one-provider-package-carries-every-chat-network-and-the-network-is-a-property.md)).
+The bridge is a separate program that runs beside the server, at home or on a
+Mac, and dials out: it POSTs one batch of events at a time to the
+`chatbridge-events` webhook, and follows the change feed for the requests it
+carries out. Nothing here calls out, and the server never reaches the
+bridge. The package's [README](../kinds/providers.substrate.reamde.dev/chatbridge/README.md)
+is the contract a bridge builds from: the batch and its JSON Schema, the
+events, the ids, the merge rules and the action protocol.
+
+- **Kinds (7)**: `instance` (one running bridge and how far its stream has
+  applied), `account` (one sign-in on one network, binding the `sync` trait),
+  and the mirrors `user`, `chat`, `message` (its sent instant bound as `at`)
+  and `messageattachment` (one file, its bytes a blob), beside `chataction`
+  (one thing the owner or an agent asked to be done in a chat, and what came
+  of it).
+- **Functions (7)**: `chatevents` applies one webhook delivery, and the six
+  agent tools `send`, `react`, `unreact`, `edit`, `delete` and `markread`
+  (offered as `chatbridge_send` and so on) each write one `chataction`.
+- **Triggers (1)**: `chatbridge-events`, a webhook shipped disabled and
+  without a key.
+- **Other records (3)**: the `chatbridge-agent-actions` gate policy, and the
+  record views of a chat and an account.
+- **Mappings**: core's `chatbridgeuser` maps a `user` onto a contact, by its
+  numbers, then its addresses, then its name
+  ([0232](decisions/0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md)).
+
+**Approving a bridge.** The bridge is an app
+([apps](apps.md#ask-for-set-up)). Its request asks for
+`write:providers.substrate.reamde.dev/chatbridge/*` and
+`write:providers.substrate.reamde.dev/chatbridge/instance` (an `internal`
+kind no glob reaches), with a `package` detail for this package at version 1
+and a `webhook` detail for `chatbridge-events`. Approving installs the
+package, keys and turns on the webhook, and puts `webhook:chatbridge-events`
+on the token, which then delivers in place of the key. Every instance an owner
+approves reaches every account of the package: instances are trusted
+programs of the same owner
+([0250](decisions/0250-a-chat-bridge-is-an-app-whose-instances-trust-each-other-and-delivers-one-ordered-stream-per-instance.md)).
+
+**What a delivery writes.** One request is a `batch` text part and one file
+part per medium; the door stores each file as a blob first. The instance
+row's `appliedSeq` is the applied watermark: an event at or below it is left
+alone, a batch that does not continue it fails the delivery until the one
+before it applies, and the batch moves it in the same write under the version
+it read. An event the function cannot apply is skipped and counted on the
+instance (`skippedEvents`, `lastSkipped`). Accounts appear when the owner
+signs in on the bridge's host, and only `account.upsert` creates one, so the
+owner cannot. Row ids are `host.ids.external(network, login id, …)`, so a
+sign-in moved to a new instance keeps its chats.
+
+**What the owner or an agent asks.** A send, a reaction or its removal, an
+edit, a delete or a read mark is a `chataction` row: the bridge claims it,
+carries it out once, and reports `done`, `failed`, `uncertain` or `expired`,
+or refuses it before a claim as `failed`, `expired` or `cancelled`. The shipped gate holds every agent
+write of one as a change request for the owner, and the owner lets one agent
+do one thing unasked with an allow that names the gate
+([0108](decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)).
+`allowNewChat` and `cancelRequestedAt`, like the account's settings, are
+`writer: owner`.
+
+**Unlinking and disconnecting.** Stamping an account's `unlinkRequestedAt`
+signs it out of its network and keeps its chats and messages; deleting the
+account row (Disconnect) deletes every chat and message it brought in, which
+cascade from it, and the bridge reads the deletion as an unlink too.
 
 ## Slack
 

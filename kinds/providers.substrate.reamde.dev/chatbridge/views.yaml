@@ -1,0 +1,95 @@
+# The chat bridge's record pages as data (decision record 0166): a chat
+# reads as a conversation whose composer writes chataction records, and an
+# account as its connection, its instance and the owner's settings.
+#
+# `time` is `at`: a message's sent instant is the temporal trait's hot
+# column, because a binding maps the trait onto a hot column alone.
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/chat
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/chat
+    name: Messages
+    sections:
+      - conversation:
+          kind: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/message
+          via: chat
+          time: at
+          sender: sender
+          mine: fromOwner
+          text: text
+          replyTo: replyTo
+          edited: editedAt
+          deleted: deleted
+          status: sendStatus
+          reactions: reactions
+          attachments: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/messageattachment
+          attachmentVia: message
+          attachmentFile: file
+          readUpTo: readUpTo
+          compose:
+            kind: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/chataction
+            via: chat
+            verb: action
+            send: send
+            react: react
+            markRead: markread
+            text: text
+            replyTo: replyTo
+            target: target
+            reaction: reactionKey
+            state: state
+            cancel: cancelRequestedAt
+            cancelIn: [queued]
+            retryIn: [failed, uncertain]
+            error: errorMessage
+            confirm: allowNewChat
+            peer: otherUser
+            peerKnown: isContact
+---
+kind: substrate.reamde.dev/console/recordview
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/account
+data:
+  properties:
+    appliesTo: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/account
+    name: Connection
+    fold:
+      - network
+      - remoteName
+      - handle
+      - phoneNumber
+      - connectionState
+      - connectionMessage
+      - warnings
+      - instance
+    sections:
+      - properties:
+          list:
+            - property: network
+            - property: remoteName
+            - property: handle
+            - property: phoneNumber
+            - property: connectionState
+            - property: connectionMessage
+            - property: warnings
+      - table:
+          label: Runs on
+          kind: substrate.reamde.dev/core/kind/providers.substrate.reamde.dev/chatbridge/instance
+          property: instance
+          columns: [instanceName, version, networks, lastSeenAt, appliedSeq,
+            skippedEvents, lastSkipped]
+      - properties:
+          label: Your settings
+          list:
+            - property: displayName
+            - property: downloadMedia
+            - property: sendsPerHour
+            - property: sendsPerDay
+      - request:
+          label: Unlink this account
+          property: unlinkRequestedAt
+          confirm: The chat bridge signs this account out of its network.
+            Its chats and messages stay here; disconnecting the account deletes
+            them too.

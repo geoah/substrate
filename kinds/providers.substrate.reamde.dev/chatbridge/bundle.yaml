@@ -1,0 +1,2983 @@
+# The chat bridge provider: every chat network the chat bridge program signs
+# in to as the owner (cmd/chatbridge, a separate AGPL program), mirrored into
+# one set of kinds, and what the owner or an agent asks to be done in a chat,
+# carried out by the bridge.
+#
+# THE BRIDGE DIALS OUT. It POSTs one batch of events at a time to the
+# `chatbridge-events` webhook (triggers.yaml), which `chatevents` applies, and
+# it follows the change feed for the `chataction` rows the owner and agents
+# write. The server never reaches the bridge. README.md is the contract: the
+# batch, the events, the ids, the merge rules and the action protocol.
+#
+# ONE PACKAGE FOR EVERY NETWORK (decision record 0251). A WhatsApp chat and a
+# Signal chat are one kind because the bridge's contract makes them one
+# shape; the network is a property, never a name prefix.
+#
+# WHAT ONLY THE OWNER WRITES. An account's settings are `writer: owner`, so no
+# app token, function or agent writes them, and an action's `allowNewChat` and
+# `cancelRequestedAt` the same. Every agent write of a `chataction` is held for
+# the owner by the shipped `chatbridge-agent-actions` policy (policies.yaml,
+# decision record 0252).
+#
+# THE PAGES ARE DATA. The console names no provider's kinds (decision record
+# 0166), so how a chat and an account read is the record views this package
+# ships (views.yaml).
+#
+# Install:   substratectl install providers.substrate.reamde.dev/chatbridge,
+#            or approve the chat bridge's authorization request, which also
+#            keys and turns on its webhook.
+# ---- the owned package ----------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  # 1: the seven kinds, `chatevents` on the `chatbridge-events` webhook, the
+  # six agent tools and the gate policy that holds their writes (decision
+  # records 0250, 0251 and 0252).
+  version: 1
+---
+# ---- the bundle document: the install unit --------------------------------
+# No inputs and no OAuth: the bridge authenticates with its app token, and
+# the accounts are rows its deliveries write.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Keeps a copy of your chats on the networks the chat bridge signs in to
+    as you, and sends, reacts, edits and deletes when you ask, or when an
+    agent asks and you approve.
+  installs:
+    - providers.substrate.reamde.dev/chatbridge/instance
+    - providers.substrate.reamde.dev/chatbridge/account
+    - providers.substrate.reamde.dev/chatbridge/user
+    - providers.substrate.reamde.dev/chatbridge/chat
+    - providers.substrate.reamde.dev/chatbridge/message
+    - providers.substrate.reamde.dev/chatbridge/messageattachment
+    - providers.substrate.reamde.dev/chatbridge/chataction
+    - providers.substrate.reamde.dev/chatbridge/chatevents
+    - providers.substrate.reamde.dev/chatbridge/send
+    - providers.substrate.reamde.dev/chatbridge/react
+    - providers.substrate.reamde.dev/chatbridge/unreact
+    - providers.substrate.reamde.dev/chatbridge/edit
+    - providers.substrate.reamde.dev/chatbridge/delete
+    - providers.substrate.reamde.dev/chatbridge/markread
+  modules:
+    chatbridge_actions.py: |
+      """What the six chat bridge tools share: the records they read, and the one
+      chataction each writes.
+
+      A tool runs as the agent that called it, and an agent names a new record of
+      a kind that is not internal by a minted id alone (decision 0228), so the
+      action's id is minted from the call's idempotency key: a retried call names
+      the same action and writes nothing new. The write is a create and nothing
+      else, so a retry never resets an action the bridge has since claimed.
+      """
+
+      PKG = "providers.substrate.reamde.dev/chatbridge/"
+      CHAT = PKG + "chat"
+      MESSAGE = PKG + "message"
+      ACTION = PKG + "chataction"
+      MAX_TEXT = 65536
+
+
+      def record_id(value, kind, what):
+          """A record id from a tool argument: the bare id, or the record's path."""
+          if not isinstance(value, str) or not value.strip():
+              raise ValueError("%s is required: the id of a %s record" % (what, kind))
+          value = value.strip()
+          if value.startswith(kind + "/"):
+              value = value[len(kind) + 1:]
+          if not value or "/" in value:
+              raise ValueError("%s %r is not the id of a %s record" % (what, value, kind))
+          return value
+
+
+      def read(host, kind, rid, what):
+          rec = host.records.get(kind, rid)
+          if not rec or rec.get("deletedAt"):
+              raise ValueError("%s %s is not a %s this repository holds" % (what, rid, kind))
+          return rec
+
+
+      def chat(host, args, what="chat"):
+          return read(host, CHAT, record_id(args.get(what), CHAT, what), what)
+
+
+      def message(host, args, what="message"):
+          return read(host, MESSAGE, record_id(args.get(what), MESSAGE, what), what)
+
+
+      def chat_of(msg):
+          """The chat a message is in, as the path its reference holds."""
+          v = (msg.get("properties") or {}).get("chat")
+          path = v.get("ref") if isinstance(v, dict) else v
+          if not isinstance(path, str) or not path.startswith(CHAT + "/"):
+              raise ValueError("message %s names no chat" % msg.get("id"))
+          return path
+
+
+      def in_chat(msg, chat_path, what):
+          if chat_of(msg) != chat_path:
+              raise ValueError("%s %s is not in chat %s" % (what, msg.get("id"), chat_path))
+
+
+      def text(args, what="text"):
+          v = args.get(what)
+          if not isinstance(v, str) or not v.strip():
+              raise ValueError("%s is required and may not be empty" % what)
+          if len(v) > MAX_TEXT:
+              raise ValueError("%s is longer than %d characters" % (what, MAX_TEXT))
+          return v.replace("\x00", "")
+
+
+      def reaction_key(args):
+          v = args.get("reactionKey")
+          if not isinstance(v, str) or not v.strip():
+              raise ValueError("reactionKey is required: the emoji, or the network's own key")
+          return v.strip()
+
+
+      def ask(input, host, name, props):
+          """Write the one chataction, and answer its id."""
+          key = input.get("idempotencyKey")
+          if not isinstance(key, str) or not key:
+              raise RuntimeError("the call carries no idempotency key to name its action by")
+          aid = host.ids.minted("chatbridge", name, key)
+          host.effects.put(ACTION, aid, properties=props, if_absent=True)
+          return {"output": {"action": aid}}
+---
+# ---- one running bridge -----------------------------------------------------
+# `appliedSeq` is the stream's applied watermark: `chatevents` applies a batch
+# only when it continues it, and moves it in the batch's own transaction under
+# the version it read (README.md, "Delivery").
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/instance
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One running copy of the chat bridge program, which signs in to chat networks
+    as you and delivers what happens there: its name, its build, the networks
+    it can run, and how far its stream of events has been applied.
+  purpose: internal
+  names:
+    singular: instance
+  label:
+    singular: Bridge instance
+    plural: Bridge instances
+  displayTemplate: "{instanceName|instanceId}"
+  properties:
+    instanceId:
+      type: string
+      required: true
+      writer: connector
+      displayName: Instance ID
+      description: the id the bridge minted when its store was created; a
+        bridge that lost its store starts again under a new one
+    instanceName:
+      type: string
+      writer: connector
+      displayName: Name
+      description: the name the bridge was given where it runs
+    version:
+      type: string
+      writer: connector
+      displayName: Build
+      description: the bridge build that last said hello
+    networks:
+      type: object
+      repeated: true
+      writer: connector
+      displayName: Networks
+      description: the networks this bridge can sign in to
+      fields:
+        network:
+          type: string
+          description: the network's id in the bridge's events, such as whatsapp
+        displayName:
+          type: string
+          description: the network's name for a person, such as WhatsApp
+    appliedSeq:
+      type: int
+      writer: connector
+      displayName: Applied through
+      description: the sequence number of the last event applied; the bridge
+        sends its next batch once this reaches the last one it sent
+    skippedEvents:
+      type: int
+      writer: connector
+      displayName: Skipped events
+      description: how many events were skipped because this package could
+        not apply them
+    lastSkipped:
+      type: string
+      writer: connector
+      displayName: Last skipped
+      description: the last skipped event and why
+    lastSeenAt:
+      type: datetime
+      writer: connector
+      displayName: Last delivery
+      description: when a delivery from this bridge last arrived, written
+        at most every five minutes
+---
+# ---- one sign-in on one network ---------------------------------------------
+# The connection the provider page lists. It binds `sync` but not
+# `accountconfig`: the engine lets only the owner create an accountconfig
+# record (write.go checkBundleOwnerGate), and these are created by the
+# deliveries when the owner signs in on the bridge. The function stamps the
+# sync properties itself, because a webhook fire names no record.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One sign-in on one chat network through the chat bridge, such as your
+    WhatsApp: its state and the network's warnings, who you are there, and
+    your settings for it. Deleting it drops every chat and message it brought
+    in, and the bridge signs out.
+  purpose: supporting
+  names:
+    singular: account
+  traits:
+    - substrate.reamde.dev/core/sync
+  displayTemplate: "{displayName|remoteName|handle|loginId}"
+  properties:
+    network:
+      type: string
+      required: true
+      writer: connector
+      displayName: Network
+      description: the network's id in the bridge's events, such as whatsapp
+    loginId:
+      type: string
+      required: true
+      writer: connector
+      displayName: Login ID
+      description: the bridge's id for this sign-in, which the ids of every
+        row it brought in are composed from
+    instance:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/instance
+      writer: connector
+      displayName: Runs on
+      description: the bridge instance that runs this sign-in; absent once
+        the bridge signed out and forgot it
+    remoteName:
+      type: string
+      writer: connector
+      displayName: Name on the network
+      description: the name the network shows for you
+    handle:
+      type: string
+      writer: connector
+      displayName: Handle
+      description: your handle on the network, where it has one
+    phoneNumber:
+      type: string
+      writer: connector
+      displayName: Phone
+      description: the number this sign-in is registered to, where the network
+        has one
+    user:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/user
+      writer: connector
+      displayName: You
+      description: your own person on this network, the sender of what you
+        send
+    connectionState:
+      type: enum
+      writer: connector
+      displayName: Connection
+      description: the bridge's last report of the connection
+      values:
+        - value: connecting
+          label: Connecting
+        - value: connected
+          label: Connected
+        - value: transientdisconnect
+          label: Reconnecting
+        - value: badcredentials
+          label: Signed out by the network
+        - value: loggedout
+          label: Logged out
+        - value: banned
+          label: Banned
+        - value: unknownerror
+          label: Error
+    connectionMessage:
+      type: string
+      writer: connector
+      displayName: Connection message
+      description: what the network or the bridge said about the connection,
+        in its own words
+    warnings:
+      type: object
+      repeated: true
+      writer: connector
+      displayName: Warnings
+      description: limits the network put on this account, which stop all
+        sending on it while they last
+      fields:
+        code:
+          type: enum
+          description: which limit
+          values:
+            - value: phoneoffline
+              label: Phone offline
+            - value: temporaryban
+              label: Temporarily banned
+            - value: reachouttimelock
+              label: New chats paused
+            - value: clientoutdated
+              label: Bridge out of date
+            - value: floodwait
+              label: Sending slowed down
+            - value: checkpoint
+              label: Account check needed
+        message:
+          type: string
+          description: the network's own words for it
+        until:
+          type: datetime
+          description: when it lifts, where the network says
+    # The owner's settings, which the bridge reads and nothing else writes.
+    displayName:
+      type: string
+      writer: owner
+      displayName: Name
+      description: a name for this account, shown wherever it is listed
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: while true the bridge mirrors nothing from this account
+        and sends nothing through it
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: stamp it with the current time to have the bridge catch
+        this account up now
+    downloadMedia:
+      type: enum
+      writer: owner
+      displayName: Download media
+      description: which files the bridge fetches; small is images and voice
+        notes up to 5 MiB, and absent reads as small
+      values:
+        - value: none
+          label: None
+        - value: small
+          label: Small files
+        - value: all
+          label: Everything
+    sendsPerHour:
+      type: int
+      min: 0
+      writer: owner
+      displayName: Sends per hour
+      description: the most messages the bridge sends through this account
+        in an hour; absent reads as 30
+    sendsPerDay:
+      type: int
+      min: 0
+      writer: owner
+      displayName: Sends per day
+      description: the most messages the bridge sends through this account
+        in a day; absent reads as 200
+    unlinkRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Unlink requested
+      description: stamp it to have the bridge sign out of this account and
+        forget it; the chats and messages stay, where deleting the account
+        deletes them
+    # The sync trait's connector hands, stamped by chatevents.
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: "from the connection: ok when connected, running while
+        it connects, throttled while it is down for a moment, erroring when
+        it needs you"
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: the network's words on the connection, its first warning's
+        where it gave one
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when a delivery last carried an event of this account,
+        written at most every five minutes
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: "sync trait contract, unwritten: the account syncs as a
+        stream, not in runs"
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: "sync trait contract, unwritten: the account syncs as a
+        stream, not in runs"
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request served
+      description: equals syncRequestedAt once the bridge reported its history
+        complete after the request
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: "{phase, pending} while the bridge is still fetching history;
+        cleared when it is complete"
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: what needs your hand, in the network's words, while the
+        connection is signed out, banned or failing; cleared once it connects
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written; cleared with it
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: "history, as {state, lastAt, pending}: how far back the
+        bridge has fetched, and how many chats it has left"
+---
+# ---- one person, as one sign-in sees them -----------------------------------
+# The kind the contact mapping reads (core's `chatbridgeuser`): the numbers,
+# the addresses and the name. WhatsApp's two ids for one person are two rows,
+# which the mapping joins on the number.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/user
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Someone on a chat network, as one of your sign-ins sees them: their names,
+    handle, numbers and addresses, and whether they are in your address book
+    there. The same person seen through two sign-ins is two records, which
+    contacts join.
+  purpose: supporting
+  names:
+    singular: user
+  displayTemplate: "{fullName|contactName|handle|userId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/account
+      required: true
+      onDelete: cascade
+      writer: connector
+      displayName: Account
+      description: the sign-in this person was seen through
+    network:
+      type: string
+      required: true
+      writer: connector
+      displayName: Network
+      description: the network's id in the bridge's events, such as whatsapp
+    userId:
+      type: string
+      required: true
+      writer: connector
+      displayName: User ID
+      description: the network's id for this person, as the bridge sends it
+    fullName:
+      type: string
+      writer: connector
+      displayName: Name
+      description: the name the network shows for this person
+    handle:
+      type: string
+      writer: connector
+      displayName: Handle
+      description: their handle on the network, where it has one
+    phoneNumbers:
+      type: string
+      repeated: true
+      writer: connector
+      displayName: Phones
+      description: their numbers, as the network gives them
+    emails:
+      type: email
+      repeated: true
+      writer: connector
+      displayName: Emails
+      description: their addresses, where the network gives any
+    isBot:
+      type: bool
+      writer: connector
+      displayName: Bot
+      description: the network marks this account as automated
+    isSelf:
+      type: bool
+      writer: connector
+      displayName: You
+      description: this is your own person on the network
+    contactName:
+      type: string
+      writer: connector
+      displayName: Contact name
+      description: the name you saved them under in the network's address
+        book
+    isContact:
+      type: bool
+      writer: connector
+      displayName: In your contacts
+      description: they are in your address book on the network
+    avatar:
+      type: blobref
+      mediaTypes: [image/*]
+      writer: connector
+      displayName: Avatar
+      description: their picture, once the bridge fetched it
+---
+# ---- one conversation -------------------------------------------------------
+# No temporal trait: `lastActivityAt` is a mutation mark, not when the chat
+# began. Members are a reference with the membership on the link, because a
+# role in one chat belongs to neither the chat nor the person.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/chat
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One conversation on a chat network through the chat bridge: a direct chat,
+    a group, a channel or a space, with its members, its settings, what the
+    network lets you do in it, and how far you have read it.
+  names:
+    singular: chat
+  displayTemplate: "{chatName|otherUser.fullName|otherUser.handle|chatId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/account
+      required: true
+      onDelete: cascade
+      writer: connector
+      displayName: Account
+      description: the sign-in this chat belongs to
+    network:
+      type: string
+      required: true
+      writer: connector
+      displayName: Network
+      description: the network's id in the bridge's events, such as whatsapp
+    chatId:
+      type: string
+      required: true
+      writer: connector
+      displayName: Chat ID
+      description: the network's id for this chat, as the bridge sends it
+    category:
+      type: enum
+      writer: connector
+      displayName: Kind of chat
+      description: a direct chat with one person, a group, a channel you follow,
+        or a space that holds chats
+      values:
+        - value: direct
+          label: Direct
+        - value: group
+          label: Group
+        - value: channel
+          label: Channel
+        - value: space
+          label: Space
+    chatName:
+      type: string
+      writer: connector
+      displayName: Name
+      description: the chat's name, where it has one; a direct chat takes
+        the other person's
+    topic:
+      type: text
+      writer: connector
+      displayName: Topic
+      description: the chat's topic or description, where it has one
+    avatar:
+      type: blobref
+      mediaTypes: [image/*]
+      writer: connector
+      displayName: Avatar
+      description: the chat's picture, once the bridge fetched it
+    otherUser:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/user
+      writer: connector
+      displayName: With
+      description: the other person in a direct chat
+    members:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/user
+      repeated: true
+      writer: connector
+      displayName: Members
+      description: everyone in the chat or invited to it; someone who left
+        or was banned is no longer listed
+      properties:
+        membership:
+          type: enum
+          description: joined, or invited and not joined yet
+          values:
+            - value: join
+              label: Joined
+            - value: invite
+              label: Invited
+        role:
+          type: enum
+          description: what they may do in this chat
+          values:
+            - value: member
+              label: Member
+            - value: admin
+              label: Admin
+            - value: owner
+              label: Owner
+    mutedUntil:
+      type: datetime
+      writer: connector
+      displayName: Muted until
+      description: notifications are off for this chat until then
+    archived:
+      type: bool
+      writer: connector
+      displayName: Archived
+      description: you archived this chat
+    pinned:
+      type: bool
+      writer: connector
+      displayName: Pinned
+      description: you pinned this chat
+    markedUnread:
+      type: bool
+      writer: connector
+      displayName: Marked unread
+      description: you marked this chat unread by hand
+    readOnly:
+      type: bool
+      writer: connector
+      displayName: Read-only
+      description: you cannot send here, such as in a channel or a group you
+        left
+    messageRequest:
+      type: bool
+      writer: connector
+      displayName: Message request
+      description: someone you have not accepted wrote to you here
+    disappearAfterSeconds:
+      type: int
+      writer: connector
+      displayName: Disappearing after (s)
+      description: the network removes messages this many seconds after they
+        are sent; nothing here acts on it
+    parent:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/chat
+      writer: connector
+      displayName: In
+      description: the space this chat belongs to, where the network has spaces
+    features:
+      type: object
+      writer: connector
+      displayName: What the network allows
+      description: what the network lets you do in this chat, as the bridge
+        reads it; the bridge checks an action against it
+      fields:
+        edit:
+          type: bool
+          description: you can edit your messages
+        editMaxAgeSeconds:
+          type: int
+          description: how old a message may be and still be edited, in seconds
+        deleteForEveryone:
+          type: bool
+          description: you can delete a message for everyone
+        deleteMaxAgeSeconds:
+          type: int
+          description: how old a message may be and still be deleted for everyone,
+            in seconds
+        reactions:
+          type: bool
+          description: you can react to messages
+        allowedReactions:
+          type: string
+          repeated: true
+          description: the reactions the network allows, where it limits them
+        replies:
+          type: bool
+          description: you can reply to one message
+        threads:
+          type: bool
+          description: messages can start threads
+        readReceipts:
+          type: bool
+          description: the network shows others what you read
+        typing:
+          type: bool
+          description: the network shows others when you type
+        maxTextLength:
+          type: int
+          description: the longest message the network takes, in characters
+    lastActivityAt:
+      type: datetime
+      writer: connector
+      displayName: Last activity
+      description: when something last happened here; a page of history never
+        moves it back
+    readUpTo:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      writer: connector
+      displayName: Read up to
+      description: the last message you read here, on any of your devices
+    sourceSeq:
+      type: int
+      writer: connector
+      displayName: Event
+      description: the sequence number of the bridge event that last changed
+        this chat
+---
+# ---- one message --------------------------------------------------------------
+# `at`, through temporal(point), is when the message was sent: a binding maps
+# the trait onto a hot column alone, so there is no `sentAt` beside it. The
+# text parts of one network message fold into `text`; its files are
+# `messageattachment` rows.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/message
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One message in one chat, on whatever network the chat is on: who sent
+    it and when, its text, what it replies to, its reactions, and whether
+    it was edited or deleted. Its files are its attachments.
+  names:
+    singular: message
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{sender.fullName|sender.handle}: {text|content}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/account
+      required: true
+      onDelete: cascade
+      writer: connector
+      displayName: Account
+      description: the sign-in this message came through
+    chat:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/chat
+      required: true
+      onDelete: cascade
+      writer: connector
+      displayName: Chat
+      description: the chat this message is in
+    network:
+      type: string
+      required: true
+      writer: connector
+      displayName: Network
+      description: the network's id in the bridge's events, such as whatsapp
+    messageId:
+      type: string
+      required: true
+      writer: connector
+      displayName: Message ID
+      description: the network's id for this message, unique within its chat
+    sender:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/user
+      writer: connector
+      displayName: From
+      description: who sent it
+    fromOwner:
+      type: bool
+      writer: connector
+      displayName: From you
+      description: you sent it, from any of your devices
+    content:
+      type: enum
+      writer: connector
+      displayName: Content
+      description: what the message is, such as text, an image or a voice
+        note
+      values:
+        - value: text
+          label: Text
+        - value: notice
+          label: Notice
+        - value: emote
+          label: Emote
+        - value: image
+          label: Image
+        - value: video
+          label: Video
+        - value: audio
+          label: Audio
+        - value: voice
+          label: Voice note
+        - value: file
+          label: File
+        - value: sticker
+          label: Sticker
+        - value: location
+          label: Location
+        - value: poll
+          label: Poll
+        - value: unsupported
+          label: Not shown here
+    text:
+      type: text
+      embed: true
+      writer: connector
+      displayName: Text
+      description: the message's words as markdown; cleared when it was deleted
+        for everyone
+    editedAt:
+      type: datetime
+      writer: connector
+      displayName: Edited
+      description: when it was last edited
+    editCount:
+      type: int
+      writer: connector
+      displayName: Edits
+      description: how many times it was edited; a page of history never lowers
+        it, so an older copy cannot undo an edit
+    replyTo:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      writer: connector
+      displayName: In reply to
+      description: the message this one replies to
+    threadRoot:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      writer: connector
+      displayName: Thread
+      description: the message that started the thread this one is in
+    mentions:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/user
+      repeated: true
+      writer: connector
+      displayName: Mentions
+      description: the people it names
+    mentionsEveryone:
+      type: bool
+      writer: connector
+      displayName: Mentions everyone
+      description: it names everyone in the chat at once
+    forwarded:
+      type: bool
+      writer: connector
+      displayName: Forwarded
+      description: it was forwarded from another chat
+    expiresAt:
+      type: datetime
+      writer: connector
+      displayName: Disappears at
+      description: when the network removes it; nothing here acts on it
+    reactions:
+      type: object
+      repeated: true
+      writer: connector
+      displayName: Reactions
+      description: everyone's reactions, the whole set the bridge holds; an
+        object because one person may react more than once
+      fields:
+        key:
+          type: string
+          description: the reaction, an emoji or the network's own key
+        user:
+          type: reference
+          kind: providers.substrate.reamde.dev/chatbridge/user
+          description: who reacted
+        reactedAt:
+          type: datetime
+          description: when they reacted, where the network says
+    deleted:
+      type: enum
+      writer: connector
+      displayName: Deleted
+      description: deleted for everyone, which clears its text and files,
+        or by you on another device, which keeps them
+      values:
+        - value: everyone
+          label: For everyone
+        - value: owner
+          label: For you
+    deletedAt:
+      type: datetime
+      writer: connector
+      displayName: Deleted at
+      description: when it was deleted
+    sendStatus:
+      type: enum
+      writer: connector
+      displayName: Status
+      description: how far one of your messages got
+      values:
+        - value: sent
+          label: Sent
+        - value: delivered
+          label: Delivered
+        - value: read
+          label: Read
+        - value: failed
+          label: Failed
+    backfilled:
+      type: bool
+      writer: connector
+      displayName: From history
+      description: it arrived in a page of history, not as it happened
+    sourceSeq:
+      type: int
+      writer: connector
+      displayName: Event
+      description: the sequence number of the bridge event that last changed
+        this message
+---
+# ---- one file of a message -------------------------------------------------
+# A kind and not an object field, because a blobref is always a property of
+# its own (internal/vocabulary/load.go).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/messageattachment
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One file sent with a message, such as a photo or a voice note: what it
+    is, its size, and its bytes once the bridge fetched them.
+  purpose: supporting
+  names:
+    singular: messageattachment
+  label:
+    singular: Attachment
+    plural: Attachments
+  displayTemplate: "{fileName|content}"
+  properties:
+    message:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      required: true
+      onDelete: cascade
+      writer: connector
+      displayName: Message
+      description: the message this file was sent with
+    partId:
+      type: string
+      required: true
+      writer: connector
+      displayName: Part ID
+      description: the bridge's id for this part of the message
+    content:
+      type: enum
+      writer: connector
+      displayName: Content
+      description: what the file is
+      values:
+        - value: image
+          label: Image
+        - value: video
+          label: Video
+        - value: audio
+          label: Audio
+        - value: voice
+          label: Voice note
+        - value: file
+          label: File
+        - value: sticker
+          label: Sticker
+    mimeType:
+      type: string
+      writer: connector
+      displayName: Media type
+      description: the file's media type, such as image/jpeg
+    fileName:
+      type: string
+      writer: connector
+      displayName: File name
+      description: the file's name, where the network gives one
+    size:
+      type: int
+      writer: connector
+      displayName: Size (bytes)
+      description: the file's size in bytes
+    width:
+      type: int
+      writer: connector
+      displayName: Width
+      description: an image's or a video's width in pixels
+    height:
+      type: int
+      writer: connector
+      displayName: Height
+      description: an image's or a video's height in pixels
+    durationMs:
+      type: int
+      writer: connector
+      displayName: Duration (ms)
+      description: an audio or video file's length in milliseconds
+    caption:
+      type: text
+      writer: connector
+      displayName: Caption
+      description: the words sent with the file; cleared when the message
+        was deleted for everyone
+    file:
+      type: blobref
+      mediaTypes: [image/*, video/*, audio/*, application/*, text/*]
+      writer: connector
+      displayName: File
+      description: the file's bytes, once the bridge fetched them
+    mediaState:
+      type: enum
+      writer: connector
+      displayName: Fetched
+      description: whether the bytes are here, and why not when they are not
+      values:
+        - value: metadata
+          label: Not fetched
+        - value: stored
+          label: Stored
+        - value: toolarge
+          label: Too large
+        - value: failed
+          label: Failed
+        - value: expired
+          label: Gone from the network
+---
+# ---- one thing the owner asked to be done ------------------------------------
+# The request properties are the owner's or an agent's; `allowNewChat` and
+# `cancelRequestedAt` the owner's alone; the outcome the function's.
+#
+# THE STATE IS NOT HELD AT THE DOOR. A state machine takes no `writer:` (the
+# loader refuses the key), so nothing at the write stops the owner moving
+# `state` along a transition. The console never does; every agent write is
+# held by the gate; `chatevents` moves it from the bridge's reports alone,
+# and applies a result only for the attempt the row carries, or for one the
+# bridge never claimed while the row is still queued. A claimed action ends
+# expired where the bridge finds its claim never left and its window closed. The owner cancels by
+# stamping `cancelRequestedAt`, never by moving the state (README.md,
+# "Actions").
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/chataction
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    One thing you asked to be done in a chat as you, such as sending a message
+    or reacting to one, and what came of it. The chat bridge carries it out
+    once; an agent's request waits for your approval first.
+  purpose: supporting
+  names:
+    singular: chataction
+  label:
+    singular: Chat action
+    plural: Chat actions
+  displayTemplate: "{action}: {text|reactionKey}"
+  properties:
+    action:
+      type: enum
+      required: true
+      displayName: Action
+      description: what to do
+      values:
+        - value: send
+          label: Send
+        - value: react
+          label: React
+        - value: unreact
+          label: Remove reaction
+        - value: edit
+          label: Edit
+        - value: delete
+          label: Delete
+        - value: markread
+          label: Mark read
+    chat:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/chat
+      required: true
+      displayName: Chat
+      description: the chat to do it in
+    target:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      displayName: Message
+      description: the message to react to, edit or delete, or to mark read
+        up to
+    text:
+      type: text
+      displayName: Text
+      description: the text to send, or a message's new text, as markdown
+    replyTo:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      displayName: In reply to
+      description: the message a send replies to
+    reactionKey:
+      type: string
+      displayName: Reaction
+      description: the reaction to add or remove, an emoji or the network's
+        own key
+    forEveryone:
+      type: bool
+      displayName: For everyone
+      description: delete the message for everyone, not only for you
+    notBefore:
+      type: datetime
+      displayName: Not before
+      description: the bridge holds the action until then
+    notAfter:
+      type: datetime
+      displayName: Not after
+      description: the action expires unsent after this; a send or an edit
+        with none expires an hour after it was written
+    allowNewChat:
+      type: bool
+      writer: owner
+      displayName: Allow a new chat
+      description: you allow a first message to someone who is not a contact
+        on the network, which the bridge otherwise refuses
+    cancelRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Cancel requested
+      description: stamp it to cancel; the bridge cancels the action unless
+        it already claimed it
+    state:
+      type: state
+      displayName: State
+      description: queued until the bridge claims it, sending while it runs,
+        then how it ended
+      states:
+        - queued
+        - sending
+        - done
+        - failed
+        - uncertain
+        - expired
+        - cancelled
+      initial: queued
+      transitions:
+        - from: queued
+          to: sending
+        - from: queued
+          to: expired
+        - from: queued
+          to: cancelled
+        - from: queued
+          to: failed
+        - from: sending
+          to: done
+        - from: sending
+          to: failed
+        - from: sending
+          to: uncertain
+        # A claim the bridge finds never left, after its window closed.
+        - from: sending
+          to: expired
+    attempt:
+      type: string
+      writer: connector
+      displayName: Attempt
+      description: the bridge's id for its attempt; a report from another
+        attempt changes nothing
+    claimedVersion:
+      type: int
+      writer: connector
+      displayName: Claimed version
+      description: the version of this record the bridge claimed and carried
+        out; an edit after the claim is not carried out
+    result:
+      type: reference
+      kind: providers.substrate.reamde.dev/chatbridge/message
+      writer: connector
+      displayName: Result
+      description: the message the action sent or changed
+    errorCode:
+      type: enum
+      writer: connector
+      displayName: Error
+      description: why the action failed, expired or was cancelled
+      values:
+        - value: unsupported
+          label: Not supported here
+        - value: notfound
+          label: Not found
+        - value: ratelimited
+          label: Rate limited
+        - value: blocked
+          label: Blocked
+        - value: rejected
+          label: Rejected
+        - value: network
+          label: Network error
+        - value: expired
+          label: Expired
+        - value: cancelled
+          label: Cancelled
+        - value: invalid
+          label: Invalid
+    errorMessage:
+      type: string
+      writer: connector
+      displayName: Error message
+      description: the network's or the bridge's own words for the error
+---
+# ---- function: chatevents ----------------------------------------------------
+# Runs on the `chatbridge-events` webhook (triggers.yaml). One delivery is one
+# batch: no cursor and no drain. A gap, a malformed batch or a failed read or
+# write raises, so the delivery is retried and parks after three attempts,
+# which the bridge reads off the trigger's parked list; an event this body
+# cannot apply is skipped and counted on the instance row instead.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/chatevents
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Apply one batch of chat bridge events, as the chatbridge-events webhook
+    delivers it, to the chat bridge's rows: the bridge instance, accounts,
+    people, chats, messages and their files, and the outcome of each chat
+    action. Applies a batch only when it continues the instance's applied
+    sequence, and moves that sequence in the same write. Runs on the webhook;
+    not meant to be called by hand.
+  runtime: python
+  timeout: PT60S
+  returns:
+    - name: instance
+      type: string
+      description: the bridge instance the batch came from
+    - name: appliedSeq
+      type: int
+      description: the instance's applied sequence after the delivery
+    - name: applied
+      type: int
+      description: events applied
+    - name: skipped
+      type: int
+      description: events skipped because this package could not apply them
+    - name: already
+      type: int
+      description: events at or below the applied sequence, left alone
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/instance
+        - providers.substrate.reamde.dev/chatbridge/account
+        - providers.substrate.reamde.dev/chatbridge/user
+        - providers.substrate.reamde.dev/chatbridge/chat
+        - providers.substrate.reamde.dev/chatbridge/message
+        - providers.substrate.reamde.dev/chatbridge/messageattachment
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      budgets:
+        calls: 64
+        rows: 4000
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/instance
+      - providers.substrate.reamde.dev/chatbridge/account
+      - providers.substrate.reamde.dev/chatbridge/user
+      - providers.substrate.reamde.dev/chatbridge/chat
+      - providers.substrate.reamde.dev/chatbridge/message
+      - providers.substrate.reamde.dev/chatbridge/messageattachment
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    """Chat bridge events -> the chatbridge rows.
+
+    One webhook delivery is one batch from one bridge instance: a multipart
+    request whose `batch` text part is the batch JSON, and whose file parts are
+    the media the batch names, each stored as a blob whose digest the part
+    carries. The instance row's `appliedSeq` is the stream's applied watermark
+    (README.md, "Delivery"):
+
+    - every event at or below `appliedSeq` is left alone, so a resent batch is a
+      no-op;
+    - a batch whose `first` is past `appliedSeq + 1` fails the delivery: an
+      earlier batch has not applied, and the retry waits for it;
+    - the rest apply in `seq` order, and `appliedSeq` moves to `last` in the
+      same transaction, guarded by the version read, so two fires racing on one
+      instance cannot both apply.
+
+    Reads see committed rows, never this delivery's staged effects, so every row
+    the batch touches is read once up front, the events are applied to that copy
+    in order, and each row is written once at the end (an action twice when the
+    batch moves it through two states). An event this body cannot apply (a
+    malformed field, a message the mirror does not hold, an account its owner
+    deleted) is skipped, counted on the instance row, and the batch goes on:
+    only a malformed batch, a gap, or a failed read or write fails the delivery.
+
+    An event needs the rows it is about: its account, and for a chat's events
+    the chat. Only `account.upsert` creates or restores an account and only
+    `chat.upsert` a chat, so the events in flight when the owner deleted an
+    account, or the bridge deleted a chat, do not bring it back. A delete
+    tombstones the row it names; the engine collects what the row owns
+    (`onDelete: cascade`) when it collects the row.
+    """
+
+    import datetime
+    import json
+    import re
+
+    PKG = "providers.substrate.reamde.dev/chatbridge/"
+    INSTANCE = PKG + "instance"
+    ACCOUNT = PKG + "account"
+    USER = PKG + "user"
+    CHAT = PKG + "chat"
+    MESSAGE = PKG + "message"
+    ATTACHMENT = PKG + "messageattachment"
+    ACTION = PKG + "chataction"
+    WRITE_ORDER = (INSTANCE, ACCOUNT, USER, CHAT, MESSAGE, ATTACHMENT, ACTION)
+    # A tombstone of these comes back with what it held when an upsert restores
+    # it, so their deleted rows are read beside the live ones. A user or an
+    # attachment is read live alone, so one not found may still be a tombstone.
+    READ_DELETED = (INSTANCE, ACCOUNT, CHAT, MESSAGE)
+
+    BATCH_VERSION = 1
+    MAX_EVENTS = 200
+    MAX_ID = 1024
+    MAX_NOTE = 300
+    MAX_LOGGED = 50
+    # Ids per read: a chat row carries its whole member list, so its pages stay
+    # small enough to fit one reply frame.
+    CHUNK = {CHAT: 25}
+    DEFAULT_CHUNK = 100
+    MAX_REFS = 256
+    STAMP_EVERY = datetime.timedelta(minutes=5)
+    MAX_SAFE_INT = (1 << 53) - 1
+
+    UTC = datetime.timezone.utc
+
+    CONNECTION_STATES = ("connecting", "connected", "transient_disconnect", "bad_credentials",
+                         "logged_out", "banned", "unknown_error")
+    WARNING_CODES = ("phone_offline", "temporary_ban", "reachout_timelock", "client_outdated",
+                     "flood_wait", "checkpoint")
+    CATEGORIES = ("direct", "group", "channel", "space")
+    MEMBERSHIPS = ("join", "invite", "leave", "ban")
+    ROLES = ("member", "admin", "owner")
+    CONTENTS = ("text", "notice", "emote", "image", "video", "audio", "voice", "file", "sticker",
+                "location", "poll", "unsupported")
+    ATTACHMENT_CONTENTS = ("image", "video", "audio", "voice", "file", "sticker")
+    MEDIA_STATES = ("metadata", "stored", "too_large", "failed", "expired")
+    SCOPES = ("everyone", "owner")
+    SEND_STATUSES = ("sent", "delivered", "read", "failed")
+    OUTCOMES = ("done", "failed", "uncertain", "expired", "cancelled")
+    ERROR_CODES = ("unsupported", "not_found", "rate_limited", "blocked", "rejected", "network",
+                   "expired", "cancelled", "invalid")
+    # The outcomes each state of an action moves on to, as the kind's state
+    # machine declares them: a request never claimed ends expired, cancelled or
+    # failed; a claimed one done, failed or uncertain, or expired when the bridge
+    # finds its claim never left and its window has closed.
+    OUTCOME_FROM = {"queued": ("expired", "cancelled", "failed"),
+                    "sending": ("done", "failed", "uncertain", "expired")}
+    # The sync trait's state for each connection state, and the error an
+    # erroring one carries where the network gave no words of its own.
+    SYNC_OF_STATE = {
+        "connected": ("ok", None),
+        "connecting": ("running", None),
+        "transient_disconnect": ("throttled", None),
+        "bad_credentials": ("erroring", "Signed out by the network: sign in again on the chat bridge."),
+        "logged_out": ("erroring", "Logged out: sign in again on the chat bridge."),
+        "banned": ("erroring", "The network banned this account."),
+        "unknown_error": ("erroring", "The chat bridge reported an error on this account."),
+    }
+
+    FEATURE_BOOLS = ("edit", "deleteForEveryone", "reactions", "replies", "threads",
+                     "readReceipts", "typing")
+    FEATURE_INTS = ("editMaxAgeSeconds", "deleteMaxAgeSeconds", "maxTextLength")
+
+    # How a stored property reads back, so a stored row and the rows this body
+    # builds compare value for value.
+    TIMES = frozenset(("lastSeenAt", "mutedUntil", "lastActivityAt", "at", "editedAt", "expiresAt",
+                       "deletedAt", "notBefore", "notAfter", "cancelRequestedAt", "lastSyncedAt",
+                       "lastSyncStartedAt", "syncRequestedAt", "syncRequestedAck", "syncErrorAt",
+                       "unlinkRequestedAt"))
+    BLOBS = frozenset(("avatar", "file"))
+    REFS = frozenset(("instance", "user", "account", "otherUser", "parent", "readUpTo", "chat",
+                      "sender", "replyTo", "threadRoot", "target", "result", "message"))
+    REF_LISTS = frozenset(("members", "mentions"))
+    OBJECT_LISTS = {"reactions": {"user": "ref", "reactedAt": "time"},
+                    "warnings": {"until": "time"}}
+
+    # RFC 3339 as the engine reads it (substrate.ParseInstant): a date, `T`, a
+    # time, an optional fraction, and `Z` or an offset.
+    RE_INSTANT = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?"
+                            r"(Z|[+-]\d{2}:\d{2})$")
+    # A plain addr-spec: a subset of what the engine's RFC 5322 parser takes, so
+    # an address this admits is never refused at the write.
+    ATEXT = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    RE_EMAIL = re.compile(r"^%s(?:\.%s)*@%s(?:\.%s)*$" % (ATEXT, ATEXT, ATEXT, ATEXT))
+
+    ABSENT = object()
+
+
+    class Bad(Exception):
+        """One event this body cannot apply: skipped and counted, never fatal."""
+
+
+    # ---- values ---------------------------------------------------------------------
+
+    def clean(s):
+        # Postgres stores no NUL in a JSON string, so one would fail the batch.
+        return s.replace("\x00", "")
+
+
+    def string(v, what):
+        if not isinstance(v, str):
+            raise Bad("%s is not a string" % what)
+        return clean(v)
+
+
+    def ident(v, what):
+        v = string(v, what)
+        if not v or len(v) > MAX_ID:
+            raise Bad("%s is empty or longer than %d characters" % (what, MAX_ID))
+        return v
+
+
+    def boolean(v, what):
+        if not isinstance(v, bool):
+            raise Bad("%s is not a boolean" % what)
+        return v
+
+
+    def integer(v, what, lo=None):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise Bad("%s is not an integer" % what)
+        if isinstance(v, float):
+            if v != v or v in (float("inf"), float("-inf")) or v != int(v):
+                raise Bad("%s is not an integer" % what)
+            v = int(v)
+        if abs(v) > MAX_SAFE_INT or (lo is not None and v < lo):
+            raise Bad("%s is out of range" % what)
+        return v
+
+
+    def strings(v, what):
+        if not isinstance(v, list):
+            raise Bad("%s is not a list" % what)
+        out = []
+        for i, x in enumerate(v):
+            x = string(x, "%s[%d]" % (what, i)).strip()
+            if x and x not in out:
+                out.append(x)
+        return out or None
+
+
+    def parse_instant(v):
+        """An aware UTC datetime, or None for anything the engine would refuse."""
+        if not isinstance(v, str):
+            return None
+        m = RE_INSTANT.match(v)
+        if not m:
+            return None
+        y, mo, d, h, mi, s = (int(x) for x in m.group(1, 2, 3, 4, 5, 6))
+        frac = (m.group(7) or "").ljust(6, "0")[:6]
+        zone = m.group(8)
+        try:
+            if zone == "Z":
+                tz = UTC
+            else:
+                sign = 1 if zone[0] == "+" else -1
+                tz = datetime.timezone(sign * datetime.timedelta(hours=int(zone[1:3]),
+                                                                 minutes=int(zone[4:6])))
+            return datetime.datetime(y, mo, d, h, mi, s, int(frac), tzinfo=tz).astimezone(UTC)
+        except (ValueError, OverflowError):
+            return None
+
+
+    def format_instant(dt):
+        # time.RFC3339Nano, the spelling the engine stores: no fraction when it is
+        # zero, and no trailing zeros when it is not.
+        out = "%04d-%02d-%02dT%02d:%02d:%02d" % (dt.year, dt.month, dt.day, dt.hour, dt.minute,
+                                                 dt.second)
+        if dt.microsecond:
+            out += "." + ("%06d" % dt.microsecond).rstrip("0")
+        return out + "Z"
+
+
+    def instant(v, what):
+        dt = parse_instant(v)
+        if dt is None:
+            raise Bad("%s is not an RFC 3339 instant" % what)
+        return format_instant(dt)
+
+
+    def enum(v, allowed, what):
+        if v not in allowed:
+            raise Bad("%s %r is not one of %s" % (what, v, ", ".join(allowed)))
+        # An enum value is one lowercase word, so the stored value drops the
+        # underscore the wire spells.
+        return v.replace("_", "")
+
+
+    def opt(obj, key, read, *args):
+        """A field by the merge rule: ABSENT leaves the property, None clears it."""
+        if key not in obj:
+            return ABSENT
+        v = obj[key]
+        if v is None:
+            return None
+        return read(v, *args)
+
+
+    def given(v):
+        return v is not ABSENT and v is not None
+
+
+    def canon(v):
+        return json.dumps(v, sort_keys=True, separators=(",", ":"))
+
+
+    def ref_path(v):
+        if isinstance(v, dict):
+            v = v.get("ref")
+        return v if isinstance(v, str) and v else None
+
+
+    def ref_id(v, kind):
+        """The id a reference to kind names, or None for one to anything else."""
+        path = ref_path(v)
+        prefix = kind + "/"
+        if path is None or not path.startswith(prefix) or len(path) == len(prefix):
+            return None
+        return path[len(prefix):]
+
+
+    def norm_obj(v, shapes):
+        if not isinstance(v, dict):
+            return v
+        out = {}
+        for k, x in v.items():
+            shape = shapes.get(k)
+            if shape == "ref":
+                x = norm_ref(x)
+            elif shape == "time":
+                x = norm_time(x)
+            elif isinstance(x, dict):
+                x = norm_obj(x, {})
+            if x is not None and x != []:
+                out[k] = x
+        return out
+
+
+    def norm_ref(v):
+        path = ref_path(v)
+        if path is None:
+            return None
+        out = {"ref": path}
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k != "ref" and x is not None:
+                    out[k] = x
+        return out
+
+
+    def norm_time(v):
+        dt = parse_instant(v)
+        return format_instant(dt) if dt is not None else v
+
+
+    def norm(name, v):
+        """A property value in the one spelling this body writes and compares."""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            if not v:
+                return None
+            if name in REF_LISTS:
+                return [x for x in (norm_ref(i) for i in v) if x is not None] or None
+            return [norm_obj(i, OBJECT_LISTS.get(name, {})) for i in v]
+        if name in REFS:
+            return norm_ref(v)
+        if name in BLOBS:
+            return v.get("digest") if isinstance(v, dict) else v
+        if name in TIMES:
+            return norm_time(v)
+        if isinstance(v, dict):
+            return norm_obj(v, {}) or None
+        return v
+
+
+    def diff(before, after):
+        out = {}
+        for name in set(before) | set(after):
+            if canon(before.get(name)) != canon(after.get(name)):
+                out[name] = after.get(name)
+        return out
+
+
+    # ---- the copy of the rows a batch touches ---------------------------------------
+
+    class Row:
+        """One row as the batch has it: what was stored, and what it holds now."""
+
+        def __init__(self, kind, rid, stored, read):
+            self.kind = kind
+            self.id = rid
+            self.path = kind + "/" + rid
+            self.read = read
+            self.version = 0
+            props = {}
+            if stored:
+                v = stored.get("version")
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    self.version = int(v)
+                props = stored.get("properties") or {}
+            self.base = {}
+            for k, v in props.items():
+                v = norm(k, v)
+                if v is not None:
+                    self.base[k] = v
+            self.props = dict(self.base)
+            self.was_live = bool(stored) and not stored.get("deletedAt")
+            self.was_tomb = bool(stored) and bool(stored.get("deletedAt"))
+            self.exists = self.was_live
+            # A stored chat this batch deletes: the delete is written first, and
+            # a put after it brings the row back where the batch restores it.
+            self.deleted_live = False
+            # The props as they stood after each state change but the last: one
+            # write per state, because the machine moves one transition at a time.
+            self.stages = []
+
+        def get(self, name):
+            return self.props.get(name)
+
+        def set(self, name, value):
+            value = norm(name, value)
+            if value is None:
+                self.props.pop(name, None)
+            else:
+                self.props[name] = value
+
+        def move(self, state):
+            if self.get("state") != self.base.get("state"):
+                self.stages.append(dict(self.props))
+            self.set("state", state)
+
+        def snapshot(self):
+            return canon(self.props)
+
+
+    class Batch:
+        def __init__(self, host, iid, media, now):
+            self.host = host
+            self.iid = iid
+            self.media = media
+            self.now = now
+            self.rows = {}
+            self.instance = None
+            self.skipped = []
+            self.applied = 0
+            self.accounts = set()
+            self.attachments_of = {}
+
+        def blob(self, v, what):
+            if not isinstance(v, dict) or not isinstance(v.get("part"), str):
+                raise Bad("%s is not a {part} naming a file part" % what)
+            digest = self.media.get(v["part"])
+            if digest is None:
+                raise Bad("%s names part %r, which the request does not carry as a file"
+                          % (what, v["part"]))
+            return digest
+
+
+    # ---- ids (README.md, "Ids") ------------------------------------------------------
+
+    def instance_id(host, iid):
+        return host.ids.external("chatbridge", iid, "instance")
+
+
+    def account_id(host, net, login):
+        return host.ids.external(net, login, "account")
+
+
+    def user_id(host, net, login, uid):
+        return host.ids.external(net, login, "user/" + uid)
+
+
+    def chat_id(host, net, login, cid):
+        return host.ids.external(net, login, "chat/" + cid)
+
+
+    def message_id(host, net, login, cid, mid):
+        return host.ids.external(net, login, "message/" + cid + "/" + mid)
+
+
+    def attachment_id(host, net, login, cid, mid, part):
+        return host.ids.external(net, login, "attachment/" + cid + "/" + mid + "/" + part)
+
+
+    def ref(kind, rid):
+        return {"ref": kind + "/" + rid}
+
+
+    # ---- events: each parses whole before it applies, so a bad one changes nothing ---
+
+    class Event:
+        """One event, validated: the rows it needs read, and how it applies."""
+
+        def __init__(self, seq, kind):
+            self.seq = seq
+            self.kind = kind
+            self.keys = []
+            self.refs = []
+            self.account = None
+            self.apply = None
+
+        def need(self, kind, rid):
+            self.keys.append((kind, rid))
+
+        def describe(self):
+            return "seq %d %s" % (self.seq, self.kind)
+
+
+    def net_account(b, ev, raw):
+        net = ident(raw.get("network"), "network")
+        login = ident(raw.get("account"), "account")
+        ev.net, ev.login = net, login
+        ev.account = account_id(b.host, net, login)
+        ev.need(ACCOUNT, ev.account)
+        return net, login
+
+
+    def parse_instance_hello(b, ev, raw):
+        ev.name = ident(raw.get("name"), "name")
+        ev.version = ident(raw.get("version"), "version")
+        nets = raw.get("networks")
+        if not isinstance(nets, list):
+            raise Bad("networks is not a list")
+        ev.networks = []
+        for i, n in enumerate(nets):
+            if not isinstance(n, dict):
+                raise Bad("networks[%d] is not an object" % i)
+            item = {"network": ident(n.get("network"), "networks[%d].network" % i)}
+            name = opt(n, "displayName", string, "networks[%d].displayName" % i)
+            if given(name) and name:
+                item["displayName"] = name
+            ev.networks.append(item)
+
+
+    def apply_instance_hello(b, ev):
+        inst = b.instance
+        inst.set("instanceName", ev.name)
+        inst.set("version", ev.version)
+        inst.set("networks", ev.networks)
+
+
+    def parse_account_upsert(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        ev.fields = {}
+        for key in ("remoteName", "handle", "phoneNumber"):
+            v = opt(raw, key, string, key)
+            if v is not ABSENT:
+                ev.fields[key] = v or None
+        me = opt(raw, "self", ident, "self")
+        if me is not ABSENT:
+            ev.fields["user"] = ref(USER, user_id(b.host, net, login, me)) if me else None
+
+
+    def apply_account_upsert(b, ev):
+        acct = b.rows[(ACCOUNT, ev.account)]
+        acct.exists = True
+        acct.set("network", ev.net)
+        acct.set("loginId", ev.login)
+        acct.set("instance", {"ref": b.instance.path})
+        for k, v in ev.fields.items():
+            acct.set(k, v)
+
+
+    def parse_account_state(b, ev, raw):
+        net_account(b, ev, raw)
+        ev.state = raw.get("state")
+        ev.stored_state = enum(ev.state, CONNECTION_STATES, "state")
+        msg = opt(raw, "message", string, "message")
+        ev.message = msg.strip() if given(msg) and msg.strip() else None
+        ev.warnings = None
+        warnings = raw.get("warnings")
+        if warnings is not None:
+            if not isinstance(warnings, list):
+                raise Bad("warnings is not a list")
+            ev.warnings = []
+            for i, w in enumerate(warnings):
+                if not isinstance(w, dict):
+                    raise Bad("warnings[%d] is not an object" % i)
+                item = {"code": enum(w.get("code"), WARNING_CODES, "warnings[%d].code" % i)}
+                text = opt(w, "message", string, "warnings[%d].message" % i)
+                if given(text) and text:
+                    item["message"] = text
+                until = opt(w, "until", instant, "warnings[%d].until" % i)
+                if given(until):
+                    item["until"] = until
+                ev.warnings.append(item)
+        ev.at = parse_instant(raw.get("at"))
+
+
+    def apply_account_state(b, ev):
+        acct = b.rows[(ACCOUNT, ev.account)]
+        # One report is the account's whole state: a message or warnings it leaves
+        # out are no longer true.
+        acct.set("connectionState", ev.stored_state)
+        acct.set("connectionMessage", ev.message)
+        acct.set("warnings", ev.warnings)
+        sync_state, fallback = SYNC_OF_STATE[ev.state]
+        acct.set("syncState", sync_state)
+        # The line the account shows is the first warning's, else the network's.
+        first = (ev.warnings or [{}])[0].get("message")
+        acct.set("syncMessage", first or ev.message)
+        if sync_state == "erroring":
+            acct.set("syncError", ev.message or fallback)
+            acct.set("syncErrorAt", format_instant(ev.at or b.now))
+        else:
+            acct.set("syncError", None)
+            acct.set("syncErrorAt", None)
+
+
+    def parse_account_removed(b, ev, raw):
+        net_account(b, ev, raw)
+
+
+    def apply_account_removed(b, ev):
+        acct = b.rows[(ACCOUNT, ev.account)]
+        if not acct.exists:
+            return
+        acct.set("connectionState", "loggedout")
+        acct.set("connectionMessage", "The chat bridge signed out of this account and forgot it.")
+        acct.set("warnings", None)
+        acct.set("instance", None)
+        acct.set("syncMessage", "Signed out by the chat bridge: nothing syncs until it signs in "
+                                "again.")
+
+
+    def parse_user_upsert(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        u = raw.get("user")
+        if not isinstance(u, dict):
+            raise Bad("user is not an object")
+        uid = ident(u.get("id"), "user.id")
+        ev.user = user_id(b.host, net, login, uid)
+        ev.need(USER, ev.user)
+        f = {"userId": uid}
+        for key in ("fullName", "handle", "contactName"):
+            v = opt(u, key, string, "user." + key)
+            if v is not ABSENT:
+                f[key] = v or None
+        for key in ("isBot", "isSelf", "isContact"):
+            v = opt(u, key, boolean, "user." + key)
+            if v is not ABSENT:
+                f[key] = v
+        v = opt(u, "phoneNumbers", strings, "user.phoneNumbers")
+        if v is not ABSENT:
+            f["phoneNumbers"] = v
+        v = opt(u, "emails", strings, "user.emails")
+        if v is not ABSENT:
+            # An address the engine would refuse is left out, not the person.
+            f["emails"] = [e for e in (v or []) if RE_EMAIL.match(e)] or None
+        v = opt(u, "avatar", b.blob, "user.avatar")
+        if v is not ABSENT:
+            f["avatar"] = v
+        ev.fields = f
+
+
+    def apply_user_upsert(b, ev):
+        user = b.rows[(USER, ev.user)]
+        user.exists = True
+        user.set("account", ref(ACCOUNT, ev.account))
+        user.set("network", ev.net)
+        for k, v in ev.fields.items():
+            user.set(k, v)
+
+
+    def parse_chat_upsert(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        c = raw.get("chat")
+        if not isinstance(c, dict):
+            raise Bad("chat is not an object")
+        cid = ident(c.get("id"), "chat.id")
+        ev.chat = chat_id(b.host, net, login, cid)
+        ev.need(CHAT, ev.chat)
+        f = {"chatId": cid}
+        v = opt(c, "category", enum, CATEGORIES, "chat.category")
+        if v is not ABSENT:
+            f["category"] = v
+        for key in ("chatName", "topic"):
+            v = opt(c, key, string, "chat." + key)
+            if v is not ABSENT:
+                f[key] = v or None
+        v = opt(c, "avatar", b.blob, "chat.avatar")
+        if v is not ABSENT:
+            f["avatar"] = v
+        v = opt(c, "otherUser", ident, "chat.otherUser")
+        if v is not ABSENT:
+            f["otherUser"] = ref(USER, user_id(b.host, net, login, v)) if v else None
+        v = opt(c, "parent", ident, "chat.parent")
+        if v is not ABSENT:
+            f["parent"] = ref(CHAT, chat_id(b.host, net, login, v)) if v else None
+        v = opt(c, "mutedUntil", instant, "chat.mutedUntil")
+        if v is not ABSENT:
+            f["mutedUntil"] = v
+        for key in ("archived", "pinned", "markedUnread", "readOnly", "messageRequest"):
+            v = opt(c, key, boolean, "chat." + key)
+            if v is not ABSENT:
+                f[key] = v
+        v = opt(c, "disappearAfterSeconds", integer, "chat.disappearAfterSeconds", 0)
+        if v is not ABSENT:
+            f["disappearAfterSeconds"] = v
+        v = opt(c, "features", features, "chat.features")
+        if v is not ABSENT:
+            f["features"] = v
+        ev.last_activity = opt(c, "lastActivityAt", instant, "chat.lastActivityAt")
+        ev.members = ABSENT
+        if "members" in c:
+            ev.members = (True, []) if c["members"] is None else members(b, net, login, c["members"])
+        ev.fields = f
+
+
+    def features(v, what):
+        if not isinstance(v, dict):
+            raise Bad("%s is not an object" % what)
+        out = {}
+        for key in FEATURE_BOOLS:
+            if v.get(key) is not None:
+                out[key] = boolean(v[key], "%s.%s" % (what, key))
+        for key in FEATURE_INTS:
+            if v.get(key) is not None:
+                out[key] = integer(v[key], "%s.%s" % (what, key), 0)
+        if v.get("allowedReactions") is not None:
+            allowed = strings(v["allowedReactions"], what + ".allowedReactions")
+            if allowed:
+                out["allowedReactions"] = allowed
+        return out or None
+
+
+    def members(b, net, login, v):
+        if not isinstance(v, dict) or not isinstance(v.get("items"), list):
+            raise Bad("chat.members is not {complete, items}")
+        complete = boolean(v.get("complete"), "chat.members.complete")
+        items = []
+        for i, m in enumerate(v["items"]):
+            what = "chat.members.items[%d]" % i
+            if not isinstance(m, dict):
+                raise Bad("%s is not an object" % what)
+            uid = ident(m.get("user"), what + ".user")
+            item = {"ref": USER + "/" + user_id(b.host, net, login, uid),
+                    "membership": enum(m.get("membership"), MEMBERSHIPS, what + ".membership")}
+            if m.get("role") is not None:
+                item["role"] = enum(m["role"], ROLES, what + ".role")
+            items.append(item)
+        return complete, items
+
+
+    def apply_chat_upsert(b, ev):
+        chat = b.rows[(CHAT, ev.chat)]
+        before = chat.snapshot() if chat.exists else None
+        chat.exists = True
+        chat.set("account", ref(ACCOUNT, ev.account))
+        chat.set("network", ev.net)
+        for k, v in ev.fields.items():
+            chat.set(k, v)
+        if ev.last_activity is not ABSENT:
+            prior = parse_instant(chat.get("lastActivityAt"))
+            new = parse_instant(ev.last_activity)
+            # A history page never moves the chat's last activity back.
+            if new is None or prior is None or new > prior:
+                chat.set("lastActivityAt", ev.last_activity)
+        if ev.members is not ABSENT:
+            # A long list arrives over several events: the first complete, the
+            # rest partial, each merged by the member it names.
+            complete, items = ev.members
+            current = {}
+            if not complete:
+                current = {m["ref"]: m for m in chat.get("members") or [] if m.get("ref")}
+            for item in items:
+                current.pop(item["ref"], None)
+                if item["membership"] in ("join", "invite"):
+                    current[item["ref"]] = item
+            chat.set("members", list(current.values()))
+        if chat.snapshot() != before:
+            chat.set("sourceSeq", ev.seq)
+
+
+    def parse_chat_delete(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        ev.chat = chat_id(b.host, net, login, ident(raw.get("chat"), "chat"))
+        ev.need(CHAT, ev.chat)
+
+
+    def apply_chat_delete(b, ev):
+        chat = b.rows[(CHAT, ev.chat)]
+        if not chat.exists:
+            return
+        chat.exists = False
+        if chat.was_live:
+            chat.deleted_live = True
+        # The stored messages go when the engine collects the chat. One this batch
+        # wrote under it earlier is not written at all.
+        for row in list(b.rows.values()):
+            if row.kind != MESSAGE or not row.exists or row.was_live or row.was_tomb \
+                    or ref_path(row.get("chat")) != chat.path:
+                continue
+            row.exists = False
+            for aid in b.attachments_of.get(row.path, ()):
+                att = b.rows[(ATTACHMENT, aid)]
+                if not att.was_live:
+                    att.exists = False
+
+
+    def parse_chat_read(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        cid = ident(raw.get("chat"), "chat")
+        ev.chat = chat_id(b.host, net, login, cid)
+        ev.need(CHAT, ev.chat)
+        ev.up_to = message_id(b.host, net, login, cid, ident(raw.get("upTo"), "upTo"))
+
+
+    def apply_chat_read(b, ev):
+        held_chat(b, ev).set("readUpTo", ref(MESSAGE, ev.up_to))
+
+
+    def held_chat(b, ev):
+        chat = b.rows[(CHAT, ev.chat)]
+        if not chat.exists:
+            raise Bad("the chat is not in the mirror")
+        return chat
+
+
+    def parse_message_upsert(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        cid = ident(raw.get("chat"), "chat")
+        ev.chat = chat_id(b.host, net, login, cid)
+        ev.need(CHAT, ev.chat)
+        ev.backfill = boolean(raw.get("backfill", False), "backfill")
+        m = raw.get("message")
+        if not isinstance(m, dict):
+            raise Bad("message is not an object")
+        mid = ident(m.get("id"), "message.id")
+        ev.message = message_id(b.host, net, login, cid, mid)
+        ev.need(MESSAGE, ev.message)
+        f = {
+            "messageId": mid,
+            "sender": ref(USER, user_id(b.host, net, login, ident(m.get("sender"), "message.sender"))),
+            "fromOwner": boolean(m.get("fromOwner"), "message.fromOwner"),
+            "at": instant(m.get("at"), "message.at"),
+            "content": enum(m.get("content"), CONTENTS, "message.content"),
+        }
+        v = opt(m, "text", string, "message.text")
+        if v is not ABSENT:
+            f["text"] = v or None
+        v = opt(m, "editedAt", instant, "message.editedAt")
+        if v is not ABSENT:
+            f["editedAt"] = v
+        ev.edit_count = opt(m, "editCount", integer, "message.editCount", 0)
+        if ev.edit_count is not ABSENT:
+            f["editCount"] = ev.edit_count
+        for key in ("replyTo", "threadRoot"):
+            v = opt(m, key, ident, "message." + key)
+            if v is not ABSENT:
+                f[key] = ref(MESSAGE, message_id(b.host, net, login, cid, v)) if v else None
+        v = opt(m, "mentions", strings, "message.mentions")
+        if v is not ABSENT:
+            f["mentions"] = [ref(USER, user_id(b.host, net, login, u)) for u in (v or [])] or None
+        for key in ("mentionsEveryone", "forwarded"):
+            v = opt(m, key, boolean, "message." + key)
+            if v is not ABSENT:
+                f[key] = v
+        v = opt(m, "expiresAt", instant, "message.expiresAt")
+        if v is not ABSENT:
+            f["expiresAt"] = v
+        ev.fields = f
+        ev.attachments = ABSENT
+        if "attachments" in m:
+            if m["attachments"] is not None and not isinstance(m["attachments"], list):
+                raise Bad("message.attachments is not a list")
+            ev.attachments = [attachment(b, ev, net, login, cid, mid, a,
+                                         "message.attachments[%d]" % i)
+                              for i, a in enumerate(m["attachments"] or [])]
+            # The list replaces the message's attachments, so the ones it no
+            # longer names are found and deleted.
+            ev.refs.append(MESSAGE + "/" + ev.message)
+        ev.action = opt(m, "action", ident, "message.action")
+        if given(ev.action):
+            ev.need(ACTION, ev.action)
+
+
+    def attachment(b, ev, net, login, cid, mid, a, what):
+        if not isinstance(a, dict):
+            raise Bad("%s is not an object" % what)
+        part = ident(a.get("part"), what + ".part")
+        aid = attachment_id(b.host, net, login, cid, mid, part)
+        ev.need(ATTACHMENT, aid)
+        f = {"partId": part,
+             "content": enum(a.get("content"), ATTACHMENT_CONTENTS, what + ".content"),
+             "mediaState": enum(a.get("mediaState"), MEDIA_STATES, what + ".mediaState")}
+        for key in ("mimeType", "fileName", "caption"):
+            v = opt(a, key, string, "%s.%s" % (what, key))
+            if v is not ABSENT:
+                f[key] = v or None
+        for key in ("size", "width", "height", "durationMs"):
+            v = opt(a, key, integer, "%s.%s" % (what, key), 0)
+            if v is not ABSENT:
+                f[key] = v
+        v = opt(a, "file", b.blob, what + ".file")
+        if v is not ABSENT:
+            f["file"] = v
+        return aid, f
+
+
+    def apply_message_upsert(b, ev):
+        held_chat(b, ev)
+        msg = b.rows[(MESSAGE, ev.message)]
+        if given(ev.action):
+            act = b.rows[(ACTION, ev.action)]
+            if act.exists and ref_path(act.get("result")) != msg.path:
+                act.set("result", {"ref": msg.path})
+        fresh = not msg.exists and not msg.was_live and not msg.was_tomb
+        if msg.get("deleted") == "everyone":
+            # Deleted for everyone: what the message said stays withdrawn.
+            msg.exists = True
+            return
+        held = msg.get("editCount") or 0
+        if not fresh and (ev.edit_count if given(ev.edit_count) else 0) < held:
+            # An older copy, from a history page: the edit it predates stands.
+            return
+        before = None if fresh else msg.snapshot()
+        msg.exists = True
+        msg.set("account", ref(ACCOUNT, ev.account))
+        msg.set("chat", ref(CHAT, ev.chat))
+        msg.set("network", ev.net)
+        for k, v in ev.fields.items():
+            msg.set(k, v)
+        if fresh:
+            msg.set("backfilled", ev.backfill)
+        if ev.attachments is not ABSENT:
+            keep = set()
+            for aid, f in ev.attachments:
+                keep.add(aid)
+                att = b.rows[(ATTACHMENT, aid)]
+                att.exists = True
+                att.set("message", {"ref": msg.path})
+                for k, v in f.items():
+                    att.set(k, v)
+                b.attachments_of.setdefault(msg.path, set()).add(aid)
+            for aid in b.attachments_of.get(msg.path, ()):
+                if aid not in keep:
+                    b.rows[(ATTACHMENT, aid)].exists = False
+        if msg.snapshot() != before:
+            msg.set("sourceSeq", ev.seq)
+
+
+    def parse_message_target(b, ev, raw):
+        net, login = net_account(b, ev, raw)
+        cid = ident(raw.get("chat"), "chat")
+        ev.chat = chat_id(b.host, net, login, cid)
+        ev.need(CHAT, ev.chat)
+        mid = ident(raw.get("message"), "message")
+        ev.message = message_id(b.host, net, login, cid, mid)
+        ev.need(MESSAGE, ev.message)
+        return net, login
+
+
+    def held_message(b, ev):
+        held_chat(b, ev)
+        msg = b.rows[(MESSAGE, ev.message)]
+        if not msg.exists:
+            raise Bad("the message is not in the mirror")
+        return msg
+
+
+    def parse_message_delete(b, ev, raw):
+        parse_message_target(b, ev, raw)
+        ev.refs.append(MESSAGE + "/" + ev.message)
+        ev.scope = enum(raw.get("scope"), SCOPES, "scope")
+        ev.at = instant(raw.get("at"), "at")
+
+
+    def apply_message_delete(b, ev):
+        msg = held_message(b, ev)
+        if ev.scope == "owner":
+            if msg.get("deleted") != "everyone":
+                msg.set("deleted", "owner")
+                msg.set("deletedAt", ev.at)
+            return
+        if msg.get("deleted") == "everyone":
+            return
+        msg.set("deleted", "everyone")
+        msg.set("deletedAt", ev.at)
+        msg.set("text", None)
+        msg.set("sourceSeq", ev.seq)
+        for aid in b.attachments_of.get(msg.path, ()):
+            att = b.rows[(ATTACHMENT, aid)]
+            if att.exists:
+                att.set("file", None)
+                att.set("caption", None)
+
+
+    def parse_message_reactions(b, ev, raw):
+        net, login = parse_message_target(b, ev, raw)
+        rs = raw.get("reactions")
+        if not isinstance(rs, list):
+            raise Bad("reactions is not a list")
+        out, seen = [], set()
+        for i, r in enumerate(rs):
+            what = "reactions[%d]" % i
+            if not isinstance(r, dict):
+                raise Bad("%s is not an object" % what)
+            key = ident(r.get("key"), what + ".key")
+            uid = ident(r.get("user"), what + ".user")
+            item = {"key": key, "user": ref(USER, user_id(b.host, net, login, uid))}
+            at = opt(r, "at", instant, what + ".at")
+            if given(at):
+                item["reactedAt"] = at
+            if (key, uid) not in seen:
+                seen.add((key, uid))
+                out.append(item)
+        ev.reactions = out or None
+
+
+    def apply_message_reactions(b, ev):
+        held_message(b, ev).set("reactions", ev.reactions)
+
+
+    def parse_message_status(b, ev, raw):
+        parse_message_target(b, ev, raw)
+        ev.status = enum(raw.get("status"), SEND_STATUSES, "status")
+
+
+    def apply_message_status(b, ev):
+        held_message(b, ev).set("sendStatus", ev.status)
+
+
+    def parse_action_claimed(b, ev, raw):
+        ev.action = ident(raw.get("action"), "action")
+        ev.attempt = ident(raw.get("attempt"), "attempt")
+        ev.claimed = integer(raw.get("version"), "version", 1)
+        ev.need(ACTION, ev.action)
+
+
+    def apply_action_claimed(b, ev):
+        act = b.rows[(ACTION, ev.action)]
+        if not act.exists:
+            raise Bad("the action is not in the repository")
+        state = act.get("state") or "queued"
+        if state == "sending" and act.get("attempt") == ev.attempt:
+            return
+        if state != "queued":
+            raise Bad("the action is %s, so the claim of attempt %s is stale" % (state, ev.attempt))
+        act.move("sending")
+        act.set("attempt", ev.attempt)
+        act.set("claimedVersion", ev.claimed)
+
+
+    def parse_action_result(b, ev, raw):
+        ev.action = ident(raw.get("action"), "action")
+        ev.attempt = ident(raw.get("attempt"), "attempt")
+        ev.outcome = enum(raw.get("outcome"), OUTCOMES, "outcome")
+        ev.message_net_id = opt(raw, "message", ident, "message")
+        ev.error = None
+        err = raw.get("error")
+        if err is not None:
+            if not isinstance(err, dict):
+                raise Bad("error is not an object")
+            text = opt(err, "message", string, "error.message")
+            ev.error = (enum(err.get("code"), ERROR_CODES, "error.code"),
+                        text if given(text) and text else None)
+        ev.need(ACTION, ev.action)
+
+
+    def apply_action_result(b, ev):
+        act = b.rows[(ACTION, ev.action)]
+        if not act.exists:
+            raise Bad("the action is not in the repository")
+        state = act.get("state") or "queued"
+        held = act.get("attempt")
+        if state == ev.outcome and held == ev.attempt:
+            return
+        # A result applies only for the attempt the row carries, but for one the
+        # bridge never claimed: refused, expired or cancelled before anything
+        # left, the row still queued and carrying no attempt.
+        if held is not None and held != ev.attempt:
+            raise Bad("attempt %s is not the action's attempt %s, so the report is stale"
+                      % (ev.attempt, held))
+        if held is None and state != "queued":
+            raise Bad("the action is %s and carries no attempt" % state)
+        if ev.outcome not in OUTCOME_FROM.get(state, ()):
+            raise Bad("an action that is %s cannot end %s" % (state, ev.outcome))
+        act.move(ev.outcome)
+        act.set("attempt", ev.attempt)
+        if ev.error is not None:
+            act.set("errorCode", ev.error[0])
+            act.set("errorMessage", ev.error[1])
+        if given(ev.message_net_id):
+            mid = result_message(b, act, ev.message_net_id)
+            if mid is not None:
+                act.set("result", ref(MESSAGE, mid))
+
+
+    def result_message(b, act, net_mid):
+        """The message row a result names, composed through the action's chat and
+        that chat's account."""
+        chat = b.rows.get((CHAT, ref_id(act.get("chat"), CHAT) or ""))
+        if chat is None or not chat.get("chatId") or not chat.get("network"):
+            return None
+        acct = b.rows.get((ACCOUNT, ref_id(chat.get("account"), ACCOUNT) or ""))
+        if acct is None or not acct.get("loginId"):
+            return None
+        return message_id(b.host, chat.get("network"), acct.get("loginId"), chat.get("chatId"),
+                          net_mid)
+
+
+    def parse_backfill_progress(b, ev, raw):
+        net_account(b, ev, raw)
+        ev.chat_net_id = opt(raw, "chat", ident, "chat")
+        ev.complete = boolean(raw.get("complete"), "complete")
+        ev.oldest = opt(raw, "oldestAt", instant, "oldestAt")
+        ev.pending = opt(raw, "pendingChats", integer, "pendingChats", 0)
+
+
+    def apply_backfill_progress(b, ev):
+        acct = b.rows[(ACCOUNT, ev.account)]
+        if not acct.exists:
+            raise Bad("the account is not in the mirror")
+        if given(ev.chat_net_id):
+            return
+        stream = {"state": "ok" if ev.complete else "running"}
+        if given(ev.oldest):
+            stream["lastAt"] = ev.oldest
+        if given(ev.pending):
+            stream["pending"] = ev.pending
+        streams = dict(acct.get("syncStreams") or {})
+        streams["history"] = stream
+        acct.set("syncStreams", streams)
+        if not ev.complete:
+            progress = {"phase": "history"}
+            if given(ev.pending):
+                progress["pending"] = ev.pending
+            acct.set("syncProgress", progress)
+            return
+        acct.set("syncProgress", None)
+        asked = acct.get("syncRequestedAt")
+        if asked and acct.get("syncRequestedAck") != asked:
+            acct.set("syncRequestedAck", asked)
+
+
+    EVENTS = {
+        "instance.hello": (parse_instance_hello, apply_instance_hello),
+        "account.upsert": (parse_account_upsert, apply_account_upsert),
+        "account.state": (parse_account_state, apply_account_state),
+        "account.removed": (parse_account_removed, apply_account_removed),
+        "user.upsert": (parse_user_upsert, apply_user_upsert),
+        "chat.upsert": (parse_chat_upsert, apply_chat_upsert),
+        "chat.delete": (parse_chat_delete, apply_chat_delete),
+        "chat.read": (parse_chat_read, apply_chat_read),
+        "message.upsert": (parse_message_upsert, apply_message_upsert),
+        "message.delete": (parse_message_delete, apply_message_delete),
+        "message.reactions": (parse_message_reactions, apply_message_reactions),
+        "message.status": (parse_message_status, apply_message_status),
+        "action.claimed": (parse_action_claimed, apply_action_claimed),
+        "action.result": (parse_action_result, apply_action_result),
+        "backfill.progress": (parse_backfill_progress, apply_backfill_progress),
+    }
+
+
+    # ---- the request, the reads and the writes ---------------------------------------
+
+    def read_request(envelope):
+        request = envelope.get("request")
+        if not isinstance(request, dict):
+            raise RuntimeError("chatevents runs on the chatbridge-events webhook; this invocation "
+                               "carries no webhook request")
+        parts = request.get("parts")
+        if not isinstance(parts, list):
+            raise RuntimeError("the request is not multipart/form-data: the batch rides a text "
+                               "part named batch")
+        text, media = None, {}
+        for part in parts:
+            if not isinstance(part, dict) or not isinstance(part.get("name"), str):
+                continue
+            if part["name"] == "batch" and isinstance(part.get("value"), str):
+                if text is not None:
+                    raise RuntimeError("the request carries two batch parts")
+                text = part["value"]
+            elif isinstance(part.get("blob"), str):
+                media[part["name"]] = part["blob"]
+        if text is None:
+            raise RuntimeError("the request carries no batch part: a text part named batch, "
+                               "with no filename")
+        return text, media
+
+
+    def read_batch(text):
+        try:
+            batch = json.loads(text)
+        except ValueError as e:
+            raise RuntimeError("the batch part is not JSON: %s" % e) from e
+        if not isinstance(batch, dict):
+            raise RuntimeError("the batch is not a JSON object")
+        version = batch.get("version")
+        if isinstance(version, bool) or version != BATCH_VERSION:
+            raise RuntimeError("the batch is version %r and this package reads version %d: "
+                               "upgrade the chat bridge package before this bridge delivers"
+                               % (version, BATCH_VERSION))
+        iid = batch.get("instance")
+        if not isinstance(iid, str) or not iid.strip() or len(iid) > 128:
+            raise RuntimeError("the batch names no instance")
+        first, last = batch.get("first"), batch.get("last")
+        for name, v in (("first", first), ("last", last)):
+            if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                raise RuntimeError("the batch's %s is not a sequence number" % name)
+        if first > last:
+            raise RuntimeError("the batch's first %d is past its last %d" % (first, last))
+        events = batch.get("events")
+        if not isinstance(events, list):
+            raise RuntimeError("the batch's events is not a list")
+        if len(events) > MAX_EVENTS:
+            raise RuntimeError("the batch carries %d events, more than the %d one batch may"
+                               % (len(events), MAX_EVENTS))
+        seqs = set()
+        for i, e in enumerate(events):
+            seq = e.get("seq") if isinstance(e, dict) else None
+            if isinstance(seq, bool) or not isinstance(seq, int) or not first <= seq <= last:
+                raise RuntimeError("events[%d] has no seq between first and last" % i)
+            if seq in seqs:
+                raise RuntimeError("seq %d is in the batch twice" % seq)
+            seqs.add(seq)
+        return iid, first, last, sorted(events, key=lambda e: e["seq"])
+
+
+    def pages(host, flt):
+        found, after = {}, None
+        while True:
+            query = {"filter": flt, "first": 500}
+            if after:
+                query["after"] = after
+            page = host.list(**query)
+            for rec in page.get("records") or []:
+                if isinstance(rec, dict) and isinstance(rec.get("id"), str):
+                    found[rec["id"]] = rec
+            after = page.get("cursor")
+            if not after:
+                return found
+
+
+    def read_rows(b, kind, ids):
+        found = {}
+        ids = sorted(ids)
+        size = CHUNK.get(kind, DEFAULT_CHUNK)
+        for i in range(0, len(ids), size):
+            chunk = ids[i:i + size]
+            found.update(pages(b.host, {"kinds": [kind], "ids": chunk}))
+            if kind in READ_DELETED:
+                found.update(pages(b.host, {"kinds": [kind], "ids": chunk, "deleted": True}))
+        for rid in ids:
+            b.rows[(kind, rid)] = Row(kind, rid, found.get(rid), read=True)
+
+
+    def load(b, events):
+        """Read every row the events name, then the rows those lead to."""
+        wanted, refs = {}, set()
+        for ev in events:
+            for kind, rid in ev.keys:
+                if (kind, rid) not in b.rows:
+                    wanted.setdefault(kind, set()).add(rid)
+            refs.update(ev.refs)
+        for kind in WRITE_ORDER:
+            if wanted.get(kind):
+                read_rows(b, kind, wanted[kind])
+        # An action's result names its message through the action's chat and that
+        # chat's account.
+        for kind, owner, prop in ((CHAT, ACTION, "chat"), (ACCOUNT, CHAT, "account")):
+            more = set()
+            for (k, _), row in b.rows.items():
+                rid = ref_id(row.get(prop), kind) if k == owner else None
+                if rid and (kind, rid) not in b.rows:
+                    more.add(rid)
+            if more:
+                read_rows(b, kind, more)
+        refs = sorted(refs)
+        for i in range(0, len(refs), MAX_REFS):
+            flt = {"kinds": [ATTACHMENT],
+                   "referencing": {"refs": refs[i:i + MAX_REFS], "property": "message"}}
+            for rid, rec in pages(b.host, flt).items():
+                b.rows[(ATTACHMENT, rid)] = Row(ATTACHMENT, rid, rec, read=True)
+        for (kind, rid), row in b.rows.items():
+            if kind == ATTACHMENT and row.exists:
+                msg = ref_path(row.get("message"))
+                if msg:
+                    b.attachments_of.setdefault(msg, set()).add(rid)
+
+
+    def stamp(b):
+        """The sync trait's last run on each account an event applied to, and the
+        instance's last delivery, each written at most every STAMP_EVERY so a busy
+        stream does not move them on every batch."""
+        at = format_instant(b.now)
+        for aid in sorted(b.accounts):
+            acct = b.rows.get((ACCOUNT, aid))
+            if acct is None or not acct.exists:
+                continue
+            last = parse_instant(acct.get("lastSyncedAt"))
+            if last is None or b.now - last >= STAMP_EVERY:
+                acct.set("lastSyncedAt", at)
+                if not acct.get("syncState"):
+                    acct.set("syncState", "ok")
+        seen = parse_instant(b.instance.get("lastSeenAt"))
+        if seen is None or b.now - seen >= STAMP_EVERY:
+            b.instance.set("lastSeenAt", at)
+
+
+    def write(b):
+        effects = b.host.effects
+        rows = sorted(b.rows.values(), key=lambda r: (WRITE_ORDER.index(r.kind), r.id))
+        # A chat's delete goes first, so a batch that deletes a chat and then
+        # brings it back writes both, in that order.
+        for row in rows:
+            if row.kind == CHAT and row.deleted_live:
+                effects.delete(CHAT, row.id, if_version=row.version)
+        for row in rows:
+            if not row.exists:
+                continue
+            if row.deleted_live:
+                # A tombstone by now, whose version moved with the delete: a put
+                # brings it back with what it held.
+                effects.put(row.kind, row.id, properties=diff(row.base, row.props))
+            elif row.was_live:
+                guard = row.version
+                prev = row.base
+                for props in row.stages + [row.props]:
+                    changes = diff(prev, props)
+                    if changes:
+                        if guard is None:
+                            effects.patch(row.kind, row.id, properties=changes)
+                        else:
+                            effects.patch(row.kind, row.id, properties=changes, if_version=guard)
+                        guard = None
+                    prev = props
+            elif row.was_tomb:
+                effects.put(row.kind, row.id, properties=diff(row.base, row.props),
+                            if_version=row.version)
+            elif row.kind in READ_DELETED:
+                effects.put(row.kind, row.id, properties=dict(row.props), if_version=0)
+            else:
+                effects.put(row.kind, row.id, properties=dict(row.props))
+        for row in rows:
+            if row.kind == ATTACHMENT and row.was_live and not row.exists:
+                effects.delete(ATTACHMENT, row.id, if_version=row.version)
+
+
+    def note(b, ev, reason):
+        line = ("%s: %s" % (ev.describe(), reason))[:MAX_NOTE]
+        b.skipped.append(line)
+        if len(b.skipped) <= MAX_LOGGED:
+            b.host.log("chatbridge: skipped " + line)
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        text, media = read_request(envelope)
+        iid, first, last, raw_events = read_batch(text)
+        now = parse_instant((envelope.get("fire") or {}).get("at")) or datetime.datetime.now(UTC)
+
+        b = Batch(host, iid, media, now)
+        inst_id = instance_id(host, iid)
+        b.instance = Row(INSTANCE, inst_id, host.records.get(INSTANCE, inst_id), read=True)
+        b.rows[(INSTANCE, inst_id)] = b.instance
+        applied = b.instance.base.get("appliedSeq") or 0
+        if last <= applied:
+            return {"output": {"instance": iid, "appliedSeq": applied, "applied": 0, "skipped": 0,
+                               "already": len(raw_events)}}
+        if first > applied + 1:
+            raise RuntimeError("batch %d..%d of instance %s does not continue its applied sequence, "
+                               "%d: an earlier batch has not applied yet" % (first, last, iid, applied))
+
+        events, already = [], 0
+        for raw in raw_events:
+            if raw["seq"] <= applied:
+                already += 1
+                continue
+            kind = raw.get("type")
+            ev = Event(raw["seq"], kind if isinstance(kind, str) else "?")
+            handlers = EVENTS.get(kind)
+            try:
+                if handlers is None:
+                    raise Bad("not an event type this package knows")
+                handlers[0](b, ev, raw)
+            except Bad as e:
+                note(b, ev, str(e))
+                continue
+            ev.apply = handlers[1]
+            events.append(ev)
+
+        load(b, events)
+        b.instance.exists = True
+        for ev in events:
+            try:
+                if ev.account is not None and ev.kind not in ("account.upsert", "account.removed") \
+                        and not b.rows[(ACCOUNT, ev.account)].exists:
+                    raise Bad("the account is not in the mirror")
+                ev.apply(b, ev)
+            except Bad as e:
+                note(b, ev, str(e))
+                continue
+            b.applied += 1
+            if ev.account is not None and ev.kind != "account.removed":
+                b.accounts.add(ev.account)
+
+        inst = b.instance
+        inst.set("instanceId", iid)
+        inst.set("appliedSeq", last)
+        if b.skipped:
+            inst.set("skippedEvents", (inst.get("skippedEvents") or 0) + len(b.skipped))
+            inst.set("lastSkipped", b.skipped[-1])
+        stamp(b)
+        write(b)
+        return {"output": {"instance": iid, "appliedSeq": last, "applied": b.applied,
+                           "skipped": len(b.skipped), "already": already}}
+---
+# ---- the agent tools ----------------------------------------------------------
+# Six functions offered to agents, each writing one `chataction` and returning
+# its id. None declares `confirmation: always`, which would also hold the
+# owner's own calls and which no allow can lift: the shipped gate holds every
+# agent write instead, and the owner lifts it per agent and tool.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/send
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to send a text message to one chat as the owner, optionally
+    as a reply to one message in it. Writes one chataction record, which the
+    bridge carries out once; an agent's request waits for the owner's approval
+    unless the owner lets this agent send unasked. Returns the action's id:
+    read its state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/chat
+        record to send to
+    - name: text
+      type: string
+      required: true
+      description: the message, as markdown
+    - name: replyTo
+      type: string
+      description: the id of a providers.substrate.reamde.dev/chatbridge/message
+        in the same chat to reply to; leave it out for a plain message
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chat
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import CHAT, MESSAGE, ask, chat, in_chat, message, text
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        path = CHAT + "/" + chat(host, args)["id"]
+        props = {"action": "send", "chat": {"ref": path}, "text": text(args)}
+        if args.get("replyTo"):
+            reply = message(host, args, "replyTo")
+            in_chat(reply, path, "replyTo")
+            props["replyTo"] = {"ref": MESSAGE + "/" + reply["id"]}
+        return ask(input, host, "send", props)
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/react
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to react to one message as the owner. Writes one chataction
+    record, which the bridge carries out once; an agent's request waits for
+    the owner's approval unless the owner lets this agent react unasked. Returns
+    the action's id: read its state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: message
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/message
+        record to react to
+    - name: reactionKey
+      type: string
+      required: true
+      description: the reaction, an emoji; the chat's features list the ones
+        its network allows where it limits them
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import MESSAGE, ask, chat_of, message, reaction_key
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        msg = message(host, args)
+        return ask(input, host, "react", {
+            "action": "react", "chat": {"ref": chat_of(msg)},
+            "target": {"ref": MESSAGE + "/" + msg["id"]}, "reactionKey": reaction_key(args)})
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/unreact
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to remove the owner's reaction from one message. Writes
+    one chataction record, which the bridge carries out once; an agent's request
+    waits for the owner's approval unless the owner lets this agent do it
+    unasked. Returns the action's id: read its state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: message
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/message
+        record the reaction is on
+    - name: reactionKey
+      type: string
+      required: true
+      description: the reaction to remove, as the message's reactions list
+        it
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import MESSAGE, ask, chat_of, message, reaction_key
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        msg = message(host, args)
+        return ask(input, host, "unreact", {
+            "action": "unreact", "chat": {"ref": chat_of(msg)},
+            "target": {"ref": MESSAGE + "/" + msg["id"]}, "reactionKey": reaction_key(args)})
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/edit
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to change the text of one message the owner sent.
+    Writes one chataction record, which the bridge carries out once; an agent's
+    request waits for the owner's approval unless the owner lets this agent
+    edit unasked. Refuses a message someone else sent. Returns the action's
+    id: read its state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: message
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/message
+        record to edit, one the owner sent
+    - name: text
+      type: string
+      required: true
+      description: the message's new text, as markdown
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import MESSAGE, ask, chat_of, message, text
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        msg = message(host, args)
+        if (msg.get("properties") or {}).get("fromOwner") is not True:
+            raise ValueError("message %s was not sent by the owner, and a network lets you edit "
+                             "only your own messages" % msg["id"])
+        return ask(input, host, "edit", {
+            "action": "edit", "chat": {"ref": chat_of(msg)},
+            "target": {"ref": MESSAGE + "/" + msg["id"]}, "text": text(args)})
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/delete
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to delete one message, for the owner alone or for
+    everyone in the chat. Writes one chataction record, which the bridge carries
+    out once; an agent's request waits for the owner's approval unless the
+    owner lets this agent delete unasked. Returns the action's id: read its
+    state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: message
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/message
+        record to delete
+    - name: forEveryone
+      type: bool
+      description: delete it for everyone in the chat, where the network allows;
+        false or left out deletes it for the owner alone
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import MESSAGE, ask, chat_of, message
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        msg = message(host, args)
+        every = args.get("forEveryone", False)
+        if not isinstance(every, bool):
+            raise ValueError("forEveryone is true or false")
+        return ask(input, host, "delete", {
+            "action": "delete", "chat": {"ref": chat_of(msg)},
+            "target": {"ref": MESSAGE + "/" + msg["id"]}, "forEveryone": every})
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/chatbridge/markread
+data:
+  authority: providers.substrate.reamde.dev
+  package: chatbridge
+  description: >-
+    Ask the chat bridge to mark one chat read as the owner, which the other
+    people in it may see. Writes one chataction record, which the bridge carries
+    out once; an agent's request waits for the owner's approval unless the
+    owner lets this agent do it unasked. Returns the action's id: read its
+    state to see how it ended.
+  runtime: python
+  timeout: PT10S
+  effect: write
+  offer:
+    agents: true
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: the id of the providers.substrate.reamde.dev/chatbridge/chat
+        record to mark read
+    - name: upTo
+      type: string
+      description: the id of the last providers.substrate.reamde.dev/chatbridge/message
+        to mark read, in the same chat; left out, the chat is read to its
+        end
+  returns:
+    - name: action
+      type: string
+      required: true
+      description: the id of the chataction record written
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chat
+        - providers.substrate.reamde.dev/chatbridge/message
+    writes:
+      - providers.substrate.reamde.dev/chatbridge/chataction
+  source: |
+    from chatbridge_actions import CHAT, MESSAGE, ask, chat, in_chat, message
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        path = CHAT + "/" + chat(host, args)["id"]
+        props = {"action": "markread", "chat": {"ref": path}}
+        if args.get("upTo"):
+            up = message(host, args, "upTo")
+            in_chat(up, path, "upTo")
+            props["target"] = {"ref": MESSAGE + "/" + up["id"]}
+        return ask(input, host, "markread", props)

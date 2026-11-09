@@ -1,0 +1,20 @@
+# Every agent write of a `chataction` waits for the owner: a put, a patch or a
+# delete, made directly or through one of this package's tools (decision
+# record 0252). Empty `agents` and `functions` mean every agent and only
+# agents' writes, so the owner's own, the console's and `chatevents`' are not
+# held. The owner lets one agent do one thing unasked with an allow naming
+# the agent, the kind and one op, and `overrides: chatbridge-agent-actions`
+# (decision record 0108).
+#
+# The owner's to edit once installed: an install or an upgrade writes it only
+# where no other hand wrote or deleted it.
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: chatbridge-agent-actions
+data:
+  properties:
+    selector:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      ops: [put, patch, delete]
+    action: gate
