@@ -1243,6 +1243,23 @@ def main():
     # it would read a broken account. A failure is never injected into a seed
     # — the owner's repository is not a test bench.
     if mode == "e2e" and mock:
+        print("--> a token that cannot list users skips the roster")
+        # GET /v1/users is refused `restricted_resource` when the integration
+        # has no user-information capability; every run used to stop there.
+        mock_call(mock, "/__mock/faults", "POST", {"rules": [
+            {"match": "GET /v1/users", "status": [403] * 6,
+             "body": {"object": "error", "status": 403,
+                      "code": "restricted_resource",
+                      "message": "Insufficient permissions for this endpoint."}}]})
+        skipped = force_sync(api, akind, aid)
+        mock_call(mock, "/__mock/faults", "DELETE")
+        ok(skipped.get("syncState") == "ok",
+           "a refused roster leaves the run `ok` (%s: %s)"
+           % (skipped.get("syncState"), skipped.get("syncError")))
+        ok("workspace roster" in str(skipped.get("syncStatus") or ""),
+           "and the status counts the roster unreachable (%s)"
+           % skipped.get("syncStatus"))
+
         print("--> the trait says `erroring` when a run fails (T-084)")
         before_state = acct2.get("syncState")
         mock_call(mock, "/__mock/faults", "POST", {"rules": [

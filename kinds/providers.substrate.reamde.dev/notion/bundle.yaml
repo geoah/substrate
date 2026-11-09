@@ -123,7 +123,11 @@ data:
   #
   # 19: `notionsync` pins requests 2.34.2, past PYSEC-2026-2275
   # (CVE-2026-25645), and names its unused loop variable `_kind`.
-  version: 19
+  #
+  # 20: a token without the user-information capability skips the
+  # roster (`restricted_resource` on GET /v1/users) instead of failing
+  # every run before a page is read.
+  version: 20
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -3274,7 +3278,23 @@ data:
             cursor = cur.get("cursor") or (cur.get("cursors") or {}).get("users") or ""
             if cursor:
                 params["start_cursor"] = cursor
-            resp = get("/v1/users", params)
+            try:
+                resp = get("/v1/users", params)
+            except _Permanent as e:
+                # A TOKEN WITHOUT THE USER-INFORMATION CAPABILITY CANNOT LIST
+                # THE ROSTER, and Notion says so with `restricted_resource`.
+                # The roster is the one stage that capability gates: pages
+                # still name their authors, who land as thin user rows. So
+                # the roster is counted unreachable and the walk goes on,
+                # rather than failing every run before a page is read.
+                if e.code != "restricted_resource":
+                    raise
+                _note_missing(cur, "the workspace roster (%s)" % e.code)
+                cursors = dict(cur.get("cursors") or {})
+                cursors.pop("users", None)
+                cur["cursors"] = cursors
+                _save_cursors(host, acct, aid, cur)
+                return _advance(host, acct, aid, cur, queue)
             for u in resp.get("results") or []:
                 sink.user_ref(u, thin=False)
             nxt = resp.get("next_cursor") or ""
