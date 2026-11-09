@@ -9,8 +9,10 @@ owner's data, read-only: over 19 weekly snapshots of WHOOP's own records the
 two agree exactly (no age difference above 0.1 years, no contributor
 difference above 1%), and with every source, WHOOP ranked first, the same 19
 weeks agree and 147 earlier weeks appear from the watch's history. The
-[importers](#importers) were proposed the same day, after the owner asked
-for them: not built.
+[importers](#importers) followed the same day, after the owner asked for
+them, approved after three reviews: every importer's plan was checked
+against the old scripts' output on the owner's own files, and all five ran
+end to end against a local substrate.
 
 ## The problem
 

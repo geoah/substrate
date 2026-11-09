@@ -22,7 +22,7 @@ its writes.
 | Labs | A card per biomarker in panels, each with its chart, target zones, the lab's range, its trend and its sources; filters, a metric's history, the reports |
 | Healthspan | An age score and a pace of aging from sleep, training, steps, VO2 max, resting heart rate and lean mass, against published reference curves; the signals your sources report; how the score works |
 | Record | The clinical record from every provider that writes it, with what is due and what is new; shown once there is one |
-| Sources | Every source of your values, what it reports and when; which one wins where two report the same thing; sources that are one device; the imports, with Resume and Undo; Import a CSV of lab results, or enter one by hand |
+| Sources | Every source of your values, what it reports and when; which one wins where two report the same thing; sources that are one device; the imports, with Resume and Undo; Import a provider's export or folder ([below](#importers)), a CSV of lab results, or one result by hand |
 | Settings | Your details and where each came from, the display settings, then the kit's sections |
 
 A phone has a tab per section; from 768 px the sections sit in a sidebar.
@@ -39,6 +39,25 @@ record's gender is offered, never taken. An app cannot write `core`, so a
 value typed here goes to the profile, and Settings links to the console to
 put it on your contact. The app reads every setting record for the one
 naming your contact; none holds a secret.
+
+## Importers
+
+Sources takes what a provider gives you and offers the importer it
+recognises, then shows what it will write before anything is written:
+
+| Importer | Hand it | It writes |
+| --- | --- | --- |
+| Numan | its JSON exports, one or several | each test as a report, its results with the lab's and Numan's ranges |
+| Randox | the folder `randoxctl` downloads, or its zip | each visit's results with their bands, and its Tanita body composition sheet, regions included |
+| DXA | GE Lunar scan printouts (PDF), and a transcribed trend page | each scan's bone density and body composition, regions included; asks the scanning centre's name and time zone |
+| NHS App | the folder `nhsctl` downloads, or its zip | the GP record's test results, and the whole clinical record: consultations, conditions, medicines, documents, messages |
+| MyChart | the folder `mychartctl` downloads for a portal, or its zip | the hospital's lab results, and its clinical record and imaging reports; asks the hospital's ODS code |
+| CSV | a CSV or TSV of lab results | the rows you tick, matched to the catalogue |
+
+An import is staged from your browser, then written by any device that
+resumes it. A newer export of the same provider updates what an older one
+wrote, never the other way round, and Undo removes what an import created.
+How each importer reads its files is in [docs/importers/](docs/importers/).
 
 ## Which source wins
 
@@ -112,7 +131,9 @@ unverified on the approval page, and still installs the published package.
 | `web/src/labs/` | the lab index: specimens, unit forms, series, filters |
 | `web/src/engine/`, `web/src/healthspan/` | the age score and its input from the shared kinds; the cards, scales and suggestions |
 | `web/src/profile/`, `web/src/record/` | who you are; the clinical record |
-| `web/src/sources/`, `web/src/import/` | the sources, ranks and links; the import's parsing, matching, plan and runner |
+| `web/src/sources/`, `web/src/import/` | the sources, ranks and links; the runner that stages, writes and undoes every import |
+| `web/src/import/importers/` | one importer per provider behind one interface, with Effect, and what they share |
+| `docs/importers/` | how each importer reads its provider |
 | `web/src/rules/` | what needs attention, one pure function each |
 | `web/src/ui/`, `web/src/lib/` | the charts, cards and controls; formatting, units, time axes, display settings |
 | `web/src/demo/` | the invented person |
