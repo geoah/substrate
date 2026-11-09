@@ -27,6 +27,11 @@ func (a *App) Login(ctx context.Context, network, flow string, history networks.
 	if !slices.Contains(spec.Flows, flow) {
 		return fmt.Errorf("%s has no login flow %q (it has %v)", spec.DisplayName, flow, spec.Flows)
 	}
+	if spec.Acknowledge != "" {
+		if err := term.Acknowledge(spec.Acknowledge); err != nil {
+			return err
+		}
+	}
 	if err := a.OpenNetworks(a.options(history), network); err != nil {
 		return err
 	}

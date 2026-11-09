@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
+	"github.com/geoah/substrate/cmd/chatbridge/internal/contract"
 	"github.com/geoah/substrate/cmd/chatbridge/internal/localmatrix"
 	"github.com/geoah/substrate/cmd/chatbridge/internal/store"
 )
@@ -90,6 +92,26 @@ type Spec struct {
 	TxnID func(action string) string
 	// Tune adjusts the bridge's configuration for the network.
 	Tune func(Options, *bridgeconfig.BridgeConfig)
+	// Acknowledge is a rule of the network the bridge breaks, which the
+	// owner accepts before an account is linked. Such a network runs by
+	// default only once one was (Linked).
+	Acknowledge string
+}
+
+// dbPath is where a network's bridge keeps its state in the store.
+func dbPath(st *store.Store, spec Spec) string { return filepath.Join(st.Dir(), spec.ID+".db") }
+
+// Linked reports a network a link was made or tried on: its database
+// exists, which only a login or a run of the network creates.
+func Linked(st *store.Store, spec Spec) bool {
+	_, err := os.Stat(dbPath(st, spec))
+	return err == nil
+}
+
+// warnable is a connector that hears of waits and challenges outside an
+// action's error, and reports them as warnings on the account.
+type warnable interface {
+	SetWarner(func(ctx context.Context, account string, w contract.Warning))
 }
 
 // Registry is every network this build carries and this configuration can
@@ -99,7 +121,7 @@ func Registry(opts Options) []Spec {
 	if opts.Telegram.Set() {
 		specs = append(specs, telegramSpec())
 	}
-	return specs
+	return append(specs, discordSpec())
 }
 
 // Find returns the network with an id.
@@ -170,13 +192,16 @@ func Open(spec Spec, st *store.Store, settings localmatrix.Settings, opts Option
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", spec.ID, err)
 	}
-	db, err := dbutil.NewWithDialect(store.DSN(filepath.Join(st.Dir(), spec.ID+".db")), store.Driver)
+	db, err := dbutil.NewWithDialect(store.DSN(dbPath(st, spec)), store.Driver)
 	if err != nil {
 		return nil, fmt.Errorf("%s: opening the database: %w", spec.ID, err)
 	}
 	zlog = zlog.With().Str("network", spec.ID).Logger()
 	db.Log = dbutil.ZeroLogger(zlog.With().Str("db", spec.ID).Logger())
 	matrix := localmatrix.New(spec.ID, st, settings, hooks, log)
+	if w, ok := conn.(warnable); ok {
+		w.SetWarner(matrix.Warn)
+	}
 	// The WhatsApp connector adds its handlers to bridgev2's own command
 	// processor, so the bridge carries one; no event ever reaches it.
 	cfg := BridgeConfig()

@@ -255,7 +255,7 @@ func (c *Connector) Execute(ctx context.Context, req Request) Outcome {
 	res := c.br.QueueMatrixEvent(ctx, evt)
 	if res.Error != nil && c.net != nil {
 		if w, ok := c.net.Throttle(res.Error, c.store.Now()); ok {
-			c.warn(ctx, req.Account, w)
+			c.Warn(ctx, req.Account, w)
 		}
 	}
 	return c.outcome(ctx, portal, req, evt, res)

@@ -127,7 +127,12 @@ func build() ([]byte, error) {
 		}
 		m := p.Module
 		if m.Replace != nil {
-			m = &module{Path: m.Path, Version: m.Replace.Version, Dir: m.Replace.Dir}
+			// The fork a replace links is what ships, under its own name.
+			name := m.Path
+			if m.Replace.Path != m.Path && m.Replace.Version != "" {
+				name = m.Path + " => " + m.Replace.Path
+			}
+			m = &module{Path: name, Version: m.Replace.Version, Dir: m.Replace.Dir}
 		}
 		mods[m.Path] = m
 		// A directory inside a module may carry code under a license of

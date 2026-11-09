@@ -31,6 +31,23 @@ type Terminal struct {
 	Secret func(prompt string) (string, error)
 }
 
+// ErrNotAcknowledged is a link the owner did not agree to.
+var ErrNotAcknowledged = errors.New("not linked: the network's rule was not acknowledged")
+
+// Acknowledge shows a rule of the network the bridge breaks and goes on
+// only when the owner types yes.
+func (t Terminal) Acknowledge(rule string) error {
+	fmt.Fprintf(t.Out, "%s\n\nType yes to link the account anyway: ", rule)
+	line, err := bufio.NewReader(t.In).ReadString('\n')
+	if strings.EqualFold(strings.TrimSpace(line), "yes") {
+		return nil
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return ErrNotAcknowledged
+}
+
 // secret reports a field whose value must not be echoed.
 func secret(t bridgev2.LoginInputFieldType) bool {
 	return t == bridgev2.LoginInputFieldTypePassword || t == bridgev2.LoginInputFieldTypeToken

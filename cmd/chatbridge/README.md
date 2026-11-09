@@ -1,7 +1,9 @@
 # chatbridge
 
 Connects the owner's chat networks to a substrate as the owner, never as a
-bot. It carries WhatsApp and Telegram. The bridge runs the mautrix
+bot. It carries WhatsApp and Telegram, and Discord for an owner who accepts
+that doing so breaks Discord's rules ([Discord](#discord)). The bridge runs
+the mautrix
 [bridgev2](https://github.com/mautrix/go/tree/main/bridgev2) framework with
 each network's connector against a local Matrix side instead of a homeserver,
 pushes what happens on the network to the substrate's webhook door one
@@ -12,8 +14,8 @@ the package it delivers to is `providers.substrate.reamde.dev/chatbridge`.
 
 It is its own program and its own Go module, under the
 [GNU Affero General Public License, version 3](LICENSE), because the network
-connectors it links (mautrix-whatsapp, mautrix-telegram) are AGPL-3.0 and
-whatsmeow links the GPL-3.0
+connectors it links (mautrix-whatsapp, mautrix-telegram, mautrix-discord)
+are AGPL-3.0 and whatsmeow links the GPL-3.0
 `go.mau.fi/libsignal` ([NOTICE](NOTICE) lists every dependency and its
 license). It imports no package of the substrate server and talks to it
 only over the server's public HTTP API
@@ -60,6 +62,11 @@ Three steps on the bridge's host, each with the store in `CHATBRIDGE_DATA`
    instead. See [Telegram](#telegram) first: it needs the operator's app
    registration.
 
+   `chatbridge login discord` prints Discord's rule against automating a user
+   account and goes on only after you type `yes`. It then draws a QR to scan
+   in the Discord app on a phone, or with `--token` reads the account's token
+   without echo. Read [Discord](#discord) first.
+
 3. **Run** it:
 
    ```sh
@@ -76,7 +83,7 @@ accounts, and works while the bridge runs.
 | `CHATBRIDGE_DATA`        | `data`         | The store directory                                                  |
 | `CHATBRIDGE_LISTEN_ADDR` | `:8080`        | Where `/healthz` and `/metrics` are served                           |
 | `CHATBRIDGE_NAME`        | the host name  | The instance's name, as the console shows it                         |
-| `CHATBRIDGE_NETWORKS`    | every network  | The networks to run, comma-separated (`whatsapp`, `telegram`)        |
+| `CHATBRIDGE_NETWORKS`    | every network  | The networks to run, comma-separated (`whatsapp`, `telegram`, `discord`); by default Discord runs only once a link was made or tried |
 | `CHATBRIDGE_DEVICE_NAME` | `Substrate`    | The name a network shows in the owner's linked devices               |
 | `CHATBRIDGE_DEBUG`       | `false`        | Debug logs from bridgev2 and the connectors, which include message text |
 | `CHATBRIDGE_TELEGRAM_API_ID`   | none     | The operator's Telegram app id, from my.telegram.org; Telegram is offered only with both |
@@ -133,9 +140,11 @@ runs on its account's one worker, by the protocol of
 - the claim (action, attempt, version, digest of the request) is written to
   the store, with `action.claimed` in the same transaction, before anything
   leaves; a claim records when it left;
-- the action's id becomes its transaction id: on WhatsApp the message id
-  itself (`3EB0` and 18 hex digits, the shape WhatsApp Web uses), so a repeat
-  would be the same message;
+- each action carries a transaction id in the network's own form: on
+  WhatsApp the message id itself (`3EB0` and 18 hex digits, the shape
+  WhatsApp Web uses) and on Telegram the message's `random_id`, both hashed
+  from the action's id, so a repeat would be the same message; on Discord a
+  nonce of the moment, as its app sends;
 - the outcome and what it changed (the owner's message, carrying the action,
   the reactions, the deletion, the read marker) are written with
   `action.result` in one transaction, and a second report of an attempt
@@ -230,6 +239,72 @@ and files map as for WhatsApp. Not mapped: secret chats, which live only on
 the device that started them, and sponsored messages (above). A send that
 left before a crash cannot be found afterwards, because Telegram numbers
 messages on its server, so it settles as `uncertain`.
+
+## Discord
+
+Discord is carried by mautrix-discord's bridgev2 rewrite, its unreleased
+`megadiscord` branch pinned by pseudo-version, on Beeper's fork of discordgo
+(a `replace` in `go.mod`), beside WhatsApp and Telegram on the same
+mautrix-go.
+
+**The risk.** Discord's rules forbid automating a user account, and Discord
+enforces them by terminating accounts. This bridge is that automation: it
+signs in as the owner, keeps a gateway connection open around the clock, and
+sends what the owner's actions ask. Behaving like Discord's own app does not
+make it allowed, and nothing guarantees Discord will not notice. The account
+can be lost, with its servers, friends and history. Link an account whose
+loss you can accept, or none. `login discord` prints the rule and links only
+after you type `yes`.
+
+**Linking.** `chatbridge login discord` draws a QR to scan in the Discord app
+on a phone. `--token` takes the account's token instead, read without echo;
+whoever holds that token holds the account, and the bridge keeps it in its
+store. There is no password login. By default the network runs only once a
+link was made or tried; `CHATBRIDGE_NETWORKS` naming `discord` runs it
+regardless. Unlinking (a deleted `account` row, or `unlinkRequestedAt`)
+disconnects and forgets the token, but the connector cannot end the session
+on Discord's side: end it under the account's devices in Discord's settings.
+
+**How it behaves:**
+
+- Gateway first. Everything live arrives on the one gateway connection, as
+  it does for the app. The REST API is read only for what the gateway does
+  not bring: a chat's latest page (100 messages) when it first appears, and
+  after a reconnect one page after the last stored message of each chat
+  whose newest message is newer. Older history is not paged. At link, the 10
+  most recently active DMs and group DMs appear; the others appear when they
+  next get a message.
+- The session identifies as Discord's web app in a desktop browser,
+  invisible and away, as the connector sets it, so it never shows the owner
+  online. Nothing types.
+- Nothing is marked read but by a `markread` action, which sends the
+  acknowledgement the app sends when its user reads a chat.
+- No unsolicited DMs. The bridge never opens a DM: an action writes into a
+  chat that already exists. A first message to someone who is not a friend,
+  or into a message request, needs `allowNewChat`, which only the owner sets.
+  The connector's own screen against messaging people who are not friends is
+  off, because it would also refuse a conversation the owner already has
+  with someone from a server.
+- A rate limit stops sending on the account for as long as Discord asks and
+  at least a minute, as a `flood_wait` warning with its end; the request
+  that met it waits the limit out inside the connector. A captcha, which
+  Discord asks for when it suspects automation, stops sending for a day, as
+  a `checkpoint` warning. Discord asking the owner to act in its app (verify
+  an email or a phone, a safety check, an urgent system message) is a
+  `checkpoint` warning until it is done there. A restart forgets a wait, and
+  the next request meets Discord's again.
+- A message's nonce is a snowflake of the moment it is sent, as the app's
+  is, rather than the action's id; the claim keeps it. Discord numbers
+  messages on its server, so a send that left before a crash cannot be found
+  afterwards and settles as `uncertain`.
+
+**What is mapped.** DMs and group DMs, with their messages, edits,
+deletions, reactions, the owner's read markers and files. Users by their
+numeric id, with their display name and their username as `handle`; a friend
+is a contact, and the nickname the owner gave a friend is its `contactName`.
+The friends list is the one Discord sent when the account connected. A
+custom emoji reaction arrives as its `:name:` and cannot be sent back. Not
+mapped: servers, their channels and threads, and calls.
 
 ## Endpoints
 

@@ -192,10 +192,11 @@ func (c *Connector) AccountRemoved(ctx context.Context, account string, forget b
 	return err
 }
 
-// warn adds a warning the network gave on an action to an account's state,
-// replacing one of the same code, and appends the state: a flood wait, a
-// rate limit or a captcha stops sending on the account until it ends.
-func (c *Connector) warn(ctx context.Context, account string, w contract.Warning) {
+// Warn adds a warning the network gave outside its state to an account's
+// state, replacing one of the same code, and appends the state: a flood
+// wait, a rate limit or a captcha stops sending on the account until it
+// ends.
+func (c *Connector) Warn(ctx context.Context, account string, w contract.Warning) {
 	c.stateMu.Lock()
 	st, ok := c.states[networkid.UserLoginID(account)]
 	if !ok {

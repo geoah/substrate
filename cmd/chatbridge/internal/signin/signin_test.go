@@ -3,6 +3,7 @@ package signin
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -46,5 +47,26 @@ func TestTheQRDrawsHalfBlocks(t *testing.T) {
 	}
 	if !strings.ContainsAny(qr, "█▀▄") || strings.Count(qr, "\n") < 10 {
 		t.Fatalf("qr %q", qr)
+	}
+}
+
+func TestALinkTheNetworkForbidsTakesAnExplicitYes(t *testing.T) {
+	for input, ok := range map[string]bool{"yes\n": true, " YES \n": true, "yes": true, "y\n": false, "\n": false, "": false, "no\n": false} {
+		var out bytes.Buffer
+		err := Terminal{In: strings.NewReader(input), Out: &out}.Acknowledge("Discord's rule: no automating.")
+		if (err == nil) != ok || (!ok && !errors.Is(err, ErrNotAcknowledged)) {
+			t.Fatalf("%q reads %v", input, err)
+		}
+		if !strings.Contains(out.String(), "Discord's rule: no automating.") {
+			t.Fatalf("the rule was not shown: %q", out.String())
+		}
+	}
+	// What follows the yes stays for the sign-in, as a piped token does.
+	in := bufio.NewReader(strings.NewReader("yes\ntoken-line\n"))
+	if err := (Terminal{In: in, Out: &bytes.Buffer{}}).Acknowledge("rule"); err != nil {
+		t.Fatal(err)
+	}
+	if rest, _ := bufio.NewReader(in).ReadString('\n'); rest != "token-line\n" {
+		t.Fatalf("the acknowledgment ate what followed: %q", rest)
 	}
 }
