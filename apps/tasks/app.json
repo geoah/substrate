@@ -22,7 +22,7 @@
   "asks": [
     {
       "package": "substrate.reamde.dev/tasks",
-      "atLeast": 1
+      "atLeast": 2
     }
   ],
   "scopes": [

@@ -11,7 +11,7 @@ const manifest = webManifest({
   id: "tasks",
   name: "Substrate Tasks",
   scopes: ["write:substrate.reamde.dev/tasks/*"],
-  details: [packageDetail("substrate.reamde.dev/tasks", 1)],
+  details: [packageDetail("substrate.reamde.dev/tasks", 2)],
   packageNames: { "substrate.reamde.dev/tasks": "Tasks" },
   softwareVersion: __APP_VERSION__,
 })
