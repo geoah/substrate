@@ -1,0 +1,17 @@
+{
+ "id": "362059",
+ "chatID": "!JSpry6d0eGyvlGnrwGVq:beeper.local",
+ "accountID": "telegram",
+ "senderID": "@adalovelace:beeper.com",
+ "senderName": "Ada Lovelace",
+ "timestamp": "2026-09-16T06:39:58.271Z",
+ "sortKey": "778140",
+ "type": "TEXT",
+ "text": "The draft was split out, and the review moves to Friday.",
+ "isSender": true,
+ "isDeleted": false,
+ "mentions": null,
+ "editedTimestamp": "2026-09-16T07:45:12.000Z",
+ "messageID": "362059",
+ "success": true
+}

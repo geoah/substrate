@@ -11,6 +11,10 @@ package providertest
 // the connect is refused at once (ECONNREFUSED) rather than waiting out a
 // connect timeout. The python cases in py/test_beeper_offline.py hold the
 // other shapes of the failure (timeouts, no route, DNS, the sandbox gate).
+//
+// The writes are held here by their declarations, and by
+// py/test_beeper_writes.py (TestBodyHelpersBeeperWrites) for the request each
+// one sends and the output it answers.
 
 import (
 	"maps"
@@ -23,6 +27,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -34,6 +39,61 @@ const (
 	beeperAccount     = "acct-beeper"
 	beeperUnreachable = "Beeper Desktop is not reachable (since "
 )
+
+// beeperWrites are the bundle's writes to Beeper, each a callable no trigger
+// fires (decision 0125), and the effect each declares.
+var beeperWrites = map[string]string{
+	"sendmessage":    vocabulary.FunctionEffectExternal,
+	"editmessage":    vocabulary.FunctionEffectExternal,
+	"deletemessage":  vocabulary.FunctionEffectIrreversible,
+	"addreaction":    vocabulary.FunctionEffectExternal,
+	"removereaction": vocabulary.FunctionEffectExternal,
+	"markread":       vocabulary.FunctionEffectExternal,
+	"markunread":     vocabulary.FunctionEffectExternal,
+}
+
+// TestBeeperWritesAreOfferedToNoAgent holds each write to what lets it ship
+// beside an agent runtime: it is offered to no agent, since a write returns
+// no record for the policy door to hold and an offered one would act as the
+// owner unasked; it declares its effect; it may write and read no record;
+// and it reaches the loopback pin alone. The bundle ships the module they
+// send the token through.
+func TestBeeperWritesAreOfferedToNoAgent(t *testing.T) {
+	t.Parallel()
+	reg := bundleRegistry(t, beeperDir)
+	b, ok := reg.BundleOf(beeperPackage)
+	if !ok {
+		t.Fatalf("the beeper bundle did not register")
+	}
+	if _, ok := b.Modules["beeper_api.py"]; !ok {
+		t.Fatalf("bundle ships modules %v, want beeper_api.py, the one place the writes send the token from", slices.Collect(maps.Keys(b.Modules)))
+	}
+	seen := map[string]bool{}
+	for _, fn := range reg.Functions() {
+		effect, write := beeperWrites[fn.Name]
+		if fn.Package != beeperPackage || !write {
+			continue
+		}
+		seen[fn.Name] = true
+		if fn.Offer != nil {
+			t.Errorf("%s is offered to agents as %q; no Beeper write may be", fn.Name, fn.Offer.ToolName)
+		}
+		if fn.Effect != effect {
+			t.Errorf("%s declares effect %q, want %q", fn.Name, fn.Effect, effect)
+		}
+		if len(fn.Caps.Emit) != 0 || fn.Caps.Reads != nil || len(fn.Caps.Call) != 0 || len(fn.Caps.Agents) != 0 {
+			t.Errorf("%s grants %+v; a write writes and reads no record and calls nothing", fn.Name, fn.Caps)
+		}
+		if !slices.Equal(fn.Caps.Network, []string{"localhost", "127.0.0.1"}) {
+			t.Errorf("%s reaches %v, want the loopback pin [localhost 127.0.0.1]", fn.Name, fn.Caps.Network)
+		}
+	}
+	for name := range beeperWrites {
+		if !seen[name] {
+			t.Errorf("the bundle declares no %s", name)
+		}
+	}
+}
 
 // fakeBeeper is a Beeper Desktop with an empty inbox: no chat accounts, no
 // bridges, no labels and no chats, so a walk reaches `done` in a few steps.

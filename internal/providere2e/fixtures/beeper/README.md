@@ -2,7 +2,9 @@
 
 37 recordings, ~244 KB, cut from the owner's own pull of a 476-chat inbox and
 pseudonymised. `audit.py` proves it is publishable; it must print
-`FINDINGS: 0`, and the commit is gated on that.
+`FINDINGS: 0`, and the commit is gated on that. Beside them, eight recordings
+answer the bundle's writes; they are written, not pulled
+([the write recordings](#the-write-recordings)).
 
 ```bash
 python3 providers/beeper/fixtures/curate.py --out /tmp/beeper-cut
@@ -82,6 +84,28 @@ nothing else can:
   sync. The same applies to a chat's `preview`, which is one of that chat's own
   messages. The list's spelling wins for a chat, the history page's for a
   message; nothing structural is copied, because the roster genuinely differs.
+
+## The write recordings
+
+A pull of the owner's inbox reads and never writes, so it holds no answer to
+a write. These eight are written to the answers Beeper's own SDK and
+changelog describe for each route, out of objects the cut already holds, so
+they add no identity: all of them name the cut's direct Telegram chat
+`!JSpry6d0eGyvlGnrwGVq:beeper.local`, the owner's message `362059` in it (to
+edit and delete) and the other participant's `362064` (to react to). The
+scenario's sections 14 and 15 drive them.
+
+| Recording | What it answers |
+| --- | --- |
+| `POST_v1_chats_JSpry…_messages.json` | `sendmessage`: the chat and a pending message id |
+| `PUT_v1_chats_JSpry…_messages_362059.json` | `editmessage`: the message, with its new text and `editedTimestamp` |
+| `DELETE_v1_chats_JSpry…_messages_362059__forEveryone-true.json` and `…-false.json` | `deletemessage`: a 204 with no body, one per `forEveryone` |
+| `POST_v1_chats_JSpry…_messages_362064_reactions.json` | `addreaction`: the reaction and a transaction id |
+| `DELETE_v1_chats_JSpry…_messages_362064_reactions.json` | `removereaction`: an emoji key has no spelling in a recording's name, so the name ends at `reactions` and the scenario reads the key off the logged path |
+| `POST_v1_chats_JSpry…_read.json` and `…_unread.json` | `markread` and `markunread`: the chat as the authoritative read returns it, unread mark off and on |
+
+`audit.py` reads the `GET_` recordings, the pulled ones; these carry nothing
+but values those already hold.
 
 ## What this set does NOT cover
 

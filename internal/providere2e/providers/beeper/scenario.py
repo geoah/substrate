@@ -50,6 +50,12 @@ WHAT IT ASSERTS, and why each one is worth a run:
                   sends, its output, no record written, Beeper's refusal
                   surfaced, a public apiBase refused unsent, and an agent
                   calling it as a tool (#712)
+   15. writes     `editmessage`, `deletemessage`, `addreaction`,
+                  `removereaction`, `markread` and `markunread`, the same
+                  way: the request each sends (the reaction key in the path,
+                  `forEveryone` always in the query), its output, no record
+                  written, Beeper's refusal surfaced, a public apiBase refused
+                  unsent, and none of them offered to agents
 
 Run against `raw/beeper` (MODE=seed) two families of check relax, and only
 two; both are commented "SEED:" at the site and described in
@@ -1107,6 +1113,9 @@ def main() -> int:
     section("14. sendmessage sends through the pasted token")
     sendmessage()
 
+    section("15. the writes past sending: edit, delete, react, mark read")
+    writes_past_sending()
+
     # ------------------------------------------------------------- the report
     print("")
     if not problems:
@@ -1308,6 +1317,183 @@ def sendmessage():
        "the agent's call carried no Beeper token (%r)"
        % (sent[0].get("auth") if sent else None))
     note("sendmessage: %d sends reached the mock" % len(w.requests("POST", route)))
+
+
+EDIT_FN, DELETE_FN = P + "/editmessage", P + "/deletemessage"
+REACT_FN, UNREACT_FN = P + "/addreaction", P + "/removereaction"
+READ_FN, UNREAD_FN = P + "/markread", P + "/markunread"
+FUNCTION = "/api/v1/substrate.reamde.dev/core/function/"
+
+
+def writes_past_sending():
+    """The six Beeper writes past sending (docs/bundles-catalog.md, "Writing
+    to Beeper"). Each is a callable that spends the config's token on one
+    route and writes no record (decision record 0125). Every id is read off a
+    recording: the edit's message is one the owner sent, the reaction's one
+    sent to the owner, both in the chat the read recordings answer for and
+    both mirrored by the sync."""
+    if not MOCK or SEED:
+        seed_note("the writes are driven against the mock only")
+        return
+    from writecall import Writes, body_json, error_text
+
+    def first(pattern):
+        return next((doc for _, doc in each(pattern)), None) or {}
+
+    edited = first("PUT_v1_chats_*_messages_*.json")
+    reacted = first("POST_v1_chats_*_messages_*_reactions.json")
+    read, unread = first("POST_v1_chats_*_read.json"), first("POST_v1_chats_*_unread.json")
+    chat, own, theirs = read.get("id"), edited.get("id"), reacted.get("messageID")
+    key = reacted.get("reactionKey")
+    if not ok(chat and own and theirs and key and unread.get("id") == chat
+              and edited.get("chatID") == chat and reacted.get("chatID") == chat,
+              "the write recordings name no one chat holding a message of each "
+              "kind and a reaction"):
+        return
+    chats = {props(r).get("chatId"): r for r in records(CHAT)}
+    held = {props(m).get("messageId"): m for m in records(MESSAGE)
+            if ref_id(props(m).get("chat")) == rid(chats.get(chat) or {})}
+    ok(chat in chats and own in held and theirs in held,
+       "the recordings' chat %s and messages %s, %s are not all mirrored"
+       % (chat, own, theirs))
+    ok(props(held.get(own) or {}).get("isSender") is True,
+       "the message to edit and delete, %s, is not the owner's" % own)
+
+    def mirror():
+        """The versions of every mirror row the writes name, and how many
+        messages there are: a write that wrote a record moves one of them."""
+        rows = [r for r in records(CHAT) if props(r).get("chatId") == chat]
+        rows += [m for m in records(MESSAGE) if props(m).get("messageId") in (own, theirs)]
+        return len(records(MESSAGE)), sorted((rid(r), version(r)) for r in rows)
+
+    before_mirror = mirror()
+    w = Writes(SERVER, TOKEN, MOCK)
+    w.reset()
+    base = "/v1/chats/" + chat
+
+    def one(fn, args, method, route, sent_body, want, query=""):
+        """One call: its output, no record written, and the one request it
+        made, with the token, the body and the query Beeper documents."""
+        name = fn.rsplit("/", 1)[-1]
+        n = len(w.requests(method, route))
+        st, reply = w.call(fn, args)
+        ok(st == 200, "%s answered %s: %s" % (name, st, error_text(reply)[:300]))
+        out = ((reply or {}).get("output") or {}) if st == 200 else {}
+        ok(out == want, "%s's output is %r, want %r" % (name, out, want))
+        ok((reply or {}).get("effects") == 0,
+           "%s wrote %r records; it writes none" % (name, (reply or {}).get("effects")))
+        sent = w.requests(method, route)[n:]
+        if not ok(len(sent) == 1, "%d %s %s requests reached Beeper for %s, want 1"
+                  % (len(sent), method, route, name)):
+            return {}
+        ok(str(sent[0].get("auth") or "").startswith("Bearer bdapi-"),
+           "%s's token did not ride the Authorization header (%r)"
+           % (name, sent[0].get("auth")))
+        ok(body_json(sent[0]) == sent_body,
+           "%s sent the body %r, want %r" % (name, sent[0].get("body"), sent_body))
+        ok((sent[0].get("query") or "") == query,
+           "%s sent the query %r, want %r" % (name, sent[0].get("query"), query))
+        return sent[0]
+
+    text = edited.get("text")
+    one(EDIT_FN, {"chat": chat, "message": own, "text": text}, "PUT",
+        "%s/messages/%s" % (base, own), {"text": text},
+        {"chat": chat, "message": own, "text": text})
+    for everyone in (True, False):
+        flag = "true" if everyone else "false"
+        one(DELETE_FN, {"chat": chat, "message": own, "forEveryone": everyone}, "DELETE",
+            "%s/messages/%s" % (base, own), None,
+            {"chat": chat, "message": own, "forEveryone": everyone},
+            query="forEveryone=" + flag)
+    one(REACT_FN, {"chat": chat, "message": theirs, "reactionKey": key}, "POST",
+        "%s/messages/%s/reactions" % (base, theirs), {"reactionKey": key},
+        {"chat": chat, "message": theirs, "reactionKey": key,
+         "transactionId": reacted.get("transactionID")})
+    # Beeper Desktop 4.2.808 moved the key from a `reactionKey` query into the
+    # path. An emoji has no spelling in a recording's name, so the path form's
+    # name ends at `reactions`: only that form matches it exactly, and the
+    # query form reaches it as a fallback.
+    gone = one(UNREACT_FN, {"chat": chat, "message": theirs, "reactionKey": key},
+               "DELETE", "%s/messages/%s/reactions/%s" % (base, theirs, key), None,
+               {"chat": chat, "message": theirs, "reactionKey": key})
+    ok(gone.get("match") == "exact",
+       "removereaction was answered by a %r match, not the path form's own "
+       "recording" % gone.get("match"))
+    state = {"chat": chat, "unreadCount": read.get("unreadCount"),
+             "isMarkedUnread": read.get("isMarkedUnread")}
+    one(READ_FN, {"chat": chat}, "POST", base + "/read", {}, state)
+    one(READ_FN, {"chat": chat, "message": theirs}, "POST", base + "/read",
+        {"messageID": theirs}, state)
+    marked = {"chat": chat, "unreadCount": unread.get("unreadCount"),
+              "isMarkedUnread": unread.get("isMarkedUnread")}
+    ok(marked["isMarkedUnread"] is True, "the unread recording carries no unread mark")
+    one(UNREAD_FN, {"chat": chat}, "POST", base + "/unread", {}, marked)
+    one(UNREAD_FN, {"chat": chat, "message": theirs}, "POST", base + "/unread",
+        {"messageID": theirs}, marked)
+
+    # Each one a fair call, for the refusals below.
+    calls = [
+        (EDIT_FN, {"chat": chat, "message": own, "text": text},
+         "PUT /v1/chats/*/messages/*", 400, "Messages with attachments cannot be edited"),
+        (DELETE_FN, {"chat": chat, "message": own, "forEveryone": True},
+         "DELETE /v1/chats/*/messages/*", 404, "Message not found"),
+        (REACT_FN, {"chat": chat, "message": theirs, "reactionKey": key},
+         "POST /v1/chats/*/messages/*/reactions", 404, "Message not found"),
+        (UNREACT_FN, {"chat": chat, "message": theirs, "reactionKey": key},
+         "DELETE /v1/chats/*/messages/*/reactions/*", 404, "Reaction not found"),
+        (READ_FN, {"chat": chat}, "POST /v1/chats/*/read", 404, "Chat not found"),
+        (UNREAD_FN, {"chat": chat}, "POST /v1/chats/*/unread", 404, "Chat not found"),
+    ]
+    for fn, args, match, status, words in calls:
+        name = fn.rsplit("/", 1)[-1]
+        w.faults([{"match": match, "status": [status],
+                   "body": {"message": words, "code": "REFUSED"}}])
+        st, reply = w.call(fn, args)
+        ok(st >= 400 and words in error_text(reply) and ("HTTP %d" % status) in error_text(reply),
+           "Beeper's refusal of %s did not reach the caller: %s %s"
+           % (name, st, error_text(reply)[:300]))
+        w.faults([])
+
+    # Which delete it is never falls to Beeper's default, and a blank id is
+    # refused before a request is built.
+    sent_before = len(w.requests())
+    st, _ = w.call(DELETE_FN, {"chat": chat, "message": own})
+    ok(400 <= st < 500, "a delete that says nothing of forEveryone answered %s, want a 4xx" % st)
+    st, _ = w.call(REACT_FN, {"chat": chat, "message": " ", "reactionKey": key})
+    ok(st >= 400, "a reaction to a blank message id answered %s" % st)
+    ok(len(w.requests()) == sent_before, "a refused call still reached Beeper")
+
+    # The origin pin: a public apiBase refuses every write before any
+    # request. The value it had is put back, not cleared: a scenario-only run
+    # reaches the mock through it.
+    cfg = "/api/v1/%s/default" % os.environ.get("CONFIG_KIND", P + "/config")
+    had = props(api("GET", cfg)[1] or {}).get("apiBase")
+    st, _ = api("PATCH", cfg, {"properties": {"apiBase": "https://beeper.example.com"}})
+    if ok(st < 400, "could not point apiBase at a public host: %s" % st):
+        try:
+            for fn, args, _match, _status, _words in calls:
+                st, reply = w.call(fn, args)
+                ok(st >= 400 and "not a private origin" in error_text(reply),
+                   "%s with a public apiBase did not refuse: %s %s"
+                   % (fn.rsplit("/", 1)[-1], st, error_text(reply)[:200]))
+            ok(len(w.requests()) == sent_before,
+               "a write refused for its apiBase still reached the mock")
+        finally:
+            api("PATCH", cfg, {"properties": {"apiBase": had}})
+
+    ok(mirror() == before_mirror,
+       "the writes moved the mirror: %r, then %r" % (before_mirror, mirror()))
+
+    # None is offered to agents: a write returns no record for the policy
+    # door to hold, so an agent offered one would act as the owner unasked.
+    for fn in (SEND_FN, EDIT_FN, DELETE_FN, REACT_FN, UNREACT_FN, READ_FN, UNREAD_FN):
+        st, row = api("GET", FUNCTION + urllib.parse.quote(fn, safe=""))
+        p = props(row or {})
+        want = "irreversible" if fn == DELETE_FN else "external"
+        ok(st == 200 and "offer" not in p and p.get("effect") == want,
+           "%s reads back %s with offer %r and effect %r, want no offer and %s"
+           % (fn, st, p.get("offer"), p.get("effect"), want))
+    note("the writes: %d requests reached the mock" % len(w.requests()))
 
 
 if __name__ == "__main__":

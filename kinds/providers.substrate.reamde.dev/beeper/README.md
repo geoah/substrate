@@ -4,11 +4,16 @@ Package `providers.substrate.reamde.dev/beeper`: a provider that mirrors one
 machine's Beeper inbox over the Beeper Client API, which Beeper Desktop serves
 locally at `http://localhost:23373`. It authenticates with a token pasted onto
 its `config` record, since no OAuth flow runs for this bundle. The sync reads
-only and downloads no media. `sendmessage` is the one write: a function a
-caller invokes, which sends one message with the same token.
+only and downloads no media. Seven functions write, each making one request
+with the same token when a caller invokes it: `sendmessage`, `editmessage`,
+`deletemessage`, `addreaction`, `removereaction`, `markread` and
+`markunread`. None is offered to agents. `deletemessage`,
+`removereaction`, `markread` and `markunread` need Beeper Desktop 4.2.808 or
+later.
 
 `bundle.yaml` is the closure (the config and account kinds, the six mirrors,
-the per-chat state kind, the sync function and `sendmessage`) and `triggers.yaml` is the
+the per-chat state kind, the sync function, the seven writes and the
+`beeper_api` module they send the token through) and `triggers.yaml` is the
 delivery wiring: on connect, every 15 minutes, and "sync now". They are the
 contract; this file is not.
 
@@ -68,3 +73,5 @@ entry is not mistaken for a sleeping computer
 What it writes, where the token comes from, the toggles on the account, how
 far the first walk reaches and how a bounded drain resumes:
 [docs/bundles-catalog.md#beeper](../../../docs/bundles-catalog.md#beeper).
+What each write takes, calls and answers, and which of them the mirror
+shows: [writing to Beeper](../../../docs/bundles-catalog.md#writing-to-beeper).

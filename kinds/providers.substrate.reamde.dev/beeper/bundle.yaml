@@ -7,8 +7,11 @@
 # This bundle mirrors that API's own object model — the bridges, the chat
 # accounts, the people, the chats and the messages in them. The sync reads; it
 # never sends, reacts, edits, archives or marks read, and it never fetches a
-# byte of media. The one write is `sendmessage`, a callable nothing fires on
-# its own (decision record 0125).
+# byte of media. The writes are seven callables nothing fires on its own
+# (decision record 0125): `sendmessage`, `editmessage`, `deletemessage`,
+# `addreaction`, `removereaction`, `markread` and `markunread`. None is offered
+# to agents: a write returns no record for the policy door to hold, so an agent
+# offered one would act as the owner unasked.
 #
 # BEEPER IS MATRIX, AND THE API IS NOT A HOMESERVER. Every identity here is a
 # Matrix one — a chat id IS a room id (`!FQsel…:beeper.local`), a person IS an
@@ -173,7 +176,12 @@ data:
   # per-chat handlers no longer file one as that chat's failure. A 4xx, a
   # 5xx, a bad body or the sandbox gate's refusal still stamps `erroring`
   # (decision 0183). Adds `account.unreachableSince`.
-  version: 23
+  #
+  # 24: the writes past sending, `editmessage`, `deletemessage`,
+  # `addreaction`, `removereaction`, `markread` and `markunread`, callables
+  # like `sendmessage` and offered to no agent; all seven send the token
+  # through the `beeper_api` module, and each declares its effect.
+  version: 24
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -187,8 +195,8 @@ data:
   package: beeper
   description: >-
     Keeps a copy of your Beeper inbox — every network it bridges, the people
-    in it, your chats and their messages. It sends only when sendmessage is
-    called, and downloads no media.
+    in it, your chats and their messages. It sends, edits, deletes, reacts
+    or marks read only when called, and downloads no media.
   inputs:
     connector:
       kind: providers.substrate.reamde.dev/beeper/config
@@ -206,6 +214,154 @@ data:
     - providers.substrate.reamde.dev/beeper/chatsync
     - providers.substrate.reamde.dev/beeper/messagessync
     - providers.substrate.reamde.dev/beeper/sendmessage
+    - providers.substrate.reamde.dev/beeper/editmessage
+    - providers.substrate.reamde.dev/beeper/deletemessage
+    - providers.substrate.reamde.dev/beeper/addreaction
+    - providers.substrate.reamde.dev/beeper/removereaction
+    - providers.substrate.reamde.dev/beeper/markread
+    - providers.substrate.reamde.dev/beeper/markunread
+  # The write functions' shared module, so the origin pin and the redirect
+  # refusal are written once for all seven. A body cannot import another
+  # body. The sync keeps its own HTTP client: it reads over requests and
+  # tells an unreachable Beeper Desktop from a refusal (decision 0183).
+  modules:
+    beeper_api.py: |
+      """Where the Beeper writes send the pasted token.
+
+      Every write body calls `call`, and each call is one request. The token is
+      the connector input's (config.inputs.connector.properties.accessToken) and
+      goes only to a PRIVATE origin (loopback, RFC 1918, the CGNAT range a
+      tailnet hands out, or a .ts.net name), the rule the sync holds, through an
+      opener that refuses every redirect, so neither an `apiBase` edit nor a 3xx
+      answer can carry it anywhere else. A refusal Beeper answers fails the call
+      with its status and message.
+      """
+      import ipaddress
+      import json
+      import urllib.error
+      import urllib.parse
+      import urllib.request
+
+      DEFAULT_API = "http://localhost:23373"
+      SEALED_PREFIX = "substrate:sealsecret:v1:"
+      HTTP_TIMEOUT = 20
+
+
+      def private(base):
+          """Beeper Desktop serves its API on the machine it runs on, or across a
+          private network the owner turned remote access on for."""
+          u = urllib.parse.urlsplit(base)
+          host = (u.hostname or "").lower()
+          if u.scheme not in ("http", "https") or u.password or u.username:
+              return False
+          if host in ("localhost", "::1") or host.endswith(".localhost"):
+              return True
+          if host.endswith(".ts.net"):
+              return True
+          try:
+              addr = ipaddress.ip_address(host)
+          except ValueError:
+              return False
+          # `is_private` covers RFC 1918 and loopback; CGNAT (100.64/10) is what
+          # a tailnet hands out and Python does not call it private.
+          return addr.is_private or addr.is_loopback or addr in ipaddress.ip_network(
+              "100.64.0.0/10")
+
+
+      class _NoRedirect(urllib.request.HTTPRedirectHandler):
+          # urllib would follow a redirect as a GET to any host and carry the
+          # Authorization header along; refusing it fails the call on the 3xx.
+          def redirect_request(self, *a, **k):
+              return None
+
+
+      _OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+      def connector(input):
+          """The pasted token and the origin it may go to, or a refusal."""
+          cfg = input.get("config") or {}
+          conf = (((cfg.get("inputs") or {}).get("connector") or {})
+                  .get("properties")) or {}
+          token = conf.get("accessToken") or ""
+          base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
+          if not token:
+              raise RuntimeError("beeper: the config record carries no accessToken")
+          if token.startswith(SEALED_PREFIX):
+              raise RuntimeError("beeper: accessToken arrived sealed; paste it on "
+                                 "the config, not the account")
+          if not private(base):
+              raise RuntimeError(
+                  "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
+                  "CGNAT or a .ts.net name); refusing to send the token" % base)
+          return token, base
+
+
+      def arg(args, name, required=True):
+          """One id argument, trimmed; a required one may not be blank."""
+          value = str(args.get(name) or "").strip()
+          if required and not value:
+              raise ValueError("beeper: %s is required" % name)
+          return value
+
+
+      def path(*segments):
+          """A route under /v1 with each id escaped whole: a room id, a message id
+          and an emoji reaction key are one path segment each."""
+          return "/v1/" + "/".join(urllib.parse.quote(s, safe="") for s in segments)
+
+
+      def call(input, method, route, what, payload=None, query=None):
+          """One request to Beeper Desktop; its JSON answer, or {} for none."""
+          token, base = connector(input)
+          url = base + route
+          if query:
+              url += "?" + urllib.parse.urlencode(query)
+          headers = {"Authorization": "Bearer " + token,
+                     "Accept": "application/json"}
+          data = None
+          if payload is not None:
+              data = json.dumps(payload).encode("utf-8")
+              headers["Content-Type"] = "application/json"
+          req = urllib.request.Request(url, data=data, method=method,
+                                       headers=headers)
+          try:
+              with _OPENER.open(req, timeout=HTTP_TIMEOUT) as resp:
+                  raw = resp.read().decode("utf-8")
+          except urllib.error.HTTPError as e:
+              text = e.read()[:400].decode("utf-8", "replace")
+              try:
+                  err = json.loads(text)
+              except ValueError:
+                  err = None
+              detail = text
+              if isinstance(err, dict):
+                  detail = err.get("message") or err.get("code") or text
+              raise RuntimeError("beeper: %s failed: HTTP %d %s"
+                                 % (what, e.code, str(detail)[:200])) from e
+          except urllib.error.URLError as e:
+              raise RuntimeError("beeper: %s failed: Beeper Desktop is not "
+                                 "reachable at %s (%s)" % (what, base, e.reason)) from e
+          if not raw.strip():
+              return {}
+          try:
+              body = json.loads(raw)
+          except ValueError as e:
+              raise RuntimeError("beeper: %s answered a body that is not JSON"
+                                 % what) from e
+          return body if isinstance(body, dict) else {}
+
+
+      def chat_state(body, chat):
+          """A mark's output, from the Chat Beeper answers: its id and the two
+          facts a mark moves, where the answer carries them."""
+          out = {"chat": str(body.get("id") or chat)}
+          count = body.get("unreadCount")
+          if isinstance(count, int) and not isinstance(count, bool):
+              out["unreadCount"] = count
+          if isinstance(body.get("isMarkedUnread"), bool):
+              out["isMarkedUnread"] = body["isMarkedUnread"]
+          return out
 ---
 # ---- the config type: the `connector` input's kind -------------------------
 # NOT oauth2, and deliberately no client id or secret: a kind wearing the
@@ -236,7 +392,7 @@ data:
       displayName: Access token
       description: >-
         the bearer token Beeper Desktop hands out. Redacted on read, injected
-        into this bundle's functions (the sync and sendmessage), and never
+        into this bundle's functions (the sync and the writes), and never
         sent to a public origin
     apiBase:
       type: url
@@ -304,7 +460,7 @@ data:
       displayName: Granted scopes
       description: >-
         accountconfig trait contract, unused. Beeper Desktop mints `read write`
-        whatever is asked for; only sendmessage calls a write route
+        whatever is asked for; only the write functions call a write route
     # The owner's hands.
     displayName:
       type: string
@@ -3608,12 +3764,13 @@ data:
         return {"more": host.page.more(cursor)}
 ---
 # ---- function: sendmessage -------------------------------------------------
-# The one write this bundle makes, and a CALLABLE only: no trigger fires it.
-# It spends the same pasted token the sync does, taken from the same injected
-# connector input, and sends it only to a private origin, as the sync does.
-# It writes no record: the message it sends reaches the mirror only when the
-# sync reads its chat back, as every other message does (decision record
-# 0125), so the mirror is not a confirmation of the send.
+# The first of the seven writes, and like each of them a CALLABLE only: no
+# trigger fires it. It spends the same pasted token the sync does, taken from
+# the same injected connector input, through `beeper_api`, which sends it
+# only to a private origin. It writes no record: the message it sends reaches
+# the mirror only when the sync reads its chat back, as every other message
+# does (decision record 0125), so the mirror is not a confirmation of the
+# send.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/beeper/sendmessage
@@ -3627,6 +3784,7 @@ data:
     network confirms the send.
   runtime: python
   timeout: PT30S
+  effect: external
   arguments:
     - name: chat
       type: string
@@ -3660,100 +3818,457 @@ data:
       - localhost
       - 127.0.0.1
   source: |
-    """Send one Beeper message with the pasted Beeper Desktop token.
-
-    The token arrives on the connector input
-    (config.inputs.connector.properties.accessToken) and leaves this body only
-    toward a PRIVATE origin (loopback, RFC 1918, the CGNAT range a tailnet
-    hands out, or a .ts.net name), the same rule the sync holds. One call,
-    `POST /v1/chats/{chatID}/messages`, with a JSON body of `text` and, for a
-    reply, `replyToMessageID`. A refusal fails the call with Beeper's status
-    and message.
-    """
-    import ipaddress
-    import json
-    import urllib.error
-    import urllib.parse
-    import urllib.request
-
-    DEFAULT_API = "http://localhost:23373"
-    SEALED_PREFIX = "substrate:sealsecret:v1:"
-    HTTP_TIMEOUT = 20
-
-
-    def _private(base):
-        u = urllib.parse.urlsplit(base)
-        host = (u.hostname or "").lower()
-        if u.scheme not in ("http", "https") or u.password or u.username:
-            return False
-        if host in ("localhost", "::1") or host.endswith(".localhost"):
-            return True
-        if host.endswith(".ts.net"):
-            return True
-        try:
-            addr = ipaddress.ip_address(host)
-        except ValueError:
-            return False
-        return addr.is_private or addr.is_loopback or addr in ipaddress.ip_network(
-            "100.64.0.0/10")
-
-
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        # urllib would follow a redirect as a GET to any host and carry the
-        # Authorization header along; refuse it so the token stays pinned.
-        def redirect_request(self, *a, **k):
-            return None
+    """Send one Beeper message: `POST /v1/chats/{chatID}/messages`, with a JSON
+    body of `text` and, for a reply, `replyToMessageID`."""
+    from beeper_api import arg, call, path
 
 
     def main(input, host):
         args = input.get("args") or {}
-        chat = str(args.get("chat") or "").strip()
+        chat = arg(args, "chat")
         text = str(args.get("text") or "")
-        reply = str(args.get("replyTo") or "").strip()
-        if not chat:
-            raise ValueError("beeper: chat is required")
+        reply = arg(args, "replyTo", required=False)
         if not text.strip():
             raise ValueError("beeper: text is empty")
-
-        cfg = input.get("config") or {}
-        conf = (((cfg.get("inputs") or {}).get("connector") or {})
-                .get("properties")) or {}
-        token = conf.get("accessToken") or ""
-        base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
-        if not token:
-            raise RuntimeError("beeper: the config record carries no accessToken")
-        if token.startswith(SEALED_PREFIX):
-            raise RuntimeError("beeper: accessToken arrived sealed; paste it on "
-                               "the config, not the account")
-        if not _private(base):
-            raise RuntimeError(
-                "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
-                "CGNAT or a .ts.net name); refusing to send the token" % base)
-
         payload = {"text": text}
         if reply:
             payload["replyToMessageID"] = reply
-        req = urllib.request.Request(
-            base + "/v1/chats/" + urllib.parse.quote(chat, safe="") + "/messages",
-            data=json.dumps(payload).encode("utf-8"), method="POST",
-            headers={"Authorization": "Bearer " + token,
-                     "Content-Type": "application/json",
-                     "Accept": "application/json"})
-        opener = urllib.request.build_opener(_NoRedirect)
-        try:
-            with opener.open(req, timeout=HTTP_TIMEOUT) as resp:
-                body = json.loads(resp.read().decode("utf-8") or "{}")
-        except urllib.error.HTTPError as e:
-            raw = e.read()[:400].decode("utf-8", "replace")
-            try:
-                err = json.loads(raw)
-                detail = err.get("message") or err.get("code") or raw
-            except ValueError:
-                detail = raw
-            raise RuntimeError("beeper: sending to %s failed: HTTP %d %s"
-                               % (chat, e.code, str(detail)[:200])) from e
+        body = call(input, "POST", path("chats", chat, "messages"),
+                    "sending to %s" % chat, payload)
         pending = str(body.get("pendingMessageID") or "")
         if not pending:
             raise RuntimeError("beeper: the send answered no pendingMessageID")
-        return {"output": {"chat": body.get("chatID") or chat,
+        return {"output": {"chat": str(body.get("chatID") or chat),
                            "pendingMessageId": pending}}
+---
+# ---- function: editmessage -------------------------------------------------
+# `PUT /v1/chats/{chatID}/messages/{messageID}`, served since Beeper Desktop
+# 4.2.499 and answering the edited message since 4.2.808. An edit reaches the
+# mirror only when the sync reads that message again, which the chat list
+# does for each chat's newest message and nothing does for an older one: the
+# forward walk reads only messages newer than its cursor.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/editmessage
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Replace the text of one message the owner sent in a Beeper chat, on whatever
+    network the chat is bridged to. Returns the chat and message ids and the
+    text Beeper now holds. A message with attachments cannot be edited.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      required: true
+      description: >-
+        the id of the message to edit, the messageId of a mirrored beeper/message
+        in the same chat that the owner sent
+    - name: text
+      type: string
+      required: true
+      description: the message's new text, which replaces all of the old
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper edited the message in
+    - name: message
+      type: string
+      required: true
+      description: the edited message's id
+    - name: text
+      type: string
+      description: >-
+        the message's text as Beeper holds it after the edit, where its answer
+        carries the message
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Edit one Beeper message: `PUT /v1/chats/{chatID}/messages/{messageID}`,
+    with a JSON body of `text`."""
+    from beeper_api import arg, call, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message")
+        text = str(args.get("text") or "")
+        if not text.strip():
+            raise ValueError("beeper: text is empty")
+        body = call(input, "PUT", path("chats", chat, "messages", message),
+                    "editing message %s in %s" % (message, chat), {"text": text})
+        # Since 4.2.808 the answer is the Message, whose own id is `id`;
+        # `messageID` is the older answer's, kept beside it for compatibility.
+        out = {"chat": str(body.get("chatID") or chat),
+               "message": str(body.get("id") or body.get("messageID") or message)}
+        if isinstance(body.get("text"), str):
+            out["text"] = body["text"]
+        return {"output": out}
+---
+# ---- function: deletemessage -----------------------------------------------
+# `DELETE /v1/chats/{chatID}/messages/{messageID}?forEveryone=…`, served since
+# Beeper Desktop 4.2.808, which answers no body. `forEveryone` is required and
+# always sent: Beeper documents no default, and whether a delete reaches the
+# other participants is the caller's to say. The effect is `irreversible`:
+# neither Beeper nor a network restores a deleted message. A delete reaches
+# the mirror only when the sync reads that message again, as an edit does.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/deletemessage
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Delete one message in a Beeper chat as the owner, either for everyone
+    in the chat, where the network allows it, or for the owner alone. A deleted
+    message cannot be restored. Returns the chat and message ids and which
+    of the two deletes was asked for.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      required: true
+      description: >-
+        the id of the message to delete, the messageId of a mirrored beeper/message
+        in the same chat; a pending id from sendmessage is refused until the
+        network confirms the send
+    - name: forEveryone
+      type: bool
+      required: true
+      description: >-
+        true to delete the message for everyone in the chat, where the network
+        allows it; false to delete it for the owner alone, where the network
+        allows that
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id the message was deleted in
+    - name: message
+      type: string
+      required: true
+      description: the deleted message's id
+    - name: forEveryone
+      type: bool
+      required: true
+      description: whether the delete was asked for everyone in the chat
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Delete one Beeper message:
+    `DELETE /v1/chats/{chatID}/messages/{messageID}?forEveryone=true|false`."""
+    from beeper_api import arg, call, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message")
+        everyone = args.get("forEveryone")
+        if not isinstance(everyone, bool):
+            raise ValueError("beeper: forEveryone is required, true or false")
+        call(input, "DELETE", path("chats", chat, "messages", message),
+             "deleting message %s in %s" % (message, chat),
+             query={"forEveryone": "true" if everyone else "false"})
+        return {"output": {"chat": chat, "message": message,
+                           "forEveryone": everyone}}
+---
+# ---- function: addreaction -------------------------------------------------
+# `POST /v1/chats/{chatID}/messages/{messageID}/reactions`, served since Beeper
+# Desktop 4.2.557. The reaction reaches the mirror's `reactions` only when the
+# sync reads its message again, as an edit does.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/addreaction
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    React to one message in a Beeper chat as the owner, with an emoji, a shortcode
+    or the network's own reaction key. Returns the chat, the message and the
+    reaction key Beeper added.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      required: true
+      description: >-
+        the id of the message to react to, the messageId of a mirrored beeper/message
+        in the same chat
+    - name: reactionKey
+      type: string
+      required: true
+      description: >-
+        the reaction: an emoji, a shortcode or the network's own key, spelled
+        as a mirrored beeper/message's reactions[].reactionKey spells it
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper reacted in
+    - name: message
+      type: string
+      required: true
+      description: the id of the message reacted to
+    - name: reactionKey
+      type: string
+      required: true
+      description: the reaction key Beeper added
+    - name: transactionId
+      type: string
+      description: >-
+        Beeper Desktop's id for sending the reaction to the network, where
+        its answer carries one
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """React to one Beeper message:
+    `POST /v1/chats/{chatID}/messages/{messageID}/reactions`, with a JSON body
+    of `reactionKey`."""
+    from beeper_api import arg, call, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message")
+        key = arg(args, "reactionKey")
+        body = call(input, "POST",
+                    path("chats", chat, "messages", message, "reactions"),
+                    "reacting to message %s in %s" % (message, chat),
+                    {"reactionKey": key})
+        out = {"chat": str(body.get("chatID") or chat),
+               "message": str(body.get("messageID") or message),
+               "reactionKey": str(body.get("reactionKey") or key)}
+        if body.get("transactionID"):
+            out["transactionId"] = str(body["transactionID"])
+        return {"output": out}
+---
+# ---- function: removereaction ----------------------------------------------
+# `DELETE /v1/chats/{chatID}/messages/{messageID}/reactions/{reactionKey}`,
+# the form Beeper Desktop 4.2.808 moved the key into: before it the key was a
+# `reactionKey` query parameter, and an older build refuses this path. The
+# removal reaches the mirror only when the sync reads its message again.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/removereaction
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Remove the owner's own reaction from one message in a Beeper chat. Returns
+    the chat, the message and the reaction key Beeper removed.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      required: true
+      description: >-
+        the id of the message the reaction is on, the messageId of a mirrored
+        beeper/message in the same chat
+    - name: reactionKey
+      type: string
+      required: true
+      description: >-
+        the owner's reaction to remove, spelled as a mirrored beeper/message's
+        reactions[].reactionKey spells it
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper removed the reaction in
+    - name: message
+      type: string
+      required: true
+      description: the id of the message the reaction was on
+    - name: reactionKey
+      type: string
+      required: true
+      description: the reaction key Beeper removed
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Remove the owner's reaction from one Beeper message:
+    `DELETE /v1/chats/{chatID}/messages/{messageID}/reactions/{reactionKey}`."""
+    from beeper_api import arg, call, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message")
+        key = arg(args, "reactionKey")
+        body = call(input, "DELETE",
+                    path("chats", chat, "messages", message, "reactions", key),
+                    "removing reaction %s from message %s in %s"
+                    % (key, message, chat))
+        return {"output": {"chat": str(body.get("chatID") or chat),
+                           "message": str(body.get("messageID") or message),
+                           "reactionKey": str(body.get("reactionKey") or key)}}
+---
+# ---- function: markread ----------------------------------------------------
+# `POST /v1/chats/{chatID}/read`, served since Beeper Desktop 4.2.808, which
+# answers the chat. Where the network sends read receipts, the other
+# participants see the chat read. The chat's unread state reaches the mirror
+# on the next sync, which reads every chat in the list again.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/markread
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Mark one Beeper chat read as the owner, the whole chat or up to one message
+    in it. Where the network sends read receipts, the other people in the
+    chat see it read. Returns the chat's unread count and unread mark as Beeper
+    holds them after.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      description: >-
+        the id of the newest message to mark read, the messageId of a mirrored
+        beeper/message in the same chat; leave it out to mark the whole chat
+        read
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper marked read
+    - name: unreadCount
+      type: int
+      description: how many messages Beeper counts unread in the chat after
+        the mark
+    - name: isMarkedUnread
+      type: bool
+      description: whether the chat still carries the owner's own unread mark
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Mark one Beeper chat read: `POST /v1/chats/{chatID}/read`, with a JSON
+    body of `messageID` to stop at one message, or an empty one."""
+    from beeper_api import arg, call, chat_state, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message", required=False)
+        body = call(input, "POST", path("chats", chat, "read"),
+                    "marking %s read" % chat,
+                    {"messageID": message} if message else {})
+        return {"output": chat_state(body, chat)}
+---
+# ---- function: markunread --------------------------------------------------
+# `POST /v1/chats/{chatID}/unread`, served since Beeper Desktop 4.2.808, which
+# answers the chat. The owner's unread mark is the chat's `isMarkedUnread`,
+# which reaches the mirror on the next sync.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/beeper/markunread
+data:
+  authority: providers.substrate.reamde.dev
+  package: beeper
+  description: >-
+    Mark one Beeper chat unread as the owner, the whole chat or from one message
+    in it on. Returns the chat's unread count and unread mark as Beeper holds
+    them after.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  arguments:
+    - name: chat
+      type: string
+      required: true
+      description: >-
+        the chat's id, a Matrix room id (!…:beeper.local), the chatId of a
+        mirrored beeper/chat
+    - name: message
+      type: string
+      description: >-
+        the id of the message to mark unread from, the messageId of a mirrored
+        beeper/message in the same chat; leave it out to mark the chat unread
+        as a whole
+  returns:
+    - name: chat
+      type: string
+      required: true
+      description: the chat id Beeper marked unread
+    - name: unreadCount
+      type: int
+      description: how many messages Beeper counts unread in the chat after
+        the mark
+    - name: isMarkedUnread
+      type: bool
+      description: whether the chat now carries the owner's own unread mark
+  permissions:
+    network:
+      - localhost
+      - 127.0.0.1
+  source: |
+    """Mark one Beeper chat unread: `POST /v1/chats/{chatID}/unread`, with a
+    JSON body of `messageID` to start from one message, or an empty one."""
+    from beeper_api import arg, call, chat_state, path
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        chat = arg(args, "chat")
+        message = arg(args, "message", required=False)
+        body = call(input, "POST", path("chats", chat, "unread"),
+                    "marking %s unread" % chat,
+                    {"messageID": message} if message else {})
+        return {"output": chat_state(body, chat)}

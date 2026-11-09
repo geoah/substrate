@@ -2,6 +2,7 @@ package providertest
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -63,6 +64,41 @@ func TestBodyHelpersBeeper(t *testing.T) {
 		t.Fatalf("wrote %d beeper bodies, want messagessync alone", written)
 	}
 	runBodyCases(t, bodyPython(t, dir), "py/test_beeper_offline.py", dir)
+}
+
+// TestBodyHelpersBeeperWrites runs internal/providertest/py/test_beeper_writes.py
+// over the shipped beeper_api module and the seven write bodies: the request
+// each one sends, that its output holds to its declared returns, that the
+// token reaches a private origin alone and never through a redirect, and that
+// Beeper's refusal reaches the caller. Each function's compiled arguments and
+// returns go beside the bodies as schemas.json, as the engine checks a call.
+func TestBodyHelpersBeeperWrites(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if written := writeModules(t, beeperDir+"/bundle.yaml", dir); written != 1 {
+		t.Fatalf("wrote %d beeper modules, want beeper_api.py alone", written)
+	}
+	written := writeBodies(t, beeperDir+"/bundle.yaml", dir, func(name string) bool {
+		_, write := beeperWrites[name]
+		return write
+	})
+	if written != len(beeperWrites) {
+		t.Fatalf("wrote %d beeper write bodies, want %d", written, len(beeperWrites))
+	}
+	schemas := map[string]any{}
+	for _, fn := range bundleRegistry(t, beeperDir).Functions() {
+		if _, write := beeperWrites[fn.Name]; write && fn.Package == beeperPackage {
+			schemas[fn.Name] = map[string]any{"arguments": fn.Input, "returns": fn.Output}
+		}
+	}
+	raw, err := json.Marshal(schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "schemas.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_beeper_writes.py", dir)
 }
 
 // TestBodyHelpersFirecrawl runs internal/providertest/py/test_firecrawl_api.py

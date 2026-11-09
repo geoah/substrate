@@ -29,14 +29,14 @@ what the Health Auto Export app on the phone sends to a webhook. WHOOP and
 Apple Health each also ship an adapter that turns their mirror rows into
 [observations](observations.md#the-adapters), and require the `health`
 catalogue it writes, which installing either installs first. Three also
-ship one write each, a function
-nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
-GitHub's `submitreview`. A write sends one request with the credential the
-sync spends and writes no record; what it sent reaches the mirror only when
-the sync's own discovery reads it back, which it does not always do (see each
-write below and
+ship writes, functions nothing fires on its own: Slack's `postmessage`,
+GitHub's `submitreview`, and Beeper's seven, which send, edit, delete, react
+and mark read. A write sends one request with the credential the sync spends
+and writes no record; what it changed reaches the mirror only when the sync's
+own discovery reads it back, which it does not always do (see each write
+below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
-Do not treat the mirror as confirmation that a send happened.
+Do not treat the mirror as confirmation that a write happened.
 
 **Four samples**: LLM, notes, the reading list and Pebble.
 Garmin and Google Fit providers, with their health adapters, are planned and
@@ -87,7 +87,7 @@ thing, and the Records column counts them.
 | Linear        | Published | API key        | 13    | 1         | 3       | 0      |
 | WHOOP         | Published | OAuth          | 7     | 3         | 10      | 0      |
 | Notion        | Published | Internal token | 8     | 1         | 3       | 0      |
-| Beeper        | Published | Pasted token   | 9     | 2         | 3       | 0      |
+| Beeper        | Published | Pasted token   | 9     | 8         | 3       | 0      |
 | Slack         | Published | User token     | 9     | 2         | 3       | 0      |
 | Apple         | Published | Owner token    | 10    | 0         | 0       | 0      |
 | Apple Health  | Published | Webhook key    | 10    | 2         | 2       | 0      |
@@ -1224,7 +1224,7 @@ people, the chats and the messages in them. It authenticates with a token
 pasted onto a `config` record and declares no `oauth2` block, because Beeper
 Desktop serves its own OAuth flow on loopback and the host facility has no
 browser to send anywhere. The sync reads only: eight GET routes and no media.
-`sendmessage` is the one write.
+Seven functions write to Beeper, each only when it is called.
 
 - **Kinds (9)**: `config`, `account`, and the mirrors `bridge` (one network
   this Beeper can run), `chataccount` (one login on one bridged network),
@@ -1232,13 +1232,14 @@ browser to send anywhere. The sync reads only: eight GET routes and no media.
   the owner puts on a chat), `chat` (one conversation, whose id is a Matrix
   room id) and `message` (one message, `timestamp` bound as its instant),
   beside the state kind `chatsync` (this connector's cursors for one chat).
-- **Functions (2)**: `messagessync` makes at most one Beeper HTTP call per
+- **Functions (8)**: `messagessync` makes at most one Beeper HTTP call per
   invocation and pages the rest off its own cursor, through eight phases:
   `info`, `accounts`, `bridges`, `labels`, `contacts`, `chats`, `whole` (the
   authoritative `GET /v1/chats/{id}` read, with `maxParticipantCount=-1`, which
-  is the only one that returns every participant) and `messages`.
-  `sendmessage` sends one text message to a chat, optionally as a reply; see
-  [writing to Beeper](#writing-to-beeper).
+  is the only one that returns every participant) and `messages`. The seven
+  writes, `sendmessage`, `editmessage`, `deletemessage`, `addreaction`,
+  `removereaction`, `markread` and `markunread`, each make one request when
+  called; see [writing to Beeper](#writing-to-beeper).
 - **Triggers (3)**: `beeper-messages-on-connect` fires when an account carries
   `enabledMessages` and no `lastSyncedAt`; `beeper-messages-scheduled` fires
   every 15 minutes and walks the enabled account when it is due;
@@ -1254,13 +1255,13 @@ browser to send anywhere. The sync reads only: eight GET routes and no media.
 
 Setting it up takes two records and no scopes. Paste the token Beeper Desktop
 hands out onto a `config` record: it is a secret, redacted on read-back and
-injected into this bundle's two functions. Beeper Desktop mints one token for
-everything it serves, and `sendmessage` is the only function that calls a
-write route with it. The
+injected into every function this bundle ships. Beeper Desktop mints one token
+for everything it serves, and the seven writes are the only functions that
+call a write route with it. The
 config's `apiBase` is the Beeper Desktop origin, `http://localhost:23373` by
-default; the function's `permissions.network` lists `localhost` and
-`127.0.0.1`, and the body refuses any origin that is not private (loopback, an
-RFC 1918 address, or the CGNAT range a tailnet hands out), so an edit of
+default; each function's `permissions.network` lists `localhost` and
+`127.0.0.1`, and every body refuses any origin that is not private (loopback,
+an RFC 1918 address, or the CGNAT range a tailnet hands out), so an edit of
 `apiBase` cannot send the token to a public host.
 
 Then create an `account`. `enabledMessages` is the toggle that runs the walk,
@@ -1353,16 +1354,62 @@ off the account onto `chatsync`.
 
 ### Writing to Beeper
 
-`sendmessage` sends one text message to a chat as the owner, on whatever
-network the chat is bridged to. It takes `chat` (the Matrix room id, a
-mirrored chat's `chatId`), `text`, and an optional `replyTo`, the `messageId`
-of the message it answers. It calls `POST /v1/chats/{chatID}/messages` with
-the config's token and the same private-origin rule the sync holds, and
-answers the `chat` and the `pendingMessageId` Beeper Desktop assigns until
-the network confirms the send. It writes no record: the confirmed message
-reaches the `message` mirror when the sync next reads its chat. A Beeper refusal fails the
-call with Beeper's status and message. Redirects are refused rather than
-followed.
+Seven functions act in Beeper as the owner, on whatever network a chat is
+bridged to. Each takes Beeper's own ids, which the mirror carries: `chat` is a
+mirrored chat's `chatId` (a Matrix room id), `message` the `messageId` of a
+mirrored message in that chat, and `reactionKey` is spelled the way the
+message's `reactions[].reactionKey` spells it.
+
+| Function | Takes | Calls | Answers |
+| --- | --- | --- | --- |
+| `sendmessage` | `chat`, `text`, and `replyTo`, the `messageId` it answers, for a reply | `POST /v1/chats/{chatID}/messages` | `chat`, `pendingMessageId` |
+| `editmessage` | `chat`, `message`, `text` | `PUT /v1/chats/{chatID}/messages/{messageID}` | `chat`, `message`, and the `text` Beeper now holds |
+| `deletemessage` | `chat`, `message`, `forEveryone` | `DELETE /v1/chats/{chatID}/messages/{messageID}?forEveryone=` | `chat`, `message`, `forEveryone` |
+| `addreaction` | `chat`, `message`, `reactionKey` | `POST /v1/chats/{chatID}/messages/{messageID}/reactions` | `chat`, `message`, `reactionKey`, `transactionId` |
+| `removereaction` | `chat`, `message`, `reactionKey` | `DELETE /v1/chats/{chatID}/messages/{messageID}/reactions/{reactionKey}` | `chat`, `message`, `reactionKey` |
+| `markread` | `chat`, and the `message` to stop at, for part of it | `POST /v1/chats/{chatID}/read` | `chat`, `unreadCount`, `isMarkedUnread` |
+| `markunread` | `chat`, and the `message` to start from, for part of it | `POST /v1/chats/{chatID}/unread` | `chat`, `unreadCount`, `isMarkedUnread` |
+
+`sendmessage` answers the pending id Beeper Desktop assigns until the network
+confirms the send, and Beeper refuses to delete a message by that id.
+`editmessage` replaces a message's whole text, and Beeper refuses one with
+attachments. `deletemessage` always says which delete it asks for, because
+Beeper documents no default: `forEveryone: true` deletes the message for
+everyone in the chat where the network allows it, `false` for the owner
+alone. Neither can be undone, so `deletemessage` declares its effect
+`irreversible` and the other six `external`. `markread` sends a read receipt
+where the network has them, so the other people in the chat see it read.
+
+Each write makes its one request with the config's token under the
+private-origin rule the sync holds: a public `apiBase` is refused before a
+request is built, and a redirect is refused rather than followed. A Beeper
+refusal fails the call with Beeper's status and message. Beeper Desktop
+4.2.808 (May 2026) added the routes `deletemessage`, `markread` and
+`markunread` call, and moved the key `removereaction` sends from a
+`reactionKey` query parameter into the path, so an older build refuses those
+four. `editmessage` needs 4.2.499 and `addreaction` 4.2.557, and before
+4.2.808 an edit answers no `text`.
+
+None writes a record, so the mirror is no confirmation of a write. The next
+sync lists every chat again, so a mark reaches the chat's `unreadCount` and
+`isMarkedUnread`, and a sent message arrives with the chat's newer messages.
+An edit, a delete or a reaction changes a message the mirror already holds,
+and the sync reads such a message again only while it is the chat's newest,
+through the list's `preview`: the message walk pages forward from its
+cursor, so a change to an older message does not reach the mirror.
+
+None of the seven is offered to agents. A write returns no record, so the
+agent loop's policy door and a `confirmation: always` floor have nothing to
+hold
+([0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)),
+and an agent offered one would act as the owner unasked. An agent reaches a
+write only by naming it among its tools, and then acts with no review.
+
+```bash
+curl -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/function/providers.substrate.reamde.dev%2Fbeeper%2Fmarkread/call" \
+  -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"input": {"chat": "!roomid:beeper.local"}}'
+```
 
 ## Slack
 
