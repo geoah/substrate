@@ -3188,7 +3188,7 @@ data:
         if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
             return
         raise _Said(
-            "The GitHub sign-in is only ever sent to https://api.github.com, and "
+            "The GitHub sign-in is only ever sent to GitHub's own API, and "
             "this provider's API base points somewhere else. Clear the API base "
             "on the GitHub client settings.",
             "refused origin %s://%s:%s" % (u.scheme, host or "?", u.port or "-"))
@@ -6428,7 +6428,7 @@ data:
         if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
             return
         raise RuntimeError(
-            "The GitHub sign-in is only ever sent to https://api.github.com, and "
+            "The GitHub sign-in is only ever sent to GitHub's own API, and "
             "this provider's API base points somewhere else. Clear the API base "
             "on the GitHub client settings.\nrefused origin %s://%s:%s"
             % (u.scheme, host or "?", u.port or "-"))

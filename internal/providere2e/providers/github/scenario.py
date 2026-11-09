@@ -1434,7 +1434,7 @@ def submitreview(api, server, token, mock_url, recdir, ckind, aid):
     try:
         st, reply = w.call(REVIEW_FN, {"repository": repo, "number": number,
                                        "event": "approve"})
-        ok(st >= 400 and "only ever sent to https://api.github.com"
+        ok(st >= 400 and "only ever sent to GitHub's own API"
            in error_text(reply),
            "an apiBase off api.github.com did not refuse: %s %s"
            % (st, error_text(reply)[:200]))
