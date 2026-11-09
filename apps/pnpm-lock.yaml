@@ -51,6 +51,49 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@26.6.6)(jsdom@30.1.3)(vite@8.3.6(@types/node@26.6.6)(jiti@2.7.0))
 
+  healthspan/web:
+    dependencies:
+      '@substrate/client':
+        specifier: workspace:*
+        version: link:../../kit/web/client
+      '@substrate/react':
+        specifier: workspace:*
+        version: link:../../kit/web/react
+      lucide-react:
+        specifier: ^1.49.0
+        version: 1.70.0(@types/react@19.3.0)(react@19.3.1)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@substrate/vite':
+        specifier: workspace:*
+        version: link:../../kit/web/vite
+      '@tailwindcss/vite':
+        specifier: ^4
+        version: 4.3.5(vite@8.3.6(@types/node@26.6.6)(jiti@2.7.0))
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: ^6
+        version: 6.2.1(vite@8.3.6(@types/node@26.6.6)(jiti@2.7.0))
+      tailwindcss:
+        specifier: ^4
+        version: 4.3.5
+      typescript:
+        specifier: ~6
+        version: 6.0.3
+      vite:
+        specifier: ^8
+        version: 8.3.6(@types/node@26.6.6)(jiti@2.7.0)
+
   kit/web/auth:
     dependencies:
       '@substrate/client':
