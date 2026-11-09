@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/geoah/substrate/internal/authority"
@@ -36,11 +37,15 @@ func TestTheDevAuthorityDocumentResolvesAsTheServerReadsIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve the tasks package from the dev document: %v", err)
 	}
-	if b.Version < 1 || len(b.Kinds()) != 2 {
-		t.Fatalf("resolved substrate.reamde.dev/tasks at %d with %d kinds, want 2 kinds", b.Version, len(b.Kinds()))
+	want := []string{
+		"substrate.reamde.dev/tasks/task", "substrate.reamde.dev/tasks/list",
+		"substrate.reamde.dev/tasks/collection", "substrate.reamde.dev/tasks/preference",
+	}
+	if b.Version < 1 || len(b.Kinds()) != len(want) {
+		t.Fatalf("resolved substrate.reamde.dev/tasks at %d with %d kinds, want %d kinds", b.Version, len(b.Kinds()), len(want))
 	}
 	for _, kind := range b.Kinds() {
-		if kind.Identity != "substrate.reamde.dev/tasks/task" && kind.Identity != "substrate.reamde.dev/tasks/list" {
+		if !slices.Contains(want, kind.Identity) {
 			t.Fatalf("the dev document's closure declares %s", kind.Identity)
 		}
 	}
