@@ -1,0 +1,2887 @@
+{
+  "importer": "dxa",
+  "name": "all",
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/observations/source",
+      "namespace": "source",
+      "key": "dxa/invented-imaging-centre",
+      "mode": "create",
+      "properties": {
+        "name": "Invented Imaging Centre",
+        "class": "lab"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Invented Imaging Centre",
+        "accession": "2023-10-03",
+        "at": "2023-10-03T12:00:00+03:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-22135674df7a533c0deec06906edec779e47106d9d4ad02700985c7a99272db6"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1772668800,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/body_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "64.9",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Total mass",
+          "display": "Total mass"
+        },
+        "upstreamId": "2023-10-03/Total mass",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/body_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "32.5",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Region %Fat (total)",
+          "display": "Region %Fat (total)"
+        },
+        "upstreamId": "2023-10-03/Region %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/tissue_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "33.5",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Tissue %Fat (total)",
+          "display": "Tissue %Fat (total)"
+        },
+        "upstreamId": "2023-10-03/Tissue %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/fat_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "21150",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat (total)",
+          "display": "Fat (total)"
+        },
+        "upstreamId": "2023-10-03/Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/lean_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/lean_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "41960",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Lean (total)",
+          "display": "Lean (total)"
+        },
+        "upstreamId": "2023-10-03/Lean (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/fat_free_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "43751",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat free (total)",
+          "display": "Fat free (total)"
+        },
+        "upstreamId": "2023-10-03/Fat free (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/bone_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "1791",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "BMC (total)",
+          "display": "BMC (total)"
+        },
+        "upstreamId": "2023-10-03/BMC (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/tissue_fat_fraction/android",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": "android",
+        "value": {
+          "value": "37.3",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Android %Fat",
+          "display": "Android %Fat"
+        },
+        "upstreamId": "2023-10-03/Android %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/tissue_fat_fraction/gynoid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": "gynoid",
+        "value": {
+          "value": "40.1",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Gynoid %Fat",
+          "display": "Gynoid %Fat"
+        },
+        "upstreamId": "2023-10-03/Gynoid %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2023-10-03/android_gynoid_ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/android_gynoid_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2023-10-03"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2023-10-03T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "0.93",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "A/G ratio",
+          "display": "A/G ratio"
+        },
+        "upstreamId": "2023-10-03/A/G ratio",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Invented Imaging Centre",
+        "accession": "b3x8n4p0aa.dfb",
+        "at": "2024-02-20T19:30:05+02:00",
+        "orderedAt": null,
+        "issuedAt": "2024-02-22T10:02:11+02:00",
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-22135674df7a533c0deec06906edec779e47106d9d4ad02700985c7a99272db6"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1772668800,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/body_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "63.9",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Total mass",
+          "display": "Total mass"
+        },
+        "upstreamId": "2024-02-20/Total mass",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/body_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "31.4",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Region %Fat (total)",
+          "display": "Region %Fat (total)"
+        },
+        "upstreamId": "2024-02-20/Region %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/tissue_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "32.4",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Tissue %Fat (total)",
+          "display": "Tissue %Fat (total)"
+        },
+        "upstreamId": "2024-02-20/Tissue %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/fat_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "20150",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat (total)",
+          "display": "Fat (total)"
+        },
+        "upstreamId": "2024-02-20/Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/lean_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/lean_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "41980",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Lean (total)",
+          "display": "Lean (total)"
+        },
+        "upstreamId": "2024-02-20/Lean (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/fat_free_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "43715",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat free (total)",
+          "display": "Fat free (total)"
+        },
+        "upstreamId": "2024-02-20/Fat free (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/bone_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "1735",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "BMC (total)",
+          "display": "BMC (total)"
+        },
+        "upstreamId": "2024-02-20/BMC (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/tissue_fat_fraction/android",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": "android",
+        "value": {
+          "value": "35.8",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Android %Fat",
+          "display": "Android %Fat"
+        },
+        "upstreamId": "2024-02-20/Android %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/tissue_fat_fraction/gynoid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": "gynoid",
+        "value": {
+          "value": "39.9",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Gynoid %Fat",
+          "display": "Gynoid %Fat"
+        },
+        "upstreamId": "2024-02-20/Gynoid %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-02-20/android_gynoid_ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/android_gynoid_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-02-20"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-02-20T19:30:05+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "0.90",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "A/G ratio",
+          "display": "A/G ratio"
+        },
+        "upstreamId": "2024-02-20/A/G ratio",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Invented Imaging Centre",
+        "accession": "2024-07-15",
+        "at": "2024-07-15T12:00:00+03:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-c8271e7a7c627a582c7743c59388e95ade120b2b83b707e8d2a8b443e7147e3e"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1772668800,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/body_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "62.1",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Total mass",
+          "display": "Total mass"
+        },
+        "upstreamId": "2024-07-15/Total mass",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/body_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "29.9",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Region %Fat (total)",
+          "display": "Region %Fat (total)"
+        },
+        "upstreamId": "2024-07-15/Region %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/tissue_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "30.8",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Tissue %Fat (total)",
+          "display": "Tissue %Fat (total)"
+        },
+        "upstreamId": "2024-07-15/Tissue %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/fat_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "18601",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat (total)",
+          "display": "Fat (total)"
+        },
+        "upstreamId": "2024-07-15/Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/lean_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/lean_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "41750",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Lean (total)",
+          "display": "Lean (total)"
+        },
+        "upstreamId": "2024-07-15/Lean (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/fat_free_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "43500",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat free (total)",
+          "display": "Fat free (total)"
+        },
+        "upstreamId": "2024-07-15/Fat free (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/bone_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "1750",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "BMC (total)",
+          "display": "BMC (total)"
+        },
+        "upstreamId": "2024-07-15/BMC (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/tissue_fat_fraction/android",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": "android",
+        "value": {
+          "value": "33.9",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Android %Fat",
+          "display": "Android %Fat"
+        },
+        "upstreamId": "2024-07-15/Android %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/tissue_fat_fraction/gynoid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": "gynoid",
+        "value": {
+          "value": "38.8",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Gynoid %Fat",
+          "display": "Gynoid %Fat"
+        },
+        "upstreamId": "2024-07-15/Gynoid %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/android_gynoid_ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/android_gynoid_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "0.87",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "A/G ratio",
+          "display": "A/G ratio"
+        },
+        "upstreamId": "2024-07-15/A/G ratio",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2024-07-15/body_fat_centile",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_centile",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2024-07-15"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2024-07-15T12:00:00+03:00",
+        "utcOffset": 180,
+        "channel": null,
+        "value": {
+          "value": "58",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Centile (US reference, v107)",
+          "display": "Centile (US reference, v107)"
+        },
+        "upstreamId": "2024-07-15/Centile (US reference, v107)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Invented Imaging Centre",
+        "accession": "2025-11-12",
+        "at": "2025-11-12T12:00:00+02:00",
+        "orderedAt": null,
+        "issuedAt": null,
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-c8271e7a7c627a582c7743c59388e95ade120b2b83b707e8d2a8b443e7147e3e"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1772668800,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/body_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "61.0",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Total mass",
+          "display": "Total mass"
+        },
+        "upstreamId": "2025-11-12/Total mass",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/body_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "27.0",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Region %Fat (total)",
+          "display": "Region %Fat (total)"
+        },
+        "upstreamId": "2025-11-12/Region %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/tissue_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "27.9",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Tissue %Fat (total)",
+          "display": "Tissue %Fat (total)"
+        },
+        "upstreamId": "2025-11-12/Tissue %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/fat_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "16530",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat (total)",
+          "display": "Fat (total)"
+        },
+        "upstreamId": "2025-11-12/Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/lean_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/lean_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "42700",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Lean (total)",
+          "display": "Lean (total)"
+        },
+        "upstreamId": "2025-11-12/Lean (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/fat_free_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "44470",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat free (total)",
+          "display": "Fat free (total)"
+        },
+        "upstreamId": "2025-11-12/Fat free (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/bone_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "1770",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "BMC (total)",
+          "display": "BMC (total)"
+        },
+        "upstreamId": "2025-11-12/BMC (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/tissue_fat_fraction/android",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": "android",
+        "value": {
+          "value": "30.6",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Android %Fat",
+          "display": "Android %Fat"
+        },
+        "upstreamId": "2025-11-12/Android %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/tissue_fat_fraction/gynoid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": "gynoid",
+        "value": {
+          "value": "36.4",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Gynoid %Fat",
+          "display": "Gynoid %Fat"
+        },
+        "upstreamId": "2025-11-12/Gynoid %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/android_gynoid_ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/android_gynoid_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "0.84",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "A/G ratio",
+          "display": "A/G ratio"
+        },
+        "upstreamId": "2025-11-12/A/G ratio",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2025-11-12/body_fat_centile",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_centile",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2025-11-12"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2025-11-12T12:00:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "44",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Centile (US reference, v107)",
+          "display": "Centile (US reference, v107)"
+        },
+        "upstreamId": "2025-11-12/Centile (US reference, v107)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labreport",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05",
+      "mode": "maintain",
+      "properties": {
+        "lab": "Invented Imaging Centre",
+        "accession": "d9t5r2w7kk.dfb",
+        "at": "2026-03-05T11:20:00+02:00",
+        "orderedAt": null,
+        "issuedAt": "2026-03-05T11:31:09+02:00",
+        "status": "final",
+        "file": {
+          "$doc": "blob-sha256-c8271e7a7c627a582c7743c59388e95ade120b2b83b707e8d2a8b443e7147e3e"
+        },
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "review": "pending"
+      },
+      "revision": 1772668800,
+      "createOnly": ["review"]
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/body_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "60.2",
+          "unit": "kg"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Total mass",
+          "display": "Total mass"
+        },
+        "upstreamId": "2026-03-05/Total mass",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/body_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "25.3",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Region %Fat (total)",
+          "display": "Region %Fat (total)"
+        },
+        "upstreamId": "2026-03-05/Region %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/tissue_fat_fraction",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "26.1",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Tissue %Fat (total)",
+          "display": "Tissue %Fat (total)"
+        },
+        "upstreamId": "2026-03-05/Tissue %Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/fat_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "15240",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat (total)",
+          "display": "Fat (total)"
+        },
+        "upstreamId": "2026-03-05/Fat (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/lean_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/lean_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "43160",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Lean (total)",
+          "display": "Lean (total)"
+        },
+        "upstreamId": "2026-03-05/Lean (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/fat_free_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/fat_free_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "44920",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Fat free (total)",
+          "display": "Fat free (total)"
+        },
+        "upstreamId": "2026-03-05/Fat free (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/bone_mass",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/bone_mass",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "1760",
+          "unit": "g"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "BMC (total)",
+          "display": "BMC (total)"
+        },
+        "upstreamId": "2026-03-05/BMC (total)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/tissue_fat_fraction/android",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": "android",
+        "value": {
+          "value": "29.0",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Android %Fat",
+          "display": "Android %Fat"
+        },
+        "upstreamId": "2026-03-05/Android %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/tissue_fat_fraction/gynoid",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/tissue_fat_fraction",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": "gynoid",
+        "value": {
+          "value": "35.2",
+          "unit": "%"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Gynoid %Fat",
+          "display": "Gynoid %Fat"
+        },
+        "upstreamId": "2026-03-05/Gynoid %Fat",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/android_gynoid_ratio",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/android_gynoid_ratio",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "0.82",
+          "unit": "1"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "A/G ratio",
+          "display": "A/G ratio"
+        },
+        "upstreamId": "2026-03-05/A/G ratio",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    },
+    {
+      "kind": "substrate.reamde.dev/labs/labresult",
+      "namespace": "dxa/invented-imaging-centre",
+      "key": "2026-03-05/body_fat_centile",
+      "mode": "maintain",
+      "properties": {
+        "metric": "substrate.reamde.dev/observations/metric/health/body_fat_centile",
+        "source": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/observations/source",
+            "namespace": "source",
+            "key": "dxa/invented-imaging-centre"
+          }
+        },
+        "report": {
+          "$ref": {
+            "kind": "substrate.reamde.dev/labs/labreport",
+            "namespace": "dxa/invented-imaging-centre",
+            "key": "2026-03-05"
+          }
+        },
+        "form": "gauge",
+        "hold": "PT0S",
+        "at": "2026-03-05T11:20:00+02:00",
+        "utcOffset": 120,
+        "channel": null,
+        "value": {
+          "value": "35",
+          "unit": "{score}"
+        },
+        "code": null,
+        "codedValue": null,
+        "text": null,
+        "sourceValue": null,
+        "sourceUnit": null,
+        "normalizationFailure": null,
+        "referenceRanges": null,
+        "interpretation": null,
+        "coding": {
+          "system": "ge-lunar",
+          "code": "Centile (US reference, v107)",
+          "display": "Centile (US reference, v107)"
+        },
+        "upstreamId": "2026-03-05/Centile (US reference, v107)",
+        "specimen": null,
+        "method": "DXA whole body",
+        "status": "final",
+        "provenance": null
+      },
+      "revision": 1772668800
+    }
+  ],
+  "documents": [
+    {
+      "digest": "blob-sha256-22135674df7a533c0deec06906edec779e47106d9d4ad02700985c7a99272db6",
+      "name": "DXA trend 2024-02-20.pdf",
+      "mediaType": "application/pdf",
+      "size": 7306
+    },
+    {
+      "digest": "blob-sha256-c8271e7a7c627a582c7743c59388e95ade120b2b83b707e8d2a8b443e7147e3e",
+      "name": "DXA trend photo 2026-03-05.jpg",
+      "mediaType": "image/jpeg",
+      "size": 10
+    }
+  ],
+  "left": [
+    {
+      "what": "the scan of 2024-02-20",
+      "why": "the printout header's height, weight and BMI are left out: the operator types them in"
+    },
+    {
+      "what": "the scan of 2026-03-05",
+      "why": "the printout header's height, weight and BMI are left out: the operator types them in"
+    },
+    {
+      "what": "the scan of 2026-03-05",
+      "why": "only the trend page was transcribed: the scan's bone density and regional composition are not in it"
+    }
+  ],
+  "source": {
+    "kind": "substrate.reamde.dev/observations/source",
+    "namespace": "source",
+    "key": "dxa/invented-imaging-centre"
+  }
+}
