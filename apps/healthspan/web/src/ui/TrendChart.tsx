@@ -1095,20 +1095,26 @@ export function TrendChart({
           `latest ${f(newest.value)} on ${formatTime(new Date(newest.t))}`,
         ]
       : [typeof empty === "string" ? empty : "No data"]
-    return [
-      ...parts,
-      ...(bands ?? []).map((b) =>
-        b.from !== undefined && b.to !== undefined
-          ? `${b.label} ${f(b.from)} to ${f(b.to)}`
-          : b.from !== undefined
-            ? `${b.label} from ${f(b.from)}`
-            : b.to !== undefined
-              ? `${b.label} up to ${f(b.to)}`
-              : b.label
-      ),
-      ...(trendline?.label ? [trendline.label] : []),
-      ...(gapLabel ? [gapLabel] : []),
-    ].join("; ")
+    return (
+      [
+        ...parts,
+        ...(bands ?? []).map((b) =>
+          b.from !== undefined && b.to !== undefined
+            ? `${b.label} ${f(b.from)} to ${f(b.to)}`
+            : b.from !== undefined
+              ? `${b.label} from ${f(b.from)}`
+              : b.to !== undefined
+                ? `${b.label} up to ${f(b.to)}`
+                : b.label
+        ),
+        ...(trendline?.label ? [trendline.label] : []),
+        ...(gapLabel ? [gapLabel] : []),
+      ]
+        // A part written as a sentence keeps no full stop of its own: the
+        // parts are joined, and the whole is closed once.
+        .map((part) => part.replace(/\.$/, ""))
+        .join("; ")
+    )
   }, [points, bands, trendline, gapLabel, unit, formatValue, formatTime, empty])
 
   return (

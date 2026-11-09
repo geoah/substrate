@@ -1,4 +1,4 @@
-import { Row, Section } from "@substrate/react"
+import { ActionRow, Row, Section, useToast } from "@substrate/react"
 import { useMemo } from "react"
 import { useBackend } from "../data"
 import { fileText, reportLines, reportTitle } from "../labs/reports"
@@ -19,7 +19,10 @@ const back = {
 /** One report: who issued it and when, then its results, the ones the lab
  * flagged first. */
 export function ReportScreen(props: { id: string }) {
-  const labs = useBackend().labs.useLabs()
+  const backend = useBackend()
+  const labs = backend.labs.useLabs()
+  const openFile = backend.record.useOpenFile()
+  const toast = useToast()
   const index = labs.data?.index
   const lines = useMemo(
     () => (index ? reportLines(index, props.id) : []),
@@ -80,16 +83,26 @@ export function ReportScreen(props: { id: string }) {
       subtitle={formatDate(rep.at)}
       back={back}
     >
-      <Section
-        footer={
-          rep.file
-            ? "The original document opens in your Substrate's console: an app is never given its files."
-            : undefined
-        }
-      >
+      <Section>
         {facts.map(([label, value]) => (
           <Row key={label} label={label} value={value} />
         ))}
+        {rep.file && openFile && (
+          <ActionRow
+            onClick={() => {
+              const file = rep.file
+              if (file)
+                openFile(file).catch((e: unknown) =>
+                  toast(
+                    e instanceof Error ? e.message : "The file did not open.",
+                    "error"
+                  )
+                )
+            }}
+          >
+            Open the original
+          </ActionRow>
+        )}
       </Section>
       <section aria-label="Results" className="mb-7">
         <h2 className="mb-1.5 flex px-4 text-[13px] tracking-wide text-secondary uppercase">

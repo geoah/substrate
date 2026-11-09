@@ -303,7 +303,7 @@ export function LabScreen(props: { entry: string; query: string }) {
                   ? {
                       from: { at: fit.from.at, value: fit.from.value },
                       to: { at: fit.to.at, value: fit.to.value },
-                      label: text.tooltip.replace(/\.$/, ""),
+                      label: text.tooltip,
                     }
                   : undefined
               }

@@ -183,7 +183,7 @@ export const LabCard = memo(function LabCard({
                 from: { at: trend.from.at, value: trend.from.value },
                 to: { at: trend.to.at, value: trend.to.value },
                 // The chart ends the label with its own full stop.
-                label: card.trendText.tooltip.replace(/\.$/, ""),
+                label: card.trendText.tooltip,
               }
             : undefined
         }

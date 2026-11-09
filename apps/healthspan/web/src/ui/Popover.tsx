@@ -2,6 +2,7 @@ import { Sheet, cx, useMediaQuery } from "@substrate/react"
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -33,7 +34,9 @@ export function Popover(props: {
     isOpen: boolean
     triggerProps: PopoverTriggerProps
   }) => ReactNode
-  /** Which edge of the button the panel lines up with. Default `start`. */
+  /** Which edge of the button the panel lines up with. Left out, the side
+   * of the window with room for the panel: a button near the right edge
+   * (a card in the last column) opens it leftward. */
   align?: "start" | "end"
   /** The panel's own classes (its width, its background). */
   panelClassName?: string
@@ -45,6 +48,18 @@ export function Popover(props: {
   const panel = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLSpanElement>(null)
   const id = useId()
+  const [placed, setPlaced] = useState<"start" | "end">("start")
+  const align = props.align ?? placed
+
+  // Measured before paint, so the panel never shows past the window's edge
+  // first.
+  useLayoutEffect(() => {
+    if (!open || !wide || props.align) return
+    const b = button.current?.getBoundingClientRect()
+    const width = panel.current?.offsetWidth ?? 0
+    if (!b) return
+    setPlaced(b.left + width > window.innerWidth - 8 ? "end" : "start")
+  }, [open, wide, props.align])
 
   const close = (refocus: boolean) => {
     setOpen(false)
@@ -104,7 +119,7 @@ export function Popover(props: {
           }}
           className={cx(
             "absolute top-full z-40 mt-2 max-h-[min(80dvh,640px)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-[14px] bg-card p-4 text-left text-label shadow-[0_8px_32px_rgb(0_0_0/0.18)] ring-1 ring-separator/40 outline-none",
-            props.align === "end" ? "right-0" : "left-0",
+            align === "end" ? "right-0" : "left-0",
             props.panelClassName
           )}
         >
