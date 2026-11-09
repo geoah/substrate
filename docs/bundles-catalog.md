@@ -225,8 +225,11 @@ cursor and status on the account, so one stream erroring never stalls another.
 The bundle's `oauth2` block derives one scope per toggle: `enabledContacts`
 takes `contacts.readonly` and `directory.readonly`, `enabledGmail`
 `gmail.readonly`, `enabledCalendar` `calendar.readonly`, `enabledDrive`
-`drive.readonly`, and `userinfo.email` rides on all four. Read only: nothing
-is ever written back to Google.
+`drive.readonly`, and `userinfo.email` rides on all four. The mirror is read
+only. Twelve tools an agent calls read Google live and, behind two toggles of
+their own, `enabledGmailWrite` (`gmail.modify`) and `enabledCalendarWrite`
+(`calendar.events`), draft and send mail and change events
+([Google's tools](#googles-tools)).
 
 - **Kinds (14)**: `config` (the OAuth client kind, `oauth2`, named by the
   bundle's `client` input) and `account` (the Connection, `accountconfig` and
@@ -241,7 +244,7 @@ is ever written back to Google.
   series it overrides) and `calendarsync` (one calendar's own drain state).
   Drive writes `drivefile` (one Drive v3 `File`, with the exported text of a
   Doc, a Sheet or a Slides deck).
-- **Functions (4)**: `synccontacts` reads one page of `people/me/connections`
+- **Functions (16)**: `synccontacts` reads one page of `people/me/connections`
   or `people:listDirectoryPeople` per invocation, mirrors each `Person`, walks
   `contactGroups.list`, and stores a People sync token per endpoint.
   `syncgmail` reads one `messages.list` or `history.list` page, or hydrates
@@ -264,7 +267,9 @@ is ever written back to Google.
   and gives it no row, so no contact is made for it, and GitHub's one contact
   is `notifications@github.com`. A subdomain is not a relay:
   `<id>+<login>@users.noreply.github.com` is a person's commit address. The
-  list is `REPLY_RELAYS` in that body.
+  list is `REPLY_RELAYS` in that body. Beside the four syncs, twelve tools
+  share the `google_api.py` module and write no record; see
+  [Google's tools](#googles-tools).
 - **Triggers (12)**, three per stream. `google-contacts-on-connect`,
   `google-gmail-on-connect`, `google-calendar-on-connect` and
   `google-drive-on-connect` fire their stream's sync while the account is
@@ -298,11 +303,12 @@ other three streams sync on. The facility reads the connected address from
 `oauth2/v3/userinfo` into `account.email`, which is why `userinfo.email` rides
 on every toggle rather than on one.
 
-**The owner sets four toggles, a cadence and a depth.** `enabledContacts`
+**The owner sets six toggles, a cadence and a depth.** `enabledContacts`
 syncs the address book and the Workspace directory, `enabledGmail` the
 threads, messages, attachments and labels, `enabledCalendar` the calendar
 list, its series and its events, and `enabledDrive` the files and their
-exported text. `syncFrequency` is `off`, `hourly` or `daily` (default
+exported text. `enabledGmailWrite` and `enabledCalendarWrite` sync nothing:
+they are what the writing tools need. `syncFrequency` is `off`, `hourly` or `daily` (default
 `daily`): the hourly tick syncs a stream whose own anchor is older than that,
 and `off` stops the schedule without touching a toggle or a cursor.
 `backfillDepth` is `none`, `last30d`, `last90d`, `last1y` or `all` (default
@@ -424,6 +430,75 @@ the `subject` slot on `contact` and `emailaddress`. The `emailaddress` kind
 now carries `account` and `address` and nothing else. `account.syncState` is
 retyped from an enum to a string, because the `sync` trait contracts the
 datatype.
+
+### Google's tools
+
+Twelve callables, each offered to agents under its tool name
+([offered functions](agents.md#offered-functions)), so the seeded Moss and
+its secretary take them once the provider is installed. No trigger names
+them, and none writes a record: what a tool sends or changes reaches the
+mirror when its stream next reads it, so the mirror is no confirmation
+([decision 0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
+
+| Tool | Function | Does | Needs |
+| --- | --- | --- | --- |
+| `gmail_search` | `searchmail` | Gmail's own search, live: threads, newest first | `enabledGmail` or `enabledGmailWrite` |
+| `gmail_read_thread` | `readthread` | one thread's messages, bodies as text | the same |
+| `gmail_draft` | `draftmail` | a new draft or a reply draft, or one replaced | `enabledGmailWrite` |
+| `gmail_send` | `sendmail` | sends a new message or a reply, from its own arguments | `enabledGmailWrite` |
+| `gmail_label_thread` | `labelthread` | archive, mark read, star, label a thread | `enabledGmailWrite` |
+| `calendar_create_event` | `createevent` | an event, with guests, Meet or a repeat rule | `enabledCalendarWrite` |
+| `calendar_update_event` | `updateevent` | only what is passed changes | `enabledCalendarWrite` |
+| `calendar_delete_event` | `deleteevent` | an event, or one occurrence | `enabledCalendarWrite` |
+| `calendar_respond` | `respondevent` | accept, decline or maybe an invitation | `enabledCalendarWrite` |
+| `calendar_free_busy` | `freebusy` | busy ranges of calendars in a window | `enabledCalendar` |
+| `drive_search` | `searchdrive` | files by words in name or text, or a Drive query | `enabledDrive` |
+| `drive_read_file` | `readfile` | one file as text: a Doc as markdown, a Sheet as CSV | `enabledDrive` |
+
+**The owner says so twice.** A tool acts as an account only when the toggle
+it needs is on and the account's `grantedScopes` carries a scope that covers
+it. The write toggles ask for their own scopes, so turning one on needs a
+reconnect, and until then the tool refuses naming it; turning one off stops
+the tools even while the grant still holds the scope. Both declare
+`access: write`, so the console lists them under **What your agents may do**
+on the provider's page and in the account dialog, and an account connected
+before version 51 reads **Off** there. One turned on without a reconnect
+needs attention, with **Reconnect**, as does any account whose grant lacks a
+switch it has on. `gmail.modify` is
+restricted, like `gmail.readonly`, so a published client needs no further
+verification for it, and the operator's client must list both write scopes
+on its consent screen. A tool takes `account`, the address to act as, which
+may be left out when one connected account can; with several it is refused
+naming them.
+
+**Ids are Google's.** Each takes the ids a mirror row carries:
+`gmailthread.threadId`, `gmailmessage.messageId`, `calendar.calendarId`
+(default the primary calendar), `calendarevent.eventId` and
+`drivefile.fileId`. A reply names the message it answers in `replyTo`: the
+tool reads its threading headers and threads the reply under it. A draft
+addresses it to the sender (`replyAll` adds everyone else but the owner) and
+keeps the subject when the call names neither; a send never does, so every
+recipient and the subject it carries are on the card the owner approves, and
+no draft is sent by its id, since its contents could change while the
+approval waits. A local event time is read in `timeZone`, else the calendar's own
+zone; `freebusy` takes instants with their offsets. A guest is emailed as
+`notify` says, and by default whenever the event has guests.
+
+**A send waits for the owner.** `gmail_send` and the four calendar changes
+(`calendar_create_event`, `calendar_update_event`, `calendar_delete_event`,
+`calendar_respond`) cannot be taken back, and because they return no effect,
+neither an agent's emit ceiling nor a policy sees them. Each declares
+`approval: required`, so an agent's call of one lands an approval in the
+chat and runs only once the owner approves it, exactly as it was asked
+([approvals](agents.md#approvals),
+[0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+A draft, a label and the reads run at once. The owner's own call of one, and
+a trigger wired straight to it, are not held.
+
+The token goes only to `https://gmail.googleapis.com` or
+`https://www.googleapis.com` on 443, or to a loopback `apiBase`, through an
+opener that refuses redirects and the environment's proxy. A Google refusal
+fails the call with Google's message.
 
 ## GitHub
 

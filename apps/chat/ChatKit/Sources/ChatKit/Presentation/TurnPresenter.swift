@@ -55,6 +55,15 @@ enum TurnPresenter {
                             text: ended.ok ? "\(name) finished in the background" : "\(name) didn't finish in the background",
                             done: ended.ok)))
             }
+            if let ended = approvalNotice(turn) {
+                let text =
+                    !ended.approved
+                    ? "You declined \(ended.tool)"
+                    : ended.ok == false
+                        ? "You approved \(ended.tool), but it didn't work" + (ended.error.map { ": \($0)" } ?? "")
+                        : "You approved \(ended.tool), and it ran"
+                return TurnPresentation(id: turn.id, body: .approvalEnded(OutcomeLine(text: text, done: ended.approved && ended.ok != false)))
+            }
             return TurnPresentation(id: turn.id, body: .system(turn.content))
         }
     }
@@ -134,9 +143,14 @@ enum TurnPresenter {
         // where it waits.
         let held = call.ok == false && request != nil
         let interaction = interactionID(of: call)
-        // What the call changed. A suggestion and questions are cards of
-        // their own, and a write's change is its panel.
-        let changes = request == nil && interaction == nil && resolved.function != HostFunction.write && call.ok == true ? stampedChanges(call) : []
+        // A call that waits for the owner's approval has not run: its card
+        // says what it would do, and its answer is only the handle.
+        let approval = approvalID(of: call)
+        // What the call changed. A suggestion, questions and an approval are
+        // cards of their own, and a write's change is its panel.
+        let changes =
+            request == nil && interaction == nil && approval == nil && resolved.function != HostFunction.write && call.ok == true
+            ? stampedChanges(call) : []
         // Several records, and the changes of a call whose line says
         // something else (a function's own words), show under the line; one
         // record the line already names keeps its link in the details.
@@ -167,7 +181,7 @@ enum TurnPresenter {
             case let .reply(agent, text):
                 details.append(.reply(heading: "\(agentName(agent)) said", text: text))
             case let .output(raw):
-                if known == nil, !working { details.append(.output(raw)) }
+                if known == nil, !working, approval == nil { details.append(.output(raw)) }
             }
         }
         // The line names the one record the call worked on: by the heading
@@ -188,7 +202,7 @@ enum TurnPresenter {
                 .working
             } else if call.ok == nil {
                 .running
-            } else if held {
+            } else if held || approval != nil {
                 .held
             } else if call.ok == false || call.job == "failed" || call.job == "canceled" {
                 .failed
@@ -200,12 +214,15 @@ enum TurnPresenter {
             if !decided.contains(request) { attachment = .suggestion(request) }
         } else if let interaction {
             attachment = .questions(interaction)
+        } else if let approval {
+            attachment = .approval(approval)
         } else if resolved.function == HostFunction.write {
             attachment = writeChange(call).map { .change(panel($0.titled(titles), titles: titles)) }
         }
         return ToolRowPresentation(
             id: id, status: status,
-            statusLabel: status == .working ? "Working in the background" : status == .held ? "Waiting for you" : nil,
+            statusLabel: status == .working
+                ? "Working in the background" : approval != nil ? "Asked for your approval" : status == .held ? "Waiting for you" : nil,
             summary: line.said(title: named), unnamed: unnamed, details: details, raw: raw, sources: known.map(sources), chips: chips,
             thread: childThread(call, resolved).map { ThreadLink(thread: $0, label: "Open its conversation") }, attachment: attachment)
     }

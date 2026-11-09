@@ -469,6 +469,12 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	if target.IsHost() {
 		return nil, fmt.Errorf("call: %s is a built-in — the engine runs it under a caller's grants, and a function body has none to lend", target.Identity())
 	}
+	// A call that waits for the owner's approval waits when an agent's call
+	// reaches it through another body too: inside an agent's tool call the
+	// body is the agent's hand, and a host call is no way around the card.
+	if target.RequiresApproval() && b.inv.ceilinged {
+		return nil, fmt.Errorf("call: %s waits for the owner's approval when an agent reaches it — an agent calls it as its own tool, where the owner is asked", target.Identity())
+	}
 	// Nested admission re-checks the callee's bundle lifecycle under the
 	// root's already-held fence: a live bundle cannot invoke a
 	// disabled bundle's function, and — because the fence is held for the

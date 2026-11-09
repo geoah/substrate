@@ -120,6 +120,7 @@ import type {
   OperatorDefault,
   BundleClosure,
   BundlePurged,
+  BundleFeature,
   BundleStatus,
   BundleUninstalled,
   BundleUpgrade,
@@ -1088,6 +1089,7 @@ const bundleStatus: Shape<BundleStatus> = {
   enabled: true,
   inputs: false,
   setup: false,
+  features: false,
   accounts: true,
   functions: true,
   kinds: true,
@@ -1101,6 +1103,12 @@ const bundleStatus: Shape<BundleStatus> = {
   shippedVersion: false,
   provider: false,
   addonFor: false,
+}
+
+const bundleFeature: Shape<BundleFeature> = {
+  toggle: true,
+  scopes: true,
+  access: true,
 }
 
 const inputStatus: Shape<InputStatus> = {
@@ -1550,6 +1558,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ShippedRecord: shippedRecord,
   SuggestedMapping: suggestedMapping,
   BundleStatus: bundleStatus,
+  BundleFeature: bundleFeature,
   InputStatus: inputStatus,
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
@@ -1624,6 +1633,9 @@ const notOnTheWire: Record<string, string> = {
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",
   JobNotice: "a view the console folds from llm/message records",
+  ApprovalNotice: "a view the console folds from llm/message records",
+  ApprovalView: "a view the console folds from an llm/approval record",
+  ApprovalArgument: "one argument of an llm/approval, folded for the card",
   LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
   ActorMirrors: "client-side actor resolution state",

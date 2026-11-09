@@ -392,6 +392,14 @@ of lists is the one shape the property dialect cannot state, since `keyed` and
 `repeated` are its two containers and a declaration is one or the other. So the
 value takes a field, and a bare list is refused naming it.
 
+An entry may also say `access: write` (absent is `read`): the toggle's scopes
+let the bundle's code change the provider, not read it, so the console lists
+it under what the owner's agents may do rather than what the account brings
+in ([0255](decisions/0255-a-providers-writes-ride-toggles-of-their-own-and-a-seeded-secretary-takes-the-providers-tools-by-pattern.md)).
+The facility requests both alike. A bundle's status lists every toggle as
+`features`, each with its `scopes` and its `access`, which is how the console
+compares an account's `grantedScopes` with what it has turned on.
+
 **The requested scope set is derived per consent from the account's enabled
 toggles**, unioned through `featureScopes`. A toggle that maps to no scope
 requests nothing, which is exactly how a declared-but-unwired feature stays off

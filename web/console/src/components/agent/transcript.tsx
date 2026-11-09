@@ -33,6 +33,7 @@ import {
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { agentName, resolveTool } from "@/lib/agent-chat"
 import {
+  approvalNoticeOf,
   decisionNoticeOf,
   deliveryNoticeOf,
   interactionNoticeOf,
@@ -69,21 +70,32 @@ function SystemTurn({
   const notice = decisionNoticeOf(turn)
   const interaction = interactionNoticeOf(turn)
   const ended = jobNoticeOf(turn)
+  const approval = approvalNoticeOf(turn)
   const target = notice?.target ? splitRecordPath(notice.target) : undefined
-  const positive = interaction
-    ? interaction.event === "interactionAnswered"
-    : ended
-      ? ended.ok
-      : notice?.decision === "accepted"
+  const positive = approval
+    ? approval.decision === "approved" && approval.ok !== false
+    : interaction
+      ? interaction.event === "interactionAnswered"
+      : ended
+        ? ended.ok
+        : notice?.decision === "accepted"
   const Icon = positive ? CheckCircle2Icon : XCircleIcon
   return (
     <div className="flex flex-col items-center gap-1.5 text-[12.5px] text-muted-foreground">
-      {interaction || notice || ended ? (
+      {interaction || notice || ended || approval ? (
         <div className="flex flex-wrap items-center justify-center gap-1.5">
           <Icon
             className={positive ? "size-3.5 text-ok" : "size-3.5 text-faint"}
           />
-          {ended ? (
+          {approval ? (
+            <span className="[overflow-wrap:anywhere]">
+              {approval.decision === "denied"
+                ? `You declined ${approval.tool}`
+                : approval.ok === false
+                  ? `You approved ${approval.tool}, but it didn’t work${approval.error ? `: ${approval.error}` : ""}`
+                  : `You approved ${approval.tool}, and it ran`}
+            </span>
+          ) : ended ? (
             <span>
               {jobName(ended, agent)}{" "}
               {ended.ok

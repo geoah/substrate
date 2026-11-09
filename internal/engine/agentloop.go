@@ -165,6 +165,10 @@ type agentInvocation struct {
 	threadID string
 	// parent is the calling agent's thread, on sub-agent invocations.
 	parent string
+	// root is the call chain's root thread, on sub-agent invocations: the
+	// conversation an approval a child needs is asked in (approvals.go).
+	// Empty at the root, whose own thread it is.
+	root string
 	// depth is the agentDepth: 0 at the root, +1 per sub-agent hop. A
 	// separate counter from causalDepth on purpose.
 	depth int
@@ -2175,6 +2179,10 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchEdit(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolAppletPreview:
 		return l.dispatchAppletPreview(ctx, args)
+	case tool.fn != nil && tool.fn.RequiresApproval():
+		// Before the background branch: a call that waits for the owner
+		// starts nothing, foreground or background, until it is approved.
+		return l.dispatchApproval(ctx, c, tool.fn, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:
@@ -3167,7 +3175,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	child := continued
 	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input, notAfter: notAfter,
-		parent: l.threadID, depth: depth, threadID: continued,
+		parent: l.threadID, root: l.rootThread(), depth: depth, threadID: continued,
 		// A stop of the detached turn stops the child with it, and the
 		// child settles `stopped` on its own bounded writes.
 		stopHub:  l.in.stopHub,

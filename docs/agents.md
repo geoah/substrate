@@ -537,7 +537,10 @@ the agent nothing it did not hold. A judge takes no offered functions either:
 an agent with `toolsFrom` is refused as one, exactly as one with `tools:`.
 
 The shipped assistant, `substrate.reamde.dev/assistant/moss`, takes `*`,
-and the notes sample's `stats` function is offered as `notes_stats`. The console lists an agent's offered
+and the notes sample's `stats` function is offered as `notes_stats`. Its
+secretary, `substrate.reamde.dev/assistant/secretary`, takes
+`providers.substrate.reamde.dev/google/*` alone: a seeded agent loads before
+the provider is installed, and the pattern picks its tools up once it is. The console lists an agent's offered
 tools on its page.
 
 ## The engine's guidance
@@ -767,6 +770,51 @@ writes again. A job lives in the server process: a job a restart interrupted
 settles `failed` at the next open, with a toolCompleted row saying so, and the
 agent calls again if it still needs it. A background call from a sub-agent
 reports into the sub-agent's own thread.
+
+### Approvals
+
+A call that cannot be taken back waits for the owner
+([0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+A function declares `approval: required` ([functions](functions.md#the-manifest)),
+and an agent's call of it, from any agent and in any thread, lands an
+`llm/approval` instead of running. The record freezes the asking `agent`, the
+`function`, the `tool` name, the call's id and its `arguments`. Its `thread`
+is the conversation the owner is in: the root of a sub-agent chain, with the
+sub-agent's own thread in `requestedIn`. The tool answers the model at once
+with `{approval, status: "waiting for the owner's approval"}`, and the turn
+goes on or ends.
+
+The owner approves or declines it by moving `state` from `pending` to
+`approved` or `denied`, with `ifVersion` the version they read. Nothing else
+in the record may change, and an agent, a function, a bundle or the engine
+deciding one is refused. The console's chat shows the card under the tool
+row, or after the transcript for a sub-agent's call, and so does the Chat
+app. A client that speaks the API writes the same patch.
+
+```yaml
+kind: substrate.reamde.dev/llm/approval
+metadata:
+  id: 01h2xcejqtf2nbrexx3vqjhp42
+data:
+  properties:
+    state: approved
+```
+
+Once approved, the engine claims the record (`running`), runs the function
+under the asking agent's actor and the writes it was granted, and ends it
+`done` with `output` or `failed` with `error`. Then it writes one `system`
+row into the thread, `{event: "approvalDecided", approval, decision, tool,
+callable, agent, ok, output|error}`, and resumes the thread as a background
+job's end does, so the agent says what happened. A declined call writes the
+row with `decision: denied` and never runs. An approval a restart left
+`approved` or `running` is failed as interrupted at the next open and
+reported, never run again: the call may already have reached the provider.
+
+The hold is an agent's: the owner's direct call and a trigger wired straight
+to the function run the body, and a function body that calls one through the
+host inside an agent's chain is refused. Nothing yet lets an agent, trigger
+or workflow skip the wait; [the plan](plans/approvals.md) is standing
+approvals the owner grants by name.
 
 ## Sub-agents, budgets, and the emit ceiling
 

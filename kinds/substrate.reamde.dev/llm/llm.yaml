@@ -4,7 +4,8 @@
 # that: a `provider` says where completions are bought, a `model` is one model
 # a provider offers and what it costs, a `thread` is one invocation (there is
 # no agent-run kind — the thread IS the run), a `message` is one turn of it,
-# and an `interaction` is one batch of questions the agent asked its owner. A
+# an `interaction` is one batch of questions the agent asked its owner, and an
+# `approval` is one call the agent wants to make that waits for its owner. A
 # repository that never runs an agent still holds these kinds, because the
 # binary seeds every package it ships. Core declares against them in exactly
 # four places: the `agent` kind's `provider` and `runsOn` references,
@@ -35,7 +36,10 @@ data:
   # version 4: the `model` kind and the shipped models (models.yaml), each
   # model a provider offers as a record agents run on (decision record 0242).
   # Every later change to a shipped model bumps this again.
-  version: 4
+  # version 5: the `approval` kind, an agent's call of a function declaring
+  # `approval: required`, held until the owner approves or declines it
+  # (decision record 0254).
+  version: 5
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

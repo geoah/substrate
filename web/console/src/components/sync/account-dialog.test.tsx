@@ -11,6 +11,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -125,5 +126,60 @@ describe("AccountDialog with a secret", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(sent()).toHaveLength(2)
     expectNoTrace(client, "tk-cancelled-secret")
+  })
+})
+
+describe("AccountDialog with switches that let agents act", () => {
+  const googleKind: KindInfo = {
+    identity: "providers.substrate.reamde.dev/google/account",
+    name: "account",
+    authority: "providers.substrate.reamde.dev",
+    package: "google",
+    version: 1,
+    source: "published",
+    description: "",
+    definition: {
+      traits: ["substrate.reamde.dev/core/accountconfig"],
+      properties: {
+        enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+        enabledGmailWrite: {
+          type: "bool",
+          writer: "owner",
+          displayName: "Gmail sending",
+        },
+      },
+    },
+  }
+
+  it("puts a write switch under what your agents may do, apart from what it brings in", () => {
+    const client = new QueryClient()
+    client.setQueryData(["registry", "kinds"], [googleKind])
+    render(
+      <ShippedUnits>
+        <QueryClientProvider client={client}>
+          <AccountDialog
+            kind={googleKind}
+            providerName="Google"
+            oauth
+            configured
+            features={[
+              { toggle: "enabledGmail", scopes: ["r"], access: "read" },
+              { toggle: "enabledGmailWrite", scopes: ["w"], access: "write" },
+            ]}
+            open
+            onOpenChange={() => {}}
+          />
+        </QueryClientProvider>
+      </ShippedUnits>
+    )
+    const bringIn = screen.getByText("What to bring in").closest("fieldset")
+    const agents = screen
+      .getByText("What your agents may do")
+      .closest("fieldset")
+    expect(bringIn).toBeTruthy()
+    expect(agents).toBeTruthy()
+    expect(within(bringIn!).getByText("Gmail")).toBeTruthy()
+    expect(within(bringIn!).queryByText("Gmail sending")).toBeNull()
+    expect(within(agents!).getByText("Gmail sending")).toBeTruthy()
   })
 })

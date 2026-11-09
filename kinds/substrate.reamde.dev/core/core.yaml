@@ -93,7 +93,12 @@ data:
   # version 53: the query tool takes `count`, a list's filtered set's size,
   # which is how an agent counts a kind's records now the aggregate read
   # groups by no kind, and its aggregate card shows groupBy with a value.
-  version: 53
+  # version 54: a bundle's featureScopes entry takes `access`, `read` or
+  # `write`, so a surface can tell a toggle that lets the bundle's code
+  # change the provider from one that syncs (decision record 0255), and a
+  # function takes `approval: required`, an agent's call of it waiting for
+  # the owner's approval before it runs (decision record 0254).
+  version: 54
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

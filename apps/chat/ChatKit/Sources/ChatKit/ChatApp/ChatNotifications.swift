@@ -23,11 +23,13 @@ public enum ChatNotifications {
             thread: thread.id, userInfo: [threadKey: thread.id], subtitle: title)
     }
 
-    /// A question or a suggestion is waiting on the owner.
+    /// A question, a suggestion or a call to approve is waiting on the owner.
     static func attention(record: Record, thread: String?, agent: String, title: String) -> NotificationRequest {
         let body: String
         if record.kind == Kinds.request {
             body = "Suggested a change for you to apply or dismiss."
+        } else if record.kind == Kinds.approval {
+            body = "Wants your approval to run \(record["tool"]?.text ?? "a tool")."
         } else {
             let n = record["questions"]?.array?.count ?? 1
             body = n == 1 ? "Has a question for you." : "Has \(n) questions for you."

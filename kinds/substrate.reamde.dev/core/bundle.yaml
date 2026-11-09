@@ -150,6 +150,19 @@ data:
               repeated: true
               required: true
               description: the scopes the toggle requests
+            # Whether the scopes read the provider or let the bundle's code
+            # change it (decision record 0255). The facility requests both
+            # alike; a surface reads it to put a write toggle under what the
+            # owner's agents may do rather than what the account brings in.
+            access:
+              type: enum
+              values:
+                - value: read
+                  label: Read
+                - value: write
+                  label: Write
+              description: whether the scopes read the provider or change
+                it (absent is read)
     disabled:
       type: bool
       managed: true

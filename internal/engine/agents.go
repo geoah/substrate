@@ -475,7 +475,10 @@ func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
 	if err := ds.settleInterruptedThreads(ctx); err != nil {
 		return err
 	}
-	return ds.settleInterruptedJobs(ctx)
+	if err := ds.settleInterruptedJobs(ctx); err != nil {
+		return err
+	}
+	return ds.settleInterruptedApprovals(ctx)
 }
 
 // settleInterruptedClaims rewrites every stored claim to interruptedAgentError,

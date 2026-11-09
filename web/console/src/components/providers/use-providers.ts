@@ -9,7 +9,11 @@ import { useQuery } from "@tanstack/react-query"
 
 import { useLiveRecords } from "@/hooks/use-live-records"
 import { useNow } from "@/hooks/use-now"
-import { accountFormGroups } from "@/lib/account-form"
+import {
+  accountFormGroups,
+  ungrantedToggles,
+  writeToggles,
+} from "@/lib/account-form"
 import { providerInfo, type ProviderInfo } from "@/lib/actor-identity"
 import {
   ACCOUNT_CONFIG_TRAIT,
@@ -68,18 +72,38 @@ export interface ProviderEntry {
   standing: ProviderStanding
   /** The account kind's switches: what step 4 chooses between. */
   toggles: { name: string; label: string }[]
+  /** The switches that let the owner's agents change things at the
+   * provider (its bundle marks them `access: write`), with what each says. */
+  permissions: { name: string; label: string; description?: string }[]
   updateAvailable: boolean
 }
 
-/** The account kind's owner-written bool properties, by name and label. */
+/** The account kind's owner-written bool properties that bring something
+ * in, by name and label: every bool but the ones `write` names. */
 export function accountToggles(
   units: UnitReader,
-  kind: KindInfo | undefined
+  kind: KindInfo | undefined,
+  write?: ReadonlySet<string>
 ): { name: string; label: string }[] {
   if (!kind) return []
-  return accountFormGroups(units, kind).toggles.map((f) => ({
+  return accountFormGroups(units, kind, write).toggles.map((f) => ({
     name: f.name,
     label: f.label,
+  }))
+}
+
+/** The account kind's switches that let the owner's agents change things
+ * at the provider, by name, label and description. */
+export function accountPermissions(
+  units: UnitReader,
+  kind: KindInfo | undefined,
+  write: ReadonlySet<string>
+): { name: string; label: string; description?: string }[] {
+  if (!kind || write.size === 0) return []
+  return accountFormGroups(units, kind, write).permissions.map((f) => ({
+    name: f.name,
+    label: f.label,
+    description: f.description,
   }))
 }
 
@@ -103,7 +127,11 @@ export function providerSteps(
   kinds: KindInfo[]
 ): { steps: SetupStep[]; toggles: { name: string; label: string }[] } {
   const accountKind = view?.accountKind ?? accountKindOf(kinds, bundleId)
-  const toggles = accountToggles(units, accountKind)
+  const toggles = accountToggles(
+    units,
+    accountKind,
+    writeToggles(view?.status?.features)
+  )
   const steps = setupSteps(
     stepFactsOf(
       installed,
@@ -130,6 +158,15 @@ function entryOf(
     view,
     kinds
   )
+  const features = view?.status?.features
+  const permissions = accountPermissions(
+    units,
+    view?.accountKind,
+    writeToggles(features)
+  )
+  const labelOf = new Map(
+    [...toggles, ...permissions].map((t) => [t.name, t.label])
+  )
   // The four steps cover the credentials input; anything else the status
   // still lists (a required setting, another input) is set up on the page.
   const otherSetup = (row.status?.setup ?? []).filter(
@@ -143,6 +180,7 @@ function entryOf(
     view,
     steps,
     toggles,
+    permissions,
     updateAvailable: upgradeAvailable(row) && !upgradeBlocked(row),
     standing: providerStanding(
       {
@@ -159,7 +197,14 @@ function entryOf(
         otherSetup,
         steps,
         oauth: view?.oauth,
-        accounts: view?.accounts ?? [],
+        accounts: (view?.accounts ?? []).map((a) => ({
+          ...a,
+          ungranted: ungrantedToggles(
+            a.record.properties,
+            a.grantedScopes,
+            features
+          ).map((t) => labelOf.get(t) ?? t),
+        })),
         triggers: installed ? bundleTriggers(triggers, row.id) : [],
       },
       now

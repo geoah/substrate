@@ -2015,6 +2015,16 @@ export interface SetupItem {
   message: string
 }
 
+/** One account toggle of an OAuth bundle (substrate.BundleFeature, decision
+ * record 0255): the scopes turning it on asks the provider for, and whether
+ * they read the provider (`read`, a thing the account brings in) or let the
+ * bundle's tools change it (`write`, a thing the owner's agents may do). */
+export interface BundleFeature {
+  toggle: string
+  scopes: string[]
+  access: string
+}
+
 /** One installed bundle's computed status — stored nowhere, recomputed per
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
@@ -2040,6 +2050,9 @@ export interface BundleStatus {
   /** What stands between the bundle and every runtime path it ships. Omitted
    * when ready; lifecycle is separate from setup. */
   setup?: SetupItem[]
+  /** The account toggles an OAuth bundle's consent is built from, toggle
+   * order. Omitted on a bundle with no `oauth2` block. */
+  features?: BundleFeature[]
   accounts: number
   functions: number
   kinds: number

@@ -1014,6 +1014,15 @@ panel on the right.
   and applies the suggestion. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
+- **Approvals** are cards under the tool row that asked: a call of a
+  function that waits for the owner (a send, a calendar change) says which
+  agent asks, the tool, and each argument it would run with, and offers
+  **Approve** and **Decline**. Once decided, the card follows the call
+  (**Approved, running**, **Approved and done**, **Approved, but it didn't
+  work** with the error, **Declined**), and the outcome line the engine
+  writes into the thread resumes the agent. A sub-agent's call waits after
+  the transcript, since its own tool rows are in its own thread
+  ([agents](agents.md#approvals)).
 - **The panel** says what the agent runs on (**Runs on OpenAI, gpt-5**, the
   AI model linking to its card on [Providers](#providers)), what it can see,
   change and ask, what it is always allowed to do (each rule with
@@ -1164,7 +1173,8 @@ up**, **Needs attention**, **Paused**) or the card offers **Add**, and one
 line says what is true right now. **Needs attention** lists
 each reason under **Why it needs attention**: a provider that failed to load,
 an account whose sign-in stopped working, an account whose last sync failed,
-a gap in its setup, a trigger that cannot run, failed runs waiting to be
+an account with a switch turned on that its sign-in was approved before
+(**Reconnect** asks the provider to approve it), a gap in its setup, a trigger that cannot run, failed runs waiting to be
 retried, an update your records block. A failed sync is not one of them while
 its account holds a sync request newer than its last run's start and its
 acknowledgement (**Sync now**, or the request a reconnect makes): the account
@@ -1204,7 +1214,9 @@ back to it:
   client's redirect URI, and says which secrets are set without ever showing
   one. **Connect your account** opens the account dialog, which asks only what
   the owner decides, read off the account kind's declaration: what to bring
-  in, one toggle per stream, and the sync's schedule and depth. On an OAuth
+  in, one toggle per stream, what your agents may do (the toggles the
+  bundle's `featureScopes` marks `access: write`, each off until you allow
+  it), and the sync's schedule and depth. On an OAuth
   provider its one button is **Create and connect**: it creates the account
   and opens the provider's [consent](bundles.md#the-oauth-facility) in a new
   tab, and the account reads connected when the approval returns.
@@ -1215,6 +1227,13 @@ back to it:
   it. When an approval returns, the notice says what it starts: the first
   sync on a new account, a sync on an account that synced before, nothing on
   a paused one.
+- **What your agents may do**, on a provider whose bundle marks a switch
+  `access: write` (Google's **Gmail sending** and **Calendar editing**): one
+  row per account and switch, reading **Off** until you allow it, **Needs your
+  approval** once it is on and the account's sign-in predates it, and
+  **Allowed** once the grant covers it, with **Turn on**, **Reconnect** and
+  **Turn off**. An account connected before the provider had the switch reads
+  **Off** here.
 - **Add-ons**: the packages that extend it (Slack live events on Slack's
   page), each opening its own page, with **Add** or where it stands.
 - **What it adds**: what it brings in (its primary kinds, each with what it

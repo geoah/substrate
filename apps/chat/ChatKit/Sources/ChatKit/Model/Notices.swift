@@ -37,6 +37,18 @@ struct JobNotice: Hashable, Sendable {
     var output: String?
 }
 
+/// A system turn an approval's end wrote (internal/engine/approvals.go):
+/// the owner's decision, and for an approved call whether it worked.
+struct ApprovalNotice: Hashable, Sendable {
+    var approvalID: String
+    var approved: Bool
+    var tool: String
+    var agent: String?
+    /// Nil for a declined call, which never ran.
+    var ok: Bool?
+    var error: String?
+}
+
 /// A triggered thread's opening message: the delivery envelope a trigger
 /// wrote as its first user turn.
 struct DeliveryNotice: Hashable, Sendable {
@@ -80,6 +92,17 @@ func jobNotice(_ turn: Turn) -> JobNotice? {
         let callID = env["toolCallId"]?.text, let ok = env["ok"]?.bool
     else { return nil }
     return JobNotice(callID: callID, name: env["name"]?.text ?? "", callable: env["callable"]?.text, ok: ok, output: env["output"]?.string)
+}
+
+func approvalNotice(_ turn: Turn) -> ApprovalNotice? {
+    guard let env = envelope(turn, role: .system), env["event"]?.string == "approvalDecided" else { return nil }
+    let decision = env["decision"]?.string
+    guard decision == "approved" || decision == "denied",
+        let path = env["approval"]?.string, let id = path.split(separator: "/").last.map(String.init), !id.isEmpty
+    else { return nil }
+    return ApprovalNotice(
+        approvalID: id, approved: decision == "approved", tool: env["tool"]?.text ?? "", agent: env["agent"]?.text,
+        ok: env["ok"]?.bool, error: env["error"]?.text)
 }
 
 func deliveryNotice(_ turn: Turn) -> DeliveryNotice? {
@@ -142,4 +165,9 @@ func interactionID(of call: ToolCall) -> String? {
     call.changes?.first {
         ($0.kind == Kinds.interaction || $0.kind == Kinds.interactionBeforeMove) && $0.op == "put"
     }?.id
+}
+
+/// The approval a call landed in place of running, from the engine's stamp.
+func approvalID(of call: ToolCall) -> String? {
+    call.changes?.first { $0.kind == Kinds.approval && $0.op == "put" }?.id
 }

@@ -18,6 +18,9 @@ enum Kinds {
     static let thread = "\(llm)/thread"
     static let message = "\(llm)/message"
     static let interaction = "\(llm)/interaction"
+    /// A call an agent made to a function that waits for the owner's
+    /// approval (decision record 0254).
+    static let approval = "\(llm)/approval"
     /// What the owner keeps for their assistants: a standing fact about
     /// them, and a standing instruction to one agent (decision 0241).
     static let memory = "\(llm)/memory"

@@ -1,0 +1,118 @@
+# one call an agent wants to make that waits for its owner (decision record
+# 0254). The agent loop lands one instead of running a function declaring
+# `approval: required`, every property stamped by the loop: what would run
+# (`function`, `arguments`), who asked (`agent`, `requestedIn`), and the
+# conversation the owner is in (`thread`, the root of the call chain, so a
+# sub-agent's call surfaces where the owner reads). The owner approves or
+# declines it through one transition; the engine then runs an approved call
+# under the asking agent's own actor and grants, records what it answered,
+# and reports either outcome into `thread` as an `approvalDecided` message,
+# which resumes the agent there. A call is never run twice: one a restart
+# interrupted ends `failed`, and the agent asks again if it still wants it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/approval
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    One call an agent wants to make that waits for your approval: what would
+    run, with exactly what, and which agent asked. Approving runs it, declining
+    does not, and the agent hears either way.
+  purpose: internal
+  names:
+    singular: approval
+  displayTemplate: "{tool} #{localName}"
+  indices:
+    - properties:
+        - state
+  properties:
+    # The conversation the owner is in: the call chain's root thread, where
+    # the card shows and the outcome reports. Stamped by the loop alone.
+    thread:
+      type: reference
+      kind: substrate.reamde.dev/llm/thread
+      required: true
+      inverse: approvals
+      inverseDescription: the calls waiting on the owner in this conversation
+      description: the conversation the approval is asked in and reports to
+    requestedIn:
+      type: reference
+      kind: substrate.reamde.dev/llm/thread
+      description: the thread whose agent made the call, when it is not `thread`
+        (a sub-agent's own)
+    agent:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      required: true
+      description: the agent that wants to make the call
+    function:
+      type: reference
+      kind: substrate.reamde.dev/core/function
+      required: true
+      description: the function the call would run
+    tool:
+      type: string
+      required: true
+      description: the tool name the agent called it by
+    toolCallId:
+      type: string
+      description: the model's id for the call it made
+    # What the owner reads is what runs: frozen at creation.
+    arguments:
+      type: json
+      description: the call's arguments, exactly as they would run
+    writes:
+      type: string
+      repeated: true
+      description: the kinds the call's effects may write, the asking agent's
+        effective grant when it asked
+    output:
+      type: json
+      description: what the call answered, once it ran
+    error:
+      type: text
+      description: why the call failed, when it did
+    decidedAt:
+      type: datetime
+      managed: true
+      description: when the owner approved or declined it
+    finishedAt:
+      type: datetime
+      description: when the approved call finished running
+    reportedAt:
+      type: datetime
+      description: when the outcome reached the conversation
+    # The owner's two transitions are approved and denied; running, done and
+    # failed are the engine's. A bundle-tier actor never decides one: an
+    # agent approving a call, its own or another's, would make "what did the
+    # owner allow" a record of the agent.
+    state:
+      type: state
+      description: pending until the owner approves or declines; an approved
+        call then runs and ends done or failed
+      states:
+        - pending
+        - approved
+        - denied
+        - running
+        - done
+        - failed
+      initial: pending
+      transitions:
+        - from: pending
+          to: approved
+          stamps:
+            decidedAt: now
+        - from: pending
+          to: denied
+          stamps:
+            decidedAt: now
+        - from: approved
+          to: running
+        - from: approved
+          to: failed
+        - from: running
+          to: done
+        - from: running
+          to: failed

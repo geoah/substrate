@@ -43,6 +43,11 @@ struct ConversationView: View {
                 if screen.typing {
                     TypingDots()
                 }
+                // A sub-agent's asks: its own tool rows are in its own
+                // conversation, so they wait here.
+                ForEach(screen.approvals, id: \.self) { id in
+                    if let card = screen.cards[id]?.approval { ApprovalCardView(id: id, card: card) }
+                }
                 ConversationStatus(screen: screen, key: key)
                 if let technical = screen.technical {
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
@@ -149,6 +154,7 @@ struct ConversationView: View {
         h.combine(screen.turns.count)
         h.combine(screen.turns.last)
         h.combine(screen.outcomes.count)
+        h.combine(screen.approvals)
         h.combine(screen.unfinished)
         h.combine(screen.error)
         h.combine(screen.typing)

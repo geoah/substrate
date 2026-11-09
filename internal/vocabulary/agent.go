@@ -115,6 +115,11 @@ const (
 // KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
 const KindLLMInteraction = "substrate.reamde.dev/llm/interaction"
 
+// KindLLMApproval is the record an agent's call of a function declaring
+// `approval: required` lands instead of running (decision record 0254): what
+// would run and with what, waiting for the owner.
+const KindLLMApproval = "substrate.reamde.dev/llm/approval"
+
 // KindRecordPatchPolicy is the owner's door rules for agent writes.
 const KindRecordPatchPolicy = "substrate.reamde.dev/core/recordpatchpolicy"
 

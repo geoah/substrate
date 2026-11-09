@@ -31,6 +31,10 @@ type BundleStatus struct {
 	// Every item mirrors a refusal dispatch would actually make; a
 	// non-refusal is never a setup step.
 	Setup []SetupItem `json:"setup,omitempty"`
+	// Features is the account toggles an OAuth bundle's consent is built
+	// from, in name order: the scopes each asks for and whether they read the
+	// provider or change it. Empty on a bundle with no `oauth2` block.
+	Features []BundleFeature `json:"features,omitempty"`
 	// Accounts counts live records of the bundle's accountconfig-trait types.
 	Accounts  int `json:"accounts"`
 	Functions int `json:"functions"`
@@ -84,6 +88,16 @@ type BundleStatus struct {
 	// they never wait on the catalog's previews.
 	Provider bool   `json:"provider,omitempty"`
 	AddonFor string `json:"addonFor,omitempty"`
+}
+
+// BundleFeature is one account toggle of an OAuth bundle (decision record
+// 0255): the scopes turning it on asks for, and its access, `read` or
+// `write`. An account's grantedScopes missing one of a toggle it has on is an
+// account whose sign-in predates the toggle, and a reconnect grants it.
+type BundleFeature struct {
+	Toggle string   `json:"toggle"`
+	Scopes []string `json:"scopes"`
+	Access string   `json:"access"`
 }
 
 // BundleCodeChange is the review evidence for one changed outside declaration.

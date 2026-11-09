@@ -195,6 +195,12 @@ extension ChatApp {
         // A new chat says it above its openers; the composer, over the rest.
         if hero?.empty == nil { hero?.keyless = callout }
         let blocked = live.blocked
+        let asked = live.thread.map(state.subagentApprovals) ?? []
+        var shown = cards(state, all, titles: titles)
+        for id in asked where shown[id] == nil {
+            shown[id] = CardPresentation(
+                approval: CardPresenter.approval(id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: nil))
+        }
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
@@ -208,7 +214,7 @@ extension ChatApp {
                     hint: "Sends “\(Conversation.continueMessage)”")
             },
             outcomes: live.outcomes.map(Self.outcome), technical: technical,
-            cards: cards(state, all, titles: titles), titles: titles,
+            cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, placeholder: agent.map { "Message \($0.name)" } ?? "Message",
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
@@ -252,13 +258,22 @@ extension ChatApp {
         var out: [String: CardPresentation] = [:]
         let proposals = CardPresenter.proposals(turns)
         var decisions: [String: DecisionNotice] = [:]
+        var approvals: [String: ApprovalNotice] = [:]
+        var asked: [String] = []
         for turn in turns {
             if let decision = decisionNotice(turn) { decisions[decision.requestID] = decision }
+            if let ended = approvalNotice(turn) { approvals[ended.approvalID] = ended }
             for call in turn.tools {
                 if let interaction = interactionID(of: call) {
                     out[interaction] = CardPresentation(question: CardPresenter.question(interaction, card: state.cards[interaction]))
                 }
+                if let approval = approvalID(of: call) { asked.append(approval) }
             }
+        }
+        for id in asked {
+            out[id] = CardPresentation(
+                approval: CardPresenter.approval(
+                    id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: approvals[id]))
         }
         for id in Set(proposals.keys).union(decisions.keys) {
             out[id] = CardPresentation(

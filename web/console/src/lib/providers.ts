@@ -5,6 +5,7 @@
  * pages fold these off the reads `lib/api/*` returns. */
 
 import type {
+  BundleFeature,
   BundleUpgradeHolder,
   CatalogBrings,
   KindInfo,
@@ -171,6 +172,7 @@ export type ProblemCode =
   | "trigger-broken"
   | "parked"
   | "update-blocked"
+  | "permissions-missing"
 
 /** One reason a provider needs attention: what is wrong in a sentence, the
  * server's own words when it gave some, and what fixes it. */
@@ -225,7 +227,12 @@ export interface StandingInput {
   accounts: (Pick<
     AccountView,
     "sync" | "label" | "tokenStatus" | "tokenError" | "legacySyncStatus"
-  > & { record: Pick<SubstrateRecord, "id"> })[]
+  > & {
+    record: Pick<SubstrateRecord, "id">
+    /** The labels of the switches it has on that its sign-in does not
+     * cover yet (`ungrantedToggles`). */
+    ungranted?: string[]
+  })[]
   /** The delivery bookkeeping of the triggers that run the provider's own
    * functions. */
   triggers?: Pick<
@@ -354,6 +361,21 @@ export function standingProblems(
         ...(technical ? { technical } : {}),
         account: a.record.id,
         fixes: s.oauth ? ["sync-now", "reconnect"] : ["sync-now"],
+      })
+    }
+    // A switch turned on after the account connected, or one an update of
+    // the provider asks a new scope for, waits on a consent: the sync or the
+    // tool refuses until a reconnect grants it. A sign-in that stopped
+    // working is the sign-in problem above, which a reconnect fixes too.
+    if (s.oauth && a.tokenStatus === "connected" && a.ungranted?.length) {
+      out.push({
+        code: "permissions-missing",
+        summary: `Reconnect ${a.label} to approve ${andList(a.ungranted)}`,
+        detail: [
+          `${a.ungranted.length === 1 ? "It is" : "They are"} turned on, but the account’s sign-in was approved before, so nothing can use ${a.ungranted.length === 1 ? "it" : "them"} until you approve again.`,
+        ],
+        account: a.record.id,
+        fixes: ["reconnect"],
       })
     }
   }
@@ -890,6 +912,32 @@ function capitalise(text: string): string {
 }
 
 /** "a", "a and b", "a, b and c". */
+/** Where one write switch stands on one account (decision record 0255):
+ * `off` until the owner allows it; `approve` once on but not yet covered by
+ * the account's sign-in, which a reconnect grants; `allowed` once both hold;
+ * and `unconnected` while the account has no working sign-in to grant it on,
+ * which Connect on the account fixes first. */
+export type PermissionState = "off" | "approve" | "allowed" | "unconnected"
+
+export function permissionState(
+  account: Pick<AccountView, "tokenStatus" | "grantedScopes"> & {
+    record: Pick<SubstrateRecord, "properties">
+  },
+  feature: Pick<BundleFeature, "toggle" | "scopes">,
+  oauth: boolean
+): PermissionState {
+  const on = account.record.properties?.[feature.toggle] === true
+  if (oauth && account.tokenStatus !== "connected") {
+    return on ? "unconnected" : "off"
+  }
+  if (!on) return "off"
+  const granted = new Set(account.grantedScopes)
+  if (oauth && feature.scopes.some((scope) => !granted.has(scope))) {
+    return "approve"
+  }
+  return "allowed"
+}
+
 export function andList(items: string[]): string {
   if (items.length <= 1) return items.join("")
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`

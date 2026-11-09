@@ -248,6 +248,13 @@ type BundleOAuth2 struct {
 	// toggles; a toggle absent here (an unwired feature) requests nothing — so
 	// gmail/calendar cannot be requested while they remain unmapped.
 	FeatureScopes map[string][]string
+	// FeatureAccess names the toggles whose scopes let the bundle's code
+	// change the provider rather than read it, by an entry's `access: write`
+	// (absent is `read`). Nothing in the facility reads it: the scopes are
+	// requested the same way. It tells a surface which switches say what the
+	// owner's agents may do as against what the account brings in, and an
+	// absent toggle is a read one.
+	FeatureAccess map[string]string
 	// EmailEndpoint is the OPTIONAL provider endpoint (https) the facility GETs
 	// with the fresh access token right after the exchange to learn the
 	// connected account's own address — Google's People `people/me` or any
@@ -272,8 +279,16 @@ var bundleDataKeys = map[string]bool{
 }
 
 // featureScopeKeys is one feature toggle's entry: the scopes enabling it
-// requests, in the object form.
-var featureScopeKeys = map[string]bool{"scopes": true}
+// requests, in the object form, and whether they read the provider or change
+// it.
+var featureScopeKeys = map[string]bool{"scopes": true, "access": true}
+
+// The two values a featureScopes entry's `access` takes: what the toggle's
+// scopes let the bundle's code do at the provider.
+const (
+	FeatureAccessRead  = "read"
+	FeatureAccessWrite = "write"
+)
 
 var oauth2MetaKeys = map[string]bool{
 	"authorizationEndpoint": true, "tokenEndpoint": true,
@@ -667,6 +682,19 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			}
 			if len(out) > 0 {
 				o.FeatureScopes[toggle] = out
+			}
+			if raw, declared := inner["access"]; declared {
+				access, _ := raw.(string)
+				switch access {
+				case FeatureAccessRead:
+				case FeatureAccessWrite:
+					if o.FeatureAccess == nil {
+						o.FeatureAccess = map[string]string{}
+					}
+					o.FeatureAccess[toggle] = access
+				default:
+					l.errf("%s.featureScopes[%q].access: %v — %q or %q", w, toggle, raw, FeatureAccessRead, FeatureAccessWrite)
+				}
 			}
 		}
 	}

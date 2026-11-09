@@ -35,6 +35,9 @@ public struct ChatApp: LinkedApp {
         case answer(question: String, picks: [String: [String]])
         case dismissQuestions(String)
         case decide(suggestion: String, accept: Bool)
+        /// Approve or decline a call waiting on the owner: the engine runs
+        /// the stored call, never anything the app sends.
+        case decideApproval(String, approve: Bool)
         case settings(SettingsCommand)
         /// Settings opened: the permission, the storage and the owner's
         /// memories and instructions read again.
@@ -120,6 +123,7 @@ public struct ChatApp: LinkedApp {
             // The change decided on is the one on screen.
             let shown = context.presentation?.conversations.values.lazy.compactMap { $0.cards[suggestion]?.suggestion?.values }.first ?? []
             return [Event(.decideAsked(suggestion, accept: accept, shown: Dictionary(shown.map { ($0.key, $0.value) }) { a, _ in a }))]
+        case let .decideApproval(id, approve): return [Event(.approveAsked(id, approve: approve))]
         case let .settings(command):
             switch command {
             case let .toggle(.app(row), on): return [Event(.setting(row: row, toggle: on, choice: nil))]

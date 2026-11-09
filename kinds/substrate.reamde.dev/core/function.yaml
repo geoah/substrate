@@ -19,7 +19,7 @@ data:
     or built into the substrate on the `host` runtime. The declaration IS
     the record — a write admits it, the commit activates it, and the dispatcher
     reads the registry this row rebuilds into.
-  version: 23
+  version: 24
   purpose: internal
   names:
     singular: function
@@ -93,6 +93,20 @@ data:
       description: with `always`, the substrate holds every put, patch or
         delete the function's code returns as a recordpatchrequest, wherever
         it runs and whatever a policy or judge says; absent means `policy`
+    # The hold on the CALL, beside `confirmation`'s hold on what a body
+    # returns (decision record 0254). An agent's call of a function declaring
+    # it lands an llm/approval instead of running; the owner approves or
+    # declines it in the conversation, and only an approved call runs, with
+    # exactly the arguments the owner read. A host function is never held. A
+    # direct call and a trigger's delivery are the owner's own doing and run
+    # as before.
+    approval:
+      type: enum
+      values:
+        - required
+      description: with `required`, an agent's call waits for the owner's
+        approval in chat before the function runs; absent means it runs at
+        once
     runtime:
       type: enum
       values:

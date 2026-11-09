@@ -236,6 +236,7 @@ var wireTypes = map[string]any{
 
 	// The installed bundle's computed status and the lifecycle replies.
 	"BundleStatus":      BundleStatus{},
+	"BundleFeature":     BundleFeature{},
 	"InputStatus":       InputStatus{},
 	"SetupItem":         SetupItem{},
 	"BundleUninstalled": BundleUninstalled{},

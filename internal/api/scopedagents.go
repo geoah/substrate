@@ -17,14 +17,15 @@ import (
 // The rows an app's `agents:` and `decide:` scopes reach (decision 0195).
 // Those scopes name agents, not kinds, so what they make readable is decided
 // record by record: an agent row whose id matches, a thread whose agent
-// matches, that thread's messages and interactions, and the change requests
-// such a thread proposed. A kind a read or write scope reaches whole is
+// matches, that thread's messages, interactions and approvals (decision
+// 0254), and the change requests such a thread proposed. A kind a read or write scope reaches whole is
 // answered exactly as before; one the agent verbs alone reach is ROW-GATED.
 const (
 	kindAgent       = corePackage + "/agent"
 	kindThread      = llmPackage + "/thread"
 	kindMessage     = llmPackage + "/message"
 	kindInteraction = llmPackage + "/interaction"
+	kindApproval    = vocabulary.KindLLMApproval
 	kindRequest     = vocabulary.KindRecordPatchRequest
 )
 
@@ -38,7 +39,7 @@ const visibleCacheMax = 4096
 // rowKind reports whether the grant's agent verbs reach records of kind.
 func (s *scopedDataset) rowKind(kind string) bool {
 	switch kind {
-	case kindAgent, kindThread, kindMessage, kindInteraction:
+	case kindAgent, kindThread, kindMessage, kindInteraction, kindApproval:
 		return s.grant.Talks()
 	case kindRequest:
 		return s.grant.DecidesAny()
@@ -92,7 +93,7 @@ func (s *scopedDataset) rowVisible(ctx context.Context, rec *substrate.Record) (
 		return s.talksTo(ctx, rec.ID)
 	case kindThread:
 		return s.talksTo(ctx, referencedID(rec.Properties["agent"], kindAgent))
-	case kindMessage, kindInteraction:
+	case kindMessage, kindInteraction, kindApproval:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
 		if err != nil {
 			return false, err
@@ -353,7 +354,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			in[i] = vocabulary.RecordPath(kindAgent, a)
 		}
 		props["agent"] = substrate.Cond{In: in}
-	case kindMessage, kindInteraction, kindRequest:
+	case kindMessage, kindInteraction, kindApproval, kindRequest:
 		narrowed = "thread"
 		c, named := props["thread"]
 		if !named {
@@ -437,6 +438,7 @@ func (s *scopedDataset) requireRow(ctx context.Context, kind, id string) error {
 var rowPatchable = map[string][]string{
 	kindThread:      {"subject"},
 	kindInteraction: {"state", "answers"},
+	kindApproval:    {"state"},
 	kindRequest:     {"decision", "adjustedDiff"},
 }
 
@@ -646,7 +648,8 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 	if err != nil || !ok {
 		return false, err
 	}
-	// A message, an interaction or a request never moves to another thread,
+	// A message, an interaction, an approval or a request never moves to
+	// another thread,
 	// so a row found readable stays readable for the rest of the watch.
 	s.mu.Lock()
 	if s.seen == nil || len(s.seen) >= visibleCacheMax {

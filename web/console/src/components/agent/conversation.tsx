@@ -51,6 +51,7 @@ import {
 } from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
+import { PendingApprovals } from "@/components/agent/approval-card"
 import { AddKeyButton } from "@/components/agent/model-key-link"
 import { Composer } from "@/components/agent/composer"
 import { ThreadHeading } from "@/components/agent/thread-heading"
@@ -82,6 +83,7 @@ import {
   type AgentResult,
   type ChatHandle,
 } from "@/lib/api/agents"
+import { pendingApprovalsQueryOptions } from "@/lib/api/approvals"
 import { LLM_PACKAGE } from "@/lib/api/http"
 import {
   EMPTY_OVERLAY,
@@ -95,6 +97,7 @@ import {
   type LiveOverlay,
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
+import { APPROVAL_KIND } from "@/lib/core-kinds"
 import { splitRecordPath } from "@/lib/record-path"
 import { cn } from "@/lib/utils"
 import { CopyButton } from "@/components/identity/copy-button"
@@ -426,6 +429,19 @@ export function Conversation({
   // While a turn runs elsewhere, every write to a thread re-reads the
   // records, so the thread's settle reaches this page.
   useLiveRecords(background ? [`${LLM_PACKAGE}/thread`] : [], [["records"]])
+
+  // A sub-agent's call that waits for the owner is asked on this
+  // conversation, but its tool row is in the sub-agent's own thread, which
+  // the transcript does not inline: it waits after the transcript instead
+  // (decision record 0254). The feed re-reads it as approvals come and go.
+  const approvals = useQuery({
+    ...pendingApprovalsQueryOptions(current ?? ""),
+    enabled: Boolean(current),
+  })
+  useLiveRecords(current ? [APPROVAL_KIND] : [], [["records"]])
+  const subagentApprovals = (approvals.data?.records ?? [])
+    .filter((r) => Boolean(r.properties.requestedIn))
+    .map((r) => r.id)
 
   const persisted = transcriptOrder(messages.data?.records ?? [])
   const handedOver = settledAt > 0 && messages.dataUpdatedAt >= settledAt
@@ -1030,6 +1046,7 @@ export function Conversation({
             agentId={agentId}
             agent={agent}
           />
+          <PendingApprovals ids={subagentApprovals} />
           {background && (
             <p role="status" className="text-sm text-muted-foreground">
               {name} is working on this chat in the background. Its answer shows

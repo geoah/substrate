@@ -15,6 +15,9 @@ public struct TurnPresentation: Codable, Hashable, Sendable, Identifiable {
         case answer(OutcomeLine)
         /// A call that ran in the background ended.
         case jobEnded(OutcomeLine)
+        /// The owner approved or declined a call, and how an approved one
+        /// ended.
+        case approvalEnded(OutcomeLine)
         case system(String)
     }
 
@@ -75,14 +78,15 @@ public struct ToolRowPresentation: Codable, Hashable, Sendable, Identifiable {
         case running, done, failed
         /// It answered with a handle, and its work runs on in the background.
         case working
-        /// The owner's policy held its write for review: the change waits
-        /// on them in the suggestion under it.
+        /// The owner's policy held its write for review, or the call waits
+        /// for their approval: either waits on them in the card under it.
         case held
     }
 
     public enum Attachment: Codable, Hashable, Sendable {
         case suggestion(String)
         case questions(String)
+        case approval(String)
         case change(ChangePanelPresentation)
     }
 

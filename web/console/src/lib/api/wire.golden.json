@@ -533,6 +533,11 @@
     "id": true,
     "kind": true
   },
+  "BundleFeature": {
+    "access": true,
+    "scopes": true,
+    "toggle": true
+  },
   "BundlePurged": {
     "purged": true
   },
@@ -541,6 +546,7 @@
     "addonFor": false,
     "authority": true,
     "enabled": true,
+    "features": false,
     "functions": true,
     "id": true,
     "inputs": false,
