@@ -30,6 +30,7 @@ import type { ChangeOp, Decision } from "@/lib/changerequests"
 import { AGENT_KIND, FUNCTION_KIND, KIND_KIND } from "@/lib/core-kinds"
 import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
+import { filledTemplate } from "@/lib/grid-values"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import {
@@ -1123,9 +1124,12 @@ export function applyWord(op: ChangeOp): string {
  * tend to declare them. */
 const HEADING_KEYS = ["name", "title", "summary", "subject"]
 
-/** What a new record would be called, from the values a create proposes. */
+/** What a new record would be called, from the values a create proposes:
+ * a heading property, else the kind's own title template filled from them
+ * (a request's `{action}: {text}` reads "Send: see you at 7"). */
 export function proposedHeading(
-  properties: Record<string, unknown>
+  properties: Record<string, unknown>,
+  kind?: KindInfo
 ): { key: string; text: string } | undefined {
   for (const key of HEADING_KEYS) {
     const value = properties[key]
@@ -1133,7 +1137,8 @@ export function proposedHeading(
       return { key, text: value.trim() }
     }
   }
-  return undefined
+  const filled = filledTemplate(kind, properties)
+  return filled ? { key: "title", text: filled } : undefined
 }
 
 /** The thread a change request's propose call came from, as its id. */

@@ -27,4 +27,8 @@ data:
   # record 0229).
   # 6 adds the record view's collapsed, the properties the sheet keeps
   # closed until asked.
-  version: 6
+  # 7 adds the conversation block (a chat's messages, with a composer that
+  # writes request records), the request block (a button that stamps an
+  # owner's datetime with now) and the table's property, which lists the
+  # records an outgoing reference names.
+  version: 7

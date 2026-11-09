@@ -17,6 +17,7 @@ import {
   gridSummary,
   titleBacking,
   titleProperties,
+  filledTemplate,
 } from "./grid-values"
 
 describe("propertyLabel", () => {
@@ -167,6 +168,40 @@ describe("titleProperties", () => {
       titleProperties(kind({ displayTemplate: "{subject|.snippet|snippet}" }))
     ).toEqual(["subject", "snippet"])
     expect(titleProperties(kind({ displayTemplate: "{snippet}" }))).toEqual([])
+  })
+})
+
+describe("filledTemplate", () => {
+  const request = kind({
+    displayTemplate: "{action}: {text}",
+    properties: {
+      action: {
+        type: "enum",
+        values: [{ value: "send", label: "Send" }],
+      },
+      text: { type: "text" },
+    },
+  })
+
+  it("fills a create's title from the values it would hold, an enum by its label", () => {
+    expect(
+      filledTemplate(request, { action: "send", text: "see you at 7" })
+    ).toBe("Send: see you at 7")
+    // An empty slot takes the separator it leaves at an edge with it.
+    expect(filledTemplate(request, { action: "send" })).toBe("Send")
+    expect(filledTemplate(request, {})).toBeUndefined()
+  })
+
+  it("takes each slot's first plain alternative that holds a value, and never reaches through a reference", () => {
+    const account = kind({ displayTemplate: "{displayName|remoteName}" })
+    expect(filledTemplate(account, { remoteName: "+44 7700" })).toBe("+44 7700")
+    expect(
+      filledTemplate(account, { displayName: "Work", remoteName: "x" })
+    ).toBe("Work")
+    const message = kind({ displayTemplate: "{sender.fullName}: {text}" })
+    expect(filledTemplate(message, { text: "hi" })).toBe("hi")
+    expect(filledTemplate(kind({}), { text: "hi" })).toBeUndefined()
+    expect(filledTemplate(undefined, { text: "hi" })).toBeUndefined()
   })
 })
 

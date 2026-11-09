@@ -5,6 +5,7 @@
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
+import { cleanTitle } from "@/lib/format"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { stateTone } from "@/lib/state-words"
 
@@ -178,6 +179,54 @@ export function titleProperties(kind: KindInfo): string[] {
     }
   }
   return [...out]
+}
+
+/** A kind's `displayTemplate` filled from values a record would hold, the
+ * title a create the engine has not titled yet would get: each slot takes
+ * its first alternative that names a plain property holding a value, an
+ * enum value by its label. A slot reaching through a reference
+ * (`{sender.fullName}`) or holding nothing reads empty, and the separators
+ * an empty slot leaves at an edge go with it. Undefined where nothing is
+ * left. */
+export function filledTemplate(
+  kind: KindInfo | undefined,
+  properties: Record<string, unknown>
+): string | undefined {
+  const template = kind?.definition?.displayTemplate
+  if (typeof template !== "string") return undefined
+  const declared = (kind?.definition?.properties ?? {}) as Record<
+    string,
+    { values?: unknown } | undefined
+  >
+  const filled = template.replace(/\{([^}]*)\}/g, (_, inner: string) => {
+    for (const part of inner.split("|")) {
+      const name = templateProperty(part.trim().split(/[\s:]/)[0])
+      if (!name || name.includes(".")) continue
+      const value = properties[name]
+      if (typeof value === "number" || typeof value === "boolean") {
+        return String(value)
+      }
+      if (typeof value !== "string" || !value.trim()) continue
+      const values = declared[name]?.values
+      const label = Array.isArray(values)
+        ? (values as unknown[]).find(
+            (v): v is { value: string; label: string } =>
+              typeof v === "object" &&
+              v !== null &&
+              (v as { value?: unknown }).value === value &&
+              typeof (v as { label?: unknown }).label === "string"
+          )?.label
+        : undefined
+      return (label ?? value).trim()
+    }
+    return ""
+  })
+  // A slot left empty at the end also leaves the colon glued to the word
+  // before it ("Send:"), which cleanTitle keeps as part of that word.
+  const out = cleanTitle(filled)
+    .replace(/\s*[:·—–]$/, "")
+    .trim()
+  return out || undefined
 }
 
 /** The one property a kind's title IS, when its `displayTemplate` is a

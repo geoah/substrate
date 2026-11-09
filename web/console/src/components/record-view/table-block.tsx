@@ -1,6 +1,7 @@
 /** A record view's table block: the records of one kind as rows with the
  * view's columns, those pointing here, those sharing a property's value
- * with this record, or those starting inside the view's window. A kind
+ * with this record, those starting inside the view's window, or those an
+ * outgoing reference of this record names. A kind
  * binding core `observed` as single values gets its time, value, flag,
  * reference range (where it binds core `result`) and source by default, and
  * may draw its values over time as points, each against its own reference
@@ -64,6 +65,7 @@ import {
 import {
   cellFraction,
   changeSinceWords,
+  namesNothing,
   tableParams,
   tileHistoryParams,
   type TableBlock,
@@ -76,6 +78,8 @@ import type { UnitReader } from "@/lib/unit-reader"
 const RESULT_TRAIT = `${CORE_PACKAGE}/result`
 
 type Props = Record<string, unknown>
+
+const NO_RECORDS: SubstrateRecord[] = []
 
 function isBag(v: unknown): v is Props {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -352,15 +356,17 @@ export function TableBlockView({
   const listedKind = kindByIdentity([...ctx.kinds], block.kind)
   const params = tableParams(ctx.bound, block, ctx.record, listedKind)
   const problem = "problem" in params ? params.problem : undefined
+  const nothing = !("problem" in params) && namesNothing(params)
   const page = useQuery({
     ...recordsQueryOptions(
       "problem" in params ? { kinds: [block.kind] } : params
     ),
-    enabled: Boolean(listedKind) && !problem,
+    enabled: Boolean(listedKind) && !problem && !nothing,
   })
-  const records = useMemo(() => page.data?.records ?? [], [page.data])
+  const fetched = useMemo(() => page.data?.records ?? [], [page.data])
+  const records = nothing ? NO_RECORDS : fetched
   const hide = block.empty === "hide"
-  const settled = !page.isPending || !listedKind || Boolean(problem)
+  const settled = !page.isPending || !listedKind || Boolean(problem) || nothing
   const hidden =
     hide &&
     settled &&
@@ -396,7 +402,9 @@ export function TableBlockView({
           {block.kind} is not one, so it lists them as rows.
         </Notice>
       ) : null}
-      {page.isPending ? (
+      {nothing ? (
+        <Quiet>None.</Quiet>
+      ) : page.isPending ? (
         <Loading />
       ) : page.error ? (
         <Failed error={page.error} onRetry={() => void page.refetch()} />

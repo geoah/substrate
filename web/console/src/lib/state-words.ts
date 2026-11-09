@@ -15,6 +15,7 @@ const TONES: Record<string, StateTone> = {
   running: "active",
   started: "active",
   inprogress: "active",
+  sending: "active",
   done: "ok",
   known: "ok",
   accepted: "ok",
@@ -36,11 +37,13 @@ const TONES: Record<string, StateTone> = {
   closed: "stopped",
   archived: "stopped",
   superseded: "stopped",
+  expired: "stopped",
   utility: "stopped",
   failed: "bad",
   error: "bad",
   parked: "bad",
   refused: "bad",
+  uncertain: "bad",
 }
 
 export function stateWord(value: string): string {
@@ -56,4 +59,16 @@ export function stateTone(value: string, initial?: string): StateTone {
   const tone = TONES[value.toLowerCase().replace(/[_\s-]+/g, "")]
   if (tone) return tone
   return initial !== undefined && value === initial ? "stopped" : "active"
+}
+
+/** States that say the outcome of something already attempted is not
+ * known: whether it happened must be checked, never assumed either way. */
+const UNKNOWN_OUTCOME = new Set(["uncertain", "unknown", "indeterminate"])
+
+/** Whether a stored state says an attempt's outcome is not known, so doing
+ * it again may do it twice. */
+export function outcomeUnknown(value: string | undefined): boolean {
+  return Boolean(
+    value && UNKNOWN_OUTCOME.has(value.toLowerCase().replace(/[_\s-]+/g, ""))
+  )
 }

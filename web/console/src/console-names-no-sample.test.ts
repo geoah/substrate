@@ -256,6 +256,12 @@ const OWN_WORDS: Record<string, readonly string[]> = {
   // A page title's size, and a unit's printed note.
   "./components/identity/page-title.ts": ["a branch on the sample kind page"],
   "./lib/units.ts": ["a branch on the sample kind note"],
+  // A record view's block type, a field of the seeded console package's
+  // recordview, which the messaging sample's kind shares by name.
+  "./lib/record-view.ts": ["a branch on the sample kind conversation"],
+  "./components/record-view/record-views.tsx": [
+    "a branch on the sample kind conversation",
+  ],
 }
 
 describe("the console's source", () => {

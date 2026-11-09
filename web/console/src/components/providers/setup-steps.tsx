@@ -4,7 +4,9 @@
  * its one primary action; the steps after it are muted and say what comes
  * next. The dialogs each step opens are the existing ones: the sign-in
  * details form and the account form, whose create-and-connect press opens
- * the provider's consent. */
+ * the provider's consent. A provider whose account kind the owner cannot
+ * create (ownerCreatesAccounts) adds its accounts itself, so its step says
+ * so and offers no form. */
 
 import { useState, type ReactNode } from "react"
 import { CheckIcon } from "lucide-react"
@@ -17,6 +19,7 @@ import { AccountDialog } from "@/components/sync/account-dialog"
 import { CredentialsDialog } from "@/components/sync/credentials-dialog"
 import { Button } from "@/components/ui/button"
 import { useOAuthConnect } from "@/hooks/use-oauth-connect"
+import { ownerCreatesAccounts } from "@/lib/account-form"
 import type { RequirementNode } from "@/lib/bundles"
 import {
   andList,
@@ -57,6 +60,7 @@ export function SetupSteps({
     (a) => !view?.oauth || a.tokenStatus === "connected"
   )
   const first = connected[0] ?? accounts[0]
+  const ownerCreates = ownerCreatesAccounts(view?.accountKind)
 
   function body(step: SetupStep): { text?: ReactNode; action?: ReactNode } {
     const now = step.state === "now"
@@ -131,7 +135,7 @@ export function SetupSteps({
             text: `${labelAtStart(andList(labels.slice(0, 2)))}${
               labels.length > 2 ? ` and ${labels.length - 2} more` : ""
             }, connected.`,
-            action: (
+            action: ownerCreates ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -139,10 +143,15 @@ export function SetupSteps({
               >
                 Add another
               </Button>
-            ),
+            ) : undefined,
           }
         }
         if (!now) return { text: "Next, after the sign-in details." }
+        if (!ownerCreates) {
+          return {
+            text: `${name} adds its accounts itself: each one you sign in to through it shows up here.`,
+          }
+        }
         if (waiting) {
           return {
             text: `${labelAtStart(waiting.label)} is waiting for you to approve it at ${name}.`,

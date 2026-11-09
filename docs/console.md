@@ -740,8 +740,11 @@ section of its own. Then come its
   with the `columns` it names. The rows are the records pointing here
   through `via`, those holding the same values as this record in every
   property `sharing` lists (such as `metric` and `channel`; a property this
-  record holds none of narrows to the records holding none either), or,
-  with `inWindow`, those starting inside the window; exactly one of the three.
+  record holds none of narrows to the records holding none either), with
+  `inWindow` those starting inside the window, or the records an outgoing
+  reference `property` of this record names (an account's `instance`, read
+  newest change first, and none where it names none); exactly one of the
+  four.
   `sameAs` is the older spelling of `sharing` with one name, and reads as
   it ([0184](decisions/0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md)).
   A kind binding core's `observed(single)` shows time, value, flag, reference
@@ -782,6 +785,55 @@ section of its own. Then come its
   the window or pointing here, or a coded metric's held states. The grammar
   declares it so the next console draws it without another package version;
   this console shows a notice where it would be.
+- **conversation**: the records of a `kind` that point here through `via`,
+  read as a chat: oldest first by their `time` property, the newest
+  `limit` (50) a page and **Show earlier** for the page before, a day's
+  date where the day changes, and a line where the record's `readUpTo`
+  reference says you read up to. Each message shows its `sender` (a
+  reference, by the sender's name), its time, its `text`, the message it
+  answers (`replyTo`, quoted), the records of the `attachments` kind that
+  point at it through `attachmentVia` (its `attachmentFile`, else its title),
+  its `reactions` (a list of objects each holding a `key` and the `user`
+  who reacted, one chip per key with how many and who), **Edited** where
+  `edited` holds a value, and, on your own (`mine`), its `status` by its
+  label. A message whose `deleted` holds a value was withdrawn, and keeps
+  what it said: its text and attachments stay, in a dashed, muted bubble
+  under a mark in the declaration's words (the property's label with the
+  value's, "Deleted for everyone"), a quote of it carries the same mark,
+  and its menu offers no reply or reaction, only **Mark read up to here**.
+  Every one of those is a property name the view gives, so the
+  console knows nothing about a chat but what the view says. With
+  `compose`, a box under the messages writes, as you, a record of the
+  request kind it names, pointing here through its own `via`, with its
+  `verb` property set to the value the view gives for what you asked:
+  `send` (the `text`, and `replyTo` where you chose **Reply** on a
+  message), `react` (a message's menu or a reaction's chip, the message in
+  `target` and the reaction in `reaction`) or `markRead` (**Mark as read**
+  up to the newest message, or **Mark read up to here** on one), each only
+  where the view names it. Where the view names the record's `peer` (the
+  one other person in it) and that person's `peerKnown` flag, a send to
+  someone it does not mark as one of your contacts asks first and sets the
+  request's `confirm` property. Under the box, the newest ten requests
+  written here, by you or by an agent no rule held, each with what it
+  asked, its `state`, why it failed (`error`), when it was asked and who
+  asked (the writer of its `verb`, read off each request's own
+  `propertyMeta`; an agent's request you added from **Waiting for you** is
+  yours): **Cancel** stamps its `cancel` time
+  where its state is one of `cancelIn`, and **Send again** writes a new
+  request with the same values where its state is one of `retryIn`, asking
+  first and saying, for one whose outcome is not known, that it may
+  already have been sent. Above them, **Waiting for you** lists the change
+  requests a gate holds that would create a request here: an agent's, of
+  whichever kinds of request the rule holds (a request a rule lets an
+  agent make unasked lands in the list below instead), each with who asked
+  (the agent and its full actor reference), what it would do and why, and
+  **Add it**, **Review** and **Dismiss**.
+- **request**: one button, worded by its `label`, that stamps the record's
+  own datetime `property` with now once you confirm, the confirmation
+  saying `confirm`, as a patch carrying the version the page read; a
+  connector watching the record acts on it (unlinking an account, say).
+  Where the record holds the stamp, the block says when it was asked. A
+  property that is no datetime you write is a notice, never a button.
 
 **Reads.** Each block that reads observations issues one batched aggregate
 read naming all its metrics, never one read per metric. A read names a
@@ -818,9 +870,12 @@ without both bounds or with its low not under its high, and a percentile
 without its rank. It says so too for a stats or trend item naming none or
 two of `metric`, `metricProperty` and `property`, a `timeInState` item
 without its `code`, a `from` outside its three words, a table naming none or
-two of `via`, `sharing` (or `sameAs`) and `inWindow`, or both `sharing`
-and `sameAs`, and a breakdown naming both or
-neither of `property` and `items`. A block that reads a window in a view
+two of `via`, `sharing` (or `sameAs`), `inWindow` and `property`, or both
+`sharing` and `sameAs`, a breakdown naming both or neither of `property`
+and `items`, a conversation naming one of `attachments` and
+`attachmentVia` without the other, a composer offering none of `send`,
+`react` and `markRead` or no request property for one it offers, and a
+request block naming no `label` or `property`. A block that reads a window in a view
 that binds none says it has nothing to read. On a record that does not hold
 the window the view binds (no end yet without `open`, or an end before its
 start), the view leaves out the blocks that read the window, and is left out
@@ -828,7 +883,8 @@ itself where nothing else remains.
 
 **How a package ships views.** A sample, a catalogue or a provider ships
 its views as data records beside its kinds, naming each kind's declaration
-in `appliesTo`
+in `appliesTo`; a provider's view of its account kind is also what the
+account's row on [Providers](#providers) opens onto
 (`substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep`). The
 `health` and `labs` catalogues ship five between them and the WHOOP provider
 two ([the well-known catalogues](observations.md#the-well-known-catalogues)).
@@ -898,8 +954,10 @@ transition, and performing the merge is what that transition does.
 A [gated](agents.md#the-policy-door) agent write lands as a
 `substrate.reamde.dev/core/recordpatchrequest` instead of applying, and one
 opens at `/change-requests/{id}`, read like the chat card that led there: the
-change it would make to which record, the rationale, and which agent
-suggested it and when; then what applying would do — a patch property by
+change it would make to which record (a create named by its heading
+property, else by its kind's title template filled from the values it
+would add, so a held request reads "New chat action: Send: see you at 7"),
+the rationale, and which agent suggested it and when; then what applying would do — a patch property by
 property, the values now beside the values if applied, a create as the record
 it would make, a delete as the record it would remove — and **Apply** or
 **Dismiss**. Applying is the state transition that applies the change; a
@@ -1207,14 +1265,27 @@ back to it:
   in, one toggle per stream, and the sync's schedule and depth. On an OAuth
   provider its one button is **Create and connect**: it creates the account
   and opens the provider's [consent](bundles.md#the-oauth-facility) in a new
-  tab, and the account reads connected when the approval returns.
-- **Accounts**: one row per account, with how its sync is doing in plain
-  words, when it last synced and how often it does, and the verbs an account
-  takes: **Connect** or **Reconnect**, **Sync now**, **Pause**, change what it
-  brings in, and **Disconnect**. `?account=<id>` scrolls to one and highlights
-  it. When an approval returns, the notice says what it starts: the first
-  sync on a new account, a sync on an account that synced before, nothing on
-  a paused one.
+  tab, and the account reads connected when the approval returns. A
+  provider whose account kind requires a property only its connector writes
+  (a login id its own program reports) adds its accounts itself: the step
+  says each one you sign in to through it shows up here, and offers no form
+  and no **Add another**, since the server refuses such a create from you.
+- **Accounts**: one row per account, its name linking to the account's own
+  page, with how its sync is doing in plain words, when it last synced and
+  how often it does, and the verbs an account takes: **Connect** or
+  **Reconnect**, **Sync now**, **Pause**, change what it brings in (**Change
+  its settings** where the account has nothing to turn on), and
+  **Disconnect**, whose confirmation says what goes with the account where
+  the provider's records cascade from it. Where the account kind has
+  [record views](#record-views), **Details** opens the row onto them, the
+  sections its page draws: a provider ships them to show what it knows of
+  an account (its network and connection, the warnings in the network's
+  own words, what it runs on, a button that asks for something), and the
+  account's form leaves out a time a view's request button stamps.
+  `?account=<id>` scrolls to one, highlights it and opens its details. When
+  an approval returns, the notice says what it starts: the first sync on a
+  new account, a sync on an account that synced before, nothing on a paused
+  one.
 - **Add-ons**: the packages that extend it (Slack live events on Slack's
   page), each opening its own page, with **Add** or where it stands.
 - **What it adds**: what it brings in (its primary kinds, each with what it

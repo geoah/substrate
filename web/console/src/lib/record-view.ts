@@ -319,6 +319,9 @@ export interface TableBlock {
    * the table lists by `via` or `inWindow`. */
   sharing: string[]
   inWindow: boolean
+  /** An outgoing reference property of this record: the table lists the
+   * records it names. */
+  property?: string
   columns: string[]
   orderBy: string
   limit: number
@@ -356,6 +359,67 @@ export interface BreakdownBlock {
   total?: string
 }
 
+/** The composer of a conversation: the request kind it writes, the
+ * property each part of a request goes in, and the verb's value for each
+ * thing it offers. Every name is the view's; the console knows none. */
+export interface ComposeSpec {
+  /** The request kind's identity. */
+  kind: string
+  /** Its reference property that points at the conversation's record. */
+  via: string
+  /** Its enum property saying what to do. */
+  verb: string
+  send?: string
+  react?: string
+  markRead?: string
+  text?: string
+  replyTo?: string
+  target?: string
+  reaction?: string
+  state?: string
+  cancel?: string
+  cancelIn: string[]
+  retryIn: string[]
+  error?: string
+  confirm?: string
+  /** The conversation's record's reference naming the one other person. */
+  peer?: string
+  /** The peer's bool property, true where they are among the contacts. */
+  peerKnown?: string
+}
+
+export interface ConversationBlock {
+  type: "conversation"
+  label?: string
+  /** The message kind's identity. */
+  kind: string
+  via: string
+  time: string
+  sender?: string
+  mine?: string
+  text?: string
+  replyTo?: string
+  edited?: string
+  deleted?: string
+  status?: string
+  reactions?: string
+  /** The attachment kind's identity. */
+  attachments?: string
+  attachmentVia?: string
+  attachmentFile?: string
+  readUpTo?: string
+  limit: number
+  compose?: ComposeSpec
+}
+
+export interface RequestBlock {
+  type: "request"
+  label: string
+  /** The record's own datetime property the button stamps with now. */
+  property: string
+  confirm?: string
+}
+
 export type Block =
   | HeadingBlock
   | TextBlock
@@ -368,6 +432,8 @@ export type Block =
   | TableBlock
   | LanesBlock
   | BreakdownBlock
+  | ConversationBlock
+  | RequestBlock
 
 /** The block types the grammar declares, in the order a notice names them. */
 export const BLOCK_TYPES = [
@@ -382,6 +448,8 @@ export const BLOCK_TYPES = [
   "table",
   "lanes",
   "breakdown",
+  "conversation",
+  "request",
 ] as const
 
 /** One section: the block it holds, or why it cannot be drawn. */
@@ -620,6 +688,25 @@ function blockOf(type: Block["type"], b: Bag): Section {
       return lanesOf(b)
     case "breakdown":
       return breakdownOf(b)
+    case "conversation":
+      return conversationOf(b)
+    case "request": {
+      const label = text(b.label)
+      const property = text(b.property)
+      if (!label || !property) {
+        return {
+          problem: `This request block names no ${label ? "property" : "label"}.`,
+        }
+      }
+      return {
+        block: {
+          type,
+          label,
+          property,
+          ...(text(b.confirm) ? { confirm: text(b.confirm) } : {}),
+        },
+      }
+    }
   }
 }
 
@@ -915,10 +1002,13 @@ function tableOf(b: Bag): Section {
   // holds: it reads as a list of one.
   const sharing = sameAs ? [sameAs] : [...new Set(listed)]
   const inWindow = b.inWindow === true
-  const named = [via, sharing.length > 0, inWindow].filter(Boolean).length
+  const property = text(b.property)
+  const named = [via, sharing.length > 0, inWindow, property].filter(
+    Boolean
+  ).length
   if (named !== 1) {
     return {
-      problem: `${what} names ${named} of via, sharing and inWindow; a table names exactly one.`,
+      problem: `${what} names ${named} of via, sharing, inWindow and property; a table names exactly one.`,
     }
   }
   const empty = oneOf(b.empty, ["say", "hide"] as const, "say")
@@ -933,8 +1023,11 @@ function tableOf(b: Bag): Section {
       ...(via ? { via } : {}),
       sharing,
       inWindow,
+      ...(property ? { property } : {}),
       columns: texts(b.columns),
-      orderBy: text(b.orderBy) ?? "at:desc",
+      // A referent need not be temporal, so the records a reference names
+      // are read newest change first.
+      orderBy: text(b.orderBy) ?? (property ? "updatedAt:desc" : "at:desc"),
       limit: clampInt(b.limit, 1, 100, 25),
       chart: b.chart === true,
       show,
@@ -1011,6 +1104,134 @@ function breakdownOf(b: Bag): Section {
   }
 }
 
+/** A conversation as the console draws it, or the rule it breaks. The
+ * rules the grammar cannot state: attachments come with the property that
+ * hangs them off a message, a composer offers something and names the
+ * request property each offer writes, and a peer's contact flag comes with
+ * the peer. */
+function conversationOf(b: Bag): Section {
+  const what = "This conversation"
+  const kind = kindOfDeclaration(b.kind)
+  const via = text(b.via)
+  const time = text(b.time)
+  if (!kind || !via || !time) {
+    const missing = [!kind && "kind", !via && "via", !time && "time"].filter(
+      (x): x is string => Boolean(x)
+    )
+    return { problem: `${what} names no ${missing.join(", ")}.` }
+  }
+  const attachments = given(b.attachments)
+    ? kindOfDeclaration(b.attachments)
+    : undefined
+  const attachmentVia = text(b.attachmentVia)
+  if (Boolean(attachments) !== Boolean(attachmentVia)) {
+    return {
+      problem: `${what} names ${attachments ? "attachments without attachmentVia" : "attachmentVia without attachments"}; it names both or neither.`,
+    }
+  }
+  let compose: ComposeSpec | undefined
+  if (given(b.compose)) {
+    if (!isBag(b.compose)) {
+      return { problem: `${what}'s compose is not an object.` }
+    }
+    const c = composeOf(b.compose)
+    if (typeof c === "string") return { problem: `${what}'s composer ${c}` }
+    compose = c
+  }
+  const names = [
+    "sender",
+    "mine",
+    "text",
+    "replyTo",
+    "edited",
+    "deleted",
+    "status",
+    "reactions",
+    "attachmentFile",
+    "readUpTo",
+  ] as const
+  const named: Partial<Record<(typeof names)[number], string>> = {}
+  for (const name of names) {
+    const v = text(b[name])
+    if (v) named[name] = v
+  }
+  return {
+    block: {
+      type: "conversation",
+      label: text(b.label),
+      kind,
+      via,
+      time,
+      ...named,
+      ...(attachments ? { attachments, attachmentVia } : {}),
+      limit: clampInt(b.limit, 1, 200, 50),
+      ...(compose ? { compose } : {}),
+    },
+  }
+}
+
+/** A composer as the console runs it, or what is wrong with it, said as
+ * the end of a sentence that starts with the composer. */
+function composeOf(c: Bag): ComposeSpec | string {
+  const kind = kindOfDeclaration(c.kind)
+  const via = text(c.via)
+  const verb = text(c.verb)
+  if (!kind || !via || !verb) {
+    const missing = [!kind && "kind", !via && "via", !verb && "verb"].filter(
+      (x): x is string => Boolean(x)
+    )
+    return `names no ${missing.join(", ")}.`
+  }
+  const send = text(c.send)
+  const react = text(c.react)
+  const markRead = text(c.markRead)
+  if (!send && !react && !markRead) {
+    return "offers nothing: it names none of send, react and markRead."
+  }
+  const needs: [string | undefined, string, string][] = [
+    [send, "text", "send"],
+    [react, "target", "react"],
+    [react, "reaction", "react"],
+    [markRead, "target", "markRead"],
+  ]
+  for (const [offered, property, offer] of needs) {
+    if (offered && !text(c[property])) {
+      return `offers ${offer} and names no ${property} property to write it in.`
+    }
+  }
+  if (text(c.peerKnown) && !text(c.peer)) {
+    return "names peerKnown without the peer it is read from."
+  }
+  const optional = [
+    "text",
+    "replyTo",
+    "target",
+    "reaction",
+    "state",
+    "cancel",
+    "error",
+    "confirm",
+    "peer",
+    "peerKnown",
+  ] as const
+  const named: Partial<Record<(typeof optional)[number], string>> = {}
+  for (const name of optional) {
+    const v = text(c[name])
+    if (v) named[name] = v
+  }
+  return {
+    kind,
+    via,
+    verb,
+    ...(send ? { send } : {}),
+    ...(react ? { react } : {}),
+    ...(markRead ? { markRead } : {}),
+    ...named,
+    cancelIn: texts(c.cancelIn),
+    retryIn: texts(c.retryIn),
+  }
+}
+
 /** The kind identity a reference to its declaration names: the stored
  * `{ref}` or the bare path. A bare word is stored as the id of a
  * declaration nobody made, and reads as that word. */
@@ -1054,6 +1275,20 @@ function chartReducerOf(r: Bag): ChartReducer | string {
     reducer = { percentile: r.rank }
   }
   return { reducer, key: reducerKey(reducer), ...(label ? { label } : {}) }
+}
+
+/** The properties the views' request blocks stamp: each is that button's
+ * to write, so a form over the record leaves it out. */
+export function requestHands(views: readonly RecordView[]): string[] {
+  return [
+    ...new Set(
+      views.flatMap((v) =>
+        v.sections.flatMap((s) =>
+          "block" in s && s.block.type === "request" ? [s.block.property] : []
+        )
+      )
+    ),
+  ]
 }
 
 /** The properties the views fold away from the generic sheet. */
@@ -2264,6 +2499,21 @@ export function tableParams(
   listedKind?: KindInfo
 ): ListParams | { problem: string } {
   const properties: Record<string, Cond> = {}
+  if (block.property) {
+    // The records an outgoing reference names, by id inside the listed
+    // kind: a referent of another kind is not this table's. An empty list
+    // reads nothing (`namesNothing`), never every record of the kind.
+    const raw = record.properties?.[block.property]
+    const ids = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw])
+      .map((v) => splitRecordPath(readReference(v)?.path ?? ""))
+      .flatMap((p) => (p && p.kind === block.kind ? [p.id] : []))
+    return {
+      kinds: [block.kind],
+      first: block.limit,
+      orderBy: block.orderBy,
+      filter: { ids: [...new Set(ids)] },
+    }
+  }
   if (block.via) {
     properties[block.via] = { eq: `${record.kind}/${record.id}` }
   } else if (block.sharing.length) {
@@ -2313,6 +2563,13 @@ export function tableParams(
     orderBy: block.orderBy,
     filter: { properties },
   }
+}
+
+/** Whether a table's read names no record at all: a reference property
+ * that holds none. Sent, its empty `ids` would narrow nothing. */
+export function namesNothing(params: ListParams): boolean {
+  const ids = params.filter?.ids
+  return Array.isArray(ids) && ids.length === 0
 }
 
 /** The most earlier results a table's tiles read to find each result's

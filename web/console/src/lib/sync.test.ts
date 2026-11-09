@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 import type { BundleStatus, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   accountViewOf,
+  cascadingKinds,
   countPhrase,
   credentialHelp,
   cursorText,
@@ -750,5 +751,41 @@ describe("labelAtStart", () => {
     expect(labelAtStart("george@example.com")).toBe("george@example.com")
     expect(labelAtStart("octocat.dev")).toBe("octocat.dev")
     expect(labelAtStart("")).toBe("")
+  })
+})
+
+describe("cascadingKinds", () => {
+  const of = (identity: string, properties: Record<string, unknown>) =>
+    ({
+      identity,
+      name: identity.split("/").pop()!,
+      authority: "ada.example.com",
+      package: "chat",
+      version: 1,
+      source: "installed",
+      description: "",
+      definition: { properties },
+    }) as KindInfo
+  const ACCOUNT = of("ada.example.com/chat/account", {})
+  it("names the kinds whose reference to the account cascades", () => {
+    const chat = of("ada.example.com/chat/chat", {
+      account: {
+        type: "reference",
+        kind: ACCOUNT.identity,
+        onDelete: "cascade",
+      },
+    })
+    const note = of("ada.example.com/chat/note", {
+      account: { type: "reference", kind: ACCOUNT.identity },
+    })
+    const other = of("ada.example.com/chat/other", {
+      chat: { type: "reference", kind: chat.identity, onDelete: "cascade" },
+    })
+    expect(
+      cascadingKinds([ACCOUNT, chat, note, other], ACCOUNT).map(
+        (k) => k.identity
+      )
+    ).toEqual([chat.identity])
+    expect(cascadingKinds([chat], undefined)).toEqual([])
   })
 })

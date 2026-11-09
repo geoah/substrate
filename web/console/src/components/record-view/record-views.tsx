@@ -11,6 +11,7 @@ import { Link } from "@tanstack/react-router"
 import { ChartLineIcon } from "lucide-react"
 
 import { BreakdownBlockView } from "./breakdown-block"
+import { ConversationBlockView } from "./conversation-block"
 import { ChartBlockView, SpansBlockView } from "./observed-blocks"
 import {
   Failed,
@@ -20,6 +21,7 @@ import {
   Quiet,
   type BlockContext,
 } from "./parts"
+import { RequestBlockView } from "./request-block"
 import { spanWords } from "./span-words"
 import { StatsBlockView } from "./stats-block"
 import { TableBlockView } from "./table-block"
@@ -253,6 +255,10 @@ function BlockView({
       return <BreakdownBlockView block={block} ctx={ctx} />
     case "lanes":
       return <Notice>This console does not draw lanes yet.</Notice>
+    case "conversation":
+      return <ConversationBlockView block={block} ctx={ctx} />
+    case "request":
+      return <RequestBlockView block={block} ctx={ctx} />
   }
 }
 
