@@ -59,6 +59,7 @@ const fullImport: ImportDraft = {
   format: "csv",
   status: "importing",
   runner: { device: "d", until: "2026-11-09T10:01:00Z" },
+  lab: "Example Lab",
   source: "lab/example",
   rows: [
     {

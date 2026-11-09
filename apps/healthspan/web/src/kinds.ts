@@ -164,6 +164,8 @@ export interface LabImport {
   format?: "csv" | "manual"
   status: ImportStatus
   runner?: ImportRunner
+  /** The lab's name, which names its source where none exists yet. */
+  lab?: string
   /** The lab's source id. */
   source?: string
   rows: ImportRow[]
@@ -181,6 +183,7 @@ export interface ImportDraft {
   format: "csv" | "manual"
   status: ImportStatus
   runner: ImportRunner | null
+  lab: string
   source: string | null
   rows: ImportRow[]
   reports: ImportReport[]
@@ -288,6 +291,7 @@ export const Import = defineKind(KIND.import, {
               return device && until ? { device, until } : undefined
             })()
           : undefined,
+      lab: stringProp(r, "lab"),
       source: refProp(r, "source")?.id,
       rows: objects(r.properties.rows)
         .map(readRow)
@@ -311,6 +315,7 @@ export const Import = defineKind(KIND.import, {
     if (d.format !== undefined) out.format = d.format
     if (d.status !== undefined) out.status = d.status
     if (d.runner !== undefined) out.runner = d.runner
+    if (d.lab !== undefined) out.lab = d.lab
     if (d.source !== undefined)
       out.source = d.source === null ? null : `${KIND.source}/${d.source}`
     if (d.rows !== undefined) out.rows = d.rows.map(writeRow)

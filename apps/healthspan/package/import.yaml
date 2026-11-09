@@ -1,8 +1,9 @@
 # import: one file or one hand entry of lab results taken in. The plan
 # (`rows`, `reports`) says everything the import writes: every id it writes
-# derives from the import's id and a key in the plan (`<id>/report/<key>`,
-# `<id>/<key>`), and every report and result carries `origin` pointing here,
-# so a browser on any device can resume it or undo it from this record
+# derives from the import's id and a key in the plan, in the minted shape a
+# writer may compute (decision 0228: `DerivedMintedID` of `<id>/report/<key>`
+# and `<id>/<key>`), and every report and result carries `origin` pointing
+# here, so a browser on any device can resume it or undo it from this record
 # alone (docs/plans/healthspan.md, Import).
 #
 # `runner` is a lease: a browser writes only while it holds it, taken and
@@ -84,6 +85,10 @@ data:
           type: datetime
           required: true
           description: when the lease ends unless renewed
+    lab:
+      type: string
+      description: the lab's name as the file or the owner gave it, which
+        names its source where none exists yet
     source:
       type: reference
       kind: substrate.reamde.dev/observations/source

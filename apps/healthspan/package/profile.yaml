@@ -1,7 +1,9 @@
 # profile: what the age score, the lab targets and the session reads need
 # about the owner that no other record holds. One per repository, under the
 # id `owner`, which the app creates with a PUT at `ifVersion: 0` and a
-# compare on 409 (docs/plans/healthspan.md, The package). The birth date is
+# compare on 409 (docs/plans/healthspan.md, The package). Its ids are
+# `named` (decision 0228): every device names the one row, which a minted
+# id cannot. The birth date is
 # the owner's contact's first (core/contact `dates.birthday`); this one is
 # written only where the contact has no whole birthday. `sex` is the
 # reference basis the owner chose, never copied unasked from a patient
@@ -22,6 +24,8 @@ data:
     where your contact has none, and the order your nights and workouts are
     read in.
   purpose: primary
+  ids:
+    type: named
   names:
     singular: profile
   label:

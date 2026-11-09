@@ -1,8 +1,19 @@
 // The sources of measured values and the imports (docs/plans/healthspan.md,
 // Sources; Import). The contract getting started and the age score read
-// sources through; the sources workstream implements it, live and demo.
+// sources through, and the Sources and Import screens' reads and writes,
+// live (sources/live.ts) and demo (demo/sources.ts).
 
-import { pending, settled, type Read } from "./read"
+import type { MetricRecord } from "../catalogue/types"
+import { demoSourcesData } from "../demo/sources"
+import type { LabImport } from "../kinds"
+import type { HeldResult, Convert } from "../import/match"
+import type { PlannedImport } from "../import/plan"
+import type { RunState } from "../import/registry"
+import type { RunOutcome } from "../import/runner"
+import type { MetricGroup, SessionKind } from "../sources/groups"
+import type { SourceLink } from "../sources/links"
+import { liveSourcesData } from "../sources/live"
+import type { Read } from "./read"
 
 /** One `observations/source` record and what it holds. */
 export interface SourceSummary {
@@ -21,15 +32,62 @@ export interface SourceSummary {
   priorities: Record<string, number>
 }
 
+/** A write's end, in words where it was not kept. */
+export type Done = { ok: true } | { ok: false; words: string }
+
+export interface SourceWrites {
+  /** Writes a metric group's order: each source's `priorities` for every
+   * metric of the group, its place in `order` (1 first), through the
+   * outbox. */
+  rankMetrics(group: MetricGroup, order: SourceSummary[]): Promise<Done>
+  /** Writes a session group's order, source ids first highest, to the
+   * profile. */
+  rankSessions(kind: SessionKind, order: string[]): Promise<Done>
+  /** Links two or more sources as one device, and moves them together in
+   * the night and workout orders shown (`orders`). */
+  link(
+    name: string,
+    sources: string[],
+    orders: Record<SessionKind, string[]>
+  ): Promise<Done>
+  unlink(link: SourceLink): Promise<Done>
+}
+
+export interface ImportActions {
+  /** One conversion through the repository's unit graph. */
+  convert: Convert
+  /** The results the repository holds for these metrics on these days. */
+  held: (metrics: string[], days: string[]) => Promise<HeldResult[]>
+  /** Writes each planned import at `planned` and runs them one after
+   * another; answers their ids once written. */
+  start: (planned: PlannedImport[]) => Promise<string[]>
+  resume: (id: string) => Promise<RunOutcome>
+  undo: (id: string) => Promise<RunOutcome>
+}
+
 export interface SourcesData {
   /** Every source, in no particular order. */
   useSourceList(): Read<SourceSummary[]>
+  /** Every metric record of the repository: the names the screens show,
+   * and the metrics a group's priorities may name. */
+  useMetrics(): Read<MetricRecord[]>
+  /** The metric records of category `labs` or `body`, which an import
+   * matches against. */
+  useLabMetrics(): Read<MetricRecord[]>
+  useSourceLinks(): Read<SourceLink[]>
+  useSourceWrites(): SourceWrites
+  /** Every import, newest first. */
+  useImports(): Read<LabImport[]>
+  /** One import; null where it is not in the repository. */
+  useImport(id: string): Read<LabImport | null>
+  /** How many records still point at an import through `origin`: read for
+   * an undone one alone (`enabled`), where a late write may have landed. */
+  useStillPointing(id: string, enabled: boolean): Read<number>
+  /** A run of an import in this page: its progress and how it ended. */
+  useRunState(id: string): RunState
+  useImportActions(): ImportActions
 }
 
-export const liveSources: SourcesData = {
-  useSourceList: () => pending(),
-}
+export const liveSources: SourcesData = liveSourcesData
 
-export const demoSources: SourcesData = {
-  useSourceList: () => settled([]),
-}
+export const demoSources: SourcesData = demoSourcesData
