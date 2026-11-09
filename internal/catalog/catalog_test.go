@@ -186,6 +186,9 @@ func TestCatalogSaysWhatEachPackageIsFor(t *testing.T) {
 		// because the binary ships it among its providers.
 		{id: "providers.substrate.reamde.dev/apple", provider: true, brings: []string{substrate.BringsCollections}},
 		{id: "providers.substrate.reamde.dev/slacklive", provider: true, addonFor: "providers.substrate.reamde.dev/slack"},
+		// The chat bridge's accounts are written by its webhook function, so
+		// its account kind binds `sync` and not `accountconfig`.
+		{id: "providers.substrate.reamde.dev/chatbridge", provider: true, brings: []string{substrate.BringsTools, substrate.BringsCollections}},
 		{id: "substrate.reamde.dev/clinical", brings: []string{substrate.BringsCollections}},
 		{id: "substrate.reamde.dev/health", brings: []string{substrate.BringsCollections, substrate.BringsMetrics}},
 		{id: "substrate.reamde.dev/environment", brings: []string{substrate.BringsMetrics}},

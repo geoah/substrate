@@ -126,8 +126,8 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop`, `beeper`, `slack`, `slacklive` and `applehealth`,
-all published under `providers.substrate.reamde.dev`. Installing one from the
+`linear`, `notion`, `whoop`, `beeper`, `chatbridge`, `slack`, `slacklive` and
+`applehealth`, all published under `providers.substrate.reamde.dev`. Installing one from the
 catalog writes `source: published` on its package, and from then on only an
 install or an upgrade writes its declarations: a `POST …/vocabulary/apply`
 naming that package is `403` for every token, because a mirror kind edited
@@ -326,8 +326,8 @@ stay `substratectl apply` of the closure.
 A **provider** is a package that connects the substrate to an outside
 service: the shipped ones are every package under
 `providers.substrate.reamde.dev` (`google`, `github`, `linear`, `notion`,
-`whoop`, `beeper`, `slack`, `slacklive`, `apple`, `applehealth` and
-`firecrawl`), and a package from an authority document is one when it
+`whoop`, `beeper`, `chatbridge`, `slack`, `slacklive`, `apple`, `applehealth`
+and `firecrawl`), and a package from an authority document is one when it
 declares an account kind. For the shipped ones it is read from the tree the
 closure came from, never guessed from an OAuth block or from the package's
 name: a token or webhook provider may declare no OAuth, and Apple's devices
@@ -351,7 +351,10 @@ its records with the owner's token through the ordinary record routes, so
 the closure declares kinds and no account, config or function. A webhook
 provider (Apple Health) ships the same `accountconfig` kind, no `oauth2:`
 block and no `config` record: the sender authenticates with the key on its
-webhook trigger, and the owner creates each account by hand.
+webhook trigger, and the owner creates each account by hand. A bridged
+provider (the chat bridge) has its accounts written by its webhook function,
+as its program signs in, so its account kind binds `sync` and not
+`accountconfig`, whose records only the owner creates.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
 under ids composed from the provider's own identifiers
@@ -809,7 +812,7 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the eleven **providers** under `kinds/providers.substrate.reamde.dev`, the
+the twelve **providers** under `kinds/providers.substrate.reamde.dev`, the
 four well-known **catalogues** under `kinds/substrate.reamde.dev`
 (`health`, `labs`, `environment` and `clinical`), which take the same install
 door and are no providers, and the

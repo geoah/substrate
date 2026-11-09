@@ -1,0 +1,148 @@
+{
+  "_fixture": {
+    "note": "The row ids chatevents composes, each from the event's own ids through host.ids.external(provider, account, externalId) as the package README's Ids section writes them. inputs are the event fields, external the three arguments, id what they produce. The Go test checks each against runner.ExternalID and against the rows the golden batches write."
+  },
+  "vectors": [
+    {
+      "row": "instance",
+      "inputs": {
+        "instance": "0b3f6f2e-6d8c-4c47-9a7e-2d8b1f5d9c11"
+      },
+      "external": {
+        "provider": "chatbridge",
+        "account": "0b3f6f2e-6d8c-4c47-9a7e-2d8b1f5d9c11",
+        "externalId": "instance"
+      },
+      "id": "chatbridge-dbb229e539107ebca646e32a39fa1972"
+    },
+    {
+      "row": "account",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "account"
+      },
+      "id": "whatsapp-9e8e492f437db8c0b8d34d79575072fe"
+    },
+    {
+      "row": "user",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "user": "lid:113920541"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "user/lid:113920541"
+      },
+      "id": "whatsapp-ebdacb44ebe9e5a25d9b22eb70178f21"
+    },
+    {
+      "row": "user",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "user": "447700900123@s.whatsapp.net"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "user/447700900123@s.whatsapp.net"
+      },
+      "id": "whatsapp-c01974dc972797be1630e51618263c68"
+    },
+    {
+      "row": "chat",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "chat": "447700900456@s.whatsapp.net"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "chat/447700900456@s.whatsapp.net"
+      },
+      "id": "whatsapp-26ad5b55c81642288e7c24914a8c4fa1"
+    },
+    {
+      "row": "chat",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "chat": "120363025246125486@g.us"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "chat/120363025246125486@g.us"
+      },
+      "id": "whatsapp-e943c1cd2c547b39894814931ed74fe4"
+    },
+    {
+      "row": "message",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "chat": "447700900456@s.whatsapp.net",
+        "message": "3EB0C1F2A9"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "message/447700900456@s.whatsapp.net/3EB0C1F2A9"
+      },
+      "id": "whatsapp-e96e168e41787607d58f5f3f545737d6"
+    },
+    {
+      "row": "message",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "chat": "120363025246125486@g.us",
+        "message": "3EB0AA11"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "message/120363025246125486@g.us/3EB0AA11"
+      },
+      "id": "whatsapp-310cc5ceef5f05856d3f14b1ff5189fb"
+    },
+    {
+      "row": "messageattachment",
+      "inputs": {
+        "network": "whatsapp",
+        "account": "447700900123",
+        "chat": "120363025246125486@g.us",
+        "message": "3EB0AA11",
+        "part": "0"
+      },
+      "external": {
+        "provider": "whatsapp",
+        "account": "447700900123",
+        "externalId": "attachment/120363025246125486@g.us/3EB0AA11/0"
+      },
+      "id": "whatsapp-0e02928341df2e81555b66e64aa35a7b"
+    },
+    {
+      "row": "chat",
+      "inputs": {
+        "network": "signal",
+        "account": "+447700900123",
+        "chat": "c2a7/9f"
+      },
+      "external": {
+        "provider": "signal",
+        "account": "+447700900123",
+        "externalId": "chat/c2a7/9f"
+      },
+      "id": "signal-164a0f6c1e906f36690532d841da5fa1"
+    }
+  ]
+}

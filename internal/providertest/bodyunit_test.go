@@ -78,6 +78,24 @@ func TestBodyHelpersFirecrawl(t *testing.T) {
 	runBodyCases(t, bodyPython(t, dir), "py/test_firecrawl_api.py", dir)
 }
 
+// TestBodyHelpersChatBridge runs internal/providertest/py/test_chatbridge_tools.py
+// over the six shipped chat bridge tools and their shared module: one action
+// per idempotency key, written create-only, and a wrong request refused
+// before anything is written.
+func TestBodyHelpersChatBridge(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bundle := providersDir + "/chatbridge/bundle.yaml"
+	if written := writeModules(t, bundle, dir); written != 1 {
+		t.Fatalf("wrote %d chat bridge modules, want chatbridge_actions.py alone", written)
+	}
+	tools := []string{"send", "react", "unreact", "edit", "delete", "markread"}
+	if written := writeBodies(t, bundle, dir, func(name string) bool { return slices.Contains(tools, name) }); written != len(tools) {
+		t.Fatalf("wrote %d chat bridge tools, want the %d", written, len(tools))
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_chatbridge_tools.py", dir)
+}
+
 // writeModules writes every shared module the bundle document ships into dir
 // under its own file name, and returns how many.
 func writeModules(t *testing.T, bundle, dir string) int {
