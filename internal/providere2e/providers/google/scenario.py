@@ -3447,25 +3447,29 @@ def assert_permanent_failure_is_named():
     # single read after the legacy sentences settled could land inside one of
     # them (#757).
     failed = ("erroring", "throttled")
+    # The owner's sentence on each status's first line (#1299): what to do
+    # after a 401, and the permission a 403 says the sign-in lacks.
+    RECONNECT = "Reconnect the account."
+    NOT_ALLOWED = "doesn't allow this provider to read your Google Calendar"
     got, acct = {}, {}
     for _ in range(48):
         acct = props(one(KIND["account"], ACCOUNT))
         got = {s: str(acct.get(s + "SyncStatus") or "")
                for s in ("contacts", "calendar")}
         streams = _streams(acct)
-        if "reconnect needed" in got["contacts"] \
-                and "not available" in got["calendar"] \
+        if RECONNECT in got["contacts"] \
+                and NOT_ALLOWED in got["calendar"] \
                 and str(acct.get("syncState") or "") in failed \
                 and all(str((streams.get(s) or {}).get("state") or "") in failed
                         for s in ("contacts", "calendar")):
             break
         time.sleep(5)
-    check("reconnect needed" in got.get("contacts", ""),
+    check(RECONNECT in got.get("contacts", ""),
           "after a 401 the contacts status is %r — a 401 is PERMANENT until "
           "the owner reconnects and the status has to say so, because it is "
           "what the console shows and the only thing that tells a human what "
           "to do" % got.get("contacts"))
-    check("not available" in got.get("calendar", ""),
+    check(NOT_ALLOWED in got.get("calendar", ""),
           "after a 403 the calendar status is %r — a 403 is this grant being "
           "refused the stream, not an outage" % got.get("calendar"))
     note("401 -> %s" % got["contacts"][:72])
@@ -3484,6 +3488,10 @@ def assert_permanent_failure_is_named():
     check(str(acct.get("syncError") or ""),
           "the account carries no syncError after two failing streams, so "
           "nothing but this bundle's own status string says what broke")
+    check(not str(acct.get("syncError") or "").startswith("erroring"),
+          "syncError is %r — the `erroring: ` prefix belongs to the legacy "
+          "status strings, and the trait's fields hold the sentence alone"
+          % str(acct.get("syncError"))[:60])
     check(acct.get("syncErrorAt"),
           "syncError is set and syncErrorAt is not — a failure with no "
           "instant cannot be ordered against the last success")

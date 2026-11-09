@@ -1076,6 +1076,11 @@ def main() -> int:
            % broke.get("syncState"))
         ok(broke.get("syncError"), "erroring, but syncError is empty")
         ok(broke.get("syncErrorAt"), "erroring, but syncErrorAt is unset")
+        said = str(broke.get("syncError") or "")
+        ok(said.startswith("Beeper Desktop no longer accepts the token")
+           and "\n401 invalid token" in said,
+           "a 401 reads as the sentence with the fix, then Beeper's words: %r"
+           % said)
         ok(str(broke.get("syncStatus") or "").startswith("erroring"),
            "the trait says erroring and syncStatus says %r"
            % broke.get("syncStatus"))
@@ -1276,7 +1281,7 @@ def sendmessage():
     st, _ = api("PATCH", cfg, {"properties": {"apiBase": "https://beeper.example.com"}})
     if ok(st < 400, "could not point apiBase at a public host: %s" % st):
         st, reply = w.call(SEND_FN, {"chat": chat, "text": text})
-        ok(st >= 400 and "not a private origin" in error_text(reply),
+        ok(st >= 400 and "isn't a private address" in error_text(reply),
            "a public apiBase did not refuse: %s %s"
            % (st, error_text(reply)[:200]))
         ok(len(w.requests("POST", route)) == before,

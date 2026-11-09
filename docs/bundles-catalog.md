@@ -1111,7 +1111,7 @@ Read only: nothing here writes back to Notion.
 Setting it up takes two steps in Notion. Mint an internal token (Settings,
 Connections, Develop or manage) with read capabilities (the user-email one
 included, or `user.person.email` stays absent; without any user-information
-capability the roster is skipped and counted unreachable, and only the
+capability the roster is skipped and counted as not read, and only the
 authors the pages name land, as thin rows), and paste it onto the `config`
 record. Then SHARE each top-level page, database or teamspace with the
 connection that token belongs to: `/v1/search` returns only what has been
@@ -1185,8 +1185,8 @@ without its `erroring:` prefix; both truncate at 400 characters. `syncProgress`
 is `{phase, done, total, pending}` over the run's own queue. `syncStreams` is
 declared and left unwritten: one function walks one workspace as one stream. A
 database or page Notion refuses permanently (`object_not_found`,
-`restricted_resource`) is counted on the status as `unreachable: N` with the
-first few named, and a block failure lands on that page's own
+`restricted_resource`) is counted on the status as `could not read N:` with
+the first few named and why, and a block failure lands on that page's own
 `pagesync.blocksStatus`, so one unreadable page never stops the rest.
 
 **What it does not do.** No writeback. No comments: the closure declares no
@@ -1322,8 +1322,9 @@ goes onto `streamCursors.failed` with its attempt count (retried up to three
 times, and queued again at the top of the next walk), and `syncStatus` gains a
 trailing `[N failed]`. One account per repository syncs, since one token
 addresses one Beeper Desktop: the lexicographically first account with
-`enabledMessages` on is the one that walks, and every other one is stamped
-`ignored: duplicate account`.
+`enabledMessages` on is the one that walks, and every other one's status
+says it is not syncing because another connection already syncs that Beeper
+Desktop, and asks for the duplicate to be removed.
 
 The sync never writes to Beeper. It sends no message, adds no reaction,
 archives nothing and marks nothing read. It fetches no media: an attachment is mirrored
@@ -1413,8 +1414,9 @@ The token is a secret on the `config` record, origin-pinned: the sync sends
 it to `https` on a `slack.com` host or to loopback, and an `apiBase` naming
 any other origin refuses to sync before a request is made. Only one account
 per repository syncs: the lexicographically first live account is the
-connection, and every other live row is stamped
-`syncStatus: ignored: duplicate account`.
+connection, and every other live row's `syncStatus` says it is ignored
+because another account already syncs the workspace, and asks for it to be
+removed.
 
 Setting it up is one paste. Mint a Slack user token (`xoxp-…`) and put it on
 `config.userToken`, not on the account: the engine seals an accountconfig's

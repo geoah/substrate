@@ -113,7 +113,7 @@ func TestGoogleDriveScopeRefusalLogsTheReasonOnce(t *testing.T) {
 	if len(failed) != 1 {
 		t.Fatalf("failure log lines = %q, want exactly one", failed)
 	}
-	if !strings.Contains(failed[0], "needs reconsent") || !strings.Contains(failed[0], "reconnect the account") {
+	if !strings.Contains(failed[0], "approved before the Google Drive provider asked to read your Drive") || !strings.Contains(failed[0], "Reconnect the account") {
 		t.Fatalf("failure log line = %q, want it to name the missing consent and the reconnect", failed[0])
 	}
 

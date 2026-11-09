@@ -173,7 +173,12 @@ data:
   # per-chat handlers no longer file one as that chat's failure. A 4xx, a
   # 5xx, a bad body or the sandbox gate's refusal still stamps `erroring`
   # (decision 0183). Adds `account.unreachableSince`.
-  version: 23
+  #
+  # 24: owner-facing errors are plain sentences with the fix (a refused
+  # token, the sandbox's refusal, a wrong API base), the technical detail
+  # on the following line; per-chat statuses and the ok run's failure
+  # note read as words. `sendmessage` says the same.
+  version: 24
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -444,9 +449,9 @@ data:
       writer: connector
       displayName: Sync status
       description: >-
-        the last sync outcome: ok, ok (N pending), erroring: <reason>, ignored:
-        duplicate account, Beeper Desktop is not reachable (since <time>)…,
-        and a trailing [N failed]
+        the last sync outcome: ok, ok (N pending), erroring: <reason>, a duplicate's
+        "Not syncing: …", Beeper Desktop is not reachable (since <time>)…,
+        and a trailing [N couldn't be read: …]
     # --- the core `sync` trait's connector hands (decision 0085) -------------
     # The ten properties the trait contracts that the CONNECTOR writes; the
     # owner's two (`syncRequestedAt`, `syncPaused`) are above. The sync body
@@ -1851,6 +1856,7 @@ data:
     """
     import datetime as _dt
     import errno
+    import ssl
     import ipaddress
     import socket
     import time
@@ -1882,7 +1888,10 @@ data:
     # a big group's roster. This is what makes the single read AUTHORITATIVE.
     ALL_PARTICIPANTS = -1
     HTTP_TIMEOUT = 20
-    REASON_MAX = 200
+    REASON_MAX = 400
+    # The cap on the technical detail under an owner's sentence; the sentence
+    # itself is never cut.
+    DETAIL_MAX = 300
     # The self-imposed drain bounds, both comfortably inside the engine's.
     DRAIN_SECONDS = 75
     DRAIN_CALLS = 300
@@ -1893,8 +1902,9 @@ data:
     MAX_RETRY_AFTER = 3600
     RETRY_MAX = 3
     FAILED_MAX = 200
-    IGNORED_STATUS = ("ignored: duplicate account (one token addresses one "
-                      "Beeper Desktop)")
+    IGNORED_STATUS = ("Not syncing: another Beeper connection already syncs "
+                      "this Beeper Desktop, and one token reaches one Desktop. "
+                      "Remove this duplicate connection.")
     # The account's sentence while Beeper Desktop cannot be reached. Its opening
     # words are what a reader matches on, so they do not change (decision 0183).
     UNREACHABLE_MESSAGE = ("Beeper Desktop is not reachable (since %s); syncing "
@@ -2978,7 +2988,7 @@ data:
         for e in _causes(err)[1:]:
             if isinstance(e, socket.gaierror):
                 return True
-            if isinstance(e, OSError) and e.errno in (errno.EACCES, errno.EPERM):
+            if isinstance(e, OSError) and not isinstance(e, ssl.SSLError) and e.errno in (errno.EACCES, errno.EPERM):
                 return False
             if isinstance(e, OSError) and e.errno in UNREACHABLE_ERRNOS:
                 return True
@@ -2987,6 +2997,178 @@ data:
             if type(e).__name__ in UNREACHABLE_CLASSES:
                 return True
         return False
+
+
+    # THE OWNER READS LINE ONE. Every failure text this body stamps opens with
+    # plain sentences — what failed, why, what to do — and keeps the raw detail
+    # on the line after it, which the console folds away. Only the detail is
+    # ever cut, so the sentence survives whole.
+    def _with_detail(sentence, detail=""):
+        detail = " ".join(str(detail or "").split())[:DETAIL_MAX]
+        return sentence + ("\n" + detail if detail else "")
+
+
+    def _capped(text, limit=REASON_MAX):
+        """`text` within `limit`, cutting only what follows its first line."""
+        text = str(text or "")
+        head, nl, rest = text.partition("\n")
+        if not nl or len(head) >= limit:
+            return head
+        return (head + "\n" + rest)[:limit]
+
+
+    def _where(base):
+        u = urllib.parse.urlsplit(base)
+        host = u.hostname or base
+        port = u.port or (443 if u.scheme == "https" else 80)
+        return host, "%s:%s" % ("[%s]" % host if ":" in host else host, port)
+
+
+    def _loopback(host):
+        if host in ("localhost", "::1") or host.endswith(".localhost"):
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+
+    def _gate_refused(err):
+        """The sandbox's connect gate answers a destination outside its
+        allowlist with EACCES (or EPERM) on the connect."""
+        return any(isinstance(e, OSError) and not isinstance(e, ssl.SSLError) and e.errno in (errno.EACCES, errno.EPERM)
+                   for e in _causes(err))
+
+
+    def _sandbox_sentence(base):
+        host, at = _where(base)
+        head = ("This server's sandbox blocked the connection to Beeper Desktop "
+                "at %s. " % at)
+        if _loopback(host):
+            return head + (
+                "Beeper Desktop runs on your computer, so that address works only "
+                "when this server runs on the same computer, and then its operator "
+                "must add 127.0.0.1 and ::1 to SUBSTRATE_SANDBOX_EGRESS_ALLOW. If "
+                "the server runs anywhere else, turn on remote access in Beeper "
+                "Desktop and set the Beeper config's API base to an address of "
+                "your computer this server can reach, such as its tailnet address.")
+        try:
+            ipaddress.ip_address(host)
+            allow = host
+        except ValueError:
+            allow = "the address %s resolves to" % host
+        return head + ("The server's operator must add %s to "
+                       "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % allow)
+
+
+    def _say(err, base):
+        """The account's sentence for a failure that stopped the walk, with the
+        technical detail under it. The state it lands in (erroring, and whether
+        the walk ends) is decided elsewhere; this only words it."""
+        host, at = _where(base)
+        exc = requests.exceptions
+        if isinstance(err, Beeper):
+            st, raw = err.status, err.detail
+            if raw == "response was not JSON":
+                s = ("Something at %s answered, but not like Beeper Desktop's API. "
+                     "Check that the Beeper config's API base points at Beeper "
+                     "Desktop (by default http://localhost:23373)." % at)
+            elif st == 401:
+                s = ("Beeper Desktop no longer accepts the token on the Beeper "
+                     "config. Create a new token in Beeper Desktop's settings and "
+                     "paste it on the config record; every sync fails until then.")
+            elif st == 403:
+                s = ("Beeper Desktop refused this request with the token on the "
+                     "Beeper config. Create a token with full access in Beeper "
+                     "Desktop's settings and paste it on the config record.")
+            elif st == 404:
+                s = ("Beeper Desktop at %s doesn't know this request. Check that the "
+                     "Beeper config's API base points at Beeper Desktop, and update "
+                     "Beeper Desktop if it is old." % at)
+            elif st == 408:
+                s = ("Beeper Desktop timed out answering (HTTP 408). The next sync "
+                     "tries again.")
+            elif 400 <= st < 500:
+                s = ("Beeper Desktop refused the request (HTTP %d), and asking again "
+                     "won't change that. The technical details say what it objected "
+                     "to." % st)
+            elif st >= 500:
+                s = ("Beeper Desktop had an internal error (HTTP %d). The next sync "
+                     "tries again." % st)
+            else:
+                s = "Beeper Desktop answered with an error. The next sync tries again."
+            return _with_detail(s, raw)
+        if isinstance(err, exc.RequestException):
+            raw = str(err)
+            if _gate_refused(err):
+                return _with_detail(_sandbox_sentence(base), raw)
+            if isinstance(err, exc.SSLError):
+                return _with_detail(
+                    "The secure connection to Beeper Desktop at %s failed. Beeper "
+                    "Desktop serves plain http, so check that the Beeper config's "
+                    "API base starts with http:// unless you set up https "
+                    "yourself." % at, raw)
+            if isinstance(err, exc.ProxyError):
+                return _with_detail(
+                    "A proxy between this server and Beeper Desktop at %s refused "
+                    "the connection. The next sync tries again; if it keeps "
+                    "failing, the server's operator should check its proxy "
+                    "settings." % at, raw)
+            if isinstance(err, exc.Timeout):
+                return _with_detail(
+                    "Beeper Desktop at %s took the connection but didn't answer "
+                    "within %d seconds. The next sync tries again."
+                    % (at, HTTP_TIMEOUT), raw)
+            return _with_detail(
+                "This server couldn't talk to Beeper Desktop at %s. The next sync "
+                "tries again." % at, raw)
+        return _with_detail(
+            "The Beeper sync stopped on an unexpected error. The next sync tries "
+            "again; if it keeps failing, the technical details say why.",
+            "%s: %s" % (type(err).__name__, err))
+
+
+    def _say_chat(err):
+        """One chat's own failure, on its state row: shorter, because the chat
+        it belongs to is the row it is written on."""
+        if isinstance(err, Beeper):
+            st, raw = err.status, err.detail
+            if st == 404:
+                s = "Beeper Desktop no longer has this chat."
+            elif st in (401, 403):
+                s = ("Beeper Desktop refused to share this chat with the token on "
+                     "the Beeper config.")
+            elif 400 <= st < 500 and st != 408:
+                s = "Beeper Desktop refused to read this chat (HTTP %d)." % st
+            elif st >= 500 or st == 408:
+                s = ("Beeper Desktop failed reading this chat (HTTP %d); the next "
+                     "sync tries again." % st)
+            else:
+                s = "Beeper Desktop answered this chat's read with an error."
+            return _with_detail(s, raw)
+        return _with_detail("Reading this chat failed; the next sync tries again.",
+                            "%s: %s" % (type(err).__name__, err))
+
+
+    # The ok run's failure note, in words: what kind of work, and Beeper's
+    # answer as a word rather than a status code.
+    FAILED_NOUNS = {"whole": "chat details", "messages": "chat histories",
+                    "contacts": "address books"}
+    FAILED_WHY = {"401": "token refused", "403": "not allowed",
+                  "404": "not found", "408": "timed out"}
+
+
+    def _failed_note(failed):
+        by_why = {}
+        for row in failed:
+            cls = _why_class(row[3] if len(row) > 3 else "")
+            why = FAILED_WHY.get(cls) or (
+                "HTTP %s" % cls if cls.isdigit() else "error")
+            key = "%s (%s)" % (FAILED_NOUNS.get(row[0], row[0]), why)
+            by_why[key] = by_why.get(key, 0) + 1
+        top = sorted(by_why.items(), key=lambda kv: -kv[1])[:3]
+        return "%d couldn't be read: %s" % (
+            len(failed), ", ".join("%s x%d" % (k, n) for k, n in top))
 
 
     def _since_text(iso):
@@ -3012,7 +3194,7 @@ data:
         n = attempts.get((kind, repr(ident)), 0) + 1
         failed = [row for row in (resume.get("failed") or [])
                   if (row[0], repr(row[1])) != (kind, repr(ident))]
-        why = str(getattr(err, "detail", err))[:REASON_MAX]
+        why = str(getattr(err, "detail", err))[:DETAIL_MAX]
         permanent = _permanent(err)
         failed.append([kind, ident, n, ("permanent: " if permanent else "") + why])
         out = dict(resume, failed=failed[-FAILED_MAX:], **rest)
@@ -3041,9 +3223,7 @@ data:
             for row in failed:
                 key = "%s/%s" % (row[0], _why_class(row[3] if len(row) > 3 else ""))
                 by_why[key] = by_why.get(key, 0) + 1
-            top = sorted(by_why.items(), key=lambda kv: -kv[1])[:3]
-            status += " [%d failed: %s]" % (
-                len(failed), ", ".join("%s x%d" % (k, n) for k, n in top))
+            status += " [%s]" % _failed_note(failed)
             host.log("beeper: %d units of work failed; streamCursors.failed holds "
                      "[kind, id, attempts, why] for each. By class: %s"
                      % (len(failed),
@@ -3081,7 +3261,7 @@ data:
         completes instead of parking. `lastSyncedAt` is the last ATTEMPT, and a
         failed walk IS one — leaving it unstamped kept the on-connect trigger's
         guard open and re-fired the same failing walk (Codex review)."""
-        why = str(reason)[:REASON_MAX]
+        why = _capped(reason)
         props = {"syncStatus": "erroring: " + why}
         if attempted:
             props["lastSyncedAt"] = _now_iso()
@@ -3301,8 +3481,7 @@ data:
             # The reason lands on the chat's STATE row, never on the mirror, and
             # the queue moves on: one unreadable chat never stops the rest.
             _chatsync_put(host, aid, cid,
-                          {"messagesStatus":
-                           str(getattr(e, "detail", e))[:REASON_MAX]})
+                          {"messagesStatus": _capped(_say_chat(e))})
             return _failed(resume, "whole", cid, e, queue=queue[1:])
         if isinstance(body, dict) and body.get("id"):
             _chat_row(host, aid, body, whole=True)
@@ -3351,7 +3530,7 @@ data:
             # One chat's failure is that chat's business. The queue moves on and
             # the reason lands on the STATE row, never on the mirror.
             _chatsync_put(host, aid, cid,
-                          {"messagesStatus": str(getattr(e, "detail", e))[:REASON_MAX]})
+                          {"messagesStatus": _capped(_say_chat(e))})
             return _failed(resume, "messages", cid, e, msgq=msgq[1:], work=None)
 
         floor = resume.get("floor")
@@ -3394,8 +3573,10 @@ data:
             # and the account would never converge (Codex review, blocker 5).
             stalled = more and (not nxt or nxt == work["cursor"])
             if stalled:
-                patch["messagesStatus"] = ("stopped: the backfill cursor did not "
-                                           "advance past %s" % (nxt or "<none>"))
+                patch["messagesStatus"] = _with_detail(
+                    "Stopped reading older messages: Beeper Desktop kept returning "
+                    "the same page, so the history before this point isn't synced.",
+                    "the backfill cursor did not advance past %s" % (nxt or "<none>"))
             done = work["floorHit"] or not more or stalled
             if done:
                 patch["backfillComplete"] = True
@@ -3461,8 +3642,10 @@ data:
             return {"output": {"skipped": "sealed-token"}}
         if not _private(base):
             raise RuntimeError(
-                "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
-                "CGNAT or a .ts.net name); refusing to send the token" % base)
+                "The Beeper config's API base, %s, isn't a private address, so the "
+                "token won't be sent there. Use Beeper Desktop's address on this "
+                "computer, your local network or your tailnet (localhost, "
+                "192.168.x.x, 100.x.x.x or a .ts.net name)." % base)
 
         resume = host.page.resume() or None
         if resume:
@@ -3507,7 +3690,7 @@ data:
                 carried = _carry(resume)
                 if _permanent(e):
                     carried["phase"] = "done"
-                _erroring(host, acct, aid, getattr(e, "detail", e), carried,
+                _erroring(host, acct, aid, _say(e, base), carried,
                           attempted=True, run=resume, at_phase=phase)
                 return {"output": {"account": aid, "erroring": True,
                                    "permanent": _permanent(e)}}
@@ -3667,9 +3850,10 @@ data:
     toward a PRIVATE origin (loopback, RFC 1918, the CGNAT range a tailnet
     hands out, or a .ts.net name), the same rule the sync holds. One call,
     `POST /v1/chats/{chatID}/messages`, with a JSON body of `text` and, for a
-    reply, `replyToMessageID`. A refusal fails the call with Beeper's status
-    and message.
+    reply, `replyToMessageID`. A refusal fails the call with a sentence saying
+    what to do, and Beeper's status and message on the line after it.
     """
+    import errno
     import ipaddress
     import json
     import urllib.error
@@ -3679,6 +3863,54 @@ data:
     DEFAULT_API = "http://localhost:23373"
     SEALED_PREFIX = "substrate:sealsecret:v1:"
     HTTP_TIMEOUT = 20
+    DETAIL_MAX = 300
+
+
+    def _with_detail(sentence, detail=""):
+        detail = " ".join(str(detail or "").split())[:DETAIL_MAX]
+        return sentence + ("\n" + detail if detail else "")
+
+
+    def _where(base):
+        u = urllib.parse.urlsplit(base)
+        host = u.hostname or base
+        port = u.port or (443 if u.scheme == "https" else 80)
+        return host, "%s:%s" % ("[%s]" % host if ":" in host else host, port)
+
+
+    def _loopback(host):
+        if host in ("localhost", "::1") or host.endswith(".localhost"):
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+
+    def _unsent(e, base):
+        """The sentence for a send that never got an answer."""
+        host, at = _where(base)
+        reason = getattr(e, "reason", e)
+        if isinstance(reason, OSError) and reason.errno in (errno.EACCES,
+                                                            errno.EPERM):
+            if _loopback(host):
+                fix = ("Beeper Desktop runs on your computer, so that address works "
+                       "only when this server runs on the same computer, and then "
+                       "its operator must add 127.0.0.1 and ::1 to "
+                       "SUBSTRATE_SANDBOX_EGRESS_ALLOW. Otherwise set the Beeper "
+                       "config's API base to an address of your computer this "
+                       "server can reach, such as its tailnet address.")
+            else:
+                fix = ("The server's operator must allow that address in "
+                       "SUBSTRATE_SANDBOX_EGRESS_ALLOW.")
+            return ("This server's sandbox blocked the connection to Beeper Desktop "
+                    "at %s, so nothing was sent. %s" % (at, fix))
+        if isinstance(reason, TimeoutError):
+            return ("Beeper Desktop at %s didn't answer within %d seconds, so the "
+                    "message may or may not have been sent. Check the chat before "
+                    "sending it again." % (at, HTTP_TIMEOUT))
+        return ("Couldn't reach Beeper Desktop at %s, so nothing was sent. Make sure "
+                "Beeper Desktop is running and this server can reach it." % at)
 
 
     def _private(base):
@@ -3711,9 +3943,9 @@ data:
         text = str(args.get("text") or "")
         reply = str(args.get("replyTo") or "").strip()
         if not chat:
-            raise ValueError("beeper: chat is required")
+            raise ValueError("Name the Beeper chat to send to: `chat` is empty.")
         if not text.strip():
-            raise ValueError("beeper: text is empty")
+            raise ValueError("There is no message to send: `text` is empty.")
 
         cfg = input.get("config") or {}
         conf = (((cfg.get("inputs") or {}).get("connector") or {})
@@ -3721,14 +3953,17 @@ data:
         token = conf.get("accessToken") or ""
         base = (conf.get("apiBase") or DEFAULT_API).rstrip("/")
         if not token:
-            raise RuntimeError("beeper: the config record carries no accessToken")
+            raise RuntimeError("Beeper isn't set up: paste a Beeper Desktop token on "
+                               "the Beeper config record.")
         if token.startswith(SEALED_PREFIX):
-            raise RuntimeError("beeper: accessToken arrived sealed; paste it on "
-                               "the config, not the account")
+            raise RuntimeError("The Beeper token reached this function sealed. Paste "
+                               "it on the Beeper config record, not on the account.")
         if not _private(base):
             raise RuntimeError(
-                "beeper: apiBase %r is not a private origin (loopback, RFC 1918, "
-                "CGNAT or a .ts.net name); refusing to send the token" % base)
+                "The Beeper config's API base, %s, isn't a private address, so the "
+                "token won't be sent there. Use Beeper Desktop's address on this "
+                "computer, your local network or your tailnet (localhost, "
+                "192.168.x.x, 100.x.x.x or a .ts.net name)." % base)
 
         payload = {"text": text}
         if reply:
@@ -3750,10 +3985,31 @@ data:
                 detail = err.get("message") or err.get("code") or raw
             except ValueError:
                 detail = raw
-            raise RuntimeError("beeper: sending to %s failed: HTTP %d %s"
-                               % (chat, e.code, str(detail)[:200])) from e
+            if e.code == 401:
+                said = ("Beeper Desktop no longer accepts the token on the Beeper "
+                        "config, so nothing was sent. Create a new token in Beeper "
+                        "Desktop's settings and paste it on the config record.")
+            elif e.code == 403:
+                said = ("Beeper Desktop refused to send with the token on the Beeper "
+                        "config. Create a token with full access in Beeper "
+                        "Desktop's settings and paste it on the config record.")
+            elif e.code == 404:
+                said = ("Beeper Desktop has no chat %s, so nothing was sent. Use the "
+                        "chat id of a mirrored Beeper chat." % chat)
+            elif e.code >= 500:
+                said = ("Beeper Desktop had an internal error and didn't send the "
+                        "message (HTTP %d). Try again." % e.code)
+            else:
+                said = ("Beeper Desktop refused to send the message (HTTP %d)."
+                        % e.code)
+            raise RuntimeError(_with_detail(
+                said, "HTTP %d %s" % (e.code, detail))) from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise RuntimeError(_with_detail(_unsent(e, base), str(e))) from e
         pending = str(body.get("pendingMessageID") or "")
         if not pending:
-            raise RuntimeError("beeper: the send answered no pendingMessageID")
+            raise RuntimeError("Beeper Desktop accepted the request but didn't say "
+                               "it queued the message, so it may not have been "
+                               "sent. Check the chat before sending it again.")
         return {"output": {"chat": body.get("chatID") or chat,
                            "pendingMessageId": pending}}

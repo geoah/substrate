@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { Pill, type PillTone } from "@/components/identity/pill"
+import { FailureText } from "@/components/sync/failure-text"
 import { Button } from "@/components/ui/button"
 import { PauseDialog } from "@/components/ui/confirm-dialog"
 import { Spinner } from "@/components/ui/spinner"
@@ -28,6 +29,7 @@ import {
   cursorText,
   durationText,
   requestServed,
+  splitFailure,
   syncErrorIsCurrent,
   syncStateOf,
   type SyncFields,
@@ -164,7 +166,7 @@ export function SyncStreams({ streams }: { streams: SyncFields["streams"] }) {
                 {cursorText(s.cursor)}
               </td>
               <td className="py-1.5 break-words text-muted-foreground">
-                {s.message ?? ""}
+                {s.message ? <FailureText text={s.message} /> : ""}
               </td>
             </tr>
           )
@@ -209,7 +211,7 @@ export function SyncSummary({
         </div>
         {message && (
           <span className="text-xs break-words text-muted-foreground">
-            {message}
+            {splitFailure(message).line}
           </span>
         )}
       </div>
@@ -219,7 +221,11 @@ export function SyncSummary({
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <SyncStateBadge fields={fields} />
-        {message && <span className="break-words">{message}</span>}
+        {message && (
+          <div className="min-w-0 flex-1">
+            <FailureText text={message} />
+          </div>
+        )}
       </div>
       <dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Last synced</dt>
@@ -279,7 +285,9 @@ export function SyncSummary({
               </span>
             )}
           </div>
-          <p className="mt-1 break-words whitespace-pre-wrap">{fields.error}</p>
+          <div className="mt-1">
+            <FailureText text={fields.error ?? ""} />
+          </div>
         </div>
       )}
       {parked && parked.count > 0 && <SyncParkedNote parked={parked} />}

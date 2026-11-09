@@ -259,5 +259,85 @@ class ClearingTest(unittest.TestCase):
         self.assertIn("syncError", patch)
 
 
+class SayTest(unittest.TestCase):
+    """The account's words for a failure: a sentence with the fix on line one,
+    the technical detail on the line after it."""
+
+    LOCAL = "http://localhost:23373"
+
+    def lines(self, err, base=LOCAL):
+        said = BODY["_say"](err, base)
+        head, _, detail = said.partition("\n")
+        return head, detail
+
+    def test_the_sandbox_gate_on_loopback_says_where_desktop_runs(self):
+        head, detail = self.lines(_wrapped(PermissionError(errno.EACCES, "Permission denied")))
+        self.assertTrue(head.startswith(
+            "This server's sandbox blocked the connection to Beeper Desktop at "
+            "localhost:23373."), head)
+        self.assertIn("SUBSTRATE_SANDBOX_EGRESS_ALLOW", head)
+        self.assertIn("API base", head)
+        self.assertIn("Max retries exceeded", detail)
+
+    def test_the_sandbox_gate_on_a_private_address_names_it(self):
+        head, _ = self.lines(_wrapped(OSError(errno.EPERM, "x")),
+                             "http://100.101.102.103:23373")
+        self.assertIn("at 100.101.102.103:23373", head)
+        self.assertIn("must add 100.101.102.103 to SUBSTRATE_SANDBOX_EGRESS_ALLOW", head)
+        head, _ = self.lines(_wrapped(OSError(errno.EACCES, "x")),
+                             "http://mac.tail1234.ts.net:23373")
+        self.assertIn("the address mac.tail1234.ts.net resolves to", head)
+
+    def test_beepers_own_answers(self):
+        cases = {
+            401: "Beeper Desktop no longer accepts the token on the Beeper config.",
+            403: "Beeper Desktop refused this request with the token",
+            404: "Beeper Desktop at localhost:23373 doesn't know this request.",
+            409: "Beeper Desktop refused the request (HTTP 409)",
+            502: "Beeper Desktop had an internal error (HTTP 502). The next sync tries again.",
+        }
+        for status, opening in cases.items():
+            with self.subTest(status):
+                head, detail = self.lines(BODY["Beeper"]("/v1/info", "%d nope" % status, status))
+                self.assertTrue(head.startswith(opening), head)
+                self.assertEqual(detail, "%d nope" % status)
+                self.assertNotIn("/v1/", head)
+
+    def test_a_body_that_is_not_beepers(self):
+        head, _ = self.lines(BODY["Beeper"]("/v1/info", "response was not JSON", 200))
+        self.assertIn("not like Beeper Desktop's API", head)
+
+    def test_a_read_timeout_and_the_unknown(self):
+        head, _ = self.lines(EXC.ReadTimeout("read timed out"))
+        self.assertIn("didn't answer within 20 seconds", head)
+        head, detail = self.lines(ValueError("boom"))
+        self.assertTrue(head.startswith("The Beeper sync stopped on an unexpected error."))
+        self.assertEqual(detail, "ValueError: boom")
+
+    def test_only_the_detail_is_cut(self):
+        long = "x" * 1000
+        said = BODY["_say"](BODY["Beeper"]("/v1/info", long, 401), self.LOCAL)
+        head, _, detail = said.partition("\n")
+        self.assertEqual(len(detail), BODY["DETAIL_MAX"])
+        capped = BODY["_capped"](said)
+        self.assertTrue(capped.startswith(head + "\n"))
+        self.assertLessEqual(len(capped), BODY["REASON_MAX"])
+        self.assertEqual(BODY["_capped"]("y" * 500 + "\nmore"), "y" * 500)
+
+    def test_a_chats_own_failure(self):
+        said = BODY["_say_chat"](BODY["Beeper"]("/v1/chats/x", "404 Chat not found", 404))
+        self.assertEqual(said, "Beeper Desktop no longer has this chat.\n404 Chat not found")
+
+    def test_the_ok_runs_failure_note_is_words(self):
+        note = BODY["_failed_note"]([
+            ["messages", "!a", 1, "permanent: 404 Chat not found"],
+            ["messages", "!b", 1, "permanent: 404 Chat not found"],
+            ["contacts", "c", 2, "502"],
+        ])
+        self.assertEqual(note, "3 couldn't be read: chat histories (not found) x2, "
+                               "address books (HTTP 502) x1")
+        self.assertNotIn("pending", note)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

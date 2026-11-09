@@ -127,7 +127,10 @@ data:
   # 20: a token without the user-information capability skips the
   # roster (`restricted_resource` on GET /v1/users) instead of failing
   # every run before a page is read.
-  version: 20
+  #
+  # 21: owner-facing errors are plain sentences with the fix; technical
+  # detail on the following line.
+  version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -384,9 +387,9 @@ data:
       writer: connector
       displayName: Sync status
       description: >-
-        the last sync outcome — ok, ok (deferred: blocks xN), ok (rate limited),
-        erroring: <reason>, and the unreachable count when an object answered
-        404 or 403
+        the last sync outcome — ok, ok (deferred: blocks xN), erroring: <sentence>
+        with any technical detail on the next line, and what could not be
+        read when Notion answered 404 or 403
     # ---- the core `sync` trait (substrate decision 0085) ------------------
     # The twelve properties the trait contracts, each redeclared with the
     # writer main's Google bundle uses. THREE OF THEM ARE ALREADY ABOVE and
@@ -419,7 +422,8 @@ data:
       displayName: Sync message
       description: >-
         the one human line the last run left — the same sentence syncStatus
-        carries, without its `erroring` prefix
+        carries, without its `erroring` prefix. A failure's sentence says
+        what to do, and a second line may carry the technical detail
     lastSyncStartedAt:
       type: datetime
       writer: connector
@@ -1978,9 +1982,9 @@ data:
       writer: connector
       displayName: Blocks status
       description: >-
-        the last outcome for THIS page — ok, or the Notion error that stopped
-        it (object_not_found, restricted_resource). One bad page never stops
-        the rest
+        the last outcome for THIS page — ok, or a sentence saying why Notion
+        would not return its blocks, with Notion's error code on a second
+        line. One bad page never stops the rest
 ---
 # ---- the sync function: one workspace, one page of one walk per invocation --
 # A PEP 723 Python body (requests through uv). The integration token arrives
@@ -2089,7 +2093,10 @@ data:
     and this sync removes nothing. See providers/notion/README.md.
     """
     import datetime as _dt
+    import errno
+    import ssl
     import json as _json
+    import socket
     from urllib.parse import urlparse
 
     import requests
@@ -2326,6 +2333,11 @@ data:
             self.code = code
 
 
+    class _Refusal(Exception):
+        """A failure this body words itself: its text is already the owner's
+        sentence."""
+
+
     def _check_origin(url):
         # The bundle-side origin pin: a request carrying the injected token may
         # reach ONLY https://api.notion.com, or loopback (the test seam / the mock
@@ -2337,10 +2349,10 @@ data:
             return
         if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
             return
-        raise RuntimeError(
-            "notion: refusing to send the integration token to %s://%s:%s — only "
-            "https://api.notion.com or loopback"
-            % (u.scheme, host or "?", u.port or "-"))
+        raise _Refusal(
+            "The Notion sync will not send your integration token to %s://%s: "
+            "only https://api.notion.com may receive it. Clear the API base on "
+            "the Notion settings." % (u.scheme, host or "?"))
 
 
     def _retry_at(resp):
@@ -2373,26 +2385,196 @@ data:
         if resp.status_code == 429:
             raise _RateLimited(_retry_at(resp), "rate limited")
         if 400 <= resp.status_code < 500:
-            code = ""
+            code, said = "", ""
             try:
-                code = str((resp.json() or {}).get("code") or "")
+                body = resp.json() or {}
+                code = str(body.get("code") or "")
+                said = str(body.get("message") or "")
             except Exception:                                    # noqa: BLE001
                 code = ""
             if code in PERMANENT or resp.status_code in (400, 403, 404):
                 raise _Permanent(code or ("http%d" % resp.status_code),
-                                 "%s %s" % (resp.status_code, code or path))
+                                 "HTTP %s %s%s" % (resp.status_code, code or path,
+                                                   (": " + said) if said else ""))
         resp.raise_for_status()
         return resp.json()
 
 
+    # ------------------------------------------------------- the owner's words
+    # An owner-facing failure is ONE LINE the owner can act on — what failed, why,
+    # what to do — and, after a newline, the technical detail. The console shows
+    # the first line and folds the rest, so a code or an exception's repr never
+    # stands in for the reason, and a cap never cuts the sentence.
+    RETRIES = "The next sync tries again on its own."
+    MAX_TEXT = 400
+    MAX_DETAIL = 300
+    CAPABILITIES = ("In Notion, open the integration's settings, turn on Read "
+                    "content and Read user information under Capabilities, then "
+                    "sync again.")
+    UNSHARED = ("Share the pages and databases you want synced with the "
+                "integration (the page's ••• menu, then Connections), then sync "
+                "again.")
+    # A code Notion answers with, as a sentence and the fix. `http4xx` is a 4xx
+    # that carried no code.
+    CODE_WORDS = {
+        "unauthorized": (
+            "Notion no longer accepts the integration token: it was revoked, or "
+            "it is not this integration's. Paste a new token from the "
+            "integration's settings in Notion onto the Notion settings here."),
+        "http401": None,
+        "restricted_resource": (
+            "The Notion integration is missing a capability this sync needs. "
+            + CAPABILITIES),
+        "http403": None,
+        "object_not_found": (
+            "Notion could not find something this sync asked for: it was "
+            "deleted, or it is not shared with the integration. " + UNSHARED),
+        "http404": None,
+        "validation_error": (
+            "Notion refused a request the sync made. This is a bug in the "
+            "Notion sync, not something you did, and syncing again will not "
+            "help until it is fixed."),
+    }
+    CODE_WORDS["http401"] = CODE_WORDS["unauthorized"]
+    CODE_WORDS["http403"] = CODE_WORDS["restricted_resource"]
+    CODE_WORDS["http404"] = CODE_WORDS["object_not_found"]
+    for _code in ("invalid_request_url", "invalid_request", "http400"):
+        CODE_WORDS[_code] = CODE_WORDS["validation_error"]
+    # The same codes as the short reason one unreadable item carries.
+    ITEM_WORDS = {
+        "object_not_found": "not shared with the integration",
+        "http404": "not shared with the integration",
+        "restricted_resource": "the integration lacks the capability to read it",
+        "http403": "the integration lacks the capability to read it",
+        "unauthorized": "Notion refused the token",
+        "http401": "Notion refused the token",
+    }
+
+
+    def _cap(text, limit=MAX_TEXT):
+        """`text` within `limit`, cut only in its technical lines: the first
+        line is the owner's sentence and is never cut mid-word."""
+        text = str(text or "")
+        if len(text) <= limit:
+            return text
+        head, sep, rest = text.partition("\n")
+        if len(head) > limit:
+            cut = head[:limit - 1].rsplit(" ", 1)[0]
+            return cut.rstrip(" ,;:") + "…"
+        room = limit - len(head) - len(sep)
+        if room <= 1:
+            return head
+        return head + sep + rest[:room - 1] + "…"
+
+
+    def _with_detail(sentence, detail):
+        detail = str(detail or "").strip()
+        if not detail:
+            return sentence
+        if len(detail) > MAX_DETAIL:
+            detail = detail[:MAX_DETAIL - 1] + "…"
+        return sentence + "\n" + detail
+
+
+    def _when(iso):
+        """A stored instant as the minute a person reads, in UTC."""
+        try:
+            at = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            return str(iso)
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=_dt.timezone.utc)
+        return at.astimezone(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+    def _causes(err):
+        out, todo, seen = [], [err], set()
+        while todo:
+            e = todo.pop(0)
+            if e is None or id(e) in seen:
+                continue
+            seen.add(id(e))
+            out.append(e)
+            for nxt in (getattr(e, "__cause__", None),
+                        getattr(e, "__context__", None),
+                        getattr(e, "reason", None)):
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+            for a in getattr(e, "args", ()) or ():
+                if isinstance(a, BaseException):
+                    todo.append(a)
+        return out
+
+
+    def _where(e):
+        """The host and port the failed request was going to, for a sentence."""
+        req = getattr(e, "request", None)
+        u = urlparse(str(getattr(req, "url", "") or ""))
+        host = u.hostname or API_HOST
+        port = u.port or (443 if u.scheme in ("", "https") else 80)
+        return host, port
+
+
+    def _connection_words(e):
+        """A request that never got an answer, as the owner's sentence, or None
+        when `e` is not one."""
+        exc = requests.exceptions
+        if not isinstance(e, (exc.ConnectionError, exc.Timeout)):
+            return None
+        host, port = _where(e)
+        if isinstance(e, exc.SSLError):
+            return "The secure connection to %s failed. %s" % (host, RETRIES)
+        chain = _causes(e)
+        for c in chain:
+            if isinstance(c, OSError) and not isinstance(c, ssl.SSLError) and c.errno in (errno.EACCES, errno.EPERM):
+                return ("This server's sandbox blocked the connection to %s:%s. "
+                        "Clear the API base on the Notion settings; a local test "
+                        "server needs the operator to allow it with "
+                        "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % (host, port))
+        for c in chain:
+            if isinstance(c, socket.gaierror) or type(c).__name__ == "NameResolutionError":
+                return ("This server could not look up %s, so it cannot reach "
+                        "Notion. %s" % (host, RETRIES))
+        if isinstance(e, exc.Timeout):
+            return "Notion did not answer in time. %s" % RETRIES
+        return "%s:%s is not answering. %s" % (host, port, RETRIES)
+
+
     def _err_msg(e):
         if isinstance(e, _RateLimited):
-            return "rate limited; retry after %s" % e.retry_at
+            return _with_detail(
+                "Notion asked this server to slow down. Syncing resumes on its "
+                "own after %s." % _when(e.retry_at), "HTTP 429")
         if isinstance(e, _Permanent):
-            return "notion refused: %s" % e.code
+            words = CODE_WORDS.get(e.code) or (
+                "Notion refused a request the sync made. Syncing again will not "
+                "help; check the integration's settings in Notion.")
+            return _with_detail(words, "notion: %s (%s)" % (e.code, e))
+        if isinstance(e, _Refusal):
+            return str(e)
         if isinstance(e, requests.HTTPError) and e.response is not None:
-            return "notion returned HTTP %d" % e.response.status_code
-        return str(e) or type(e).__name__
+            status = e.response.status_code
+            if status == 401:
+                return _with_detail(CODE_WORDS["unauthorized"], "HTTP 401")
+            if status >= 500:
+                return _with_detail(
+                    "Notion had a problem on its side (HTTP %d). %s"
+                    % (status, RETRIES), str(e))
+            return _with_detail(
+                "Notion answered with an error the sync did not expect (HTTP %d). "
+                "%s" % (status, RETRIES), str(e))
+        words = _connection_words(e)
+        if words:
+            return _with_detail(words, "%s: %s" % (type(e).__name__, e))
+        return _with_detail(
+            "The Notion sync stopped on an unexpected error. %s If it keeps "
+            "happening, it is a bug in the Notion sync." % RETRIES,
+            "%s: %s" % (type(e).__name__, e))
+
+
+    def _item_why(e):
+        """Why one page, database or tree could not be read, in a few words."""
+        return ITEM_WORDS.get(getattr(e, "code", ""), "Notion refused to return it")
 
 
     # ---------------------------------------------------------------- ids
@@ -3033,10 +3215,10 @@ data:
         a failure.
         """
         out = {"syncState": state,
-               "syncMessage": str(message or "")[:400],
+               "syncMessage": _cap(message),
                "syncProgress": _progress(cur, phase)}
         if state == "erroring":
-            out["syncError"] = str(message or "")[:400]
+            out["syncError"] = _cap(message)
             out["syncErrorAt"] = _now()
         return out
 
@@ -3088,7 +3270,7 @@ data:
     def _stamp(host, acct, aid, cur, error=None, not_before="", completed=True):
         patch = {"lastSyncedAt": _now()}
         if error is not None:
-            patch["syncStatus"] = ("erroring: " + str(error))[:400]
+            patch["syncStatus"] = _cap("erroring: " + str(error))
         else:
             pending = _pending(cur)
             notes = list(cur.get("notes") or [])
@@ -3096,10 +3278,12 @@ data:
                 notes.append("deferred: " + ", ".join(
                     "%s x%d" % (k, len(v)) for k, v in sorted(pending.items())))
             if cur.get("missing"):
-                notes.append("unreachable: %d (%s)"
-                             % (len(cur["missing"]), ", ".join(cur["missing"][:4])))
-            patch["syncStatus"] = ("ok" if not notes
-                                   else "ok (" + "; ".join(notes) + ")")[:400]
+                missing = cur["missing"]
+                notes.append("could not read %d: %s%s"
+                             % (len(missing), ", ".join(missing[:4]),
+                                ", and more" if len(missing) > 4 else ""))
+            patch["syncStatus"] = _cap("ok" if not notes
+                                       else "ok (" + "; ".join(notes) + ")")
             patch["syncPending"] = pending or None
             patch["syncCursors"] = dict(cur.get("cursors") or {}) or None
             if completed and not pending:
@@ -3125,7 +3309,8 @@ data:
             state, message = "erroring", str(error)
         elif not_before:
             state = "throttled"
-            message = "rate limited by Notion; retry after %s" % not_before
+            message = ("Notion asked this server to slow down. Syncing resumes "
+                       "on its own after %s." % _when(not_before))
         elif left:
             state, message = "running", patch["syncStatus"]
         else:
@@ -3289,7 +3474,9 @@ data:
                 # rather than failing every run before a page is read.
                 if e.code != "restricted_resource":
                     raise
-                _note_missing(cur, "the workspace roster (%s)" % e.code)
+                _note_missing(cur, "the workspace roster (turn on Read user "
+                                   "information under the integration's "
+                                   "Capabilities in Notion)")
                 cursors = dict(cur.get("cursors") or {})
                 cursors.pop("users", None)
                 cur["cursors"] = cursors
@@ -3359,7 +3546,8 @@ data:
                     # Notion has added object kinds before (`data_source` itself
                     # arrived in 2025-09-03). An unknown one is NAMED rather than
                     # dropped silently.
-                    _note_missing(cur, "object " + str(kind))
+                    _note_missing(cur, "%s objects (a kind of Notion object this "
+                                       "sync does not know yet)" % kind)
             _save_pending(host, acct, aid, cur)
             # SAY IT WHEN THE FLOOR IS WHAT STOPPED THE WALK. "0 rows, ok" was
             # indistinguishable from an empty workspace, and that is exactly how
@@ -3371,8 +3559,10 @@ data:
                 # object this account can see is older than its window.
                 newest = str((resp["results"][0] or {}).get(
                     "last_edited_time") or "?")
-                note = ("backfill window admitted nothing: floor %s, newest "
-                        "object %s" % (floor, newest))
+                note = ("backfill window admitted nothing: everything the "
+                        "integration can see was last edited before %s (the "
+                        "newest on %s); widen the backfill depth to bring it in"
+                        % (_when(floor), _when(newest)))
                 if note not in (cur.get("notes") or []):
                     cur["notes"] = list(cur.get("notes") or []) + [note]
             nxt = resp.get("next_cursor") or ""
@@ -3410,7 +3600,8 @@ data:
                 except _Permanent as e:
                     # A database the integration was never shared. Permanent: it
                     # is named on the status and never asked for again this run.
-                    _note_missing(cur, "database %s (%s)" % (dbid[:8], e.code))
+                    _note_missing(cur, "database %s (%s)"
+                                  % (dbid[:8], _item_why(e)))
                     continue
                 sink.write(DATABASE_TYPE, _row_id(host, aid, "database", dbid),
                            _database_props(host, sink, aid, item))
@@ -3501,7 +3692,8 @@ data:
             except _Permanent as e:
                 # ONE BAD PAGE NEVER STOPS THE REST: the error that stopped THIS
                 # page lives on its own state row, not on the account.
-                _note_missing(cur, "blocks %s (%s)" % (parent_ident[:8], e.code))
+                _note_missing(cur, "the blocks of %s (%s)"
+                              % (parent_ident[:8], _item_why(e)))
                 if parent_ident == page_ident:
                     host.effects.put(
                         PAGESYNC_TYPE, _row_id(host, aid, "pagesync", page_ident),
@@ -3509,7 +3701,9 @@ data:
                         if_absent=True)
                     host.effects.patch(
                         PAGESYNC_TYPE, _row_id(host, aid, "pagesync", page_ident),
-                        properties={"blocksStatus": e.code, "blocksCursor": None})
+                        properties={"blocksStatus": _cap(_with_detail(
+                            "Notion would not return this page's blocks: %s."
+                            % _item_why(e), e.code)), "blocksCursor": None})
                 cur["blockStack"] = stack[1:]
                 cur["blockPage"] = ""
                 if not cur["blockStack"]:

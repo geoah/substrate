@@ -309,7 +309,15 @@ data:
   # contact per reason and `notifications@github.com` is GitHub's one
   # contact. A subdomain is not: `users.noreply.github.com` is a person's
   # commit address and keeps its row.
-  version: 49
+  #
+  # 50: every failure the owner reads is a sentence first — what failed,
+  # why and what to do, in product words — with Google's own status,
+  # reason and message on the line after it, which the console folds
+  # away (#1299). Connection failures say what happened (a name that
+  # does not resolve, a refusal, a timeout, the sandbox's connect gate),
+  # a calendar's failure names the calendar rather than the phase, and
+  # `syncMessage`/`syncError` no longer carry the `erroring: ` prefix.
+  version: 50
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -562,7 +570,8 @@ data:
       writer: oauth
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
-        token, as the provider's status and error code; empty while it works
+        token, as a sentence saying what to do with the provider's answer
+        on the next line; empty while it works
     tokenErrorAt:
       type: datetime
       writer: oauth
@@ -4622,6 +4631,10 @@ data:
     not written as an identity and mints no hub row.
     """
     import datetime as _dt
+    import errno
+    import http.client
+    import socket
+    import ssl
     import json as _json
     import re
     import urllib.error
@@ -4901,9 +4914,12 @@ data:
             return PEOPLE_API
         host = (urllib.parse.urlsplit(base).hostname or "").lower()
         if host not in LOOPBACK_HOSTS:
-            raise RuntimeError(
-                "google-contacts: config.apiBase names %s — only a loopback "
-                "host may stand in for %s" % (host or "?", PEOPLE_HOST))
+            raise RuntimeError(_says(
+                "The Google sign-in details name an API base this provider "
+                "won't send the account's token to. Clear the API base on "
+                "the Google provider's sign-in details.",
+                "config.apiBase names %s; only a loopback host may stand in "
+                "for %s" % (host or "?", PEOPLE_HOST)))
         return base
 
 
@@ -4935,12 +4951,16 @@ data:
             url = url + "?" + urllib.parse.urlencode(params, doseq=True)
         if not _pinned(url, base):
             parts = urllib.parse.urlsplit(url)
-            raise RuntimeError(
-                "google-contacts: refusing to send credentials to %s://%s — "
-                "only https://%s or the configured loopback base"
-                % (parts.scheme, parts.hostname or "?", PEOPLE_HOST))
+            raise RuntimeError(_says(
+                "This provider refused to send the account's token to %s, "
+                "which is not Google. Clear the API base on the Google "
+                "provider's sign-in details." % (parts.hostname or "?"),
+                "only https://%s or the configured loopback base may be "
+                "called, not %s://%s"
+                % (PEOPLE_HOST, parts.scheme, parts.hostname or "?")))
         req = urllib.request.Request(url, headers={
             "Authorization": "Bearer " + token, "Accept": "application/json"})
+        _dial(req.full_url)
         with _OPENER.open(req, timeout=20) as resp:
             return _json.loads(resp.read().decode("utf-8"))
 
@@ -4949,27 +4969,201 @@ data:
         return getattr(e, "code", None)
 
 
-    def _reason(e):
-        """The failure in one line, and its CLASS first.
+    # ---- the owner's words for a failure ---------------------------------
+    # LINE ONE IS THE OWNER'S: what failed, why, and what to do, in product
+    # words, with no status codes, reason words or exception text. What follows
+    # the first newline is the technical detail the console folds away, and it
+    # is the only part a cap ever cuts (#1299). The four Google bodies carry the
+    # same words; only these three names differ.
+    _PRODUCT = "Google Contacts"
+    _ALLOWS = "read your Google contacts"
+    _API = "People API"
+    MESSAGE_MAX = 400
+    DETAIL_MAX = 300
+    RETRIES = "The next sync tries again on its own."
+    RATE_REASONS = frozenset((
+        "ratelimitexceeded", "userratelimitexceeded", "rate_limit_exceeded",
+        "quotaexceeded", "dailylimitexceeded", "resource_exhausted"))
+    DISABLED_REASONS = frozenset(("accessnotconfigured", "service_disabled"))
+    # The host and port of the request in flight, so a connection failure can
+    # name where it was going: urllib's error does not carry the URL.
+    _DIALED = [""]
 
-        The words matter: the status is what the console shows and what the e2e
-        asserts on, so each class is named rather than left as a status code.
+
+    def _dial(url):
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        _DIALED[0] = "%s:%d" % (parts.hostname or "?", port)
+
+
+    def _says(sentence, detail=""):
+        """The owner's sentence, and the technical detail on the next line."""
+        detail = " ".join(str(detail or "").split())
+        return sentence + ("\n" + detail[:DETAIL_MAX] if detail else "")
+
+
+    def _clip(text, limit=MESSAGE_MAX):
+        """`text` within `limit`, cutting the detail and never the sentence."""
+        text = str(text or "")
+        head, nl, tail = text.partition("\n")
+        if not nl or len(text) <= limit:
+            return text
+        room = limit - len(head) - 1
+        return head + ("\n" + tail[:room] if room > 0 else "")
+
+
+    def _bare(message):
+        """A stream's sentence without the legacy `erroring: ` prefix, which
+        belongs to the `*SyncStatus` strings alone: `syncMessage` and
+        `syncError` hold the sentence."""
+        text = str(message or "")
+        if text.startswith("erroring: "):
+            text = text[len("erroring: "):]
+        return _clip(text)
+
+
+    def _error_doc(e):
+        """Google's error object off an HTTPError, `{}` when there is none.
+
+        AN HTTPError BODY READS ONCE, and the classifiers here read it
+        themselves, so what this read is handed back to every later `read()`.
+        """
+        kept = getattr(e, "_google_error", None)
+        if kept is not None:
+            return kept
+        try:
+            raw = e.read() or b""
+        except Exception:
+            raw = b""
+        try:
+            e.read = lambda *_a, **_k: raw
+        except Exception:
+            pass
+        doc = {}
+        try:
+            parsed = _json.loads(raw.decode("utf-8", "replace"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                doc = parsed["error"]
+        except (ValueError, AttributeError):
+            pass
+        try:
+            e._google_error = doc
+        except Exception:
+            pass
+        return doc
+
+
+    def _reason_words(doc):
+        """Google's machine words for a refusal: its status and every reason."""
+        words = {str(doc.get("status") or "").lower()}
+        for d in list(doc.get("errors") or []) + list(doc.get("details") or []):
+            if isinstance(d, dict):
+                words.add(str(d.get("reason") or "").lower())
+        words.discard("")
+        return words
+
+
+    def _http_reason(code, doc):
+        words = _reason_words(doc)
+        detail = " ".join(p for p in (
+            "HTTP %d" % code, ", ".join(sorted(words)),
+            str(doc.get("message") or "")) if p)
+        if code == 401:
+            return _says("Google no longer accepts this account's sign-in, so "
+                         "%s can't be read. Reconnect the account." % _PRODUCT,
+                         detail)
+        if words & DISABLED_REASONS:
+            return _says("The %s is turned off in the Google Cloud project your "
+                         "sign-in details come from. Turn it on in the Google "
+                         "Cloud console, then sync again." % _API, detail)
+        if code == 429 or words & RATE_REASONS:
+            return _says("Google asked this account to slow down. " + RETRIES,
+                         detail)
+        if code == 403:
+            return _says("The Google sign-in doesn't allow this provider to %s. "
+                         "Reconnect the account and approve that access."
+                         % _ALLOWS, detail)
+        if code == 404:
+            return _says("Google couldn't find something this sync asked for: it "
+                         "was deleted, or is no longer shared with this account. "
+                         + RETRIES, detail)
+        if code >= 500:
+            return _says("Google had a problem on its side. " + RETRIES, detail)
+        return _says("Google refused a request this sync made. " + RETRIES
+                     + " If it keeps happening, it is a bug in the Google "
+                     "provider.", detail)
+
+
+    def _net_reason(e):
+        """A failure that never got an answer from Google, by its cause."""
+        where = _DIALED[0] or "Google"
+        seen, todo = [], [e]
+        while todo and len(seen) < 12:
+            c = todo.pop(0)
+            if any(c is s for s in seen):
+                continue
+            seen.append(c)
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(c, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        detail = str(e) or type(e).__name__
+        # The sandbox's connect gate answers EACCES: an operator's allowlist,
+        # never a network fault, so it is named before anything else.
+        for c in seen:
+            if (isinstance(c, OSError)
+                    and not isinstance(c, (socket.gaierror, ssl.SSLError))
+                    and c.errno in (errno.EACCES, errno.EPERM)):
+                return _says("This server's sandbox blocked the connection to "
+                             "%s. The server's operator can allow it with "
+                             "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % where, detail)
+        for c in seen:
+            if isinstance(c, socket.gaierror):
+                return _says("This server couldn't look up %s, so Google "
+                             "couldn't be reached. %s"
+                             % (where.rpartition(":")[0] or where, RETRIES), detail)
+            if isinstance(c, ConnectionRefusedError):
+                return _says("%s refused the connection. %s" % (where, RETRIES),
+                             detail)
+            if isinstance(c, ssl.SSLError):
+                return _says("The secure connection to %s failed. %s"
+                             % (where, RETRIES), detail)
+            if isinstance(c, TimeoutError):
+                return _says("Google didn't answer in time. " + RETRIES, detail)
+            if isinstance(c, (ConnectionError, http.client.HTTPException)):
+                return _says("The connection to Google dropped before it "
+                             "finished answering. " + RETRIES, detail)
+            if isinstance(c, ValueError):
+                return _says("Google sent an answer this sync couldn't read. "
+                             + RETRIES, detail)
+        return _says("Syncing %s failed unexpectedly. %s" % (_PRODUCT, RETRIES),
+                     detail)
+
+
+    def _token_reason(token_error):
+        """The engine's word for a grant it could not turn into a token."""
+        text = str(token_error or "")
+        if "client credentials" in text:
+            return _says("The Google provider's sign-in details are missing, so "
+                         "%s can't sync. Add them on the Google provider's page."
+                         % _PRODUCT, text)
+        return _says("The Google sign-in for this account stopped working, so "
+                     "%s can't sync. Reconnect the account." % _PRODUCT, text)
+
+
+    def _reason(e):
+        """The failure as the owner reads it: `_says` shape, line one first.
+
         401 is PERMANENT until the owner reconnects; 403 is the stream being
         unavailable to this grant; 429 is transient and says when; everything
-        else is transient and the cadence retries it.
+        else is transient and the cadence retries it. A RuntimeError is this
+        body's own refusal and is already worded for the owner.
         """
-        code = _http_status(e)
-        if code == 401:
-            return ("reconnect needed: Google refused the grant (401) — the "
-                    "token was revoked or expired beyond refresh")
-        if code == 403:
-            return ("stream not available: Google refused the call (403) — is "
-                    "contacts.readonly granted? a reconnect may be needed")
-        if code == 429:
-            return "rate limited by Google (429) — the retry is scheduled"
-        if code is not None:
-            return "google returned HTTP %d" % code
-        return str(e) or type(e).__name__
+        if isinstance(e, urllib.error.HTTPError):
+            return _http_reason(int(e.code), _error_doc(e))
+        if isinstance(e, RuntimeError):
+            return str(e)
+        return _net_reason(e)
 
 
     def _now():
@@ -5584,10 +5778,7 @@ data:
         # the error (the directory walk asks three questions of one refusal)
         # passes the body it read; only a caller that has not reads here.
         if body is None:
-            try:
-                body = _json.loads(e.read().decode("utf-8", "replace"))
-            except Exception:
-                return False
+            body = {"error": _error_doc(e)}
         err = (body or {}).get("error") or {}
         for d in (err.get("details") or []) + (err.get("errors") or []):
             if not isinstance(d, dict):
@@ -5619,17 +5810,26 @@ data:
 
 
     def _error_body(e):
-        try:
-            return _json.loads(e.read().decode("utf-8", "replace")) or {}
-        except Exception:
-            return {}
+        # Through `_error_doc`, which keeps what it read for the failure's
+        # own sentence.
+        doc = _error_doc(e)
+        return {"error": doc} if doc else {}
 
 
-    def _reason_of(body, e):
-        """The refusal in one line, out of the body already read."""
+    def _reason_of(body, e, verdict=""):
+        """The directory's refusal as the owner reads it, out of the body
+        already read: the verdict's words, Google's on the detail line."""
         err = (body or {}).get("error") or {}
-        text = str(err.get("message") or "") or str(e)
-        return ("HTTP %s %s" % (getattr(e, "code", "?"), text))[:REASON_MAX]
+        detail = "HTTP %s %s" % (getattr(e, "code", "?"),
+                                 str(err.get("message") or "") or str(e))
+        if verdict == "needsreconsent":
+            return _says("Reading your Workspace directory needs a permission this "
+                         "Google sign-in was approved without. Reconnect the "
+                         "account to approve it.", detail)
+        if verdict == "unavailable":
+            return _says("Your Google Workspace has the directory turned off, so "
+                         "colleagues aren't brought in with your contacts.", detail)
+        return _says("Google refused to list your Workspace directory.", detail)
 
 
     def _mask_refusal(body, fields):
@@ -5793,10 +5993,11 @@ data:
         `completed` is what stamps `lastAt`: a drain that handed back with work
         owed is `ok` with a pending count, not a run that finished.
         """
+        message = _bare(message)
         streams = _trait_streams(props)
         entry = dict(streams.get(stream) or {})
         entry["state"] = state
-        entry["message"] = str(message)[:400]
+        entry["message"] = message
         if completed:
             entry["lastAt"] = now
         if progress is not None:
@@ -5841,7 +6042,7 @@ data:
             # A failure always speaks: it is the account's newest fact, and the
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
             if state == "throttled":
                 # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
                 # stream's `erroring` outranks this stream's `throttled`, as it
@@ -5852,8 +6053,8 @@ data:
                              "")
                 if worse:
                     out["syncState"], said = _trait_failure(props, streams, worse)
-                    out["syncMessage"] = said[:400]
-            out["syncError"] = str(message)[:400]
+                    out["syncMessage"] = _bare(said)
+            out["syncError"] = message
             out["syncErrorAt"] = now
         elif failing and not started:
             # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
@@ -5868,10 +6069,10 @@ data:
                           if _trait_failure(props, streams, s)[0] == "erroring"),
                          failing[0])
             out["syncState"], said = _trait_failure(props, streams, worst)
-            out["syncMessage"] = said[:400]
+            out["syncMessage"] = _bare(said)
         elif not failing:
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
@@ -6027,7 +6228,7 @@ data:
         # complete, so the cadence must keep retrying. `scheduled` is the
         # cursor's: only a record-sourced delivery has a dispatcher settling it.
         props = acct.get("properties") or {}
-        status = "erroring: " + str(reason)[:REASON_MAX]
+        status = "erroring: " + _clip(reason)
         now = _iso(_now())
         # A RATE LIMIT IS NOT A BREAKAGE. The trait spells the wall `throttled`,
         # beside `erroring`, because an account waiting out a `Retry-After` is
@@ -6198,12 +6399,12 @@ data:
         held = sorted(notes)
         parts = []
         if cur is not None and str(cur.get("dirState") or "") == "needsreconsent":
-            parts.append("the Workspace directory needs a reconnect: this grant "
-                         "predates the directory.readonly scope")
+            parts.append("reconnect the account to bring in your Workspace "
+                         "directory: this sign-in was approved without it")
         elif cur is not None and str(cur.get("dirState") or "") == "unavailable":
-            parts.append("no Workspace directory on this account")
+            parts.append("this account's Workspace directory is turned off")
         if cur is not None and (cur.get("dirDropped") or []):
-            parts.append("directory readMask fields Google refused: %s"
+            parts.append("directory fields Google no longer returns: %s"
                          % ", ".join(sorted(cur["dirDropped"])[:UNKNOWN_MAX]))
         if held:
             shown = held[:UNKNOWN_MAX]
@@ -6370,7 +6571,8 @@ data:
             except Exception as e:
                 host.log("google-contacts: %s could not read its contact groups "
                          "(%s) — the people walks carry on" % (aid, _reason(e)))
-                notes.add("contact groups unread: %s" % _reason(e))
+                notes.add("contact groups couldn't be read: %s"
+                          % _reason(e).partition("\n")[0].rstrip("."))
                 return
             for group in resp.get("contactGroups") or []:
                 if not isinstance(group, dict):
@@ -6511,7 +6713,7 @@ data:
             # this is a consent or a domain fact, not an outage. It is recorded on
             # the account so the owner can act on it, and the sweep is told what
             # the evidence is worth.
-            cur.update({"dirState": state, "dirStatus": str(reason)[:REASON_MAX],
+            cur.update({"dirState": state, "dirStatus": _clip(reason),
                         "dirToken": "", "fullDirectory": state == "unavailable"})
             host.log("google-contacts: %s directory %s: %s"
                      % (aid, state, str(reason)[:REASON_MAX]))
@@ -6529,7 +6731,7 @@ data:
             body = _error_body(e)
             verdict = _directory_verdict(code, body)
             if verdict:
-                return _skip(verdict, _reason_of(body, e))
+                return _skip(verdict, _reason_of(body, e, verdict))
             if sync_token and _expired_sync_token(e, body):
                 host.log("google-contacts: directory sync token expired for %s, "
                          "full re-read" % aid)
@@ -6589,10 +6791,12 @@ data:
         # point this one never reached.
         token = resp.get("nextSyncToken") or ""
         if not token:
-            raise RuntimeError(
-                "people finished the directory walk without a nextSyncToken — "
-                "the delta boundary is unknown, so neither the token nor the "
-                "success stamp is written")
+            raise RuntimeError(_says(
+                "Google finished listing your Workspace directory without saying "
+                "where the next sync should pick up, so this sync can't be "
+                "trusted as complete. " + RETRIES,
+                "people finished the directory walk without a nextSyncToken; "
+                "neither the token nor the success stamp is written"))
         cur.update({"dirToken": token, "fullDirectory": bool(full),
                     "dirState": "ok", "dirStatus": ""})
         return _finish_account(host, cur, queue, aid, acct, state["notes"])
@@ -6645,7 +6849,7 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-contacts: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(host, acct, acct["tokenError"],
+                _erroring(host, acct, _token_reason(acct["tokenError"]),
                           scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
@@ -6841,10 +7045,12 @@ data:
             # cadence retries.
             token = resp.get("nextSyncToken") or ""
             if not token:
-                raise RuntimeError(
-                    "people finished the walk without a nextSyncToken — the "
-                    "delta boundary is unknown, so neither the token nor the "
-                    "success stamp is written")
+                raise RuntimeError(_says(
+                    "Google finished listing your contacts without saying where "
+                    "the next sync should pick up, so this sync can't be trusted "
+                    "as complete. " + RETRIES,
+                    "people finished the walk without a nextSyncToken; neither "
+                    "the token nor the success stamp is written"))
 
             # THE ADDRESS BOOK IS HALF THE ACCOUNT. Nothing is stamped and
             # nothing is swept yet: the Workspace DIRECTORY is the same `contact`
@@ -7837,6 +8043,9 @@ data:
     import base64
     import codecs
     import datetime as _dt
+    import errno
+    import socket
+    import ssl
     import http.client
     import json as _json
     import re
@@ -8184,9 +8393,12 @@ data:
             return GMAIL_API
         host = (urllib.parse.urlsplit(base).hostname or "").lower()
         if host not in LOOPBACK_HOSTS:
-            raise RuntimeError(
-                "google-gmail: config.apiBase names %s — only a loopback host "
-                "may stand in for %s" % (host or "?", GMAIL_HOST))
+            raise RuntimeError(_says(
+                "The Google sign-in details name an API base this provider "
+                "won't send the account's token to. Clear the API base on "
+                "the Google provider's sign-in details.",
+                "config.apiBase names %s; only a loopback host may stand in "
+                "for %s" % (host or "?", GMAIL_HOST)))
         return base
 
 
@@ -8219,10 +8431,13 @@ data:
             url = url + "?" + urllib.parse.urlencode(params, doseq=True)
         if not _pinned(url, base):
             parts = urllib.parse.urlsplit(url)
-            raise RuntimeError(
-                "google-gmail: refusing to send credentials to %s://%s — only "
-                "https://%s or the configured loopback base"
-                % (parts.scheme, parts.hostname or "?", GMAIL_HOST))
+            raise RuntimeError(_says(
+                "This provider refused to send the account's token to %s, "
+                "which is not Google. Clear the API base on the Google "
+                "provider's sign-in details." % (parts.hostname or "?"),
+                "only https://%s or the configured loopback base may be "
+                "called, not %s://%s"
+                % (GMAIL_HOST, parts.scheme, parts.hostname or "?")))
         req = urllib.request.Request(url, headers={
             "Authorization": "Bearer " + token, "Accept": "application/json"})
         # ONE CALL'S WALL CLOCK, not only its socket's. urllib's timeout is
@@ -8233,6 +8448,7 @@ data:
         # raises the same TimeoutError a stalled socket does, which defers
         # the message (`_fetch_message`).
         began = _clock()
+        _dial(req.full_url)
         with _OPENER.open(req, timeout=FETCH_TIMEOUT) as resp:
             chunks = []
             while True:
@@ -8268,15 +8484,9 @@ data:
         return one. A 400 is only a stale page token when Google SAYS so, and
         saying so is what distinguishes it from a request bug this sync should
         surface rather than paper over (Codex §4.4.8)."""
-        try:
-            body = e.read()
-        except Exception:
-            return {}
-        try:
-            doc = _json.loads((body or b"").decode("utf-8", "replace"))
-        except (ValueError, AttributeError):
-            return {}
-        return doc.get("error") if isinstance(doc.get("error"), dict) else {}
+        # Through `_error_doc`, which keeps what it read: the failure's own
+        # sentence reads the same body after this.
+        return _error_doc(e)
 
 
     def _bad_page_token(e):
@@ -8296,27 +8506,201 @@ data:
         return "pagetoken" in str(err.get("message") or "").lower().replace(" ", "")
 
 
-    def _reason(e):
-        """The failure in one line, and its CLASS first.
+    # ---- the owner's words for a failure ---------------------------------
+    # LINE ONE IS THE OWNER'S: what failed, why, and what to do, in product
+    # words, with no status codes, reason words or exception text. What follows
+    # the first newline is the technical detail the console folds away, and it
+    # is the only part a cap ever cuts (#1299). The four Google bodies carry the
+    # same words; only these three names differ.
+    _PRODUCT = "Gmail"
+    _ALLOWS = "read your Gmail"
+    _API = "Gmail API"
+    MESSAGE_MAX = 400
+    DETAIL_MAX = 300
+    RETRIES = "The next sync tries again on its own."
+    RATE_REASONS = frozenset((
+        "ratelimitexceeded", "userratelimitexceeded", "rate_limit_exceeded",
+        "quotaexceeded", "dailylimitexceeded", "resource_exhausted"))
+    DISABLED_REASONS = frozenset(("accessnotconfigured", "service_disabled"))
+    # The host and port of the request in flight, so a connection failure can
+    # name where it was going: urllib's error does not carry the URL.
+    _DIALED = [""]
 
-        The words matter: the status is what the console shows and what the e2e
-        asserts on, so each class is named rather than left as a status code.
+
+    def _dial(url):
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        _DIALED[0] = "%s:%d" % (parts.hostname or "?", port)
+
+
+    def _says(sentence, detail=""):
+        """The owner's sentence, and the technical detail on the next line."""
+        detail = " ".join(str(detail or "").split())
+        return sentence + ("\n" + detail[:DETAIL_MAX] if detail else "")
+
+
+    def _clip(text, limit=MESSAGE_MAX):
+        """`text` within `limit`, cutting the detail and never the sentence."""
+        text = str(text or "")
+        head, nl, tail = text.partition("\n")
+        if not nl or len(text) <= limit:
+            return text
+        room = limit - len(head) - 1
+        return head + ("\n" + tail[:room] if room > 0 else "")
+
+
+    def _bare(message):
+        """A stream's sentence without the legacy `erroring: ` prefix, which
+        belongs to the `*SyncStatus` strings alone: `syncMessage` and
+        `syncError` hold the sentence."""
+        text = str(message or "")
+        if text.startswith("erroring: "):
+            text = text[len("erroring: "):]
+        return _clip(text)
+
+
+    def _error_doc(e):
+        """Google's error object off an HTTPError, `{}` when there is none.
+
+        AN HTTPError BODY READS ONCE, and the classifiers here read it
+        themselves, so what this read is handed back to every later `read()`.
+        """
+        kept = getattr(e, "_google_error", None)
+        if kept is not None:
+            return kept
+        try:
+            raw = e.read() or b""
+        except Exception:
+            raw = b""
+        try:
+            e.read = lambda *_a, **_k: raw
+        except Exception:
+            pass
+        doc = {}
+        try:
+            parsed = _json.loads(raw.decode("utf-8", "replace"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                doc = parsed["error"]
+        except (ValueError, AttributeError):
+            pass
+        try:
+            e._google_error = doc
+        except Exception:
+            pass
+        return doc
+
+
+    def _reason_words(doc):
+        """Google's machine words for a refusal: its status and every reason."""
+        words = {str(doc.get("status") or "").lower()}
+        for d in list(doc.get("errors") or []) + list(doc.get("details") or []):
+            if isinstance(d, dict):
+                words.add(str(d.get("reason") or "").lower())
+        words.discard("")
+        return words
+
+
+    def _http_reason(code, doc):
+        words = _reason_words(doc)
+        detail = " ".join(p for p in (
+            "HTTP %d" % code, ", ".join(sorted(words)),
+            str(doc.get("message") or "")) if p)
+        if code == 401:
+            return _says("Google no longer accepts this account's sign-in, so "
+                         "%s can't be read. Reconnect the account." % _PRODUCT,
+                         detail)
+        if words & DISABLED_REASONS:
+            return _says("The %s is turned off in the Google Cloud project your "
+                         "sign-in details come from. Turn it on in the Google "
+                         "Cloud console, then sync again." % _API, detail)
+        if code == 429 or words & RATE_REASONS:
+            return _says("Google asked this account to slow down. " + RETRIES,
+                         detail)
+        if code == 403:
+            return _says("The Google sign-in doesn't allow this provider to %s. "
+                         "Reconnect the account and approve that access."
+                         % _ALLOWS, detail)
+        if code == 404:
+            return _says("Google couldn't find something this sync asked for: it "
+                         "was deleted, or is no longer shared with this account. "
+                         + RETRIES, detail)
+        if code >= 500:
+            return _says("Google had a problem on its side. " + RETRIES, detail)
+        return _says("Google refused a request this sync made. " + RETRIES
+                     + " If it keeps happening, it is a bug in the Google "
+                     "provider.", detail)
+
+
+    def _net_reason(e):
+        """A failure that never got an answer from Google, by its cause."""
+        where = _DIALED[0] or "Google"
+        seen, todo = [], [e]
+        while todo and len(seen) < 12:
+            c = todo.pop(0)
+            if any(c is s for s in seen):
+                continue
+            seen.append(c)
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(c, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        detail = str(e) or type(e).__name__
+        # The sandbox's connect gate answers EACCES: an operator's allowlist,
+        # never a network fault, so it is named before anything else.
+        for c in seen:
+            if (isinstance(c, OSError)
+                    and not isinstance(c, (socket.gaierror, ssl.SSLError))
+                    and c.errno in (errno.EACCES, errno.EPERM)):
+                return _says("This server's sandbox blocked the connection to "
+                             "%s. The server's operator can allow it with "
+                             "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % where, detail)
+        for c in seen:
+            if isinstance(c, socket.gaierror):
+                return _says("This server couldn't look up %s, so Google "
+                             "couldn't be reached. %s"
+                             % (where.rpartition(":")[0] or where, RETRIES), detail)
+            if isinstance(c, ConnectionRefusedError):
+                return _says("%s refused the connection. %s" % (where, RETRIES),
+                             detail)
+            if isinstance(c, ssl.SSLError):
+                return _says("The secure connection to %s failed. %s"
+                             % (where, RETRIES), detail)
+            if isinstance(c, TimeoutError):
+                return _says("Google didn't answer in time. " + RETRIES, detail)
+            if isinstance(c, (ConnectionError, http.client.HTTPException)):
+                return _says("The connection to Google dropped before it "
+                             "finished answering. " + RETRIES, detail)
+            if isinstance(c, ValueError):
+                return _says("Google sent an answer this sync couldn't read. "
+                             + RETRIES, detail)
+        return _says("Syncing %s failed unexpectedly. %s" % (_PRODUCT, RETRIES),
+                     detail)
+
+
+    def _token_reason(token_error):
+        """The engine's word for a grant it could not turn into a token."""
+        text = str(token_error or "")
+        if "client credentials" in text:
+            return _says("The Google provider's sign-in details are missing, so "
+                         "%s can't sync. Add them on the Google provider's page."
+                         % _PRODUCT, text)
+        return _says("The Google sign-in for this account stopped working, so "
+                     "%s can't sync. Reconnect the account." % _PRODUCT, text)
+
+
+    def _reason(e):
+        """The failure as the owner reads it: `_says` shape, line one first.
+
         401 is PERMANENT until the owner reconnects; 403 is the stream being
         unavailable to this grant; 429 is transient and says when; everything
-        else is transient and the cadence retries it.
+        else is transient and the cadence retries it. A RuntimeError is this
+        body's own refusal and is already worded for the owner.
         """
-        code = _status(e)
-        if code == 401:
-            return ("reconnect needed: Google refused the grant (401) — the "
-                    "token was revoked or expired beyond refresh")
-        if code == 403:
-            return ("stream not available: Google refused the call (403) — is "
-                    "gmail.readonly granted? a reconnect may be needed")
-        if code == 429:
-            return "rate limited by Google (429) — the retry is scheduled"
-        if code is not None:
-            return "google returned HTTP %d" % code
-        return str(e) or type(e).__name__
+        if isinstance(e, urllib.error.HTTPError):
+            return _http_reason(int(e.code), _error_doc(e))
+        if isinstance(e, RuntimeError):
+            return str(e)
+        return _net_reason(e)
 
 
     def _address_id(host, aid, addr):
@@ -9737,10 +10121,11 @@ data:
         `completed` is what stamps `lastAt`: a drain that handed back with work
         owed is `ok` with a pending count, not a run that finished.
         """
+        message = _bare(message)
         streams = _trait_streams(props)
         entry = dict(streams.get(stream) or {})
         entry["state"] = state
-        entry["message"] = str(message)[:400]
+        entry["message"] = message
         if completed:
             entry["lastAt"] = now
         if progress is not None:
@@ -9785,7 +10170,7 @@ data:
             # A failure always speaks: it is the account's newest fact, and the
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
             if state == "throttled":
                 # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
                 # stream's `erroring` outranks this stream's `throttled`, as it
@@ -9796,8 +10181,8 @@ data:
                              "")
                 if worse:
                     out["syncState"], said = _trait_failure(props, streams, worse)
-                    out["syncMessage"] = said[:400]
-            out["syncError"] = str(message)[:400]
+                    out["syncMessage"] = _bare(said)
+            out["syncError"] = message
             out["syncErrorAt"] = now
         elif failing and not started:
             # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
@@ -9812,10 +10197,10 @@ data:
                           if _trait_failure(props, streams, s)[0] == "erroring"),
                          failing[0])
             out["syncState"], said = _trait_failure(props, streams, worst)
-            out["syncMessage"] = said[:400]
+            out["syncMessage"] = _bare(said)
         elif not failing:
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
@@ -10060,7 +10445,7 @@ data:
         # advance past mail this run never read. `scheduled` is the cursor's:
         # only a record-sourced delivery has a dispatcher settling it.
         props = acct.get("properties") or {}
-        status = "erroring: " + str(reason)[:REASON_MAX]
+        status = "erroring: " + _clip(reason)
         now = _iso(_now())
         # A RATE LIMIT IS NOT A BREAKAGE. The trait spells the wall `throttled`
         # beside `erroring` (decision 0085): an account waiting out a
@@ -11367,7 +11752,7 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-gmail: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(batch, acct, acct["tokenError"],
+                _erroring(batch, acct, _token_reason(acct["tokenError"]),
                           scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
@@ -13647,6 +14032,10 @@ data:
     once and leaves both lastSyncedAt and calendarLastSyncedAt alone.
     """
     import datetime as _dt
+    import errno
+    import http.client
+    import socket
+    import ssl
     import json as _json
     import re
     import urllib.error
@@ -13831,9 +14220,12 @@ data:
             return CAL_API
         host = (urllib.parse.urlsplit(base).hostname or "").lower()
         if host not in LOOPBACK_HOSTS:
-            raise RuntimeError(
-                "google-calendar: config.apiBase names %s — only a loopback "
-                "host may stand in for %s" % (host or "?", CAL_HOST))
+            raise RuntimeError(_says(
+                "The Google sign-in details name an API base this provider "
+                "won't send the account's token to. Clear the API base on "
+                "the Google provider's sign-in details.",
+                "config.apiBase names %s; only a loopback host may stand in "
+                "for %s" % (host or "?", CAL_HOST)))
         return base
 
 
@@ -13865,12 +14257,16 @@ data:
             url = url + "?" + urllib.parse.urlencode(params, doseq=True)
         if not _pinned(url, base):
             parts = urllib.parse.urlsplit(url)
-            raise RuntimeError(
-                "google-calendar: refusing to send credentials to %s://%s — "
-                "only https://%s or the configured loopback base"
-                % (parts.scheme, parts.hostname or "?", CAL_HOST))
+            raise RuntimeError(_says(
+                "This provider refused to send the account's token to %s, "
+                "which is not Google. Clear the API base on the Google "
+                "provider's sign-in details." % (parts.hostname or "?"),
+                "only https://%s or the configured loopback base may be "
+                "called, not %s://%s"
+                % (CAL_HOST, parts.scheme, parts.hostname or "?")))
         req = urllib.request.Request(url, headers={
             "Authorization": "Bearer " + token, "Accept": "application/json"})
+        _dial(req.full_url)
         with _OPENER.open(req, timeout=20) as resp:
             return _json.loads(resp.read().decode("utf-8"))
 
@@ -13880,37 +14276,213 @@ data:
 
 
     def _where(cur):
-        """The failing phase, and the calendar it was on, as a prefix for the
-        status line. Empty while the drain is still planning, because there is
-        nothing more specific to say than the account."""
+        """The calendar the failure was on, as words opening the owner's
+        sentence. Empty while the drain lists the calendars, because then
+        there is nothing more specific to say than the account; the phase is
+        the log's, not the owner's."""
         phase = str(cur.get("phase") or "")
         cals = [str(c) for c in (cur.get("cals") or []) if c]
         if phase and cals and phase != "calendars":
-            return "%s of %s: " % (phase, cals[0][:REASON_MAX // 2])
-        return "%s: " % phase if phase else ""
+            return ("While reading the calendar \u201c%s\u201d: "
+                    % cals[0][:REASON_MAX // 2])
+        return ""
+
+
+    # ---- the owner's words for a failure ---------------------------------
+    # LINE ONE IS THE OWNER'S: what failed, why, and what to do, in product
+    # words, with no status codes, reason words or exception text. What follows
+    # the first newline is the technical detail the console folds away, and it
+    # is the only part a cap ever cuts (#1299). The four Google bodies carry the
+    # same words; only these three names differ.
+    _PRODUCT = "Google Calendar"
+    _ALLOWS = "read your Google Calendar"
+    _API = "Google Calendar API"
+    MESSAGE_MAX = 400
+    DETAIL_MAX = 300
+    RETRIES = "The next sync tries again on its own."
+    RATE_REASONS = frozenset((
+        "ratelimitexceeded", "userratelimitexceeded", "rate_limit_exceeded",
+        "quotaexceeded", "dailylimitexceeded", "resource_exhausted"))
+    DISABLED_REASONS = frozenset(("accessnotconfigured", "service_disabled"))
+    # The host and port of the request in flight, so a connection failure can
+    # name where it was going: urllib's error does not carry the URL.
+    _DIALED = [""]
+
+
+    def _dial(url):
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        _DIALED[0] = "%s:%d" % (parts.hostname or "?", port)
+
+
+    def _says(sentence, detail=""):
+        """The owner's sentence, and the technical detail on the next line."""
+        detail = " ".join(str(detail or "").split())
+        return sentence + ("\n" + detail[:DETAIL_MAX] if detail else "")
+
+
+    def _clip(text, limit=MESSAGE_MAX):
+        """`text` within `limit`, cutting the detail and never the sentence."""
+        text = str(text or "")
+        head, nl, tail = text.partition("\n")
+        if not nl or len(text) <= limit:
+            return text
+        room = limit - len(head) - 1
+        return head + ("\n" + tail[:room] if room > 0 else "")
+
+
+    def _bare(message):
+        """A stream's sentence without the legacy `erroring: ` prefix, which
+        belongs to the `*SyncStatus` strings alone: `syncMessage` and
+        `syncError` hold the sentence."""
+        text = str(message or "")
+        if text.startswith("erroring: "):
+            text = text[len("erroring: "):]
+        return _clip(text)
+
+
+    def _error_doc(e):
+        """Google's error object off an HTTPError, `{}` when there is none.
+
+        AN HTTPError BODY READS ONCE, and the classifiers here read it
+        themselves, so what this read is handed back to every later `read()`.
+        """
+        kept = getattr(e, "_google_error", None)
+        if kept is not None:
+            return kept
+        try:
+            raw = e.read() or b""
+        except Exception:
+            raw = b""
+        try:
+            e.read = lambda *_a, **_k: raw
+        except Exception:
+            pass
+        doc = {}
+        try:
+            parsed = _json.loads(raw.decode("utf-8", "replace"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                doc = parsed["error"]
+        except (ValueError, AttributeError):
+            pass
+        try:
+            e._google_error = doc
+        except Exception:
+            pass
+        return doc
+
+
+    def _reason_words(doc):
+        """Google's machine words for a refusal: its status and every reason."""
+        words = {str(doc.get("status") or "").lower()}
+        for d in list(doc.get("errors") or []) + list(doc.get("details") or []):
+            if isinstance(d, dict):
+                words.add(str(d.get("reason") or "").lower())
+        words.discard("")
+        return words
+
+
+    def _http_reason(code, doc):
+        words = _reason_words(doc)
+        detail = " ".join(p for p in (
+            "HTTP %d" % code, ", ".join(sorted(words)),
+            str(doc.get("message") or "")) if p)
+        if code == 401:
+            return _says("Google no longer accepts this account's sign-in, so "
+                         "%s can't be read. Reconnect the account." % _PRODUCT,
+                         detail)
+        if words & DISABLED_REASONS:
+            return _says("The %s is turned off in the Google Cloud project your "
+                         "sign-in details come from. Turn it on in the Google "
+                         "Cloud console, then sync again." % _API, detail)
+        if code == 429 or words & RATE_REASONS:
+            return _says("Google asked this account to slow down. " + RETRIES,
+                         detail)
+        if code == 403:
+            return _says("The Google sign-in doesn't allow this provider to %s. "
+                         "Reconnect the account and approve that access."
+                         % _ALLOWS, detail)
+        if code == 404:
+            return _says("Google couldn't find something this sync asked for: it "
+                         "was deleted, or is no longer shared with this account. "
+                         + RETRIES, detail)
+        if code >= 500:
+            return _says("Google had a problem on its side. " + RETRIES, detail)
+        return _says("Google refused a request this sync made. " + RETRIES
+                     + " If it keeps happening, it is a bug in the Google "
+                     "provider.", detail)
+
+
+    def _net_reason(e):
+        """A failure that never got an answer from Google, by its cause."""
+        where = _DIALED[0] or "Google"
+        seen, todo = [], [e]
+        while todo and len(seen) < 12:
+            c = todo.pop(0)
+            if any(c is s for s in seen):
+                continue
+            seen.append(c)
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(c, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        detail = str(e) or type(e).__name__
+        # The sandbox's connect gate answers EACCES: an operator's allowlist,
+        # never a network fault, so it is named before anything else.
+        for c in seen:
+            if (isinstance(c, OSError)
+                    and not isinstance(c, (socket.gaierror, ssl.SSLError))
+                    and c.errno in (errno.EACCES, errno.EPERM)):
+                return _says("This server's sandbox blocked the connection to "
+                             "%s. The server's operator can allow it with "
+                             "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % where, detail)
+        for c in seen:
+            if isinstance(c, socket.gaierror):
+                return _says("This server couldn't look up %s, so Google "
+                             "couldn't be reached. %s"
+                             % (where.rpartition(":")[0] or where, RETRIES), detail)
+            if isinstance(c, ConnectionRefusedError):
+                return _says("%s refused the connection. %s" % (where, RETRIES),
+                             detail)
+            if isinstance(c, ssl.SSLError):
+                return _says("The secure connection to %s failed. %s"
+                             % (where, RETRIES), detail)
+            if isinstance(c, TimeoutError):
+                return _says("Google didn't answer in time. " + RETRIES, detail)
+            if isinstance(c, (ConnectionError, http.client.HTTPException)):
+                return _says("The connection to Google dropped before it "
+                             "finished answering. " + RETRIES, detail)
+            if isinstance(c, ValueError):
+                return _says("Google sent an answer this sync couldn't read. "
+                             + RETRIES, detail)
+        return _says("Syncing %s failed unexpectedly. %s" % (_PRODUCT, RETRIES),
+                     detail)
+
+
+    def _token_reason(token_error):
+        """The engine's word for a grant it could not turn into a token."""
+        text = str(token_error or "")
+        if "client credentials" in text:
+            return _says("The Google provider's sign-in details are missing, so "
+                         "%s can't sync. Add them on the Google provider's page."
+                         % _PRODUCT, text)
+        return _says("The Google sign-in for this account stopped working, so "
+                     "%s can't sync. Reconnect the account." % _PRODUCT, text)
 
 
     def _reason(e):
-        """The failure in one line, and its CLASS first.
+        """The failure as the owner reads it: `_says` shape, line one first.
 
-        The words matter: the status is what the console shows and what the e2e
-        asserts on, so each class is named rather than left as a status code.
         401 is PERMANENT until the owner reconnects; 403 is the stream being
         unavailable to this grant; 429 is transient and says when; everything
-        else is transient and the cadence retries it.
+        else is transient and the cadence retries it. A RuntimeError is this
+        body's own refusal and is already worded for the owner.
         """
-        code = _http_status(e)
-        if code == 401:
-            return ("reconnect needed: Google refused the grant (401) — the "
-                    "token was revoked or expired beyond refresh")
-        if code == 403:
-            return ("stream not available: Google refused the call (403) — is "
-                    "calendar.readonly granted? a reconnect may be needed")
-        if code == 429:
-            return "rate limited by Google (429) — the retry is scheduled"
-        if code is not None:
-            return "google returned HTTP %d" % code
-        return str(e) or type(e).__name__
+        if isinstance(e, urllib.error.HTTPError):
+            return _http_reason(int(e.code), _error_doc(e))
+        if isinstance(e, RuntimeError):
+            return str(e)
+        return _net_reason(e)
 
 
     def _events_path(cid):
@@ -15403,10 +15975,11 @@ data:
         `completed` is what stamps `lastAt`: a drain that handed back with work
         owed is `ok` with a pending count, not a run that finished.
         """
+        message = _bare(message)
         streams = _trait_streams(props)
         entry = dict(streams.get(stream) or {})
         entry["state"] = state
-        entry["message"] = str(message)[:400]
+        entry["message"] = message
         if completed:
             entry["lastAt"] = now
         if progress is not None:
@@ -15451,7 +16024,7 @@ data:
             # A failure always speaks: it is the account's newest fact, and the
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
             if state == "throttled":
                 # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
                 # stream's `erroring` outranks this stream's `throttled`, as it
@@ -15462,8 +16035,8 @@ data:
                              "")
                 if worse:
                     out["syncState"], said = _trait_failure(props, streams, worse)
-                    out["syncMessage"] = said[:400]
-            out["syncError"] = str(message)[:400]
+                    out["syncMessage"] = _bare(said)
+            out["syncError"] = message
             out["syncErrorAt"] = now
         elif failing and not started:
             # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
@@ -15478,10 +16051,10 @@ data:
                           if _trait_failure(props, streams, s)[0] == "erroring"),
                          failing[0])
             out["syncState"], said = _trait_failure(props, streams, worst)
-            out["syncMessage"] = said[:400]
+            out["syncMessage"] = _bare(said)
         elif not failing:
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
@@ -15642,7 +16215,7 @@ data:
         # `scheduled` is the cursor's: only a record-sourced delivery has a
         # dispatcher settling it.
         props = acct.get("properties") or {}
-        status = "erroring: " + str(reason)[:REASON_MAX]
+        status = "erroring: " + _clip(reason)
         now = _iso(_now())
         # A RATE LIMIT IS NOT A BREAKAGE. The trait spells the wall `throttled`
         # beside `erroring` (decision 0085): an account waiting out a
@@ -16441,7 +17014,7 @@ data:
             if acct is not None and acct.get("tokenError"):
                 host.log("google-calendar: skip %s: %s"
                          % (queue[0], acct["tokenError"]))
-                _erroring(host, acct, acct["tokenError"],
+                _erroring(host, acct, _token_reason(acct["tokenError"]),
                           scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
@@ -16803,9 +17376,9 @@ data:
     exportError:
       type: string
       displayName: Export error
-      description: "why the last export failed, one line — a 403 cannotExportFile,
-        a 400 for a media type the file does not offer; cleared by a later
-        success"
+      description: "why the last export failed: a sentence for the owner,
+        then Google's own status and message on the next line; cleared by
+        a later success"
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
@@ -16919,6 +17492,10 @@ data:
     and flushed only when the invocation returns normally.
     """
     import datetime as _dt
+    import errno
+    import http.client
+    import socket
+    import ssl
     import json as _json
     import re
     import urllib.error
@@ -17106,9 +17683,12 @@ data:
             return DRIVE_API
         host = (urllib.parse.urlsplit(base).hostname or "").lower()
         if host not in LOOPBACK_HOSTS:
-            raise RuntimeError(
-                "google-drive: config.apiBase names %s — only a loopback host "
-                "may stand in for %s" % (host or "?", DRIVE_HOST))
+            raise RuntimeError(_says(
+                "The Google sign-in details name an API base this provider "
+                "won't send the account's token to. Clear the API base on "
+                "the Google provider's sign-in details.",
+                "config.apiBase names %s; only a loopback host may stand in "
+                "for %s" % (host or "?", DRIVE_HOST)))
         return base
 
 
@@ -17135,10 +17715,13 @@ data:
             url = url + "?" + urllib.parse.urlencode(params, doseq=True)
         if not _pinned(url, base):
             parts = urllib.parse.urlsplit(url)
-            raise RuntimeError(
-                "google-drive: refusing to send credentials to %s://%s — only "
-                "https://%s or the configured loopback base"
-                % (parts.scheme, parts.hostname or "?", DRIVE_HOST))
+            raise RuntimeError(_says(
+                "This provider refused to send the account's token to %s, "
+                "which is not Google. Clear the API base on the Google "
+                "provider's sign-in details." % (parts.hostname or "?"),
+                "only https://%s or the configured loopback base may be "
+                "called, not %s://%s"
+                % (DRIVE_HOST, parts.scheme, parts.hostname or "?")))
         return url
 
 
@@ -17149,6 +17732,7 @@ data:
         # account erroring rather than parking the whole delivery.
         req = urllib.request.Request(_url(base, path, params), headers={
             "Authorization": "Bearer " + token, "Accept": "application/json"})
+        _dial(req.full_url)
         with _OPENER.open(req, timeout=20) as resp:
             return _json.loads(resp.read().decode("utf-8"))
 
@@ -17159,6 +17743,7 @@ data:
         and no JSON expectation, because none is coming."""
         req = urllib.request.Request(_url(base, path, params), headers={
             "Authorization": "Bearer " + token})
+        _dial(req.full_url)
         with _OPENER.open(req, timeout=60) as resp:
             return resp.read(), str(resp.headers.get("Content-Type") or "")
 
@@ -17170,15 +17755,9 @@ data:
     def _detail(e):
         """The error document Google returned, as a dict — `{}` when it did not
         return one. The body of an HTTPError reads ONCE."""
-        try:
-            body = e.read()
-        except Exception:
-            return {}
-        try:
-            doc = _json.loads((body or b"").decode("utf-8", "replace"))
-        except (ValueError, AttributeError):
-            return {}
-        return doc.get("error") if isinstance(doc.get("error"), dict) else {}
+        # Through `_error_doc`, which keeps what it read: the failure's own
+        # sentence reads the same body after this.
+        return _error_doc(e)
 
 
     def _scope_refused(err):
@@ -17195,25 +17774,205 @@ data:
                 or "acl_insufficient" in text)
 
 
-    def _reason(e):
-        """The failure in one line, and its CLASS first — the same words the
-        other three streams use, because the status is what the console shows
-        and what the e2e asserts on."""
-        code = _status(e)
-        if isinstance(e, _NeedsReconsent):
-            return ("needs reconsent: this grant predates drive.readonly — "
-                    "reconnect the account to add the Drive scope")
+    # ---- the owner's words for a failure ---------------------------------
+    # LINE ONE IS THE OWNER'S: what failed, why, and what to do, in product
+    # words, with no status codes, reason words or exception text. What follows
+    # the first newline is the technical detail the console folds away, and it
+    # is the only part a cap ever cuts (#1299). The four Google bodies carry the
+    # same words; only these three names differ.
+    _PRODUCT = "Google Drive"
+    _ALLOWS = "read your Google Drive"
+    _API = "Google Drive API"
+    MESSAGE_MAX = 400
+    DETAIL_MAX = 300
+    RETRIES = "The next sync tries again on its own."
+    RATE_REASONS = frozenset((
+        "ratelimitexceeded", "userratelimitexceeded", "rate_limit_exceeded",
+        "quotaexceeded", "dailylimitexceeded", "resource_exhausted"))
+    DISABLED_REASONS = frozenset(("accessnotconfigured", "service_disabled"))
+    # The host and port of the request in flight, so a connection failure can
+    # name where it was going: urllib's error does not carry the URL.
+    _DIALED = [""]
+
+
+    def _dial(url):
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        _DIALED[0] = "%s:%d" % (parts.hostname or "?", port)
+
+
+    def _says(sentence, detail=""):
+        """The owner's sentence, and the technical detail on the next line."""
+        detail = " ".join(str(detail or "").split())
+        return sentence + ("\n" + detail[:DETAIL_MAX] if detail else "")
+
+
+    def _clip(text, limit=MESSAGE_MAX):
+        """`text` within `limit`, cutting the detail and never the sentence."""
+        text = str(text or "")
+        head, nl, tail = text.partition("\n")
+        if not nl or len(text) <= limit:
+            return text
+        room = limit - len(head) - 1
+        return head + ("\n" + tail[:room] if room > 0 else "")
+
+
+    def _bare(message):
+        """A stream's sentence without the legacy `erroring: ` prefix, which
+        belongs to the `*SyncStatus` strings alone: `syncMessage` and
+        `syncError` hold the sentence."""
+        text = str(message or "")
+        if text.startswith("erroring: "):
+            text = text[len("erroring: "):]
+        return _clip(text)
+
+
+    def _error_doc(e):
+        """Google's error object off an HTTPError, `{}` when there is none.
+
+        AN HTTPError BODY READS ONCE, and the classifiers here read it
+        themselves, so what this read is handed back to every later `read()`.
+        """
+        kept = getattr(e, "_google_error", None)
+        if kept is not None:
+            return kept
+        try:
+            raw = e.read() or b""
+        except Exception:
+            raw = b""
+        try:
+            e.read = lambda *_a, **_k: raw
+        except Exception:
+            pass
+        doc = {}
+        try:
+            parsed = _json.loads(raw.decode("utf-8", "replace"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                doc = parsed["error"]
+        except (ValueError, AttributeError):
+            pass
+        try:
+            e._google_error = doc
+        except Exception:
+            pass
+        return doc
+
+
+    def _reason_words(doc):
+        """Google's machine words for a refusal: its status and every reason."""
+        words = {str(doc.get("status") or "").lower()}
+        for d in list(doc.get("errors") or []) + list(doc.get("details") or []):
+            if isinstance(d, dict):
+                words.add(str(d.get("reason") or "").lower())
+        words.discard("")
+        return words
+
+
+    def _http_reason(code, doc):
+        words = _reason_words(doc)
+        detail = " ".join(p for p in (
+            "HTTP %d" % code, ", ".join(sorted(words)),
+            str(doc.get("message") or "")) if p)
         if code == 401:
-            return ("reconnect needed: Google refused the grant (401) — the "
-                    "token was revoked or expired beyond refresh")
+            return _says("Google no longer accepts this account's sign-in, so "
+                         "%s can't be read. Reconnect the account." % _PRODUCT,
+                         detail)
+        if words & DISABLED_REASONS:
+            return _says("The %s is turned off in the Google Cloud project your "
+                         "sign-in details come from. Turn it on in the Google "
+                         "Cloud console, then sync again." % _API, detail)
+        if code == 429 or words & RATE_REASONS:
+            return _says("Google asked this account to slow down. " + RETRIES,
+                         detail)
         if code == 403:
-            return ("stream not available: Google refused the call (403) — is "
-                    "drive.readonly granted? a reconnect may be needed")
-        if code == 429:
-            return "rate limited by Google (429) — the retry is scheduled"
-        if code is not None:
-            return "google returned HTTP %d" % code
-        return str(e) or type(e).__name__
+            return _says("The Google sign-in doesn't allow this provider to %s. "
+                         "Reconnect the account and approve that access."
+                         % _ALLOWS, detail)
+        if code == 404:
+            return _says("Google couldn't find something this sync asked for: it "
+                         "was deleted, or is no longer shared with this account. "
+                         + RETRIES, detail)
+        if code >= 500:
+            return _says("Google had a problem on its side. " + RETRIES, detail)
+        return _says("Google refused a request this sync made. " + RETRIES
+                     + " If it keeps happening, it is a bug in the Google "
+                     "provider.", detail)
+
+
+    def _net_reason(e):
+        """A failure that never got an answer from Google, by its cause."""
+        where = _DIALED[0] or "Google"
+        seen, todo = [], [e]
+        while todo and len(seen) < 12:
+            c = todo.pop(0)
+            if any(c is s for s in seen):
+                continue
+            seen.append(c)
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(c, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        detail = str(e) or type(e).__name__
+        # The sandbox's connect gate answers EACCES: an operator's allowlist,
+        # never a network fault, so it is named before anything else.
+        for c in seen:
+            if (isinstance(c, OSError)
+                    and not isinstance(c, (socket.gaierror, ssl.SSLError))
+                    and c.errno in (errno.EACCES, errno.EPERM)):
+                return _says("This server's sandbox blocked the connection to "
+                             "%s. The server's operator can allow it with "
+                             "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % where, detail)
+        for c in seen:
+            if isinstance(c, socket.gaierror):
+                return _says("This server couldn't look up %s, so Google "
+                             "couldn't be reached. %s"
+                             % (where.rpartition(":")[0] or where, RETRIES), detail)
+            if isinstance(c, ConnectionRefusedError):
+                return _says("%s refused the connection. %s" % (where, RETRIES),
+                             detail)
+            if isinstance(c, ssl.SSLError):
+                return _says("The secure connection to %s failed. %s"
+                             % (where, RETRIES), detail)
+            if isinstance(c, TimeoutError):
+                return _says("Google didn't answer in time. " + RETRIES, detail)
+            if isinstance(c, (ConnectionError, http.client.HTTPException)):
+                return _says("The connection to Google dropped before it "
+                             "finished answering. " + RETRIES, detail)
+            if isinstance(c, ValueError):
+                return _says("Google sent an answer this sync couldn't read. "
+                             + RETRIES, detail)
+        return _says("Syncing %s failed unexpectedly. %s" % (_PRODUCT, RETRIES),
+                     detail)
+
+
+    def _token_reason(token_error):
+        """The engine's word for a grant it could not turn into a token."""
+        text = str(token_error or "")
+        if "client credentials" in text:
+            return _says("The Google provider's sign-in details are missing, so "
+                         "%s can't sync. Add them on the Google provider's page."
+                         % _PRODUCT, text)
+        return _says("The Google sign-in for this account stopped working, so "
+                     "%s can't sync. Reconnect the account." % _PRODUCT, text)
+
+
+    def _reason(e):
+        """The failure as the owner reads it: `_says` shape, line one first.
+
+        401 is PERMANENT until the owner reconnects; 403 is the stream being
+        unavailable to this grant; 429 is transient and says when; everything
+        else is transient and the cadence retries it. A RuntimeError is this
+        body's own refusal and is already worded for the owner.
+        """
+        if isinstance(e, _NeedsReconsent):
+            return ("This Google sign-in was approved before the Google Drive "
+                    "provider asked to read your Drive. Reconnect the account "
+                    "to approve it.")
+        if isinstance(e, urllib.error.HTTPError):
+            return _http_reason(int(e.code), _error_doc(e))
+        if isinstance(e, RuntimeError):
+            return str(e)
+        return _net_reason(e)
 
 
     def _address_id(host, aid, addr):
@@ -17574,10 +18333,11 @@ data:
         writes that failure's state and message), the owner's request
         acknowledged at the account level only once EVERY enabled stream has
         answered it."""
+        message = _bare(message)
         streams = _trait_streams(props)
         entry = dict(streams.get(stream) or {})
         entry["state"] = state
-        entry["message"] = str(message)[:400]
+        entry["message"] = message
         if completed:
             entry["lastAt"] = now
         if progress is not None:
@@ -17607,7 +18367,7 @@ data:
             out["lastSyncDurationMs"] = max(0, int(elapsed_ms))
         if state in ("erroring", "throttled"):
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
             if state == "throttled":
                 # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
                 # stream's `erroring` outranks this stream's `throttled`, as it
@@ -17618,8 +18378,8 @@ data:
                              "")
                 if worse:
                     out["syncState"], said = _trait_failure(props, streams, worse)
-                    out["syncMessage"] = said[:400]
-            out["syncError"] = str(message)[:400]
+                    out["syncMessage"] = _bare(said)
+            out["syncError"] = message
             out["syncErrorAt"] = now
         elif failing and not started:
             # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
@@ -17634,10 +18394,10 @@ data:
                           if _trait_failure(props, streams, s)[0] == "erroring"),
                          failing[0])
             out["syncState"], said = _trait_failure(props, streams, worst)
-            out["syncMessage"] = said[:400]
+            out["syncMessage"] = _bare(said)
         elif not failing:
             out["syncState"] = state
-            out["syncMessage"] = str(message)[:400]
+            out["syncMessage"] = message
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
@@ -17762,7 +18522,7 @@ data:
         # `scheduled` is the cursor's: only a record-sourced delivery has a
         # dispatcher settling it.
         props = acct.get("properties") or {}
-        status = "erroring: " + str(reason)[:REASON_MAX]
+        status = "erroring: " + _clip(reason)
         now = _iso(_now())
         state = "throttled" if retry_at else "erroring"
         stamp = _ack(props, {}, "drive")
@@ -18230,13 +18990,23 @@ data:
                 if code in (401, 429) or code is None or code >= 500:
                     raise
                 err = _detail(e)
-                reason = ("HTTP %d %s" % (code, str(err.get("message") or "")
+                detail = ("HTTP %d %s" % (code, str(err.get("message") or "")
                                           or (err.get("errors") or [{}])[0]
                                           .get("reason") or "")).strip()
+                if code == 404:
+                    said = ("Google Drive no longer has this file, or it is no "
+                            "longer shared with this account.")
+                elif code == 403:
+                    said = ("Google Drive doesn't let this account export this "
+                            "file, so its text isn't brought in. The file's owner "
+                            "can allow downloading and copying.")
+                else:
+                    said = ("Google Drive can't export this file as text, so its "
+                            "text isn't brought in.")
+                reason = _clip(_says(said, detail))
                 host.log("google-drive: export of %s for %s refused: %s"
-                         % (fid, aid, reason[:REASON_MAX]))
-                batch.patch(FILE_TYPE, rid,
-                            properties={"exportError": reason[:REASON_MAX]})
+                         % (fid, aid, detail[:REASON_MAX]))
+                batch.patch(FILE_TYPE, rid, properties={"exportError": reason})
                 failed += 1
                 continue
             text, truncated = _text(raw, ctype)
@@ -18426,7 +19196,7 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-drive: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(batch, acct, acct["tokenError"],
+                _erroring(batch, acct, _token_reason(acct["tokenError"]),
                           scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):

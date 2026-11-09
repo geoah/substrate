@@ -1256,9 +1256,10 @@ def main():
         ok(skipped.get("syncState") == "ok",
            "a refused roster leaves the run `ok` (%s: %s)"
            % (skipped.get("syncState"), skipped.get("syncError")))
-        ok("workspace roster" in str(skipped.get("syncStatus") or ""),
-           "and the status counts the roster unreachable (%s)"
-           % skipped.get("syncStatus"))
+        ok("workspace roster" in str(skipped.get("syncStatus") or "")
+           and "Read user information" in str(skipped.get("syncStatus") or ""),
+           "and the status names the roster it could not read, with the "
+           "capability to turn on (%s)" % skipped.get("syncStatus"))
 
         print("--> the trait says `erroring` when a run fails (T-084)")
         before_state = acct2.get("syncState")
@@ -1283,6 +1284,11 @@ def main():
         ok(str(bad.get("syncError") or "") == str(bad.get("syncMessage") or ""),
            "the message and the error are the same sentence — a console shows "
            "one line and it is this one (%s)" % bad.get("syncMessage"))
+        said = str(bad.get("syncError") or "").split("\n")[0]
+        ok(said.startswith("Notion had a problem on its side")
+           and "tries again on its own" in said,
+           "the error's first line is the owner's sentence, saying the next "
+           "sync retries, and no code or exception text (%s)" % said)
         ok(str(bad.get("syncStatus") or "").startswith("erroring:"),
            "and the legacy syncStatus string says it too, unchanged: the "
            "trait is ADDITIVE and a reader of the old shape keeps working "

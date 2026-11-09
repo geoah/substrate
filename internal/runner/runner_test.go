@@ -310,6 +310,19 @@ def main(input, host):
 	if _, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil {
 		t.Fatalf("host died with the body error: %v", err)
 	}
+
+	// A raised sentence with its detail on the next line leads with the
+	// sentence, which is the line the sync status shows.
+	said := spec
+	said.Function = "said.g.test"
+	said.Source = "def main(input, host):\n    raise RuntimeError('Notion no longer accepts the token.\\nHTTP 401 unauthorized')\n"
+	_, err = r.Invoke(context.Background(), said, testInput(), widgetBackend())
+	if err == nil {
+		t.Fatalf("a raised sentence: no error")
+	}
+	if first, _, _ := strings.Cut(err.Error(), "\n"); !strings.HasSuffix(first, "Notion no longer accepts the token.") {
+		t.Fatalf("a raised sentence leads with %q, want the sentence", first)
+	}
 }
 
 // TestPythonSearchResultCarriesPending: the host's search answer carries the

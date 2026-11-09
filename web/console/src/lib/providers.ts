@@ -25,6 +25,7 @@ import { refId, toolName, writeKinds } from "@/lib/tools"
 import {
   requestPending,
   requestUnstarted,
+  splitFailure,
   syncFailing,
   type AccountView,
   type ProviderView,
@@ -180,6 +181,10 @@ export interface ProviderProblem {
   /** The server's words for it (an error, a reason, guard lines), when it
    * gave some. */
   detail?: string[]
+  /** What followed the first line of that error: the provider's or the
+   * library's own text, which a sync body keeps under its sentence for
+   * whoever has to debug it. Shown folded, never as the reason. */
+  technical?: string
   /** The account the problem is on, by record id. */
   account?: string
   fixes: ProblemFix[]
@@ -311,17 +316,19 @@ export function standingProblems(
 ): ProviderProblem[] {
   const out: ProviderProblem[] = []
   for (const a of s.accounts) {
-    const why = firstLine(
-      a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
-    )
+    const said = a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
+    const why = firstLine(said)
+    const technical = restLines(said)
     if (a.tokenStatus === "erroring") {
       // The OAuth facility's own reason. A sync error is a different
       // failure, often an older one, so it never stands in for it.
       const reason = firstLine(a.tokenError ?? "")
+      const more = restLines(a.tokenError ?? "")
       out.push({
         code: "sign-in",
         summary: `The sign-in for ${a.label} stopped working`,
         detail: reason ? [reason] : undefined,
+        ...(more ? { technical: more } : {}),
         account: a.record.id,
         fixes: ["reconnect"],
       })
@@ -344,6 +351,7 @@ export function standingProblems(
         code: "sync",
         summary: `Syncing ${a.label} is failing`,
         detail: detail.length ? detail : undefined,
+        ...(technical ? { technical } : {}),
         account: a.record.id,
         fixes: s.oauth ? ["sync-now", "reconnect"] : ["sync-now"],
       })
@@ -566,6 +574,10 @@ export function connectionWords(
       }
     case "erroring": {
       const why = firstLine(tokenError ?? "")
+      // The facility's reason is a sentence that says what to do, so it
+      // stands alone; one written before it was (a protocol answer) still
+      // gets the ask.
+      if (/[.!?]$/.test(why)) return { text: why, tone: "bad" }
       return {
         text: why
           ? `Its sign-in stopped working: ${why} · reconnect it`
@@ -866,7 +878,11 @@ export function firstSentence(text: string | undefined): string {
 }
 
 function firstLine(text: string): string {
-  return text.split("\n")[0].trim()
+  return splitFailure(text).line
+}
+
+function restLines(text: string): string {
+  return splitFailure(text).technical
 }
 
 function capitalise(text: string): string {

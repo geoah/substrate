@@ -97,7 +97,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 22
+  # 23: every failure the sync writes reads as a sentence for the owner,
+  # with Linear's raw words on a second line; a rejected key and a refused
+  # team are recognised.
+  version: 23
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -3630,7 +3633,10 @@ data:
     short is a lie about the graph rather than a partial read of it.
     """
     import datetime as _dt
+    import errno
+    import ssl
     import json
+    import socket
 
     import requests
 
@@ -3671,6 +3677,8 @@ data:
     PAGES_PER_RUN = 8
     OVERLAP_SECONDS = 900             # re-read window behind the stored watermark
     REASON_MAX = 400
+    PIN_REFUSAL = ("The Linear config's API base is not %s, so the API key was "
+                   "not sent. Clear the API base on the Linear config record.")
     NOTE_MAX = 12
     BACKFILL_DAYS = {"last14d": 14, "last30d": 30, "last90d": 90, "last1y": 365}
     DEFAULT_RETRY_AFTER = 60
@@ -4754,14 +4762,124 @@ data:
         return False
 
 
+    class _Refused(Exception):
+        """A failure worded for the owner: `say` is the sentence the console
+        shows, `detail` the raw text it folds under it."""
+
+        def __init__(self, say, detail=""):
+            super().__init__(say)
+            self.say = say
+            self.detail = detail
+
+
+    def _gql_detail(errors):
+        """Linear's own words for a GraphQL failure: each entry's message and
+        extension code, never the JSON around them."""
+        parts = []
+        for e in errors or []:
+            ext = (e or {}).get("extensions") or {}
+            code = str(ext.get("code") or ext.get("type") or "").strip()
+            msg = str((e or {}).get("message") or "").strip()
+            parts.append("%s (%s)" % (msg, code) if code and msg else msg or code)
+        return "; ".join(p for p in parts if p)
+
+
+    def _gql_codes(errors):
+        out = set()
+        for e in errors or []:
+            ext = (e or {}).get("extensions") or {}
+            for v in (ext.get("code"), ext.get("type")):
+                if v:
+                    out.add(str(v).strip().upper().replace(" ", "_"))
+        return out
+
+
+    def _http_refusal(status, op, errors, text):
+        """An answer Linear gave, as the sentence the owner reads. A key Linear
+        rejects needs a new one pasted; anything Linear-side mends itself."""
+        codes = _gql_codes(errors)
+        detail = "HTTP %d on %s: %s" % (status, op, _gql_detail(errors) or text)
+        if status == 401 or codes & {"AUTHENTICATION_ERROR", "UNAUTHENTICATED"}:
+            return _Refused(
+                "Linear no longer accepts the API key. Create a new personal "
+                "API key in Linear and paste it on the Linear config record.",
+                detail)
+        if status == 403 or codes & {"FORBIDDEN", "PERMISSION_DENIED"}:
+            return _Refused(
+                "Linear did not give the API key access to part of the workspace. "
+                "Use a key from a member who can see every team you want "
+                "synced.", detail)
+        if status >= 500:
+            return _Refused(
+                "Linear had a problem on its side (HTTP %d). The next sync "
+                "tries again." % status, detail)
+        return _Refused(
+            "Linear refused a request from the sync, which is likely a bug in "
+            "the Linear provider rather than anything you set. The next sync "
+            "tries again; if it keeps failing, report it with the technical "
+            "details.", detail)
+
+
+    def _causes(err):
+        """`err` and what it wraps: requests puts urllib3's MaxRetryError in
+        `args[0]`, which carries the socket error on `.reason`. Bounded, because
+        a chain is data and a loop in it must not hang the run."""
+        seen, out, todo = set(), [], [err]
+        while todo and len(out) < 16:
+            e = todo.pop(0)
+            if e is None or id(e) in seen:
+                continue
+            seen.add(id(e))
+            out.append(e)
+            args = getattr(e, "args", None) or ()
+            if args and isinstance(args[0], BaseException):
+                todo.append(args[0])
+            for attr in ("reason", "__cause__", "__context__"):
+                nxt = getattr(e, attr, None)
+                if isinstance(nxt, BaseException):
+                    todo.append(nxt)
+        return out
+
+
+    def _connection_words(e, api):
+        """A request that never got an answer, by what stopped it. The sandbox's
+        refusal comes first: it is EACCES on the connect, and only the server's
+        operator can lift it."""
+        try:
+            from urllib.parse import urlsplit
+            u = urlsplit(api)
+            where = u.hostname or api
+            port = u.port or (443 if u.scheme == "https" else 80)
+        except ValueError:
+            where, port = api, 0
+        exc = requests.exceptions
+        chain = _causes(e)
+        for c in chain:
+            if isinstance(c, OSError) and not isinstance(c, ssl.SSLError) and c.errno in (errno.EACCES, errno.EPERM):
+                return ("This server's sandbox blocked the connection to %s:%d. "
+                        "Its operator has to allow it with "
+                        "SUBSTRATE_SANDBOX_EGRESS_ALLOW." % (where, port))
+        if isinstance(e, exc.SSLError):
+            return ("The secure connection to %s failed. The next sync tries "
+                    "again." % where)
+        if isinstance(e, (exc.Timeout, socket.timeout, TimeoutError)) or any(
+                isinstance(c, (socket.timeout, TimeoutError)) for c in chain):
+            return ("Linear did not answer in time. The next sync tries "
+                    "again.")
+        if any(isinstance(c, socket.gaierror) for c in chain) or any(
+                type(c).__name__ == "NameResolutionError" for c in chain):
+            return ("This server could not find %s; its DNS or network may "
+                    "be down. The next sync tries again." % where)
+        return ("Linear could not be reached at %s. The next sync tries "
+                "again." % where)
+
+
     def _post(key, api, query, op):
         """One GraphQL POST. The body carries `operationName` because that is what
         the mock server records under, and what Linear needs to pick the operation
         out of a document whose only operation is named."""
         if not _pinned(api):
-            raise RuntimeError(
-                "linear: apiBase %r is not a pinned origin (https on %s, or "
-                "loopback); refusing to send the API key" % (api, API_HOST))
+            raise _Refused(PIN_REFUSAL % API_HOST, "apiBase %r" % api)
         payload = {"query": query, "operationName": op, "variables": {}}
         resp = requests.post(api + GRAPHQL_PATH, json=payload, headers={
             "Authorization": key,
@@ -4770,8 +4888,11 @@ data:
         if resp.status_code in (301, 302, 303, 307, 308):
             # A redirect would carry the key to wherever the Location says; the
             # pin is on the request, so the only safe answer is to refuse.
-            raise RuntimeError("linear: %s redirected (%s) — refusing to follow"
-                               % (op, resp.headers.get("Location") or "?"))
+            raise _Refused(
+                "Linear answered with a redirect, which the sync does not "
+                "follow so the API key cannot leave Linear. The next sync tries "
+                "again.", "%s redirected to %s"
+                % (op, resp.headers.get("Location") or "?"))
         if resp.status_code == 429:
             raise _RateLimited(_retry_at(resp), "rate limited on " + op)
         if resp.status_code >= 400:
@@ -4779,30 +4900,46 @@ data:
             # 400, not only as a 429, so the errors array is read BEFORE the
             # status is classified — a rate limit is work to resume, and treating
             # it as a generic failure throws the retry instant away.
-            body = ""
             try:
                 errors = resp.json().get("errors") or []
             except ValueError:
                 errors = []
             if _is_rate_limited(errors):
                 raise _RateLimited(_retry_at(resp), "rate limited on " + op)
-            body = json.dumps(errors)[:200] if errors else resp.text[:200]
-            raise RuntimeError("linear: %s returned HTTP %d %s"
-                               % (op, resp.status_code, body))
+            raise _http_refusal(resp.status_code, op, errors, resp.text[:200])
         doc = resp.json()
         if doc.get("errors"):
             # A GraphQL error can also carry HTTP 200.
             if _is_rate_limited(doc["errors"]):
                 raise _RateLimited(_retry_at(resp), "rate limited on " + op)
-            raise RuntimeError("linear: %s: %s"
-                               % (op, json.dumps(doc["errors"])[:REASON_MAX]))
+            raise _http_refusal(200, op, doc["errors"], "")
         return doc.get("data") or {}
 
 
-    def _err_msg(e):
+    def _err_msg(e, api=DEFAULT_API):
+        """What the owner reads: one plain sentence, then the raw text for
+        whoever debugs it. Only the raw half is cut, so the `erroring: ` prefix
+        and the sentence always fit `REASON_MAX` whole."""
         if isinstance(e, _RateLimited):
-            return "rate limited; retry after %s" % (e.retry_at or "the window resets")
-        return (str(e) or type(e).__name__)[:REASON_MAX]
+            say = ("Linear asked the sync to slow down. It resumes on its own "
+                   "after %s." % (e.retry_at or "the rate-limit window resets"))
+            detail = str(e)
+        elif isinstance(e, _Refused):
+            say, detail = e.say, e.detail
+        elif isinstance(e, requests.exceptions.RequestException):
+            say, detail = _connection_words(e, api), str(e)
+        else:
+            say = ("The Linear sync stopped on an unexpected error. The next "
+                   "sync tries again; if it keeps failing, report it with the "
+                   "technical details.")
+            detail = "%s: %s" % (type(e).__name__, e)
+        room = REASON_MAX - len("erroring: ") - len(say) - 1
+        detail = " ".join(str(detail or "").split())
+        if room <= 0 or not detail:
+            return say
+        if len(detail) > room:
+            detail = detail[:max(room - 1, 0)] + "…"
+        return say + "\n" + detail
 
 
     class _Budget:
@@ -4939,7 +5076,8 @@ data:
             if ((value.get("pageInfo") or {}).get("hasNextPage")):
                 # SHORT IS A LIE. The property is left alone and the run says so.
                 if notes is not None:
-                    _note(notes, "%s.%s past %d" % (kind, api, NESTED_PAGE_SIZE))
+                    _note(notes, "%s %s over %d"
+                          % (kind.rsplit("/", 1)[-1], api, NESTED_PAGE_SIZE))
                 continue
             props[name] = [r for r in (_rid(host, aid, target, _node_id(v))
                                        for v in (value.get("nodes") or [])) if r] or None
@@ -5046,7 +5184,7 @@ data:
                     sink.write("reaction", r)
                 comments = (node.get("comments") or {})
                 if (comments.get("pageInfo") or {}).get("hasNextPage"):
-                    _note(sink.notes, "issue.comments past %d" % NESTED_PAGE_SIZE)
+                    _note(sink.notes, "issue comments over %d" % NESTED_PAGE_SIZE)
                 for c in comments.get("nodes") or []:
                     sink.write("comment", c)
                     for r in c.get("reactions") or []:
@@ -5102,7 +5240,10 @@ data:
             # left rather than reporting a bare "pending".
             notes.append("deferred: %s x1" % parked)
         if cur.get("notes"):
-            notes.append("short: " + ", ".join(cur["notes"][:4]))
+            # A capped list is left as it was rather than written short, and
+            # the owner is told which ones.
+            notes.append("some lists were too long to read whole and were "
+                         "left unchanged: " + ", ".join(cur["notes"][:4]))
         return ("ok" if not notes else "ok (" + "; ".join(notes) + ")")[:REASON_MAX]
 
 
@@ -5212,7 +5353,7 @@ data:
                 "runStart": cur.get("runStart") or ""}
 
 
-    def _stamp(host, acct, aid, cur, error=None, parked=""):
+    def _stamp(host, acct, aid, cur, error=None, parked="", throttled=False):
         """The connector stamp. EVERY path writes syncStatus, and lastSyncedAt
         marks the ATTEMPT finished either way: it anchors the cadence AND drops
         the on-connect trigger's guard, so an erroring stamp can never re-fire the
@@ -5224,11 +5365,10 @@ data:
             patch["syncStatus"] = ("erroring: " + error)[:REASON_MAX]
             # A rate limit is WORK TO RESUME, not a fault: 0085 spells it
             # `throttled` and the Connections page renders it as a wait rather
-            # than a break. `_err_msg` has already turned a 429 — or the
-            # RATELIMITED extension Linear sometimes serves with HTTP 400 — into
-            # "rate limited; retry after <instant>", and `retryNotBefore` holds
-            # every entry path until then.
-            state = "throttled" if error.startswith("rate limited") else "erroring"
+            # than a break. The caller says so — a 429, or the RATELIMITED
+            # extension Linear sometimes serves with HTTP 400 — and
+            # `retryNotBefore` holds every entry path until then.
+            state = "throttled" if throttled else "erroring"
             patch.update(_trait(cur, state, error, now, parked=parked,
                                 error=error,
                                 held=bool((acct.get("properties") or {})
@@ -5403,9 +5543,7 @@ data:
                      "record, not on the account")
             return {"output": {"skipped": "sealed-key"}}
         if not _pinned(api):
-            raise RuntimeError(
-                "linear: apiBase %r is not a pinned origin (https on %s, or "
-                "loopback); refusing to send the API key" % (api, API_HOST))
+            raise RuntimeError(PIN_REFUSAL % API_HOST)
 
         args = input.get("args")
         if not isinstance(args, dict):
@@ -5457,13 +5595,13 @@ data:
             return _sync_account(host, api, key, acct, aid, props, cur, queue)
         except _RateLimited as e:
             host.log("linear: account %s rate limited until %s" % (aid, e.retry_at))
-            _stamp(host, acct, aid, cur, error=_err_msg(e),
-                   parked=cur.get("stage") or "")
+            _stamp(host, acct, aid, cur, error=_err_msg(e, api),
+                   parked=cur.get("stage") or "", throttled=True)
             host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid,
                                properties={"retryNotBefore": e.retry_at})
             return {"output": {"account": aid, "retryAfter": e.retry_at}}
         except Exception as e:  # noqa: BLE001 — per-account isolation
-            msg = _err_msg(e)
+            msg = _err_msg(e, api)
             host.log("linear: account %s failed: %s" % (aid, msg))
             _stamp(host, acct, aid, cur, error=msg, parked=cur.get("stage") or "")
             rest = queue[1:]

@@ -15,6 +15,7 @@ import type {
   SyncStream,
   TriggerStatus,
 } from "@/lib/api/types"
+import { providerInfo } from "@/lib/actor-identity"
 import { serverNow, splitKind } from "@/lib/api/http"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
 import { kindPackage } from "@/lib/definition"
@@ -281,7 +282,9 @@ export interface AccountView {
   kind: KindInfo | undefined
   /** The bundle id, `<authority>/<package>`: the provider the account is of. */
   provider: string
-  /** `email`, else `displayName`, else the rendered title, else the id. */
+  /** `email`, else `displayName`, else the rendered title, else the login,
+   * else "your <Provider> account": never the record id, which is a
+   * string of characters nobody recognises (#1298). */
   label: string
   tokenStatus?: string
   /** Why the OAuth facility last failed to refresh the token (`tokenError`),
@@ -327,7 +330,7 @@ export function accountViewOf(
       str(p.title) ??
       str(p.login) ??
       str(p.userId) ??
-      record.id,
+      `your ${providerInfo(pkg).name} account`,
     tokenStatus,
     tokenError: str(p.tokenError),
     tokenErrorAt: str(p.tokenErrorAt),
@@ -339,6 +342,24 @@ export function accountViewOf(
     sync,
     health: healthOf(tokenStatus, sync, legacy),
   }
+}
+
+/** accountViewOf over every account, with a label two accounts share told
+ * apart by number in record order ("your Google account (2)"): the label is
+ * how the accounts table, a problem and a confirmation name one account. */
+export function accountViewsOf(
+  records: SubstrateRecord[],
+  kinds: KindInfo[]
+): AccountView[] {
+  const views = records.map((r) => accountViewOf(r, kinds))
+  const seen = new Map<string, number>()
+  for (const v of views) {
+    const key = `${v.provider} ${v.label}`
+    const n = (seen.get(key) ?? 0) + 1
+    seen.set(key, n)
+    if (n > 1) v.label = `${v.label} (${n})`
+  }
+  return views
 }
 
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
@@ -391,6 +412,18 @@ export function credentialHelp(
   if (oauth && declared.clientId)
     out.clientId = `From the app you created ${where}.`
   return out
+}
+
+/** A failure a sync body or the OAuth facility wrote: its first line is the
+ * owner's sentence, and what follows is the provider's or the library's own
+ * text, shown folded (docs/bundles.md, "How a failure is worded"). */
+export function splitFailure(text: string): {
+  line: string
+  technical: string
+} {
+  const i = text.indexOf("\n")
+  if (i < 0) return { line: text.trim(), technical: "" }
+  return { line: text.slice(0, i).trim(), technical: text.slice(i + 1).trim() }
 }
 
 /** An account's label where it opens a sentence: a plain name ("work")

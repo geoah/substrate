@@ -50,7 +50,7 @@ import {
   type SetupStep,
 } from "@/lib/providers"
 import {
-  accountViewOf,
+  accountViewsOf,
   providerViews,
   type AccountView,
   type ProviderView,
@@ -212,8 +212,7 @@ export function useProviders() {
   }, [rows, kinds])
 
   const accounts = useMemo<AccountView[]>(
-    () =>
-      (accountsRead.data?.records ?? []).map((r) => accountViewOf(r, kinds)),
+    () => accountViewsOf(accountsRead.data?.records ?? [], kinds),
     [accountsRead.data, kinds]
   )
   const views = useMemo(() => {

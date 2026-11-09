@@ -93,7 +93,7 @@ func oauthWrites(ty *vocabulary.Kind, name string) bool {
 func (ds *dataset) noteTokenRefresh(ctx context.Context, account eref, cause error, gen time.Time) {
 	status, reason := tokenStatusConnected, ""
 	if cause != nil {
-		status, reason = tokenStatusErroring, boundText(firstLine(cause.Error()), syncErrorMax)
+		status, reason = tokenStatusErroring, tokenReason(cause)
 	}
 	// A read outside the transaction first: the common case is a row that
 	// already says so, and it takes no lock.
@@ -917,7 +917,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 	tok, account, gen := g.tok, g.account, g.gen
 	out := refreshOutcome{gen: gen}
 	if account != want {
-		out.failed = errors.New("the stored credential reference belongs to another account")
+		out.failed = errOtherAccountsGrant
 		return out, nil
 	}
 	if out.failed = ds.refuseOtherClient(ctx, g, client); out.failed != nil {
@@ -963,7 +963,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 				tok, gen = g.tok, g.gen
 				out.gen, landed = gen, true
 				if g.account != account {
-					out.failed = errors.New("the stored credential reference belongs to another account")
+					out.failed = errOtherAccountsGrant
 					return out, nil
 				}
 				if out.failed = ds.refuseOtherClient(storeCtx, g, client); out.failed != nil {
@@ -990,7 +990,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 		return out, nil
 	}
 	if tok.RefreshToken == "" {
-		out.failed = fmt.Errorf("token for %s expired and cannot refresh", account.ID)
+		out.failed = errCannotRefresh{account: account.ID}
 		return out, nil
 	}
 	if refusal := oauthRefreshes.backedOff(e, gen, ds.oauthNow()); refusal != nil {
@@ -1123,8 +1123,74 @@ func (ds *dataset) oauthWriteRefusal() error {
 // reached oauthParkAfter carries (0180): how many refusals of its
 // generation, since when, the last answer, and the ask.
 func repeatedRefusal(refusals int, since time.Time, last error) error {
-	return fmt.Errorf("refused %d times since %s, last answer: %w; reconnect the account",
-		refusals, since.UTC().Format(time.RFC3339), last)
+	return &refusedRepeatedly{refusals: refusals, since: since.UTC(), last: last}
+}
+
+type refusedRepeatedly struct {
+	refusals int
+	since    time.Time
+	last     error
+}
+
+func (e *refusedRepeatedly) Error() string {
+	return fmt.Sprintf("refused %d times since %s, last answer: %v; reconnect the account",
+		e.refusals, e.since.Format(time.RFC3339), e.last)
+}
+
+func (e *refusedRepeatedly) Unwrap() error { return e.last }
+
+// errCannotRefresh is a due token with no refresh token, or, with
+// noFacility, a deployment whose OAuth facility is off.
+type errCannotRefresh struct {
+	account    string
+	noFacility bool
+}
+
+func (e errCannotRefresh) Error() string {
+	return fmt.Sprintf("token for %s expired and cannot refresh", e.account)
+}
+
+var errOtherAccountsGrant = errors.New("the stored credential reference belongs to another account")
+
+// tokenReason is the account's tokenError for cause: on its first line, one
+// sentence the owner can act on, and on the next, the facility's own words,
+// which the console folds away and an operator greps for. The first line is
+// what every surface that shows one line shows, so it must never be a status
+// code. reasonOAuthClientChanged is compared whole
+// (saysClientChanged), so it stays exactly itself.
+func tokenReason(cause error) string {
+	if errors.Is(cause, errOAuthClientChanged) {
+		return reasonOAuthClientChanged
+	}
+	raw := firstLine(cause.Error())
+	return tokenSentence(cause) + "\n" + boundText(raw, syncErrorMax)
+}
+
+func tokenSentence(cause error) string {
+	var repeated *refusedRepeatedly
+	var te *oauthflow.TokenError
+	var cannot errCannotRefresh
+	switch {
+	case errors.As(cause, &repeated):
+		// The instant ends in a comma: refusal readers cut it out on that.
+		return fmt.Sprintf("The provider has refused to renew this sign-in %d times since %s, so syncing has stopped. Reconnect the account.",
+			repeated.refusals, repeated.since.Format(time.RFC3339))
+	case oauthflow.GrantRefused(cause):
+		return "The provider no longer accepts this sign-in: it was revoked, expired or replaced. Reconnect the account."
+	case errors.As(cause, &te) && (te.Code == "invalid_client" || te.Code == "unauthorized_client"):
+		return "The provider refused this app's sign-in details (its client ID or secret). Check them in the provider's settings, then reconnect the account."
+	case oauthflow.Refused(cause):
+		return "The provider refused to renew this sign-in. Reconnect the account if this keeps happening."
+	case errors.As(cause, &te):
+		return "The provider couldn't renew this sign-in just now. It tries again on its own."
+	case errors.As(cause, &cannot) && cannot.noFacility:
+		return "This sign-in expired, and this server has no OAuth facility to renew it. The server's operator has to turn it on."
+	case errors.As(cause, &cannot):
+		return "This sign-in expired and can't be renewed on its own. Reconnect the account."
+	case errors.Is(cause, errOtherAccountsGrant):
+		return "This connection's stored sign-in belongs to another account. Reconnect the account."
+	}
+	return "The sign-in couldn't be renewed just now. It tries again on its own; reconnect the account if this keeps happening."
 }
 
 // storeRefreshedToken stores a refreshed token through updateCredential's
@@ -1178,7 +1244,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 	}
 	tok, account := g.tok, g.account
 	if account != want {
-		return "", errors.New("the stored credential reference belongs to another account")
+		return "", errOtherAccountsGrant
 	}
 	if err := ds.refuseOtherClient(ctx, g, client); err != nil {
 		return "", err
@@ -1190,7 +1256,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 		return tok.AccessToken, nil
 	}
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {
-		return "", fmt.Errorf("token for %s expired and cannot refresh", account.ID)
+		return "", errCannotRefresh{account: account.ID, noFacility: ds.svc.oauth == nil}
 	}
 	out, err := ds.refreshCredential(ctx, ref, account, g.gen, meta, client)
 	if err != nil {

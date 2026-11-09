@@ -19,7 +19,7 @@ import { glanceCountQueryOptions } from "@/lib/api/records"
 import type { CollectionGroup } from "@/lib/collections"
 import { kindPackage } from "@/lib/definition"
 import { collectionsListed, currentStep, type SetupStep } from "@/lib/providers"
-import { accountViewOf, providerViews } from "@/lib/sync"
+import { accountViewsOf, providerViews } from "@/lib/sync"
 import { kindHasTrait } from "@/lib/traits"
 
 /** A provider group holds one package's kinds: the bundle's id. */
@@ -65,9 +65,7 @@ export function useListedGroups(
     if (accountKinds && !accountsRead.data) return undefined
     const kinds = registry.data
     const ids = new Set(providers.map(bundleOf))
-    const accounts = (accountsRead.data?.records ?? []).map((r) =>
-      accountViewOf(r, kinds)
-    )
+    const accounts = accountViewsOf(accountsRead.data?.records ?? [], kinds)
     const views = providerViews(statuses.data, ids, kinds, accounts)
     const out = new Map<string, SetupStep[]>()
     for (const id of ids) {
