@@ -155,8 +155,8 @@ Each becomes a decision record when it lands; the numbers are taken then.
   the server's module, and talks to the server only through the public HTTP
   API. The server's module never imports it. It is host software the operator
   installs and trusts, like the server itself; 0220 confines function bodies
-  the server runs and says nothing about it. The alternative is a repository
-  of its own ([section 14](#14-open-questions-for-the-owner)).
+  the server runs and says nothing about it. The owner chose this over a
+  repository of its own ([section 14](#14-settled-with-the-owner)).
 - **D2. The bridge is an app, and its instances trust each other.** It gets
   its token through the app authorization flow
   ([0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)),
@@ -468,12 +468,14 @@ as `message.status`, and a group's per-member receipts are left out.
   connector has it).
 - **Edits.** A `message.upsert` never lowers `editCount`, so a history page
   that returns an older text cannot undo a live edit.
-- **Deletes.** `scope: everyone` marks the row `deleted: everyone` and clears
-  its `text` and its attachments' files; `scope: owner` (the owner deleted it
-  for themselves on another device) marks `deleted: owner` and keeps the
-  content. A deleted row stays deleted against later upserts. Clearing a row
-  is not erasure: the changelog is append-only and every export carries the
-  earlier text. Nothing here promises that withdrawn content is gone.
+- **Deletes.** `scope: everyone` marks the row `deleted: everyone` with
+  `deletedAt` and keeps its text, its attachments' files and their captions:
+  the owner keeps what they received as their archive
+  ([section 14](#14-settled-with-the-owner)), and the console shows it under
+  the deleted mark so nobody takes it for a live message. `scope: owner` (the
+  owner deleted it for themselves on another device) marks `deleted: owner`
+  and keeps the content too. A deleted row stays deleted against later
+  upserts, its content as it was before the delete.
 - **Disappearing messages.** `expiresAt` is recorded and nothing acts on it in
   phase 1; the same limit applies.
 - **Chats.** `chat.delete` deletes the row; a later `chat.upsert` (new
@@ -671,12 +673,38 @@ data:
 
 Empty `agents` and `functions` mean every agent write and only agent writes,
 directly or through a function tool; the owner's own writes, the console's
-and the function's are not held. The owner lets one agent react unasked with
-an `allow` naming the agent and the `chatbridge_react` function, one op each,
-and `overrides: chatbridge-agent-actions`
-([0108](../decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md));
-an allow naming the function covers writes through that tool and never the
-agent's direct writes. The owner may also give the gate a judge agent with
+and the function's are not held. The gate stays kind-wide because Moss, the
+seeded assistant, holds `writes: ["*"]`: a gate on the tools alone would let
+its direct `write` of a send through.
+
+**Reactions and mark-read pass unasked** ([section 14](#14-settled-with-the-owner)).
+Three `allow` policies ship beside the gate, each naming one agent, one op and
+one tool, and `overrides: chatbridge-agent-actions`
+([0108](../decisions/0108-an-allow-outranks-a-gate-only-by-naming-it.md)):
+
+```yaml
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: chatbridge-moss-reacts
+data:
+  properties:
+    selector:
+      kinds:
+        - providers.substrate.reamde.dev/chatbridge/chataction
+      ops: [put]
+      agents:
+        - substrate.reamde.dev/assistant/moss
+      functions:
+        - providers.substrate.reamde.dev/chatbridge/chatbridge_react
+    action: allow
+    overrides: chatbridge-agent-actions
+```
+
+and the same for `chatbridge_unreact` and `chatbridge_markread`. An allow
+naming a tool covers writes through that tool and never the agent's direct
+writes, so a send, an edit or a delete still waits for the owner whichever
+way an agent asks. Another agent the owner wants to react unasked gets its
+own three allows. The owner may also give the gate a judge agent with
 criteria (the policy's `judge`), which accepts what fits within its
 threshold. The policy is the owner's to edit once installed, and an upgrade
 leaves an edited one alone. PR 1 tests that an install admits it in the same
@@ -791,8 +819,9 @@ deciding. An assistant reaching the repository over MCP with the owner's
 token holds the owner's hand (0230); that is the owner's choice to make and
 the console says so.
 
-**At the policy door.** Every agent write of `chataction` is held until the
-owner accepts it or lifts the gate for that agent and tool
+**At the policy door.** An agent's send, edit or delete is held until the
+owner accepts it; the assistant's reactions and read markers pass, through
+their own tools only, and the owner widens or narrows that per agent and tool
 ([section 7](#7-the-package)). The bridge trusts the record, not who wrote
 it, since an app's reads carry no provenance.
 
@@ -804,7 +833,7 @@ it, since an app's reads carry no provenance.
    `markread` action, and presence stays unavailable, so the owner's phone
    keeps its notifications. This is the default per network, not a rule for
    all: Telegram's terms forbid a client that hides reads, presence or
-   typing, so its profile is decided before it ships ([section 10](#telegram)).
+   typing, so its profile offers no "ghost" feature ([section 10](#telegram)).
 3. **Limits.** At most `sendsPerHour` and `sendsPerDay` sends per account, at
    least 3 seconds between sends in one chat, and the same text to one chat
    in an hour. A typing indicator before a send, paced to the text, is
@@ -847,9 +876,11 @@ limits bite (the phone online within 30 days, the device within 45).
 
 ### Telegram
 
-Not in phase 1. Technically it is the cleanest network (full history,
-gap-free catch-up, every action), and the connector can ship once three
-things are decided:
+Mirrored, by the owner's decision ([section 14](#14-settled-with-the-owner)),
+and built right after phase 1 on mautrix-telegram's Go connector, with the
+operator's `api_id` and `api_hash` from the environment. Technically it is
+the cleanest network (full history, gap-free catch-up, every action). What
+its terms bind, and how the bridge meets each:
 
 - **The AI clause.** Telegram's API terms (§1.5) and content licensing terms,
   since about February 2026, forbid using Telegram data to "engage in the …
@@ -858,12 +889,15 @@ things are decided:
   searches plausibly falls inside it, and no agent grant can exclude one
   network's rows from a kind. The clause binds whoever holds the `api_id`,
   which on a shared deployment is the operator who registered it.
+  The owner chose to mirror Telegram knowing this, and holds the `api_id`.
 - **Client behaviour.** §1.4 forbids clients that interfere with read,
-  presence, typing or disappearing-content behaviour, so the invisible
-  default above does not apply as written: a background archive read and the
-  owner viewing a chat need different treatment.
+  presence, typing or disappearing-content behaviour, so the bridge offers no
+  "ghost" feature: archiving marks nothing read, a `markread` action sends the
+  receipt a person's client sends after reading, and presence stays offline
+  as an idle official client's does.
 - **Sponsored messages.** §3.3 requires them in channels for clients that
-  show channels.
+  show channels; the bridge follows the connector's handling and says what it
+  does.
 
 One process owns a session: Telegram kills one used from two connections at
 once, so nothing but the bridge may open it.
@@ -892,11 +926,15 @@ an acknowledgment that says so.
 
 ### Discord
 
-Not by default. Discord forbids automating a user account even for replies
-the owner directs, and no official route reads one's own DMs. Phase 3 offers
-an importer for the account's data package (only the owner's own messages,
-up to 30 days to arrive, no account risk), and mautrix-discord's rewrite once
-released, behind an acknowledgment that names the rule it breaks.
+The live connection is the primary path, by the owner's decision
+([section 14](#14-settled-with-the-owner)), built right after Telegram on
+mautrix-discord's bridgev2 rewrite (the `megadiscord` branch, unreleased, by
+pinned pseudo-version, as Courier imports it). Discord forbids automating a
+user account even for replies the owner directs, and no official route reads
+one's own DMs, so `chatbridge login discord` states that rule and asks for an
+explicit yes before it links. The bridge keeps to the gateway, pages history
+lightly, marks read only through `markread`, and stops sending on a rate
+limit or a captcha. The data-package importer is not needed for now.
 
 ### Bluesky
 
@@ -962,12 +1000,15 @@ None carries `offer:`: an agent offered them would send as the owner unasked,
 which is the problem [section 1](#1-the-problem) names. The owner's console
 and direct calls reach them; the agent path is the bridge's `chataction`.
 
+**Kept.** The owner keeps the Beeper provider in general
+([section 14](#14-settled-with-the-owner)): it is the way in for Viber,
+WeChat and Snapchat and for anything an owner already runs through Beeper.
+
 **Live, later.** Beeper's WebSocket has no resume, so the 15-minute poll stays
 the catch-up either way. A relay that holds `/v1/ws` could speak this plan's
 contract and make Beeper Desktop one more instance of the chat bridge
 package, which is what would bring Viber, WeChat and Snapchat close to real
-time; the Beeper provider would then retire once nothing reads its kinds.
-That waits until the bridge's own path works.
+time. That waits until the bridge's own path works.
 
 ## 12. Licensing and distribution
 
@@ -979,7 +1020,7 @@ build reachable from the build itself (the image's labels name the commit of
 this public repository); copyright lines kept on anything adapted from
 Courier or nook-chatd. The Beeper CLI carries no license and is read, never
 copied. The server's own license is still undecided
-([section 14](#14-open-questions-for-the-owner)), and the separate program
+([section 14](#14-settled-with-the-owner)), and the separate program
 keeps that choice open. This is an engineering reading of the licenses, not
 legal advice.
 
@@ -1018,34 +1059,37 @@ built at once from [section 6](#6-the-contract) and
    that has no key and declares no signature, with tests for install,
    approval, upgrade and Resume. Decision record for D8, amending 0168.
 
+**Right after phase 1**, from the owner's decisions: Telegram, then Discord's
+live connection, each a pull request stacked on the bridge's; the package
+keeps a message deleted for everyone and lets the assistant's reactions and
+read markers through; the console shows a deleted message's kept text under
+its mark.
+
 **Phase 2**: Signal, the remote sign-in protocol and its console and app
 steps, Messenger and Instagram (with the apps' cookie templates), Google
 Messages, sending files, a second instance, the typing indicator, the device
 grant.
 
-**Phase 3**: Telegram once its questions are answered, X, LinkedIn,
-Discord's importer and opt-in connector, Bluesky, LINE, the on-device Mac
-bridge for iMessage, Beeper as an instance.
+**Phase 3**: X, LinkedIn, Bluesky, LINE, the on-device Mac bridge for
+iMessage, Beeper as an instance.
 
 **Testing.** No network is touched in CI. Each network gets a manual run on a
 throwaway account, where the network allows one, before it is called done.
 
-## 14. Open questions for the owner
+## 14. Settled with the owner
 
-1. **Where the AGPL code lives**: in this repository as `cmd/chatbridge`
-   with its own module and `LICENSE` (Nook does this), or in a repository of
-   its own. The repository has no `LICENSE` yet.
-2. **Telegram**: mirror it at all, and if so how its rows stay away from the
-   assistant, given that a grant cannot exclude one network's rows from a
-   kind ([section 10](#telegram)).
-3. **Deleted for everyone**: clear the row (proposed) or keep the text as the
-   owner's archive? Either way the changelog keeps it.
-4. **Discord**: the importer only, or also the live connector behind an
-   acknowledgment?
-5. **Agents**: is the gate on every action right, or should reactions and
-   mark-read pass unasked by default?
-6. **The Beeper provider's future**: keep it as the way in for Viber, WeChat
-   and Beeper users, or plan its retirement once Beeper speaks this contract?
+Answered on 2026-11-09:
+
+1. **Where the AGPL code lives**: in this repository, as its own Go module
+   with its own `LICENSE` (`cmd/chatbridge`).
+2. **Telegram**: mirrored ([section 10](#telegram)).
+3. **Deleted for everyone**: kept, and marked deleted
+   ([section 6.4](#64-merge-rules)).
+4. **Discord**: the live connection is the primary path
+   ([section 10](#discord)).
+5. **Agents**: reactions and mark-read go through unasked; sends, edits and
+   deletes wait for the owner ([section 7](#7-the-package)).
+6. **Beeper**: kept in general ([section 11](#11-beeper)).
 
 ## 15. Reviews
 
