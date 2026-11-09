@@ -1879,15 +1879,29 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 	if !hasDone && !hasDropped && !hasProposed {
 		return
 	}
+	// The keys the property wrote, so a refusal names what is there.
+	var keys []string
+	for _, k := range []struct {
+		name    string
+		present bool
+	}{{"done", hasDone}, {"dropped", hasDropped}, {"proposed", hasProposed}} {
+		if k.present {
+			keys = append(keys, k.name)
+		}
+	}
+	named, names, belongs := keys[0], "names", "belongs"
+	if len(keys) > 1 {
+		named, names, belongs = strings.Join(keys[:len(keys)-1], ", ")+" and "+keys[len(keys)-1], "name", "belong"
+	}
 	switch {
 	case declared == nil:
-		l.errf("%s: done and dropped name an enum's values or a state machine's states", where)
+		l.errf("%s: %s %s an enum's values or a state machine's states", where, named, names)
 		return
 	case depth > 1:
-		l.errf("%s: done and dropped close a record, so they sit on a kind's own property, never an object field or link data", where)
+		l.errf("%s: %s %s on a kind's own property, never an object field or link data", where, named, belongs)
 		return
 	case p.Repeated || p.Keyed:
-		l.errf("%s: done and dropped close a record by its one status: drop repeated/keyed or drop the lists", where)
+		l.errf("%s: %s %s on a status that holds one value: drop repeated/keyed or drop the lists", where, named, belongs)
 		return
 	}
 	listedIn := map[string]string{}
@@ -1920,7 +1934,7 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 	p.Proposed = read("proposed", hasProposed)
 	if len(listedIn) >= len(declared) {
 		if hasProposed {
-			l.errf("%s: done, dropped and proposed leave no value open to accept a proposal into", where)
+			l.errf("%s: %s leave no value outside the lists to accept a proposal into", where, named)
 		} else {
 			l.errf("%s: done and dropped leave no value open", where)
 		}
@@ -1945,7 +1959,7 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 				}
 			}
 			if !accepted {
-				l.errf("%s.proposed: %q has no transition to an open state, so nothing can accept it", where, s)
+				l.errf("%s.proposed: %q has no transition to an open state that is not proposed, so nothing can accept it", where, s)
 			}
 		}
 	}
