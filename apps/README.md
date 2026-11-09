@@ -1,14 +1,15 @@
 # The apps
 
-Five apps: the console in a native shell, Substrate Chat, Substrate Sync,
+Six apps: the console in a native shell, Substrate Chat, Substrate Sync,
 Substrate Workouts and Substrate Tasks (each below), all on Apple systems
-and Tasks on Android too; and the template `mise run apps:new` copies, a
-whole app that nothing releases ([A new app](#a-new-app)). Each is a folder
-here named by its [app.json](#an-apps-appjson), six in all, beside the kit
-they share ([kit/](kit/README.md)) and the two build roots, `xcode/` and
-`gradle/`. Tasks is on the web too ([tasks/web](tasks/web/README.md)), on the
-web kit ([kit/web](kit/web/README.md)) in the pnpm workspace rooted here
-(`package.json`, `pnpm-workspace.yaml`).
+and Tasks on Android too, and Substrate Healthspan, on the web alone; and
+the template `mise run apps:new` copies, a whole app that nothing releases
+([A new app](#a-new-app)). Each is a folder here named by its
+[app.json](#an-apps-appjson), seven in all, beside the kit they share
+([kit/](kit/README.md)) and the two build roots, `xcode/` and `gradle/`.
+Tasks is on the web too ([tasks/web](tasks/web/README.md)), and Healthspan
+is only there, both on the web kit ([kit/web](kit/web/README.md)) in the
+pnpm workspace rooted here (`package.json`, `pnpm-workspace.yaml`).
 
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that
@@ -1077,6 +1078,24 @@ mise run apple:test:tasks    # TasksKit's tests and the views over its fixtures,
 mise run android:build       # every Android module, the Tasks app's :tasks among them
 ```
 
+## Substrate Healthspan
+
+A web app on the web kit, with no Apple or Android build: labs with their
+targets and trends, an age score from sleep, training, steps, VO2 max,
+resting heart rate and lean mass, the clinical record, and the sources
+behind them, with an import of lab results from a file. Its approval asks
+for `substrate.reamde.dev/healthspan`, which it publishes, and the `health`
+and `labs` catalogues it reads; everything else it reads from the shared
+kinds any provider writes, so it works with whichever wearables and labs
+a repository holds. Its `app.json` names the platform `web`, which a
+release skips: the build is deployed as a static site, and its package goes
+up with the site's closures. [Its README](healthspan/README.md) has the
+screens, its access, and how to serve it anywhere.
+
+```bash
+cd apps && pnpm --filter @substrate/healthspan-web dev   # http://127.0.0.1:5175; ?demo runs on an invented person
+```
+
 ## A new app
 
 `mise run apps:new <id>` makes `apps/<id>/` from `template/`, and every app
@@ -1289,5 +1308,7 @@ tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (Su
 tasks/package/                      its published tasks package
 tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders) and TasksAndroid (its roots over the Android bridge, the SubstrateTasks library), with their tests; portable
 tasks/android/                      Substrate Tasks on Android: the Gradle module :tasks, its Compose UI, its bridge.json and generated Kotlin, fixtures/tasks.json
+healthspan/web/                     Substrate Healthspan on the web: the app on the web kit, its screens, the age score, the lab catalogue, the import
+healthspan/package/                 its published healthspan package
 template/                           what `mise run apps:new` copies: a whole app named `template` (app.json, TemplateKit/, apple/, package/), released by nothing
 ```

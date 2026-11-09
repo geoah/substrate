@@ -1,7 +1,13 @@
 # Healthspan: a health app on the web kit
 
-Status: proposal, 2026-11-09, against `main` at `6717954da`, fourth draft
-after three reviews ([Reviews](#reviews)). Nothing here is built yet.
+Status: built, 2026-11-09, on `main` at `6717954da`: the fourth draft,
+approved after four reviews ([Reviews](#reviews)), then corrected where the
+build found the server's rules ([0228](../decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)'s
+minted ids). The age score was checked against the old engine on one
+owner's data, read-only: over 19 weekly snapshots of WHOOP's own records the
+two agree exactly (no age difference above 0.1 years, no contributor
+difference above 1%), and with every source, WHOOP ranked first, the same 19
+weeks agree and 147 earlier weeks appear from the watch's history.
 
 ## The problem
 

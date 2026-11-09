@@ -4,7 +4,9 @@ What every Substrate web app shares, the browser's side of
 [the kit](../README.md): TypeScript packages in the pnpm workspace rooted at
 `apps/` (`apps/pnpm-workspace.yaml`), each exported as source, so an app's
 Vite build compiles them with it. The apps on them are
-[Substrate Tasks on the web](../../tasks/web/README.md) and
+[Substrate Tasks on the web](../../tasks/web/README.md),
+[Substrate Healthspan](../../healthspan/README.md), which reads the shared
+catalogues through aggregates (`aggregate`, `useRead`), and
 [the template](../../template/web/README.md), the smallest complete one,
 which a new web app copies.
 
