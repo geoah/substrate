@@ -16,7 +16,6 @@ import (
 
 	"github.com/geoah/substrate/cmd/chatbridge/internal/contract"
 	"github.com/geoah/substrate/cmd/chatbridge/internal/localmatrix"
-	"github.com/geoah/substrate/cmd/chatbridge/internal/store"
 )
 
 var testApp = TelegramApp{APIID: 12345, APIHash: "0123456789abcdef0123456789abcdef"}
@@ -154,11 +153,7 @@ func TestTelegramWaitsAndErrors(t *testing.T) {
 // The connector migrates and starts over the store with no login, without
 // reaching Telegram.
 func TestTelegramStartsWithoutALogin(t *testing.T) {
-	st, err := store.Open(context.Background(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
+	st := tempStore(t)
 	run, err := Open(telegramSpec(), st, nil, Options{DeviceName: "Substrate", Telegram: testApp}, slog.New(slog.DiscardHandler), zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
