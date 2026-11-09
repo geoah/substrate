@@ -30,8 +30,9 @@ export interface SubstrateContextValue {
    * the token to revoke. */
   signOut: () => Promise<void>
   /** The server's sign-in and approval page again, for this repository: to
-   * review more access, renew it, or sign in after it ended. */
-  signInAgain: () => Promise<void>
+   * review more access, renew it, or sign in after it ended. `scopes` are
+   * asked for this time beside the manifest's and `askScopes`'s. */
+  signInAgain: (scopes?: readonly string[]) => Promise<void>
   /** The scopes the app asks for now beyond its manifest's, such as write
    * access to a kind the owner chose: every later `signInAgain` asks for
    * them with the manifest's. */

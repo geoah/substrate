@@ -90,6 +90,8 @@ describe("the contract's words", () => {
   it("says a group", () => {
     expect(words.group.kind("Project", "Active")).toBe("Project · Active")
     expect(words.group.open(3)).toBe("3 open")
+    expect(words.group.outOfReach).toBe("Out of reach")
+    expect(words.viewOnly).toBe("View only")
     expect([
       words.group.todo,
       words.group.done,

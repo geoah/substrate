@@ -35,24 +35,38 @@ function refused(
   )
 }
 
-/** Turning a collection on that the grant does not write asks for write
- * access to it: the sentence, and Approve, which opens the server's
- * approval with the app's request and every collection's scope in it. */
-export function ApprovalNote(props: { collection: Collection }) {
+/** A collection the grant does not write: the sentence, and Approve, which
+ * opens the server's approval asking for `write:<kind>` beside the app's
+ * request and every collection's scope, whether the collection is on or
+ * not (one turned on from another device is view only here until then).
+ * Settings → Collections shows it for the collections that are on; their
+ * pages and their tasks' pages show it always. */
+export function ApprovalNote(props: {
+  collection: Collection
+  /** Only where the collection is on. */
+  whenOn?: boolean
+  className?: string
+}) {
   const { session, signInAgain } = useSubstrate()
   const c = props.collection
-  if (!c.enabled || !c.viewOnly || c.kind === ownTaskKind) return null
+  if (!c.viewOnly || c.kind === ownTaskKind) return null
+  if (props.whenOn && !c.enabled) return null
   const no = refused(c, session.requestedScopes, session.scopes)
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-[10px] bg-card px-4 py-3">
-      <p className="min-w-0 flex-1 text-[15px]">
+    <div
+      className={cx(
+        "mb-4 flex flex-wrap items-center gap-3 rounded-[10px] bg-card px-4 py-3",
+        props.className
+      )}
+    >
+      <p className="min-w-[12rem] flex-1 text-[15px]">
         {no
           ? words.approval.refused(c.label.plural)
           : words.approval.ask(c.label.plural)}
       </p>
       <button
         type="button"
-        onClick={() => void signInAgain()}
+        onClick={() => void signInAgain([`write:${c.kind}`])}
         className="h-11 shrink-0 rounded-full bg-accent px-4 text-[15px] font-semibold text-white active:opacity-80"
       >
         {words.approval.approve}
@@ -98,7 +112,7 @@ export function CollectionsScreen(props: { onBack: () => void }) {
       </p>
       <div className="px-4">
         {collections.map((c) => (
-          <ApprovalNote key={c.kind} collection={c} />
+          <ApprovalNote key={c.kind} collection={c} whenOn />
         ))}
         <Section
           header={words.collections.showFrom}
@@ -209,7 +223,7 @@ export function CollectionScreen(props: { kind: string; onBack: () => void }) {
       !status.proposed.includes(v)
   )
   const choice = c.record?.properties.group
-  const waiting = c.references.find((r) => r.property === choice && !r.readable)
+  const waiting = c.waitingGroup
   const asked =
     waiting && session.requestedScopes?.includes(`read:${waiting.kind}`)
   return (
@@ -222,8 +236,8 @@ export function CollectionScreen(props: { kind: string; onBack: () => void }) {
       <div className="px-4">
         <ApprovalNote collection={c} />
         {waiting && (
-          <div className="mb-4 flex items-center gap-3 rounded-[10px] bg-card px-4 py-3">
-            <p className="min-w-0 flex-1 text-[15px]">
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[10px] bg-card px-4 py-3">
+            <p className="min-w-[12rem] flex-1 text-[15px]">
               {asked
                 ? words.approval.readRefused(c.label.plural)
                 : words.approval.readAsk(
@@ -233,7 +247,7 @@ export function CollectionScreen(props: { kind: string; onBack: () => void }) {
             </p>
             <button
               type="button"
-              onClick={() => void signInAgain()}
+              onClick={() => void signInAgain([`read:${waiting.kind}`])}
               className="h-11 shrink-0 rounded-full bg-accent px-4 text-[15px] font-semibold text-white active:opacity-80"
             >
               {words.approval.approve}

@@ -9,6 +9,7 @@ import {
 } from "@substrate/react"
 import { Link2 } from "lucide-react"
 import { usePending, useTaskActions } from "./actions"
+import { ApprovalNote } from "./CollectionsScreen"
 import { DescriptionSection, DetailsSection, statusText } from "./Details"
 import { safeURL } from "./markdown"
 import {
@@ -99,6 +100,7 @@ export function TaskDetail(props: {
         }
       />
       <div className="px-4 pt-2">
+        <ApprovalNote collection={c} />
         <Section>
           <div className="flex items-center gap-2 py-1.5 pr-1.5 pl-4">
             <Title
@@ -129,6 +131,9 @@ export function TaskDetail(props: {
         </Section>
         <Section>
           <Row label={fieldLabel.status} value={status} />
+          {c.waitingGroup && (
+            <Row label={c.waitingGroup.label} value={words.group.outOfReach} />
+          )}
           {c.group &&
             (writable ? (
               <SelectRow

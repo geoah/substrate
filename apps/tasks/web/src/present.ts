@@ -61,9 +61,14 @@ export interface RowView {
   reschedule?: { title: string; options: { label: string; how: Reschedule }[] }
   /** Won't Do, where it waits on a decision. */
   decides: boolean
-  /** A suggestion's row: when it was written, and its Dismiss and Accept
-   * where its collection is writable. */
-  suggestion?: { written: string; dismiss: boolean; accept: boolean }
+  /** A suggestion's row: when it was written, its Dismiss and Accept where
+   * its collection is writable, and View only where it is not. */
+  suggestion?: {
+    written: string
+    dismiss: boolean
+    accept: boolean
+    viewOnly: boolean
+  }
   notes?: string
   /** The row read aloud: "Buy milk, due Today, priority High". */
   spoken: string
@@ -74,6 +79,7 @@ export interface RowView {
 export function groupName(model: TasksModel, t: TaskItem): string | undefined {
   const g = t.item.group
   const c = t.item.collection
+  if (c.waitingGroup) return words.group.outOfReach
   if (g === null || !c.group) return undefined
   if (g === "none")
     return words.lists.none(
@@ -198,6 +204,7 @@ export function row(
           written: writtenWords(task.item.createdAt, now),
           dismiss: task.item.actions.dismiss.length > 0,
           accept: task.item.actions.accept.length > 0,
+          viewOnly: task.item.collection.viewOnly,
         }
       : undefined,
     notes: task.description ? notesPreview(task.description) : undefined,

@@ -186,6 +186,12 @@ export function TaskRow(
       ? actions.complete(t.id)
       : actions.reopen(t.id)
   const writable = !t.item.collection.viewOnly
+  // Buttons rather than a mark trail the row: where the row is too narrow
+  // for them and a readable title (a phone at a large text size), they go
+  // under the title rather than squeeze it.
+  const wide =
+    (!!suggestion && (suggestion.accept || suggestion.dismiss)) ||
+    !!view.decision
   const swipe = useSwipe({
     trailing: suggestion ? (suggestion.dismiss ? 1 : 0) : open ? 2 : 1,
     leading: suggestion ? suggestion.accept : view.toggles,
@@ -267,6 +273,7 @@ export function TaskRow(
         }}
         className={cx(
           "relative flex items-center gap-1 pr-1.5 pl-4",
+          wide && "flex-wrap",
           selected
             ? "bg-[color-mix(in_srgb,var(--sx-accent)_9%,var(--sx-card))]"
             : "bg-card"
@@ -275,6 +282,7 @@ export function TaskRow(
         <div
           className={cx(
             "min-w-0 flex-1 py-2.5 transition-opacity",
+            wide && "min-w-[min(100%,11rem)]",
             (faded || !open) && "opacity-[0.62]"
           )}
         >
@@ -359,6 +367,11 @@ export function TaskRow(
                     className="text-secondary"
                   />
                 )}
+                {suggestion?.viewOnly && (
+                  <span className="text-[12px] leading-4 font-medium text-secondary">
+                    {words.viewOnly}
+                  </span>
+                )}
                 {!suggestion && view.collection && (
                   <Chip
                     icon={<Layers className="size-3.5 shrink-0" />}
@@ -442,7 +455,7 @@ function SuggestionControls(props: {
   if (!s.accept && !s.dismiss) return null
   return (
     <span
-      className="flex shrink-0 items-center gap-2 pr-1.5 pl-1"
+      className="ml-auto flex shrink-0 items-center gap-2 pr-1.5 pl-1 @max-sm:pb-2.5"
       onPointerDown={(e) => e.stopPropagation()}
     >
       {s.dismiss && (
@@ -481,7 +494,7 @@ function SuggestionControls(props: {
 function UndoControl(props: { words: string; onUndo: () => void }) {
   return (
     <span
-      className="flex shrink-0 items-center gap-2 pr-1.5 pl-1"
+      className="ml-auto flex shrink-0 items-center gap-2 pr-1.5 pl-1 @max-sm:pb-2.5"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <span className="text-[15px] text-secondary">{props.words}</span>

@@ -74,6 +74,10 @@ export interface Collection {
   priority: string | null
   order: string | null
   group: GroupReading | null
+  /** The reference the owner chose to group by whose kind the grant does
+   * not read yet: no group reading until it does, and each task's group
+   * is out of reach meanwhile. */
+  waitingGroup: ReferenceChoice | null
   /** What each reading guesses from the declaration alone, which the
    * collection's page shows beside the owner's choice. */
   guess: Record<Reading, string | null> & { group: GroupReading | null }
@@ -478,12 +482,15 @@ export function readCollections(
       guess.order
     )
     let group = guess.group
+    let waitingGroup: ReferenceChoice | null = null
     const groupChoice = record?.properties.group
     if (groupChoice === "-") group = null
     else if (typeof groupChoice === "string" && groupChoice) {
       const ref = refs.find((r) => r.property === groupChoice)
-      if (ref)
+      if (ref) {
         group = ref.readable ? { property: ref.property, kind: ref.kind } : null
+        if (!ref.readable) waitingGroup = ref
+      }
     }
     const title = editableTitle(definition)
     const writes = grantWrites(grant, kind, definition)
@@ -511,6 +518,7 @@ export function readCollections(
       priority,
       order,
       group,
+      waitingGroup,
       guess,
       priorities: valuesOf(prioritySpec),
       references: refs,

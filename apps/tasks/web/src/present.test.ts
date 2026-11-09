@@ -79,7 +79,12 @@ describe("the presenter over the contract's cases", () => {
     expect(view.open.map((r) => [r.title, r.suggestion])).toEqual([
       [
         "Fix the fence · C-2",
-        { written: expect.any(String), dismiss: true, accept: true },
+        {
+          written: expect.any(String),
+          dismiss: true,
+          accept: true,
+          viewOnly: false,
+        },
       ],
     ])
     expect(view.open[0].collection).toBe("Chores")
@@ -128,8 +133,35 @@ describe("the presenter over the contract's cases", () => {
     const m = model(c)
     const t = m.task("ada.example.com/work/chore/y1")!
     const r = row(t, { now: new Date(c.now), model: m })
-    expect(r.suggestion).toMatchObject({ dismiss: false, accept: false })
+    expect(r.suggestion).toMatchObject({
+      dismiss: false,
+      accept: false,
+      viewOnly: true,
+    })
     expect(r.toggles).toBe(false)
+  })
+
+  it("says a task's group is out of reach while its chosen kind waits on approval", () => {
+    const c = cases["../../contract/view-only-and-pins.json"]
+    const m = model({
+      ...c,
+      records: c.records.map((r) =>
+        r.kind === "substrate.reamde.dev/tasks/collection"
+          ? { ...r, properties: { ...r.properties, group: "area" } }
+          : r
+      ),
+    })
+    const chore = m.collection("ada.example.com/work/chore")!
+    expect(chore.group).toBeNull()
+    expect(chore.waitingGroup).toMatchObject({
+      property: "area",
+      kind: "ada.example.com/work/area",
+      readable: false,
+    })
+    const t = m.task("ada.example.com/work/chore/y1")!
+    expect(
+      row(t, { now: new Date(c.now), model: m, mixed: true }).listName
+    ).toBe("Out of reach")
   })
 })
 
@@ -170,5 +202,17 @@ describe("the scopes the app asks for beyond its first approval", () => {
       "read:ada.example.com/work/area",
       "write:ada.example.com/work/chore",
     ])
+    // A write approved for a collection that is off is asked for again.
+    const request = [
+      "write:substrate.reamde.dev/tasks/*",
+      "read:implements(substrate.reamde.dev/core/lifecycle)",
+    ]
+    expect(
+      extraScopes(
+        [],
+        [...request, "write:ada.example.com/flow/ticket"],
+        request
+      )
+    ).toEqual(["write:ada.example.com/flow/ticket"])
   })
 })

@@ -74,6 +74,8 @@ export const words = {
       status ? `${label} · ${status}` : label,
     open: (n: number) => `${n} open`,
     todo: "To Do",
+    /** A task's group while its kind waits on the owner's approval. */
+    outOfReach: "Out of reach",
     done: "Done",
     pin: "Pin",
     unpin: "Unpin",
@@ -113,6 +115,8 @@ export const words = {
     order: "Order",
     none: "None",
   },
+  /** A view-only collection's suggestion row, in place of its decisions. */
+  viewOnly: "View only",
   approval: {
     ask: (collection: string) =>
       `Substrate Tasks needs your approval to change your ${collection}.`,

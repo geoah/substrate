@@ -370,29 +370,35 @@ export function SubstrateProvider({
     )
   }, [])
 
-  const signInAgain = useCallback(async () => {
-    if (!session) return
-    try {
-      const located = await probe(
-        session.server,
-        undefined,
-        requirementOf(manifest)
-      )
-      await beginSignIn({
-        manifest: extraScopes.length
-          ? {
-              ...manifest,
-              scopes: [...new Set([...manifest.scopes, ...extraScopes])],
-            }
-          : manifest,
-        server: located.server,
-        metadata: located.metadata,
-        repository: session.repository,
-      })
-    } catch (e) {
-      toast(describe(e), "error")
-    }
-  }, [session, manifest, toast, extraScopes])
+  const signInAgain = useCallback(
+    async (more: readonly string[] = []) => {
+      if (!session) return
+      try {
+        const located = await probe(
+          session.server,
+          undefined,
+          requirementOf(manifest)
+        )
+        await beginSignIn({
+          manifest:
+            extraScopes.length || more.length
+              ? {
+                  ...manifest,
+                  scopes: [
+                    ...new Set([...manifest.scopes, ...extraScopes, ...more]),
+                  ],
+                }
+              : manifest,
+          server: located.server,
+          metadata: located.metadata,
+          repository: session.repository,
+        })
+      } catch (e) {
+        toast(describe(e), "error")
+      }
+    },
+    [session, manifest, toast, extraScopes]
+  )
 
   // `keeper.signOut` queues the token before it clears the session, and
   // clears it only while it is this tab's: clearing it signs out every

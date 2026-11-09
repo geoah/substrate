@@ -19,6 +19,7 @@ import {
   deletingListStore,
   editorStore,
   go,
+  linkKindsStore,
   namingStore,
   openSettings,
   openTask,
@@ -47,10 +48,14 @@ export function App() {
   const route = useRoute()
   const model = useTasks()
   const actions = useTaskActions()
-  const { askScopes } = useSubstrate()
+  const { askScopes, session, manifest } = useSubstrate()
   useDiscovery()
   useLinkKinds(model)
-  const asked = extraScopes(model.sources.collections).join(" ")
+  const asked = extraScopes(
+    model.sources.collections,
+    session.scopes,
+    manifest.scopes
+  ).join(" ")
   useEffect(() => {
     askScopes(asked ? asked.split(" ") : [])
   }, [askScopes, asked])
@@ -67,10 +72,16 @@ export function App() {
   const { section, selection } = route
   const task = route.task ? model.task(route.task) : undefined
 
-  // A task deleted elsewhere closes; a link to one not yet read waits.
+  // A task deleted elsewhere closes; a link to one not yet read waits,
+  // including one of a collection the link does not read yet, which it
+  // reads once the settings say it is on.
+  const linkKinds = useStore(linkKindsStore)
+  const taskKind = route.task?.split("/").slice(0, 3).join("/")
+  const kindRead = !!taskKind && linkKinds.includes(taskKind)
   useEffect(() => {
-    if (route.task && !task && listed) go({ ...route, task: undefined }, true)
-  }, [route, task, listed])
+    if (route.task && !task && listed && kindRead)
+      go({ ...route, task: undefined }, true)
+  }, [route, task, listed, kindRead])
 
   // A reminder's task, once its record is read: Lists, on its list, open.
   useEffect(() => {

@@ -608,10 +608,16 @@ export function listName(lists: TaskList[], id: string | undefined) {
 }
 
 /** The scopes the app asks for beyond its first approval: write access to
- * every collection that is on, and read access to each group kind one
- * groups by that the grant does not read yet. */
-export function extraScopes(collections: Collection[]): string[] {
-  const out = new Set<string>()
+ * every collection that is on, read access to each group kind one groups
+ * by that the grant does not read yet, and every scope beyond the request
+ * the token already holds (write access approved for a collection that is
+ * off), so a sign-in again never gives back less. */
+export function extraScopes(
+  collections: Collection[],
+  held: readonly string[] = [],
+  requested: readonly string[] = []
+): string[] {
+  const out = new Set<string>(held.filter((s) => !requested.includes(s)))
   for (const c of collections) {
     if (!c.enabled) continue
     if (c.kind !== ownTaskKind) out.add(`write:${c.kind}`)

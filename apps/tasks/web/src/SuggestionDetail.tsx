@@ -2,6 +2,7 @@ import { NavBar, Row, Section, SelectRow, cx } from "@substrate/react"
 import { Sparkle } from "lucide-react"
 import { useEffect, useState } from "react"
 import { usePending, useTaskActions } from "./actions"
+import { ApprovalNote } from "./CollectionsScreen"
 import { DescriptionSection, DetailsSection } from "./Details"
 import {
   atTime,
@@ -150,6 +151,7 @@ export function SuggestionDetail(props: {
             )}
           </span>
         </p>
+        <ApprovalNote collection={c} />
         <Section>
           <div className="flex items-start gap-3 px-4 py-3">
             <Sparkle
@@ -161,56 +163,79 @@ export function SuggestionDetail(props: {
             </Title>
           </div>
         </Section>
-        {writable && (c.group || dayProp || atProp || c.priority || t.own) && (
-          <Section>
-            {c.group && (
-              <SelectRow
-                label={groupLabel}
-                value={groupValue}
-                options={[
-                  {
-                    value: none,
-                    label: words.lists.none(groupLabel ?? "list"),
-                  },
-                  ...groups.map((l) => ({ value: l.id, label: listTitle(l) })),
-                ]}
-                onChange={(v) => set(c.group!.property, v === none ? null : v)}
-              />
-            )}
-            {(dayProp || atProp) && (
-              <label className="flex min-h-11 items-center gap-3 px-4 py-1.5">
-                <span className="text-[17px]">{fieldLabel.due}</span>
-                <input
-                  type="date"
-                  aria-label={fieldLabel.due}
-                  value={dayValue}
-                  onChange={(e) => setDay(e.target.value)}
-                  className="ml-auto rounded-lg bg-fill px-2.5 py-1.5 text-[17px] text-label outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        {writable &&
+          (c.group ||
+            c.waitingGroup ||
+            dayProp ||
+            atProp ||
+            c.priority ||
+            t.own) && (
+            <Section>
+              {c.waitingGroup && (
+                <Row
+                  label={c.waitingGroup.label}
+                  value={words.group.outOfReach}
                 />
-              </label>
-            )}
-            {c.priority && (
-              <SelectRow
-                label={propertyLabel(definition, c.priority)}
-                value={(valueOf(c.priority) as string | undefined) ?? none}
-                options={[
-                  ...(t.own
-                    ? []
-                    : [{ value: none, label: words.collection.none }]),
-                  ...(t.own
-                    ? priorities
-                    : c.priorities.map((v) => ({
-                        value: v,
-                        label: nameWords(v),
-                      }))),
-                ]}
-                onChange={(v) => set(c.priority!, v === none ? null : v)}
+              )}
+              {c.group && (
+                <SelectRow
+                  label={groupLabel}
+                  value={groupValue}
+                  options={[
+                    {
+                      value: none,
+                      label: words.lists.none(groupLabel ?? "list"),
+                    },
+                    ...groups.map((l) => ({
+                      value: l.id,
+                      label: listTitle(l),
+                    })),
+                  ]}
+                  onChange={(v) =>
+                    set(c.group!.property, v === none ? null : v)
+                  }
+                />
+              )}
+              {(dayProp || atProp) && (
+                <label className="flex min-h-11 items-center gap-3 px-4 py-1.5">
+                  <span className="text-[17px]">{fieldLabel.due}</span>
+                  <input
+                    type="date"
+                    aria-label={fieldLabel.due}
+                    value={dayValue}
+                    onChange={(e) => setDay(e.target.value)}
+                    className="ml-auto rounded-lg bg-fill px-2.5 py-1.5 text-[17px] text-label outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </label>
+              )}
+              {c.priority && (
+                <SelectRow
+                  label={propertyLabel(definition, c.priority)}
+                  value={(valueOf(c.priority) as string | undefined) ?? none}
+                  options={[
+                    ...(t.own
+                      ? []
+                      : [{ value: none, label: words.collection.none }]),
+                    ...(t.own
+                      ? priorities
+                      : c.priorities.map((v) => ({
+                          value: v,
+                          label: nameWords(v),
+                        }))),
+                  ]}
+                  onChange={(v) => set(c.priority!, v === none ? null : v)}
+                />
+              )}
+            </Section>
+          )}
+        {!writable && (c.group || c.waitingGroup || dayProp || atProp) && (
+          <Section>
+            {c.waitingGroup && (
+              <Row
+                label={c.waitingGroup.label}
+                value={words.group.outOfReach}
               />
             )}
-          </Section>
-        )}
-        {!writable && (
-          <Section>
             {c.group && (
               <Row
                 label={groupLabel}
