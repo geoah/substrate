@@ -1110,7 +1110,9 @@ Read only: nothing here writes back to Notion.
 
 Setting it up takes two steps in Notion. Mint an internal token (Settings,
 Connections, Develop or manage) with read capabilities (the user-email one
-included, or `user.person.email` stays absent), and paste it onto the `config`
+included, or `user.person.email` stays absent; without any user-information
+capability the roster is skipped and counted unreachable, and only the
+authors the pages name land, as thin rows), and paste it onto the `config`
 record. Then SHARE each top-level page, database or teamspace with the
 connection that token belongs to: `/v1/search` returns only what has been
 shared with that connection, so an unshared page is invisible to the sync
