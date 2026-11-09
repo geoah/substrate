@@ -158,7 +158,10 @@ export function ProposalCard({ id }: { id: string }) {
       ? offered
       : undefined
 
-  const heading = op === "create" ? proposedHeading(diff.properties) : undefined
+  const heading =
+    op === "create"
+      ? proposedHeading(diff.properties, targetKindInfo)
+      : undefined
   const Icon =
     op === "create" ? PlusIcon : op === "delete" ? Trash2Icon : PencilIcon
 

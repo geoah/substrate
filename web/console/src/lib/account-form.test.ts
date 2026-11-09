@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
-import { accountFormGroups } from "./account-form"
+import { accountFormGroups, ownerCreatesAccounts } from "./account-form"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 function kind(traits: string[], props: Record<string, unknown>): KindInfo {
@@ -90,5 +90,48 @@ describe("accountFormGroups", () => {
     const names = g.all.map((f) => f.name)
     expect(names).toContain("syncRequestedAt")
     expect(names).toContain("syncPaused")
+  })
+
+  it("leaves out what a button of the page writes instead", () => {
+    const g = accountFormGroups(
+      SHIPPED_UNITS,
+      kind(["accountconfig", "sync"], {
+        ...GOOGLE_LIKE,
+        unlinkRequestedAt: { type: "datetime", writer: "owner" },
+      }),
+      ["unlinkRequestedAt"]
+    )
+    expect(g.all.map((f) => f.name)).not.toContain("unlinkRequestedAt")
+  })
+})
+
+describe("ownerCreatesAccounts", () => {
+  it("is false where the kind requires what only another hand writes", () => {
+    expect(ownerCreatesAccounts(kind(["accountconfig"], GOOGLE_LIKE))).toBe(
+      true
+    )
+    expect(
+      ownerCreatesAccounts(
+        kind(["accountconfig"], {
+          ...GOOGLE_LIKE,
+          loginId: { type: "string", required: true, writer: "connector" },
+        })
+      )
+    ).toBe(false)
+    // A default fills it, and the engine stamps what it manages.
+    expect(
+      ownerCreatesAccounts(
+        kind(["accountconfig"], {
+          loginId: {
+            type: "string",
+            required: true,
+            writer: "connector",
+            default: "x",
+          },
+          stamp: { type: "string", required: true, managed: true },
+        })
+      )
+    ).toBe(true)
+    expect(ownerCreatesAccounts(undefined)).toBe(true)
   })
 })

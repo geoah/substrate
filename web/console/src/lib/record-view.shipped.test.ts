@@ -84,6 +84,12 @@ function kindsOf(block: Block): string[] {
       return [block.kind]
     case "lanes":
       return block.rows.flatMap((r) => r.kind ?? [])
+    case "conversation":
+      return [
+        block.kind,
+        ...(block.attachments ? [block.attachments] : []),
+        ...(block.compose ? [block.compose.kind] : []),
+      ]
     default:
       return []
   }

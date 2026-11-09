@@ -59,8 +59,9 @@ Each section holds exactly one block. Small blocks are:
 - `text: {text}`: required markdown text.
 - `properties: {label, list: [{property, label}]}`: chosen properties; each list entry requires `property`, while labels are optional.
 - `related`: either an outgoing `property`, or `kind` (a kind declaration reference) plus `via` (the reference property on that kind). Do not set both forms. Optional `show` is `list` or `count`, and `limit` bounds a list.
+- `request: {label, property, confirm}`: a button that stamps one of the record's own datetime properties the owner writes with now, after a confirmation saying `confirm`.
 
-For measurements and larger layouts, inspect `describe_kind` for the exact fields of `chart`, `spans`, `stats`, `trend`, `table`, `breakdown` and `lanes`. Declared blocks are not a guarantee that every console version draws them; unsupported or invalid blocks show a notice. Do not invent block properties.
+For measurements and larger layouts, inspect `describe_kind` for the exact fields of `chart`, `spans`, `stats`, `trend`, `table`, `breakdown`, `conversation` and `lanes`. A `conversation` reads the records of a kind that point here as a chat, oldest first, and with `compose` writes a record of a request kind for each send, reaction and read mark; it names every kind and property it uses, so nothing about a chat is assumed. Declared blocks are not a guarantee that every console version draws them; unsupported or invalid blocks show a notice. Do not invent block properties.
 
 `window` binds blocks to the current record through property names, not expressions:
 

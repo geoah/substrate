@@ -17,7 +17,7 @@ import type {
 } from "@/lib/api/types"
 import { serverNow, splitKind } from "@/lib/api/http"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
-import { kindPackage } from "@/lib/definition"
+import { declaredProperties, kindPackage } from "@/lib/definition"
 import { kindHasTrait } from "@/lib/traits"
 
 /** The trait's five words, in the order a legend lists them. */
@@ -339,6 +339,24 @@ export function accountViewOf(
     sync,
     health: healthOf(tokenStatus, sync, legacy),
   }
+}
+
+/** The kinds whose records go with an account of `kind` when it is
+ * deleted: each declares a reference pinned to the account kind that
+ * cascades (`onDelete: cascade`). Undefined kind, none. */
+export function cascadingKinds(
+  kinds: readonly KindInfo[],
+  kind: KindInfo | undefined
+): KindInfo[] {
+  if (!kind) return []
+  return kinds.filter((k) =>
+    declaredProperties(k).some(
+      (p) =>
+        p.kind === "reference" &&
+        p.to === kind.identity &&
+        p.onDelete === "cascade"
+    )
+  )
 }
 
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and

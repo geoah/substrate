@@ -144,16 +144,19 @@ function Warning({
 function Heading({
   op,
   target,
+  kind,
   properties,
 }: {
   op?: string
   target?: ChangeTargetRef
+  /** The target's kind, whose title template names a create. */
+  kind?: KindInfo
   properties: Record<string, unknown>
 }) {
   if (!op) return <>A change the console can’t read</>
   if (op === "create") {
     const what = target ? lowerFirst(displayName(target.kind)) : "record"
-    const heading = proposedHeading(properties)
+    const heading = proposedHeading(properties, kind)
     return <>{heading ? `New ${what}: ${heading.text}` : `New ${what}`}</>
   }
   const record = target ? (
@@ -383,6 +386,7 @@ export function ChangeRequestDetailPage() {
           <Heading
             op={op}
             target={target}
+            kind={targetSide.kind}
             properties={pending ? edited : (applied ?? diff.properties)}
           />
         }

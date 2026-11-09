@@ -4,7 +4,7 @@
  * Every verb that leaves the page or loses something asks first. */
 
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   EllipsisIcon,
   PencilIcon,
@@ -25,9 +25,19 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import { useOAuthConnect, type OAuthConnect } from "@/hooks/use-oauth-connect"
+import { useUnits } from "@/hooks/use-units"
+import { accountFormGroups } from "@/lib/account-form"
+import { kindsQueryOptions } from "@/lib/api/kinds"
 import { deleteRecord } from "@/lib/api/sync"
+import { displayPlural } from "@/lib/kind-names"
+import { andList } from "@/lib/providers"
 import { recordPath } from "@/lib/record-path"
-import { labelAtStart, type AccountView, type ProviderView } from "@/lib/sync"
+import {
+  cascadingKinds,
+  labelAtStart,
+  type AccountView,
+  type ProviderView,
+} from "@/lib/sync"
 
 /** The confirmation a connect asks: the provider opens in a new tab. The
  * caller owns the connect, so the consent's return is heard after this
@@ -114,9 +124,18 @@ export function AccountMenu({
   providerName: string
 }) {
   const queryClient = useQueryClient()
+  const units = useUnits()
+  const registry = useQuery(kindsQueryOptions)
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
+  // A kind with nothing to turn on has settings only.
+  const brings = view.kind
+    ? accountFormGroups(units, view.kind).toggles.length > 0
+    : true
+  // What deleting the account takes with it: the records whose reference
+  // to it cascades, which its provider wrote from this account.
+  const cascades = cascadingKinds(registry.data ?? [], view.kind)
   const connect = useOAuthConnect(
     recordPath(view.record.kind, view.record.id),
     view.label,
@@ -160,7 +179,8 @@ export function AccountMenu({
             disabled={!view.kind}
             onClick={() => setEditing(true)}
           >
-            <PencilIcon /> Change what it brings in
+            <PencilIcon />{" "}
+            {brings ? "Change what it brings in" : "Change its settings"}
           </DropdownMenuItem>
           {provider?.oauth && view.tokenStatus === "connected" && (
             <DropdownMenuItem onClick={() => setReconnecting(true)}>
@@ -200,7 +220,11 @@ export function AccountMenu({
       {removing && (
         <ConfirmDialog
           title={`Disconnect ${view.label}?`}
-          consequence={`${providerName} stops bringing anything in from this account, and its approval is withdrawn. What it already brought in stays until you remove ${providerName}. Connecting it again means approving it again.`}
+          consequence={
+            cascades.length
+              ? `${providerName} stops bringing anything in from this account and deletes everything it brought in from it: its ${andList(cascades.map((k) => displayPlural(k).toLowerCase()))}. Your own records stay.`
+              : `${providerName} stops bringing anything in from this account, and its approval is withdrawn. What it already brought in stays until you remove ${providerName}. Connecting it again means approving it again.`
+          }
           confirm="Disconnect"
           destructive
           pending={disconnect.isPending}

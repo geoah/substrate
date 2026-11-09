@@ -51,6 +51,7 @@ import { ChangeRequestDetailPage } from "./change-request-detail"
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const CREDENTIAL_KIND = "samples.substrate.reamde.dev/vault/credential"
+const ACTION_KIND = "ada.example.com/chat/action"
 const REQUEST_PATH = "/api/v1/substrate.reamde.dev/core/recordpatchrequest/cr-1"
 const TARGET_PATH = "/api/v1/samples.substrate.reamde.dev/tasks/task/task-1"
 const THREAD_PATH = "/api/v1/substrate.reamde.dev/llm/thread/th-1"
@@ -68,6 +69,26 @@ const KINDS: KindInfo[] = [
       properties: {
         summary: { type: "string", description: "what it is" },
         note: { type: "string" },
+      },
+    },
+  },
+  {
+    identity: ACTION_KIND,
+    name: "action",
+    authority: "ada.example.com",
+    package: "chat",
+    version: 1,
+    source: "installed",
+    description: "",
+    definition: {
+      displayTemplate: "{action}: {text}",
+      properties: {
+        action: {
+          type: "enum",
+          values: [{ value: "send", label: "Send" }],
+        },
+        chat: { type: "reference", kind: "ada.example.com/chat/chat" },
+        text: { type: "text" },
       },
     },
   },
@@ -483,6 +504,29 @@ describe("ChangeRequestDetailPage", () => {
     ).toBeTruthy()
     // Nothing exists yet, so there is no Now column to compare with.
     expect(screen.queryByText("Now")).toBeNull()
+  })
+
+  it("titles a create by its kind's own template where it has no heading property", async () => {
+    serve(
+      request({
+        properties: {
+          op: "create",
+          targetKind: ACTION_KIND,
+          targetId: "a-1",
+          diff: {
+            properties: {
+              action: "send",
+              chat: "ada.example.com/chat/chat/c1",
+              text: "see you at 7",
+            },
+          },
+        },
+      })
+    )
+    renderPage(<ChangeRequestDetailPage />)
+    expect(
+      await screen.findByText("New action: Send: see you at 7")
+    ).toBeTruthy()
   })
 
   it("lets the reviewer correct a create's heading before adding it", async () => {

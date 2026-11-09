@@ -49,8 +49,10 @@ import {
   type FormValue,
   type FormValues,
 } from "@/lib/record-form"
+import { useRecordViews } from "@/hooks/use-record-views"
 import { useSecretMutation } from "@/hooks/use-secret-mutation"
 import { useUnits } from "@/hooks/use-units"
+import { requestHands } from "@/lib/record-view"
 
 export interface AccountDialogProps {
   /** The provider's `accountconfig` kind. */
@@ -91,7 +93,13 @@ export function AccountDialog({
   const units = useUnits()
   const queryClient = useQueryClient()
   const registry = useQuery(kindsQueryOptions)
-  const groups = useMemo(() => accountFormGroups(units, kind), [units, kind])
+  // A property a view's request button stamps is that button's, not a
+  // field to type a time into.
+  const views = useRecordViews(kind)
+  const groups = useMemo(
+    () => accountFormGroups(units, kind, requestHands(views)),
+    [units, kind, views]
+  )
   const mode: FormMode = record ? "patch" : "create"
   const seed = useMemo(
     () => initialValues(groups.all, record),
@@ -222,7 +230,9 @@ export function AccountDialog({
     ? `Edit ${label ?? accountName}`
     : `Add a ${providerName} account`
   const description = record
-    ? "Change what this account brings in, how often, and how far back. Its sign-in stays as it is."
+    ? groups.toggles.length
+      ? "Change what this account brings in, how often, and how far back. Its sign-in stays as it is."
+      : "Change this account’s settings. Its sign-in stays as it is."
     : oauth
       ? configured
         ? `Choose what to bring in. ${providerName} then opens in a new tab and asks you to approve access to each thing you turned on. It starts once you approve.`

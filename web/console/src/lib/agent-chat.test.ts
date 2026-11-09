@@ -39,7 +39,7 @@ import {
   withArticle,
 } from "./agent-chat"
 import type { ToolCallView } from "./api/transcript"
-import type { SubstrateRecord } from "./api/types"
+import type { KindInfo, SubstrateRecord } from "./api/types"
 
 function record(over: Partial<SubstrateRecord>): SubstrateRecord {
   return {
@@ -638,6 +638,14 @@ describe("a suggested change, in words", () => {
       text: "Status page",
     })
     expect(proposedHeading({ status: "open" })).toBeUndefined()
+    // Else the kind's own title template, filled from the proposed values.
+    const request = {
+      identity: "ada.example.com/chat/action",
+      definition: { displayTemplate: "{action}: {text}", properties: {} },
+    } as unknown as KindInfo
+    expect(
+      proposedHeading({ action: "send", text: "see you at 7" }, request)
+    ).toEqual({ key: "title", text: "send: see you at 7" })
   })
 })
 

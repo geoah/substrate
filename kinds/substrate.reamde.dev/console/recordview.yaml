@@ -27,8 +27,12 @@
 # - a stats item names exactly one of `metric`, `metricProperty` and
 #   `property`, a trend item one of `metric` and `metricProperty`;
 # - a table names exactly one of `via`, `sharing` (or its older one-name
-#   spelling `sameAs`) and `inWindow`;
+#   spelling `sameAs`), `inWindow` and `property`;
 # - a breakdown names `property` or `items`, not both;
+# - a conversation names `attachmentVia` with `attachments`, a composer
+#   offers at least one of `send`, `react` and `markRead` and names the
+#   request property each needs, and `peerKnown` comes with `peer`;
+# - a request names a datetime property the owner writes;
 # - a lanes row names a `kind` or a `metric`, not both;
 # - a window names `about` or `aboutSelf`, `source` or `sourceSelf`, and
 #   `start` or `last`, never both of a pair.
@@ -48,9 +52,10 @@ data:
   package: console
   description: >-
     How the console lays out the record page of one kind: an ordered list
-    of sections of headings, text, chosen properties, related records and
-    charts, tiles, trends and tables of what was measured during the record.
-    A sample ships its views as records, and the owner edits them.
+    of sections of headings, text, chosen properties, related records, a conversation,
+    request buttons, and charts, tiles, trends and tables of what was measured
+    during the record. A sample ships its views as records, and the owner
+    edits them.
   purpose: internal
   names:
     singular: recordview
@@ -715,6 +720,10 @@ data:
               default: false
               description: lists the records that start inside the view's
                 window
+            property:
+              type: string
+              description: an outgoing reference property of this record,
+                such as instance; lists the records it names
             columns:
               type: string
               repeated: true
@@ -856,3 +865,184 @@ data:
               type: string
               description: the property each bar is a share of, such as timeInBed;
                 the bars' sum where absent
+        # Every name here is a property of a kind the view names, never a
+        # word the console knows: a chat's messages, their attachments and
+        # the requests its composer writes are a provider's kinds.
+        conversation:
+          type: object
+          description: the records of a kind that point here, read as a conversation
+            in time order, with a composer that writes a request record for
+            each reply, reaction and read mark
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            kind:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              required: true
+              description: the kind whose records are the messages
+            via:
+              type: string
+              required: true
+              description: the reference property on that kind that points
+                here, such as chat
+            time:
+              type: string
+              required: true
+              description: the message's datetime property the conversation
+                is ordered by, such as sentAt
+            sender:
+              type: string
+              description: the message's reference property naming who sent
+                it
+            mine:
+              type: string
+              description: the message's bool property, true on what the owner
+                sent
+            text:
+              type: string
+              description: the message's text property
+            replyTo:
+              type: string
+              description: the message's reference property naming the message
+                it answers
+            edited:
+              type: string
+              description: the message's property holding when it was last
+                edited
+            deleted:
+              type: string
+              description: the message's property marking it withdrawn, whatever
+                its value
+            status:
+              type: string
+              description: the message's property saying how the owner's own
+                message fared, such as sendStatus
+            reactions:
+              type: string
+              description: the message's repeated object property of reactions,
+                each item a key and the user who reacted
+            attachments:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              description: a kind whose records hang off a message, drawn
+                under it; give attachmentVia with it
+            attachmentVia:
+              type: string
+              description: the reference property on the attachment kind that
+                points at its message
+            attachmentFile:
+              type: string
+              description: the attachment kind's blobref property holding
+                the file
+            readUpTo:
+              type: string
+              description: this record's reference property naming the newest
+                message the owner has read
+            limit:
+              type: int
+              min: 1
+              max: 200
+              default: 50
+              description: how many of the newest messages one page reads
+            compose:
+              type: object
+              description: the composer, which writes a record of a request
+                kind pointing here for each reply, reaction and read mark,
+                and lists those requests with their state
+              fields:
+                kind:
+                  type: reference
+                  kind: substrate.reamde.dev/core/kind
+                  required: true
+                  description: the kind whose records are the requests
+                via:
+                  type: string
+                  required: true
+                  description: the request's reference property that points
+                    here
+                verb:
+                  type: string
+                  required: true
+                  description: the request's enum property saying what to
+                    do
+                send:
+                  type: string
+                  description: the verb's value that sends the text; absent
+                    offers no sending
+                react:
+                  type: string
+                  description: the verb's value that reacts to a message;
+                    absent offers no reactions
+                markRead:
+                  type: string
+                  description: the verb's value that marks the conversation
+                    read up to a message; absent offers no read mark
+                text:
+                  type: string
+                  description: the request's property holding the text to
+                    send
+                replyTo:
+                  type: string
+                  description: the request's reference property naming the
+                    message a reply answers
+                target:
+                  type: string
+                  description: the request's reference property naming the
+                    message a reaction or a read mark is about
+                reaction:
+                  type: string
+                  description: the request's property holding the reaction,
+                    such as an emoji
+                state:
+                  type: string
+                  description: the request's state property
+                cancel:
+                  type: string
+                  description: the request's datetime property the owner stamps
+                    to ask that it be cancelled
+                cancelIn:
+                  type: string
+                  repeated: true
+                  description: the states a request may be cancelled in, such
+                    as queued
+                retryIn:
+                  type: string
+                  repeated: true
+                  description: the states a request may be sent again from,
+                    as a new request, such as failed
+                error:
+                  type: string
+                  description: the request's property saying why it failed
+                confirm:
+                  type: string
+                  description: the request's bool property set once the owner
+                    confirms writing to someone outside their contacts
+                peer:
+                  type: string
+                  description: this record's reference property naming the
+                    one other person in it, such as otherUser
+                peerKnown:
+                  type: string
+                  description: the peer's bool property, true where they are
+                    among the owner's contacts, such as isContact
+        # A request is a time the owner stamps, which a connector acts on:
+        # the button never writes anything but now.
+        request:
+          type: object
+          description: a button that asks for something by stamping one of
+            the record's own datetime properties with now, after asking first
+          fields:
+            label:
+              type: string
+              required: true
+              description: the button's words, such as Unlink this account
+            property:
+              type: string
+              required: true
+              description: the record's datetime property the owner writes,
+                such as unlinkRequestedAt
+            confirm:
+              type: string
+              description: what the confirmation says pressing it does

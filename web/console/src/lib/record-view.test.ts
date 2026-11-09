@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest"
 
+import type { ListParams } from "@/lib/api/records"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { METRIC_TRAIT, OBSERVED_TRAIT } from "@/lib/core-kinds"
 import { isoWithOffset, type TimeRange } from "@/lib/observations-time"
@@ -43,6 +44,7 @@ import {
   spansOf,
   spansTotalsRead,
   statsReads,
+  namesNothing,
   tableParams,
   tileHistoryParams,
   toneColor,
@@ -53,6 +55,7 @@ import {
   valueAt,
   viewNeedsWindow,
   readsWindow,
+  requestHands,
   viewTimelineSearch,
   viewsOf,
   type Band,
@@ -60,6 +63,7 @@ import {
   type BreakdownBlock,
   type Bound,
   type ChartBlock,
+  type ConversationBlock,
   type SpansBlock,
   type StatsBlock,
   type TableBlock,
@@ -788,7 +792,12 @@ describe("the blocks of version 2 read into blocks", () => {
     expect(
       problemIn({ table: { kind, via: "plan", sharing: ["metric"] } })
     ).toBe(
-      "This table names 2 of via, sharing and inWindow; a table names exactly one."
+      "This table names 2 of via, sharing, inWindow and property; a table names exactly one."
+    )
+    expect(
+      problemIn({ table: { kind, property: "instance", inWindow: true } })
+    ).toBe(
+      "This table names 2 of via, sharing, inWindow and property; a table names exactly one."
     )
   })
 
@@ -892,6 +901,178 @@ describe("the blocks of version 2 read into blocks", () => {
     expect(
       viewNeedsWindow(recordViewOf(view({ window: { last: "P7D" } })))
     ).toBe(true)
+  })
+})
+
+describe("the blocks of version 7 read into blocks", () => {
+  const MESSAGE = "ada.example.com/chat/message"
+  const ACTION = "ada.example.com/chat/action"
+  const declaration = (kind: string) => ({
+    ref: `substrate.reamde.dev/core/kind/${kind}`,
+  })
+  const compose = {
+    kind: declaration(ACTION),
+    via: "chat",
+    verb: "action",
+    send: "send",
+    react: "react",
+    markRead: "markread",
+    text: "text",
+    target: "target",
+    reaction: "reactionKey",
+    state: "state",
+    cancel: "cancelRequestedAt",
+    cancelIn: ["queued"],
+    retryIn: ["failed", "uncertain"],
+  }
+
+  it("reads a conversation and its composer, the names the view gives", () => {
+    const block = blockIn({
+      conversation: {
+        kind: declaration(MESSAGE),
+        via: "chat",
+        time: "sentAt",
+        sender: "sender",
+        mine: "fromOwner",
+        text: "text",
+        attachments: declaration("ada.example.com/chat/attachment"),
+        attachmentVia: "message",
+        attachmentFile: "file",
+        compose,
+      },
+    }) as ConversationBlock
+    expect(block).toMatchObject({
+      type: "conversation",
+      kind: MESSAGE,
+      via: "chat",
+      time: "sentAt",
+      sender: "sender",
+      mine: "fromOwner",
+      attachments: "ada.example.com/chat/attachment",
+      attachmentVia: "message",
+      limit: 50,
+      compose: {
+        kind: ACTION,
+        send: "send",
+        markRead: "markread",
+        cancelIn: ["queued"],
+        retryIn: ["failed", "uncertain"],
+      },
+    })
+    expect(block).not.toHaveProperty("replyTo")
+    expect(
+      blockIn({
+        conversation: {
+          kind: declaration(MESSAGE),
+          via: "chat",
+          time: "sentAt",
+          limit: 999,
+        },
+      })
+    ).toMatchObject({ limit: 200 })
+  })
+
+  it("says which rule a conversation breaks", () => {
+    const base = { kind: declaration(MESSAGE), via: "chat", time: "sentAt" }
+    expect(problemIn({ conversation: { via: "chat" } })).toBe(
+      "This conversation names no kind, time."
+    )
+    expect(
+      problemIn({
+        conversation: { ...base, attachments: declaration(MESSAGE) },
+      })
+    ).toBe(
+      "This conversation names attachments without attachmentVia; it names both or neither."
+    )
+    expect(
+      problemIn({
+        conversation: { ...base, compose: { ...compose, verb: undefined } },
+      })
+    ).toBe("This conversation's composer names no verb.")
+    expect(
+      problemIn({
+        conversation: {
+          ...base,
+          compose: {
+            kind: declaration(ACTION),
+            via: "chat",
+            verb: "action",
+          },
+        },
+      })
+    ).toBe(
+      "This conversation's composer offers nothing: it names none of send, react and markRead."
+    )
+    expect(
+      problemIn({
+        conversation: { ...base, compose: { ...compose, text: undefined } },
+      })
+    ).toBe(
+      "This conversation's composer offers send and names no text property to write it in."
+    )
+    expect(
+      problemIn({
+        conversation: {
+          ...base,
+          compose: { ...compose, peerKnown: "isContact" },
+        },
+      })
+    ).toBe(
+      "This conversation's composer names peerKnown without the peer it is read from."
+    )
+  })
+
+  it("reads a request block, and refuses one missing its label or property", () => {
+    expect(
+      blockIn({
+        request: {
+          label: "Unlink this account",
+          property: "unlinkRequestedAt",
+          confirm: "The bridge signs it out.",
+        },
+      })
+    ).toEqual({
+      type: "request",
+      label: "Unlink this account",
+      property: "unlinkRequestedAt",
+      confirm: "The bridge signs it out.",
+    })
+    expect(problemIn({ request: { property: "unlinkRequestedAt" } })).toBe(
+      "This request block names no label."
+    )
+    expect(problemIn({ request: { label: "Unlink" } })).toBe(
+      "This request block names no property."
+    )
+  })
+
+  it("names the properties its request blocks stamp, once each", () => {
+    const request = (property: string) => ({
+      request: { label: "Ask", property },
+    })
+    const views = viewsOf([
+      view({
+        sections: [request("unlinkRequestedAt"), { heading: { text: "x" } }],
+      }),
+      view({ sections: [request("unlinkRequestedAt"), request("resyncAt")] }),
+    ])
+    expect(requestHands(views)).toEqual(["unlinkRequestedAt", "resyncAt"])
+  })
+
+  it("reads none of the new blocks as reading the window", () => {
+    expect(
+      readsWindow(
+        blockIn({
+          conversation: {
+            kind: declaration(MESSAGE),
+            via: "chat",
+            time: "sentAt",
+          },
+        })
+      )
+    ).toBe(false)
+    expect(
+      readsWindow(blockIn({ request: { label: "Ask", property: "askedAt" } }))
+    ).toBe(false)
   })
 })
 
@@ -1630,6 +1811,35 @@ describe("the reads of version 2", () => {
     expect(
       tableParams(undefined, table({ inWindow: true }), SESSION)
     ).toHaveProperty("problem")
+  })
+
+  it("lists the records an outgoing reference names, by id inside the listed kind", () => {
+    const account = record("ada.example.com/chat/account", "a1", {
+      instance: { ref: `${WORKOUT.identity}/s1` },
+      others: [
+        { ref: `${WORKOUT.identity}/s2` },
+        { ref: "ada.example.com/chat/user/u1" },
+        { ref: `${WORKOUT.identity}/s2` },
+      ],
+    })
+    const params = tableParams(bound, table({ property: "instance" }), account)
+    expect(params).toEqual({
+      kinds: [WORKOUT.identity],
+      first: 25,
+      orderBy: "updatedAt:desc",
+      filter: { ids: ["s1"] },
+    })
+    expect(
+      tableParams(bound, table({ property: "others" }), account)
+    ).toMatchObject({ filter: { ids: ["s2"] } })
+    // A reference holding nothing reads nothing, never the whole kind.
+    const none = tableParams(bound, table({ property: "missing" }), account)
+    expect(none).toMatchObject({ filter: { ids: [] } })
+    expect(namesNothing(none as ListParams)).toBe(true)
+    expect(namesNothing(params as ListParams)).toBe(false)
+    expect(table({ property: "instance", orderBy: "at:asc" }).orderBy).toBe(
+      "at:asc"
+    )
   })
 
   it("narrows a table by who it is about only where the listed kind declares about", () => {

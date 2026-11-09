@@ -157,6 +157,68 @@ const KINDS: KindInfo[] = [
   kind(`${HOME}/people/person`, [], {}),
 ]
 
+/** The kinds of a provider whose accounts arrive from its own program: the
+ * account requires a login id only the connector writes, carries a time the
+ * owner stamps to ask it unlinked, and the provider's contacts cascade from
+ * it. */
+const BRIDGE_KINDS: KindInfo[] = KINDS.map((k) =>
+  k.identity === ACCOUNT
+    ? {
+        ...k,
+        definition: {
+          ...k.definition,
+          properties: {
+            ...(k.definition.properties as Record<string, unknown>),
+            loginId: { type: "string", required: true, writer: "connector" },
+            network: { type: "string", writer: "connector" },
+            unlinkRequestedAt: {
+              type: "datetime",
+              writer: "owner",
+              displayName: "Unlink requested",
+            },
+          },
+        },
+      }
+    : k.identity === CONTACT
+      ? {
+          ...k,
+          definition: {
+            ...k.definition,
+            properties: {
+              account: {
+                type: "reference",
+                kind: ACCOUNT,
+                onDelete: "cascade",
+              },
+            },
+          },
+        }
+      : k
+)
+
+/** The record view such a provider ships for its account kind. */
+const ACCOUNT_VIEW: SubstrateRecord = {
+  id: `${GOOGLE}/account`,
+  kind: "substrate.reamde.dev/console/recordview",
+  properties: {
+    appliesTo: { ref: `substrate.reamde.dev/core/kind/${ACCOUNT}` },
+    name: "Connection",
+    sections: [
+      { properties: { list: [{ property: "network" }] } },
+      {
+        request: {
+          label: "Unlink this account",
+          property: "unlinkRequestedAt",
+        },
+      },
+    ],
+  },
+  labels: {},
+  version: 1,
+  createdAt: HOUR_AGO,
+  updatedAt: HOUR_AGO,
+}
+
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
   return {
     id: GOOGLE,
@@ -337,6 +399,8 @@ const MAPPING: SubstrateRecord = {
 
 interface Wire {
   changes?: ChangeRow[]
+  kinds?: KindInfo[]
+  views?: SubstrateRecord[]
   statuses?: BundleStatus[]
   catalog?: CatalogItem[]
   accounts?: SubstrateRecord[]
@@ -440,7 +504,13 @@ describe("ProviderPage", () => {
         })
       }
       if (filter.kinds?.includes("substrate.reamde.dev/core/kind"))
-        return jsonResponse(200, { kinds: KINDS })
+        return jsonResponse(200, { kinds: wire.kinds ?? KINDS })
+      if (filter.kinds?.includes("substrate.reamde.dev/console/recordview"))
+        return jsonResponse(200, {
+          records: wire.views ?? [],
+          head: 1,
+          generation: "g",
+        })
       if (filter.implements === "substrate.reamde.dev/core/accountconfig")
         return jsonResponse(200, {
           records: wire.accounts ?? [WORK, PERSONAL],
@@ -569,7 +639,7 @@ describe("ProviderPage", () => {
 
   async function row(label: string): Promise<HTMLElement> {
     const el = await screen.findByText(label, {
-      selector: '[data-slot="account-row"] div',
+      selector: '[data-slot="account-row"] div > a',
     })
     return el.closest("tr") as HTMLElement
   }
@@ -592,6 +662,25 @@ describe("ProviderPage", () => {
         within(details).getByText(/\/api\/v1\/oauth\/callback$/)
       ).toBeTruthy()
       expect(screen.getByText("Step 2 of 4")).toBeTruthy()
+    })
+
+    it("says a provider adds its accounts itself where the owner cannot create one", async () => {
+      serve({ kinds: BRIDGE_KINDS, accounts: [] })
+      renderPage(<ProviderPage />)
+      const connect = await step(/Connect your account/)
+      expect(connect.getAttribute("aria-current")).toBe("step")
+      expect(connect.textContent).toContain(
+        "Google adds its accounts itself: each one you sign in to through it shows up here."
+      )
+      expect(within(connect).queryByRole("button")).toBeNull()
+      cleanup()
+      serve({ kinds: BRIDGE_KINDS })
+      renderPage(<ProviderPage />)
+      const done = await step(/Connect your account/)
+      expect(done.getAttribute("data-state")).toBe("done")
+      expect(
+        within(done).queryByRole("button", { name: "Add another" })
+      ).toBeNull()
     })
 
     it("opens the sign-in details form from the current step", async () => {
@@ -799,6 +888,77 @@ describe("ProviderPage", () => {
       expect(calls("PATCH")[0].body).toEqual({
         properties: { syncPaused: true },
       })
+    })
+
+    it("opens an account onto the record views its kind has, and links it to its own page", async () => {
+      serve({
+        kinds: BRIDGE_KINDS,
+        views: [ACCOUNT_VIEW],
+        accounts: [
+          { ...WORK, properties: { ...WORK.properties, network: "whatsapp" } },
+        ],
+      })
+      renderPage(<ProviderPage />)
+      const work = await row("george@example.com")
+      const link = within(work).getByText("george@example.com")
+      expect(link.getAttribute("data-to")).toBe(
+        "/data/$authority/$pkg/$name/$id"
+      )
+      expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
+        authority: "providers.substrate.reamde.dev",
+        pkg: "google",
+        name: "account",
+        id: "george-work",
+      })
+      const details = await within(work).findByRole("button", {
+        name: "Details",
+      })
+      expect(details.getAttribute("aria-expanded")).toBe("false")
+      fireEvent.click(details)
+      const section = await screen.findByRole("region", { name: "Connection" })
+      expect(within(section).getByText("whatsapp")).toBeTruthy()
+      expect(
+        within(section).getByRole("button", { name: "Unlink this account" })
+      ).toBeTruthy()
+    })
+
+    it("draws no Details where the account kind has no record view", async () => {
+      renderPage(<ProviderPage />)
+      const work = await row("george@example.com")
+      expect(within(work).queryByRole("button", { name: "Details" })).toBeNull()
+    })
+
+    it("leaves what a request button stamps out of the account's form", async () => {
+      serve({ kinds: BRIDGE_KINDS, views: [ACCOUNT_VIEW] })
+      renderPage(<ProviderPage />)
+      const work = await row("george@example.com")
+      fireEvent.click(
+        within(work).getByRole("button", {
+          name: /More for george@example.com/,
+        })
+      )
+      fireEvent.click(await screen.findByText("Change what it brings in"))
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText("Gmail")).toBeTruthy()
+      await waitFor(() =>
+        expect(within(dialog).queryByText("Unlink requested")).toBeNull()
+      )
+    })
+
+    it("says Disconnect deletes what cascades from the account", async () => {
+      serve({ kinds: BRIDGE_KINDS })
+      renderPage(<ProviderPage />)
+      const home = await row("home@example.com")
+      fireEvent.click(
+        within(home).getByRole("button", { name: /More for home@example.com/ })
+      )
+      fireEvent.click(await screen.findByText("Disconnect…"))
+      const dialog = await screen.findByRole("dialog")
+      await waitFor(() =>
+        expect(dialog.textContent).toContain(
+          "deletes everything it brought in from it: its contacts. Your own records stay."
+        )
+      )
     })
 
     it("Disconnect confirms, then deletes the record", async () => {
