@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.123.1](https://github.com/geoah/substrate/compare/v0.123.0...v0.123.1) (2026-11-09)
+
+
+### Fixed
+
+* **engine:** refuse enabling a package's webhook trigger without a key ([#1304](https://github.com/geoah/substrate/issues/1304)) ([fdb34c8](https://github.com/geoah/substrate/commit/fdb34c84920cb5f5e2b7faa6628a3c5217f8e987))
+
 ## [0.123.0](https://github.com/geoah/substrate/compare/v0.122.0...v0.123.0) (2026-11-09)
 
 
