@@ -1,0 +1,661 @@
+{
+  "name": "a second collection with a renamed enum status, its own group kind, and an id another kind shares",
+  "now": "2026-11-09T09:41:00Z",
+  "timeZone": "Europe/London",
+  "grant": [
+    "write:substrate.reamde.dev/tasks/*",
+    "read:implements(substrate.reamde.dev/core/lifecycle)",
+    "write:ada.example.com/work/chore",
+    "read:ada.example.com/work/area"
+  ],
+  "declarations": [
+    {
+      "identity": "substrate.reamde.dev/tasks/task",
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Something you have to do, such as Buy milk or Renew passport, with when it is due and how urgent it is. It is in one of your task lists or in none, and stays open until you mark it done or abandon it.",
+        "purpose": "primary",
+        "names": {
+          "singular": "task"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point: dueAt)",
+          "substrate.reamde.dev/core/lifecycle"
+        ],
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "what to do, in one line, such as Buy milk"
+          },
+          "description": {
+            "type": "markdown",
+            "description": "the details, as prose"
+          },
+          "url": {
+            "type": "url",
+            "description": "a link that goes with the task, such as the page to read or the form to fill in"
+          },
+          "list": {
+            "type": "reference",
+            "kind": "substrate.reamde.dev/tasks/list",
+            "mustExist": true,
+            "onDelete": "cascade",
+            "description": "the task list it is in; absent when it is in none, which Substrate Tasks shows as its inbox"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the task sits among the tasks of its list, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          },
+          "dueDay": {
+            "type": "date",
+            "description": "the day it is due; written on every task with a due date, timed or not"
+          },
+          "priority": {
+            "type": "enum",
+            "description": "how urgent it is, from none to urgent",
+            "default": "none",
+            "values": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "status": {
+            "type": "state",
+            "description": "open until you mark it done or abandon it; either can be undone. A suggested task waits as proposed until you add or dismiss it",
+            "states": [
+              "proposed",
+              "open",
+              "done",
+              "abandoned"
+            ],
+            "initial": "open",
+            "done": [
+              "done"
+            ],
+            "dropped": [
+              "abandoned"
+            ],
+            "proposed": [
+              "proposed"
+            ],
+            "transitions": [
+              {
+                "from": "proposed",
+                "to": "open"
+              },
+              {
+                "from": "proposed",
+                "to": "abandoned"
+              },
+              {
+                "from": "open",
+                "to": "done",
+                "stamps": {
+                  "completedAt": "now"
+                }
+              },
+              {
+                "from": "done",
+                "to": "open"
+              },
+              {
+                "from": "open",
+                "to": "abandoned"
+              },
+              {
+                "from": "abandoned",
+                "to": "open"
+              }
+            ]
+          },
+          "completedAt": {
+            "type": "datetime",
+            "description": "when it was marked done"
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/list",
+      "label": {
+        "singular": "Task list",
+        "plural": "Task lists"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "A task list: a named list of your tasks, such as Groceries or Home, kept in the order you arrange your lists. A task is in one list or in none.",
+        "purpose": "primary",
+        "names": {
+          "singular": "list"
+        },
+        "label": {
+          "singular": "Task list",
+          "plural": "Task lists"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the list's name, such as Groceries"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the list sits among your lists, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/collection",
+      "label": {
+        "singular": "Task collection",
+        "plural": "Task collections"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "How Substrate Tasks shows one collection of your tasks: whether it is on, what it groups by, and which of its properties the app reads as the due date, the priority and the order.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "collection"
+        },
+        "label": {
+          "singular": "Task collection",
+          "plural": "Task collections"
+        },
+        "displayTemplate": "{kind}",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "required": true,
+            "description": "the collection's kind, by its full reference, such as substrate.reamde.dev/tasks/task"
+          },
+          "enabled": {
+            "type": "bool",
+            "description": "whether Substrate Tasks shows the collection"
+          },
+          "group": {
+            "type": "string",
+            "description": "the reference the collection's tasks are grouped by; absent for the app's guess, `-` for none"
+          },
+          "due": {
+            "type": "string",
+            "description": "the property read as the due time; absent for the app's guess, `-` for none"
+          },
+          "dueDay": {
+            "type": "string",
+            "description": "the property read as the due day; absent for the app's guess, `-` for none"
+          },
+          "priority": {
+            "type": "string",
+            "description": "the property read as the priority; absent for the app's guess, `-` for none"
+          },
+          "order": {
+            "type": "string",
+            "description": "the property read as the owner's order; absent for the app's guess, `-` for none"
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/preference",
+      "label": {
+        "singular": "Tasks preference",
+        "plural": "Tasks preferences"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Your choices across every collection Substrate Tasks shows: where new tasks go, and the groups you pinned, in your order.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "preference"
+        },
+        "label": {
+          "singular": "Tasks preference",
+          "plural": "Tasks preferences"
+        },
+        "properties": {
+          "newTasks": {
+            "type": "string",
+            "description": "the kind new tasks are written to, by its full reference; absent for substrate.reamde.dev/tasks/task"
+          },
+          "pins": {
+            "type": "reference",
+            "repeated": true,
+            "description": "the groups you pinned, in your order"
+          }
+        }
+      }
+    },
+    {
+      "identity": "ada.example.com/work/chore",
+      "label": {
+        "singular": "Chore",
+        "plural": "Chores"
+      },
+      "definition": {
+        "authority": "ada.example.com",
+        "package": "work",
+        "names": {
+          "singular": "chore"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point: due)",
+          "substrate.reamde.dev/core/lifecycle(status: state)"
+        ],
+        "displayTemplate": "{summary} · {code}",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "required": true
+          },
+          "code": {
+            "type": "string"
+          },
+          "due": {
+            "type": "datetime"
+          },
+          "state": {
+            "type": "enum",
+            "values": [
+              "suggested",
+              "todo",
+              "doing",
+              "closed",
+              "skipped"
+            ],
+            "done": [
+              "closed"
+            ],
+            "dropped": [
+              "skipped"
+            ],
+            "proposed": [
+              "suggested"
+            ]
+          },
+          "priority": {
+            "type": "enum",
+            "values": [
+              "low",
+              "normal",
+              "high"
+            ]
+          },
+          "area": {
+            "type": "reference",
+            "kind": "ada.example.com/work/area"
+          },
+          "tags": {
+            "type": "string",
+            "repeated": true
+          }
+        }
+      }
+    },
+    {
+      "identity": "ada.example.com/work/area",
+      "label": {
+        "singular": "Area",
+        "plural": "Areas"
+      },
+      "definition": {
+        "authority": "ada.example.com",
+        "package": "work",
+        "names": {
+          "singular": "area"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/tasks/collection",
+      "id": "c-chore",
+      "version": 1,
+      "createdAt": "2026-11-01T08:00:00Z",
+      "properties": {
+        "kind": "ada.example.com/work/chore",
+        "enabled": true,
+        "title": "ada.example.com/work/chore"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/area",
+      "id": "a1",
+      "version": 1,
+      "createdAt": "2026-10-01T08:00:00Z",
+      "properties": {
+        "name": "Garden",
+        "title": "Garden"
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/tasks/task",
+      "id": "x1",
+      "version": 1,
+      "createdAt": "2026-11-01T08:00:00Z",
+      "properties": {
+        "name": "Pay rent",
+        "title": "Pay rent",
+        "dueDay": "2026-11-05",
+        "status": "open"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/chore",
+      "id": "x1",
+      "version": 1,
+      "createdAt": "2026-11-02T08:00:00Z",
+      "properties": {
+        "summary": "Clean the gutters",
+        "code": "C-1",
+        "title": "Clean the gutters · C-1",
+        "state": "todo",
+        "due": "2026-11-08T12:00:00Z",
+        "area": "ada.example.com/work/area/a1"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/chore",
+      "id": "x2",
+      "version": 1,
+      "createdAt": "2026-11-09T06:00:00Z",
+      "properties": {
+        "summary": "Fix the fence",
+        "code": "C-2",
+        "title": "Fix the fence · C-2",
+        "state": "suggested",
+        "area": "ada.example.com/work/area/a1"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/chore",
+      "id": "x3",
+      "version": 1,
+      "createdAt": "2026-11-03T08:00:00Z",
+      "properties": {
+        "summary": "Sharpen the mower",
+        "code": "C-3",
+        "title": "Sharpen the mower · C-3",
+        "state": "doing",
+        "priority": "high",
+        "area": "ada.example.com/work/area/a9"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/chore",
+      "id": "x4",
+      "version": 1,
+      "createdAt": "2026-11-03T09:00:00Z",
+      "properties": {
+        "summary": "Rake the leaves",
+        "code": "C-4",
+        "title": "Rake the leaves · C-4",
+        "state": "closed",
+        "area": "ada.example.com/work/area/a1"
+      }
+    },
+    {
+      "kind": "ada.example.com/work/chore",
+      "id": "x5",
+      "version": 1,
+      "createdAt": "2026-11-04T08:00:00Z",
+      "properties": {
+        "summary": "Oil the hinges",
+        "code": "C-5",
+        "title": "Oil the hinges · C-5",
+        "state": "todo",
+        "priority": "normal"
+      }
+    }
+  ],
+  "expect": {
+    "collections": [
+      {
+        "kind": "substrate.reamde.dev/tasks/task",
+        "enabled": true,
+        "viewOnly": false,
+        "creatable": true,
+        "title": "name",
+        "due": "dueAt",
+        "dueDay": "dueDay",
+        "priority": "priority",
+        "order": "position",
+        "group": {
+          "property": "list",
+          "kind": "substrate.reamde.dev/tasks/list"
+        }
+      },
+      {
+        "kind": "ada.example.com/work/chore",
+        "enabled": true,
+        "viewOnly": false,
+        "creatable": false,
+        "title": null,
+        "due": "due",
+        "dueDay": null,
+        "priority": "priority",
+        "order": null,
+        "group": {
+          "property": "area",
+          "kind": "ada.example.com/work/area"
+        }
+      }
+    ],
+    "items": {
+      "substrate.reamde.dev/tasks/task/x1": {
+        "standing": "open",
+        "accept": [],
+        "dismiss": [],
+        "complete": [
+          "done"
+        ],
+        "wontDo": [
+          "abandoned"
+        ],
+        "reopen": [],
+        "group": "none",
+        "band": "lateOrUrgent"
+      },
+      "ada.example.com/work/chore/x1": {
+        "standing": "open",
+        "accept": [],
+        "dismiss": [],
+        "complete": [
+          "closed"
+        ],
+        "wontDo": [
+          "skipped"
+        ],
+        "reopen": [],
+        "group": "ada.example.com/work/area/a1",
+        "band": "lateOrUrgent"
+      },
+      "ada.example.com/work/chore/x2": {
+        "standing": "proposed",
+        "accept": [
+          "todo",
+          "doing"
+        ],
+        "dismiss": [
+          "skipped"
+        ],
+        "complete": [],
+        "wontDo": [],
+        "reopen": [],
+        "group": "ada.example.com/work/area/a1",
+        "band": null
+      },
+      "ada.example.com/work/chore/x3": {
+        "standing": "open",
+        "accept": [],
+        "dismiss": [],
+        "complete": [
+          "closed"
+        ],
+        "wontDo": [
+          "skipped"
+        ],
+        "reopen": [],
+        "group": "missing",
+        "band": "lateOrUrgent"
+      },
+      "ada.example.com/work/chore/x4": {
+        "standing": "done",
+        "accept": [],
+        "dismiss": [],
+        "complete": [],
+        "wontDo": [],
+        "reopen": [
+          "todo",
+          "doing"
+        ],
+        "group": "ada.example.com/work/area/a1",
+        "band": null
+      },
+      "ada.example.com/work/chore/x5": {
+        "standing": "open",
+        "accept": [],
+        "dismiss": [],
+        "complete": [
+          "closed"
+        ],
+        "wontDo": [
+          "skipped"
+        ],
+        "reopen": [],
+        "group": "none",
+        "band": "noDate"
+      }
+    },
+    "needsYou": {
+      "lateOrUrgent": [
+        "substrate.reamde.dev/tasks/task/x1",
+        "ada.example.com/work/chore/x1",
+        "ada.example.com/work/chore/x3"
+      ],
+      "comingUp": [],
+      "later": [],
+      "noDate": 1,
+      "suggestions": 1,
+      "badge": 3
+    },
+    "suggestions": [
+      "ada.example.com/work/chore/x2"
+    ],
+    "groups": [
+      {
+        "collection": "substrate.reamde.dev/tasks/task",
+        "kind": "substrate.reamde.dev/tasks/list",
+        "rows": [
+          {
+            "group": "none",
+            "open": 1
+          }
+        ]
+      },
+      {
+        "collection": "ada.example.com/work/chore",
+        "kind": "ada.example.com/work/area",
+        "rows": [
+          {
+            "group": "ada.example.com/work/area/a1",
+            "open": 1
+          },
+          {
+            "group": "none",
+            "open": 1
+          },
+          {
+            "group": "missing",
+            "open": 1
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    {
+      "do": {
+        "accept": "ada.example.com/work/chore/x2"
+      },
+      "choices": [
+        "todo",
+        "doing"
+      ],
+      "writes": []
+    },
+    {
+      "do": {
+        "accept": "ada.example.com/work/chore/x2",
+        "to": "doing"
+      },
+      "writes": [
+        {
+          "op": "patch",
+          "path": "ada.example.com/work/chore/x2",
+          "ifVersion": 1,
+          "properties": {
+            "state": "doing"
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "complete": "ada.example.com/work/chore/x1"
+      },
+      "writes": [
+        {
+          "op": "patch",
+          "path": "ada.example.com/work/chore/x1",
+          "ifVersion": 1,
+          "properties": {
+            "state": "closed"
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "reopen": "ada.example.com/work/chore/x4"
+      },
+      "choices": [
+        "todo",
+        "doing"
+      ],
+      "writes": []
+    },
+    {
+      "do": {
+        "complete": "substrate.reamde.dev/tasks/task/x1"
+      },
+      "writes": [
+        {
+          "op": "patch",
+          "path": "substrate.reamde.dev/tasks/task/x1",
+          "ifVersion": 1,
+          "properties": {
+            "status": "done"
+          }
+        }
+      ]
+    }
+  ]
+}
