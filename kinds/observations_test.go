@@ -395,19 +395,78 @@ var loincAxes = map[string]struct{ component, property, system string }{
 	"1988-5":  {"C reactive protein", "MCnc", "Ser/Plas"},
 	"4548-4":  {"Hemoglobin A1c/Hemoglobin.total", "MFr", "Bld"},
 	"59261-8": {"Hemoglobin A1c/Hemoglobin.total^^standardized per IFCC-RMP for CDT", "SFr", "Bld"},
+	"22664-7": {"Urea", "SCnc", "Ser/Plas"},
+	"3091-6":  {"Urea", "MCnc", "Ser/Plas"},
+	"33863-2": {"Cystatin C", "MCnc", "Ser/Plas"},
+	"70204-3": {"Cholesterol.non HDL", "SCnc", "Ser/Plas"},
+	"1884-6":  {"Apolipoprotein B", "MCnc", "Ser/Plas"},
+	"1869-7":  {"Apolipoprotein A-I", "MCnc", "Ser/Plas"},
+	"43583-4": {"Lipoprotein (little a)", "SCnc", "Ser/Plas"},
+	"1877-0":  {"Apolipoprotein C-III", "MCnc", "Ser/Plas"},
+	"1886-1":  {"Apolipoprotein E", "MCnc", "Ser/Plas"},
+	"14920-3": {"Thyroxine.free", "SCnc", "Ser/Plas"},
+	"14928-6": {"Triiodothyronine.free", "SCnc", "Ser/Plas"},
+	"14913-8": {"Testosterone", "SCnc", "Ser/Plas"},
+	"2986-8":  {"Testosterone", "MCnc", "Ser/Plas"},
+	"14914-6": {"Testosterone.free", "SCnc", "Ser/Plas"},
+	"13967-5": {"Sex hormone binding globulin", "SCnc", "Ser/Plas"},
+	"14715-7": {"Estradiol", "SCnc", "Ser/Plas"},
+	"14631-6": {"Bilirubin", "SCnc", "Ser/Plas"},
+	"1751-7":  {"Albumin", "MCnc", "Ser/Plas"},
+	"10834-0": {"Globulin", "MCnc", "Ser"},
+	"2336-6":  {"Globulin", "MCnc", "Ser"},
+	"2885-2":  {"Protein", "MCnc", "Ser/Plas"},
+	"14685-2": {"Cobalamins", "SCnc", "Ser/Plas"},
+	"2132-9":  {"Cobalamins", "MCnc", "Ser/Plas"},
+	"14732-2": {"Folate", "SCnc", "Ser/Plas"},
+	"2284-8":  {"Folate", "MCnc", "Ser/Plas"},
+	"2601-3":  {"Magnesium", "SCnc", "Ser/Plas"},
+	"19123-9": {"Magnesium", "MCnc", "Ser/Plas"},
+	"14798-3": {"Iron", "SCnc", "Ser/Plas"},
+	"2498-4":  {"Iron", "MCnc", "Ser/Plas"},
+	"14800-7": {"Iron binding capacity", "SCnc", "Ser/Plas"},
+	"3034-6":  {"Transferrin", "MCnc", "Ser/Plas"},
+	"786-4":   {"Hemoglobin", "EntMCnc", "RBC"},
+	"14796-7": {"Insulin", "SCnc", "Ser/Plas"},
+	"30522-7": {"C reactive protein", "MCnc", "Ser/Plas"},
+	"1986-9":  {"C peptide", "MCnc", "Ser/Plas"},
+	"2951-2":  {"Sodium", "SCnc", "Ser/Plas"},
+	"2823-3":  {"Potassium", "SCnc", "Ser/Plas"},
+	"2075-0":  {"Chloride", "SCnc", "Ser/Plas"},
+	"29265-6": {"Calcium^^corrected for albumin", "SCnc", "Ser/Plas"},
+	"2000-8":  {"Calcium", "SCnc", "Ser/Plas"},
+	"17861-6": {"Calcium", "MCnc", "Ser/Plas"},
+	"14879-1": {"Phosphate", "SCnc", "Ser/Plas"},
+	"2777-1":  {"Phosphate", "MCnc", "Ser/Plas"},
+	"14866-8": {"Parathyrin.intact", "SCnc", "Ser/Plas"},
+	"2857-1":  {"Prostate specific Ag", "MCnc", "Ser/Plas"},
+	"14933-6": {"Urate", "SCnc", "Ser/Plas"},
+	"3084-1":  {"Urate", "MCnc", "Ser/Plas"},
 }
 
 // loincConcentration is the measure a concentration's LOINC property names.
-var loincConcentration = map[string]string{"SCnc": "amount-concentration", "MCnc": "mass-concentration"}
+// An entitic mass concentration (MCHC: haemoglobin per volume of red cells)
+// is a mass concentration all the same.
+var loincConcentration = map[string]string{"SCnc": "amount-concentration", "MCnc": "mass-concentration", "EntMCnc": "mass-concentration"}
 
 // concentrationOf answers which concentration a metric's unit is, by which
 // base its shipped unit converts to through linear conversions:
 // "mass-concentration" for g/L, "amount-concentration" for mol/L, else "".
+// The graph is the seeded one with the units the labs catalogue ships, so a
+// metric written in one of those (ng/dL) is held like any other.
 func concentrationOf(t *testing.T) func(props map[string]any) string {
 	t.Helper()
-	g, problems, err := unitseed.Graph()
-	if err != nil || len(problems) > 0 {
-		t.Fatalf("the shipped unit graph: %v %v", err, problems)
+	us, cs := unitDocs(t, unitseed.Units())
+	more, moreCs := unitDocs(t, unitseed.Conversions())
+	us, cs = append(us, more...), append(cs, moreCs...)
+	raw, err := fs.ReadFile(kinds.All(), labsPackage+"/lab_units.yaml")
+	if err != nil {
+		t.Fatalf("read the lab units: %v", err)
+	}
+	more, moreCs = unitDocs(t, raw)
+	g, problems := vocabulary.BuildUnitGraph(append(us, more...), append(cs, moreCs...))
+	if len(problems) > 0 {
+		t.Fatalf("the seeded unit graph with the lab units: %v", problems)
 	}
 	return func(props map[string]any) string {
 		ref, _ := props["unit"].(map[string]any)
@@ -659,8 +718,8 @@ func TestLabAnalytesPairEveryLabTwin(t *testing.T) {
 			t.Errorf("%s and %s carry molar masses %v and %v, want one", id, twin, analytes[id]["molarMass"], analytes[twin]["molarMass"])
 		}
 	}
-	if pairs < 7 {
-		t.Errorf("%d lab twins, want the seven the catalogue lists", pairs)
+	if pairs < 16 {
+		t.Errorf("%d lab twins, want the sixteen the catalogue lists", pairs)
 	}
 	for id, a := range analytes {
 		if metrics[id] == nil {
