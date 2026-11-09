@@ -36,17 +36,3 @@ public enum TaskOrder: String, Codable, Hashable, Sendable, CaseIterable {
         }
     }
 }
-
-public extension [TaskList] {
-    /// By `position`, lists with none last, then by name.
-    var arranged: [TaskList] {
-        sorted { a, b in
-            switch (a.position, b.position) {
-            case let (x?, y?) where x != y: return x < y
-            case (.some, nil): return true
-            case (nil, .some): return false
-            default: return (a.name.lowercased(), a.id) < (b.name.lowercased(), b.id)
-            }
-        }
-    }
-}

@@ -14,6 +14,10 @@ public struct TasksPackage: Sendable {
     /// parameter: `temporal` → `point` → `dueAt`, a property the trait binds
     /// rather than the kind declares.
     public var bindings: [String: [String: [String: String]]] = [:]
+    /// Each kind's declaration, as the app reads its own kinds before the
+    /// server has said anything (and where the server says nothing of the
+    /// settings kinds, which bind no status).
+    public var declarations: [TaskKindDeclaration] = []
 
     /// The closure in this build's resources. On Android `Bundle.module`
     /// looks beside `/system/bin` and stops the process when the bundle is
@@ -40,9 +44,11 @@ public struct TasksPackage: Sendable {
         let file = try JSONDecoder().decode(JSONValue.self, from: data)
         var properties: [String: [String]] = [:]
         var bindings: [String: [String: [String: String]]] = [:]
+        var declarations: [TaskKindDeclaration] = []
         for document in file["documents"]?.arrayValue ?? [] where document["kind"]?.text == "substrate.reamde.dev/core/kind" {
             guard let id = document["metadata"]?["id"]?.text else { continue }
             properties[id] = document["data"]?["properties"]?.objectValue?.keys ?? []
+            declarations.append(TaskKindDeclaration(identity: id, definition: document["data"]?.object ?? [:]))
             for trait in document["data"]?["traits"]?.arrayValue ?? [] {
                 guard let text = trait.text, let open = text.firstIndex(of: "("), text.hasSuffix(")") else { continue }
                 let name = String(text[..<open].split(separator: "/").last ?? "")
@@ -54,6 +60,7 @@ public struct TasksPackage: Sendable {
         }
         var package = TasksPackage(package: file["package"]?.text ?? "", version: file["version"]?.int ?? 0, properties: properties)
         package.bindings = bindings
+        package.declarations = declarations
         return package
     }
 }

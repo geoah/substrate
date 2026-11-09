@@ -3,13 +3,16 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// A task's row in its band's or section's card: its words on the left,
-/// which open it, and on the right the round mark, centred on the row,
-/// which completes it. The mark fills at once, with a ring that drains for
-/// the undo window, and a second tap within it takes the mark back; the row
-/// only leaves when the window closes and the write goes. On Needs you a
-/// late task's row also offers where to move it and Won't Do. The card, the
-/// dividers and the open task's tint are the list's (`TaskListView`).
+/// A task's row in its band's or section's card: a title, one meta line,
+/// and one trailing control. The words on the left open it; on the right is
+/// the round mark, centred on the row, which completes it, or for a
+/// suggestion Dismiss beside Accept. The mark fills at once, with a ring
+/// that drains for the undo window, and a second tap within it takes the
+/// mark back; any other decision shows its words with Undo; the row only
+/// leaves when the window closes and the write goes. On Needs you a late
+/// task's row also offers where to move it and Won't Do. While suggestions
+/// are picked, a row's leading check picks it. The card, the dividers and
+/// the open task's tint are the list's (`TaskListView`).
 struct TaskRowView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -22,24 +25,82 @@ struct TaskRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
+            if let picked = row.picked {
+                Button {
+                    shell.send(.picked(row.id))
+                } label: {
+                    Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(picked ? Color.brandAccent : Color.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityAddTraits(picked ? .isSelected : [])
+            }
             if let open {
                 Button(action: open) { content }
                     .buttonStyle(.plain)
                     .accessibilityLabel(row.spoken)
-                    .accessibilityAction(named: Text(row.toggle), toggle)
+                    .accessibilityAction(named: Text(row.toggle ?? ""), toggle)
             } else {
                 content
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(row.spoken)
-                    .accessibilityAction(named: Text(row.toggle), toggle)
+                    .accessibilityAction(named: Text(row.toggle ?? ""), toggle)
             }
-            mark
+            trailing
         }
         .opacity(row.band == .later || !isOpen ? 0.62 : 1)
         .onChange(of: row.pending, initial: true) { _, pending in
             markedAt = pending ? Date() : nil
         }
         .sensoryFeedback(.impact(weight: .light), trigger: row.pending)
+    }
+
+    /// The one trailing control: Undo for a decision in its window that is
+    /// not a completion, Dismiss and Accept for a suggestion, else the mark.
+    @ViewBuilder
+    private var trailing: some View {
+        if row.pending, row.pendingWords != "Done" {
+            Button {
+                shell.send(.undo(row.id))
+            } label: {
+                DecisionLabel(title: "Undo", symbol: "arrow.uturn.backward", prominent: false)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+        } else if row.suggestion {
+            if row.picked == nil {
+                HStack(spacing: 8) {
+                    ForEach(row.decisions, id: \.self) { decision in
+                        if decision.action == .dismiss {
+                            Button {
+                                shell.perform(decision.action, on: row.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Color.secondary)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.primary.opacity(0.07), in: .circle)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(decision.title)
+                        } else {
+                            Button(decision.title) { shell.perform(decision.action, on: row.id) }
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.borderedProminent)
+                                .buttonBorderShape(.capsule)
+                                .frame(minHeight: 44)
+                        }
+                    }
+                }
+            }
+        } else if row.toggle != nil {
+            mark
+        }
     }
 
     /// The round mark: open, done (filled, the ring draining while the
@@ -59,9 +120,9 @@ struct TaskRowView: View {
                     }
                     .frame(width: markSize + 10, height: markSize + 10)
                 }
-                Image(systemName: row.pending || row.status == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.status))
+                Image(systemName: row.pending || row.standing == .done ? "checkmark.circle.fill" : TasksSymbols.mark(row.standing))
                     .font(.system(size: markSize))
-                    .foregroundStyle(row.pending || row.status == .done ? Color.brandAccent : Color.secondary)
+                    .foregroundStyle(row.pending || row.standing == .done ? Color.brandAccent : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
                     .scaleEffect(row.pending ? 1.08 : 1)
             }
@@ -70,7 +131,7 @@ struct TaskRowView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.borderless)
-        .accessibilityLabel(row.toggle)
+        .accessibilityLabel(row.toggle ?? "")
     }
 
     private var content: some View {
@@ -80,14 +141,23 @@ struct TaskRowView: View {
                 .foregroundStyle(isOpen && !row.pending ? Color.primary : Color.secondary)
                 .strikethrough(!isOpen || row.pending)
                 .fixedSize(horizontal: false, vertical: true)
-            if let notes = row.notes {
+            if let written = row.written {
+                Label(written, systemImage: "sparkle")
+                    .labelStyle(TightLabelStyle(spacing: 4))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            if let pending = row.pendingWords, row.pending, pending != "Done" {
+                Text(pending).font(.caption.weight(.semibold)).foregroundStyle(Color.brandAccent)
+            }
+            if let notes = row.notes, !row.suggestion {
                 Text(notes)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .strikethrough(!isOpen || row.pending)
                     .lineLimit(1)
             }
-            if isOpen, hasChips {
+            if isOpen || row.suggestion, hasChips {
                 Group {
                     if typeSize.isAccessibilitySize {
                         VStack(alignment: .leading, spacing: 6) { chips }
@@ -107,11 +177,11 @@ struct TaskRowView: View {
         .animation(.snappy(duration: 0.25), value: row.pending)
     }
 
-    private var isOpen: Bool { row.status == .open }
+    private var isOpen: Bool { row.standing == .open || row.standing == .proposed }
 
-    private var hasChips: Bool { row.due != nil || row.priority != nil || row.listName != nil }
+    private var hasChips: Bool { row.due != nil || row.priority != nil || row.listName != nil || row.collection != nil }
 
-    private var hasDecisions: Bool { row.reschedule != nil || !row.decisions.isEmpty }
+    private var hasDecisions: Bool { row.reschedule != nil || (!row.suggestion && !row.decisions.isEmpty) }
 
     @ViewBuilder
     private var chips: some View {
@@ -123,6 +193,9 @@ struct TaskRowView: View {
         }
         if let list = row.listName {
             Chip(text: list, symbol: "list.bullet", color: .secondary, emphasis: false)
+        }
+        if let collection = row.collection {
+            Chip(text: collection, symbol: "square.stack", color: .secondary, emphasis: false)
         }
     }
 
@@ -141,14 +214,9 @@ struct TaskRowView: View {
                 .buttonStyle(.plain)
                 .fixedSize()
             }
-            ForEach(row.decisions, id: \.self) { decision in
+            ForEach(row.decisions.filter { !row.suggestion && $0.action != .accept && $0.action != .dismiss }, id: \.self) { decision in
                 Button {
-                    switch decision.action {
-                    case .complete: shell.send(.complete(row.id))
-                    case .reopen: shell.send(.reopen(row.id))
-                    case .abandon: shell.send(.abandon(row.id))
-                    case .delete: shell.send(.deleteTask(row.id))
-                    }
+                    shell.perform(decision.action, on: row.id)
                 } label: {
                     DecisionLabel(title: decision.title, symbol: nil, prominent: false)
                 }
@@ -166,7 +234,8 @@ struct TaskRowView: View {
     }
 
     private func toggle() {
-        shell.send(row.status == .open && !row.pending ? .complete(row.id) : .reopen(row.id))
+        guard row.toggle != nil else { return }
+        shell.send(row.standing == .open && !row.pending ? .complete(row.id) : .reopen(row.id))
     }
 }
 

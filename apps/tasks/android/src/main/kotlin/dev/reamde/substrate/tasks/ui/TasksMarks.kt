@@ -1,8 +1,12 @@
 package dev.reamde.substrate.tasks.ui
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.HighlightOff
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
@@ -15,10 +19,11 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.reamde.substrate.kit.bridge.DueWords
+import dev.reamde.substrate.kit.bridge.KindStatus
 import dev.reamde.substrate.kit.bridge.ScreenTone
+import dev.reamde.substrate.kit.ui.menuIcon
 import dev.reamde.substrate.kit.ui.tint
 import dev.reamde.substrate.tasks.bridge.TaskPriority
-import dev.reamde.substrate.tasks.bridge.TaskStatus
 
 /** Tasks' own marks, as the Apple app's `TasksSymbols` draws them in SF Symbols. */
 object TasksMarks {
@@ -51,10 +56,21 @@ object TasksMarks {
             DueWords.Tone.overdue -> ScreenTone.critical.tint
         }
 
-    fun mark(status: TaskStatus): ImageVector =
-        when (status) {
-            TaskStatus.open -> Icons.Rounded.RadioButtonUnchecked
-            TaskStatus.done -> Icons.Rounded.CheckCircle
-            TaskStatus.abandoned -> Icons.Rounded.HighlightOff
+    fun mark(standing: KindStatus.Standing): ImageVector =
+        when (standing) {
+            KindStatus.Standing.open,
+            KindStatus.Standing.proposed -> Icons.Rounded.RadioButtonUnchecked
+            KindStatus.Standing.done -> Icons.Rounded.CheckCircle
+            KindStatus.Standing.dropped -> Icons.Rounded.HighlightOff
+        }
+
+    /** A presentation's name for a mark: Tasks' own, else kit-ui's menu marks. */
+    fun symbol(name: String): ImageVector =
+        when (name) {
+            "suggestion" -> Icons.Rounded.AutoAwesome
+            "nodate" -> Icons.Rounded.EventBusy
+            "group" -> Icons.Rounded.Folder
+            "missing" -> Icons.Rounded.FolderOff
+            else -> menuIcon(name)
         }
 }

@@ -11,6 +11,11 @@ import Testing
 
 @testable import TasksCore
 
+/// Whether a list read asks for `kind`.
+func asksFor(_ sent: ScriptedServer.Sent, _ kind: String) -> Bool {
+    ((sent.query ?? "").removingPercentEncoding ?? "").contains("\"\(kind)\"")
+}
+
 @Suite("What became of a write", .timeLimit(.minutes(10)))
 struct WrittenTests {
     @Test func aWriteThatLeftTheQueueWithoutLandingIsNotLaidOver() async throws {
@@ -19,9 +24,9 @@ struct WrittenTests {
         await harness.deliver(.records(.loaded([taskRecord("a", "Eggs", version: 1)], cursor: nil, queue: [])))
         await harness.deliver(.settingsRead(SettingsValues(), usage: []))
         await harness.send(.show(.inbox))
-        await harness.send(.complete("a"))
+        await harness.send(.complete(t("a")))
         // The window over: the write the completion waited with.
-        await harness.deliver(.records(.wrote(try #require(await harness.state.completing["a"]))))
+        await harness.deliver(.records(.wrote(try #require(await harness.state.pending[t("a")]?.write))))
         let write = try #require(
             harness.effects.compactMap { effect -> OutboxEntry? in
                 if case let .records(.enqueue(write)) = effect { return write.entries.first }
@@ -50,7 +55,7 @@ struct WrittenTests {
         await harness.runtime.linkChanged(signedIn)
         try await harness.until { await $0.state.linked.phase == .following }
         await harness.send(.show(.inbox))
-        await harness.send(.complete("t1"))
+        await harness.send(.complete(t("t1")))
         try await window(harness)
         #expect(titles(await harness.presentation).isEmpty)
         try await harness.until { await $0.state.linked.unconfirmed.isEmpty }
@@ -88,7 +93,7 @@ struct WrittenTests {
         rig.server.on { $0.method == "PATCH" ? (409, #"{"error":{"code":"conflict","message":"version 2, not 1"}}"#) : nil }
         let harness = try linked(rig)
         try await harness.until { await $0.runtime.state(of: LinkController<TasksApp>.appKey)?.linked.phase == .following }
-        try await harness.runtime.send(TasksApp.Command.edit("t1"), to: LinkController<TasksApp>.appPath)
+        try await harness.runtime.send(TasksApp.Command.edit(t("t1")), to: LinkController<TasksApp>.appPath)
         let key = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey)?.editors.keys.first)
         try await harness.runtime.send(TaskEditor.Command.setName("Six eggs"), to: LinkController<TasksApp>.appPath + [key])
         try await harness.runtime.send(TaskEditor.Command.save, to: LinkController<TasksApp>.appPath + [key])
@@ -118,10 +123,11 @@ struct WrittenTests {
         try await harness.untilIdle(since: mark)
         // Asked for once, as every effect is traced in the step that asks.
         let reads = harness.trace.count { entry in
-            if case let .effect(_, effect) = entry, (effect as? TasksApp.Effect) == .records(.read) { true } else { false }
+            if case let .effect(_, effect) = entry, (effect as? TasksApp.Effect) == .records(.read(over: TasksKinds.all)) { true } else { false }
         }
         #expect(reads == 1)
-        #expect(rig.server.sent.count { $0.method == "GET" && $0.path == "/api/v1/records" } == 1)
+        // The data link's read; the settings link reads its own kinds.
+        #expect(rig.server.sent.count { $0.method == "GET" && $0.path == "/api/v1/records" && asksFor($0, TasksKinds.task) } == 1)
         // The access stands: the token was not refused, the approval falls short.
         #expect(await harness.presentation.snapshot.phase == .signedIn)
     }
@@ -140,9 +146,9 @@ struct WrittenTests {
         waiting.waiting = 1
         harness.clearTrace()
         await harness.deliver(.records(.linked(waiting)))
-        #expect(!harness.effects.contains(.records(.follow(cursor))))
+        #expect(!harness.effects.contains(.records(.follow(cursor, over: TasksKinds.all))))
         await harness.send(.foreground)
         #expect(await harness.state.linked.phase == .following)
-        #expect(harness.effects.contains(.records(.follow(cursor))))
+        #expect(harness.effects.contains(.records(.follow(cursor, over: TasksKinds.all))))
     }
 }

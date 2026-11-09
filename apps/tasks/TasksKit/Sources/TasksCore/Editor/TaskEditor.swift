@@ -53,6 +53,8 @@ public struct TaskEditor: Controller, Equatable {
     /// The task as it stands, read again with each change to it; nil for a
     /// new one.
     public let original: TaskItem?
+    /// The app's own collection, whose readings a save writes through.
+    public let collection: TaskCollection
     /// The list a new task goes in, and the day it is due on (Needs you's).
     public let seedList: String?
     public let seedDay: CivilDay?
@@ -65,10 +67,12 @@ public struct TaskEditor: Controller, Equatable {
     public let saving: EditorSave?
 
     public init(
-        original: TaskItem?, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption], lastPositions: [String: Decimal],
+        original: TaskItem?, collection: TaskCollection, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption],
+        lastPositions: [String: Decimal],
         saving: EditorSave? = nil
     ) {
         self.original = original
+        self.collection = collection
         self.seedList = seedList
         self.seedDay = seedDay
         self.lists = lists
@@ -131,13 +135,13 @@ public struct TaskEditor: Controller, Equatable {
     func save(_ state: State, writes: TaskWrites) -> Event {
         let draft = state.draft
         guard let seen = state.seen else {
-            var task = draft.applied(to: TaskItem(id: writes.newID(), name: ""))
+            var task = draft.applied(to: TaskItem(recordID: writes.newID(), name: ""))
             task.position = Position.between(lastPositions[draft.list ?? ""], nil)
-            return .saved(writes.create(task), task: task.id)
+            return .saved(writes.create(task, in: collection), task: task.id)
         }
         var task = draft.applied(to: seen, changedFrom: TaskDraft(seen))
         if task.list != seen.list { task.position = Position.between(lastPositions[task.list ?? ""], nil) }
-        return .saved(writes.edit(seen, to: task), task: seen.id)
+        return .saved(writes.edit(seen, to: task, in: collection), task: seen.id)
     }
 
     // MARK: The engine

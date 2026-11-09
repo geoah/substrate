@@ -29,6 +29,7 @@ import dev.reamde.substrate.kit.ui.KitText
 import dev.reamde.substrate.kit.ui.SettingsScreen
 import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.ListSelection
+import dev.reamde.substrate.tasks.bridge.SettingsPage
 import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
@@ -65,6 +66,8 @@ fun TasksAppView(app: TasksPresentation, banner: AccessBanner?, settings: Settin
             TaskEditorDialog(editor, send = { actions.send(key, it) })
         }
     app.confirmation?.let { ConfirmationDialog(it, actions) }
+    app.choice?.let { ChoiceDialog(it, actions) }
+    app.approval?.let { ApprovalDialog(it, actions) }
     app.problem?.let { ProblemDialog(it) { actions.send(TasksApp.Command.DismissProblem) } }
     naming?.let { ListNamingDialog(it, dismiss = { naming = null }, actions) }
 }
@@ -80,36 +83,40 @@ private fun Section(
     name: (ListNaming) -> Unit,
 ) {
     val list = app.list
-    val detail = app.detail
+    val opened = app.detail?.id ?: app.suggestion?.id
     val back = { command: TasksApp.Command -> actions.send(command) }
     when (id) {
-        MENU_SETTINGS -> SettingsPane(settings, actions)
+        MENU_SETTINGS -> SettingsSection(app, settings, panes, actions)
         MENU_NEEDS ->
             when {
-                panes == Panes.One && detail != null -> {
+                panes == Panes.One && opened != null -> {
                     BackHandler { back(TasksApp.Command.Open(null)) }
-                    TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
+                    OpenTask(app, actions, onBack = { back(TasksApp.Command.Open(null)) })
                 }
-                list != null && list.selection == ListSelection.NeedsYou && panes != Panes.One ->
+                panes == Panes.One && (app.queue != null || (list != null && list.selection != ListSelection.NeedsYou)) -> {
+                    BackHandler { back(TasksApp.Command.Show(ListSelection.NeedsYou)) }
+                    Column(app, banner, actions, name, onBack = { back(TasksApp.Command.Show(ListSelection.NeedsYou)) }, selected = null)
+                }
+                panes != Panes.One && (list != null || app.queue != null) ->
                     Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { TaskListScreen(list, app, banner, actions, name, onBack = null, selected = detail?.id) }
+                        Box(Modifier.weight(1f)) { Column(app, banner, actions, name, onBack = null, selected = opened) }
                         VerticalDivider()
                         Box(Modifier.weight(1f)) { DetailPane(app, actions) }
                     }
-                list != null && list.selection == ListSelection.NeedsYou -> TaskListScreen(list, app, banner, actions, name, onBack = null)
+                list != null -> TaskListScreen(list, app, banner, actions, name, onBack = null)
                 else -> Box(Modifier.fillMaxSize())
             }
         else ->
             when (panes) {
                 Panes.One ->
                     when {
-                        detail != null -> {
+                        opened != null -> {
                             BackHandler { back(TasksApp.Command.Open(null)) }
-                            TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
+                            OpenTask(app, actions, onBack = { back(TasksApp.Command.Open(null)) })
                         }
-                        list != null -> {
+                        list != null || app.queue != null -> {
                             BackHandler { back(TasksApp.Command.Show(null)) }
-                            TaskListScreen(list, app, banner, actions, name, onBack = { back(TasksApp.Command.Show(null)) })
+                            Column(app, banner, actions, name, onBack = { back(TasksApp.Command.Show(null)) }, selected = null)
                         }
                         else -> SidebarScreen(app.sidebar, app, banner, actions, name, showsNeedsYou = false)
                     }
@@ -122,11 +129,11 @@ private fun Section(
                         VerticalDivider()
                         Box(Modifier.weight(1f)) {
                             when {
-                                panes == Panes.Two && detail != null -> {
+                                panes == Panes.Two && opened != null -> {
                                     BackHandler { back(TasksApp.Command.Open(null)) }
-                                    TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
+                                    OpenTask(app, actions, onBack = { back(TasksApp.Command.Open(null)) })
                                 }
-                                list != null -> TaskListScreen(list, app, null, actions, name, onBack = null, selected = detail?.id)
+                                list != null || app.queue != null -> Column(app, null, actions, name, onBack = null, selected = opened)
                                 else -> Placeholder("Choose a list")
                             }
                         }
@@ -139,10 +146,72 @@ private fun Section(
     }
 }
 
+/** The list column: the suggestions while they are shown, else the list. */
+@Composable
+private fun Column(
+    app: TasksPresentation,
+    banner: AccessBanner?,
+    actions: TasksActions,
+    name: (ListNaming) -> Unit,
+    onBack: (() -> Unit)?,
+    selected: String?,
+) {
+    val queue = app.queue
+    val list = app.list
+    when {
+        queue != null -> SuggestionsScreen(queue, app, actions, onBack, selected)
+        list != null -> TaskListScreen(list, app, banner, actions, name, onBack, selected)
+    }
+}
+
+/** The open task or suggestion. */
+@Composable
+private fun OpenTask(app: TasksPresentation, actions: TasksActions, onBack: (() -> Unit)?) {
+    val suggestion = app.suggestion
+    val detail = app.detail
+    when {
+        suggestion != null -> SuggestionScreen(suggestion, actions, onBack)
+        detail != null -> TaskDetailScreen(detail, actions, onBack)
+    }
+}
+
+/** Settings, then Collections and one collection past it: pushed on a phone, beside it wider. */
+@Composable
+private fun SettingsSection(app: TasksPresentation, settings: SettingsPresentation?, panes: Panes, actions: TasksActions) {
+    val page = app.settingsPage
+    val collection = app.collection
+    val back = { to: SettingsPage? -> actions.send(TasksApp.Command.ShowSettings(to)) }
+    val pageView: (@Composable (Boolean) -> Unit)? =
+        when {
+            page is SettingsPage.Collection && collection != null -> { phone ->
+                CollectionScreen(collection, actions, onBack = if (phone) ({ back(SettingsPage.Collections) }) else null)
+            }
+            page != null -> { phone ->
+                CollectionsScreen(app.collections, actions, onBack = if (phone) ({ back(null) }) else null)
+            }
+            else -> null
+        }
+    if (panes == Panes.One) {
+        if (pageView != null) {
+            BackHandler { back(if (page is SettingsPage.Collection) SettingsPage.Collections else null) }
+            pageView(true)
+        } else {
+            SettingsPane(settings, actions)
+        }
+    } else {
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f)) { SettingsPane(settings, actions) }
+            if (pageView != null) {
+                VerticalDivider()
+                Box(Modifier.weight(1f)) { pageView(false) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DetailPane(app: TasksPresentation, actions: TasksActions) {
-    val detail = app.detail
-    if (detail != null) TaskDetailScreen(detail, actions, onBack = null) else Placeholder("No task open", "Choose a task to see it here.")
+    if (app.detail != null || app.suggestion != null) OpenTask(app, actions, onBack = null) else Placeholder("No task open", "Choose a task to see it here.")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

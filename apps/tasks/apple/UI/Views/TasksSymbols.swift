@@ -9,8 +9,17 @@ import TasksCore
 /// tones and a task's state; the menu's and the tones' are the kit's
 /// design tokens.
 enum TasksSymbols {
-    /// A presentation's name for a mark, in the kit's design tokens.
-    static func symbol(_ name: String) -> String { DesignTokens.menuSymbol(name).sfSymbol }
+    /// A presentation's name for a mark: Tasks' own, else the kit's design
+    /// tokens'.
+    static func symbol(_ name: String) -> String {
+        switch name {
+        case "suggestion": "sparkle"
+        case "nodate": "calendar.badge.exclamationmark"
+        case "group": "folder"
+        case "missing": "questionmark.folder"
+        default: DesignTokens.menuSymbol(name).sfSymbol
+        }
+    }
 
     static func symbol(_ priority: TaskPriority) -> String {
         switch priority {
@@ -81,11 +90,11 @@ enum TasksSymbols {
         #endif
     }
 
-    static func mark(_ status: TaskStatus) -> String {
-        switch status {
-        case .open: "circle"
+    static func mark(_ standing: KindStatus.Standing) -> String {
+        switch standing {
+        case .open, .proposed: "circle"
         case .done: "checkmark.circle.fill"
-        case .abandoned: "xmark.circle"
+        case .dropped: "xmark.circle"
         }
     }
 }

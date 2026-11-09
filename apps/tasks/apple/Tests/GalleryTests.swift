@@ -32,9 +32,12 @@ import Testing
         let app = fixture.app
         switch fixture.screen {
         case .sidebar:
-            return AnyView(NavigationStack { SidebarView(sidebar: app.sidebar, link: link, app: app, menu: app.menu, select: { _ in }) })
+            return AnyView(NavigationStack { SidebarView(sidebar: app.sidebar, link: link, app: app, select: { _ in }) })
         case .list:
-            return app.list.map { list in AnyView(NavigationStack { TaskListView(list: list, app: app, link: link) }) }
+            // At a phone's size: the tab bar holds the +, as on a phone.
+            return app.list.map { list in
+                AnyView(NavigationStack { TaskListView(list: list, app: app, link: link) }.environment(\.addsFromTabBar, true))
+            }
         case .detail:
             return app.detail.map { detail in AnyView(NavigationStack { TaskDetailView(detail: detail) }) }
         case let .editor(key):
@@ -43,6 +46,19 @@ import Testing
             return nil
         case let .settings(settings):
             return AnyView(NavigationStack { SettingsScreen(settings) { _ in }.navigationTitle("Settings") })
+        case .queue:
+            return app.queue.map { queue in AnyView(NavigationStack { SuggestionsView(queue: queue, app: app, link: link) }) }
+        case .suggestion:
+            return app.suggestion.map { suggestion in AnyView(NavigationStack { SuggestionView(suggestion: suggestion) }) }
+        case .choice:
+            // The system's sheet: drawn over the suggestions it is asked from.
+            return app.queue.map { queue in AnyView(NavigationStack { SuggestionsView(queue: queue, app: app, link: link) }) }
+        case .collections:
+            return AnyView(NavigationStack { CollectionsView(collections: app.collections) })
+        case .collection:
+            return app.collection.map { collection in AnyView(NavigationStack { CollectionView(collection: collection) }) }
+        case .approval:
+            return AnyView(NavigationStack { CollectionsView(collections: app.collections) })
         }
     }
 
@@ -66,7 +82,8 @@ import Testing
         }
         // The Mac's and the iPad's layout: the sidebar, a list and the open
         // task side by side, in a Mac window with its toolbar.
-        for fixture in TasksFixtures.all where fixture.name == "tasks-detail" || fixture.name == "tasks-needs-you" {
+        let wide = ["tasks-detail", "tasks-needs-you", "tasks-suggestion", "tasks-group"]
+        for fixture in TasksFixtures.all where wide.contains(fixture.name) {
             try await OffscreenDrawing.png(SplitRoot(link: link, app: fixture.app).environment(shell), size: OffscreenDrawing.mac, frame: .window)
                 .write(to: directory.appendingPathComponent("\(fixture.name)-wide.png"))
         }

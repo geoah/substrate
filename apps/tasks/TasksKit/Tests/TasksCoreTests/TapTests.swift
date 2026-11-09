@@ -15,25 +15,25 @@ struct TapTests {
     }
 
     @Test func aTapOnlyAReminderMakesIsACommand() {
-        let tap = NotificationResponse(id: Reminders.id("t3"), category: Reminders.category, action: .open, userInfo: ["task": "t3"])
-        #expect(Reminders.command(for: tap) == .reminderTapped("t3"))
+        let tap = NotificationResponse(id: Reminders.id(t("t3")), category: Reminders.category, action: .open, userInfo: ["task": t("t3")])
+        #expect(Reminders.command(for: tap) == .reminderTapped(t("t3")))
         var dismissed = tap
         dismissed.action = .dismiss
         #expect(Reminders.command(for: dismissed) == nil)
-        #expect(Reminders.command(for: NotificationResponse(id: "x", category: "chat.reply", action: .open, userInfo: ["task": "t3"])) == nil)
+        #expect(Reminders.command(for: NotificationResponse(id: "x", category: "chat.reply", action: .open, userInfo: ["task": t("t3")])) == nil)
     }
 
     @Test func aTapAtAColdLaunchOpensTheTaskOnceItsRecordIsRead() async throws {
         let (_, harness) = try rig()
         // The tap reaches the root before the device's copy is read.
-        await harness.send(.reminderTapped("t3"))
+        await harness.send(.reminderTapped(t("t3")))
         #expect(await harness.state.openTask == nil)
-        #expect(await harness.state.tapped == "t3")
+        #expect(await harness.state.tapped == t("t3"))
         await harness.deliver(.records(.loaded([listRecord("home", "Home"), taskRecord("t3", "Pay rent", list: "home")], cursor: nil, queue: [])))
         let state = await harness.state
         #expect(state.section == TasksMenu.lists)
         #expect(state.selection == .list("home"))
-        #expect(state.openTask == "t3")
+        #expect(state.openTask == t("t3"))
         #expect(state.tapped == nil)
         let presented = await harness.presentation
         #expect(presented.menu.selected == TasksMenu.lists)
@@ -43,19 +43,19 @@ struct TapTests {
 
     @Test func aViewTellingTheStateItHoldsForgetsNoTap() async throws {
         let (_, harness) = try rig()
-        await harness.send(.reminderTapped("t3"))
+        await harness.send(.reminderTapped(t("t3")))
         // Drawn again at launch: the tab already open, no task open.
         await harness.send(.select(section: TasksMenu.needsYou))
         await harness.send(.open(task: nil))
         await harness.deliver(.records(.loaded([taskRecord("t3", "Pay rent")], cursor: nil, queue: [])))
-        #expect(await harness.state.openTask == "t3")
-        await harness.send(.open(task: "t3"))
-        #expect(await harness.state.openTask == "t3")
+        #expect(await harness.state.openTask == t("t3"))
+        await harness.send(.open(task: t("t3")))
+        #expect(await harness.state.openTask == t("t3"))
     }
 
     @Test func goingElsewhereBeforeTheRecordComesForgetsTheTap() async throws {
         let (_, harness) = try rig()
-        await harness.send(.reminderTapped("t3"))
+        await harness.send(.reminderTapped(t("t3")))
         await harness.send(.select(section: TasksMenu.settings))
         await harness.deliver(.records(.loaded([taskRecord("t3", "Pay rent")], cursor: nil, queue: [])))
         #expect(await harness.state.openTask == nil)
@@ -70,8 +70,8 @@ struct TapTests {
         await harness.send(.select(section: TasksMenu.lists))
         #expect(await harness.presentation.list == nil)
         await harness.send(.show(.list("home")))
-        await harness.send(.open(task: "a"))
-        #expect(await harness.presentation.detail?.id == "a")
+        await harness.send(.open(task: t("a")))
+        #expect(await harness.presentation.detail?.id == t("a"))
         // Back, then back again.
         await harness.send(.open(task: nil))
         #expect(await harness.presentation.detail == nil)
@@ -80,7 +80,7 @@ struct TapTests {
     }
 
     @Test func aDaysReminderComesAtTheHourOfTheDeviceTimeZone() throws {
-        let model = TasksModel(tasks: ["t": TaskItem(id: "t", name: "Rent", due: .day(CivilDay(year: 2026, month: 11, day: 4)))])
+        let model = TasksModel(tasks: [t("t"): TaskItem(recordID: "t", name: "Rent", due: .day(CivilDay(year: 2026, month: 11, day: 4)))])
         func fire(_ zone: String) -> Date? {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: zone)!

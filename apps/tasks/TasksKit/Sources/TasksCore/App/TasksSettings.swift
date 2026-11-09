@@ -9,6 +9,8 @@ public enum TasksSettings {
     public static let remindHour = "remindHour"
     public static let order = "order"
     public static let showCompleted = "showCompleted"
+    /// The row that opens Settings → Collections.
+    public static let collections = "collections"
 
     public static let hours = [7, 8, 9, 12, 18]
     public static let defaultHour = 9
@@ -27,10 +29,11 @@ public enum TasksSettings {
 
     public static func showsCompleted(_ values: SettingsValues) -> Bool { values.toggle(showCompleted, default: false) }
 
-    /// The app's two sections: the reminders, then how lists are shown.
+    /// The app's sections: the collections it shows, the reminders, then how
+    /// lists are shown.
     public static func sections(
         _ values: SettingsValues, permission: NotificationPermission?, scheduled: Int, device: String,
-        locale: Locale
+        locale: Locale, collectionsOn: Int = 1
     ) -> [SettingsSection] {
         var reminders = [
             SettingsRow(id: .app(remind), label: "Remind Me When Tasks Are Due", control: .toggle(reminds(values)))
@@ -66,6 +69,9 @@ public enum TasksSettings {
             SettingsRow(id: .app(showCompleted), label: "Show Completed Tasks", control: .toggle(showsCompleted(values))),
         ]
         return [
+            SettingsSection(
+                id: .app(collections),
+                rows: [SettingsRow(id: .app(collections), label: "Collections", detail: "\(collectionsOn) on", control: .link)]),
             SettingsSection(
                 id: .app("reminders"), title: "Reminders", rows: reminders,
                 footer: reminds(values)

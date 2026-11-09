@@ -1,67 +1,73 @@
 import Foundation
 import SubstrateCore
 
-/// Where an open task falls on Needs you: waiting on a decision, due
-/// within the week, or later.
+/// Where an open task falls on Needs you (apps/tasks/contract/README.md,
+/// "A record"): late or urgent, due within the week, due later, or with no
+/// date at all.
 public enum TaskBand: String, Bridged, Hashable, Sendable, CaseIterable {
-    /// Past its day or its moment, or urgent with no day to be due on.
-    case needsYou
+    /// Past its moment or its day, or pressing with no date.
+    case lateOrUrgent
     /// Due today or within the next seven days.
-    case upcoming
+    case comingUp
     case later
+    /// No date, and not pressing: counted, never listed, on Needs you.
+    case noDate
 }
 
 public extension TasksModel {
-    /// Where to draw the needs-you line under a priority: `high` and
-    /// `urgent` with no date wait on a day.
-    static let pressing = TaskPriority.high
-
-    /// How far Upcoming reaches past today.
+    /// How far Coming up reaches past today.
     static let horizonDays = 7
 
-    /// An open task's band at `now`.
-    static func band(of task: TaskItem, now: Date, today: CivilDay, calendar: Calendar) -> TaskBand {
+    /// An open task's band at `now`; nil for any other.
+    static func band(of task: TaskItem, now: Date, today: CivilDay, calendar: Calendar) -> TaskBand? {
+        guard task.isOpen else { return nil }
         if let due = task.due {
-            let overdue = due.instant.map { $0 < now } ?? (due.day < today)
-            if overdue { return .needsYou }
-            return due.day <= today.adding(days: horizonDays, in: calendar) ? .upcoming : .later
+            let late = due.instant.map { $0 < now } ?? (due.day < today)
+            if late { return .lateOrUrgent }
+            return due.day <= today.adding(days: horizonDays, in: calendar) ? .comingUp : .later
         }
-        return task.priority >= pressing ? .needsYou : .later
+        return task.pressing ? .lateOrUrgent : .noDate
     }
 
     /// Every open task, narrowed to `filter` where there is one, in its
-    /// band, ranked: what is late by how late, then what has no day by
-    /// how urgent; what is coming by when; the rest by when, the undated
-    /// after by how urgent, each tie in the owner's order.
-    func banded(filter: ListSelection?, now: Date, today: CivilDay, calendar: Calendar) -> [(task: TaskItem, band: TaskBand)] {
-        let open = tasks.values.filter { task in
-            guard task.isOpen else { return false }
-            switch filter {
-            case nil: return true
-            case .needsYou?: return true
-            case .inbox?: return task.list == nil
-            case let .list(id)?: return task.list == id
-            }
-        }
-        let ranked = open.map { (task: $0, band: Self.band(of: $0, now: now, today: today, calendar: calendar)) }
+    /// band, in the contract's order: what is late by when it was due, then
+    /// what has no date by how pressing; what is coming and what is later by
+    /// when; each tie by the owner's order, then by when it was written.
+    func banded(filter: ListSelection?, now: Date, today: CivilDay) -> [(task: TaskItem, band: TaskBand)] {
+        let open = tasks.values.filter { task in task.isOpen && (filter.map { holds(task, in: $0) } ?? true) }
+        let ranked = open.compactMap { task in Self.band(of: task, now: now, today: today, calendar: calendar).map { (task: task, band: $0) } }
         return ranked.sorted { a, b in
             if a.band != b.band { return a.band.rank < b.band.rank }
             switch (a.task.due, b.task.due) {
             case let (x?, y?):
                 let (kx, ky) = (x.sortKey(in: calendar), y.sortKey(in: calendar))
-                return kx != ky ? kx < ky : TaskOrder.manual(a.task, b.task)
+                return kx != ky ? kx < ky : Self.tie(a.task, b.task)
             case (.some, nil): return true
             case (nil, .some): return false
             case (nil, nil):
-                return a.task.priority != b.task.priority ? a.task.priority > b.task.priority : TaskOrder.manual(a.task, b.task)
+                let (ra, rb) = (rank(a.task), rank(b.task))
+                return ra != rb ? ra > rb : Self.tie(a.task, b.task)
             }
         }
     }
 
-    /// How many open tasks wait on a decision, across every list.
-    func needsYouCount(now: Date, today: CivilDay, calendar: Calendar) -> Int {
-        tasks.values.filter { $0.isOpen && Self.band(of: $0, now: now, today: today, calendar: calendar) == .needsYou }.count
+    /// How many open tasks are late or urgent, across every collection:
+    /// Needs you's badge.
+    func lateOrUrgentCount(now: Date, today: CivilDay) -> Int {
+        tasks.values.filter { Self.band(of: $0, now: now, today: today, calendar: calendar) == .lateOrUrgent }.count
     }
+
+    /// A tie in any band: the owner's order where both are of one kind and
+    /// hold one, then when each was written, then the path.
+    static func tie(_ a: TaskItem, _ b: TaskItem) -> Bool {
+        if a.kind == b.kind, let x = a.position, let y = b.position, x != y { return x < y }
+        let (ca, cb) = (a.createdAt ?? .distantPast, b.createdAt ?? .distantPast)
+        if ca != cb { return ca < cb }
+        return a.id < b.id
+    }
+
+    /// A priority's place among its collection's values.
+    func rank(_ task: TaskItem) -> Int { collection(task.kind)?.rank(task.priorityValue) ?? -1 }
 }
 
 extension TaskBand {

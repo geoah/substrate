@@ -82,7 +82,12 @@ public struct TasksOpening: Bridged, Equatable {
     /// resources the bridge copied out (`Bundle.module` cannot be read on
     /// Android); 1 where they cannot be read, as on Apple systems.
     static func packageVersion(in environment: BridgeEnvironment) -> Int {
-        environment.bundle(package: "TasksKit", target: "TasksCore").flatMap { try? TasksPackage.bundled(from: $0).version } ?? 1
+        package(in: environment)?.version ?? 1
+    }
+
+    /// The tasks package's closure from the resources the bridge copied out.
+    static func package(in environment: BridgeEnvironment) -> TasksPackage? {
+        environment.bundle(package: "TasksKit", target: "TasksCore").flatMap { try? TasksPackage.bundled(from: $0) }
     }
 }
 

@@ -22,6 +22,25 @@ struct AppView: View {
         }
         .confirmation(app.confirmation, confirm: { shell.send(.confirm) }, dismiss: { shell.send(.dismissConfirmation) })
         .problem(app.problem, dismiss: { shell.send(.dismissProblem) })
+        .confirmationDialog(
+            app.choice?.title ?? "", isPresented: Binding(get: { app.choice != nil }, set: { if !$0 { shell.send(.dismissChoice) } }),
+            titleVisibility: .visible, presenting: app.choice
+        ) { choice in
+            ForEach(choice.options) { option in
+                Button(option.title) { shell.send(.decide(choice.task, choice.decision, to: option.id)) }
+            }
+            Button(choice.cancel, role: .cancel) { shell.send(.dismissChoice) }
+        }
+        .alert(
+            app.approval?.refused ?? app.approval?.message ?? "",
+            isPresented: Binding(get: { app.approval.map { !$0.waiting } ?? false }, set: { _ in }),
+            presenting: app.approval
+        ) { approval in
+            if approval.refused == nil {
+                Button(approval.approve) { shell.approve(approval) }
+            }
+            Button(approval.cancel, role: .cancel) { shell.send(.dismissApproval) }
+        }
     }
 }
 

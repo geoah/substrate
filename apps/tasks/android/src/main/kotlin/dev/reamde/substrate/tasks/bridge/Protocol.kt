@@ -11,14 +11,68 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "3ec8c4f7faa07617eb7b0b7aeab440f6514be36b5b741646628df6a31d34ff79"
+    public const val VALUE: String = "6ee481d6260a98b2c4c91d863009f592e13b96018a91fe04078f8cd5bb8bcbf6"
 }
+
+@Serializable
+public data class ApprovalPresentation(
+    val collection: String,
+    val message: String,
+    val scopes: List<String>,
+    val approve: String,
+    val cancel: String,
+    val refused: String? = null,
+    val waiting: Boolean,
+)
 
 @Serializable
 public data class BandHeading(
     val band: TaskBand,
     val title: String,
     val count: Long,
+)
+
+@Serializable
+public data class ChoicePresentation(
+    val task: String,
+    val decision: TaskDecision,
+    val title: String,
+    val options: List<EditorOption>,
+    val cancel: String,
+)
+
+@Serializable
+public data class CollectionPresentation(
+    val kind: String,
+    val title: String,
+    val reference: String,
+    val groupTitle: String,
+    val groups: List<GroupChoice>,
+    val statesTitle: String,
+    val states: List<LabeledValue>,
+    val fieldsTitle: String,
+    val fields: List<LabeledValue>,
+)
+
+@Serializable
+public data class CollectionRow(
+    val id: String,
+    val title: String,
+    val reference: String,
+    val meta: String? = null,
+    val on: Boolean,
+    val viewOnly: Boolean,
+)
+
+@Serializable
+public data class CollectionsPresentation(
+    val title: String,
+    val intro: String,
+    val showTitle: String,
+    val rows: List<CollectionRow>,
+    val footer: String,
+    val newTasksTitle: String,
+    val newTasks: EditorChoice,
 )
 
 @Serializable(with = Confirmation.Serializer::class)
@@ -37,6 +91,22 @@ public sealed interface Confirmation {
 }
 
 @Serializable
+public data class CountedRow(
+    val title: String,
+    val detail: String,
+    val count: Long,
+    val selection: ListSelection,
+)
+
+@Serializable
+public data class DetailFact(
+    val id: String,
+    val label: String,
+    val value: String,
+    val note: String? = null,
+)
+
+@Serializable
 public data class DetailField(
     val field: TaskField,
     val label: String,
@@ -44,6 +114,7 @@ public data class DetailField(
     val url: String? = null,
     val tone: DueWords.Tone? = null,
     val choice: EditorChoice? = null,
+    val property: String? = null,
 )
 
 @Serializable
@@ -92,8 +163,30 @@ public data class EditorText(
 public data class FilterChip(
     val id: String,
     val title: String,
+    val count: Long? = null,
     val selection: ListSelection? = null,
     val selected: Boolean,
+)
+
+@Serializable
+public data class GroupChoice(
+    val id: String,
+    val title: String,
+    val detail: String,
+    val selected: Boolean,
+)
+
+@Serializable
+public data class GroupSection(
+    val id: String,
+    val title: String,
+    val reference: String,
+    val rows: List<SidebarRow>,
+    val quiet: List<SidebarRow>,
+    val more: String? = null,
+    val busiest: Long,
+    val all: String? = null,
+    val reorders: Boolean,
 )
 
 @Serializable(with = ListAction.Serializer::class)
@@ -123,20 +216,23 @@ public data class ListPresentation(
     val title: String,
     val summary: ListSummary,
     val chips: List<FilterChip>,
+    val queue: CountedRow? = null,
     val bands: List<BandHeading>,
     val clear: String? = null,
+    val noDate: CountedRow? = null,
     val open: KeyedList<TaskRow>,
     val openTitle: String,
     val closed: KeyedList<TaskRow>,
     val closedTitle: String,
     val showsClosed: Boolean,
     val toggleClosed: String,
-    val quickAdd: String,
+    val quickAdd: String? = null,
     val newTask: String,
     val reorders: Boolean,
     val orderNote: String? = null,
     val empty: EmptyPresentation? = null,
     val actions: List<ActionButton<ListAction>>,
+    val pin: ActionButton<PinAction>? = null,
     val rowMenu: TaskMenuWords,
 )
 
@@ -146,10 +242,28 @@ public sealed interface ListSelection {
     public data object NeedsYou : ListSelection
 
     @Serializable
-    public data object Inbox : ListSelection
+    public data object Suggestions : ListSelection
 
     @Serializable
-    public data class List(
+    public data object NoDate : ListSelection
+
+    @Serializable
+    public data class Group(
+        @SerialName("_0") val value: String,
+    ) : ListSelection
+
+    @Serializable
+    public data class Ungrouped(
+        @SerialName("_0") val value: String,
+    ) : ListSelection
+
+    @Serializable
+    public data class Missing(
+        @SerialName("_0") val value: String,
+    ) : ListSelection
+
+    @Serializable
+    public data class Collection(
         @SerialName("_0") val value: String,
     ) : ListSelection
 
@@ -157,8 +271,12 @@ public sealed interface ListSelection {
         "ListSelection",
         listOf(
             SwiftEnumSerializer.Case("needsYou", NeedsYou::class, NeedsYou.serializer()),
-            SwiftEnumSerializer.Case("inbox", Inbox::class, Inbox.serializer()),
-            SwiftEnumSerializer.Case("list", List::class, List.serializer()),
+            SwiftEnumSerializer.Case("suggestions", Suggestions::class, Suggestions.serializer()),
+            SwiftEnumSerializer.Case("noDate", NoDate::class, NoDate.serializer()),
+            SwiftEnumSerializer.Case("group", Group::class, Group.serializer()),
+            SwiftEnumSerializer.Case("ungrouped", Ungrouped::class, Ungrouped.serializer()),
+            SwiftEnumSerializer.Case("missing", Missing::class, Missing.serializer()),
+            SwiftEnumSerializer.Case("collection", Collection::class, Collection.serializer()),
         ),
     )
 }
@@ -170,10 +288,44 @@ public data class ListSummary(
     val overdue: String? = null,
 )
 
+@Serializable(with = PinAction.Serializer::class)
+public sealed interface PinAction {
+    @Serializable
+    public data class Pin(
+        @SerialName("_0") val value: String,
+    ) : PinAction
+
+    @Serializable
+    public data class Unpin(
+        @SerialName("_0") val value: String,
+    ) : PinAction
+
+    public object Serializer : KSerializer<PinAction> by SwiftEnumSerializer(
+        "PinAction",
+        listOf(
+            SwiftEnumSerializer.Case("pin", Pin::class, Pin.serializer()),
+            SwiftEnumSerializer.Case("unpin", Unpin::class, Unpin.serializer()),
+        ),
+    )
+}
+
 @Serializable
 public data class PriorityBadge(
     val text: String,
     val priority: TaskPriority,
+)
+
+@Serializable
+public data class QueuePresentation(
+    val title: String,
+    val intro: String,
+    val rows: KeyedList<TaskRow>,
+    val select: String,
+    val picking: Boolean,
+    val picked: String? = null,
+    val acceptPicked: String? = null,
+    val dismissPicked: String? = null,
+    val empty: EmptyPresentation? = null,
 )
 
 @Serializable
@@ -190,12 +342,35 @@ public data class RescheduleMenu(
     val options: List<ActionButton<Reschedule>>,
 )
 
+@Serializable(with = SettingsPage.Serializer::class)
+public sealed interface SettingsPage {
+    @Serializable
+    public data object Collections : SettingsPage
+
+    @Serializable
+    public data class Collection(
+        @SerialName("_0") val value: String,
+    ) : SettingsPage
+
+    public object Serializer : KSerializer<SettingsPage> by SwiftEnumSerializer(
+        "SettingsPage",
+        listOf(
+            SwiftEnumSerializer.Case("collections", Collections::class, Collections.serializer()),
+            SwiftEnumSerializer.Case("collection", Collection::class, Collection.serializer()),
+        ),
+    )
+}
+
 @Serializable
 public data class SidebarPresentation(
     val title: String,
     val fixed: List<SidebarRow>,
-    val listsTitle: String,
-    val lists: KeyedList<SidebarRow>,
+    val search: String,
+    val pinnedTitle: String,
+    val pinned: List<SidebarRow>,
+    val sections: List<GroupSection>,
+    val ungroupedTitle: String,
+    val ungrouped: List<SidebarRow>,
     val newList: String,
     val noLists: String? = null,
     val selected: ListSelection? = null,
@@ -206,10 +381,27 @@ public data class SidebarRow(
     val id: String,
     val selection: ListSelection,
     val title: String,
+    val detail: String? = null,
     val symbol: String,
     val open: Long,
     val openWords: String,
+    val pinned: Boolean,
     val actions: List<ActionButton<ListAction>>,
+)
+
+@Serializable
+public data class SuggestionPresentation(
+    val id: String,
+    val header: String,
+    val title: String,
+    val fields: List<DetailField>,
+    val description: DetailFact? = null,
+    val detailsTitle: String,
+    val details: List<DetailFact>,
+    val place: String? = null,
+    val pending: Boolean,
+    val pendingWords: String? = null,
+    val actions: List<ActionButton<TaskAction>>,
 )
 
 @Serializable(with = TaskAction.Serializer::class)
@@ -226,6 +418,15 @@ public sealed interface TaskAction {
     @Serializable
     public data object Delete : TaskAction
 
+    @Serializable
+    public data object Accept : TaskAction
+
+    @Serializable
+    public data object Dismiss : TaskAction
+
+    @Serializable
+    public data object Undo : TaskAction
+
     public object Serializer : KSerializer<TaskAction> by SwiftEnumSerializer(
         "TaskAction",
         listOf(
@@ -233,26 +434,41 @@ public sealed interface TaskAction {
             SwiftEnumSerializer.Case("reopen", Reopen::class, Reopen.serializer()),
             SwiftEnumSerializer.Case("abandon", Abandon::class, Abandon.serializer()),
             SwiftEnumSerializer.Case("delete", Delete::class, Delete.serializer()),
+            SwiftEnumSerializer.Case("accept", Accept::class, Accept.serializer()),
+            SwiftEnumSerializer.Case("dismiss", Dismiss::class, Dismiss.serializer()),
+            SwiftEnumSerializer.Case("undo", Undo::class, Undo.serializer()),
         ),
     )
 }
 
 @Serializable
 public enum class TaskBand {
-    @SerialName("needsYou") needsYou,
-    @SerialName("upcoming") upcoming,
+    @SerialName("lateOrUrgent") lateOrUrgent,
+    @SerialName("comingUp") comingUp,
     @SerialName("later") later,
+    @SerialName("noDate") noDate,
+}
+
+@Serializable
+public enum class TaskDecision {
+    @SerialName("accept") accept,
+    @SerialName("dismiss") dismiss,
+    @SerialName("complete") complete,
+    @SerialName("wontDo") wontDo,
+    @SerialName("reopen") reopen,
 }
 
 @Serializable
 public data class TaskDetailPresentation(
     val id: String,
     val title: String,
-    val status: TaskStatus,
+    val standing: KindStatus.Standing,
     val pending: Boolean,
     val fields: List<DetailField>,
+    val detailsTitle: String,
+    val details: List<DetailFact>,
     val actions: List<ActionButton<TaskAction>>,
-    val edit: String,
+    val edit: String? = null,
 )
 
 @Serializable
@@ -294,6 +510,9 @@ public data class TaskMenuWords(
     val move: String,
     val delete: String,
     val swipeDelete: String,
+    val accept: String,
+    val dismiss: String,
+    val undo: String,
 )
 
 @Serializable
@@ -309,26 +528,25 @@ public enum class TaskPriority {
 public data class TaskRow(
     val id: String,
     val title: String,
-    val status: TaskStatus,
+    val standing: KindStatus.Standing,
+    val suggestion: Boolean,
     val pending: Boolean,
-    val toggle: String,
+    val pendingWords: String? = null,
+    val toggle: String? = null,
+    val written: String? = null,
     val due: DueBadge? = null,
     val priority: PriorityBadge? = null,
     val listName: String? = null,
+    val collection: String? = null,
     val band: TaskBand? = null,
     val reschedule: RescheduleMenu? = null,
     val decisions: List<ActionButton<TaskAction>>,
+    val picked: Boolean? = null,
+    val editable: Boolean,
     val hasNotes: Boolean,
     val notes: String? = null,
     val spoken: String,
 )
-
-@Serializable
-public enum class TaskStatus {
-    @SerialName("open") open,
-    @SerialName("done") done,
-    @SerialName("abandoned") abandoned,
-}
 
 @Serializable
 public data class TasksFrame(
@@ -353,6 +571,12 @@ public data class TasksGalleryFixture(
         @SerialName("editor") editor,
         @SerialName("confirmation") confirmation,
         @SerialName("settings") settings,
+        @SerialName("queue") queue,
+        @SerialName("suggestion") suggestion,
+        @SerialName("choice") choice,
+        @SerialName("collections") collections,
+        @SerialName("collection") collection,
+        @SerialName("approval") approval,
     }
 }
 
@@ -373,12 +597,19 @@ public data class TasksPresentation(
     val menu: AppMenuPresentation,
     val sidebar: SidebarPresentation,
     val list: ListPresentation? = null,
+    val queue: QueuePresentation? = null,
     val detail: TaskDetailPresentation? = null,
+    val suggestion: SuggestionPresentation? = null,
+    val choice: ChoicePresentation? = null,
     val editors: Map<String, TaskEditorPresentation>,
     val confirmation: ConfirmationPresentation<Confirmation>? = null,
     val settings: List<SettingsSection>,
     val storage: SettingsSection,
     val about: AboutPresentation,
+    val collections: CollectionsPresentation,
+    val collection: CollectionPresentation? = null,
+    val settingsPage: SettingsPage? = null,
+    val approval: ApprovalPresentation? = null,
     val notices: List<NoticeLine>,
     val problem: ProblemPresentation? = null,
     val reminders: List<NotificationRequest>,
@@ -509,14 +740,62 @@ public object TasksApp {
         ) : Command
 
         @Serializable
+        public data class Abandon(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class Accept(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class Dismiss(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
         public data class Reopen(
             @SerialName("_0") val value: String,
         ) : Command
 
         @Serializable
-        public data class Abandon(
+        public data class Decide(
+            @SerialName("_0") val value0: String,
+            @SerialName("_1") val value1: TaskDecision,
+            val to: String,
+        ) : Command
+
+        @Serializable
+        public data class Undo(
             @SerialName("_0") val value: String,
         ) : Command
+
+        @Serializable
+        public data object DismissChoice : Command
+
+        @Serializable
+        public data class SetSuggestion(
+            @SerialName("_0") val value: String,
+            val property: String,
+            val to: @Serializable(with = ExactJson::class) JsonElement? = null,
+        ) : Command
+
+        @Serializable
+        public data class Pick(
+            @SerialName("_0") val value: Boolean,
+        ) : Command
+
+        @Serializable
+        public data class Picked(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data object AcceptPicked : Command
+
+        @Serializable
+        public data object DismissPicked : Command
 
         @Serializable
         public data class Reschedule(
@@ -570,6 +849,46 @@ public object TasksApp {
         ) : Command
 
         @Serializable
+        public data class Pin(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class Unpin(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class SetCollection(
+            @SerialName("_0") val value: String,
+            val on: Boolean,
+        ) : Command
+
+        @Serializable
+        public data class SetGrouping(
+            @SerialName("_0") val value: String,
+            val property: String? = null,
+        ) : Command
+
+        @Serializable
+        public data class SetNewTasks(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class ShowSettings(
+            @SerialName("_0") val value: SettingsPage? = null,
+        ) : Command
+
+        @Serializable
+        public data class ApprovalAnswered(
+            val completed: Boolean,
+        ) : Command
+
+        @Serializable
+        public data object DismissApproval : Command
+
+        @Serializable
         public data object Confirm : Command
 
         @Serializable
@@ -613,8 +932,18 @@ public object TasksApp {
                 SwiftEnumSerializer.Case("newTask", NewTask::class, NewTask.serializer()),
                 SwiftEnumSerializer.Case("edit", Edit::class, Edit.serializer()),
                 SwiftEnumSerializer.Case("complete", Complete::class, Complete.serializer()),
-                SwiftEnumSerializer.Case("reopen", Reopen::class, Reopen.serializer()),
                 SwiftEnumSerializer.Case("abandon", Abandon::class, Abandon.serializer()),
+                SwiftEnumSerializer.Case("accept", Accept::class, Accept.serializer()),
+                SwiftEnumSerializer.Case("dismiss", Dismiss::class, Dismiss.serializer()),
+                SwiftEnumSerializer.Case("reopen", Reopen::class, Reopen.serializer()),
+                SwiftEnumSerializer.Case("decide", Decide::class, Decide.serializer()),
+                SwiftEnumSerializer.Case("undo", Undo::class, Undo.serializer()),
+                SwiftEnumSerializer.Case("dismissChoice", DismissChoice::class, DismissChoice.serializer()),
+                SwiftEnumSerializer.Case("setSuggestion", SetSuggestion::class, SetSuggestion.serializer()),
+                SwiftEnumSerializer.Case("pick", Pick::class, Pick.serializer()),
+                SwiftEnumSerializer.Case("picked", Picked::class, Picked.serializer()),
+                SwiftEnumSerializer.Case("acceptPicked", AcceptPicked::class, AcceptPicked.serializer()),
+                SwiftEnumSerializer.Case("dismissPicked", DismissPicked::class, DismissPicked.serializer()),
                 SwiftEnumSerializer.Case("reschedule", Reschedule::class, Reschedule.serializer()),
                 SwiftEnumSerializer.Case("setPriority", SetPriority::class, SetPriority.serializer()),
                 SwiftEnumSerializer.Case("move", Move::class, Move.serializer()),
@@ -624,6 +953,14 @@ public object TasksApp {
                 SwiftEnumSerializer.Case("createList", CreateList::class, CreateList.serializer()),
                 SwiftEnumSerializer.Case("renameList", RenameList::class, RenameList.serializer()),
                 SwiftEnumSerializer.Case("deleteList", DeleteList::class, DeleteList.serializer()),
+                SwiftEnumSerializer.Case("pin", Pin::class, Pin.serializer()),
+                SwiftEnumSerializer.Case("unpin", Unpin::class, Unpin.serializer()),
+                SwiftEnumSerializer.Case("setCollection", SetCollection::class, SetCollection.serializer()),
+                SwiftEnumSerializer.Case("setGrouping", SetGrouping::class, SetGrouping.serializer()),
+                SwiftEnumSerializer.Case("setNewTasks", SetNewTasks::class, SetNewTasks.serializer()),
+                SwiftEnumSerializer.Case("showSettings", ShowSettings::class, ShowSettings.serializer()),
+                SwiftEnumSerializer.Case("approvalAnswered", ApprovalAnswered::class, ApprovalAnswered.serializer()),
+                SwiftEnumSerializer.Case("dismissApproval", DismissApproval::class, DismissApproval.serializer()),
                 SwiftEnumSerializer.Case("confirm", Confirm::class, Confirm.serializer()),
                 SwiftEnumSerializer.Case("dismissConfirmation", DismissConfirmation::class, DismissConfirmation.serializer()),
                 SwiftEnumSerializer.Case("settings", Settings::class, Settings.serializer()),
@@ -640,8 +977,15 @@ public object TasksApp {
 
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
+    "ApprovalPresentation" to ApprovalPresentation.serializer(),
     "BandHeading" to BandHeading.serializer(),
+    "ChoicePresentation" to ChoicePresentation.serializer(),
+    "CollectionPresentation" to CollectionPresentation.serializer(),
+    "CollectionRow" to CollectionRow.serializer(),
+    "CollectionsPresentation" to CollectionsPresentation.serializer(),
     "Confirmation" to Confirmation.Serializer,
+    "CountedRow" to CountedRow.serializer(),
+    "DetailFact" to DetailFact.serializer(),
     "DetailField" to DetailField.serializer(),
     "DueBadge" to DueBadge.serializer(),
     "DueKind" to DueKind.serializer(),
@@ -650,17 +994,24 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "EditorOption" to EditorOption.serializer(),
     "EditorText" to EditorText.serializer(),
     "FilterChip" to FilterChip.serializer(),
+    "GroupChoice" to GroupChoice.serializer(),
+    "GroupSection" to GroupSection.serializer(),
     "ListAction" to ListAction.Serializer,
     "ListPresentation" to ListPresentation.serializer(),
     "ListSelection" to ListSelection.Serializer,
     "ListSummary" to ListSummary.serializer(),
+    "PinAction" to PinAction.Serializer,
     "PriorityBadge" to PriorityBadge.serializer(),
+    "QueuePresentation" to QueuePresentation.serializer(),
     "Reschedule" to Reschedule.serializer(),
     "RescheduleMenu" to RescheduleMenu.serializer(),
+    "SettingsPage" to SettingsPage.Serializer,
     "SidebarPresentation" to SidebarPresentation.serializer(),
     "SidebarRow" to SidebarRow.serializer(),
+    "SuggestionPresentation" to SuggestionPresentation.serializer(),
     "TaskAction" to TaskAction.Serializer,
     "TaskBand" to TaskBand.serializer(),
+    "TaskDecision" to TaskDecision.serializer(),
     "TaskDetailPresentation" to TaskDetailPresentation.serializer(),
     "TaskEditor.Command" to TaskEditor.Command.Serializer,
     "TaskEditorPresentation" to TaskEditorPresentation.serializer(),
@@ -668,7 +1019,6 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "TaskMenuWords" to TaskMenuWords.serializer(),
     "TaskPriority" to TaskPriority.serializer(),
     "TaskRow" to TaskRow.serializer(),
-    "TaskStatus" to TaskStatus.serializer(),
     "TasksApp.Command" to TasksApp.Command.Serializer,
     "TasksFrame" to TasksFrame.serializer(),
     "TasksGalleryFixture" to TasksGalleryFixture.serializer(),

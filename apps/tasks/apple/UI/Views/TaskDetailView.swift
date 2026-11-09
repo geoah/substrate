@@ -6,7 +6,8 @@ import TasksCore
 /// waits its undo window), then each fact once under
 /// the label the editor uses, the list and the priority as the pickers that
 /// change them where they stand, the notes and the link as text of their
-/// own, then what can be done to it, Delete apart. Edit is in the toolbar.
+/// own, every other property under Details, then what can be done to it,
+/// Delete apart. Edit is in the toolbar, for the app's own tasks.
 struct TaskDetailView: View {
     @Environment(TasksShell.self) private var shell
     @ScaledMetric(relativeTo: .title2) private var markSize = 26
@@ -18,23 +19,24 @@ struct TaskDetailView: View {
                 HStack(alignment: .center, spacing: 6) {
                     Text(detail.title)
                         .font(.title2.weight(.semibold))
-                        .foregroundStyle(detail.status == .open && !detail.pending ? Color.primary : Color.secondary)
-                        .strikethrough(detail.status == .abandoned || detail.pending)
+                        .foregroundStyle(detail.standing == .open && !detail.pending ? Color.primary : Color.secondary)
+                        .strikethrough(detail.standing == .dropped || detail.pending)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
-                        shell.send(detail.status == .open && !detail.pending ? .complete(detail.id) : .reopen(detail.id))
+                        shell.send(detail.standing == .open && !detail.pending ? .complete(detail.id) : .reopen(detail.id))
                     } label: {
-                        Image(systemName: detail.pending ? "checkmark.circle.fill" : TasksSymbols.mark(detail.status))
+                        Image(systemName: detail.pending ? "checkmark.circle.fill" : TasksSymbols.mark(detail.standing))
                             .font(.system(size: markSize))
-                            .foregroundStyle(detail.status == .done || detail.pending ? Color.brandAccent : Color.secondary)
+                            .foregroundStyle(detail.standing == .done || detail.pending ? Color.brandAccent : Color.secondary)
                             .contentTransition(.symbolEffect(.replace))
                             .frame(minWidth: 44, minHeight: 44)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(detail.pending ? "Undo" : detail.status == .open ? "Mark as Done" : "Reopen")
+                    .disabled(detail.actions.allSatisfy { $0.action == .delete })
+                    .accessibilityLabel(detail.pending ? "Undo" : detail.standing == .open ? "Mark as Done" : "Reopen")
                 }
                 .animation(.snappy(duration: 0.25), value: detail.pending)
             }
@@ -67,6 +69,11 @@ struct TaskDetailView: View {
                     }
                 }
             }
+            if !detail.details.isEmpty {
+                Section(detail.detailsTitle) {
+                    ForEach(detail.details) { fact in DetailFactRow(fact: fact) }
+                }
+            }
             Section {
                 ForEach(detail.actions.filter { $0.action != .delete }, id: \.self) { action in
                     Button(action.title) { perform(action.action) }
@@ -85,8 +92,10 @@ struct TaskDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(detail.edit) { shell.send(.edit(detail.id)) }
+            if let edit = detail.edit {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(edit) { shell.send(.edit(detail.id)) }
+                }
             }
         }
     }
@@ -112,11 +121,23 @@ struct TaskDetailView: View {
     }
 
     private func perform(_ action: TaskAction) {
-        switch action {
-        case .complete: shell.send(.complete(detail.id))
-        case .reopen: shell.send(.reopen(detail.id))
-        case .abandon: shell.send(.abandon(detail.id))
-        case .delete: shell.send(.deleteTask(detail.id))
+        shell.perform(action, on: detail.id)
+    }
+}
+
+/// A property under Details: its label, its value, and the full reference
+/// under it where it names one.
+struct DetailFactRow: View {
+    let fact: DetailFact
+
+    var body: some View {
+        LabeledContent(fact.label) {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(fact.value).multilineTextAlignment(.trailing)
+                if let note = fact.note {
+                    Text(note).font(.caption.monospaced()).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                }
+            }
         }
     }
 }

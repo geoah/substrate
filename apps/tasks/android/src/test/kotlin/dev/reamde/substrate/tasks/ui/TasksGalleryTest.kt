@@ -37,16 +37,36 @@ internal object TasksFixtures {
         val none = TasksActions.None
         return when (fixture.screen) {
             TasksGalleryFixture.Screen.sidebar -> {
-                { SidebarScreen(app.sidebar, app, null, none, {}, showsNeedsYou = true, selected = app.sidebar.selected) }
+                { SidebarScreen(app.sidebar, app, null, none, {}, showsNeedsYou = false, selected = app.sidebar.selected) }
             }
             TasksGalleryFixture.Screen.list ->
                 app.list?.let { list ->
-                    { TaskListScreen(list, app, null, none, {}, onBack = if (list.selection is ListSelection.List) ({}) else null) }
+                    { TaskListScreen(list, app, null, none, {}, onBack = if (list.selection is ListSelection.Group) ({}) else null) }
                 }
             TasksGalleryFixture.Screen.detail -> app.detail?.let { detail -> { TaskDetailScreen(detail, none, onBack = {}) } }
             TasksGalleryFixture.Screen.editor -> app.editors[fixture.editor]?.let { editor -> { TaskEditorForm(editor, {}, zone = ZoneOffset.UTC) } }
             TasksGalleryFixture.Screen.confirmation -> null
             TasksGalleryFixture.Screen.settings -> fixture.settings?.let { settings -> { SettingsPane(settings, none) } }
+            TasksGalleryFixture.Screen.queue -> app.queue?.let { queue -> { SuggestionsScreen(queue, app, none, onBack = {}) } }
+            TasksGalleryFixture.Screen.suggestion -> app.suggestion?.let { suggestion -> { SuggestionScreen(suggestion, none, onBack = {}) } }
+            TasksGalleryFixture.Screen.choice ->
+                app.choice?.let { choice ->
+                    {
+                        app.queue?.let { SuggestionsScreen(it, app, none, onBack = {}) }
+                        ChoiceDialog(choice, none)
+                    }
+                }
+            TasksGalleryFixture.Screen.collections -> {
+                { CollectionsScreen(app.collections, none, onBack = {}) }
+            }
+            TasksGalleryFixture.Screen.collection -> app.collection?.let { collection -> { CollectionScreen(collection, none, onBack = {}) } }
+            TasksGalleryFixture.Screen.approval ->
+                app.approval?.let { approval ->
+                    {
+                        CollectionsScreen(app.collections, none, onBack = {})
+                        ApprovalDialog(approval, none)
+                    }
+                }
         }
     }
 }
@@ -98,6 +118,6 @@ class TasksWideGalleryTest(private val name: String) {
     companion object {
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
-        fun fixtures(): List<Array<Any>> = listOf(arrayOf<Any>("tasks-detail"), arrayOf<Any>("tasks-needs-you"))
+        fun fixtures(): List<Array<Any>> = listOf("tasks-detail", "tasks-needs-you", "tasks-suggestion", "tasks-group").map { arrayOf<Any>(it) }
     }
 }

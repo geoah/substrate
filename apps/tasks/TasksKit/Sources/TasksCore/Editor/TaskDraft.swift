@@ -69,9 +69,10 @@ public struct TaskDraft: Codable, Hashable, Sendable {
         next.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
         let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
         next.url = link.isEmpty ? nil : link
-        next.list = list
+        next.group = list.map { .record(ListSelection.list($0).listPath) } ?? TaskGroupLink.none
         next.due = due
         next.priority = priority
+        next.priorityValue = priority.rawValue
         return next
     }
 
@@ -84,9 +85,12 @@ public struct TaskDraft: Codable, Hashable, Sendable {
         if name != opened.name { next.name = changed.name }
         if notes != opened.notes { next.notes = changed.notes }
         if link != opened.link { next.url = changed.url }
-        if list != opened.list { next.list = changed.list }
+        if list != opened.list { next.group = changed.group }
         if due != opened.due { next.due = changed.due }
-        if priority != opened.priority { next.priority = changed.priority }
+        if priority != opened.priority {
+            next.priority = changed.priority
+            next.priorityValue = changed.priorityValue
+        }
         return next
     }
 }

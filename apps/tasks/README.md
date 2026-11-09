@@ -24,18 +24,39 @@ draws it and sends commands, nothing else.
 `TasksCore` holds, each in a file of its own, what is Tasks' own; the rest
 is the kit's ([its README](../kit/README.md)):
 
-- **The model and its codec.** `TaskItem`, `TaskList`, `TaskPriority`,
-  `TaskStatus` and `TaskOrder`, over the kit's `CivilDay`, `Due` and
-  `Position` (a moved task or list writes that one record, a number between
-  its neighbours); `TasksCodec` reads a record leniently and writes a create
-  (never a state: the state moves only by patch) or a patch of what changed,
-  with `completedAt: null` on a reopen. A test holds its property names to
-  the closure the app carries (`Resources/Package/tasks.json`, written by
-  `.mise/closures.py --json`), and `dueAt` to the temporal trait's point.
+- **The model and its codec.** Tasks over any kind with a status
+  ([docs/plans/tasks-sources.md](../../docs/plans/tasks-sources.md)):
+  `TaskKindDeclaration` (a kind's declaration, from the lifecycle trait's
+  implementors or the closure the app carries), `TaskCollection` (a
+  candidate and its readings: title, due, due day, priority, order and
+  group, the owner's `CollectionSetting` over the guess), `TasksModel` (the
+  collections, every record of one that is on as a `TaskItem` by its record
+  path, the `TaskGroup`s they point at, the `TasksPreference` with its pins;
+  the bands, the suggestions, each collection's group rows) and
+  `TasksModel.outcome` (a decision's patch, or its choice of values). Every
+  case in [contract/](contract/README.md) runs against it
+  (`ContractTests`). `TasksCodec` writes a create (never a state: the state
+  moves only by a decision's patch) or a patch of what changed, through the
+  collection's readings. A test holds its property names to the closure
+  (`Resources/Package/tasks.json`, written by `.mise/closures.py --json`),
+  and `dueAt` to the temporal trait's point.
 - **`TasksApp`**, the root under `LinkController<TasksApp>`, a
-  `LinkedRecordsApp`: its tasks and lists are the kit's `LinkedRecords` over
-  the two kinds, whose stages it writes none of, so a change made
-  offline shows at once and stays shown until its record is read again, and
+  `LinkedRecordsApp`: its tasks are the kit's `LinkedRecords` over the
+  collections that are on and their group kinds, closed and opened again
+  (`rekinded`) when a collection, a grouping, the declarations or the scopes
+  move; the settings kinds are a second `LinkedRecords` of their own
+  (`settings.json` beside the record cache) that stays open, and the kinds
+  with a status are read from the lifecycle trait's implementors at every
+  sign-in, new approval and return to the front. Accept, dismiss, complete
+  and won't do wait `undoWindow` before they reach the outbox, and Undo
+  within it writes nothing; a suggestion's fields set on its page go in its
+  accept's patch; a settings record is created under its derived id and
+  patched in the same batch, so a device that lost the race patches the
+  winner; turning a collection on asks for `write:` on it, and grouping by a
+  kind out of reach for `read:` on that, through the approval page
+  (`AppShell.changeAccess(adding:)`; Android answers it as not given, its
+  sign-in asking for the manifest's scopes alone). A change made offline
+  shows at once and stays shown until its record is read again, and
   only a write the outbox says landed is shown as landed. Every write goes
   through the outbox (`TaskWrites`, over the kit's `RecordWrites`): a create
   as a PUT with `ifVersion: 0`, which a retry whose earlier try landed counts
