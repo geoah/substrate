@@ -174,17 +174,32 @@ enough to resume on any device and to undo ([Importers](#importers)).
 | `lab` | string | for a CSV or a hand entry: the lab's name as the file or the owner gave it, which names its source where none exists yet |
 | `source` | reference to `observations/source` | the provider the results are from, where one source stands for the import |
 | `plan` | blobref | the plan, as JSON: every record the import writes, its key, kind, properties, references by key and revision, and every document's bytes by digest |
-| `counts` | object | what the last run did: `created`, `updated`, `unchanged`, `stale` and `left` (ints) |
+| `counts` | object | what the run did so far: `created`, `updated` (a revision-only write counts here, as the scripts count it), `unchanged`, `stale` and `left` (ints) |
 | `problem` | string | why it stopped |
 | `importedAt` | datetime | when it finished |
 | `skipped` | markdown | what the importer left out and why |
 
-The plan is a blob, not properties, so an import has no size cap short of
-the blob limit (64 MiB): a request body is capped at 1 MiB, and the NHS
-App's record alone is hundreds of records. The app writes the blob before
-the import record (any token that writes a kind with a `blobref` stores
-blobs) and reads it back to resume (a token reads a blob a record it reads
-names). Every record an import creates carries `origin` set to the import.
+The plan is a blob, not properties, so an import is not capped by the
+1 MiB a request body may be (the NHS App's record alone is hundreds of
+records); the plan as serialized is held to the blob limit, 64 MiB, and
+each record write to 1 MiB. The plan names every document by its digest and
+holds no document bytes.
+
+**Staging.** Until the import record exists nothing is resumable from
+another device, because a token reads only a blob some record it reads
+names. So the import is staged from this browser, kept in its IndexedDB
+until the record is confirmed: its id is minted here; every document's
+bytes go up as blobs (a PUT by digest, which is idempotent); the plan goes
+up; then the import record is a PUT at `ifVersion: 0` under the minted id
+naming the plan, and a 409 reads the row and takes it where it names the
+same plan digest. A page closed before then offers, on its next open in
+this browser, to finish staging or to drop it. Once the record exists, any
+device resumes it from the plan, and every document it writes is already
+up.
+
+Every record an import creates carries `origin` set to the import, but a
+source and an organization, which declare no `origin` or are shared
+between importers ([Importers](#importers)).
 
 ## The owner's details
 
@@ -278,7 +293,7 @@ both win a transition.
 - **The lease.** A browser runs an import only while it holds
   `runner`: it takes it with a guarded patch where `runner` is absent or its
   `until` has passed, for 60 seconds, and renews it every 20 seconds with a
-  guarded patch that also writes `results`. It sends a write only while at
+  guarded patch that also writes `counts` so far. It sends a write only while at
   least 20 seconds of the lease remain, and gives up waiting on one 5
   seconds before the lease ends. Giving up stops this browser, not the
   server: a write the server accepted may still commit later, and nothing
@@ -298,9 +313,9 @@ both win a transition.
   the plan writes: the same is a write that landed; different stops the
   import as `stopped` with the problem, as any other refusal does. For a
   provider import, whose ids are the provider's, the row is decided by its
-  revision ([Writing a provider's plan](#importers)). At the end,
-  `imported`, `importedAt`, `counts` and `runner` cleared, in one guarded
-  patch.
+  revision ([Writing a provider's plan](#importers)). At the end, one
+  guarded patch moves it to `imported` and writes `importedAt` and the
+  final `counts`, and clears `runner` and `problem`.
 - **Recovery.** Every state but `imported` and `undone` is resumable from
   the import's row on Sources, on any device, once no live lease holds it:
   `planned` runs setup; `stopped` first moves to `importing` in the patch
@@ -311,9 +326,14 @@ both win a transition.
   as above (waiting out a live one, which the page shows), moves the import
   to `undoing` in that patch, and waits until the previous lease's `until`
   has passed by 30 seconds, a heuristic for a write still in flight to land
-  first. Then it deletes every report and result the plan names (a 404 is
-  already gone), then everything that still points at the import through
-  `origin`, reads that list again, and moves the import to `undone`. A
+  first. Then it deletes what the import created: for a CSV or a hand
+  entry, every report and result the plan names (its ids are the import's
+  own, a 404 is already gone); for a provider import, every record the plan
+  names whose `origin` is this import, each read first and deleted held to
+  the version read, so a record another import created and this one only
+  updated is never deleted. Then everything that still points at the
+  import through `origin`, read again, and the import moves to `undone`.
+  Undo never deletes a source or an organization. A
   result's derived twins in the other unit go with it: `convertlab` deletes
   the derivations of a deleted input, asynchronously.
 - **What is left.** No record write carries a cross-record guard, and the
@@ -405,43 +425,108 @@ under a neutral name (`<provider> <kind> <date>`), never the file name the
 provider gave it, which can carry the owner's name and birth date.
 
 **Ids, and re-imports.** A provider import names each record by
-`DerivedMintedID` of a key the provider's data gives it
-(`healthspan/<importer>/<kind>/<provider's key>`: Numan's test id, Randox's
-sample id, the scan's file name, the NHS App's EMIS ids and EPS barcodes,
-MyChart's result and visit keys; an organization by its ODS code), the
-minted shape an app may create under
-([0228](../decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
-So the next export of the same tests lands on the same records. A CSV has
-no provider key, so its records keep the import's own ids, as today.
+`DerivedMintedID` of `healthspan/<namespace>/<kind>/<key>`, the minted
+shape an app may create under
+([0228](../decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)):
+the derivation hashes the whole string, so a key of any length gives an id
+of fixed length. The namespace is the provider's account where one
+provider can have several: `numan`, `randox`, `dxa/<the centre's key>`,
+`nhs`, `mychart/<the portal's host>`. The key is the one the scripts
+compose from the provider's data, which they made stable across exports:
+
+| Importer | Record | Key |
+| --- | --- | --- |
+| `numan` | report | the test's short id |
+| | result | `<short id>/<analyte code>`; an analyte seen twice in a test keeps its first value, so the code is unique within the test (Hurdle rows share an `upstreamId`, so it is not the key) |
+| `randox` | report | the sample id |
+| | result | `<sample>/<test name>` |
+| | Tanita report | `<sample>/bia` |
+| | Tanita result | `<sample>/bia/<row name>/<channel>` |
+| `dxa` | report | the scan's date, `YYYY-MM-DD`, from a printout or a trend table alike, so a scan first known from a later scan's trend table is the same report once its own printout arrives |
+| | result | `<date>/<measure>/<channel>` |
+| `nhs` | test report | the EMIS test id |
+| | test result | `<test id>/<term>` |
+| | patient | `patient` |
+| | consultation | a hash of its date, clinician and place, with `-2`, `-3` for the second and later consultation of one hash in the record's order (the scripts' key: an EMIS entry id is not on every consultation) |
+| | problem, allergy, immunisation, referral, acute medicine | the scripts' hash of the record's identifying fields |
+| | repeat course | the course id, else the scripts' hash |
+| | dispensing | `<EPS barcode>/<item position>` |
+| | appointment, document, message | the NHS App's own id |
+| `mychart` | lab report | MyChart's result key, whole |
+| | lab result | `<result key>/<component id, else name>` |
+| | patient | `patient` |
+| | visit (appointment, encounter) | the CSN |
+| | document, condition, allergy, message | MyChart's own id, under its kind |
+| | medicine | its id, else its name |
+| | dispensing | `<medicine id>/<date>` |
+| | pharmacy | `pharmacy/<id>` |
+
+A hash here is SHA-256 over the parts, each written as its JSON text,
+joined by U+001F: fresh copies need no agreement with the scripts' hashes.
+The one key whose stability rests on order is a consultation's suffix: a
+later export that lists two consultations of one date, clinician and place
+in the other order swaps them, and each is updated with the other's
+content, which the owner sees as the record it is. A CSV has no provider
+key, so its records keep the import's own ids, as today.
+
+**Sources and organizations** are shared, and written once.
+
+- A source (`observations/source`, which declares no `origin` or
+  `revision`) is `healthspan/source/<namespace>`, created where absent with
+  its name and class from the data or from the import screen's questions,
+  and never written again: the owner's later edits of its name and its
+  ranks stand, and Undo never deletes it, as the scripts never rewrite a
+  source.
+- An organization is `healthspan/ods/<ODS code>`, one id whatever importer
+  meets it, so the NHS App's GP practice and MyChart's naming of the same
+  practice are one record. It is merged, never replaced: its identifiers are
+  the union of every importer's (by system and value), and every other
+  field is written only where the stored record has none, so an importer
+  that knows no address never clears one another wrote. Undo never deletes
+  one.
+- A report's `review` is written when the report is created and never
+  again, as the scripts do: the owner's review stands.
 
 **Writing a provider's plan.** The runner's lease, recovery and Undo are
 every importer's. What a provider import adds is the decision on a record
-that is already there, the scripts' `decide`, by the record's `revision`
-(each importer's: Numan the test's `updated_at`, Randox the visit's
-`lastUpdated`, the NHS App a run's start, MyChart its export's):
+that is already there, the scripts' `decide`, by the record's `revision`,
+which is each provider's:
 
-- absent: created, `origin` the import;
-- present with the same content: `unchanged`, its revision raised where
-  the plan's is higher;
+| Records | Revision |
+| --- | --- |
+| Numan's | the test's `updated_at`, else its `created_at` |
+| Randox's and their Tanita sheets' | the visit's `lastUpdated` (London), else the newest run's start in the folder's manifest |
+| DXA's | the newest scan date of the import, at UTC midnight, for every DXA record (a later trend table can restate an earlier scan) |
+| The NHS App's | the run's start; a message, its own `version` |
+| MyChart's | the newest run's start |
+
+- absent: created, `origin` the import, counted `created`;
+- a tombstone (deleted, not yet collected): restored by a PUT held to the
+  tombstone's version, `origin` the import, counted `created`;
+- present with the same content and a revision no lower than the plan's:
+  `unchanged`, nothing written;
+- present with the same content and a lower revision: the revision alone
+  raised, counted `updated`, as the scripts count it;
 - present with other content and a revision no higher than the plan's:
-  `updated`, a PUT held to the version read that names every property the
-  importer writes (a value the provider no longer gives is written as
-  null), `origin` left as it is;
+  `updated`, a PUT that names every property the importer maintains (a
+  value the provider no longer gives is written as null, since a PUT merges
+  and never prunes), `origin` left as it is;
 - present with a higher revision: `stale`, not written: an older export
-  never overwrites a newer one.
+  never overwrites a newer one, as the server's own `stale_revision` would
+  refuse it.
 
-Content is compared as the scripts do: references and documents by their
-target and digest, quantities by number and unit, instants as instants,
-nothing else normalized. A document's bytes go up before the record that
-names it, and not at all where the record found already names that
-digest (an app's token cannot read the blob records, but stores a blob
-idempotently).
+Every write is held to the version read; one the version moved under (409
+or 412) reads again and decides again, three times at most, then stops the
+import with the problem. Content is compared as the scripts compare it:
+references and documents by their target and digest, quantities by number
+and unit, instants as instants, a property neither side holds as equal. A
+document's bytes are already up when the records are written (staging).
 
-**Undo** deletes what the import created (what points at it through
-`origin`); what it updated stays updated, and the screen says so before
-the owner confirms. Undoing an earlier import of a provider takes with it
-the records a later one only updated, which the later import's Resume
-writes again.
+**Undo** deletes what the import created, and only that ([The
+runner](#the-runner)): what it updated stays updated, and the screen says so
+before the owner confirms. Undoing an earlier import of a provider takes
+with it the records a later one only updated; importing that later export
+again writes them anew.
 
 **The owner's existing records.** The owner's repository holds about 1,600
 records the scripts wrote, under their own ids and 143 metrics of the
@@ -459,14 +544,37 @@ fflate, which tolerates the stream's trailing byte that the browser's
 `DecompressionStream` refuses) and its text placed by the operators'
 positions. Both load with the importer that needs them.
 
-**Checking an importer.** Each importer has fixtures of invented files in
-its provider's exact shape, with the plan it must make. On the owner's own
+**Checking an importer.** What each importer reads and writes is written
+down, rule by rule, in `apps/healthspan/docs/importers/` (one page per
+importer and one for what they share), drawn from the scripts and kept free
+of any person's or practice's names: the port is held to those pages, not
+to the scripts. Each importer has fixtures of invented files in its
+provider's exact shape, with the plan it must make. On the owner's own
 files, read only on the owner's machine and never committed, every
 importer's plan is compared with what the scripts write for the same files
 (the scripts' offline run, as a reference): the same reports, results,
-values, units, ranges, flags and records, by provider key, apart from the
-ids and the metrics, which the importers take from the shared catalogues.
-A difference is a bug of the port or a fix the plan names.
+values, units, ranges, flags and records, by provider key. These differ on
+purpose, and nothing else may:
+
+- ids and metrics, which the importers take from minted ids and the shared
+  catalogues;
+- a JSON attachment's bytes (a report's own JSON, kept as its file), written
+  as canonical JSON (keys sorted, numbers as JavaScript prints them), where
+  the scripts print Python's floats (`140.0`);
+- a document's text read from a PDF, by pdf.js rather than the scripts'
+  library: compared with spacing normalized, and listed rather than failed;
+- the NHS App's historic test results, which the scripts ignore when the
+  record says it holds them all only in part, and which `nhs` reads (the
+  year-by-year results the fetcher already downloads);
+- the NHS App's prescription statuses written as one word (`NotTracked`),
+  which `nhs` maps to the spaced words the scripts expect, where the
+  scripts left them unknown;
+- references to records no import wrote, which the scripts write dangling
+  and the importers leave out.
+
+What the scripts do not write, the importers do not either, for now: a
+medication statement for a medicine prescribed elsewhere, and the owner's
+own messages (both open in the owner's other tree).
 
 ## The catalogue
 
@@ -718,12 +826,20 @@ screenshot script captures only the demo.
 - Today's rules, filters, chart maths, scales and suggestions, carried over.
 - Every importer: its fixtures of invented files in the provider's exact
   shape and the plan each must make; detection between importers (a
-  Randox folder is not taken for MyChart's); the decision on a record
-  already there (created, unchanged, updated, stale, a raised revision
-  only); a document not uploaded again; a reference to a record no import
-  wrote left out; Undo leaving what an import only updated. On the owner's
+  Randox folder is not taken for MyChart's); every key of the identity
+  table, a DXA scan known first from a trend table and then from its own
+  printout landing on one report, two consultations of one hash; the
+  decision on a record already there (created, a tombstone restored,
+  unchanged, a raised revision only counted updated, updated with a value
+  the provider dropped written null, stale, a version moved under the write
+  decided again); a source written once and an owner's edit of it kept;
+  one organization from the NHS App then MyChart and the other way round,
+  identifiers merged, an address kept; a report's `review` kept; staging
+  interrupted before the record and finished on the next open; Undo of the
+  later and of the earlier of two imports of one provider, deleting only
+  what each created and never a source or an organization. On the owner's
   machine only, every importer's plan against the scripts' offline output
-  for the owner's files.
+  for the owner's files, within the named differences.
 - End to end on a local substrate (`mise run dev:up` with the authority
   document from this tree): connect, approve (the three packages install),
   getting started, import the template file, the cards and the score appear,
@@ -742,8 +858,10 @@ the build beside Tasks on the web.
 The importers come before the first release, so the package is first
 published with the `import` kind they need:
 
-1. The `import` kind's plan as a blob, the runner's provider decision, the
-   CSV and hand entry moved onto the interface.
+1. The importers' pages under `apps/healthspan/docs/importers/`; the
+   `import` kind's plan as a blob with staging, the runner's provider
+   decision and its Undo by `origin`, the CSV and hand entry moved onto the
+   interface.
 2. `labs` and `health` grow to the 71 measures.
 3. In parallel: `numan`; `randox` with the Tanita sheet; `dxa`; `nhs`;
    `mychart`.
@@ -769,6 +887,8 @@ One pull request, built in this order:
 - Thiva, once the owner has a file of its results to read.
 - Offering to delete what a newer export of a provider no longer holds
   (the scripts never delete, and neither do the importers yet).
+- A medication statement for a medicine prescribed elsewhere, and the
+  owner's own messages, once the owner settles them.
 
 - Importing a PDF lab report, through an agent the package ships.
 - Hand-entered body measurements (weight, blood pressure), which need a
@@ -814,3 +934,19 @@ One pull request, built in this order:
   recovery, its gate night and its day worn moving with the sleep it spans,
   named as a change; `stopped` → `importing` before a resumed write and
   `undone` → `undoing` declared.
+- **Astra, the importers' first draft: rework.** Taken: sources are written
+  once and organizations merged, neither carrying `origin` nor undone; a
+  report's `review` written once; Undo for a provider import deletes only
+  what the import created, by `origin`, read and held to its version, and
+  the promise that a later import's Resume rewrites what an earlier Undo
+  took is gone; a tombstone restored by a PUT held to its version; the
+  identity table, with Numan's analyte codes, the consultations' hash and
+  suffix, DXA keyed by the scan's date so a trend-only scan and its
+  printout are one report, MyChart's key whole; organizations under one
+  ODS namespace, identifiers merged and no field cleared; revisions per
+  provider, a revision-only write counted `updated`, a moved version
+  decided again; staging until the import record exists, documents up
+  before it, the plan holding digests and no bytes; the importers' pages in
+  the tree and the differences from the scripts named, with the NHS App's
+  historic results and prescription statuses taken in; `counts` in place of
+  `results` through the runner.
