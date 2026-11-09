@@ -30,5 +30,5 @@ export {
 export type { AppIssue, AppStatus, PackageStanding } from "./status"
 export { AppStatusModel } from "./model"
 export type { AppStatusState } from "./model"
-export { changesFrom, scopeWords } from "./words"
+export { changesFrom, scopeWords, traitOf } from "./words"
 export type { Change } from "./words"
