@@ -12,7 +12,10 @@
   "dependencies": {
     "@substrate/client": "workspace:*",
     "@substrate/react": "workspace:*",
+    "effect": "~4.1.2",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.49.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
