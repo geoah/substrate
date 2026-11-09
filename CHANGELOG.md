@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.122.0](https://github.com/geoah/substrate/compare/v0.121.0...v0.122.0) (2026-11-09)
+
+
+### Added
+
+* **api:** give a stale revision refusal the reason stale_revision ([#1278](https://github.com/geoah/substrate/issues/1278)) ([2cdbe31](https://github.com/geoah/substrate/commit/2cdbe311d2066634a5542a17244713c6cafbde8f))
+* **apps:** build the web kit for npm and publish it with each release, once its packages are opened ([#1289](https://github.com/geoah/substrate/issues/1289)) ([2649868](https://github.com/geoah/substrate/commit/26498680f1d373e94da792c18206c0bcba25b185))
+* **apps:** put Tasks on the web, on a web kit every app can share ([#1275](https://github.com/geoah/substrate/issues/1275)) ([9d92f81](https://github.com/geoah/substrate/commit/9d92f815b4877489cc1ebbd2787b931ccef0962b))
+
+
+### Fixed
+
+* **agents:** teach Moss to count a kind with a list, stop a resent refused read, and list a chat while it runs ([#1285](https://github.com/geoah/substrate/issues/1285)) ([da0f27d](https://github.com/geoah/substrate/commit/da0f27da0f15e5244096ec49658160781c6ea07c))
+* **apps:** a retried create in the Swift kit reads its row instead of writing over another device's edit ([6d9783b](https://github.com/geoah/substrate/commit/6d9783b24488b781a82be883da67f3d00643d09c))
+* **apps:** the Swift kit drops a write refused at its revision only where the stored record holds a later one ([1290871](https://github.com/geoah/substrate/commit/1290871a3dfee1b6af26f07cb9732b523c7445c1))
+* **apps:** the Swift kit's outbox never loses an edit made after a create went, nor parks one behind the device's own change ([b09527d](https://github.com/geoah/substrate/commit/b09527d88d6fd12848ee73e1dfc50c952d76f2d0))
+* **console:** list a provider's collections only once it is connected ([#1283](https://github.com/geoah/substrate/issues/1283)) ([5b46a82](https://github.com/geoah/substrate/commit/5b46a82ffa5432f952ed701a4ae3920582199f88))
+* **console:** open each page at the top and each collection with its own filters ([#1284](https://github.com/geoah/substrate/issues/1284)) ([156ea46](https://github.com/geoah/substrate/commit/156ea46fc53f625c409abb76af58eefa258254ef))
+* **engine:** remove the contacts GitHub's relay addresses made ([#1288](https://github.com/geoah/substrate/issues/1288)) ([42030e0](https://github.com/geoah/substrate/commit/42030e03fed252f5565d360ce87fa206d59f1a5b))
+* **providers:** title Gmail threads by subject, and keep reply addresses out of contacts ([#1286](https://github.com/geoah/substrate/issues/1286)) ([52918ad](https://github.com/geoah/substrate/commit/52918ad8ebf2359a444f0d063a8f993e925e8f80))
+* **runner:** end an invocation whose host call returns past its deadline ([682ffae](https://github.com/geoah/substrate/commit/682ffae5bf5d997fb9573f0d7c525a2538ad3ddc))
+
 ## [0.121.0](https://github.com/geoah/substrate/compare/v0.120.0...v0.121.0) (2026-11-08)
 
 
