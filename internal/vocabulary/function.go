@@ -73,6 +73,10 @@ const (
 	FunctionEffectIrreversible = "irreversible"
 	FunctionConfirmPolicy      = "policy"
 	FunctionConfirmAlways      = "always"
+	// FunctionApprovalRequired is `approval: required`: an agent's call of the
+	// function waits for the owner's approval before its body runs (decision
+	// record 0254). Absent is no approval.
+	FunctionApprovalRequired = "required"
 
 	HostFunctionQuery   = PackageCore + "/query"
 	HostFunctionPropose = PackageCore + "/propose"
@@ -140,6 +144,13 @@ type Function struct {
 	// "policy" (and absent) leaves the owner's policies to decide. Floors
 	// only tighten.
 	Confirmation string
+	// Approval is the declared hold on the CALL rather than its effects:
+	// "required" means an agent's call does not run until the owner approves
+	// it, in the conversation the call came from; empty means it runs at
+	// once. Where Confirmation holds what a body returned, this holds the
+	// body itself, which is the only hold a call that writes nothing here
+	// (a send) can have.
+	Approval string
 	// Runtime names the body's language; Source is the inline body itself.
 	// Python's entrypoint is `main(input, host)`. On RuntimeHost there is no
 	// body at all: Source is empty and the engine is the implementation.
@@ -741,6 +752,8 @@ var functionDataKeys = map[string]bool{
 	// The author's OBJECTIVE facts for the policy layer: what class of effect
 	// the body has, and a confirmation floor no policy or judge loosens.
 	"effect": true, "confirmation": true,
+	// Whether an agent's call waits for the owner's approval before it runs.
+	"approval": true,
 	// The sync stream the function keeps, read by the sync status alone.
 	"stream": true,
 	// Whether the function offers itself to agents, and under what tool name.
@@ -834,6 +847,19 @@ func (l *loader) parseFunction(d Document) *Function {
 	case "", FunctionConfirmPolicy, FunctionConfirmAlways:
 	default:
 		l.errf("%s: data.confirmation: %q — \"policy\" (the default) or \"always\"", where, fn.Confirmation)
+		return nil
+	}
+	fn.Approval = mstr(d.Data, "approval")
+	switch fn.Approval {
+	case "", FunctionApprovalRequired:
+	default:
+		l.errf("%s: data.approval: %q — \"required\", or absent for none", where, fn.Approval)
+		return nil
+	}
+	if fn.Approval != "" && fn.Runtime == RuntimeHost {
+		// The built-ins are the loop's own machinery: approving a query or an
+		// ask would be a second door onto what the policy door already holds.
+		l.errf("%s: data.approval: a host function runs as the loop's machinery and is never held for approval", where)
 		return nil
 	}
 	if raw, declared := d.Data["stream"]; declared {
@@ -1339,4 +1365,10 @@ func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
 		return nil, errors.New(bareNameProblem("", "function", nameOrIdentity, names))
 	}
 	return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
+}
+
+// RequiresApproval reports whether an agent's call of the function waits for
+// the owner's approval before its body runs (decision record 0254).
+func (fn *Function) RequiresApproval() bool {
+	return fn.Approval == FunctionApprovalRequired
 }

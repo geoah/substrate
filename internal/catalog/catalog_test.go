@@ -178,7 +178,7 @@ func TestCatalogSaysWhatEachPackageIsFor(t *testing.T) {
 		brings   []string
 		addonFor string
 	}{
-		{id: "providers.substrate.reamde.dev/google", provider: true, brings: []string{substrate.BringsAccount, substrate.BringsCollections}},
+		{id: "providers.substrate.reamde.dev/google", provider: true, brings: []string{substrate.BringsAccount, substrate.BringsTools, substrate.BringsCollections}},
 		// WHOOP requires health and is still no add-on: it has an account.
 		{id: "providers.substrate.reamde.dev/whoop", provider: true, brings: []string{substrate.BringsAccount, substrate.BringsCollections, substrate.BringsMetrics}},
 		{id: "providers.substrate.reamde.dev/firecrawl", provider: true, brings: []string{substrate.BringsTools}},

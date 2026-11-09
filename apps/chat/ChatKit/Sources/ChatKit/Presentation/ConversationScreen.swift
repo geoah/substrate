@@ -30,6 +30,10 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     /// the owner asked for technical details.
     public var technical: [LabeledValue]?
     public var cards: [String: CardPresentation]
+    /// The calls a sub-agent asked for in its own conversation, by the
+    /// approval: they wait on the owner after the transcript, their cards
+    /// in `cards`.
+    public var approvals: [String]
     /// What the chat's tool results named each record, by `kind/id`.
     public var titles: [String: String]
     public var composer: ComposerPresentation

@@ -844,6 +844,22 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 		}
 	}
+	// An approval likewise (approvals.go): the loop alone lands one, what
+	// runs is frozen, the owner alone decides it, and the engine alone runs
+	// and reports it.
+	if sp.ty.Identity == vocabulary.KindLLMApproval {
+		switch {
+		case create && t.movingRecords:
+		case create:
+			if err := t.admitApproval(sp); err != nil {
+				return nil, err
+			}
+		default:
+			if err := t.guardApproval(sp); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if create {
 		row = &erow{
 			ID: sp.id, Kind: sp.ty.Identity, States: map[string]string{},

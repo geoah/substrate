@@ -146,6 +146,10 @@ export const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
  * (`vocabulary.KindLLMInteraction`). */
 export const INTERACTION_KIND = `${LLM_PACKAGE}/interaction`
 
+/** The call an agent wants to make that waits for the owner's approval
+ * (`vocabulary.KindLLMApproval`, decision record 0254). */
+export const APPROVAL_KIND = `${LLM_PACKAGE}/approval`
+
 /** Where INTERACTION_KIND was before record 0077 moved it out of core. A
  * stamp written before the move still spells it, and the loader still
  * accepts it on a stored grant the boot upgrade has not rewritten yet. */

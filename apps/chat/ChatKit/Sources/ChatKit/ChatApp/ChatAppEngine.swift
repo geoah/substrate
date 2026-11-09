@@ -97,6 +97,12 @@ extension ChatApp {
             }
         case let .watchRow(row):
             next.feedBatch.insert(.init(kind: row.kind, id: row.recordID))
+            // An approval moves under the engine once decided (running,
+            // then done or failed), and the pending list no longer holds it:
+            // a card on screen reads it again.
+            if row.kind == Kinds.approval, next.cards[row.recordID] != nil {
+                next.asks.append(.readCard(.approval(row.recordID), target: false))
+            }
             // Only the wait restarts, never a batch being read.
             next.asks.append(.feedWait(seconds: 0.3))
         case .watchRelist:
@@ -209,6 +215,14 @@ extension ChatApp {
             } else {
                 next.asks.append(.decideUnread(id, accept: accept, shown: shown))
             }
+        case let .approveAsked(id, approve):
+            // Decided on the version the owner read: one moved since is
+            // refused, and read again.
+            guard let held = next.cards[id]?.record ?? next.approvals.first(where: { $0.id == id }) else { break }
+            next.cards[id, default: State.Card()].busy = approve ? "approve" : "decline"
+            next.cards[id]?.problem = nil
+            next.asks.append(
+                .writeCard(id, kind: Kinds.approval, properties: ["state": .string(approve ? "approved" : "denied")], ifVersion: held.version))
         case let .cardWritten(id, record):
             next.cards[id, default: State.Card()].record = record
             next.cards[id]?.busy = nil
@@ -219,6 +233,11 @@ extension ChatApp {
                     next.plan, [.init(kind: Kinds.thread, id: "")],
                     threads: next.threadIDs),
             ]
+            // An approved call runs after the decision, under the engine:
+            // the card follows it to its end.
+            if record.kind == Kinds.approval, record["state"]?.string == "approved" {
+                next.asks.append(.readCard(.approval(id), target: false))
+            }
         case let .cardWriteFailed(id, failure, conflict):
             next.cards[id, default: State.Card()].busy = nil
             if failure.report == nil { next.cards[id]?.problem = failure.status == 409 ? conflict : failure.words }
@@ -411,7 +430,7 @@ extension ChatApp {
     private func watch(_ state: inout State, head: WatchCursor? = nil) {
         guard let disk = state.disk, state.online, state.appActive || !pausesWhenAway else { return }
         state.watching = true
-        state.asks.append(.watch(disk, head: head, kinds: ChatApp.watched(state.plan)))
+        state.asks.append(.watch(disk, head: head, kinds: ChatApp.watched(state.plan, approvals: state.approvalsKnown)))
     }
 
     /// After a list: the opening lines it lacks, then the chats to read
@@ -523,14 +542,28 @@ extension ChatApp {
     func apply(_ state: inout State, cards: ChatAppStep.Cards) {
         state.interactions = cards.interactions
         state.requests = cards.requests
-        for record in cards.interactions + cards.requests {
+        state.approvals = cards.approvals ?? []
+        // The first answer of the approvals read: the watch opens again,
+        // from its bookmark, following the kind too.
+        if cards.approvals != nil, !state.approvalsKnown {
+            state.approvalsKnown = true
+            if state.watching { watch(&state) }
+        }
+        // A card read before keeps the newer of the two: a list read that
+        // started before the owner decided must not offer the buttons again.
+        for record in state.approvals where (state.cards[record.id]?.record?.version ?? .max) < record.version {
+            state.cards[record.id]?.record = record
+        }
+        for record in cards.interactions + cards.requests + state.approvals {
             let key = "card|\(record.kind)/\(record.id)"
             guard !state.notified.contains(key) else { continue }
             state.notified.insert(key)
             let thread = record["thread"]?.referenceID
             guard state.baselined, state.preferences.notifyAttention, !(thread.map(state.visibleThreads.contains) ?? false) else { continue }
             let row = thread.flatMap { state.thread($0) }
-            let who = agentName(row?.agentID ?? record["proposer"]?.string ?? "Your agent")
+            // An approval names the agent that asked, a sub-agent included.
+            let asker = record.kind == Kinds.approval ? referent(record["agent"], pin: Kinds.agent) : nil
+            let who = agentName(asker ?? row?.agentID ?? record["proposer"]?.string ?? "Your agent")
             state.asks.append(
                 .notify(
                     ChatNotifications.attention(
@@ -771,6 +804,7 @@ extension ChatAppState {
     func reference(of id: String) -> CardReference? {
         if interactions.contains(where: { $0.id == id }) || cards[id]?.record?.kind == Kinds.interaction { return .question(id) }
         if requests.contains(where: { $0.id == id }) || cards[id]?.record?.kind == Kinds.request { return .suggestion(id) }
+        if approvals.contains(where: { $0.id == id }) || cards[id]?.record?.kind == Kinds.approval { return .approval(id) }
         return nil
     }
 }

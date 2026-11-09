@@ -78,6 +78,15 @@ trigger, a host call and the call API all address it with.
   [0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)).
   An offered function declares its `effect`, and a host function is never
   offered.
+- Optional **`approval`** (`required`, the one value) holds an agent's call
+  of the function before the body runs: the call lands an `llm/approval`
+  for the owner to approve or decline in the chat, and runs only once they
+  approve it, exactly as asked ([approvals](agents.md#approvals),
+  [0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+  It is for calls that cannot be taken back and return no effect for
+  `confirmation` to hold, such as a send. A direct call, a trigger and a
+  host call outside an agent's chain run the body as before, and a host
+  call inside one is refused. A `host` function is refused the key.
 - Optional **`stream`** names the sync stream the function keeps, the key its
   code writes under the account's `syncStreams`, so `sync status` marks that
   stream `erroring` when a delivery of the function parks

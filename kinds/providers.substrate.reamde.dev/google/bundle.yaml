@@ -63,6 +63,11 @@
 #     sync reads it, so a recorded upstream stands in without rewriting a line
 #     of source.
 #
+# THE TOOLS ARE NOT THE MIRROR. Beside the four syncs sit twelve callables an
+# agent takes as tools (see "the tools" below): live Gmail, Calendar and
+# Drive reads, and the writes, each behind a toggle of its own. They write
+# no record, so the mirror stays the syncs' alone (decision record 0125).
+#
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
 # Configure: create a config record — the Google OAuth client id + secret,
 #   and, for a test or a seed, the `apiBase` the syncs should call instead of
@@ -317,7 +322,17 @@ data:
   # does not resolve, a refusal, a timeout, the sandbox's connect gate),
   # a calendar's failure names the calendar rather than the phase, and
   # `syncMessage`/`syncError` no longer carry the `erroring: ` prefix.
-  version: 50
+  #
+  # 51: THE TOOLS. Twelve callables an agent takes as tools (decision
+  # records 0125 and 0198), sharing the `google_api.py` module: Gmail
+  # search, read, draft, send and label; Calendar create, update, delete,
+  # respond and free/busy; Drive search and read. Two owner toggles on the
+  # account, `enabledGmailWrite` (gmail.modify) and `enabledCalendarWrite`
+  # (calendar.events), are what the writing tools need, so an account
+  # writes nothing until its owner turns one on and reconnects. The syncs
+  # are untouched. ADDITIVE. The send and the four calendar changes declare
+  # `approval: required` (decision record 0254).
+  version: 51
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -326,9 +341,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: google
   description: >-
-    Keeps a copy of your Google contacts, mail, calendars and Drive files
-    in Google's own shape, each its own toggle you can turn on separately.
-    Read-only: nothing is ever written back to Google.
+    Keeps a copy of your Google contacts, mail, calendars and Drive files,
+    each its own toggle. Your agents send mail and change events only where
+    you turn on Gmail sending or Calendar editing.
   # The one declared input: the OAuth client record. `inject: functions`
   # now, because the syncs read `apiBase` off it — the OAuth facility's own
   # secrets (the clientSecret here, an account's tokenRef) are never injected
@@ -417,6 +432,28 @@ data:
         scopes:
           - https://www.googleapis.com/auth/drive.readonly
           - https://www.googleapis.com/auth/userinfo.email
+      # THE WRITE TOGGLES (version 51). No stream syncs under them: they are
+      # what the tools that change Google need, kept apart from the read
+      # toggles so a mirror never carries a write grant the owner did not
+      # turn on. `gmail.modify` is the one scope that covers drafting,
+      # sending and labelling and the reads a reply needs (the original's
+      # threading headers), and it cannot delete mail for good; it is
+      # RESTRICTED like `gmail.readonly`, so it costs a published client no
+      # further verification. `calendar.events` changes events and answers
+      # an invitation, and touches no calendar's settings or sharing. An
+      # account turns either on and then reconnects; until it does, the
+      # tools refuse naming the reconnect. `access: write` is what tells the
+      # console to list them under what the owner's agents may do.
+      enabledGmailWrite:
+        access: write
+        scopes:
+          - https://www.googleapis.com/auth/gmail.modify
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledCalendarWrite:
+        access: write
+        scopes:
+          - https://www.googleapis.com/auth/calendar.events
+          - https://www.googleapis.com/auth/userinfo.email
   installs:
     - providers.substrate.reamde.dev/google/config
     - providers.substrate.reamde.dev/google/account
@@ -436,6 +473,617 @@ data:
     - providers.substrate.reamde.dev/google/syncgmail
     - providers.substrate.reamde.dev/google/synccalendar
     - providers.substrate.reamde.dev/google/syncdrive
+    - providers.substrate.reamde.dev/google/searchmail
+    - providers.substrate.reamde.dev/google/readthread
+    - providers.substrate.reamde.dev/google/draftmail
+    - providers.substrate.reamde.dev/google/sendmail
+    - providers.substrate.reamde.dev/google/labelthread
+    - providers.substrate.reamde.dev/google/createevent
+    - providers.substrate.reamde.dev/google/updateevent
+    - providers.substrate.reamde.dev/google/deleteevent
+    - providers.substrate.reamde.dev/google/respondevent
+    - providers.substrate.reamde.dev/google/freebusy
+    - providers.substrate.reamde.dev/google/searchdrive
+    - providers.substrate.reamde.dev/google/readfile
+  modules:
+    google_api.py: |
+      """The one place the Google tools send an account's token from.
+
+      Every tool body calls `account` for the connected account it acts as and
+      `request` for each call it makes. The token goes only to Google's two API
+      origins on 443, or to the loopback base the client config names (the test
+      seam), through an opener that refuses every redirect and ignores the
+      environment's proxy, so neither an `apiBase` edit nor a 3xx answer can carry
+      the bearer anywhere else.
+
+      A tool acts only where the owner said so twice: the account's toggle for
+      what it does is on (the owner's word), and the grant carries a scope that
+      covers it (Google's). A toggle turned off stops the tool even while the
+      grant still holds the scope.
+      """
+      import base64
+      import datetime
+      import html.parser
+      import json
+      import re
+      import urllib.error
+      import urllib.parse
+      import urllib.request
+      from email.message import EmailMessage
+      from email.utils import formataddr, getaddresses
+
+      GMAIL_API = "https://gmail.googleapis.com"
+      GOOGLE_API = "https://www.googleapis.com"
+      HOSTS = ("gmail.googleapis.com", "www.googleapis.com")
+      LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+      TIMEOUT = 20
+      # The most one answer may carry into a body: a Drive export runs to 10 MB,
+      # and a tool result is capped far below that anyway.
+      READ_MAX = 4 * 1024 * 1024
+
+      _SCOPE = "https://www.googleapis.com/auth/"
+      _ALL_MAIL = "https://mail.google.com/"
+
+      # What each capability needs: one of these toggles on the account, and one of
+      # these scopes in its grant. gmail.modify reads, drafts, sends and labels;
+      # calendar.events reads and changes events but answers no free/busy query.
+      GMAIL_READ = ("read Gmail", ("enabledGmail", "enabledGmailWrite"),
+                    (_SCOPE + "gmail.readonly", _SCOPE + "gmail.modify", _ALL_MAIL))
+      GMAIL_WRITE = ("draft, send or label mail", ("enabledGmailWrite",),
+                     (_SCOPE + "gmail.modify", _ALL_MAIL))
+      CALENDAR_READ = ("read calendars", ("enabledCalendar",),
+                       (_SCOPE + "calendar.readonly", _SCOPE + "calendar"))
+      CALENDAR_WRITE = ("change calendar events", ("enabledCalendarWrite",),
+                        (_SCOPE + "calendar.events", _SCOPE + "calendar"))
+      DRIVE_READ = ("read Drive", ("enabledDrive",),
+                    (_SCOPE + "drive.readonly", _SCOPE + "drive"))
+
+      # The switch each toggle is on the Providers page, by its displayName.
+      TOGGLE_LABELS = {
+          "enabledGmail": "Gmail",
+          "enabledGmailWrite": "Gmail sending",
+          "enabledCalendar": "Calendar",
+          "enabledCalendarWrite": "Calendar editing",
+          "enabledDrive": "Drive",
+      }
+
+      # The RFC 5322 dot-atom production the sync streams hold an address to.
+      _ATEXT = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+      _LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+      _RE_ADDR = re.compile(
+          r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
+          + _LABEL + r"(?:\." + _LABEL + r")+$")
+
+
+      class _NoRedirect(urllib.request.HTTPRedirectHandler):
+          """urllib re-sends the Authorization header across a redirect, so refuse
+          it: a None new-request turns the 3xx into an ordinary HTTPError."""
+
+          def redirect_request(self, req, fp, code, msg, headers, newurl):
+              return None
+
+
+      # An EMPTY ProxyHandler: the default opener honours http_proxy from the
+      # runner's environment, which would route the bearer through it.
+      _OPENER = urllib.request.build_opener(
+          _NoRedirect, urllib.request.ProxyHandler({}))
+
+
+      def args(input):
+          return input.get("args") or {}
+
+
+      def seg(value):
+          """One id as one path segment."""
+          return urllib.parse.quote(str(value), safe="@")
+
+
+      def limit_arg(a, default, most):
+          try:
+              n = int(a.get("limit") or default)
+          except (TypeError, ValueError):
+              raise ValueError("google: limit is a whole number") from None
+          return max(1, min(n, most))
+
+
+      def instant(ms):
+          """Gmail's internalDate, epoch milliseconds as a string, as RFC 3339."""
+          try:
+              secs = int(ms) / 1000.0
+          except (TypeError, ValueError):
+              return ""
+          return datetime.datetime.fromtimestamp(secs, datetime.timezone.utc).strftime(
+              "%Y-%m-%dT%H:%M:%SZ")
+
+
+      def text_arg(a, name, required=False):
+          value = a.get(name)
+          value = "" if value is None else str(value).strip()
+          if required and not value:
+              raise ValueError("google: %s is required" % name)
+          return value
+
+
+      def list_arg(a, name):
+          value = a.get(name) or []
+          if isinstance(value, str):
+              value = [value]
+          return [str(v).strip() for v in value if str(v).strip()]
+
+
+      def _email(acct):
+          return str(((acct.get("properties") or {}).get("email")) or "")
+
+
+      def _label(toggle):
+          return TOGGLE_LABELS.get(toggle, toggle)
+
+
+      def _allows(acct, toggles):
+          props = acct.get("properties") or {}
+          return any(props.get(t) is True for t in toggles)
+
+
+      def account(input, want, need):
+          """The connected account a call acts as, and its live access token.
+
+          `want` is the account's address (or its record id); left empty, the one
+          account whose toggles allow `need` is chosen, and several are refused
+          by name rather than guessed between.
+          """
+          what, toggles, scopes = need
+          accounts = list((input.get("config") or {}).get("accounts") or [])
+          if not accounts:
+              raise RuntimeError(
+                  "google: no Google account is connected; the owner connects one "
+                  "on the Providers page")
+          want = (want or "").strip()
+          if want:
+              match = [a for a in accounts
+                       if _email(a).lower() == want.lower() or a.get("id") == want]
+              if not match:
+                  raise ValueError(
+                      "google: no connected account is %r; connected: %s"
+                      % (want, ", ".join(_email(a) or str(a.get("id")) for a in accounts)))
+              acct = match[0]
+          else:
+              able = [a for a in accounts if _allows(a, toggles)]
+              if len(able) > 1:
+                  raise ValueError(
+                      "google: several connected accounts can %s; name one in "
+                      "account: %s" % (what, ", ".join(_email(a) or str(a.get("id")) for a in able)))
+              if not able and len(accounts) > 1:
+                  raise RuntimeError(
+                      "google: no connected account may %s: the owner turns on %s "
+                      "for one on the Providers page, then reconnects it"
+                      % (what, " or ".join(_label(t) for t in toggles)))
+              acct = able[0] if able else accounts[0]
+          who = _email(acct) or str(acct.get("id"))
+          if not _allows(acct, toggles):
+              raise RuntimeError(
+                  "google: %s may not %s: the owner turns on %s for the account on "
+                  "the Providers page, then reconnects it"
+                  % (who, what, " or ".join(_label(t) for t in toggles)))
+          props = acct.get("properties") or {}
+          granted = props.get("grantedScopes")
+          if isinstance(granted, list) and granted and not any(s in granted for s in scopes):
+              raise RuntimeError(
+                  "google: %s's sign-in predates %s being turned on: the owner "
+                  "reconnects the account on the Providers page to grant it"
+                  % (who, _label(toggles[0])))
+          if acct.get("tokenError"):
+              raise RuntimeError(
+                  "google: %s cannot sign in (%s): the owner reconnects it on the "
+                  "Providers page" % (who, acct["tokenError"]))
+          token = acct.get("token") or ""
+          if not token:
+              raise RuntimeError(
+                  "google: %s is not connected yet: the owner finishes connecting it "
+                  "on the Providers page" % who)
+          return acct, token
+
+
+      def api_base(input, origin):
+          """The base the calls go to: Google's own origin, or a loopback stand-in.
+
+          LOOPBACK ONLY. The client config is owner-writable, so a base anywhere
+          else would let an edit point the account's token at a stranger; it is
+          refused by name rather than ignored.
+          """
+          cfg = input.get("config") or {}
+          props = ((cfg.get("inputs") or {}).get("client") or {}).get("properties") or {}
+          base = str(props.get("apiBase") or "").strip().rstrip("/")
+          if not base:
+              return origin
+          host = (urllib.parse.urlsplit(base).hostname or "").lower()
+          if host not in LOOPBACK_HOSTS:
+              raise RuntimeError(
+                  "google: config.apiBase names %s; only a loopback host may stand "
+                  "in for Google" % (host or "?"))
+          return base
+
+
+      def _pinned(url, base):
+          u = urllib.parse.urlsplit(url)
+          b = urllib.parse.urlsplit(base)
+          host = (u.hostname or "").lower()
+          if (host and host == (b.hostname or "").lower() and u.scheme == b.scheme
+                  and u.port == b.port):
+              return True
+          return u.scheme == "https" and host in HOSTS and u.port in (None, 443)
+
+
+      def _google_message(raw):
+          try:
+              err = json.loads(raw).get("error")
+          except ValueError:
+              return raw.strip()[:200]
+          if isinstance(err, dict):
+              return str(err.get("message") or err.get("status") or "")[:300]
+          return str(err or raw)[:300]
+
+
+      def request(input, token, method, origin, path, params=None, body=None, text=False):
+          """One call to Google with the account's token; the parsed answer.
+
+          `text` answers the body as a string (an export, a download) capped at
+          READ_MAX, with a second value saying whether the cap cut it.
+          """
+          base = api_base(input, origin)
+          url = base + path
+          if params:
+              url += "?" + urllib.parse.urlencode(params, doseq=True)
+          if not _pinned(url, base):
+              parts = urllib.parse.urlsplit(url)
+              raise RuntimeError(
+                  "google: refusing to send credentials to %s://%s"
+                  % (parts.scheme, parts.hostname or "?"))
+          headers = {"Authorization": "Bearer " + token,
+                     "Accept": "*/*" if text else "application/json"}
+          data = None
+          if body is not None:
+              data = json.dumps(body).encode("utf-8")
+              headers["Content-Type"] = "application/json"
+          req = urllib.request.Request(url, data=data, method=method, headers=headers)
+          try:
+              with _OPENER.open(req, timeout=TIMEOUT) as resp:
+                  raw = resp.read(READ_MAX + 1)
+          except urllib.error.HTTPError as e:
+              if 300 <= e.code < 400:
+                  raise RuntimeError(
+                      "google answered a redirect (HTTP %d), and the token is never "
+                      "sent on" % e.code) from e
+              detail = _google_message(e.read(4000).decode("utf-8", "replace"))
+              raise RuntimeError("google answered HTTP %d: %s" % (e.code, detail)) from e
+          if text:
+              cut = len(raw) > READ_MAX
+              return raw[:READ_MAX].decode("utf-8", "replace"), cut
+          if not raw:
+              return {}
+          return json.loads(raw.decode("utf-8"))
+
+
+      # ---- mail -------------------------------------------------------------------
+
+
+      def address(value, field):
+          """One recipient, `ada@example.com` or `Ada <ada@example.com>`, checked
+          and spelled back the way a header carries it."""
+          if "\n" in value or "\r" in value:
+              raise ValueError("google: %s %r carries a line break" % (field, value))
+          pairs = getaddresses([value])
+          if len(pairs) != 1 or not _RE_ADDR.match(pairs[0][1] or ""):
+              raise ValueError("google: %s %r is not one email address" % (field, value))
+          name, addr = pairs[0]
+          return formataddr((name, addr)) if name else addr
+
+
+      def addresses(values, field):
+          return [address(v, field) for v in values]
+
+
+      def bare(value):
+          """The address alone of one header value, lowercased for comparing."""
+          pairs = getaddresses([value or ""])
+          return (pairs[0][1] if pairs else "").strip().lower()
+
+
+      def headers_of(message):
+          out = {}
+          for h in ((message.get("payload") or {}).get("headers") or []):
+              name = str(h.get("name") or "").lower()
+              if name and name not in out:
+                  out[name] = str(h.get("value") or "")
+          return out
+
+
+      _REPLY_HEADERS = ("Message-ID", "References", "Subject", "From", "Reply-To",
+                        "To", "Cc")
+
+
+      def reply_context(input, token, message_id, me, reply_all):
+          """What a reply to one message carries: its thread, the two threading
+          headers, the subject, and who it goes to."""
+          msg = request(input, token, "GET", GMAIL_API,
+                        "/gmail/v1/users/me/messages/" + seg(message_id),
+                        params={"format": "metadata", "metadataHeaders": list(_REPLY_HEADERS)})
+          h = headers_of(msg)
+          me = (me or "").lower()
+          if me and bare(h.get("from")) == me:
+              # A reply to one's own message goes to whoever it went to.
+              to = [v for _, v in _split(h.get("to"))]
+          else:
+              to = [v for _, v in _split(h.get("reply-to") or h.get("from"))]
+          cc = []
+          if reply_all:
+              seen = {bare(v) for v in to} | {me}
+              for _, v in _split(h.get("to")) + _split(h.get("cc")):
+                  if bare(v) and bare(v) not in seen:
+                      seen.add(bare(v))
+                      cc.append(v)
+          subject = h.get("subject") or ""
+          if not re.match(r"(?i)^\s*re\s*:", subject):
+              subject = ("Re: " + subject).strip()
+          rfc_id = h.get("message-id") or ""
+          refs = (h.get("references") or "").split()
+          if rfc_id and rfc_id not in refs:
+              refs.append(rfc_id)
+          return {"threadId": msg.get("threadId") or "", "inReplyTo": rfc_id,
+                  "references": " ".join(refs), "subject": subject, "to": to, "cc": cc}
+
+
+      def _split(value):
+          return [(n, formataddr((n, a)) if n else a)
+                  for n, a in getaddresses([value or ""]) if a]
+
+
+      def compose(a, input, token, me, derive=True):
+          """The message a draft or a send carries, from the call's arguments: a
+          new message, or a reply to `replyTo`. Returns (raw, threadId, summary).
+
+          With `derive` a reply goes to the message's sender and keeps its
+          subject when the call names neither. A send passes False: the owner
+          approved its arguments, so nothing it carries may come from elsewhere,
+          and its subject is required."""
+          to = addresses(list_arg(a, "to"), "to")
+          cc = addresses(list_arg(a, "cc"), "cc")
+          bcc = addresses(list_arg(a, "bcc"), "bcc")
+          subject = text_arg(a, "subject")
+          body = str(a.get("body") or "")
+          html_body = str(a.get("html") or "")
+          reply_to = text_arg(a, "replyTo")
+          if not body.strip() and not html_body.strip():
+              raise ValueError("google: body is required")
+          thread = ""
+          ctx = None
+          if reply_to:
+              ctx = reply_context(input, token, reply_to, me, derive and a.get("replyAll") is True)
+              thread = ctx["threadId"]
+              if derive:
+                  to = to or ctx["to"]
+                  if not list_arg(a, "cc"):
+                      cc = ctx["cc"]
+                  subject = subject or ctx["subject"]
+          if not (to or cc or bcc):
+              raise ValueError("google: name at least one recipient in to, cc or bcc")
+          if not derive and not subject.strip():
+              raise ValueError("google: subject is required: the owner approves the line that goes")
+          if "\n" in subject or "\r" in subject:
+              raise ValueError("google: subject carries a line break")
+          m = EmailMessage()
+          if to:
+              m["To"] = ", ".join(to)
+          if cc:
+              m["Cc"] = ", ".join(cc)
+          if bcc:
+              m["Bcc"] = ", ".join(bcc)
+          m["Subject"] = subject
+          if ctx and ctx["inReplyTo"]:
+              m["In-Reply-To"] = ctx["inReplyTo"]
+              m["References"] = ctx["references"]
+          m.set_content(body if body.strip() else html_text(html_body))
+          if html_body.strip():
+              m.add_alternative(html_body, subtype="html")
+          raw = base64.urlsafe_b64encode(m.as_bytes()).decode("ascii")
+          summary = {"to": to, "subject": subject}
+          if cc:
+              summary["cc"] = cc
+          if bcc:
+              summary["bcc"] = bcc
+          return raw, thread, summary
+
+
+      def thread_link(me, thread_id):
+          who = urllib.parse.quote(me or "0", safe="@.")
+          return "https://mail.google.com/mail/u/%s/#all/%s" % (who, thread_id)
+
+
+      class _Text(html.parser.HTMLParser):
+          _SKIP = ("script", "style", "head", "title")
+          _BREAK = ("br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6",
+                    "blockquote", "table", "ul", "ol")
+
+          def __init__(self):
+              super().__init__(convert_charrefs=True)
+              self.out = []
+              self.skip = 0
+
+          def handle_starttag(self, tag, attrs):
+              if tag in self._SKIP:
+                  self.skip += 1
+              elif tag in self._BREAK:
+                  self.out.append("\n")
+
+          def handle_endtag(self, tag):
+              if tag in self._SKIP and self.skip:
+                  self.skip -= 1
+              elif tag in self._BREAK:
+                  self.out.append("\n")
+
+          def handle_data(self, data):
+              if not self.skip:
+                  self.out.append(data)
+
+
+      def html_text(source):
+          """An html body as readable text: tags dropped, blocks on their own
+          lines, entities decoded, blank runs collapsed."""
+          p = _Text()
+          try:
+              p.feed(source)
+              p.close()
+          except Exception:
+              return re.sub(r"<[^>]+>", " ", source)
+          text = "".join(p.out)
+          text = re.sub(r"[ \t\xa0]+", " ", text)
+          text = re.sub(r" *\n *", "\n", text)
+          return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+      def _decode(data):
+          if not data:
+              return ""
+          pad = "=" * (-len(data) % 4)
+          return base64.urlsafe_b64decode(data + pad).decode("utf-8", "replace")
+
+
+      def message_text(payload):
+          """A message's body as text: its text/plain part, else its html made
+          text, and the attachments it names."""
+          plain, rich, files = [], [], []
+
+          def walk(part):
+              mime = str(part.get("mimeType") or "").lower()
+              body = part.get("body") or {}
+              if part.get("filename"):
+                  files.append({"filename": part["filename"], "mimeType": mime,
+                                "size": body.get("size") or 0})
+              elif mime == "text/plain" and body.get("data"):
+                  plain.append(_decode(body["data"]))
+              elif mime == "text/html" and body.get("data"):
+                  rich.append(_decode(body["data"]))
+              for child in part.get("parts") or []:
+                  walk(child)
+
+          walk(payload or {})
+          if plain:
+              return "\n".join(plain).strip(), files
+          return html_text("\n".join(rich)), files
+
+
+      # ---- calendar -----------------------------------------------------------------
+
+      _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+      _OFFSET = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
+
+
+      def calendar_zone(input, token, calendar):
+          """The calendar's own time zone, the one a local time is read in."""
+          cal = request(input, token, "GET", GOOGLE_API,
+                        "/calendar/v3/calendars/" + seg(calendar))
+          return str(cal.get("timeZone") or "")
+
+
+      def when(value, zone, field):
+          """A Calendar EventDateTime from `2026-11-12` (an all-day date) or a
+          datetime, local in `zone` unless it carries its own offset."""
+          value = value.strip()
+          if _DATE.match(value):
+              return {"date": value}
+          if not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", value):
+              raise ValueError(
+                  "google: %s %r is neither a date (2026-11-12) nor a datetime "
+                  "(2026-11-12T10:00:00)" % (field, value))
+          short = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?!:\d)(.*)$", value)
+          if short:
+              value = short.group(1) + ":00" + short.group(2)
+          out = {"dateTime": value}
+          if zone:
+              out["timeZone"] = zone
+          elif not _OFFSET.search(value):
+              raise ValueError(
+                  "google: %s %r has no offset and no time zone to read it in"
+                  % (field, value))
+          return out
+
+
+      def needs_zone(*values):
+          """Whether any of these times is a local datetime, read in a zone."""
+          return any(v and not _DATE.match(v) and not _OFFSET.search(v) for v in values)
+
+
+      def _parse(value):
+          """An EventDateTime's instant or date, as Python reads it."""
+          if value.get("date"):
+              return datetime.date.fromisoformat(value["date"])
+          raw = str(value.get("dateTime") or "")
+          return datetime.datetime.fromisoformat(re.sub(r"Z$", "+00:00", raw))
+
+
+      def _format(v, like):
+          if isinstance(v, datetime.datetime):
+              out = {"dateTime": v.isoformat()}
+          else:
+              out = {"date": v.isoformat()}
+          if like.get("timeZone"):
+              out["timeZone"] = like["timeZone"]
+          return out
+
+
+      def end_after(start, length=None):
+          """The end of an event starting at `start`: `length` on, or an hour on
+          (a day on for an all-day date)."""
+          s = _parse(start)
+          if length is None:
+              length = (datetime.timedelta(days=1) if not isinstance(s, datetime.datetime)
+                        else datetime.timedelta(hours=1))
+          return _format(s + length, start)
+
+
+      def length_of(start, end):
+          """How long an event runs, or None when start and end are not one shape."""
+          try:
+              s, e = _parse(start or {}), _parse(end or {})
+          except ValueError:
+              return None
+          if isinstance(s, datetime.datetime) != isinstance(e, datetime.datetime):
+              return None
+          if isinstance(s, datetime.datetime) and (s.tzinfo is None) != (e.tzinfo is None):
+              return None
+          return e - s
+
+
+      def event_summary(ev, calendar):
+          out = {"event": ev.get("id") or "", "calendar": calendar,
+                 "summary": ev.get("summary") or "",
+                 "start": ev.get("start") or {}, "end": ev.get("end") or {}}
+          for src, dst in (("htmlLink", "link"), ("hangoutLink", "meet"),
+                           ("status", "status")):
+              if ev.get(src):
+                  out[dst] = ev[src]
+          guests = [g.get("email") for g in ev.get("attendees") or [] if g.get("email")]
+          if guests:
+              out["attendees"] = guests
+          return out
+
+
+      def guests_arg(a, name):
+          """Attendee addresses from a list argument, bare and checked."""
+          return [bare(address(v, name)) for v in list_arg(a, name)]
+
+
+      def notify_arg(a, guests):
+          """Who Google emails about the change: as asked, else everyone when
+          the event has other guests and nobody when it has none."""
+          value = text_arg(a, "notify")
+          if value:
+              return value
+          return "all" if guests else "none"
+
+
+      def event_path(calendar, event=""):
+          path = "/calendar/v3/calendars/%s/events" % seg(calendar)
+          return path + "/" + seg(event) if event else path
 ---
 # ---- the config type: the `client` input's kind ---------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -641,12 +1289,28 @@ data:
       displayName: Gmail
       description: sync this account's Gmail threads and messages (a restricted
         Google scope)
+    # The write toggles sync nothing: each admits the tools that change
+    # Google (the bundle's `google_api.account`), and asks for its own scope
+    # in the manifest's featureScopes block, so turning one on needs a
+    # reconnect.
+    enabledGmailWrite:
+      type: bool
+      writer: owner
+      displayName: Gmail sending
+      description: let your agents draft, send and label mail as this account
+        (a restricted Google scope)
     enabledCalendar:
       type: bool
       writer: owner
       displayName: Calendar
       description: sync this account's Google calendars, their recurring series
         and their events
+    enabledCalendarWrite:
+      type: bool
+      writer: owner
+      displayName: Calendar editing
+      description: let your agents create, change and delete events and answer
+        invitations on this account's calendars
     enabledDrive:
       type: bool
       writer: owner
@@ -19247,3 +19911,1411 @@ data:
             return {}
         batch.flush(host)
         return out
+---
+# ---- the tools: what an agent calls on the owner's Google account ---------
+# Twelve callables, offered to agents (decision record 0198) under the tool
+# names they declare, so the seeded assistant and its secretary take them by
+# pattern. Each is a callable no trigger names, and none writes a record
+# (decision record 0125): what a tool sends or changes reaches the mirror
+# only when its stream next reads it back, so the mirror is no confirmation.
+#
+# THE OWNER SAYS SO TWICE. Every tool goes through `google_api.account`,
+# which admits an account only when the toggle for what the tool does is on
+# (the owner's word: `enabledGmail`, `enabledGmailWrite`, `enabledCalendar`,
+# `enabledCalendarWrite`, `enabledDrive`) AND the grant carries a scope that
+# covers it (Google's word). A write toggle turned off stops its tools even
+# while the grant still holds the scope; one turned on before a reconnect is
+# refused naming the reconnect.
+#
+# THE OWNER APPROVES EACH SEND. The tools that reach other people (a sent
+# mail, an event with guests, an answer to an invitation) declare `approval:
+# required`, so an agent's call of one waits in the conversation until the
+# owner approves exactly what would go (decision record 0254). A draft and a
+# label change wait for nothing: they stay in the owner's own account.
+#
+# Each takes the provider's own ids, the ones the mirror rows carry:
+# `gmailthread.threadId`, `gmailmessage.messageId`, `calendar.calendarId`,
+# `calendarevent.eventId`, `drivefile.fileId`. `account` picks among
+# several connected accounts by address and may be left out when one can.
+# ---- function: searchmail ---------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/searchmail
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Search the owner's Gmail live, with Gmail's own query syntax (from:, to:,
+    subject:, after:2026/11/01, before:, newer_than:7d, is:unread, has:attachment,
+    label:, in:inbox, "a phrase", OR, -word). Returns threads newest first:
+    thread id, subject, last sender and date, message count, unread, the last
+    message's id and a link. Read one whole with gmail_read_thread. Read-only.
+  runtime: python
+  timeout: PT45S
+  effect: read
+  offer:
+    agents: true
+    name: gmail_search
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: a Gmail search query, as typed in Gmail's search box
+    - name: limit
+      type: int
+      description: how many threads to return (default 10, at most 25)
+    - name: account
+      type: string
+      description: the connected Google account's address to search; leave
+        it out when only one account can read Gmail
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: threads
+      type: json
+      repeated: true
+      required: true
+    - name: more
+      type: bool
+      required: true
+      description: more threads match than were returned
+  permissions:
+    network:
+      - "gmail.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Search Gmail live: the threads a Gmail query matches, newest first.
+
+    `threads.list` names the matches; one `threads.get` with the metadata format
+    per thread gives its subject, its last sender and date, and whether any of
+    it is unread. The mirror is never read: this answers what Gmail holds now.
+    """
+    from google_api import (GMAIL_API, GMAIL_READ, account, args, headers_of,
+                            instant, limit_arg, request, seg, text_arg, thread_link)
+
+    LIMIT = 10
+    MOST = 25
+
+
+    def main(input, host):
+        a = args(input)
+        query = text_arg(a, "query", required=True)
+        limit = limit_arg(a, LIMIT, MOST)
+        acct, token = account(input, text_arg(a, "account"), GMAIL_READ)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        listing = request(input, token, "GET", GMAIL_API, "/gmail/v1/users/me/threads",
+                          params={"q": query, "maxResults": limit})
+        threads = []
+        for t in (listing.get("threads") or [])[:limit]:
+            tid = str(t.get("id") or "")
+            if not tid:
+                continue
+            full = request(input, token, "GET", GMAIL_API,
+                           "/gmail/v1/users/me/threads/" + seg(tid),
+                           params={"format": "metadata",
+                                   "metadataHeaders": ["Subject", "From", "Date"]})
+            msgs = full.get("messages") or [{}]
+            first, last = headers_of(msgs[0]), msgs[-1]
+            labels = set()
+            for m in msgs:
+                labels.update(m.get("labelIds") or [])
+            threads.append({
+                "thread": tid,
+                "subject": first.get("subject") or "",
+                "from": headers_of(last).get("from") or "",
+                "date": instant(last.get("internalDate")),
+                "messages": len(full.get("messages") or []),
+                "lastMessage": str(last.get("id") or ""),
+                "snippet": str(last.get("snippet") or t.get("snippet") or ""),
+                "unread": "UNREAD" in labels,
+                "link": thread_link(me, tid),
+            })
+        return {"output": {"account": me, "threads": threads,
+                           "more": bool(listing.get("nextPageToken"))}}
+---
+# ---- function: readthread ---------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/readthread
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Read one Gmail thread live: every message's id, sender, recipients, date,
+    subject, labels and body as text (6000 characters a message, 30000 a thread),
+    and the attachments it names. The thread id comes from gmail_search or
+    a mirrored gmailthread's threadId. Read-only.
+  runtime: python
+  timeout: PT30S
+  effect: read
+  offer:
+    agents: true
+    name: gmail_read_thread
+  arguments:
+    - name: thread
+      type: string
+      required: true
+      description: the Gmail thread id
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account can read Gmail
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: thread
+      type: string
+      required: true
+    - name: messages
+      type: json
+      repeated: true
+      required: true
+    - name: truncated
+      type: bool
+      required: true
+      description: a body was cut to fit
+    - name: link
+      type: string
+      required: true
+      description: the thread in Gmail
+  permissions:
+    network:
+      - "gmail.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Read one Gmail thread live: every message, its headers and its body as
+    text, capped so the whole answer fits a tool result.
+
+    A body is the message's text/plain part, else its html made text. Attachments
+    are named, never fetched.
+    """
+    from google_api import (GMAIL_API, GMAIL_READ, account, args, headers_of,
+                            instant, message_text, request, seg, text_arg,
+                            thread_link)
+
+    # One message's body, and the thread's together, in characters: a tool
+    # result is capped at 48 KiB unless the agent raises it, and a cut there
+    # loses the end of the thread rather than the end of each message.
+    BODY_MAX = 6000
+    TOTAL_MAX = 30000
+
+
+    def main(input, host):
+        a = args(input)
+        thread = text_arg(a, "thread", required=True)
+        acct, token = account(input, text_arg(a, "account"), GMAIL_READ)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        full = request(input, token, "GET", GMAIL_API,
+                       "/gmail/v1/users/me/threads/" + seg(thread),
+                       params={"format": "full"})
+        messages = []
+        used = 0
+        cut = False
+        for m in full.get("messages") or []:
+            h = headers_of(m)
+            body, files = message_text(m.get("payload"))
+            room = max(0, min(BODY_MAX, TOTAL_MAX - used))
+            if len(body) > room:
+                body = body[:room]
+                cut = True
+            used += len(body)
+            item = {"message": str(m.get("id") or ""),
+                    "from": h.get("from") or "", "to": h.get("to") or "",
+                    "date": instant(m.get("internalDate")),
+                    "subject": h.get("subject") or "",
+                    "labels": list(m.get("labelIds") or []), "body": body}
+            if h.get("cc"):
+                item["cc"] = h["cc"]
+            if files:
+                item["attachments"] = files
+            messages.append(item)
+        return {"output": {"account": me, "thread": thread, "messages": messages,
+                           "truncated": cut, "link": thread_link(me, thread)}}
+---
+# ---- function: draftmail ----------------------------------------------------
+# Changes the owner's mailbox but sends nothing: a draft is read, changed or
+# thrown away in Gmail, so it is `external`, not `irreversible`.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/draftmail
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Write a Gmail draft as the owner, left in their Drafts to read and send;
+    nothing is sent. A new message takes to, subject and body. A reply takes
+    replyTo, the id of the message it answers: it is threaded under it, goes
+    to its sender (replyAll adds the other recipients) and keeps its subject
+    unless told otherwise. Pass draft to replace an existing draft whole (and
+    replyTo again if it is a reply). Needs Gmail sending turned on for the
+    account.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  offer:
+    agents: true
+    name: gmail_draft
+  arguments:
+    - name: to
+      type: string
+      repeated: true
+      description: recipients, each ada@example.com or Ada Lovelace <ada@example.com>;
+        a reply defaults to the sender it answers
+    - name: cc
+      type: string
+      repeated: true
+      description: copied recipients
+    - name: bcc
+      type: string
+      repeated: true
+      description: blind-copied recipients
+    - name: subject
+      type: string
+      description: the subject line; a reply defaults to Re and the original's
+    - name: body
+      type: string
+      description: the message as plain text, no markdown
+    - name: html
+      type: string
+      description: the message as html, when it needs formatting; body is
+        then its plain-text twin
+    - name: replyTo
+      type: string
+      description: the Gmail message id this answers (gmail_read_thread's
+        message, a mirrored gmailmessage's messageId)
+    - name: replyAll
+      type: bool
+      description: a reply also goes to everyone else on the message it answers
+    - name: draft
+      type: string
+      description: the id of a draft to replace instead of writing a new one
+    - name: account
+      type: string
+      description: the connected Google account's address to write as; leave
+        it out when only one account has Gmail sending on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: draft
+      type: string
+      required: true
+      description: the draft's id, for a later replacement
+    - name: message
+      type: string
+      required: true
+    - name: thread
+      type: string
+      required: true
+    - name: to
+      type: string
+      repeated: true
+      required: true
+    - name: subject
+      type: string
+      required: true
+    - name: cc
+      type: string
+      repeated: true
+    - name: bcc
+      type: string
+      repeated: true
+  permissions:
+    network:
+      - "gmail.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Write a Gmail draft: a new message, or a reply threaded under the message
+    it answers, left in the owner's Drafts for them to read and send.
+
+    `drafts.create`, or `drafts.update` when `draft` names one to replace whole.
+    Nothing is sent. No record is written: the draft reaches the mirror only as
+    mail the sync reads back, if ever.
+    """
+    from google_api import (GMAIL_API, GMAIL_WRITE, account, args, compose,
+                            request, seg, text_arg)
+
+
+    def main(input, host):
+        a = args(input)
+        acct, token = account(input, text_arg(a, "account"), GMAIL_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        raw, thread, summary = compose(a, input, token, me)
+        message = {"raw": raw}
+        if thread:
+            message["threadId"] = thread
+        draft = text_arg(a, "draft")
+        if draft:
+            made = request(input, token, "PUT", GMAIL_API,
+                           "/gmail/v1/users/me/drafts/" + seg(draft),
+                           body={"id": draft, "message": message})
+        else:
+            made = request(input, token, "POST", GMAIL_API, "/gmail/v1/users/me/drafts",
+                           body={"message": message})
+        msg = made.get("message") or {}
+        out = {"account": me, "draft": str(made.get("id") or draft),
+               "message": str(msg.get("id") or ""),
+               "thread": str(msg.get("threadId") or thread)}
+        out.update(summary)
+        return {"output": out}
+---
+# ---- function: sendmail -----------------------------------------------------
+# The one Gmail tool that cannot be taken back. No policy reviews it, since
+# the loop's policy door acts on record effects and this returns none
+# (decision record 0125), so it declares `approval: required`: an agent's
+# call waits for the owner's approval in the conversation, which shows
+# exactly what would go, and runs only once approved (decision record 0254).
+# The calendar tools that email guests are held the same way.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/sendmail
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Send mail as the owner, now; it cannot be unsent. Every recipient, the
+    subject and the body are this call's own, and the owner approves exactly
+    them before it goes. A reply names the message it answers in replyTo,
+    which threads it; name its recipients and subject yourself (Re: and the
+    original's), as gmail_read_thread shows them. Send only what the owner
+    asked to send. Needs Gmail sending turned on for the account.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  approval: required
+  offer:
+    agents: true
+    name: gmail_send
+  arguments:
+    - name: to
+      type: string
+      repeated: true
+      description: recipients, each ada@example.com or Ada Lovelace <ada@example.com>
+    - name: cc
+      type: string
+      repeated: true
+      description: copied recipients
+    - name: bcc
+      type: string
+      repeated: true
+      description: blind-copied recipients
+    - name: subject
+      type: string
+      description: the subject line, required; a reply's is Re and the original's
+    - name: body
+      type: string
+      description: the message as plain text, no markdown
+    - name: html
+      type: string
+      description: the message as html, when it needs formatting; body is
+        then its plain-text twin
+    - name: replyTo
+      type: string
+      description: the Gmail message id this answers, which threads it; it
+        adds no recipient
+    - name: account
+      type: string
+      description: the connected Google account's address to send as; leave
+        it out when only one account has Gmail sending on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: message
+      type: string
+      required: true
+    - name: thread
+      type: string
+      required: true
+    - name: link
+      type: string
+      required: true
+      description: the thread in Gmail
+    - name: to
+      type: string
+      repeated: true
+    - name: subject
+      type: string
+    - name: cc
+      type: string
+      repeated: true
+    - name: bcc
+      type: string
+      repeated: true
+  permissions:
+    network:
+      - "gmail.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Send mail as the owner: a new message or a reply, from the call's
+    arguments alone.
+
+    The call waits for the owner's approval of exactly these arguments
+    (decision record 0254), so nothing that goes is read at send time: no
+    draft is sent by its id, whose contents could change while the approval
+    waits, and a reply's recipients and subject are never derived from the
+    message it answers. `messages.send`; no record is written.
+    """
+    from google_api import (GMAIL_API, GMAIL_WRITE, account, args, compose,
+                            request, text_arg, thread_link)
+
+
+    def main(input, host):
+        a = args(input)
+        acct, token = account(input, text_arg(a, "account"), GMAIL_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        raw, thread, summary = compose(a, input, token, me, derive=False)
+        body = {"raw": raw}
+        if thread:
+            body["threadId"] = thread
+        sent = request(input, token, "POST", GMAIL_API, "/gmail/v1/users/me/messages/send",
+                       body=body)
+        thread = str(sent.get("threadId") or "")
+        out = {"account": me, "message": str(sent.get("id") or ""), "thread": thread,
+               "link": thread_link(me, thread)}
+        out.update(summary)
+        return {"output": out}
+---
+# ---- function: labelthread --------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/labelthread
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Change the labels on one Gmail thread. Archive it: remove INBOX. Mark
+    it read: remove UNREAD (add it to mark unread). Star it: add STARRED.
+    File it: add one of the owner's labels by its name. Returns the labels
+    the thread carries after. Needs Gmail sending turned on for the account.
+  runtime: python
+  timeout: PT30S
+  effect: external
+  offer:
+    agents: true
+    name: gmail_label_thread
+  arguments:
+    - name: thread
+      type: string
+      required: true
+      description: the Gmail thread id
+    - name: add
+      type: string
+      repeated: true
+      description: labels to add, Gmail's (STARRED, IMPORTANT, UNREAD, INBOX)
+        by id or the owner's by name
+    - name: remove
+      type: string
+      repeated: true
+      description: labels to remove, the same way
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Gmail sending on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: thread
+      type: string
+      required: true
+    - name: labels
+      type: string
+      repeated: true
+      required: true
+      description: the label ids on the thread's messages after the change
+  permissions:
+    network:
+      - "gmail.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Add and remove labels on one Gmail thread: archive it, mark it read,
+    star it, or file it under one of the owner's labels.
+
+    `threads.modify`, after one `labels.list` when a label is named by its name
+    rather than its id. Gmail's system labels go by their ids (INBOX, UNREAD,
+    STARRED, IMPORTANT); the owner's own by name or id.
+    """
+    from google_api import (GMAIL_API, GMAIL_WRITE, account, args, list_arg,
+                            request, seg, text_arg)
+
+    SYSTEM = ("INBOX", "UNREAD", "STARRED", "IMPORTANT", "SPAM", "SENT", "DRAFT",
+              "CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS",
+              "CATEGORY_UPDATES", "CATEGORY_FORUMS")
+
+
+    def _resolve(names, input, token):
+        """Each label as its id: a system label by its id in any case, an owner's
+        label by its exact id or its name, case aside."""
+        ids, wanted = [], []
+        for n in names:
+            if n.upper() in SYSTEM:
+                ids.append(n.upper())
+            else:
+                wanted.append(n)
+        if not wanted:
+            return ids
+        labels = request(input, token, "GET", GMAIL_API,
+                         "/gmail/v1/users/me/labels").get("labels") or []
+        by_id = {str(lb.get("id")): str(lb.get("id")) for lb in labels}
+        by_name = {str(lb.get("name") or "").lower(): str(lb.get("id")) for lb in labels}
+        for n in wanted:
+            found = by_id.get(n) or by_name.get(n.lower())
+            if not found:
+                own = sorted(str(lb.get("name")) for lb in labels if lb.get("type") == "user")
+                raise ValueError("google: no Gmail label is %r; the owner's labels: %s"
+                                 % (n, ", ".join(own[:40]) or "none"))
+            ids.append(found)
+        return ids
+
+
+    def main(input, host):
+        a = args(input)
+        thread = text_arg(a, "thread", required=True)
+        add, remove = list_arg(a, "add"), list_arg(a, "remove")
+        if not add and not remove:
+            raise ValueError("google: name a label to add or to remove")
+        acct, token = account(input, text_arg(a, "account"), GMAIL_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        changed = request(input, token, "POST", GMAIL_API,
+                          "/gmail/v1/users/me/threads/%s/modify" % seg(thread),
+                          body={"addLabelIds": _resolve(add, input, token),
+                                "removeLabelIds": _resolve(remove, input, token)})
+        labels = set()
+        for m in changed.get("messages") or []:
+            labels.update(m.get("labelIds") or [])
+        return {"output": {"account": me, "thread": thread, "labels": sorted(labels)}}
+---
+# ---- function: createevent --------------------------------------------------
+# `irreversible`, because an event with guests emails them the moment it is
+# made, and that email is not taken back by deleting the event.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/createevent
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Create a Google Calendar event as the owner. start and end are local times
+    (2026-11-12T10:00) read in timeZone, else the calendar's own zone, or
+    dates (2026-11-12) for an all-day event whose end is the day after the
+    last; end defaults to an hour on, or a day. Guests are emailed an invitation
+    unless notify says otherwise. Needs Calendar editing turned on for the
+    account.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  approval: required
+  offer:
+    agents: true
+    name: calendar_create_event
+  arguments:
+    - name: summary
+      type: string
+      required: true
+      description: the event's title
+    - name: start
+      type: string
+      required: true
+      description: when it starts, a local datetime or an all-day date
+    - name: end
+      type: string
+      description: when it ends, the same shape as start
+    - name: timeZone
+      type: string
+      description: the IANA zone local times are in (Europe/Athens), when
+        the owner named one; else the calendar's
+    - name: description
+      type: string
+      description: the event's notes
+    - name: location
+      type: string
+      description: where it is
+    - name: attendees
+      type: string
+      repeated: true
+      description: guests' email addresses
+    - name: meet
+      type: bool
+      description: add a Google Meet link
+    - name: recurrence
+      type: string
+      description: an RFC 5545 rule for a repeating event, such as FREQ=WEEKLY;BYDAY=MO
+    - name: notify
+      type: enum
+      values: [all, externalOnly, none]
+      description: who Google emails about it (default all when it has guests,
+        none otherwise)
+    - name: calendar
+      type: string
+      description: the calendar's id (a mirrored calendar's calendarId); default
+        the account's primary calendar
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Calendar editing on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: event
+      type: string
+      required: true
+      description: the event's id
+    - name: calendar
+      type: string
+      required: true
+    - name: summary
+      type: string
+      required: true
+    - name: start
+      type: json
+      required: true
+    - name: end
+      type: json
+      required: true
+    - name: link
+      type: string
+      description: the event in Google Calendar
+    - name: meet
+      type: string
+      description: its Google Meet link
+    - name: status
+      type: string
+    - name: attendees
+      type: string
+      repeated: true
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Create a Google Calendar event as the owner, inviting whoever it names.
+
+    `events.insert`. A local time is read in `timeZone`, else in the calendar's
+    own zone, which one `calendars.get` reads. Guests are emailed as `notify`
+    says. No record is written: the event reaches the mirror when the calendar
+    stream next reads it.
+    """
+    import uuid
+
+    from google_api import (CALENDAR_WRITE, GOOGLE_API, account, args, calendar_zone,
+                            end_after, event_path, event_summary, guests_arg,
+                            needs_zone, notify_arg, request, text_arg, when)
+
+
+    def main(input, host):
+        a = args(input)
+        summary = text_arg(a, "summary", required=True)
+        start = text_arg(a, "start", required=True)
+        end = text_arg(a, "end")
+        recurrence = text_arg(a, "recurrence")
+        guests = guests_arg(a, "attendees")
+        acct, token = account(input, text_arg(a, "account"), CALENDAR_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        calendar = text_arg(a, "calendar") or "primary"
+        zone = text_arg(a, "timeZone")
+        # A repeating event needs its zone whatever its times carry: Google
+        # expands the rule in it.
+        if not zone and (needs_zone(start, end) or recurrence):
+            zone = calendar_zone(input, token, calendar)
+        s = when(start, zone, "start")
+        e = when(end, zone, "end") if end else end_after(s)
+        if ("date" in s) != ("date" in e):
+            raise ValueError("google: start and end are both dates or both datetimes")
+        ev = {"summary": summary, "start": s, "end": e}
+        for name in ("description", "location"):
+            if text_arg(a, name):
+                ev[name] = text_arg(a, name)
+        if guests:
+            ev["attendees"] = [{"email": g} for g in guests]
+        if recurrence:
+            if "\n" in recurrence:
+                raise ValueError("google: recurrence is one RRULE line")
+            ev["recurrence"] = [recurrence if recurrence.upper().startswith("RRULE:")
+                                else "RRULE:" + recurrence]
+        params = {"sendUpdates": notify_arg(a, guests)}
+        if a.get("meet") is True:
+            ev["conferenceData"] = {"createRequest": {
+                "requestId": uuid.uuid4().hex,
+                "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
+            params["conferenceDataVersion"] = 1
+        made = request(input, token, "POST", GOOGLE_API, event_path(calendar),
+                       params=params, body=ev)
+        out = event_summary(made, calendar)
+        out["account"] = me
+        return {"output": out}
+---
+# ---- function: updateevent --------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/updateevent
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Change a Google Calendar event: only what is passed changes. Moving start
+    alone keeps the event's length. Add or remove guests by address. Guests
+    are emailed the change unless notify says otherwise; for a repeating event,
+    the id of one occurrence changes that one, the series' id all of them.
+    Needs Calendar editing turned on for the account.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  approval: required
+  offer:
+    agents: true
+    name: calendar_update_event
+  arguments:
+    - name: event
+      type: string
+      required: true
+      description: the event's id (a mirrored calendarevent's eventId)
+    - name: summary
+      type: string
+      description: a new title
+    - name: start
+      type: string
+      description: a new start, a local datetime or an all-day date
+    - name: end
+      type: string
+      description: a new end, the same shape as start
+    - name: timeZone
+      type: string
+      description: the IANA zone new local times are in, when the owner named
+        one; else the event's
+    - name: description
+      type: string
+      description: new notes
+    - name: location
+      type: string
+      description: a new place
+    - name: addAttendees
+      type: string
+      repeated: true
+      description: guests to invite, by address
+    - name: removeAttendees
+      type: string
+      repeated: true
+      description: guests to take off, by address
+    - name: meet
+      type: bool
+      description: add a Google Meet link if it has none
+    - name: notify
+      type: enum
+      values: [all, externalOnly, none]
+      description: who Google emails about it (default all when it has guests,
+        none otherwise)
+    - name: calendar
+      type: string
+      description: the calendar's id; default the account's primary calendar
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Calendar editing on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: event
+      type: string
+      required: true
+      description: the event's id
+    - name: calendar
+      type: string
+      required: true
+    - name: summary
+      type: string
+      required: true
+    - name: start
+      type: json
+      required: true
+    - name: end
+      type: json
+      required: true
+    - name: link
+      type: string
+      description: the event in Google Calendar
+    - name: meet
+      type: string
+      description: its Google Meet link
+    - name: status
+      type: string
+    - name: attendees
+      type: string
+      repeated: true
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Change a Google Calendar event: its title, times, place, notes or guests.
+
+    One `events.get` reads the event as it stands (its guests, its length, its
+    zone), then one `events.patch` sends only what changes. A start moved alone
+    keeps the event's length. No record is written.
+    """
+    import uuid
+
+    from google_api import (CALENDAR_WRITE, GOOGLE_API, account, args, bare,
+                            calendar_zone, end_after, event_path, event_summary,
+                            guests_arg, length_of, needs_zone, notify_arg, request,
+                            text_arg, when)
+
+
+    def main(input, host):
+        a = args(input)
+        event = text_arg(a, "event", required=True)
+        add, drop = guests_arg(a, "addAttendees"), guests_arg(a, "removeAttendees")
+        acct, token = account(input, text_arg(a, "account"), CALENDAR_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        calendar = text_arg(a, "calendar") or "primary"
+        path = event_path(calendar, event)
+        cur = request(input, token, "GET", GOOGLE_API, path)
+        patch = {}
+        for name in ("summary", "description", "location"):
+            if a.get(name) is not None:
+                patch[name] = str(a[name])
+        start, end = text_arg(a, "start"), text_arg(a, "end")
+        if start or end:
+            zone = text_arg(a, "timeZone")
+            if not zone and needs_zone(start, end):
+                zone = ((cur.get("start") or {}).get("timeZone")
+                        or calendar_zone(input, token, calendar))
+            if start:
+                patch["start"] = when(start, zone, "start")
+                if not end:
+                    patch["end"] = end_after(patch["start"],
+                                             length_of(cur.get("start"), cur.get("end")))
+            if end:
+                patch["end"] = when(end, zone, "end")
+            if ("date" in patch.get("start", cur.get("start") or {})) != \
+                    ("date" in patch["end"]):
+                raise ValueError("google: start and end are both dates or both datetimes")
+        guests = list(cur.get("attendees") or [])
+        if add or drop:
+            gone = set(drop)
+            guests = [g for g in guests if bare(g.get("email")) not in gone]
+            have = {bare(g.get("email")) for g in guests}
+            guests += [{"email": g} for g in add if g not in have]
+            patch["attendees"] = guests
+        params = {"sendUpdates": notify_arg(a, [g for g in guests if not g.get("self")])}
+        if a.get("meet") is True and not cur.get("conferenceData"):
+            patch["conferenceData"] = {"createRequest": {
+                "requestId": uuid.uuid4().hex,
+                "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
+            params["conferenceDataVersion"] = 1
+        if not patch:
+            raise ValueError("google: nothing to change; name what changes")
+        changed = request(input, token, "PATCH", GOOGLE_API, path, params=params, body=patch)
+        out = event_summary(changed, calendar)
+        out["account"] = me
+        return {"output": out}
+---
+# ---- function: deleteevent --------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/deleteevent
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Delete a Google Calendar event the owner keeps; guests are told it is
+    cancelled unless notify says otherwise. For a repeating event, the id
+    of one occurrence deletes that one, the series' id all of them. Needs
+    Calendar editing turned on for the account.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  approval: required
+  offer:
+    agents: true
+    name: calendar_delete_event
+  arguments:
+    - name: event
+      type: string
+      required: true
+      description: the event's id (a mirrored calendarevent's eventId)
+    - name: notify
+      type: enum
+      values: [all, externalOnly, none]
+      description: who Google emails about it (default all when it has guests,
+        none otherwise)
+    - name: calendar
+      type: string
+      description: the calendar's id; default the account's primary calendar
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Calendar editing on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: calendar
+      type: string
+      required: true
+    - name: event
+      type: string
+      required: true
+    - name: summary
+      type: string
+      required: true
+      description: the title of the event deleted
+    - name: deleted
+      type: bool
+      required: true
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Delete a Google Calendar event, or one occurrence of a repeating one.
+
+    One `events.get` reads who is invited, so the default notice goes to the
+    guests an event has and to nobody otherwise; then `events.delete`. No record
+    is written: the event leaves the mirror when the calendar stream next reads
+    its calendar.
+    """
+    from google_api import (CALENDAR_WRITE, GOOGLE_API, account, args, event_path,
+                            notify_arg, request, text_arg)
+
+
+    def main(input, host):
+        a = args(input)
+        event = text_arg(a, "event", required=True)
+        acct, token = account(input, text_arg(a, "account"), CALENDAR_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        calendar = text_arg(a, "calendar") or "primary"
+        path = event_path(calendar, event)
+        cur = request(input, token, "GET", GOOGLE_API, path)
+        guests = [g for g in cur.get("attendees") or [] if not g.get("self")]
+        request(input, token, "DELETE", GOOGLE_API, path,
+                params={"sendUpdates": notify_arg(a, guests)})
+        return {"output": {"account": me, "calendar": calendar, "event": event,
+                           "summary": str(cur.get("summary") or ""), "deleted": True}}
+---
+# ---- function: respondevent -------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/respondevent
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Answer an invitation on the owner's calendar: accepted, declined or tentative,
+    with an optional note to the organizer, who is told unless notify says
+    otherwise. Needs Calendar editing turned on for the account.
+  runtime: python
+  timeout: PT30S
+  effect: irreversible
+  approval: required
+  offer:
+    agents: true
+    name: calendar_respond
+  arguments:
+    - name: event
+      type: string
+      required: true
+      description: the event's id (a mirrored calendarevent's eventId)
+    - name: response
+      type: enum
+      values: [accepted, declined, tentative]
+      required: true
+      description: the owner's answer
+    - name: comment
+      type: string
+      description: a note to the organizer
+    - name: notify
+      type: enum
+      values: [all, externalOnly, none]
+      description: who Google emails about it (default all)
+    - name: calendar
+      type: string
+      description: the calendar's id; default the account's primary calendar
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Calendar editing on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: calendar
+      type: string
+      required: true
+    - name: event
+      type: string
+      required: true
+    - name: summary
+      type: string
+      required: true
+    - name: response
+      type: string
+      required: true
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Answer an invitation as the owner: accept, decline or say maybe.
+
+    One `events.get`, then one `events.patch` of the guest list with the owner's
+    own entry changed: Google takes the list whole, so every other guest is sent
+    back as it was read. No record is written.
+    """
+    from google_api import (CALENDAR_WRITE, GOOGLE_API, account, args, bare,
+                            event_path, request, text_arg)
+
+
+    def main(input, host):
+        a = args(input)
+        event = text_arg(a, "event", required=True)
+        response = text_arg(a, "response", required=True)
+        acct, token = account(input, text_arg(a, "account"), CALENDAR_WRITE)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        calendar = text_arg(a, "calendar") or "primary"
+        path = event_path(calendar, event)
+        cur = request(input, token, "GET", GOOGLE_API, path)
+        guests = list(cur.get("attendees") or [])
+        mine = [g for g in guests if g.get("self") is True or bare(g.get("email")) == me.lower()]
+        if not mine:
+            raise ValueError("google: %s is not a guest of this event; there is no "
+                             "invitation to answer" % (me or "the account"))
+        mine[0]["responseStatus"] = response
+        if a.get("comment") is not None:
+            mine[0]["comment"] = str(a["comment"])
+        request(input, token, "PATCH", GOOGLE_API, path,
+                params={"sendUpdates": text_arg(a, "notify") or "all"},
+                body={"attendees": guests})
+        return {"output": {"account": me, "calendar": calendar, "event": event,
+                           "summary": str(cur.get("summary") or ""), "response": response}}
+---
+# ---- function: freebusy -----------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/freebusy
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    When calendars are busy between two instants, live: the owner's primary
+    calendar by default, or others by id or address (a colleague's, where
+    their domain shares free/busy). Returns each calendar's busy ranges; a
+    gap between them is free time. Read-only.
+  runtime: python
+  timeout: PT30S
+  effect: read
+  offer:
+    agents: true
+    name: calendar_free_busy
+  arguments:
+    - name: start
+      type: string
+      required: true
+      description: the window's start, with its offset (2026-11-12T09:00:00+01:00)
+    - name: end
+      type: string
+      required: true
+      description: the window's end, with its offset
+    - name: calendars
+      type: string
+      repeated: true
+      description: calendar ids or people's addresses (default the primary
+        calendar)
+    - name: timeZone
+      type: string
+      description: the IANA zone the busy ranges are answered in
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Calendar on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: calendars
+      type: json
+      repeated: true
+      required: true
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """When calendars are busy in a window: the owner's, and any other a Google
+    `freeBusy.query` may read (a colleague's, in a Workspace domain that shares
+    free/busy).
+
+    Both bounds carry their offset: freeBusy reads instants, and a local time
+    here would be a guess at the zone.
+    """
+    import re
+
+    from google_api import (CALENDAR_READ, GOOGLE_API, account, args, list_arg,
+                            request, text_arg)
+
+    _INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$")
+    MOST = 20
+
+
+    def main(input, host):
+        a = args(input)
+        start, end = text_arg(a, "start", required=True), text_arg(a, "end", required=True)
+        for name, value in (("start", start), ("end", end)):
+            if not _INSTANT.match(value):
+                raise ValueError(
+                    "google: %s %r is an instant with its offset, such as "
+                    "2026-11-12T09:00:00+01:00" % (name, value))
+        calendars = list_arg(a, "calendars") or ["primary"]
+        if len(calendars) > MOST:
+            raise ValueError("google: at most %d calendars at once" % MOST)
+        acct, token = account(input, text_arg(a, "account"), CALENDAR_READ)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        body = {"timeMin": start, "timeMax": end, "items": [{"id": c} for c in calendars]}
+        if text_arg(a, "timeZone"):
+            body["timeZone"] = text_arg(a, "timeZone")
+        answer = request(input, token, "POST", GOOGLE_API, "/calendar/v3/freeBusy", body=body)
+        out = []
+        for cal, got in (answer.get("calendars") or {}).items():
+            item = {"calendar": cal, "busy": [{"start": b.get("start"), "end": b.get("end")}
+                                              for b in got.get("busy") or []]}
+            errors = [str(e.get("reason") or "") for e in got.get("errors") or []]
+            if errors:
+                item["error"] = ", ".join(e for e in errors if e) or "unreadable"
+            out.append(item)
+        return {"output": {"account": me, "calendars": out}}
+---
+# ---- function: searchdrive --------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/searchdrive
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Search the owner's Google Drive live, shared drives included: text finds
+    files whose name or contents hold the words, q adds a Drive query (name
+    contains 'budget', mimeType = 'application/vnd.google-apps.spreadsheet',
+    modifiedTime > '2026-10-01T00:00:00', '<address>' in owners). Neither
+    lists the newest-changed files. Returns each file's id, name, type, modified
+    time, owners and link; read one with drive_read_file. Read-only.
+  runtime: python
+  timeout: PT30S
+  effect: read
+  offer:
+    agents: true
+    name: drive_search
+  arguments:
+    - name: text
+      type: string
+      description: words to find in a file's name or contents
+    - name: q
+      type: string
+      description: a Drive query clause, ANDed with text
+    - name: limit
+      type: int
+      description: how many files to return (default 10, at most 50)
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Drive on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: files
+      type: json
+      repeated: true
+      required: true
+    - name: more
+      type: bool
+      required: true
+      description: more files match than were returned
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Search Google Drive live: the files whose name or text holds some words,
+    or that a Drive query matches, trashed files left out.
+
+    One `files.list` across My Drive and the shared drives the account can read.
+    Without words it lists the newest-changed first; Drive ranks a full-text
+    search itself and refuses to sort one.
+    """
+    from google_api import (DRIVE_READ, GOOGLE_API, account, args, limit_arg,
+                            request, text_arg)
+
+    LIMIT = 10
+    MOST = 50
+    FIELDS = ("nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,"
+              "size,owners(displayName,emailAddress))")
+
+
+    def _quoted(words):
+        return "'" + words.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+    def main(input, host):
+        a = args(input)
+        words, q = text_arg(a, "text"), text_arg(a, "q")
+        limit = limit_arg(a, LIMIT, MOST)
+        acct, token = account(input, text_arg(a, "account"), DRIVE_READ)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        clauses = ["trashed = false"]
+        if words:
+            clauses.append("fullText contains " + _quoted(words))
+        if q:
+            clauses.append("(" + q + ")")
+        params = {"q": " and ".join(clauses), "pageSize": limit, "fields": FIELDS,
+                  "includeItemsFromAllDrives": "true", "supportsAllDrives": "true"}
+        if "fulltext" not in params["q"].lower():
+            params["orderBy"] = "modifiedTime desc"
+        listing = request(input, token, "GET", GOOGLE_API, "/drive/v3/files", params=params)
+        files = []
+        for f in listing.get("files") or []:
+            item = {"file": str(f.get("id") or ""), "name": str(f.get("name") or ""),
+                    "mimeType": str(f.get("mimeType") or ""),
+                    "modified": str(f.get("modifiedTime") or ""),
+                    "link": str(f.get("webViewLink") or "")}
+            owners = [o.get("emailAddress") for o in f.get("owners") or [] if o.get("emailAddress")]
+            if owners:
+                item["owners"] = owners
+            files.append(item)
+        return {"output": {"account": me, "files": files,
+                           "more": bool(listing.get("nextPageToken"))}}
+---
+# ---- function: readfile -----------------------------------------------------
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/google/readfile
+data:
+  authority: providers.substrate.reamde.dev
+  package: google
+  description: >-
+    Read one Google Drive file live, as text: a Doc as markdown, a Sheet's
+    first sheet as CSV, a Slides deck as plain text, a text file as it is.
+    A PDF, an image or an Office file answers its name, type and link and
+    no content. The file id comes from drive_search or a mirrored drivefile's
+    fileId. Read-only.
+  runtime: python
+  timeout: PT30S
+  effect: read
+  offer:
+    agents: true
+    name: drive_read_file
+  arguments:
+    - name: file
+      type: string
+      required: true
+      description: the Drive file id
+    - name: maxChars
+      type: int
+      description: how much text to return (default 20000, at most 100000)
+    - name: account
+      type: string
+      description: the connected Google account's address; leave it out when
+        only one account has Drive on
+  returns:
+    - name: account
+      type: string
+      required: true
+    - name: file
+      type: string
+      required: true
+    - name: name
+      type: string
+      required: true
+    - name: mimeType
+      type: string
+      required: true
+    - name: modified
+      type: string
+      required: true
+    - name: link
+      type: string
+      required: true
+    - name: content
+      type: string
+      description: the file as text, absent when it has none
+    - name: truncated
+      type: bool
+    - name: note
+      type: string
+      description: why there is no content
+  permissions:
+    network:
+      - "www.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    """Read one Google Drive file live, as text.
+
+    A Doc is exported as markdown, a Sheet as its first sheet's CSV and a Slides
+    deck as plain text, the same table the drive stream exports by; a file Drive
+    holds as text (text/*, JSON, XML, YAML) is downloaded as it is. Anything
+    else (a PDF, an image, an Office file) answers its metadata and a note, and
+    no content.
+    """
+    from google_api import (DRIVE_READ, GOOGLE_API, account, args, request, seg,
+                            text_arg)
+
+    EXPORTS = {
+        "application/vnd.google-apps.document": "text/markdown",
+        "application/vnd.google-apps.spreadsheet": "text/csv",
+        "application/vnd.google-apps.presentation": "text/plain",
+    }
+    TEXTUAL = ("application/json", "application/xml", "application/x-yaml",
+               "application/yaml", "application/javascript", "image/svg+xml")
+    DEFAULT_CHARS = 20000
+    MOST_CHARS = 100000
+
+
+    def main(input, host):
+        a = args(input)
+        fid = text_arg(a, "file", required=True)
+        try:
+            cap = int(a.get("maxChars") or DEFAULT_CHARS)
+        except (TypeError, ValueError):
+            raise ValueError("google: maxChars is a whole number") from None
+        cap = max(1000, min(cap, MOST_CHARS))
+        acct, token = account(input, text_arg(a, "account"), DRIVE_READ)
+        me = str((acct.get("properties") or {}).get("email") or "")
+        path = "/drive/v3/files/" + seg(fid)
+        meta = request(input, token, "GET", GOOGLE_API, path,
+                       params={"fields": "id,name,mimeType,modifiedTime,webViewLink",
+                               "supportsAllDrives": "true"})
+        mime = str(meta.get("mimeType") or "")
+        out = {"account": me, "file": fid, "name": str(meta.get("name") or ""),
+               "mimeType": mime, "modified": str(meta.get("modifiedTime") or ""),
+               "link": str(meta.get("webViewLink") or "")}
+        if mime in EXPORTS:
+            content, cut = request(input, token, "GET", GOOGLE_API, path + "/export",
+                                   params={"mimeType": EXPORTS[mime]}, text=True)
+        elif mime.startswith("text/") or mime in TEXTUAL:
+            content, cut = request(input, token, "GET", GOOGLE_API, path,
+                                   params={"alt": "media", "supportsAllDrives": "true"},
+                                   text=True)
+        else:
+            out["note"] = ("Drive holds this file as %s, which this tool cannot read "
+                           "as text; the owner opens it at its link" % (mime or "an unknown type"))
+            return {"output": out}
+        if len(content) > cap:
+            content, cut = content[:cap], True
+        out["content"] = content
+        out["truncated"] = cut
+        return {"output": out}

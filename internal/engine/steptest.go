@@ -41,6 +41,7 @@ type Stepper struct {
 	fn   *vocabulary.Function
 	cfg  map[string]any
 	env  map[string]any
+	args map[string]any
 	n    int
 	last []effect
 }
@@ -70,6 +71,12 @@ func (s *Stepper) SetConfig(cfg map[string]any) { s.cfg = cfg }
 // names ONE record, and a body that reads it wrong syncs the wrong thing.
 func (s *Stepper) SetEnvelope(env map[string]any) { s.env = env }
 
+// SetArgs puts call-mode arguments on every following step, the
+// `input["args"]` a direct call or an agent's tool call hands the body. They
+// are not checked against the function's `arguments:`; a caller that wants
+// the check holds them to the function's Input with vocabulary.CheckValue.
+func (s *Stepper) SetArgs(args map[string]any) { s.args = args }
+
 // Step runs one invocation of the chain: resume is the previous page's cursor,
 // nil for a fresh delivery. The third return is the continuation cursor, nil
 // once the chain drained.
@@ -80,6 +87,7 @@ func (s *Stepper) Step(ctx context.Context, resume any) ([]StepEffect, any, map[
 		Mode:           runner.ModeCall,
 		Config:         s.cfg,
 		Envelope:       s.env,
+		Args:           s.args,
 		Resume:         resume,
 		IdempotencyKey: fmt.Sprintf("test/step/%s/%d", s.fn.Identity(), s.n),
 	})

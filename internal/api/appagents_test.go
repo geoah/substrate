@@ -94,6 +94,9 @@ func agentKinds() []substrate.KindInfo {
 		internal(kindInteraction, "interaction", "llm", map[string]any{
 			"state": map[string]any{"type": "state"}, "answers": map[string]any{"type": "object"}, "thread": threadRef,
 		}),
+		internal(kindApproval, "approval", "llm", map[string]any{
+			"state": map[string]any{"type": "state"}, "arguments": map[string]any{"type": "json"}, "thread": threadRef,
+		}),
 		internal(kindRequest, "recordpatchrequest", "core", map[string]any{
 			"decision": map[string]any{"type": "state"}, "adjustedDiff": map[string]any{"type": "json"},
 			"diff": map[string]any{"type": "json"}, "thread": threadRef,
@@ -127,6 +130,9 @@ func newAgentEnv(t *testing.T) (*appEnv, *chatRecord) {
 		}}, nil)
 		e.seed(substrate.Record{ID: "i" + side.suffix, Kind: kindInteraction, Version: 1, Properties: map[string]any{
 			"thread": ref(kindThread, thread), "state": "pending",
+		}}, nil)
+		e.seed(substrate.Record{ID: "a" + side.suffix, Kind: kindApproval, Version: 1, Properties: map[string]any{
+			"thread": ref(kindThread, thread), "state": "pending", "arguments": map[string]any{"text": "hi"},
 		}}, nil)
 		e.seed(substrate.Record{ID: "r" + side.suffix, Kind: kindRequest, Version: 1, Properties: map[string]any{
 			"thread": ref(kindThread, thread), "decision": "proposed",
@@ -195,10 +201,13 @@ func TestAnAgentsScopeReadsTheRowsOfItsAgentsAlone(t *testing.T) {
 	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindInteraction, `{"state":{"eq":"pending"},"thread":{"eq":"tA"}}`), app, nil, "")); got != "iA" {
 		t.Fatalf("pending interactions = %q, want the matching thread's alone", got)
 	}
+	if got := recordIDs(t, e.do(http.MethodGet, listOf(kindApproval, `{"state":{"eq":"pending"},"thread":{"eq":"tA"}}`), app, nil, "")); got != "aA" {
+		t.Fatalf("pending approvals = %q, want the matching thread's alone", got)
+	}
 	// A list that names no thread is refused before the engine pages: its
 	// cursor would carry the last scanned row, another agent's included,
 	// and its count every agent's rows.
-	for _, kind := range []string{kindMessage, kindInteraction} {
+	for _, kind := range []string{kindMessage, kindInteraction, kindApproval} {
 		wantStatus(t, e.do(http.MethodGet, listOf(kind, ``), app, nil, ""), http.StatusForbidden)
 		wantStatus(t, e.do(http.MethodGet, listOf(kind, `{"state":{"eq":"pending"}}`), app, nil, ""), http.StatusForbidden)
 		wantStatus(t, e.do(http.MethodGet, listOf(kind, ``)+"&count=1", app, nil, ""), http.StatusForbidden)
@@ -242,11 +251,14 @@ func TestAnAgentsScopeWritesARenameAndAnAnswerAndNothingElse(t *testing.T) {
 	if ds.lastPatch.IfVersion == nil || *ds.lastPatch.IfVersion != 1 {
 		t.Fatalf("the answer reached the engine without its ifVersion: %+v", ds.lastPatch)
 	}
+	// An approval is approved or declined by its state alone (decision 0254).
+	wantStatus(t, patch(kindApproval, "aA", `{"properties":{"state":"approved"},"ifVersion":1}`), http.StatusOK)
 
 	for _, c := range []struct{ kind, id, body string }{
 		{kindThread, "tA", `{"properties":{"status":"stopped"}}`},
 		{kindThread, "tA", `{"properties":{"subject":"x"},"labels":{"app:notes.example.org/x":"y"}}`},
 		{kindInteraction, "iA", `{"properties":{"state":"dismissed","thread":"tB"}}`},
+		{kindApproval, "aA", `{"properties":{"state":"approved","arguments":{"text":"changed"}}}`},
 		{kindMessage, "mA", `{"properties":{"content":"x"}}`},
 		{kindAgent, talkedAgent, `{"properties":{"hiddenFromChat":true}}`},
 	} {

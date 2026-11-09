@@ -40,7 +40,7 @@ struct TurnView: View, Equatable {
                 if let card = cards[suggestion]?.suggestion { SuggestionCardView(id: suggestion, card: card) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        case let .answer(line), let .jobEnded(line): OutcomeRow(line: line)
+        case let .answer(line), let .jobEnded(line), let .approvalEnded(line): OutcomeRow(line: line)
         case let .system(text):
             Text(text)
                 .lineLimit(3)
@@ -54,7 +54,7 @@ struct TurnView: View, Equatable {
 extension ToolRowPresentation {
     var cardID: String? {
         switch attachment {
-        case let .suggestion(id)?, let .questions(id)?: id
+        case let .suggestion(id)?, let .questions(id)?, let .approval(id)?: id
         default: nil
         }
     }
@@ -135,6 +135,8 @@ private struct AssistantTurnView: View {
                     if let card = cards[id]?.suggestion { SuggestionCardView(id: id, card: card) }
                 case let .questions(id)?:
                     if let card = cards[id]?.question { QuestionCardView(id: id, card: card) }
+                case let .approval(id)?:
+                    if let card = cards[id]?.approval { ApprovalCardView(id: id, card: card) }
                 case let .change(panel)?:
                     ChangePanel(panel: panel)
                 case nil:

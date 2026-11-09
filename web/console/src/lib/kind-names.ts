@@ -48,6 +48,7 @@ const WORDS = new Set([
   "app",
   "applet",
   "appointment",
+  "approval",
   "attachment",
   "authority",
   "batch",

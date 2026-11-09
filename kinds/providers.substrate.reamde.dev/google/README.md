@@ -4,11 +4,14 @@ Package `providers.substrate.reamde.dev/google`: an OAuth provider that
 mirrors a Google account's address book, mail, calendars and Drive files into
 the repository, in Google's own shape. Four streams (contacts, gmail,
 calendar, drive) share one account, each with its own toggle, scope, sync
-function and cursor. Read only: nothing is written back to Google.
+function and cursor. The mirror is read only. Twelve tools an agent calls
+read Gmail, Calendar and Drive live and, behind the account's Gmail sending
+and Calendar editing toggles, draft and send mail and change events.
 
 `bundle.yaml` is the closure (the config and account kinds, the ten mirrors,
-the `emailaddress` hub, the `calendarsync` state kind, the four sync functions
-and the trusted `oauth2:` metadata) and `triggers.yaml` is the delivery wiring
+the `emailaddress` hub, the `calendarsync` state kind, the four sync
+functions, the twelve tools and the `google_api.py` module they share, and
+the trusted `oauth2:` metadata) and `triggers.yaml` is the delivery wiring
 (three triggers per stream). They are the contract; this file is not.
 
 ## Kinds
@@ -33,3 +36,5 @@ and the trusted `oauth2:` metadata) and `triggers.yaml` is the delivery wiring
 What it writes, what it deliberately does not, the scopes, `backfillDepth`,
 how each stream walks and how to connect it:
 [docs/bundles-catalog.md#google](../../../docs/bundles-catalog.md#google).
+The tools, what each needs turned on and what none of them is checked by:
+[Google's tools](../../../docs/bundles-catalog.md#googles-tools).

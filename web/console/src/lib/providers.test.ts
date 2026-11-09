@@ -15,6 +15,7 @@ import {
   firstSentence,
   lastSyncOf,
   providerActors,
+  permissionState,
   providerStanding,
   providerTools,
   recurrenceWords,
@@ -276,6 +277,48 @@ describe("providerStanding", () => {
         fixes: ["sync-now", "reconnect"],
       },
     ])
+  })
+
+  it("asks to reconnect an account whose sign-in predates a switch it has on", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [{ ...ada, ungranted: ["Gmail sending", "Calendar editing"] }],
+    })
+    expect(s).toMatchObject({
+      tone: "attention",
+      line: "Reconnect ada@example.com to approve Gmail sending and Calendar editing",
+    })
+    expect(s.problems).toEqual([
+      {
+        code: "permissions-missing",
+        summary:
+          "Reconnect ada@example.com to approve Gmail sending and Calendar editing",
+        detail: [
+          "They are turned on, but the account’s sign-in was approved before, so nothing can use them until you approve again.",
+        ],
+        account: "ada",
+        fixes: ["reconnect"],
+      },
+    ])
+  })
+
+  it("leaves a missing switch to the sign-in problem while the sign-in is broken", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [
+        { ...ada, tokenStatus: "erroring", ungranted: ["Gmail sending"] },
+      ],
+    })
+    expect(s.problems.map((p) => p.code)).toEqual(["sign-in"])
+  })
+
+  it("asks nothing of a token provider's accounts", () => {
+    const s = providerStanding({
+      ...base,
+      oauth: false,
+      accounts: [{ ...ada, ungranted: ["Gmail sending"] }],
+    })
+    expect(s.problems).toEqual([])
   })
 
   describe("a failing account asked to sync again", () => {
@@ -1188,5 +1231,59 @@ describe("approvedWords", () => {
     expect(
       approvedWords({ paused: false, lastSyncedAt: "2026-10-19T10:00:00Z" })
     ).toBe("is approved and a sync is starting.")
+  })
+})
+
+describe("permissionState", () => {
+  const feature = {
+    toggle: "enabledGmailWrite",
+    scopes: ["gmail.modify", "userinfo.email"],
+  }
+  const account = (
+    properties: Record<string, unknown>,
+    grantedScopes: string[],
+    tokenStatus = "connected"
+  ) => ({ record: { properties }, grantedScopes, tokenStatus })
+
+  it("is off until the owner turns it on", () => {
+    expect(
+      permissionState(account({}, ["gmail.readonly"]), feature, true)
+    ).toBe("off")
+  })
+
+  it("needs approval while the grant lacks one of its scopes", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, ["userinfo.email"]),
+        feature,
+        true
+      )
+    ).toBe("approve")
+  })
+
+  it("is allowed once the grant carries every scope", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, [
+          "gmail.modify",
+          "userinfo.email",
+        ]),
+        feature,
+        true
+      )
+    ).toBe("allowed")
+  })
+
+  it("waits on the account's own connect before anything else", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, [], "erroring"),
+        feature,
+        true
+      )
+    ).toBe("unconnected")
+    expect(permissionState(account({}, [], "pending"), feature, true)).toBe(
+      "off"
+    )
   })
 })

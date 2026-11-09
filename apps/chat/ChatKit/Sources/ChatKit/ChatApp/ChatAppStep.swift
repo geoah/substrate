@@ -70,6 +70,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case answerAsked(String, picks: [String: [String]])
     case questionsDismissed(String)
     case decideAsked(String, accept: Bool, shown: [String: JSONValue])
+    case approveAsked(String, approve: Bool)
     case cardWritten(String, Record)
     case cardWriteFailed(String, Failure, conflict: String)
     case setting(row: String, toggle: Bool?, choice: String?)
@@ -114,6 +115,9 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     struct Cards: Codable, Equatable, Sendable {
         var interactions: [Record]
         var requests: [Record]
+        /// Nil where the server refused the read: a server older than the
+        /// kind, or a token that does not reach it.
+        var approvals: [Record]?
     }
 
     struct Refresh: Codable, Equatable, Sendable {

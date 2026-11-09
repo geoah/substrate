@@ -45,7 +45,8 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var query = ""
     }
 
-    /// A question's or a suggestion's card, as last read and acted on.
+    /// A question's, a suggestion's or an approval's card, as last read and
+    /// acted on.
     struct Card: Codable, Equatable, Sendable {
         var record: Record?
         /// A suggestion's target, for its values before.
@@ -131,6 +132,13 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var openings: [String: String] = [:]
     var interactions: [Record] = []
     var requests: [Record] = []
+    /// The calls waiting on the owner's approval. Never kept on the device:
+    /// one decided elsewhere must not wait here after a relaunch.
+    var approvals: [Record] = []
+    /// The server answered the approvals read: it declares the kind and the
+    /// token reaches it, so the watch may follow it. A watch naming a kind
+    /// an older server lacks is refused whole.
+    var approvalsKnown = false
     var seen: [String: String] = [:]
     var notified: Set<String> = []
     var baselined = false

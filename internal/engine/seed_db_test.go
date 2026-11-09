@@ -271,6 +271,7 @@ func TestCreationSeedsTheAssistantAndNoSample(t *testing.T) {
 		"substrate.reamde.dev/assistant/designer",
 		"substrate.reamde.dev/assistant/librarian",
 		"substrate.reamde.dev/assistant/moss",
+		"substrate.reamde.dev/assistant/secretary",
 	}
 	if !slices.Equal(agents, want) {
 		t.Fatalf("agents = %v, want only the shipped assistant's %v", agents, want)

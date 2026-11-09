@@ -626,6 +626,12 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// approvalLoop marks the agent loop's own landing of an approval, the one
+	// writer that creates one; approvalRun marks the engine's run of an
+	// approved call, the one writer of its run properties and of the
+	// running, done and failed states (approvals.go).
+	approvalLoop bool
+	approvalRun  bool
 	// migrating marks a repository migration's transaction (repomigrate.go):
 	// it folds before the stored vocabulary loads, so a row whose kind the
 	// registry does not yet hold keeps its derived indexes as they stand,

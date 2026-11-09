@@ -40,6 +40,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 
@@ -991,6 +993,26 @@ func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.Bundl
 	return quarantined[0], nil
 }
 
+// bundleFeatures lists an OAuth bundle's feature toggles off its trusted
+// manifest metadata, in toggle order: what each asks the provider for, and
+// whether that reads it or changes it.
+func bundleFeatures(b *vocabulary.Bundle) []substrate.BundleFeature {
+	if b.OAuth2 == nil {
+		return nil
+	}
+	var out []substrate.BundleFeature
+	for _, toggle := range slices.Sorted(maps.Keys(b.OAuth2.FeatureScopes)) {
+		access := b.OAuth2.FeatureAccess[toggle]
+		if access == "" {
+			access = vocabulary.FeatureAccessRead
+		}
+		out = append(out, substrate.BundleFeature{
+			Toggle: toggle, Scopes: slices.Clone(b.OAuth2.FeatureScopes[toggle]), Access: access,
+		})
+	}
+	return out
+}
+
 // bundleStatus computes one bundle's status. counted reads Accounts and
 // LiveRecords: an exact count of every live row of each of its kinds, which
 // for a large kind is a scan of the table, so a read that does not show them
@@ -1017,6 +1039,7 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)
 	st.Version = g.Version
+	st.Features = bundleFeatures(b)
 	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
 		return st, err
 	}

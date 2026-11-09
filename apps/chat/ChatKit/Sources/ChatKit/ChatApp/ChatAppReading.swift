@@ -144,9 +144,16 @@ extension ChatAppState {
         return seen[thread.id] != finished
     }
 
-    /// The cards waiting on the owner in a thread: questions and suggestions.
+    /// The cards waiting on the owner in a thread: questions, suggestions
+    /// and approvals.
     func attention(_ thread: String) -> Int {
-        interactions.count { $0["thread"]?.referenceID == thread } + requests.count { $0["thread"]?.referenceID == thread }
+        (interactions + requests + approvals).count { $0["thread"]?.referenceID == thread }
+    }
+
+    /// The approvals a sub-agent asked on a conversation: its own tool rows
+    /// are in its own thread, so they wait after the transcript.
+    func subagentApprovals(_ thread: String) -> [String] {
+        approvals.filter { $0["thread"]?.referenceID == thread && $0["requestedIn"]?.referenceID != nil }.map(\.id)
     }
 
     var unreadCount: Int { threads.count { unread($0) } }

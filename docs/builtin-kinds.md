@@ -235,6 +235,7 @@ and not part of the frozen core:
 | `thread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `message`     | One turn in a thread, with its tool-call audit.                                                  |
 | `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
+| `approval`    | One call an agent made to a function declaring `approval: required`, held before it ran: `agent`, `function`, `tool` and `arguments`, frozen; `thread`, the conversation the owner is in, and `requestedIn`, a sub-agent's own thread. The owner moves it `pending` to `approved` or `denied`; the engine moves an approved one to `running`, then `done` or `failed`, and reports it into the thread ([agents](agents.md#approvals), decision record [0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)). |
 | `memory`      | One standing fact or instruction the owner keeps for their agents: `text`, `active` (default true) and `source` (`owner`, `agent` or `import`). The one `primary` kind of the package, because the rows are the owner's data; an agent reads the active ones through `context.pinned` ([agents](agents.md#pinned-context), decision record [0197](decisions/0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md)). |
 | `instruction` | One standing instruction the owner gives one agent about how to work: `agent` (a reference to it), `text`, `active` (default true) and `source`. `primary`, like `memory`. The engine reads an agent's active ones into its system prompt when a thread opens, as the owner's direction; an agent writes one only where its own writes name the kind ([agents](agents.md#owner-instructions), decision record [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)). |
 
@@ -245,7 +246,7 @@ manifest document is a record of a core kind whatever package it describes.
 
 The fifth seeded package (decision record
 [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
-the owner's assistant, four agents and no kinds, written into every
+the owner's assistant, five agents and no kinds, written into every
 repository and upgraded at boot, so a prompt fix reaches every repository
 with the binary.
 
@@ -259,10 +260,19 @@ with the binary.
 - `designer`, which Moss calls as a background job to build or change one
   of the owner's applets: its writes name `applets/applet` alone, and it checks each
   screen with `preview` ([the applets plan](plans/applets.md)).
+- `secretary`, which Moss calls for the owner's mail, calendar and Drive
+  files over several steps. It takes the Google provider's offered tools by
+  pattern, so it has them once the provider is installed and none before; it
+  reads and drafts, and sends only what Moss says the owner asked to send
+  ([Google's tools](bundles-catalog.md#googles-tools)). Its grant writes no
+  record.
+
+Moss itself takes every offered function, Google's tools among them, for a
+single step, and hands the secretary anything longer.
 
 The owner shapes them without editing them: `llm/instruction` records
 naming one of them ride its system prompt, and Moss proposes one when asked
-to change how it works. All four name the seeded `anthropic` row. The
+to change how it works. All five name the seeded `anthropic` row. The
 design and the recorded sessions are in [docs/plans/moss.md](plans/moss.md).
 
 ## substrate.reamde.dev/applets

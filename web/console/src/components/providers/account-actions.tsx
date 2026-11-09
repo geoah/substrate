@@ -160,7 +160,10 @@ export function AccountMenu({
             disabled={!view.kind}
             onClick={() => setEditing(true)}
           >
-            <PencilIcon /> Change what it brings in
+            <PencilIcon />{" "}
+            {provider?.status?.features?.some((f) => f.access === "write")
+              ? "Change what it brings in and allows"
+              : "Change what it brings in"}
           </DropdownMenuItem>
           {provider?.oauth && view.tokenStatus === "connected" && (
             <DropdownMenuItem onClick={() => setReconnecting(true)}>
@@ -182,6 +185,7 @@ export function AccountMenu({
           providerName={providerName}
           oauth={provider?.oauth ?? false}
           configured={provider?.configured ?? true}
+          features={provider?.status?.features}
           record={view.record}
           label={view.label}
           open={editing}

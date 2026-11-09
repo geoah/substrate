@@ -5,7 +5,9 @@
  * happens next, and on an OAuth provider whose credentials are set the one
  * primary button CREATES the record and opens the provider's consent, the
  * tab opened synchronously from the press so the async create does not hand
- * it to the popup blocker. The same dialog EDITS an account's toggles,
+ * it to the popup blocker. The switches the bundle marks `access: write`
+ * stand apart from what to bring in, as what the owner's agents may do there
+ * (decision record 0255). The same dialog EDITS an account's toggles,
  * cadence and depth, without the connect step. */
 
 import { useMemo, useState } from "react"
@@ -34,8 +36,8 @@ import { toast } from "@/components/ui/toast"
 import type { OAuthConnect } from "@/hooks/use-oauth-connect"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { createRecord, patchRecord } from "@/lib/api/records"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { accountFormGroups } from "@/lib/account-form"
+import type { BundleFeature, KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { accountFormGroups, writeToggles } from "@/lib/account-form"
 import { splitKind } from "@/lib/definition"
 import { recordPath } from "@/lib/record-path"
 import { SYNC_TRAIT } from "@/lib/core-kinds"
@@ -62,6 +64,9 @@ export interface AccountDialogProps {
   oauth: boolean
   /** The provider's credentials are set, so a create can go on to consent. */
   configured: boolean
+  /** The bundle's feature toggles (its status's `features`): which switches
+   * let the owner's agents change things at the provider. */
+  features?: BundleFeature[]
   /** The connect mutation the OWNING surface holds, so the return listener
    * outlives this dialog, which closes as the consent tab opens. Absent on a
    * token provider. */
@@ -81,6 +86,7 @@ export function AccountDialog({
   providerName,
   oauth,
   configured,
+  features,
   connect,
   onSetUpCredentials,
   record,
@@ -91,7 +97,10 @@ export function AccountDialog({
   const units = useUnits()
   const queryClient = useQueryClient()
   const registry = useQuery(kindsQueryOptions)
-  const groups = useMemo(() => accountFormGroups(units, kind), [units, kind])
+  const groups = useMemo(
+    () => accountFormGroups(units, kind, writeToggles(features)),
+    [units, kind, features]
+  )
   const mode: FormMode = record ? "patch" : "create"
   const seed = useMemo(
     () => initialValues(groups.all, record),
@@ -204,12 +213,17 @@ export function AccountDialog({
     // An account with nothing turned on requests no scope and syncs nothing:
     // a first-time creator is told, rather than left with a silent row. An
     // edit may switch everything off, which is how a sync is stopped for good.
+    const switches = [...groups.toggles, ...groups.permissions]
     if (
       mode === "create" &&
-      groups.toggles.length > 0 &&
-      !groups.toggles.some((f) => values[f.name] === true)
+      switches.length > 0 &&
+      !switches.some((f) => values[f.name] === true)
     ) {
-      setFormError("Turn on at least one thing to bring in.")
+      setFormError(
+        groups.permissions.length
+          ? "Turn on at least one thing to bring in or allow."
+          : "Turn on at least one thing to bring in."
+      )
       return
     }
     // The consent tab is opened HERE, from the press, before the create's
@@ -222,7 +236,9 @@ export function AccountDialog({
     ? `Edit ${label ?? accountName}`
     : `Add a ${providerName} account`
   const description = record
-    ? "Change what this account brings in, how often, and how far back. Its sign-in stays as it is."
+    ? groups.permissions.length
+      ? "Change what this account brings in, what your agents may do with it, how often and how far back. Its sign-in stays as it is."
+      : "Change what this account brings in, how often, and how far back. Its sign-in stays as it is."
     : oauth
       ? configured
         ? `Choose what to bring in. ${providerName} then opens in a new tab and asks you to approve access to each thing you turned on. It starts once you approve.`
@@ -318,6 +334,19 @@ export function AccountDialog({
                     : "Turn on what you want copied here."}
                 </FieldDescription>
                 {groups.toggles.map(field)}
+              </FieldSet>
+            )}
+            {groups.permissions.length > 0 && (
+              <FieldSet className="gap-3" data-slot="account-permissions">
+                <FieldLegend variant="label">
+                  What your agents may do
+                </FieldLegend>
+                <FieldDescription>
+                  {record && oauth
+                    ? `Each lets your agents act in ${providerName} as this account, and is off until you allow it. Turning one on asks you to reconnect, so ${providerName} can ask you to approve it.`
+                    : `Each lets your agents act in ${providerName} as this account, and is off until you allow it. ${providerName} asks you to approve each one you turn on.`}
+                </FieldDescription>
+                {groups.permissions.map(field)}
               </FieldSet>
             )}
             {groups.settings.length > 0 && (

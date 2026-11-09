@@ -18,10 +18,11 @@ public enum AppPhase: String, Codable, Equatable, Sendable {
 public enum CardReference: Codable, Hashable, Sendable {
     case question(String)
     case suggestion(String)
+    case approval(String)
 
     var id: String {
         switch self {
-        case let .question(id), let .suggestion(id): id
+        case let .question(id), let .suggestion(id), let .approval(id): id
         }
     }
 }
