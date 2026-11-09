@@ -50,6 +50,7 @@ const KIND = "substrate.reamde.dev/core/kind"
 const FN = "substrate.reamde.dev/core/function"
 const GCAL = "providers.substrate.reamde.dev/google/synccalendar"
 const SAVE = "ada.example.com/notes/savenote"
+const INGEST = "providers.substrate.reamde.dev/applehealth/applehealthingest"
 
 function rec(
   kind: string,
@@ -100,6 +101,10 @@ const FUNCTIONS = [
     ],
     returns: [{ name: "saved", type: "string", description: "the note id" }],
   }),
+  rec(FN, INGEST, {
+    runtime: "python",
+    description: "Write one Health Auto Export delivery.",
+  }),
 ]
 
 const AGENTS = [
@@ -123,6 +128,11 @@ const TRIGGERS = [
         ops: ["create", "update"],
       },
     },
+  }),
+  rec("substrate.reamde.dev/core/trigger", "applehealth-webhook", {
+    enabled: false,
+    callable: { ref: `${FN}/${INGEST}` },
+    source: { webhook: { maxBody: 8388608 } },
   }),
 ]
 
@@ -158,14 +168,20 @@ describe("ToolPage", () => {
   let calls: { count: number; records: SubstrateRecord[] } | undefined
   let turns: SubstrateRecord[] = []
   let callStatus = 200
+  let refusal: string | undefined
 
   beforeEach(() => {
     runs = []
     calls = undefined
     turns = []
     callStatus = 200
-    fetchMock.mockImplementation(async (url) => {
+    refusal = undefined
+    fetchMock.mockImplementation(async (url, init) => {
       const path = String(url)
+      if (init?.method === "PATCH" && refusal)
+        return jsonResponse(422, {
+          error: { code: "validation", message: refusal },
+        })
       if (path.endsWith("/sync/status")) return jsonResponse(200, { items: [] })
       if (path.endsWith("/core/trigger/status"))
         return jsonResponse(200, {
@@ -327,6 +343,15 @@ describe("ToolPage", () => {
         properties: { enabled: false },
       })
     }
+  })
+
+  it("says why the server refused to resume a webhook it would open", async () => {
+    refusal =
+      "substrate: validation failed: trigger applehealth-webhook: providers.substrate.reamde.dev/applehealth ships this webhook trigger, so it is enabled only with a key, or anyone who reaches this server could run it: set source.webhook.key (16 to 128 characters of [A-Za-z0-9_-]) in the same write, or approve the app that sets it up"
+    renderAt(INGEST)
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }))
+    expect(await screen.findByText("Couldn’t change it.")).toBeTruthy()
+    expect(screen.getByText(refusal)).toBeTruthy()
   })
 
   it("lists the runs a trigger recorded, newest first, in words", async () => {

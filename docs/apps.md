@@ -415,9 +415,11 @@ The trigger takes webhook deliveries, declares no
 `source.webhook.signature` (a provider that signs what it sends holds the
 secret, so no app can deliver there), and runs a callable of a package a
 `package` entry of the same request names. Approving turns it on, and gives
-it a key only when it has none; the key is never shared. The token carries
-`webhook:<trigger>`, which delivers to that trigger with the token itself. A
-request never asks for `webhook:` in `scope`.
+it a key only when it has none; the key is never shared. The key and the
+switch land in one write, because the server turns on a webhook trigger a
+package shipped only with a key ([triggers](functions.md#triggers)). The
+token carries `webhook:<trigger>`, which delivers to that trigger with the
+token itself. A request never asks for `webhook:` in `scope`.
 
 What the error page refuses is the request's shape. What the repository
 decides is the approval page's: a row approving cannot run keeps the action
@@ -993,7 +995,11 @@ declaration for that package, and its declarations and records. The header's
 version matches the listed version. Every declaration belongs to the
 package; records of shared machinery kinds use ids beneath the package id.
 The binary wins for packages it already ships. A repository's own authority
-is declared locally rather than installed from its document.
+is declared locally rather than installed from its document. A webhook
+trigger the closure ships is disabled and keyless unless it declares a
+`signature`: an install of one enabled with neither is refused, and the
+app's `webhook` detail is what keys it and turns it on
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
 
 Check the candidate with `substratectl publish --check` before uploading
 it. Upload the immutable closure first, update the authority document

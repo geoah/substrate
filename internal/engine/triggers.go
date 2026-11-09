@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -99,6 +101,13 @@ func (t *trigger) webhookMaxBody() int64 {
 
 // runnable reports whether the trigger's callable resolved.
 func (t *trigger) runnable() bool { return t.Callable != nil || t.Agent != nil }
+
+// open reports whether the webhook door admits a delivery to the trigger from
+// anyone who reaches the server: it takes webhooks, it is enabled, and it
+// declares neither a key nor a signature for the door to check.
+func (t *trigger) open() bool {
+	return t.Webhook && t.Enabled && t.WebhookKey == "" && t.WebhookSignature == nil
+}
 
 // callablePath is the callable's RECORD path — the value a reference at the
 // function or agent row stores. CallableKind is the LOCAL name parseTrigger
@@ -673,6 +682,142 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
 		"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+}
+
+// refuseOpenShippedWebhook refuses a write that leaves a webhook trigger a
+// publisher shipped open (decision 0248). The door checks a key only when one
+// is set, so such a trigger would run its publisher's code for anyone who
+// reaches the server, and the console's Resume is one click. The owner's own
+// trigger, and one an imported sample shipped, which the import made the
+// owner's, keep decision 0045's open endpoint. Of the engine's internal
+// writes only a publisher's own hand is held (an install, an upgrade, the
+// seed), so a repository migration never wedges on a trigger stored open
+// before the rule, which stays as it is until a write keys it, turns it off
+// or deletes it.
+func (t *txn) refuseOpenShippedWebhook(tr *trigger) error {
+	if !tr.open() {
+		return nil
+	}
+	pkg := publisherOf(t.declarations(), t.actor)
+	if pkg == "" && !t.internal {
+		var err error
+		if pkg, err = shippedBy(t.ctx, t.tx, t.declarations(), tr.ID); err != nil {
+			return err
+		}
+	}
+	if pkg == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: trigger %s: %s ships this webhook trigger, so it is enabled only with a key, or anyone who reaches this server could run it: set source.webhook.key (16 to 128 characters of [A-Za-z0-9_-]) in the same write, or approve the app that sets it up",
+		substrate.ErrValidation, tr.ID, pkg)
+}
+
+// shippedBy is the package that shipped trigger id while the repository does
+// not own it: the first builtin or published package whose hand
+// (`bundle:<authority>:<package>`) wrote the trigger, at its install or an
+// upgrade. "" when none did. The changelog keeps every hand that ever wrote
+// the id, so deleting the shipped trigger and writing it again by hand does
+// not make it the owner's: the next upgrade would write the shipped one over
+// it anyway.
+func shippedBy(ctx context.Context, q dbx, reg *vocabulary.Registry, id string) (string, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT DISTINCT actor FROM changelog WHERE record_id = $1 AND kind = $2 AND actor LIKE $3 ORDER BY actor`,
+		id, typeTrigger, substrate.BundleActorPrefix+"%")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var hand string
+		if err := rows.Scan(&hand); err != nil {
+			return "", err
+		}
+		if pkg := publisherOf(reg, substrate.Actor(hand)); pkg != "" {
+			return pkg, nil
+		}
+	}
+	return "", rows.Err()
+}
+
+// publisherOf is the package a bundle hand writes for when the repository
+// does not own that package, because it is builtin or published, and "" for
+// any other hand. The seed's hand is the builtin core's. A package reg does
+// not hold is not consulted.
+func publisherOf(reg *vocabulary.Registry, hand substrate.Actor) string {
+	if hand == substrate.ActorSeed {
+		return vocabulary.PackageCore
+	}
+	rest, ok := strings.CutPrefix(string(hand), substrate.BundleActorPrefix)
+	authority, name, split := strings.Cut(rest, ":")
+	if !ok || !split {
+		return ""
+	}
+	pkg := vocabulary.PackageRef(authority, name)
+	g, held := reg.PackageByName(pkg)
+	if !held || (g.Source != vocabulary.SourceBuiltin && g.Source != vocabulary.SourcePublished) {
+		return ""
+	}
+	return pkg
+}
+
+// reportOpenShippedWebhooks logs, at each open, every webhook trigger a
+// publisher shipped that is stored open: a binary from before decision 0248
+// let its owner enable it with no key. Nothing turns one off, and the door
+// keeps admitting what it admitted; the next write to it must key it or
+// disable it. A failure to look is logged and never fails the open.
+func (ds *dataset) reportOpenShippedWebhooks(ctx context.Context) error {
+	open, err := ds.openShippedWebhooks(ctx)
+	if err != nil {
+		ds.svc.log.Warn("substrate: could not look for open webhook triggers a package shipped",
+			"repository", logSafeID(ds.Repository().ID), "error", err)
+		return nil
+	}
+	for _, id := range slices.Sorted(maps.Keys(open)) {
+		ds.svc.log.Warn("substrate: a webhook trigger a package shipped is enabled with no key and no signature, so it runs for anyone who reaches the server; set its source.webhook.key or turn it off (decision 0248)",
+			"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(id), "package", logSafeID(open[id]))
+	}
+	return nil
+}
+
+// openShippedWebhooks is every live trigger shippedBy names whose stored
+// record is open, keyed by id, with the package that shipped it.
+func (ds *dataset) openShippedWebhooks(ctx context.Context) (map[string]string, error) {
+	rows, err := ds.db.QueryContext(ctx, `SELECT id, props FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeTrigger)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		var props map[string]any
+		if err := json.Unmarshal(raw, &props); err != nil {
+			continue
+		}
+		if tr, err := parseTrigger(id, props); err == nil && tr.open() {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	out := map[string]string{}
+	for _, id := range ids {
+		pkg, err := shippedBy(ctx, ds.db, ds.registry(), id)
+		if err != nil {
+			return nil, err
+		}
+		if pkg != "" {
+			out[id] = pkg
+		}
+	}
+	return out, nil
 }
 
 // logSafeText is logSafeID for PROSE: an admission error or a quarantine

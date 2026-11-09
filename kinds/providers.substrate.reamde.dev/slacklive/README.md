@@ -105,8 +105,11 @@ does not rotate this one. A target Slack refuses (`channel_not_found`,
    Never write this record without the key: the webhook door checks a key
    only when the trigger declares one, so a keyless enabled trigger takes a
    POST from anyone who can reach the server, and every POST writes Slack
-   rows. For the same reason the bundle ships no trigger at all, not even a
-   disabled one: the console's Resume would enable it without a key.
+   rows. The server refuses to enable a keyless webhook trigger only when a
+   package shipped it
+   ([decision 0248](../../../docs/decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)),
+   and this one is yours, so nothing but this step keeps it keyed. The
+   bundle ships no trigger, so installing it opens nothing.
 4. Start the bridge with
    `SUBSTRATE_WEBHOOK_URL=https://<server>/webhooks/<authority>/slack-live-events/<key>`.
 

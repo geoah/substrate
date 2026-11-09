@@ -1261,6 +1261,19 @@ data:
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
   trigger status` prints the path; the key stays on the record
   ([decision 0045](decisions/0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md)).
+  A webhook trigger a publisher shipped, one a builtin or published
+  package's install or upgrade wrote, is enabled only with a `key` or a
+  `signature`: a write that leaves it enabled with neither is refused,
+  naming the trigger and its package, and so is the console's Resume, a
+  patch of `enabled` alone. Such a package ships its webhook disabled and
+  keyless; the owner sets the key in the write that enables it, or approves
+  the app that sets it up, which writes both at once
+  ([apps](apps.md#ask-for-set-up)). An install of a package that ships one
+  enabled with neither is refused. The owner's own trigger, and one an
+  imported sample shipped, keep the open endpoint. A trigger an older server
+  let its owner enable keyless stays as it was: the server logs it whenever
+  the repository opens, and the next write must key it or turn it off
+  ([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
   `headers` is the list of header names the callable reads, each matched
   case-insensitively by exact name (`^[A-Za-z0-9-]{1,64}$`, at most 32, no
   duplicates): a fire carries those and the ones that describe the body
