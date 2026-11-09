@@ -1,10 +1,12 @@
 package metrics
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -26,8 +28,11 @@ func TestUsageLabelsInClear(t *testing.T) {
 			t.Errorf("Name(%q) = %q", name, got)
 		}
 	}
-	if got := Provider("my-ollama"); got != "my-ollama" {
+	if got := Provider("ada.example.com", "my-ollama"); got != "my-ollama" {
 		t.Errorf("Provider = %q", got)
+	}
+	if got := Model("ada.example.com", "ft:gpt-4o:ada-corp:x", false); got != "ft:gpt-4o:ada-corp:x" {
+		t.Errorf("Model = %q", got)
 	}
 }
 
@@ -67,8 +72,16 @@ func TestUsageLabelsAnonymized(t *testing.T) {
 	if got := Name("ada.example.com", "evilsubstrate.reamde.dev/x/y"); !strings.HasPrefix(got, "ext:") {
 		t.Errorf("lookalike authority = %q, want hashed", got)
 	}
-	if Provider("anthropic") != "anthropic" || !strings.HasPrefix(Provider("my-ollama"), "own:") {
-		t.Errorf("Provider = %q, %q", Provider("anthropic"), Provider("my-ollama"))
+	if Provider("ada.example.com", "anthropic") != "anthropic" || !strings.HasPrefix(Provider("ada.example.com", "my-ollama"), "own:") {
+		t.Errorf("Provider = %q, %q", Provider("ada.example.com", "anthropic"), Provider("ada.example.com", "my-ollama"))
+	}
+	// A model only a public list or an operator names is in clear; an
+	// owner's may carry their organization, a fine-tune's id does.
+	if got := Model("ada.example.com", "claude-opus-5-5", true); got != "claude-opus-5-5" {
+		t.Errorf("public Model = %q", got)
+	}
+	if got := Model("ada.example.com", "ft:gpt-4o:ada-corp:x", false); !strings.HasPrefix(got, "own:") || strings.Contains(got, "ada") {
+		t.Errorf("private Model = %q", got)
 	}
 	// The key is what makes a hash: another key, another label.
 	SetUsageLabels(true, []byte("other"))
@@ -176,5 +189,94 @@ func TestInventoryCollectorSumsLabelsAlike(t *testing.T) {
 		if strings.Contains(labels, "ada.example.com") {
 			t.Errorf("an anonymized series names the repository: %s", labels)
 		}
+	}
+}
+
+// Every repository's inventory is published at once: the registry tells
+// collectors apart by their descriptors, and a second repository must not
+// take the first one's place, nor its close drop the other's.
+func TestInventoryCollectorsOfTwoRepositoriesStandTogether(t *testing.T) {
+	withUsageLabels(t, false, "k")
+	read := func(n int64) func() Inventory {
+		return func() Inventory { return Inventory{Records: map[string]int64{"substrate.reamde.dev/core/contact": n}} }
+	}
+	closeA := RegisterInventory("a.example.com", read(1))
+	closeB := RegisterInventory("b.example.com", read(2))
+	defer closeB()
+	records := gauges(t, "substrate_repository_records")
+	if records["kind=substrate.reamde.dev/core/contact,repository=a.example.com"] != 1 ||
+		records["kind=substrate.reamde.dev/core/contact,repository=b.example.com"] != 2 {
+		t.Fatalf("records = %v, want both repositories", records)
+	}
+	closeA()
+	records = gauges(t, "substrate_repository_records")
+	if _, ok := records["kind=substrate.reamde.dev/core/contact,repository=a.example.com"]; ok {
+		t.Errorf("a closed repository is still published: %v", records)
+	}
+	if records["kind=substrate.reamde.dev/core/contact,repository=b.example.com"] != 2 {
+		t.Errorf("closing one repository dropped the other: %v", records)
+	}
+}
+
+// The spool gauges hold every repository at once too.
+func TestSpoolCollectorsOfTwoRepositoriesStandTogether(t *testing.T) {
+	closeA := RegisterWebhookSpool("spool-a.example.com", func() SpoolStats { return SpoolStats{Entries: 1} })
+	defer closeA()
+	closeB := RegisterWebhookSpool("spool-b.example.com", func() SpoolStats { return SpoolStats{Entries: 2} })
+	defer closeB()
+	entries := gauges(t, "substrate_webhook_spool_entries")
+	if entries["repository=spool-a.example.com"] != 1 || entries["repository=spool-b.example.com"] != 2 {
+		t.Errorf("spool entries = %v, want both repositories", entries)
+	}
+}
+
+// A copy's origin is whatever its apply claimed, so only a shipped sample's
+// id is shown; any other stays behind the package's own label.
+func TestInventoryCollectorHashesAClaimedOrigin(t *testing.T) {
+	withUsageLabels(t, true, "k")
+	unregister := RegisterInventory("claim.example.com", func() Inventory {
+		return Inventory{Packages: []PackageInventory{
+			{Package: "claim.example.com/payroll", Origin: "sample", From: "private.example.com/payroll", Kinds: 1},
+		}}
+	})
+	defer unregister()
+	for labels := range gauges(t, "substrate_repository_package_kinds") {
+		if strings.Contains(labels, "payroll") || strings.Contains(labels, "private.example.com") {
+			t.Errorf("an anonymized series names a claimed origin: %s", labels)
+		}
+	}
+}
+
+// Past its budget a repository's new names share one label, and a deleted
+// repository's series and budget go.
+func TestNameBudgetAndForget(t *testing.T) {
+	withUsageLabels(t, false, "k")
+	const repo = "budget.example.com"
+	for i := range maxNamesPerRepository {
+		if got := Name(repo, fmt.Sprintf("%s/p/k%d", repo, i)); got == overflowLabel {
+			t.Fatalf("name %d overflowed inside the budget", i)
+		}
+	}
+	if got := Name(repo, repo+"/p/one-too-many"); got != overflowLabel {
+		t.Errorf("a name past the budget = %q, want %q", got, overflowLabel)
+	}
+	if got := Name(repo, repo+"/p/k0"); got != repo+"/p/k0" {
+		t.Errorf("a name already admitted = %q", got)
+	}
+	if got := Name(repo, "substrate.reamde.dev/core/contact"); got != "substrate.reamde.dev/core/contact" {
+		t.Errorf("a shipped name past the budget = %q", got)
+	}
+
+	Changes.WithLabelValues(repo, repo+"/p/k0", "put", "api").Inc()
+	AuthEvents.WithLabelValues(repo, "repository_deleted").Inc()
+	ForgetRepository(repo)
+	if n := Changes.DeletePartialMatch(prometheus.Labels{"repository": repo}); n != 0 {
+		t.Errorf("%d changes series outlived ForgetRepository", n)
+	}
+	if !AuthEvents.DeleteLabelValues(repo, "repository_deleted") {
+		t.Error("ForgetRepository dropped the deletion event it should keep")
+	}
+	if got := Name(repo, repo+"/p/one-too-many"); got == overflowLabel {
+		t.Error("the budget outlived ForgetRepository")
 	}
 }

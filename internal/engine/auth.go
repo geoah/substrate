@@ -704,7 +704,7 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	s.lease.release(repo.ID)
 	s.unitGraphs.forget(repo.ID)
 	s.log.Info("substrate: repository deleted by its owner", "repository", repo.ID)
-	countAuth(repo.ID, "repository_deleted")
+	forgetUsage(repo.ID)
 	return nil
 }
 

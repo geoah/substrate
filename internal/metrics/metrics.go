@@ -95,22 +95,29 @@ type SpoolStats struct {
 	Oldest  time.Time
 }
 
-var (
-	spoolLabels      = []string{"repository"}
-	spoolEntriesDesc = prometheus.NewDesc("substrate_webhook_spool_entries", "Webhook requests answered and not yet recorded in the changelog.", spoolLabels, nil)
-	spoolBytesDesc   = prometheus.NewDesc("substrate_webhook_spool_bytes", "Bytes the webhook spool holds on disk.", spoolLabels, nil)
-	spoolOldestDesc  = prometheus.NewDesc("substrate_webhook_spool_oldest_age_seconds", "Age of the oldest spooled webhook request, 0 when the spool is empty.", spoolLabels, nil)
-)
-
+// spoolCollector publishes one repository's spool. Its descriptors carry
+// the repository as a constant label, as the inventory collector's do: alike
+// descriptors would make every repository's collector one collector to the
+// registry, each registration taking the previous one's place.
 type spoolCollector struct {
-	repository string
-	stat       func() SpoolStats
+	stat                  func() SpoolStats
+	entries, bytes, older *prometheus.Desc
+}
+
+func newSpoolCollector(repository string, stat func() SpoolStats) *spoolCollector {
+	repo := prometheus.Labels{"repository": repository}
+	return &spoolCollector{
+		stat:    stat,
+		entries: prometheus.NewDesc("substrate_webhook_spool_entries", "Webhook requests answered and not yet recorded in the changelog.", nil, repo),
+		bytes:   prometheus.NewDesc("substrate_webhook_spool_bytes", "Bytes the webhook spool holds on disk.", nil, repo),
+		older:   prometheus.NewDesc("substrate_webhook_spool_oldest_age_seconds", "Age of the oldest spooled webhook request, 0 when the spool is empty.", nil, repo),
+	}
 }
 
 func (c *spoolCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- spoolEntriesDesc
-	ch <- spoolBytesDesc
-	ch <- spoolOldestDesc
+	ch <- c.entries
+	ch <- c.bytes
+	ch <- c.older
 }
 
 func (c *spoolCollector) Collect(ch chan<- prometheus.Metric) {
@@ -119,9 +126,9 @@ func (c *spoolCollector) Collect(ch chan<- prometheus.Metric) {
 	if !s.Oldest.IsZero() {
 		age = max(time.Since(s.Oldest).Seconds(), 0)
 	}
-	ch <- prometheus.MustNewConstMetric(spoolEntriesDesc, prometheus.GaugeValue, float64(s.Entries), c.repository)
-	ch <- prometheus.MustNewConstMetric(spoolBytesDesc, prometheus.GaugeValue, float64(s.Bytes), c.repository)
-	ch <- prometheus.MustNewConstMetric(spoolOldestDesc, prometheus.GaugeValue, age, c.repository)
+	ch <- prometheus.MustNewConstMetric(c.entries, prometheus.GaugeValue, float64(s.Entries))
+	ch <- prometheus.MustNewConstMetric(c.bytes, prometheus.GaugeValue, float64(s.Bytes))
+	ch <- prometheus.MustNewConstMetric(c.older, prometheus.GaugeValue, age)
 }
 
 // RegisterWebhookSpool publishes stat as the substrate_webhook_spool_*
@@ -129,7 +136,7 @@ func (c *spoolCollector) Collect(ch chan<- prometheus.Metric) {
 // repository reopened under the same name, and returns the matching
 // unregister.
 func RegisterWebhookSpool(name string, stat func() SpoolStats) (unregister func()) {
-	return register("webhookspool:"+name, &spoolCollector{repository: name, stat: stat})
+	return register("webhookspool:"+name, newSpoolCollector(name, stat))
 }
 
 // RegisterDBStats publishes a pool's sql.DBStats as the standard go_sql_*

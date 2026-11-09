@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -65,20 +66,27 @@ func Repository(id string) string {
 
 // Name is the label for a kind reference, a package, or a function's or
 // agent's identity (`<authority>/<package>[/<name>]`) as repository uses it.
-// Anonymized, a name the substrate ships stays in clear; one under the
+// A name the substrate ships is always in clear. Anonymized, one under the
 // repository's own authority becomes `own:` and the hash of what follows
 // the authority, so one sample imported by two repositories reads as one
-// name; any other authority's becomes `ext:` and the hash of the whole.
+// name, and any other authority's becomes `ext:` and the hash of the whole.
+// Past the repository's name budget every new name is `overflow`.
 func Name(repository, name string) string {
-	p := usage.Load()
-	if !p.anonymize || name == "" {
+	if name == "" {
 		return name
 	}
 	authority, rest, _ := strings.Cut(name, "/")
 	if shipped(authority) {
 		return name
 	}
-	if authority == repository {
+	if !admitName(repository, name) {
+		return overflowLabel
+	}
+	p := usage.Load()
+	switch {
+	case !p.anonymize:
+		return name
+	case authority == repository:
 		return "own:" + p.hash(rest)
 	}
 	return "ext:" + p.hash(name)
@@ -94,13 +102,88 @@ func shipped(authority string) bool {
 // row is one its owner named.
 var shippedProviders = map[string]bool{"openai": true, "anthropic": true, "gemini": true}
 
-// Provider is the label for an llm/provider row id.
-func Provider(id string) string {
-	p := usage.Load()
-	if !p.anonymize || shippedProviders[id] {
+// Provider is the label for an llm/provider row id of repository.
+func Provider(repository, id string) string {
+	if shippedProviders[id] {
 		return id
 	}
-	return "own:" + p.hash(id)
+	if !admitName(repository, "provider:"+id) {
+		return overflowLabel
+	}
+	if p := usage.Load(); p.anonymize {
+		return "own:" + p.hash(id)
+	}
+	return id
+}
+
+// Model is the label for a model id of repository. A public model, one the
+// shipped llm/model records name or an operator entry serves, is in clear;
+// any other may carry its owner's organization or project, a fine-tune's id
+// does, and is hashed like an owner's name.
+func Model(repository, model string, public bool) string {
+	if public || model == "" {
+		return model
+	}
+	if !admitName(repository, "model:"+model) {
+		return overflowLabel
+	}
+	if p := usage.Load(); p.anonymize {
+		return "own:" + p.hash(model)
+	}
+	return model
+}
+
+// maxNamesPerRepository bounds the distinct names a repository's owner can
+// put on the usage series. Every one is a series held for the life of the
+// process, and a declaration is cheap, so without a bound one repository
+// could grow the process and the Prometheus behind it without end. A real
+// repository holds tens; the bound is far above that.
+const maxNamesPerRepository = 1000
+
+// overflowLabel stands for every name past a repository's budget.
+const overflowLabel = "overflow"
+
+// names is every owner-controlled name each repository has put on a series.
+var names = struct {
+	sync.Mutex
+	seen map[string]map[string]struct{}
+}{seen: map[string]map[string]struct{}{}}
+
+// admitName reports whether name may label repository's series: one it has
+// used before, or a new one within its budget.
+func admitName(repository, name string) bool {
+	names.Lock()
+	defer names.Unlock()
+	set := names.seen[repository]
+	if _, ok := set[name]; ok {
+		return true
+	}
+	if len(set) >= maxNamesPerRepository {
+		return false
+	}
+	if set == nil {
+		set = map[string]struct{}{}
+		names.seen[repository] = set
+	}
+	set[name] = struct{}{}
+	return true
+}
+
+// ForgetRepository drops the usage series of the repository named id and
+// its name budget: a deleted repository's series would otherwise be held,
+// and scraped, for the life of the process. The account events stay, a few
+// series at most, so a deletion is still there to count; the duration
+// histogram carries no repository and keeps its series.
+func ForgetRepository(id string) {
+	match := prometheus.Labels{"repository": Repository(id)}
+	for _, v := range []interface{ DeletePartialMatch(prometheus.Labels) int }{
+		Changes, FunctionInvocations, AgentRuns, LLMTokens, LLMCost, MCPToolCalls,
+	} {
+		v.DeletePartialMatch(match)
+	}
+	names.Lock()
+	delete(names.seen, id)
+	names.Unlock()
 }
 
 // ActorClass folds an actor into the hand it writes under, so the changes
@@ -219,22 +302,32 @@ type PackageInventory struct {
 	Kinds int64
 }
 
-var (
-	inventoryLabels   = []string{"repository"}
-	inventoryRecords  = prometheus.NewDesc("substrate_repository_records", "Live records by repository and kind.", []string{"repository", "kind"}, nil)
-	inventoryPackages = prometheus.NewDesc("substrate_repository_package_kinds", "Kinds each declared package holds, by repository, package and origin.", []string{"repository", "package", "origin"}, nil)
-	inventorySince    = prometheus.NewDesc("substrate_repository_first_change_timestamp_seconds", "When the repository's first change was written.", inventoryLabels, nil)
-)
-
+// inventoryCollector publishes one repository's Inventory. Its descriptors
+// carry the repository as a constant label: the registry tells collectors
+// apart by their descriptors, and two repositories' collectors with alike
+// descriptors would be one collector to it, the second registration taking
+// the first one's place.
 type inventoryCollector struct {
-	repository string
-	read       func() Inventory
+	repository        string
+	read              func() Inventory
+	records, packages *prometheus.Desc
+	since             *prometheus.Desc
+}
+
+func newInventoryCollector(repository string, read func() Inventory) *inventoryCollector {
+	repo := prometheus.Labels{"repository": Repository(repository)}
+	return &inventoryCollector{
+		repository: repository, read: read,
+		records:  prometheus.NewDesc("substrate_repository_records", "Live records by repository and kind.", []string{"kind"}, repo),
+		packages: prometheus.NewDesc("substrate_repository_package_kinds", "Kinds each declared package holds, by repository, package and origin.", []string{"package", "origin"}, repo),
+		since:    prometheus.NewDesc("substrate_repository_first_change_timestamp_seconds", "When the repository's first change was written.", nil, repo),
+	}
 }
 
 func (c *inventoryCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- inventoryRecords
-	ch <- inventoryPackages
-	ch <- inventorySince
+	ch <- c.records
+	ch <- c.packages
+	ch <- c.since
 }
 
 // Collect sums what labels alike before it emits: an anonymized label may
@@ -242,32 +335,30 @@ func (c *inventoryCollector) Describe(ch chan<- *prometheus.Desc) {
 // one label set twice.
 func (c *inventoryCollector) Collect(ch chan<- prometheus.Metric) {
 	inv := c.read()
-	repo := Repository(c.repository)
 	records := map[string]int64{}
 	for kind, n := range inv.Records {
 		records[Name(c.repository, kind)] += n
 	}
 	for kind, n := range records {
-		ch <- prometheus.MustNewConstMetric(inventoryRecords, prometheus.GaugeValue, float64(n), repo, kind)
+		ch <- prometheus.MustNewConstMetric(c.records, prometheus.GaugeValue, float64(n), kind)
 	}
 	type pkgKey struct{ pkg, origin string }
 	packages := map[pkgKey]int64{}
 	for _, p := range inv.Packages {
-		name := p.Package
-		if p.Origin == "sample" && p.From != "" {
+		name := Name(c.repository, p.Package)
+		if authority, _, _ := strings.Cut(p.From, "/"); p.Origin == "sample" && shipped(authority) {
 			// The shipped spelling says which sample it is, and it is
 			// public, so it reads the same whether or not names are hashed.
+			// An origin anyone could claim is not, and stays the package's.
 			name = p.From
-		} else {
-			name = Name(c.repository, name)
 		}
 		packages[pkgKey{name, p.Origin}] += p.Kinds
 	}
 	for k, n := range packages {
-		ch <- prometheus.MustNewConstMetric(inventoryPackages, prometheus.GaugeValue, float64(n), repo, k.pkg, k.origin)
+		ch <- prometheus.MustNewConstMetric(c.packages, prometheus.GaugeValue, float64(n), k.pkg, k.origin)
 	}
 	if !inv.Since.IsZero() {
-		ch <- prometheus.MustNewConstMetric(inventorySince, prometheus.GaugeValue, float64(inv.Since.Unix()), repo)
+		ch <- prometheus.MustNewConstMetric(c.since, prometheus.GaugeValue, float64(inv.Since.Unix()))
 	}
 }
 
@@ -276,5 +367,5 @@ func (c *inventoryCollector) Collect(ch chan<- prometheus.Metric) {
 // reopened under the same name, and returns the matching unregister. read
 // runs on every scrape, so it answers from what it already holds.
 func RegisterInventory(repository string, read func() Inventory) (unregister func()) {
-	return register("inventory:"+repository, &inventoryCollector{repository: repository, read: read})
+	return register("inventory:"+repository, newInventoryCollector(repository, read))
 }

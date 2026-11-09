@@ -57,6 +57,13 @@ func countAuth(id, event string) {
 	metrics.AuthEvents.WithLabelValues(metrics.Repository(id), event).Inc()
 }
 
+// forgetUsage counts a repository's deletion and drops the rest of its usage
+// series.
+func forgetUsage(id string) {
+	countAuth(id, "repository_deleted")
+	metrics.ForgetRepository(id)
+}
+
 // repositoryExists reports whether a repository is named id. Every path
 // asks it after the factors were judged, existing name or not, so it adds
 // the same round trip to both and the timing still tells nothing.
@@ -102,13 +109,16 @@ func (l *agentLoop) countRun(res *substrate.AgentResult, err error) {
 // countUsage records one completion's tokens and its priced cost.
 func (l *agentLoop) countUsage(u *llm.Usage, cost float64) {
 	id := l.ds.Repository().ID
-	repo, agent, provider := metrics.Repository(id), metrics.Name(id, l.ag.Identity()), metrics.Provider(l.provider.id)
+	repo, agent, provider := metrics.Repository(id), metrics.Name(id, l.ag.Identity()), metrics.Provider(id, l.provider.id)
+	// An operator entry's models are the operator's choice, and the shipped
+	// records' are public: either is in clear.
+	model := metrics.Model(id, l.model, l.provider.operator != nil || l.ds.svc.shippedModels[l.model])
 	for typ, n := range map[string]int{
 		"prompt": u.PromptTokens, "completion": u.CompletionTokens,
 		"cache_read": u.CacheReadTokens, "cache_write": u.CacheWriteTokens,
 	} {
 		if n > 0 {
-			metrics.LLMTokens.WithLabelValues(repo, agent, provider, l.model, typ).Add(float64(n))
+			metrics.LLMTokens.WithLabelValues(repo, agent, provider, model, typ).Add(float64(n))
 		}
 	}
 	payer := "owner"
@@ -116,7 +126,7 @@ func (l *agentLoop) countUsage(u *llm.Usage, cost float64) {
 		payer = "operator"
 	}
 	if cost > 0 {
-		metrics.LLMCost.WithLabelValues(repo, agent, provider, l.model, payer).Add(cost)
+		metrics.LLMCost.WithLabelValues(repo, agent, provider, model, payer).Add(cost)
 	}
 }
 
@@ -203,18 +213,34 @@ func (ds *dataset) readInventory(ctx context.Context) (metrics.Inventory, error)
 // samplesAuthority publishes the sample packages (samples/samples.go).
 const samplesAuthority = "samples." + vocabulary.AuthorityPublisher
 
-// packageOrigin names where a package came from, and the shipped package a
-// sample was copied from: the seed (builtin), an install of a published
-// package, a sample (imported and rehomed, naming its origin, or installed
-// under the shipped spelling) or its owner's own.
+// packageOrigin names where a package came from, and the shipped sample it
+// was copied from: the seed (builtin), an install of a published package, a
+// sample (imported and rehomed, its origin a shipped sample's id, or
+// installed under the shipped spelling) or its owner's own. A hand apply may
+// claim any origin (vocabularywrite.go claimedOrigin), so one outside the
+// samples is the owner's own copy and its origin names nothing public.
 func packageOrigin(pkg, source, from string) (origin, shipped string) {
 	switch {
 	case source == "builtin" || source == "published":
 		return source, ""
-	case from != "":
+	case strings.HasPrefix(from, samplesAuthority+"/"):
 		return "sample", from
 	case strings.HasPrefix(pkg, samplesAuthority+"/"):
 		return "sample", pkg
 	}
 	return "own", ""
+}
+
+// shippedModelIDs is the set of model ids the shipped llm/model records name.
+func shippedModelIDs(records []vocabulary.ShippedRecord) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range records {
+		if r.Kind != vocabulary.PackageLLM+"/model" {
+			continue
+		}
+		if m, ok := r.Properties["model"].(string); ok && m != "" {
+			out[m] = true
+		}
+	}
+	return out
 }
