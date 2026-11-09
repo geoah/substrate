@@ -883,7 +883,8 @@ plan's contract: the contract does not care what language a bridge is written
 in. It needs an always-on Mac with a logged-in session and Messages open, and
 the Accessibility, Contacts, Full Disk Access and Automation grants. Until
 then, Beeper Desktop on the Mac runs the same engine and the Beeper provider
-reads it. Nothing works on iOS.
+reads it. Nothing works on iOS. The libraries that reimplement Apple's
+protocol without a Mac (pypush, rustpush) are SSPL-licensed and are not used.
 
 On Android, an app can read and send SMS and MMS through the telephony
 provider, but no third-party app can read RCS; RCS comes through Google
@@ -900,7 +901,11 @@ Snapchat come through Beeper and the Beeper provider.
 ### LINE, Google Chat, Teams and the rest
 
 LINE has an MIT bridgev2 connector from Beeper (`beeper/line`), so it can
-join the bridge in phase 3, with the account risk the terms imply. Google
+join the bridge in phase 3, with the account risk the terms imply and one
+more question first: it bundles a transpiled copy of LINE's own encryption
+module, whose redistribution in a public repository is not settled. Matrix
+itself needs no bridge at all: mautrix-go's client (MPL-2.0) reads and
+writes it as the owner. Google
 Chat on a Workspace account and Teams on a work account have official APIs
 that act as the user (the Chat API, Microsoft Graph with delegated
 permissions); each is a plain provider of its own if wanted. KakaoTalk,
@@ -914,6 +919,10 @@ has the details per network.
 **Writes, now.** `editmessage`, `deletemessage`, `addreaction`,
 `removereaction`, `markread` and `markunread`, each a callable like
 `sendmessage` (0125), reaching the same private origin with the same token.
+The research disagrees on which of these routes Beeper serves (report 01
+read them in the SDK and changelog, report 05 in the published OpenAPI
+description, which lags the SDK), so each is checked against the SDK before
+it ships, and one Beeper does not serve is left out.
 None carries `offer:`: an agent offered them would send as the owner unasked,
 which is the problem [section 1](#1-the-problem) names. The owner's console
 and direct calls reach them; the agent path is the bridge's `chataction`.
