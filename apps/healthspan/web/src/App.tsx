@@ -13,24 +13,63 @@ import {
   FlaskConical,
   Settings,
 } from "lucide-react"
-import { useEffect, type ReactNode } from "react"
+import { Suspense, lazy, useEffect, type ReactNode } from "react"
 import { useBackend } from "./data"
 import { go, sectionOf, useRoute, type Route, type Section } from "./route"
-import { GettingStartedScreen } from "./screens/GettingStartedScreen"
-import { HealthspanMetricScreen } from "./screens/HealthspanMetricScreen"
-import { HealthspanScreen } from "./screens/HealthspanScreen"
-import { HowScreen } from "./screens/HowScreen"
-import { ImportScreen } from "./screens/ImportScreen"
-import { LabScreen } from "./screens/LabScreen"
-import { LabsScreen } from "./screens/LabsScreen"
-import { RecordScreen } from "./screens/RecordScreen"
-import { ReportScreen } from "./screens/ReportScreen"
-import { ReportsScreen } from "./screens/ReportsScreen"
-import { SettingsScreen } from "./screens/SettingsScreen"
-import { SourceScreen } from "./screens/SourceScreen"
-import { SourcesScreen } from "./screens/SourcesScreen"
-import { TodayScreen } from "./screens/TodayScreen"
 import { ShellContext } from "./ui/shell"
+
+// Each screen loads on its first visit, so the first paint carries the
+// shell and the screen it opens on, not every chart and the import.
+const GettingStartedScreen = lazy(() =>
+  import("./screens/GettingStartedScreen").then((m) => ({
+    default: m.GettingStartedScreen,
+  }))
+)
+const HealthspanScreen = lazy(() =>
+  import("./screens/HealthspanScreen").then((m) => ({
+    default: m.HealthspanScreen,
+  }))
+)
+const HealthspanMetricScreen = lazy(() =>
+  import("./screens/HealthspanMetricScreen").then((m) => ({
+    default: m.HealthspanMetricScreen,
+  }))
+)
+const HowScreen = lazy(() =>
+  import("./screens/HowScreen").then((m) => ({ default: m.HowScreen }))
+)
+const ImportScreen = lazy(() =>
+  import("./screens/ImportScreen").then((m) => ({ default: m.ImportScreen }))
+)
+const LabScreen = lazy(() =>
+  import("./screens/LabScreen").then((m) => ({ default: m.LabScreen }))
+)
+const LabsScreen = lazy(() =>
+  import("./screens/LabsScreen").then((m) => ({ default: m.LabsScreen }))
+)
+const RecordScreen = lazy(() =>
+  import("./screens/RecordScreen").then((m) => ({ default: m.RecordScreen }))
+)
+const ReportScreen = lazy(() =>
+  import("./screens/ReportScreen").then((m) => ({ default: m.ReportScreen }))
+)
+const ReportsScreen = lazy(() =>
+  import("./screens/ReportsScreen").then((m) => ({ default: m.ReportsScreen }))
+)
+const SettingsScreen = lazy(() =>
+  import("./screens/SettingsScreen").then((m) => ({
+    default: m.SettingsScreen,
+  }))
+)
+const SourceScreen = lazy(() =>
+  import("./screens/SourceScreen").then((m) => ({ default: m.SourceScreen }))
+)
+const SourcesScreen = lazy(() =>
+  import("./screens/SourcesScreen").then((m) => ({ default: m.SourcesScreen }))
+)
+const TodayScreen = lazy(() =>
+  import("./screens/TodayScreen").then((m) => ({ default: m.TodayScreen }))
+)
 
 interface Item {
   section: Section
@@ -111,7 +150,17 @@ export function App() {
     )
   }
 
-  const screen = <ScreenFor route={route} />
+  const screen = (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-24 text-secondary">
+          <Spinner />
+        </div>
+      }
+    >
+      <ScreenFor route={route} />
+    </Suspense>
+  )
   if (route.screen === "start") {
     return (
       <ShellContext.Provider value={{ wide: false }}>
