@@ -62,7 +62,7 @@ that model promises, and four assumptions built into it.
    cheap only before 1.0 (F12, F14).
 
 [The proposal at a glance](#the-proposal-at-a-glance) lists every decision
-as a problem, a proposal and a reason, with six questions still open.
+as a problem, a proposal and a reason.
 
 ## What the product has to support
 
@@ -89,19 +89,7 @@ this proposal.
 ## The proposal at a glance
 
 Each row is a decision: the problem, what is proposed, and why. **agreed**
-means the owner has agreed; **proposed** awaits approval; **open** is one
-of the questions below.
-
-### Open questions
-
-| | Question | Recommendation |
-| --- | --- | --- |
-| Q1 | Does 1.0 itself ship sign-in by person, with one member, or does that come just after? | Ship the shape in 1.0. Sign-in is what apps in stores freeze |
-| Q2 | How long is history kept by default? | Everything for kinds a person writes; 30 days for mirrors of outside services; 7 days for bookkeeping |
-| Q3 | If Postgres is lost, how much confirmed work may be lost with it, and do writes stop when the copy falls further behind than that? | Aim for under a minute; keep serving and raise an alarm |
-| Q4 | Keep the recovery key, or remove it? | Remove it |
-| Q5 | Is a server shared by people who do not know its operator supported in 1.x? | No. One household or one trusted group per server |
-| Q6 | What size must one repository reach in 1.x? | Validate at 5 million records, 50 GB kept, 100 people connected |
+means the owner has agreed; **proposed** awaits approval.
 
 ### What 1.0 promises
 
@@ -117,12 +105,12 @@ of the questions below.
 | | Problem | Proposal | Why | Status |
 | --- | --- | --- | --- | --- |
 | 5 | Complete history is the source of truth, so it only grows, cannot be erased, and every release must replay all of it | A log that can be compacted: the latest state of every record is always kept; older entries per retention | what etcd does under Kubernetes; it resolves four findings at once | agreed |
-| 6 | Nothing says how long history is kept | A `retention` setting on each kind, which a repository can override | a journal and a mirror of someone's inbox need different answers | proposed; defaults are Q2 |
+| 6 | Nothing says how long history is kept | A `retention` setting on each kind, which a repository can override. By default: everything for kinds a person writes, 30 days for mirrors of outside services, 7 days for bookkeeping | a journal and a mirror of someone's inbox need different answers | agreed |
 | 7 | Deleting leaves the values in history | A permanent delete compacts that record at once; "forget history" does the same for a live record | erasure becomes an ordinary operation | proposed |
 | 8 | Every run of a trigger is kept forever | Short retention for bookkeeping | probably most of the bytes; nobody reads them later | proposed |
 | 9 | A client may ask for history that is gone | The existing `compacted` answer, tested in every first-party app | the API already has it | proposed |
 | 10 | One rule asks history "did a person ever edit this?" | Read the mark already kept on each property | it must not depend on history that may be gone | proposed |
-| 11 | Every write waits for a second copy on disk | Postgres alone confirms a write; a background archiver copies the compacted log, files and secrets to a directory or S3 | there is no complete history left to protect, and the failure states go | agreed; the limits are Q3 |
+| 11 | Every write waits for a second copy on disk | Postgres alone confirms a write; a background archiver copies the compacted log, files and secrets to a directory or S3. If the copy falls behind, the server keeps serving and reports the delay | there is no complete history left to protect, and the failure states go | agreed |
 | 12 | History cannot be shown to be unaltered | Not in 1.x. If ever needed: a signed tree over current records, not a chain over history | a chain and compaction do not mix | proposed |
 | 13 | The stored format is the way out and the upgrade path, and nothing pins it | Document it; keep a directory from each release and import it under current code; refuse fields it does not know | otherwise the first failure is found by someone restoring a backup | proposed |
 
@@ -145,7 +133,7 @@ of the questions below.
 | --- | --- | --- | --- | --- |
 | 22 | A repository is its one person | A person's identity, a repository, and a membership joining them. Today's case is one member | several people is a requirement | proposed |
 | 23 | Where a person's identity lives | In a store on the server, outside any repository | hundreds of members should not each need a repository | proposed |
-| 24 | Sign-in names a repository, not a person | Sign-in names a person, who then picks a repository | apps in stores freeze the sign-in request | open: Q1 |
+| 24 | Sign-in names a repository, not a person | Sign-in names a person, who then picks a repository. 1.0 ships it, with one member | apps in stores freeze the sign-in request | agreed |
 | 25 | A person can only have full access | Owner, or a list of read and write grants over kinds, packages or traits, with Editor and Viewer as presets | the form apps already use | proposed |
 | 26 | Private data inside a shared repository | None. A repository is the unit of privacy | avoids a list of people on every record | proposed |
 | 27 | History cannot say who made a change | The person is recorded on each history line and each change event | a token can be deleted; a person's id cannot | proposed |
@@ -189,8 +177,9 @@ of the questions below.
 | 50 | The assistant, console layouts, model lists and vendor mappings ship inside the core | Name them as outside the promise | they are product content and will change | proposed |
 | 51 | Going back to an older server after an upgrade | Not supported; the way back is a copy taken before | every release would have to be reversible | proposed |
 | 52 | Offline use | The apps' queue of pending writes is the answer; separate histories are never merged | one order per repository is what everything rests on | proposed |
-| 53 | The recovery key cannot be replaced once lost or leaked | Remove it | what it protects can be obtained again | open: Q4 |
-| 54 | A server shared by strangers | Not supported in 1.x | it changes the sandbox, naming and start-up rules | open: Q5 |
+| 53 | The recovery key cannot be replaced once lost or leaked | Remove it. Moving to another host means reconnecting accounts and entering API keys again | what it protects can be obtained again | agreed |
+| 54 | Who may share a server | One household or one trusted group. A server for people who do not know its operator is not supported in 1.x | it would change the sandbox, naming and start-up rules | agreed |
+| 55 | How large one repository must be able to get | Validate at 100 GB in one repository | the limits should be numbers | agreed |
 
 ## How to read this page
 
@@ -270,7 +259,7 @@ What people will come to depend on, and what each is proposed to be at
 | Reading and writing records over HTTP, and the error format | every client | served; not on the feature list | **stable**, listed |
 | The change feed and watch | apps, console, triggers | labelled `stable` | stable, after F12 |
 | Search; aggregates and units | console, apps | `beta`; `alpha` | as labelled |
-| Signing in | every client, apps in stores included | outside `/api/v1`, not listed | stable in its new shape (F3, Q1) |
+| Signing in | every client, apps in stores included | outside `/api/v1`, not listed | stable in its new shape (F3) |
 | App authorization (`/oauth/*`, scopes) | third-party apps | `alpha` | beta |
 | Webhook URLs | outside services | not listed | stable, addressed by repository id (F2) |
 | The declaration dialect | package authors, every stored repository | closed | stable, with the additions in F2, F4, F6 and F11 |
@@ -640,9 +629,8 @@ person's identity, a repository, and a membership that joins them. Today's
 design is its special case, one person and one repository. For 1.0:
 
 1. **Sign-in names a person.** The person then picks a repository they are
-   a member of. Whether 1.0 ships this shape with one member, or labels
-   sign-in beta and ships it just after, is Q1; the recommendation is to
-   ship it.
+   a member of. 1.0 ships this shape, with one member per repository;
+   inviting a second can follow.
 2. **The person is recorded** on each history line and each change event,
    left out when the repository has one member.
 3. **The stored value `owner` becomes `person`**, in the record of who
@@ -857,9 +845,9 @@ How it works:
 
 1. **Retention.** A kind declares how long entries about its records are
    kept: everything, a length of time, or nothing. A repository can
-   override it. Proposed defaults (Q2): everything for kinds a person
-   writes, 30 days for mirrors of outside services, 7 days for bookkeeping
-   such as run records.
+   override it. The defaults: everything for kinds a person writes, 30 days
+   for mirrors of outside services, 7 days for bookkeeping such as run
+   records.
 2. **Compaction.** A background pass replaces a record's entries that are
    past their retention with one **state entry**: the record's whole state
    as of the newest entry it replaces. Sequence numbers are kept, so older
@@ -913,15 +901,24 @@ its own key and destroying the key is the only approach that does. It was
 considered and left out: every value would be encrypted at rest, and search
 still needs the plain text.
 
-**Keys.** The recovery key is written once, at registration
-(`internal/engine/auth.go:455`). The key that encrypts secrets is created
-once and never replaced (`internal/engine/engine.go:1638`). A lost
-recovery key cannot be replaced. A leaked one opens every copy ever taken:
-enrolling a new one would not help, because the old copy of the key stays
-readable and opens the same secrets (`internal/engine/rewrap.go:3-10`).
-The recommendation is to remove the recovery key (Q4, and
-[What could be cut](#what-could-be-cut)). If it stays, it needs both a way
-to enrol a new one and a way to replace the encryption key.
+**Keys: the recovery key is removed.** The key that encrypts a
+repository's secrets is stored twice today: once locked with the host key,
+which the running server uses, and once locked with a recovery key that
+only the person holds (`internal/engine/dek.go:3-13`). The second copy is
+used in one situation, offline: bringing a repository to a host that does
+not have the original host key (`internal/engine/rewrap.go:42-52`). It is
+not needed to use secrets, and it does not reset a forgotten password.
+
+It is written once, at registration (`internal/engine/auth.go:455`), and
+cannot be replaced if lost. If it leaks, it opens the secrets in every copy
+of the data ever taken, because the key that encrypts secrets is created
+once and never replaced (`internal/engine/engine.go:1638`).
+
+Without it, moving to another host means reconnecting accounts and entering
+API keys again. The import has to accept a repository whose secrets it
+cannot open, which it refuses today
+(`internal/engine/repodir.go:926-930`). The host key stays the operator's
+to back up.
 
 **Why.** It keeps the order and the single write path, which are the
 valuable parts and are built and tested. It turns "how much history" from a
@@ -930,8 +927,8 @@ growth, rename (F2) and format changes (F8) each need. Keeping no history
 at all, with only a sequence number on each record, was considered: it is
 the simplest to explain, and it is a new write path and gives up repair.
 
-**To measure first:** bytes of history by kind on the largest repository.
-It decides the default retentions.
+**To measure first:** bytes of history by kind on the largest repository,
+to check the default retentions against real data.
 
 ### F7. History cannot be shown to be unaltered
 
@@ -965,7 +962,8 @@ trust the host".
 | Is this record, received from another server, what its owner wrote? | sharing across servers | a direct, encrypted connection to that server is enough |
 
 **Proposal.** Not in 1.x. Only the first question lacks a cheaper answer,
-and it matters once strangers are hosted, which 1.x does not plan (Q5).
+and it matters once strangers are hosted, which 1.x does not support
+(F13).
 
 If it is ever needed, the right form is a signed tree over the *current*
 records, which is what AT Protocol does: each repository is a tree of its
@@ -1101,10 +1099,14 @@ replaces older pieces after each compaction.
   file.
 - **The archive is on by default.** An operator who backs up Postgres may
   turn it off.
-- **What is at risk.** If Postgres is lost, what had not been archived is
-  lost with it. The target and what happens when it is missed are Q3: the
-  recommendation is under a minute, and to keep serving and raise an alarm
-  instead of refusing writes.
+- **What is at risk.** If Postgres's storage is lost, what was confirmed
+  and not yet archived is missing when the repository is rebuilt from the
+  copy. A crash or a restart of Postgres loses nothing. Zero loss is
+  available from Postgres itself, with a synchronous replica.
+- **When the copy falls behind**, the server keeps serving and reports the
+  delay. How far behind it may fall, and whether the server should ever
+  stop, is not a decision for 1.0. It is to be reviewed once the archiver
+  is running ([#1314](https://github.com/geoah/substrate/issues/1314)).
 - **What it must have before it replaces today's design:** a durable mark
   of the last position archived; files and secrets written before the
   piece of history that names them; the delay measured and reported.
@@ -1197,14 +1199,13 @@ from a failed row.
    permanent one is set aside at once, as today.
 6. **Missed schedules.** Each trigger says what to do with runs it missed:
    all of them, or only the latest. The default becomes the latest.
-7. **The sandbox.** The server refuses to start in "best effort" mode where
-   more than one person can register.
+7. **The sandbox default stays.** A server is for one household or one
+   trusted group (F13), so code its members write is trusted as they are.
 8. **Code from outside publishers is experimental at 1.0.**
 
-**Why.** Package authors need something fixed to write against, and three
-of today's behaviours (the eighth-of-a-second retry, replaying every missed
-run, running unconfined) are surprising enough that freezing them would be
-a mistake.
+**Why.** Package authors need something fixed to write against, and two of
+today's behaviours (the eighth-of-a-second retry, and replaying every
+missed run) are surprising enough that freezing them would be a mistake.
 
 ### F11. A package cannot say which server it needs
 
@@ -1272,6 +1273,10 @@ What a client may conclude today:
 
 ### F13. Operating limits
 
+- **Who shares a server.** One household or one trusted group. A server
+  for people who do not know its operator is not supported in 1.x: the
+  sandbox default, the naming rules and start-up all assume the people on
+  a server trust each other and its operator. The guide should say so.
 - **One server process per database.** A second one is refused
   ([0083](../decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)),
   and the guide says to keep to one (`docs/operations.md:1100-1103`). So
@@ -1668,14 +1673,15 @@ Two alpha subsystems, measured values and agents, are 30% of the engine
    216 units and 149 conversions (`AGENTS.md`). Not a deletion: make it
    cost nothing where unused, and keep it alpha.
 4. **The renaming of copied samples** (F2).
-5. **The recovery key** (Q4). Records are stored unencrypted: "the
+5. **The recovery key** (F6). Records are stored unencrypted: "the
    changelog carries every record in the clear"
    (`internal/changelogfile/fsutil.go:8-12`). The encrypted side store
    holds connected-account tokens and package secrets, and with F3 no
    longer the password. Each can be obtained again by reconnecting the
-   account. What the recovery key adds is moving hosts without doing that.
-   Its costs are a step at registration, a key that cannot be replaced, and
-   with several owners, a key each.
+   account or entering the key. What the recovery key adds is moving hosts
+   without doing that. Its costs are a step at registration, a key that
+   cannot be replaced, and with several owners, a key each. It goes, and
+   the offline tool that uses it goes with it.
 
 ## Work and validation
 
@@ -1686,6 +1692,7 @@ The work the proposal implies, by area. A plan would order it.
 | Promises | The stability policy; labels on packages; route groups with revisions; records, errors and sign-in listed; the guide and console held to the code's error codes; every `proposed` record resolved; the operations guide's list of absences rewritten | F1 |
 | History | State entries for records, former ids, annotations, property writers and the delivery tables; replay that honours stored versions and times; the `retention` key; the compaction pass; permanent delete and "forget history" compacting at once; the shipped-record rule moved off history; apps tested against `compacted` | F6 |
 | The copy | The archiver, with a directory and an S3 destination; the mark of the last position archived; delay reported; the synchronous protocol, the stopped-server snapshot and the background check removed; the identity store included | F9 |
+| Keys | The recovery key, its step at registration and the offline rewrap tool removed; an import that accepts a repository without its secrets | F6 |
 | Format | The format documented with test vectors; a directory per release, imported in a test; unknown fields refused; the moved-kind checks restored | F8 |
 | Names | The repository id; storage, keys and webhook addresses bound to it; names as aliases with a hold period; the local namespace on the wire and in storage; one compaction that rewrites existing data; publishing as a step; one "add" route and the renamed catalog field; default-name rule | F2 |
 | People | The identity store; memberships; sign-in by person; the person on history lines and events; `owner` renamed to `person`; grants for members | F3 |
@@ -1712,7 +1719,8 @@ Validation before the release:
    the real engine.
 9. A rename: every address, app token and webhook still works under the
    old name and the new.
-10. Rebuild, import, compaction and archive timed at the sizes Q6 settles.
+10. Rebuild, import, compaction and archive timed at 100 GB in one
+    repository, with a hundred people connected.
 11. A stated run of releases with no break to anything labelled stable.
 
 ## Decision records this would replace or amend
@@ -1729,6 +1737,7 @@ Validation before the release:
 | [0048](../decisions/0048-providers-are-published-samples-are-copied.md), [0070](../decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | Amended: a sample is copied into the local namespace, not under the repository's name |
 | [0041](../decisions/0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Amended: `body` loses its column |
 | [0143](../decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | Amended: a member's token is limited; sign out everywhere |
+| [0054](../decisions/0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | Replaced: there is no recovery key. A repository moves to another host with its host key, or without its secrets |
 | [0191](../decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | Amended: whether a person edited a shipped record is read from the property mark, not from history |
 | [0051](../decisions/0051-a-repository-directory-is-the-backup-unit.md), [0065](../decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md), [0069](../decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | Replaced: the snapshot and the export become the archive and its format |
 
@@ -1809,7 +1818,7 @@ versioning.
 | [0198](../decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md) | functions offered to agents as tools |
 | [0212](../decisions/0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md), [0213](../decisions/0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md), [0220](../decisions/0220-outside-code-is-confined-and-reviewed.md) | proposed records with shipped code (F1); outside code must be confined (F10) |
 | [0245](../decisions/0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | a proposed record already on the wire (F1) |
-| 0042, 0048, 0051, 0065, 0069, 0070, 0098, 0101, 0191 | linked in [the table of records this would replace or amend](#decision-records-this-would-replace-or-amend) |
+| 0042, 0048, 0051, 0054, 0065, 0069, 0070, 0098, 0101, 0191 | linked in [the table of records this would replace or amend](#decision-records-this-would-replace-or-amend) |
 
 The index of every record is [docs/decisions](../decisions/README.md).
 
