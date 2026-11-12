@@ -1,8 +1,9 @@
 # Proposal for 1.0: architecture, data model and system design
 
 Status: a review of the tree at `f26d42a6b` (v0.123.1) and the changes it
-proposes before 1.0, dated 2026-11-11. Nothing here is implemented. Like
-every page under `docs/plans/` it is not a contract: the code that lands is.
+proposes before 1.0, dated 2026-11-12. Every decision in it is agreed and
+none is implemented; [the plan](#the-plan) gives the order. Like every page
+under `docs/plans/` it is not a contract: the code that lands is.
 
 ## Contents
 
@@ -16,9 +17,11 @@ every page under `docs/plans/` it is not a contract: the code that lands is.
 - [What stays](#what-stays)
 - [Designs](#designs)
   - [Shared repositories](#shared-repositories)
+  - [Where a value came from](#where-a-value-came-from)
+  - [The conversion at 1.0](#the-conversion-at-10)
   - [Several repositories under one API](#several-repositories-under-one-api)
   - [What could be cut](#what-could-be-cut)
-- [Work and validation](#work-and-validation)
+- [The plan](#the-plan)
 - [Decision records this would replace or amend](#decision-records-this-would-replace-or-amend)
 - [The stability policy](#the-stability-policy)
 - [References](#references)
@@ -38,7 +41,7 @@ typed records, kinds declared in packages, one ordered list of changes per
 repository, isolation enforced by the database. What has to change is what
 that model promises, and four assumptions built into it.
 
-**The proposal, in eight lines.**
+**The proposal, in nine lines.**
 
 1. **Say what 1.0 promises**, and put the "stable" label where a client
    can rely on it (F1).
@@ -50,16 +53,24 @@ that model promises, and four assumptions built into it.
 3. **A repository gets an id, and its name becomes an alias that can
    change.** A repository's own kinds move to a local namespace, so the
    name is no longer written into the data (F2).
-4. **A person, a repository and a membership become three things**, so
-   several people can use one repository with their own permissions (F3).
-5. **One rule for who may write what**, for people, apps, agents and
+4. **A person signs in as themselves, and everything that acts in a
+   repository is an actor record**: a person, an app, a function, an
+   agent. A person's permissions come from roles, so several people can
+   use one repository (F3).
+5. **One check for who may write what**, for people, apps, agents and
    package code alike (F5).
-6. **The copy of the data outside Postgres is written after a write is
+6. **Every write and every stored value links to who wrote it and what it
+   was taken from**, in place of names kept as text (F3).
+7. **The copy of the data outside Postgres is written after a write is
    confirmed**, to a directory or to S3, instead of before it (F9).
-7. **A package says what it needs**: which declaration format, and which
+8. **A package says what it needs**: which declaration format, and which
    version of the interface its code is written against (F10, F11).
-8. **A set of smaller fixes** to the API and to stored values that are
+9. **A set of smaller fixes** to the API and to stored values that are
    cheap only before 1.0 (F12, F14).
+
+Stored data changes shape in several of these. Each repository is converted
+once, and the 1.0 server reads only the new shapes
+([The conversion at 1.0](#the-conversion-at-10)).
 
 [The proposal at a glance](#the-proposal-at-a-glance) lists every decision
 as a problem, a proposal and a reason.
@@ -71,7 +82,7 @@ does today.
 
 | Capability | Needed | Today | Proposed |
 | --- | --- | --- | --- |
-| Several people in one repository, each with their own sign-in and permissions. The creator is the owner. Tens to hundreds of people; not enterprise access control | required | one sign-in per repository, with full access | F3 and [Shared repositories](#shared-repositories) |
+| Several people in one repository, each with their own sign-in and permissions. The creator has full control. Tens to hundreds of people; not enterprise access control | required | one sign-in per repository, with full access | F3 and [Shared repositories](#shared-repositories) |
 | Sharing between repositories, including with a person on another server | required, later | not possible | reserved for in 1.0, built after (F4) |
 | One API, and one agent, working over several repositories | wanted | one repository per sign-in | after 1.0 ([design](#several-repositories-under-one-api)) |
 | Renaming a repository | required | not possible | F2 |
@@ -88,98 +99,100 @@ this proposal.
 
 ## The proposal at a glance
 
-Each row is a decision: the problem, what is proposed, and why. **agreed**
-means the owner has agreed; **proposed** awaits approval.
+Each row is a decision: the problem, what is proposed, and why. Every row
+is agreed.
 
 ### What 1.0 promises
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 1 | Nothing says what 1.0 promises | A written policy: data and the API are stable; package code and outside publishers are experimental | apps in stores cannot be fixed after a break | proposed |
-| 2 | "Stable" sits on a hand-written feature list that no client reads, and it has been broken | Labels move onto packages; route groups keep an entry with a number that only goes up; records and sign-in are listed | one place to look for a kind, one for a route | agreed |
-| 3 | Only one API version can be served | `/api/v1` only gains things; a later `/api/v2` is served beside it for a stated period; a kind is never served in two shapes | routes are cheap to serve twice; stored data is not | agreed |
-| 4 | 56 decision records say "proposed" while their code is shipped | Accept or reject each before 1.0 | they are the design's memory | proposed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 1 | Nothing says what 1.0 promises | A written policy: data and the API are stable; package code and outside publishers are experimental | apps in stores cannot be fixed after a break |
+| 2 | "Stable" sits on a hand-written feature list that no client reads, and it has been broken | Labels move onto packages; route groups keep an entry with a number that only goes up; records and sign-in are listed | one place to look for a kind, one for a route |
+| 3 | Only one API version can be served | `/api/v1` only gains things; a later `/api/v2` is served beside it for a stated period; a kind is never served in two shapes | routes are cheap to serve twice; stored data is not |
+| 4 | 56 decision records say "proposed" while their code is shipped | Accept or reject each before 1.0 | they are the design's memory |
 
 ### History
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 5 | Complete history is the source of truth, so it only grows, cannot be erased, and every release must replay all of it | A log that can be compacted: the latest state of every record is always kept; older entries per retention | what etcd does under Kubernetes; it resolves four findings at once | agreed |
-| 6 | Nothing says how long history is kept | A `retention` setting on each kind, which a repository can override. By default: everything for kinds a person writes, 30 days for mirrors of outside services, 7 days for bookkeeping | a journal and a mirror of someone's inbox need different answers | agreed |
-| 7 | Deleting leaves the values in history | A permanent delete compacts that record at once; "forget history" does the same for a live record | erasure becomes an ordinary operation | proposed |
-| 8 | Every run of a trigger is kept forever | Short retention for bookkeeping | probably most of the bytes; nobody reads them later | proposed |
-| 9 | A client may ask for history that is gone | The existing `compacted` answer, tested in every first-party app | the API already has it | proposed |
-| 10 | One rule asks history "did a person ever edit this?" | Read the mark already kept on each property | it must not depend on history that may be gone | proposed |
-| 11 | Every write waits for a second copy on disk | Postgres alone confirms a write; a background archiver copies the compacted log, files and secrets to a directory or S3. If the copy falls behind, the server keeps serving and reports the delay | there is no complete history left to protect, and the failure states go | agreed |
-| 12 | History cannot be shown to be unaltered | Not in 1.x. If ever needed: a signed tree over current records, not a chain over history | a chain and compaction do not mix | proposed |
-| 13 | The stored format is the way out and the upgrade path, and nothing pins it | Document it; keep a directory from each release and import it under current code; refuse fields it does not know | otherwise the first failure is found by someone restoring a backup | proposed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 5 | Complete history is the source of truth, so it only grows, cannot be erased, and every release must replay all of it | A log that can be compacted: the latest state of every record is always kept; older entries per retention | what etcd does under Kubernetes; it resolves four findings at once |
+| 6 | Nothing says how long history is kept | A `retention` setting on each kind, which a repository can override. By default: everything for kinds a person writes, 30 days for mirrors of outside services, 7 days for bookkeeping | a journal and a mirror of someone's inbox need different answers |
+| 7 | Deleting leaves the values in history | A permanent delete compacts that record at once; "forget history" does the same for a live record | erasure becomes an ordinary operation |
+| 8 | Every run of a trigger is kept forever | Short retention for bookkeeping | probably most of the bytes; nobody reads them later |
+| 9 | A client may ask for history that is gone | The existing `compacted` answer, tested in every first-party app | the API already has it |
+| 10 | One rule asks history "did a person ever edit this?" | Read the mark kept on each property (row 30) | it must not depend on history that may be gone |
+| 11 | Every write waits for a second copy on disk | Postgres alone confirms a write; a background archiver copies the compacted log, files and secrets to a directory or S3. If the copy falls behind, the server keeps serving and reports the delay | there is no complete history left to protect, and the failure states go |
+| 12 | History cannot be shown to be unaltered | Not in 1.x. If ever needed: a signed tree over current records, not a chain over history | a chain and compaction do not mix |
+| 13 | The stored format is the way out and the upgrade path, and nothing pins it | Document it; keep a directory from each release and import it under current code; refuse fields it does not know | otherwise the first failure is found by someone restoring a backup |
 
 ### Names
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 14 | The name is the storage id, so it can never change | An opaque repository id; storage, keys and webhook addresses bind to it | an id never needs to change | agreed |
-| 15 | A repository cannot be renamed | The name becomes an alias that can change; old names keep resolving for a period | typos, getting a domain, moving hosts | agreed |
-| 16 | A person's own kinds carry the repository's name | A local namespace: own kinds are `~/tasks/task` | nothing left to rename; two copies of a sample match | agreed |
-| 17 | "Authority" means both a permanent publisher and a renameable repository | Three namespaces: the project's, a publisher's (proven by DNS, permanent) and the local one. Publishing is a deliberate step | removes the conflict between the two | agreed |
-| 18 | A short name is completed with whatever address the browser used | Complete it under the configured public host; refuse `localhost` and IP addresses outside development | otherwise `ada.localhost` is permanent | agreed |
-| 19 | The project's own name is called a placeholder | `substrate.reamde.dev` is permanent; record who holds the domain; the server knows its own packages without DNS | it is in every repository | agreed |
-| 20 | A deleted name is free at once | Hold it for 90 days | links and webhooks still point at it | proposed |
-| 21 | The catalog field `tier` is a misleading word with a second meaning | One "add" route; a field that says who keeps the package | one word, one meaning | agreed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 14 | The name is the storage id, so it can never change | An opaque repository id; storage, keys and webhook addresses bind to it | an id never needs to change |
+| 15 | A repository cannot be renamed | The name becomes an alias that can change; after a rename the old name keeps resolving for 90 days | typos, getting a domain, moving hosts |
+| 16 | A person's own kinds carry the repository's name | A local namespace: own kinds are `~/tasks/task` | nothing left to rename; two copies of a sample match |
+| 17 | "Authority" means both a permanent publisher and a renameable repository | Three namespaces: the project's, a publisher's (proven by DNS, permanent) and the local one. Publishing is a deliberate step | removes the conflict between the two |
+| 18 | A short name is completed with whatever address the browser used | Complete it under the configured public host; refuse `localhost` and IP addresses outside development | otherwise `ada.localhost` is permanent |
+| 19 | The project's own name is called a placeholder | `substrate.reamde.dev` is permanent; record who holds the domain; the server knows its own packages without DNS | it is in every repository |
+| 20 | The catalog field `tier` is a misleading word with a second meaning | One "add" route; a field that says who keeps the package | one word, one meaning |
 
 ### People and access
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 22 | A repository is its one person | A person's identity, a repository, and a membership joining them. Today's case is one member | several people is a requirement | proposed |
-| 23 | Where a person's identity lives | In a store on the server, outside any repository | hundreds of members should not each need a repository | proposed |
-| 24 | Sign-in names a repository, not a person | Sign-in names a person, who then picks a repository. 1.0 ships it, with one member | apps in stores freeze the sign-in request | agreed |
-| 25 | A person can only have full access | Owner, or a list of read and write grants over kinds, packages or traits, with Editor and Viewer as presets | the form apps already use | proposed |
-| 26 | Private data inside a shared repository | None. A repository is the unit of privacy | avoids a list of people on every record | proposed |
-| 27 | History cannot say who made a change | The person is recorded on each history line and each change event | a token can be deleted; a person's id cannot | proposed |
-| 28 | `owner` already means "any human" in the vocabulary | Rename that stored value to `person` | frees the word for the role | proposed |
-| 29 | "Write only the records you created" | Later | no first use needs it | proposed |
-| 30 | Who may write what is checked differently for each sort of writer | One list of control kinds, one table of writers, held by a test; an agent is limited by whoever started it | a member is a person with limited access | proposed |
-| 31 | A sign-in never expires and cannot be revoked in bulk | Keep it non-expiring; add "sign out everywhere"; cut every open stream with its token | a leaked token should be stoppable | proposed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 21 | A repository is its one person | Three things: a person's sign-in on the server, a repository, and an actor record in the repository that joins the two | several people is a requirement |
+| 22 | Where a person's sign-in lives | In a table on the server, beside the table of repositories | one sign-in across repositories, and no repository per person |
+| 23 | Sign-in names a repository, not a person | Sign-in names a person, who then picks a repository. 1.0 ships it with one person per repository | apps in stores freeze the sign-in request |
+| 24 | Whoever wrote something is kept as text, such as `app:chat.example.com`, that cannot be followed to a record | One kind, `actor`, for a person, an app, a function, an agent, a package and the engine, each with a type and a link to what it is. The text forms go, with the header a client names itself by | a link can be followed, checked and listed |
+| 25 | A person can only have full access | Roles as records, as in Kubernetes: a role is a list of rules, each a set of verbs over kinds, packages or traits, and an actor names its roles. `admin`, `editor` and `viewer` ship. No role is called owner; the creator is the first `admin` | tens to hundreds of people need named roles, not a list each |
+| 26 | Private data inside a shared repository | None. A repository is the unit of privacy | avoids a list of people on every record |
+| 27 | History cannot say who made a change | Every write records three links: the `actor`, the actor it acted `onBehalfOf`, and the `token` | a token can be deleted; an actor is only ever disabled |
+| 28 | Who may write what is checked differently for each sort of writer | One check for every actor: its own rules must allow the write, and so must the rules of the actor it acts for. One list of control kinds, held by a test | a person with limited access must not gain more through an agent |
+| 29 | `owner` names a class of writer, and `writer:` on a property takes three unrelated words | The class is the actor's type, and `writer:` takes actor types. The word `owner` goes | a repository with several people has no one owner |
+| 30 | Each stored value records a `manager` and a `tier`, which mix where it came from with whether sync may replace it | Separate fields: `pinned`, `setBy`, `onBehalfOf`, `derivedFrom` and `setAt`. `pin` and `release` become explicit actions | the marks are stored data and freeze at 1.0 |
+| 31 | "Write only the records you created" | Later. Nothing is stored for it now | no first use needs it |
+| 32 | A sign-in never expires and cannot be revoked in bulk | Keep it non-expiring; add "sign out everywhere"; cut every open stream with its token | a leaked token should be stoppable |
 
 ### Sharing
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 32 | A reference cannot say which repository its target is in | Reserve a `repository` key in the reference value now | a reserved name cannot be added safely later | proposed |
-| 33 | Sharing with a person on another server | After 1.0, through a provider package that mirrors records | existing machinery | proposed |
-| 34 | Working across several repositories | A client library first, then a server API | the library also works across servers | proposed |
-| 35 | An agent across repositories | Reads by default, writes held for approval; an agent may be a member | text in one repository could steer writes in another | proposed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 33 | A reference cannot say which repository its target is in | Reserve a `repository` key in the reference value now | a reserved name cannot be added safely later |
+| 34 | Sharing with a person on another server | After 1.0, through a provider package that mirrors records | existing machinery |
+| 35 | Working across several repositories | A client library first, then a server API | the library also works across servers |
+| 36 | An agent across repositories | Reads by default, writes held for approval; an agent may be an actor there in its own right | text in one repository could steer writes in another |
 
 ### Packages and code
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 36 | A package's code has no version to build against | An interface version on the package; the Python release is part of it; the input's shape is pinned by a test | authors need something fixed to write to | proposed |
-| 37 | A failed delivery is set aside after an eighth of a second | Tell a temporary failure from a permanent one; retry the temporary one over minutes | a provider that is down for a minute should not need a person | proposed |
-| 38 | A schedule that missed runs runs every one of them | Each trigger says; the default is the latest only | a week offline should not mean 500 syncs | proposed |
-| 39 | A package cannot say which server it needs | It states the declaration format it needs; the server picks the newest version it can read | one new key should not hide a package from older servers | proposed |
-| 40 | May a publisher rename a kind? | No: deprecate it and add another | others have records of it | proposed |
-| 41 | Code from outside publishers | Experimental at 1.0 | review and confinement are new | proposed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 37 | A package's code has no version to build against | An interface version on the package; the Python release is part of it; the input's shape is pinned by a test | authors need something fixed to write to |
+| 38 | A failed delivery is set aside after an eighth of a second | Tell a temporary failure from a permanent one; retry the temporary one over minutes | a provider that is down for a minute should not need a person |
+| 39 | A schedule that missed runs runs every one of them | Each trigger says; the default is the latest only | a week offline should not mean 500 syncs |
+| 40 | A package cannot say which server it needs | It states the declaration format it needs; the server picks the newest version it can read | one new key should not hide a package from older servers |
+| 41 | May a publisher rename a kind? | No: deprecate it and add another | others have records of it |
+| 42 | Code from outside publishers | Experimental at 1.0 | review and confinement are new |
 
 ### Storage and API details
 
-| | Problem | Proposal | Why | Status |
-| --- | --- | --- | --- | --- |
-| 42 | A property named `body` is stored specially and skips its checks | Make it an ordinary property | no property name should be special | agreed |
-| 43 | Record ids sort by the database's language settings | Plain byte order on the identity columns | the main index depends on the host's locale library | proposed |
-| 44 | A time zone value accepts `Local` and the empty string | Refuse both | a stored value should mean the same on every host | proposed |
-| 45 | Adding a list of allowed values to a property is not checked against existing records | Count it like any other narrowing | records the kind no longer allows cannot be saved again | proposed |
-| 46 | Five API details would freeze as mistakes | Fix them (F12) | each is small now and a break later | proposed |
-| 47 | One damaged repository stops the whole server from starting | Set it aside and serve the rest | several people will share a server | proposed |
-| 48 | The API is tested against a hand-written copy of the engine | Test it against the real engine | the copy does not implement what the tests claim | proposed |
-| 49 | Measured-value checks run in every write, in every repository | Make them cost nothing where unused; the feature stays alpha | it is the largest subsystem, and optional | proposed |
-| 50 | The assistant, console layouts, model lists and vendor mappings ship inside the core | Name them as outside the promise | they are product content and will change | proposed |
-| 51 | Going back to an older server after an upgrade | Not supported; the way back is a copy taken before | every release would have to be reversible | proposed |
-| 52 | Offline use | The apps' queue of pending writes is the answer; separate histories are never merged | one order per repository is what everything rests on | proposed |
-| 53 | The recovery key cannot be replaced once lost or leaked | Remove it. Moving to another host means reconnecting accounts and entering API keys again | what it protects can be obtained again | agreed |
-| 54 | Who may share a server | One household or one trusted group. A server for people who do not know its operator is not supported in 1.x | it would change the sandbox, naming and start-up rules | agreed |
-| 55 | How large one repository must be able to get | Validate at 100 GB in one repository | the limits should be numbers | agreed |
+| | Problem | Proposal | Why |
+| --- | --- | --- | --- |
+| 43 | A property named `body` is stored specially and skips its checks | Make it an ordinary property | no property name should be special |
+| 44 | Record ids sort by the database's language settings | Plain byte order on the identity columns | the main index depends on the host's locale library |
+| 45 | A time zone value accepts `Local` and the empty string | Refuse both | a stored value should mean the same on every host |
+| 46 | Adding a list of allowed values to a property is not checked against existing records | Count it like any other narrowing | records the kind no longer allows cannot be saved again |
+| 47 | Five API details would freeze as mistakes | Fix them (F12) | each is small now and a break later |
+| 48 | One damaged repository stops the whole server from starting | Set it aside and serve the rest | several people will share a server |
+| 49 | The API is tested against a hand-written copy of the engine | Test it against the real engine | the copy does not implement what the tests claim |
+| 50 | Measured-value checks run in every write, in every repository | Make them cost nothing where unused; the feature stays alpha | it is the largest subsystem, and optional |
+| 51 | The assistant, console layouts, model lists and vendor mappings ship inside the core | Name them as outside the promise | they are product content and will change |
+| 52 | Going back to an older server after an upgrade | Not supported; the way back is a copy taken before | every release would have to be reversible |
+| 53 | Stored data is in the old shapes | Each repository is converted once, when it first starts under a server that changes a shape. The server reads only the new shapes | two ways of reading stored data are two sets of bugs |
+| 54 | Offline use | The apps' queue of pending writes is the answer; separate histories are never merged | one order per repository is what everything rests on |
+| 55 | The recovery key cannot be replaced once lost or leaked | Remove it. Moving to another host means reconnecting accounts and entering API keys again | what it protects can be obtained again |
+| 56 | Who may share a server | One household or one trusted group. A server for people who do not know its operator is not supported in 1.x | it would change the sandbox, naming and start-up rules |
+| 57 | How large one repository must be able to get | Validate at 100 GB in one repository | the limits should be numbers |
 
 ## How to read this page
 
@@ -189,9 +202,11 @@ means the owner has agreed; **proposed** awaits approval.
 - **Nothing was run:** no database suite, no live test. A test named here
   exists in the tree; nobody watched it pass.
 - **A second reviewer**, another model, opened 139 citations of an earlier
-  draft and tested its reasoning; what it found is fixed. The proposals on
-  history, names and people were written after that check and have had
-  only the author's.
+  draft and tested its reasoning; what it found is fixed. It later reviewed
+  two parts of the design by reading the code:
+  [where a value came from](#where-a-value-came-from), and the names of the
+  fields there. The proposals on history, names, actors and roles have had
+  only the author's check.
 - **Sizes** are lines of Go outside `_test.go` files, counted with `wc -l`
   over the files [the appendix](#appendix-how-the-sizes-were-counted)
   names. They say where the code is, not what it is worth.
@@ -224,6 +239,10 @@ The words below are used throughout. `docs/terms.md` is the full list.
 - A **token** is the credential a client sends. A token belongs to one
   repository. An app's token carries **scopes**: the kinds it may read or
   write.
+- An **actor** is the name of the program that made a write, kept as text:
+  `console`, `app:chat.example.com`,
+  `function:<publisher>:<package>:<name>`. It says which program, not
+  which person.
 - A **function** is Python code a package ships; the server runs it in a
   sandbox. A **trigger** runs a function or an agent when a record
   changes, on a schedule, or when a webhook arrives.
@@ -264,7 +283,7 @@ What people will come to depend on, and what each is proposed to be at
 | Webhook URLs | outside services | not listed | stable, addressed by repository id (F2) |
 | The declaration dialect | package authors, every stored repository | closed | stable, with the additions in F2, F4, F6 and F11 |
 | The interface a function's code is written against | package authors | no version | beta, versioned (F10) |
-| Agents, MCP tools, applets | owner, assistants | `alpha` | experimental; the records they write are still durable |
+| Agents, MCP tools, applets | people, assistants | `alpha` | experimental; the records they write are still durable |
 | The history format and the export | every backup, every way out | called storage, free to change (`docs/changelog.md:55-61`) | public and documented (F8) |
 | Postgres tables | nobody | internal | internal; say so |
 | The Go interfaces in `internal/substrate` | this module only | "what v1 freezes" (`internal/substrate/dataset.go:19-24`) | internal; remove the sentence |
@@ -279,9 +298,9 @@ is proposed and why. F6 to F9 are one change seen from four sides.
 | --- | --- | --- |
 | [F1](#f1-nothing-defines-what-10-promises-and-the-stable-label-has-already-been-broken) | Nothing defines what 1.0 promises, and the "stable" label has already been broken | a written policy; labels on packages |
 | [F2](#f2-a-repositorys-name-does-five-jobs-and-can-never-change) | A repository's name does five jobs and can never change | an id, a name that can change, a local namespace |
-| [F3](#f3-one-person-per-repository-is-built-into-sign-in-history-and-the-vocabulary) | One person per repository is built into sign-in, history and the vocabulary | identity, repository and membership |
+| [F3](#f3-one-person-per-repository-is-built-into-sign-in-history-and-the-vocabulary) | One person per repository is built into sign-in, history and the vocabulary | a sign-in for each person; one kind of actor; roles |
 | [F4](#f4-nothing-can-point-from-one-repository-into-another) | Nothing can point from one repository into another | reserve now, build later |
-| [F5](#f5-who-may-write-what-is-enforced-differently-for-each-kind-of-writer) | Who may write what is enforced differently for each kind of writer | one list, one table, one test |
+| [F5](#f5-who-may-write-what-is-enforced-differently-for-each-kind-of-writer) | Who may write what is enforced differently for each kind of writer | one check for every actor |
 | [F6](#f6-complete-history-is-the-source-of-truth-so-nothing-can-be-erased-and-nothing-shrinks) | Complete history is the source of truth, so nothing can be erased and nothing shrinks | a log that can be compacted |
 | [F7](#f7-history-cannot-be-shown-to-be-unaltered) | History cannot be shown to be unaltered | not in 1.x |
 | [F8](#f8-the-stored-format-is-the-way-out-and-the-upgrade-path-and-nothing-pins-it) | The stored format is the way out and the upgrade path, and nothing pins it | document it and test old data |
@@ -524,10 +543,12 @@ person's own kinds are named after their repository.
    how it was made, so an id that can be proven from outside could be added
    if moving between hosts ever needs proof.
 2. **The name becomes an alias.** It is what people type and see, and it
-   can change. An old name keeps resolving, and stays unavailable to anyone
-   else, for 90 days. Finding a repository from its name already works
-   through DNS in the apps
-   (`apps/kit/Sources/SubstrateAPI/ServerLocator.swift:10-18`).
+   can change. After a rename the old name keeps resolving, and stays
+   unavailable to anyone else, for 90 days. The name of a deleted
+   repository is free at once, as it is today
+   ([0236](../decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
+   Finding a repository from its name already works through DNS in the
+   apps (`apps/kit/Sources/SubstrateAPI/ServerLocator.swift:10-18`).
 3. **A local namespace for a repository's own kinds.** Own kinds are
    stored and addressed as `~/tasks/task`, meaning "this repository's". The
    name never enters the data, so a rename touches nothing. `~` already
@@ -556,8 +577,8 @@ person's own kinds are named after their repository.
    the domain, and have the server recognise its own packages without
    asking DNS. Today packages it does not ship are fetched from wherever
    that name's DNS points (`internal/catalog/published.go:62-80`).
-8. **Existing data** is rewritten to `~` once, by the same full compaction
-   that F6 introduces.
+8. **Existing data** is rewritten to `~` once, by
+   [the conversion at 1.0](#the-conversion-at-10).
 
 **What this changes elsewhere.**
 
@@ -594,9 +615,10 @@ does.
 each with their own sign-in and permissions. Today a repository *is* its
 one person. That assumption is in the sign-in request, in every history
 line, in the meaning of the word "owner", and in several kinds of data.
-None of it is hard to change today. Most of it becomes hard at 1.0, because
-it is exactly what apps in stores and published packages will have built
-on.
+Beside it sits a second problem: who wrote something is kept as text that
+cannot be followed to a record. None of it is hard to change today. Most
+of it becomes hard at 1.0, because it is exactly what apps in stores and
+published packages will have built on.
 
 **Example.** Ada wants her partner Bo to see and edit the household's
 recipes and shopping lists, and not her journal. Today she has one option:
@@ -612,7 +634,9 @@ what.
 | The credential | one per repository, stored as a record with the fixed id `self` (`internal/engine/auth.go:5-12,52`) | it is stored data; a migration, not a contract |
 | History | a line records `actor`, which program wrote, and `principal`, which token (`internal/changelogfile/entry.go:41-60`). A token can be deleted, and a token record names no person (`kinds/substrate.reamde.dev/core/token.yaml`). No line says who | the line's key set is closed (`internal/changelogfile/entry.go:179-180`): a new key is a format change every older server refuses |
 | Permissions for a person | none. Only an app's token can be limited, and a person cannot be handed a limited one: a token minted by hand may carry `["mcp"]` and nothing else (`internal/api/auth_endpoints.go:66-69,372`) | the app and its scopes are the only model clients know |
-| The word `owner` | it already means "any human hand", as opposed to installed code (`internal/substrate/tier.go:15-19`). Package authors write `writer: owner` on a property to mean that (`internal/vocabulary/types.go:416-430`) | the dialect is a stable surface. Once "owner" also means the person who created the repository, `writer: owner` reads two ways |
+| Who wrote | an actor: text in one of eight forms (`internal/substrate/actor.go:11-22`). Three of them, `console`, `substratectl` and `api`, are whatever the client sends in a header (`internal/api/auth.go:48`). None can be followed to a record | it is on every history line and on every stored value |
+| The word `owner` | it names a class of writer: anything that writes through the API under a token, a person's or an app's, as opposed to installed code (`bundle`) and the engine (`machine`) (`internal/substrate/tier.go:15-30`, `internal/engine/rows.go:594-616`). Package authors write `writer: owner` on a property, 80 times in the shipped packages, to mean a person's own sign-in (`internal/vocabulary/types.go:416-430`, `internal/engine/write.go:1813-1823`). Four checks in the engine say "only the owner may" (`internal/engine/write.go:1715,2152,3056,3072`) | the dialect is a stable surface, and a repository with several people has no one owner |
+| Where a value came from | each property stores a `manager` and a `tier` (`internal/engine/migrations/0001_init.up.sql:210-220`), which mix two questions ([Where a value came from](#where-a-value-came-from)) | it is stored data, and on the wire as `propertyMeta` |
 | Data that is really one person's | console preferences are "Repository-owned" (`kinds/substrate.reamde.dev/core/consolepreference.yaml:8-9`); an assistant's memories are facts "the owner keeps" (`kinds/substrate.reamde.dev/llm/memory.yaml:15-18`); one setting names "the owner's own" contact (`kinds/substrate.reamde.dev/core/contact.yaml:32-33`) | with two people these are shared by accident |
 | Limits | four chat turns at once per repository (`internal/engine/agents.go:376-379`); no limit per person | internal; free to change |
 | Clients | the Chat app asks for full access (`apps/chat/ChatKit/Sources/ChatKit/ChatManifest.swift:35`); an app holds one repository per connection (`docs/terms.md:170`) | apps in stores |
@@ -624,31 +648,43 @@ clients of that process.
 rules out something different: several servers each writing their own
 history and merging them.
 
-**Proposal.** The model in [Shared repositories](#shared-repositories): a
-person's identity, a repository, and a membership that joins them. Today's
-design is its special case, one person and one repository. For 1.0:
+**Proposal.** The model in [Shared repositories](#shared-repositories).
+Today's design is its special case, one person and one repository. For
+1.0:
 
-1. **Sign-in names a person.** The person then picks a repository they are
-   a member of. 1.0 ships this shape, with one member per repository;
-   inviting a second can follow.
-2. **The person is recorded** on each history line and each change event,
-   left out when the repository has one member.
-3. **The stored value `owner` becomes `person`**, in the record of who
-   wrote a property and in the dialect's `writer:`. "Owner" is then free to
-   mean the role.
-4. **F5 is fixed first.** A member is a principal with less than full
-   access, and today that is enforced in one layer only.
+1. **Sign-in names a person.** The person then picks a repository. 1.0
+   ships this shape with one person per repository; adding a second can
+   follow, and changes no stored data.
+2. **One kind of actor.** A person, an app, a function, an agent, a
+   package and the engine are each a record of `core/actor`, with a `type`
+   and a link to what it is. The text forms go, and so does the header a
+   client names itself with.
+3. **Every write records three links**: the `actor`, the actor it acted
+   `onBehalfOf` when there is one, and the `token`. They are on each
+   history line and each change event.
+4. **Roles as records.** What a person may read and write comes from
+   roles, each a list of rules. Nothing is called owner: the creator is
+   the first `admin`.
+5. **The class of a writer is its actor's type.** `writer:` on a property
+   takes actor types, and the words `owner`, `bundle` and `machine` go.
+6. **Each stored value links to who set it and what it was taken from**
+   ([Where a value came from](#where-a-value-came-from)).
+7. **F5 is fixed first.** A person with less than full access is new, and
+   today limits are enforced in one layer only.
+8. **Existing data is converted once**
+   ([The conversion at 1.0](#the-conversion-at-10)).
 
-**Why.** Several people in one repository is a requirement, and the three
-things that are costly to change after 1.0 (the sign-in request, the
-history line, a word in the dialect) are each small to change before it.
+**Why.** Several people in one repository is a requirement. The things
+that are costly to change after 1.0 are the sign-in request, the history
+line, the marks on stored values and the words in the dialect, and each is
+small to change before it.
 
 ### F4. Nothing can point from one repository into another
 
 **In plain terms.** Sharing between repositories needs three things the
 data model cannot express: a reference that says which repository its
 target is in, a way to tell that two people's "tasks" are the same sort of
-thing, and a way to grant less than a whole collection.
+thing, and a way to give access to less than a whole collection.
 
 **Examples.**
 
@@ -667,9 +703,10 @@ thing, and a way to grant less than a whole collection.
   repository field (`internal/substrate/record.go:12-78`). Ids that a
   provider composes can also collide: one calendar event synced into two
   repositories has the same kind and id in both.
-- *A grant covers a kind, not a record.* A scope is `read:` or `write:`
-  over a kind, a package or a trait (`internal/scope/scope.go:6-17`). "Share
-  this one list" cannot be said.
+- *Access covers a kind, not a record.* An app's scope is `read:` or
+  `write:` over a kind, a package or a trait
+  (`internal/scope/scope.go:6-17`), and a role's rule takes the same form
+  (F3). "Share this one list" cannot be said.
 - *A person cannot easily publish.* A repository cannot install a package
   from its own name (`internal/catalog/published.go:134-140`), and
   publishing means hosting a document by hand
@@ -746,18 +783,27 @@ reading; no test exercises it.
 
 **Proposal.**
 
-1. One list of control kinds: triggers, policies, AI provider settings,
-   package settings and secrets, applets, declarations, memberships.
-2. One table saying what each sort of writer may do to each, held by a
-   test that fails when a writer or a kind is added without a row.
-3. An agent that a caller starts is limited by the caller's access as well
-   as its own.
-4. The writer-name header takes a fixed form.
-5. "Sign out everywhere", offered when a password changes. Every stream is
-   cut when its token dies. Sign-in tokens stay non-expiring.
-6. `docs/auth.md` is corrected.
+1. **One list of control kinds:** triggers, policies, AI provider
+   settings, package settings and secrets, applets, declarations, actors
+   and roles. A wildcard in a rule never reaches them; a rule has to name
+   one.
+2. **One check for every type of actor** (F3). A write is allowed when the
+   actor's own rules allow it and, where it acts on behalf of another
+   actor, that actor's rules allow it too. A person's rules come from
+   roles, an app's from what was approved, and a function's or an agent's
+   from its declaration. So an agent a person starts can never do more
+   than that person.
+3. **A test holds the table** of actor types against control kinds, and
+   fails when a type or a kind is added without a row.
+4. **The four "only the owner may" checks** (F3) become rules the `admin`
+   role holds.
+5. **The header by which a client names itself goes** (F3). A write is
+   attributed to the actor its token belongs to.
+6. **"Sign out everywhere"**, offered when a password changes. Every
+   stream is cut when its token dies. Sign-in tokens stay non-expiring.
+7. `docs/auth.md` is corrected.
 
-**Why.** With members (F3) a person can have limited access. If limits are
+**Why.** With roles (F3) a person can have limited access. If limits are
 enforced in one layer and not the others, a viewer can ask an agent to
 write for them.
 
@@ -876,16 +922,16 @@ How it works:
 What it needs:
 
 - A state entry for each table that is not computed from records: records
-  themselves, former ids, annotations, who wrote each property, and the
-  delivery tables (`internal/engine/delivery.go:65`). Search, references
-  and the measured-value index are computed from records and need none.
+  themselves, former ids, annotations, the mark on each property
+  ([Where a value came from](#where-a-value-came-from)), and the delivery
+  tables (`internal/engine/delivery.go:65`). Search, references and the
+  measured-value index are computed from records and need none.
 - Replay that takes a record's version and its times from a state entry.
   Today it recounts the version and ignores the stored one
   (`internal/engine/fold.go:200-210`).
 - A `retention` key on a kind.
-- The rule "a person ever edited this" read from the mark already kept per
-  property (`internal/engine/migrations/0001_init.up.sql:210-220`) instead
-  of from history.
+- The rule "a person ever edited this" read from the mark kept on each
+  property, its `setBy` link, instead of from history.
 - A compaction pass that is paced and gives way to real work. The
   background check of old files had to learn the same lesson
   (`internal/engine/segmentdigest.go:15-24`).
@@ -1147,8 +1193,8 @@ take the server down.
 **Example.** The image moves from one Python release to the next. A
 function in someone's package imported a module the new release dropped.
 It stops loading, and every delivery to it is set aside as failed. The
-package had no way to say which Python it needed, and its owner finds out
-from a failed row.
+package had no way to say which Python it needed, and the person who
+installed it finds out from a failed row.
 
 **Evidence.**
 
@@ -1200,7 +1246,7 @@ from a failed row.
 6. **Missed schedules.** Each trigger says what to do with runs it missed:
    all of them, or only the latest. The default becomes the latest.
 7. **The sandbox default stays.** A server is for one household or one
-   trusted group (F13), so code its members write is trusted as they are.
+   trusted group (F13), so code those people write is trusted as they are.
 8. **Code from outside publishers is experimental at 1.0.**
 
 **Why.** Package authors need something fixed to write against, and two of
@@ -1439,51 +1485,196 @@ would take.
 
 ### Shared repositories
 
-Several people in one repository; the creator is the owner; each other
-person has permissions of their own.
+Several people in one repository, each with permissions of their own.
 
-#### Three nouns
+#### Four nouns
 
-Today one word does three jobs. Split them:
+Today the repository's name stands for three things: the person, the data
+and the access. Split them:
 
-- **Identity**: a person. A name, a password, an optional second factor. It
-  holds no data.
+- **Identity**: a person's sign-in. A name, a password, an optional second
+  factor. The server holds it, and it holds no data.
 - **Repository**: the data. It has an id and a name (F2).
-- **Membership**: a record inside a repository saying that an identity may
-  act there, as an owner or with listed grants.
+- **Actor**: a record inside a repository for anything that acts there. A
+  person in a repository is an actor of type `person` that names their
+  identity.
+- **Role**: a record inside a repository holding a list of rules. An actor
+  names the roles it has.
 
-Today's design is the special case: one identity, one repository, and an
-owner membership nobody wrote down. So no data has to move: each existing
-repository gains one owner.
+Today's design is the special case: one identity, one repository, and one
+actor of type `person` holding the `admin` role. There is no separate
+"member": being in a repository is having an actor record there.
 
-#### Permissions
+#### Actors
 
-- **Owner.** Everything: members, packages and kinds, connected accounts
-  and secrets, export, deletion. The creator is the first owner. A
-  repository may have several and always has one.
-- **Member.** A list of grants in the form apps already use: `read:` or
-  `write:` over one kind, a package, a publisher or a trait
-  (`internal/scope/scope.go:6-17`). Two presets: Editor is `write:*`,
-  Viewer is `read:*`. A wildcard never reaches sign-in material
-  ([0080](../decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)),
-  and should not reach F5's control kinds either.
-- **Not offered:** a list of people on each record, groups, deny rules,
-  inheritance. The rule that replaces them: *a repository is the unit of
-  privacy, and a kind is the unit of permission.* Something private from
-  the other members belongs in another repository.
-- **Later:** "write only the records you created". It needs each record to
-  know its creator, which the person on each history line makes possible.
-- **Grants are read on each request** from the membership, not copied into
-  the token, so a change or a removal takes effect at once.
-- **Delegation.** An agent or a function that a member starts runs with
-  what both of them may do, never more. Code that runs on its own, from a
-  trigger, keeps its own grant as today.
+The kind exists. The engine already writes a `core/actor` record for each
+actor a package declares, holding a name and a class
+(`kinds/substrate.reamde.dev/core/actor.yaml:8-18`). It becomes the one
+record for anything that acts. Ids are shortened here; real ones are
+opaque.
 
-#### Where identity lives
+```yaml
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: bo
+data:
+  properties:
+    type: person
+    identity: 7f3k2m          # the sign-in, held by the server
+    roles:
+      - ref: substrate.reamde.dev/core/role/kitchen
+---
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: chat
+data:
+  properties:
+    type: app
+    publisher: chat.example.com
+---
+kind: substrate.reamde.dev/core/actor
+metadata:
+  id: google-synccontacts
+data:
+  properties:
+    type: function
+    function:
+      ref: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
+```
 
-In a store on the server, outside any repository.
+| Type | Is | Written when | Links to |
+| --- | --- | --- | --- |
+| `person` | a person in this repository | the repository is created, and when an admin adds someone | the identity, held by the server |
+| `app` | a program a person approved | the approval | its publisher |
+| `function`, `agent` | installed code | the package is installed | the function or agent record |
+| `package` | a package's own installs | the package is installed | the package record |
+| `system` | the engine | the repository is created | nothing |
 
-- Hundreds of members should not each need a full repository.
+An actor is disabled, never deleted, so an old write still links to
+something. The link to an identity is the one link that leaves the
+repository.
+
+**What a write records.** Three links, on each history line and each
+change event, in place of today's `actor` text and `principal`
+(`internal/changelogfile/entry.go:41-60`):
+
+| Write | `actor` | `onBehalfOf` | `token` |
+| --- | --- | --- | --- |
+| Ada edits in the console | Ada | none | her sign-in |
+| Ada uses the Chat app | Chat | Ada | the app's |
+| An agent Bo started | the agent | Bo | none |
+| Sync on a schedule | the sync function | none | none |
+| The engine merging synced values | system | none | none |
+
+The history line for an edit Ada made through the Chat app:
+
+```json
+{"seq":4812,"actor":"chat","onBehalfOf":"ada","token":"tok8c1","op":"patch","kind":"substrate.reamde.dev/core/contact","recordId":"grace"}
+```
+
+The write is the app's, not Ada's: the code already holds that an app's
+change "reads as the app's and never as the owner's"
+(`internal/substrate/actor.go:78-80`). `onBehalfOf` says whose access it
+used.
+
+**The names.** A history line is an event and names its `actor`. A stored
+thing says what was done to it and by whom: `setBy`, `createdBy`.
+`onBehalfOf` is the same word in both places. W3C PROV and OAuth token
+exchange keep the acting party apart from the one it acts for in the same
+way.
+
+**What goes.**
+
+- The text forms `app:…`, `function:…`, `agent:…` and `bundle:…`
+  (`internal/substrate/actor.go:11-22`).
+- The names `console`, `substratectl` and `api`, with the
+  `X-Substrate-Actor` header a client claims one by
+  (`internal/api/auth.go:48`). They are labels nobody checks. Which client
+  made a write is on its token record.
+- The classes `owner`, `bundle` and `machine`
+  (`internal/substrate/tier.go:15-30`). The class of a writer is its
+  actor's type.
+- The `writer:` words. On a property, `writer:` takes actor types: `owner`
+  becomes `person`, `connector` becomes `[function, agent]`, and `oauth`
+  becomes `system`. 286 declarations in the shipped packages change.
+
+Three properties that hold an actor or a token as text become links.
+`createdBy` on a blob keeps its name
+(`kinds/substrate.reamde.dev/core/blob.yaml:42-45`). `caller` and
+`principal` on a trigger run become `actor` and `token`
+(`kinds/substrate.reamde.dev/core/triggerrun.yaml:122-128`).
+
+#### Roles
+
+Permissions follow Kubernetes: a role is a named list of rules, and an
+actor names the roles it has.
+
+```yaml
+kind: substrate.reamde.dev/core/role
+metadata:
+  id: kitchen
+data:
+  properties:
+    rules:
+      - verbs: [read, write]
+        kinds: ["~/recipes/*", "~/shopping/*"]
+```
+
+- **A rule** is a list of verbs over a list of patterns. A pattern is the
+  form apps already use: one kind, a package, a publisher or a trait
+  (`internal/scope/scope.go:6-17`).
+- **Rules only add.** There is no rule that denies.
+- **Three roles ship.** `admin` may do everything. `editor` reads and
+  writes every kind that is not a control kind (F5). `viewer` reads them.
+  A repository adds its own.
+- **The verbs are `read` and `write`** at 1.0, which is what the engine
+  enforces today. A rule's verbs are a list, so `create`, `update` and
+  `delete` can be added.
+- **A wildcard never reaches** sign-in material
+  ([0080](../decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md))
+  or a control kind. A rule has to name one.
+- **Only an admin changes roles, and the roles an actor holds.** No rule
+  can hand that out. Kubernetes needs two extra verbs to stop a person
+  granting themselves more; this avoids them.
+- **Nothing is called owner.** The creator is the first admin, all admins
+  are equal, and the last one cannot be removed.
+- **Roles are read on each request**, not copied into the token, so a
+  change or a removal takes effect at once.
+- **One check for every type of actor** (F5). A person's rules come from
+  roles, an app's from what was approved, and a function's or an agent's
+  from its declaration. An actor that acts on behalf of another may do
+  what both sets of rules allow, never more. Code that runs on its own,
+  from a trigger, keeps its own rules as today.
+- **`writer:` asks a different question.** A role says which people may
+  write a kind. `writer:` on a property says which type of actor may set
+  it: a person, code, or the engine. Kubernetes splits the same way:
+  people write `spec` and controllers write `status`.
+- **Not offered:** a list of people on each record, groups, rules that
+  deny, inheritance. The rule that replaces them: *a repository is the
+  unit of privacy, and a kind is the unit of permission.* Something
+  private from the other people belongs in another repository.
+- **Later:** "write only the records you created". Nothing is stored for
+  it now. Kubernetes does not store who created an object either; who did
+  what is in its audit log, as it is in history here. If a creator is ever
+  stored, the field is `createdBy`.
+
+#### Where a person's sign-in lives
+
+In a table on the server, beside the table of repositories. A sign-in
+belongs to a person, not to any one repository: Bo may be in Ada's
+repository and in Cy's, and have none of his own.
+
+| Where | What it costs |
+| --- | --- |
+| A table on the server (proposed) | one new table, which the archive (F9) has to include |
+| A record in each repository the person is in | a password per repository, and each admin's export holds the other people's sign-in records |
+| A repository of the person's own | every invited viewer gets a full repository, with its seeded packages, units and conversions |
+| A built-in repository of identity records | everything stays a record, and every sign-in depends on a repository nobody owns |
+
+- The repository itself already works the first way: its row in the
+  `repositories` table is the truth, and the `core/repository` record is a
+  read-only copy inside
+  (`kinds/substrate.reamde.dev/core/repository.yaml:8-12`).
 - The credential stops being a record of one repository. Today it is one,
   holding two pointers into that repository's encrypted side store
   (`internal/engine/auth.go:5-12`), so changing it writes to the
@@ -1493,11 +1684,6 @@ In a store on the server, outside any repository.
   history.
 - The sign-in name stops being the repository's name
   ([0074](../decisions/0074-the-repository-name-is-the-login-name.md)).
-
-The cost: an identity is no longer inside a repository's backup, so the
-archive (F9) carries the identity store as well. The alternative, each
-person's identity being a personal repository, keeps one concept and costs
-a repository per member.
 
 Identity names keep today's DNS-style form, so that another server could
 vouch for one later: the person signs in at their own server, which asserts
@@ -1514,18 +1700,19 @@ name it asserts and the trust between two servers are all still to design.
 
 | Needed | Today |
 | --- | --- |
-| A view of a repository limited to a grant | exists, for apps: `internal/api/scoped.go:19-40` |
+| A view of a repository limited to a set of rules | exists, for apps: `internal/api/scoped.go:19-40` |
+| Actors as records | exists for the actors a package declares; missing for people, apps, functions and agents |
 | A token that names a person | missing (F3) |
-| A grant given to a person | missing (F3) |
+| Roles a person holds | missing (F3) |
 | Clients that work with less than full access | missing: the Chat app asks for everything, and limited tokens cannot plan a change to kinds, merge records or use the catalog (`internal/api/api.go:542-591`) |
 | Delegation limited by the caller | missing (F5) |
-| One meaning for `owner` | missing (F3) |
 
 #### What history needs
 
-1. **The person on each line** and on each change event (F3).
-2. **Memberships and grants as records,** kept with full retention, so a
-   change of permission is in history and in the export.
+1. **Three links on each line** and on each change event: `actor`,
+   `onBehalfOf` and `token`.
+2. **Actors and roles as records,** kept with full retention, so a change
+   of permission is in history and in the export.
 
 #### Two people editing at once
 
@@ -1562,10 +1749,193 @@ After 1.0. The cheapest form uses what exists: the other person's substrate
 is treated as a provider, like Google or Slack. Bo connects an account to
 Ada's repository, holding a limited token, and her records are mirrored
 into his by the same machinery that mirrors a calendar. Besides the package
-it needs: a way to grant a person (F3); grants narrower than a kind, if she
-shares less than a whole collection, which is the expensive part because
-the filter must hold in every read; and the same kind on both sides, which
-means she publishes it (F2).
+it needs: Bo as an actor in her repository with a role (F3); rules narrower
+than a kind, if she shares less than a whole collection, which is the
+expensive part because the filter must hold in every read; and the same
+kind on both sides, which means she publishes it (F2).
+
+### Where a value came from
+
+Every property of every record carries a mark saying where its value came
+from. The mark is how a hand edit survives the next sync. Its purpose is
+sound and its shape is not.
+
+**Today.** The mark is a `manager` and a `tier`
+(`internal/substrate/property.go:5-22`, `docs/projection.md:424-502`). Sync
+replaces a value only when its tier is `machine`. Otherwise it leaves the
+value alone and lists what it would have written as an "alternative".
+
+| Problem | Evidence |
+| --- | --- |
+| `manager` answers three different questions | for a direct write it is the writer. For a synced value it is the actor that wrote the winning source record, while the engine wrote the value (`internal/engine/write.go:1387-1395`). For the link a mapping fills in it is the text `mapping:<name>` (`internal/engine/write.go:1397-1408`) |
+| `tier` looks like a ranking and is a yes or no | the serving code only asks "machine or not" (`internal/engine/mapping.go:763`, `internal/engine/orphans.go:107`, `internal/engine/query.go:201`). A function's write over a person's edit is not held back |
+| The stored tier can differ from the one in force | [0113](../decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) reads it again from the actor's current declaration, and lists six drawbacks of doing so |
+| Sources are grouped by the actor that wrote them | `internal/engine/mapping.go:1274-1284`. Two accounts of one provider, synced by the same function, share one alternative |
+| Pinning and releasing are side effects | writing the value sync already wrote pins nothing (`internal/engine/write.go:1367-1369`). Release is "delete the property", which a required property refuses (`internal/engine/write.go:1627-1653`); this was read, not reproduced |
+
+**Proposal.** Store two facts apart: whether sync may replace the value,
+and where the value came from.
+
+Grace is one contact built from two Google address books, work and home.
+Ada fixed the name by hand, the Chat app added a nickname for her, and
+sync supplied the rest.
+
+```yaml
+kind: substrate.reamde.dev/core/contact
+metadata:
+  id: grace
+data:
+  properties:                  # the values
+    name: Grace Hopper
+    nickname: Amazing Grace
+    jobTitle: Rear Admiral
+    emails:
+      - grace@navy.example
+      - grace@home.example
+status:
+  properties:                  # where each value came from
+    name:                      # Ada typed it in the console
+      pinned: true
+      setBy:
+        ref: substrate.reamde.dev/core/actor/ada
+      setAt: 2026-11-10T09:14:03Z
+      alternatives:            # what sync would have written
+        - derivedFrom:
+            ref: providers.substrate.reamde.dev/google/contact/work-c123
+          value: G. Hopper
+          updatedAt: 2026-11-12T03:00:11Z
+        - derivedFrom:
+            ref: providers.substrate.reamde.dev/google/contact/home-c900
+          value: Grace M. Hopper
+          updatedAt: 2026-11-09T21:40:52Z
+    nickname:                  # the Chat app wrote it for Ada
+      pinned: true
+      setBy:
+        ref: substrate.reamde.dev/core/actor/chat
+      onBehalfOf:
+        ref: substrate.reamde.dev/core/actor/ada
+      setAt: 2026-11-11T18:02:40Z
+    jobTitle:                  # sync took it from the work address book
+      derivedFrom:
+        ref: providers.substrate.reamde.dev/google/contact/work-c123
+      setAt: 2026-11-12T03:00:11Z
+    emails:                    # sync merged both address books
+      derivedFrom:
+        - ref: providers.substrate.reamde.dev/google/contact/work-c123
+        - ref: providers.substrate.reamde.dev/google/contact/home-c900
+      setAt: 2026-11-12T03:00:11Z
+```
+
+| Field | Holds | Meaning |
+| --- | --- | --- |
+| `pinned` | yes or no | sync leaves the value alone. Left out where no |
+| `setBy` | a link to an actor | who wrote the value directly |
+| `onBehalfOf` | a link to an actor | who that actor acted for, if anyone |
+| `derivedFrom` | a link to a source record, or several | what sync took the value from |
+| `setAt` | a time | when the value was set |
+| `alternatives` | a list | what other source records offer, each with `derivedFrom`, `value`, and the source record's `updatedAt` |
+
+The rules:
+
+- **The value stays in `data.properties`.** The marks sit under the same
+  name in `status.properties`. Kubernetes splits it the same way: values
+  in `spec`, and `managedFields` naming who set each one.
+- **`pinned` is stored when the value is written** and never worked out
+  again later. A direct write by a person, an app, a function or an agent
+  pins. A write by the engine or a package does not. So the rule of
+  decision 0113 goes, and so does the `tier:` key on an actor.
+- **Who wrote a value and what it was taken from are separate facts.**
+  `setBy` always points at an actor and `derivedFrom` always at a source
+  record, and both may be present.
+- **`pin` and `release` are explicit actions,** recorded in history. `pin`
+  keeps the current value. `release` hands the property back to sync,
+  which then picks among the alternatives. Both work on a required
+  property.
+- **Alternatives are keyed by source record,** so two accounts of one
+  provider show separately.
+- **If the last source goes and the value is kept,** `derivedFrom` is
+  dropped, so no link dangles.
+- **A link a mapping fills in carries no mark.** Its declaration already
+  says which mapping fills it.
+- **The state entry that compaction writes (F6) carries the marks,** since
+  the line that set a value may be gone.
+
+**The names.** `derivedFrom` already exists with this meaning on an
+observation: "the records this value was computed from"
+(`kinds/substrate.reamde.dev/observations/observation.yaml:214-218`).
+`source` is avoided because it already means other things, among them
+where a declaration came from
+(`kinds/substrate.reamde.dev/core/kind.yaml:36`) and a kind of the
+observations package
+(`kinds/substrate.reamde.dev/observations/source.yaml:8-10`). `setAt`
+dates the value being set, not a later pin or a change in the
+alternatives.
+
+**Other ways considered.**
+
+| Way | Precedent | Verdict |
+| --- | --- | --- |
+| Store "may sync replace it" apart from "where it came from" | the Google People API keeps a field's source apart from which value is primary | proposed |
+| Refuse a second writer until it takes the field over | Kubernetes server-side apply | later. It changes what every direct write does |
+| Keep every source's and every person's statement as a record, and select one | Wikidata ranks | no. More records and rules than the problem needs |
+
+**What can wait.** Pins on single items of a list; ranking sources; an
+option on a write that says "do not pin", for importers; and the
+Kubernetes-style refusal. Each is an addition to this shape.
+
+### The conversion at 1.0
+
+Several proposals change the shape of stored data: the repository id and
+the local namespace (F2), actors and the links on each write (F3), the
+marks on each value, and the history format (F6). The rule for all of them
+is one conversion and one read path. The server never reads two shapes of
+the same thing.
+
+**How.** Each change to a stored shape ships with one conversion step,
+numbered like a database migration. A repository already carries a stamp
+saying which format its history is in
+(`internal/engine/changelogdialect.go:3-37`). When it first starts under a
+newer server it runs the steps it lacks, in order, before it serves. A
+repository that comes straight from the last 0.x release runs all of them
+in one pass. A server refuses a repository stamped by a later release, as
+today.
+
+What the steps do for actors and marks:
+
+1. **Create the actor records** from what the repository holds: its one
+   person, each app found in tokens and history, each installed function,
+   agent and package, and `system`.
+2. **Rewrite every history line and the values inside it** by the fixed
+   rule below, and recompute each line's checksum.
+3. **Rewrite stored declarations and the properties that hold an actor as
+   text,** as ordinary record writes.
+4. **Rebuild the mark on each property** from the rewritten history, which
+   the existing rebuild already does. Each stored tier is resolved once
+   into `pinned`.
+
+| Old text | Becomes |
+| --- | --- |
+| `console`, `substratectl`, `api` | the repository's one person |
+| `app:chat.example.com` | that app's actor, on behalf of the person |
+| `function:…`, `agent:…`, `bundle:…` | the actor of that function, agent or package |
+| `substrate`, `substrate.oauth` | `system` |
+| a name whose function, agent or package is gone | a disabled actor that keeps the old name |
+
+What to know about it:
+
+- **Rewriting history is possible** only because F6 stops treating it as
+  permanent, and because the checksum on a line detects damage and is not
+  a chain (F7).
+- **It is tested against a directory kept from each release** (F8).
+- **Its time grows with the size of history.** It needs a copy taken
+  first, like any upgrade, and it is timed at 100 GB with the rest
+  ([the plan](#the-plan)).
+- **The door name is lost.** "Edited in the console" survives only where a
+  line has a token, since the token says which client it was issued to.
+- **Nothing is guessed.** Where an old synced value has no source record
+  the API reports today, `derivedFrom` is left empty.
+- **The steps can be deleted one release after 1.0.** From then on a 0.x
+  repository or export has to pass through 1.0 first.
 
 ### Several repositories under one API
 
@@ -1592,7 +1962,7 @@ agents need to work across them.
 | Change to the server | none | a new surface |
 | Reach | any server | one server |
 | Cost | N requests and N streams; the logic is written three times, in Swift, TypeScript and Go, unless specified once | it is the one place repositories meet, so the one place data can leak between them |
-| Waits on | nothing | identities and memberships |
+| Waits on | nothing | a sign-in for each person, and people as actors with roles |
 
 Both, in that order. The library is the only form that crosses servers. It
 keeps a local copy and a position per repository. The CLI already holds
@@ -1606,7 +1976,7 @@ for one stream, resumed with one token, over many rooms. Three additions,
 in order:
 
 1. **A session read:** the repositories this identity may use, with its
-   grants in each.
+   roles in each.
 2. **A way to choose a repository:** the sign-in is exchanged for a token
    per repository, in the manner of OAuth token exchange, which keeps
    today's rule that a token implies its repository.
@@ -1629,8 +1999,8 @@ Three routes, cheapest first:
   (`internal/engine/agentloop.go:665-666`). It would need tools that take a
   repository; each repository opened as the person who asked, under what
   both the person and the agent may do; the conversation kept in the home
-  repository; and a rule for runs no person started: an agent may be a
-  member in its own right.
+  repository; and a rule for runs no person started: the agent is an actor
+  there in its own right, with its own rules.
 
 The risk that grows is this. Text read from one repository can instruct an
 agent that may write to another, so a planted instruction becomes a path
@@ -1683,45 +2053,157 @@ Two alpha subsystems, measured values and agents, are 30% of the engine
    cannot be replaced, and with several owners, a key each. It goes, and
    the offline tool that uses it goes with it.
 
-## Work and validation
+## The plan
 
-The work the proposal implies, by area. A plan would order it.
+The work in order, as 39 steps. A row number is a row of
+[the proposal at a glance](#the-proposal-at-a-glance).
 
-| Area | Work | From |
-| --- | --- | --- |
-| Promises | The stability policy; labels on packages; route groups with revisions; records, errors and sign-in listed; the guide and console held to the code's error codes; every `proposed` record resolved; the operations guide's list of absences rewritten | F1 |
-| History | State entries for records, former ids, annotations, property writers and the delivery tables; replay that honours stored versions and times; the `retention` key; the compaction pass; permanent delete and "forget history" compacting at once; the shipped-record rule moved off history; apps tested against `compacted` | F6 |
-| The copy | The archiver, with a directory and an S3 destination; the mark of the last position archived; delay reported; the synchronous protocol, the stopped-server snapshot and the background check removed; the identity store included | F9 |
-| Keys | The recovery key, its step at registration and the offline rewrap tool removed; an import that accepts a repository without its secrets | F6 |
-| Format | The format documented with test vectors; a directory per release, imported in a test; unknown fields refused; the moved-kind checks restored | F8 |
-| Names | The repository id; storage, keys and webhook addresses bound to it; names as aliases with a hold period; the local namespace on the wire and in storage; one compaction that rewrites existing data; publishing as a step; one "add" route and the renamed catalog field; default-name rule | F2 |
-| People | The identity store; memberships; sign-in by person; the person on history lines and events; `owner` renamed to `person`; grants for members | F3 |
-| Access | Control kinds and the writer table with its test; delegation limited by the caller; the writer-name form; sign out everywhere; streams cut with their token; `docs/auth.md` | F5 |
-| Sharing | The `repository` key reserved in a reference | F4 |
-| Packages | Interface version; Python window; pinned input; retries over minutes; missed-schedule setting; dialect stated by a package and fallback to a readable version | F10, F11 |
-| API | F12 rows 1 to 5; a limit per person | F12 |
-| Operation | A damaged repository set aside at start-up; one reader per repository for watchers; a token cache | F13 |
-| Values | Byte order on identity columns; `body` ordinary; time zone check; added value lists counted | F14 |
-| Tests | The API tested against the real engine | What could be cut |
+### Rules for every step
 
-Validation before the release:
+1. **One pull request per step.** It leaves `main` able to release.
+2. **A step that changes a stored shape ships its conversion** and a test
+   that converts the kept directories (step 3). The same pull request
+   removes the code that read the old shape
+   ([The conversion at 1.0](#the-conversion-at-10)).
+3. **A step that replaces or amends a decision record writes the new
+   record**
+   ([the table](#decision-records-this-would-replace-or-amend)).
+4. **A break carries its upgrade steps** in a `BREAKING CHANGE:` footer.
+5. **The docs, the console, the CLI and the apps follow in the same step.**
+   A step is not done while a first-party client is broken.
+6. **Tests for what changed run with `-run`.** The full database suites
+   run once, at the end of a step, from one tree.
 
-1. A directory from each release, imported under the current code.
+### Order
+
+- Steps 1 to 5 come first.
+- 6 before 7. 7 before any step that rewrites history: 11, 15 and 21.
+- 15 before 16, 17 and 19. 18 before 19. 17 before 21 and 25.
+- The steps under Names, Packages and code, and Details do not wait on the
+  other groups.
+
+### Foundations
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 1 | The stability policy as a page; labels on packages; route groups with revisions; records, errors and sign-in listed in the discovery file | 1 to 3, 52, 54, 56 | the discovery file is built from the labels, and a test fails on a route in no group |
+| 2 | Every `proposed` decision record accepted or rejected | 4 | none remains whose code is on `main` |
+| 3 | The stored format documented, with test vectors; a data directory kept from the current release; the conversion chain, with no steps in it yet | 13, 53 | a test imports the kept directory under current code and compares every record |
+| 4 | The API tested against the real engine | 49 | the suites that claim engine behaviour run against it |
+| 5 | The [defects found in passing](#defects-found-in-passing) | none | each has a test that failed before the fix |
+
+### Storage
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 6 | The repository id; storage, keys and webhook addresses bound to it | 14 | no table or path is keyed by the name |
+| 7 | Postgres alone confirms a write; the archiver, to a directory or to S3; its delay reported; the export becomes the archive | 11 | the synchronous protocol, the stopped-server snapshot and the background check are gone; the server killed at each step of a write and of an archive pass restarts with the two in agreement |
+| 8 | The recovery key removed; an import that accepts a repository without its secrets | 55 | registration has no key step |
+| 9 | A damaged repository set aside at start-up | 48 | the others serve |
+
+### Names
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 10 | The name as an alias: rename, 90 days for the old name, the default-name rule | 15, 18 | every address, app token and webhook works under the old name and the new |
+| 11 | The local namespace `~`, in storage and on the wire; a sample is copied into it | 16 | an export imports under another name |
+| 12 | Three namespaces; publishing as a step; the project's name permanent | 17, 19 | a repository publishes one of its packages and another installs it |
+| 13 | One "add" route, and the catalog field that says who keeps a package | 20 | the console makes one call |
+| 14 | The `repository` key reserved in a reference | 33 | a declaration that uses the name is refused |
+
+### Actors and access
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 15 | `core/actor` with a type and its links, written by the engine for every type; each write records `actor`, `onBehalfOf` and `token`; the text forms and the header removed | 24, 27 | no history line, change event or stored value holds an actor as text |
+| 16 | `writer:` takes actor types | 29 | the old words are refused |
+| 17 | The marks `pinned`, `setBy`, `onBehalfOf`, `derivedFrom` and `setAt`; alternatives keyed by source record; `pin` and `release` | 30 | `tier` is gone from the tree; a pinned required property can be released |
+| 18 | The identity table; sign-in names a person, who picks a repository | 21 to 23 | every first-party client signs in the new way |
+| 19 | Roles: the kind, the three shipped roles, one check for every type of actor, the list of control kinds | 25, 28 | the test of actor types against control kinds passes; the four "only the owner may" checks are rules of `admin` |
+| 20 | "Sign out everywhere"; every stream cut with its token; `docs/auth.md` corrected | 32 | a revoked token's open stream ends |
+
+### History
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 21 | State entries for every table not computed from records; replay that honours stored versions and times | 5 | a repository compacted and replayed gives the same records |
+| 22 | The `retention` key on a kind, with its defaults | 6, 8 | a repository can override it |
+| 23 | The compaction pass, paced; `compacted` handled in each first-party app | 9 | each app recovers when told |
+| 24 | A permanent delete and "forget history" compact at once | 7 | no value of the record is left in the log |
+| 25 | The rule for a shipped record a person edited reads the mark | 10 | it no longer reads history |
+
+### Packages and code
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 26 | An interface version on a package; the supported Python releases; the input's shape pinned by a test | 37 | a package that names a version the server lacks is refused with that reason |
+| 27 | A temporary failure told from a permanent one and retried over minutes | 38 | a one-minute outage needs no person |
+| 28 | A trigger says what to do with runs it missed; the default is the latest only | 39 | a week offline runs one sync |
+| 29 | A package states the declaration format it needs; the server picks the newest version it can read | 40 | an older server installs the last version it understands |
+| 30 | A publisher may not rename a kind; code from outside publishers labelled experimental | 41, 42 | the rename is refused at the publisher's door |
+
+### Details
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 31 | `body` an ordinary property | 43 | it passes the checks every property passes |
+| 32 | Byte order on the identity columns | 44 | the index no longer depends on the host's locale |
+| 33 | `Local` and the empty time zone refused; an added list of allowed values counted as a narrowing | 45, 46 | both are refused with a reason |
+| 34 | The five API details (F12) | 47 | each has a test over HTTP |
+| 35 | Measured-value checks cost nothing where unused | 50 | a write to a kind with no measured values runs none |
+| 36 | One reader per repository feeding its watchers; a token cache; limits per person (F13) | none | a hundred watchers cost one read per change |
+| 37 | The assistant, layouts, model lists and vendor mappings named as outside the promise; the operations guide's list of absences rewritten | 51 | the policy page names them |
+
+### Release
+
+| Step | What lands | Rows | Done when |
+| --- | --- | --- | --- |
+| 38 | The validation below, with the timing at 100 GB | 57 | every item passes |
+| 39 | A stated run of releases with no break to anything labelled stable, then 1.0 | 1 | the run is complete |
+
+Each step delivers everything the proposals behind its rows list; the
+finding holds the detail. Rows 12, 26 and 31 need no work before 1.0, and
+rows 34 to 36 are under [After 1.0](#after-10).
+
+### Validation before the release
+
+1. A directory kept from each release, converted and imported under the
+   current code. No history line, event or stored value is left with an
+   actor as text.
 2. Compaction: a repository compacted and replayed gives the same records
    as before; a permanent delete leaves no value in the log.
 3. Each first-party app recovering when told history is `compacted`.
 4. A start-up with one damaged repository among several: the others serve.
-5. The server killed at each step of a write and of an archive pass.
-6. The table of writers against control kinds.
-7. A list of every route as public, owner-only or limited, where a new
-   route fails until it is placed†.
+5. The server killed at each step of a write, of an archive pass and of a
+   conversion.
+6. The table of actor types against control kinds.
+7. A list of every route as public, for an admin only, or limited by
+   rules, where a new route fails until it is placed†.
 8. Retry keys, guarded PATCH and refused paging tokens, over HTTP against
    the real engine.
 9. A rename: every address, app token and webhook still works under the
    old name and the new.
-10. Rebuild, import, compaction and archive timed at 100 GB in one
-    repository, with a hundred people connected.
+10. Rebuild, import, conversion, compaction and archive timed at 100 GB in
+    one repository, with a hundred people connected.
 11. A stated run of releases with no break to anything labelled stable.
+
+### After 1.0
+
+None of these changes stored data.
+
+- Adding a second person to a repository, and roles a repository writes
+  itself, in the console and the apps. Clients that work with less than
+  full access. Data that is really one person's (console preferences, an
+  assistant's memories, the "own" contact) gains a link to that person's
+  actor (F3).
+- A client library over several repositories, then a server API
+  ([design](#several-repositories-under-one-api)).
+- An agent across repositories.
+- Sharing with a person on another server, through a provider package.
+- "Write only the records you created".
+- How far the copy outside Postgres may fall behind
+  ([#1314](https://github.com/geoah/substrate/issues/1314)).
+- The conversion steps deleted, one release after 1.0.
 
 ## Decision records this would replace or amend
 
@@ -1733,10 +2215,14 @@ Validation before the release:
 | [0064](../decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md) | Amended: positions stay in the log; run records get short retention |
 | [0052](../decisions/0052-the-authority-is-the-repository-id.md) | Replaced: a repository has an id of its own |
 | [0074](../decisions/0074-the-repository-name-is-the-login-name.md) | Replaced: a person signs in; a repository's name is an alias |
+| [0025](../decisions/0025-an-actor-carries-the-full-authority.md) | Replaced: an actor is a record with a type and a link, not text |
+| [0113](../decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | Replaced: whether sync may replace a value is stored as `pinned` when the value is written, and never read again from a declaration |
+| [0092](../decisions/0092-an-orphaned-mapping-target-is-marked-and-collected-on-request.md), [0094](../decisions/0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md) | Amended: both read `pinned` and `derivedFrom` in place of the manager and its tier |
+| [0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md) | Amended: an approved app is an actor record; its token names the person it acts for |
 | [0042](../decisions/0042-every-kind-carries-an-authority.md), [0098](../decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md), [0101](../decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md) | Amended: a kind is named in full, except that `~` is the one short form |
 | [0048](../decisions/0048-providers-are-published-samples-are-copied.md), [0070](../decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | Amended: a sample is copied into the local namespace, not under the repository's name |
 | [0041](../decisions/0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Amended: `body` loses its column |
-| [0143](../decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | Amended: a member's token is limited; sign out everywhere |
+| [0143](../decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | Amended: a person's token is held to that person's roles; sign out everywhere |
 | [0054](../decisions/0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | Replaced: there is no recovery key. A repository moves to another host with its host key, or without its secrets |
 | [0191](../decisions/0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | Amended: whether a person edited a shipped record is read from the property mark, not from history |
 | [0051](../decisions/0051-a-repository-directory-is-the-backup-unit.md), [0065](../decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md), [0069](../decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | Replaced: the snapshot and the export become the archive and its format |
@@ -1765,13 +2251,15 @@ versioning.
    - The dialect: a new key raises the dialect number; a package states the
      number it needs.
    - The stored format: a new line key or effect raises the format stamp. A
-     1.x server reads what any earlier 1.x wrote, and 2.0 reads what the
-     last 1.x wrote.
+     1.x server opens what any earlier 1.x wrote, converting it once where
+     a shape changed, and 2.0 opens what the last 1.x wrote.
    - The function interface: an interface version, and the current Python
      release and the one before.
 5. **Upgrading.** A 1.x server opens any database and archive written by
    the same or an earlier 1.x release, in one step. It refuses one written
-   by a later release, as today. Database changes only go forward.
+   by a later release, as today. Database changes only go forward. A
+   change to a stored shape ships with a conversion that runs once; the
+   server never reads two shapes of the same thing.
 6. **Going back.** Not supported once a newer server has stamped the data
    or changed the database. The way back is a copy taken before. Each
    release says whether it closes the way back.
@@ -1817,15 +2305,16 @@ versioning.
 | [0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md) | the app flow and limited tokens |
 | [0198](../decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md) | functions offered to agents as tools |
 | [0212](../decisions/0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md), [0213](../decisions/0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md), [0220](../decisions/0220-outside-code-is-confined-and-reviewed.md) | proposed records with shipped code (F1); outside code must be confined (F10) |
+| [0236](../decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md) | a deleted repository's name is free at once (F2) |
 | [0245](../decisions/0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | a proposed record already on the wire (F1) |
-| 0042, 0048, 0051, 0054, 0065, 0069, 0070, 0098, 0101, 0191 | linked in [the table of records this would replace or amend](#decision-records-this-would-replace-or-amend) |
+| 0025, 0042, 0048, 0051, 0054, 0065, 0069, 0070, 0092, 0094, 0098, 0101, 0113, 0191 | linked in [the table of records this would replace or amend](#decision-records-this-would-replace-or-amend) |
 
 The index of every record is [docs/decisions](../decisions/README.md).
 
 ### Other systems
 
-Named for comparison. Each link answered on 2026-11-11. `lint:docs` does
-not fetch them.
+Named for comparison. Each link answered on 2026-11-11 or 2026-11-12.
+`lint:docs` does not fetch them.
 
 | System | Source | Cited for |
 | --- | --- | --- |
@@ -1843,7 +2332,12 @@ not fetch them.
 | Automerge, Yjs | [automerge.org](https://automerge.org/), [docs.yjs.dev](https://docs.yjs.dev/) | merging simultaneous edits with no server choosing the order |
 | IndieAuth | [specification](https://indieauth.spec.indieweb.org/) | a person named by a URL they control |
 | OpenID Connect | [core](https://openid.net/specs/openid-connect-core-1_0.html) | a server vouching for a person |
-| OAuth token exchange | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) | a sign-in exchanged for a token per repository |
+| OAuth token exchange | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) | a sign-in exchanged for a token per repository; the acting party kept apart from the one it acts for |
+| Kubernetes RBAC | [using RBAC authorization](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) | a role as a list of rules that only add; a binding from a subject to roles; `admin`, `edit` and `view` shipped |
+| Kubernetes server-side apply | [server-side apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/) | each field records which program set it; a second program is refused until it takes the field over |
+| W3C PROV | [PROV-O](https://www.w3.org/TR/prov-o/) | who a thing is attributed to, who acted on whose behalf, and what it was derived from, as three separate facts |
+| Google People API | [`FieldMetadata`](https://developers.google.com/people/api/rest/v1/people) | a field's source kept apart from which value is primary |
+| Wikidata | [ranking](https://www.wikidata.org/wiki/Help:Ranking) | every statement kept, with one preferred |
 | JSON canonicalization | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785) | the standard canonical form, and why it does not fit exact numbers |
 | Event sourcing patterns | [throw away the key](https://verraes.net/2019/05/eventsourcing-patterns-throw-away-the-key/) | erasing by destroying a key (F6) |
 | Postgres | [continuous archiving](https://www.postgresql.org/docs/current/continuous-archiving.html) | shipping a log after the commit |
