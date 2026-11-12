@@ -33,7 +33,12 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: observations
+  # A first release: these kinds may change or go in any release
+  # (docs/stability.md). The observations an owner holds survive either way.
+  stability: experimental
   # The sample samples.substrate.reamde.dev/observations at its version 6,
   # without its six example metrics (now the `environment` catalogue).
   # version 2: the metric kind's ids are named (decision record 0228).
-  version: 2
+  # version 3: the package states its stability, `experimental` (decision
+  # record 0256).
+  version: 3

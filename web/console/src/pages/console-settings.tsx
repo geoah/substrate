@@ -25,6 +25,14 @@ import { VerifyDomainRow } from "@/components/settings-page/verify-domain-row"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { toast } from "@/components/ui/toast"
 import {
   useConsolePreferences,
@@ -219,9 +227,16 @@ function DownloadRow() {
   )
 }
 
-function ServerRows() {
+/** What this server says about itself in its discovery file: its version,
+ * where its API is, and the features it lists. A feature is a group of
+ * routes; its three facts sit under their own column headers, and the notice
+ * column is drawn only where a feature carries one. A server older than the
+ * revision count sends none, which reads as a dash and never as a number. */
+export function ServerRows() {
   const server = useQuery(discoveryQueryOptions)
   const doc = server.data
+  const features = doc?.features ?? []
+  const notices = features.some((f) => f.notice)
   return (
     <SettingRow
       title="This server"
@@ -233,20 +248,45 @@ function ServerRows() {
             : "Asking…"
       }
     >
-      {doc?.features?.length ? (
-        <ul className="flex flex-wrap gap-1.5">
-          {doc.features.map((f) => (
-            <li
-              key={f.name}
-              className="rounded-full border border-border px-2 py-px text-xs text-muted-foreground"
-            >
-              {f.name}
-              {f.stability !== "stable" && (
-                <span className="text-faint"> · {f.stability}</span>
-              )}
-            </li>
-          ))}
-        </ul>
+      {features.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="max-w-[68ch] text-[12.5px] text-faint">
+            Each feature is a group of routes. Its stability says how far its
+            shape is promised, and its revision goes up when it gains something.
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <Table aria-label="Features">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Feature</TableHead>
+                  <TableHead>Stability</TableHead>
+                  <TableHead className="text-right">Revision</TableHead>
+                  {notices && <TableHead>Notice</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {features.map((f) => (
+                  <TableRow key={f.name}>
+                    <TableCell className="font-mono text-xs">
+                      {f.name}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {f.stability}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">
+                      {typeof f.revision === "number" ? f.revision : "—"}
+                    </TableCell>
+                    {notices && (
+                      <TableCell className="min-w-[16rem] whitespace-normal text-muted-foreground">
+                        {f.notice}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       ) : undefined}
     </SettingRow>
   )

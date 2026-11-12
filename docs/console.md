@@ -262,8 +262,11 @@ naming the agent that made it where one did, and
 **Made by** with that agent's card and a way to ask it. Who declared a
 package is the `package` row's `declaredBy`, stamped by the engine
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md));
-a package created before the stamp names no one. A standard collection's
-package (below) adds **Updates**: who keeps it up to date, **Update** when
+a package created before the stamp names no one. With Technical details on,
+the head also says the package's **Stability**, beside its id: the label its
+`package` row states for its kinds, and `experimental` where the row states
+none ([stability](stability.md#on-a-package-for-its-kinds)). A standard collection's package (below) adds **Updates**: who keeps it
+up to date, **Update** when
 the catalog offers one (or why it is blocked), **Pause** and **Remove**,
 which a provider has on its own page
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md));
@@ -1708,7 +1711,13 @@ how many values are pending.
   `substrate.reamde.dev`, **API tokens** (label, created, expiry; mint one for
   a script or a device, each with full access, and revoke), and what this
   server says about itself at `/.well-known/substrate/server.json`: its
-  version, its API endpoint and its features.
+  version, its API endpoint and its features. The features are a table, one
+  row per group of routes, with the feature's name, its **Stability**
+  (`stable`, `beta` or `experimental`) and its **Revision**, the number that
+  goes up when the feature gains something. A **Notice** column appears where
+  a feature carries one, which is where the server announces a coming break.
+  A server from before revisions were counted shows a dash there.
+  [Stability](stability.md) says what each label promises.
 
 The old addresses `/account` and `/account/tokens` redirect here.
 

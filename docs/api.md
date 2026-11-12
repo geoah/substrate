@@ -905,17 +905,18 @@ is on the wire: the
 stored per repository, and a binary too old for a store refuses to open it,
 which surfaces as `unavailable`. That
 feature list is what a client reads instead of trying a route to see whether
-it exists: each entry names a feature, its stability and the `surfaces` that
-serve it:
+it exists: each entry names a feature, which is a group of routes, with its
+stability, its revision and the `surfaces` that serve it:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
- "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "changefeed", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "search", "stability": "beta", "surfaces": ["rest"]},
-              {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
+ "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
+              {"name": "auth", "stability": "beta", "revision": 1, "surfaces": ["rest"],
+               "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
+              {"name": "search", "stability": "beta", "revision": 1, "surfaces": ["rest"]},
+              {"name": "agents", "stability": "experimental", "revision": 1, "surfaces": ["rest"]}],
  "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
               "mcp": {"endpoint": "/mcp", "compatibility": "preview"}},
  "grammar": {"kind": "<authority>/<package>/<name>",
@@ -934,19 +935,10 @@ serve it:
  "registration": {"inviteRequired": true, "totpRequired": true}}
 ```
 
-A feature's `surfaces` are the doors to its own operations, not to its
-records: a trigger and a blob manifest are ordinary records and read through
-the records route whatever the entry says. Every entry lists `rest` but
-`mcp`, which lists the MCP surface ([connecting an assistant](mcp.md)). The
-example above is abridged; the full list, and it is the same for every
-deployment of a given build, is `triggers`, `functions`, `bundles`, `blobs`,
-`export`, `changefeed`, `search`, `aggregate`, `units`, `embeddings`,
-`agents`, `apps` and `mcp`, and a deployment that booted with an
-[operator defaults](operations.md#operator-defaults) file adds
-`operatorDefaults` ([operator defaults](#operator-defaults)). `grammar.collection`
-is the records route and `grammar.recordPath` the record path, so a client
-checks the two shapes it must agree with the substrate about before it
-addresses anything.
+The example's feature list is abridged; [the features](#the-features) below
+names every entry. `grammar.collection` is the records route and
+`grammar.recordPath` the record path, so a client checks the two shapes it
+must agree with the substrate about before it addresses anything.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
@@ -954,8 +946,8 @@ is the interface a client builds on, and a break there is announced, never
 silent. It is `preview` on `mcp`, at `/mcp`, whose tools may still move. A second, preview surface used to sit beside it and is gone
 ([decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md));
 the object is keyed so its removal was one key leaving, not a reshaped
-document. A feature's `stability` says how far that feature's own shape has
-settled, and it binds on the one door.
+document. A feature's `stability` says how that feature's own routes may
+change.
 
 `registration` is what the register door asks for. `registration.inviteRequired`
 is `false` only on a deployment with
@@ -966,52 +958,109 @@ describe a local substrate, and a client reads them before it asks a person
 for either code. Neither field is a verdict — the service refuses on its own
 terms either way.
 
-### What a feature's stability means
+### The features
 
-The stamp is a promise about **change**, not about quality: everything listed
-is served and works today.
+A feature's entry carries:
 
-| Value | Means |
-| ----- | ----- |
-| `alpha` | The shape may change or be withdrawn with no v1 wire break. Pin the server version if you depend on it. |
-| `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
-| `stable` | Frozen for v1. Changes are additive only. |
+| Key | What it says |
+| --- | ------------ |
+| `name` | The feature. |
+| `stability` | `stable`, `beta` or `experimental`: how the feature's routes may change. It is a promise about change, not about quality, and everything listed is served and works today ([stability](stability.md#the-three-labels)). |
+| `revision` | A number that starts at 1 and only goes up. It goes up when the feature gains something a client may want to check for: a route, a parameter, a request field, a response field. Always present. |
+| `surfaces` | The request surfaces that serve the feature's own operations, each a key of the document's `surfaces` object. They say nothing about its records: a trigger and a blob manifest are ordinary records and read through the records route whatever the entry lists. |
+| `notice` | Present only where the server announces a coming break to a beta feature, or a deprecation. |
 
-**The settled features report `stable`**: `triggers`, `functions`, `bundles`,
-`blobs` and `changefeed`. `search` reports `beta`: it is served, at
-`GET /api/v1/records?q=`, and the hit shape (the per-arm `scores` beside the
-page) is young. `export` reports `beta` too: `GET /api/v1/export` streams the
-repository's recovery export, a tar of its directory in the snapshot format
-([backups](operations.md#backups)), and it freezes by a decision of its own,
-not by age. `agents` and `embeddings` report `alpha` because their shapes are
-still moving; a surface in their `surfaces` says where they are served, not
-that they are frozen. `embeddings` reach a caller as the semantic arm of
-[`search`](#search), its one door.
+Every route the server registers is in exactly one feature, so an entry
+stands for every route behind it. The entries, in the order the document lists
+them:
 
-The list is a literal in the server (`internal/api/discovery.go`), and it is
-every feature the build serves: one implementation serves them all, so there
-is nothing per-deployment to compute. A client reads the list for the
-stability stamps and the `surfaces`, not to find out whether a route is
-there.
+| Feature | Stability | What it covers |
+| ------- | --------- | -------------- |
+| `discovery` | `stable` | This document and `GET /healthz`. |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, and the record path with its four verbs. |
+| `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
+| `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
+| `blobs` | `stable` | [Blob](#blobs) upload and read. |
+| `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
+| `functions` | `stable` | The function call ([functions](functions.md)). |
+| `bundles` | `stable` | Bundle status and `bind`, and the catalog with its install and import ([bundles](bundles.md)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens` and `/repository/delete` ([users and tokens](auth.md)). |
+| `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
+| `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
+| `merge` | `beta` | `POST /api/v1/merge` and `POST /api/v1/split`. |
+| `connect` | `beta` | Connecting an account to its provider: `POST /api/v1/oauth/start` and the callback the provider redirects to. |
+| `sync` | `beta` | `GET /api/v1/sync/status`. |
+| `domain` | `beta` | [Verify domain](auth.md#verify-domain): `POST /api/v1/repository/domain` and its `/verify`. |
+| `export` | `beta` | `GET /api/v1/export`, the repository's recovery export in the snapshot format ([backups](operations.md#backups)). |
+| `search` | `beta` | The ranked read, `q=` on the records route ([search](#search)). It has no route of its own. |
+| `metrics` | `beta` | `GET /metrics`. |
+| `site` | `beta` | The deployment's site under `/site/`, and its tab icon. |
+| `aggregate` | `experimental` | [The aggregate read](#the-aggregate-read), `aggregate=` on the records route. |
+| `embeddings` | `experimental` | The semantic arm of `q=`, its one door. |
+| `units` | `experimental` | `GET /api/v1/units` and `GET /api/v1/units/convert` ([units](#units-and-conversions)). |
+| `agents` | `experimental` | The agent chat and call routes, and a thread's `events` and `stop` ([agents](agents.md)). |
+| `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
+| `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
+| `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
+
+Every entry lists the `rest` surface but two: `mcp` lists `mcp`, and
+`applets` lists both.
+
+The list is the same for every deployment of a given build, with one
+exception. `operatorDefaults` is listed only where the server booted with an
+[operator defaults](operations.md#operator-defaults) file, and its entry is
+what tells a client the operator pays for anything. `metrics` and `site` are
+listed on every server, whether or not the deployment turns their routes on:
+the list says what the build serves and what it promises about it, and
+whether a deployment has a site is the document's own `site` object.
 
 `embeddings` is listed like the rest. Discovery opens no repository, so it
 does not answer the narrower question of whether the CALLER's repository
 declares an [`llm/provider` row](agents.md): the first semantic query answers
-that one, naming the property no row declares. An entry stands for every route
-behind it, so `bundles` covers the lifecycle transitions and catalog install
-together.
+that one, naming the property no row declares.
+
+The list is built from one table in the server
+(`internal/api/features.go`), and a test holds that table to the router: a
+route no feature holds fails it, and so does a feature naming a route the
+server does not serve.
+
+### Reading a revision
+
+The server refuses a request field it does not know with `400 bad_request`,
+so a client that sends a field a later release added fails on an older
+server. The revision is how it asks first:
+
+- **Check a feature's revision before sending something that revision
+  added.** Find the entry by `name` and compare its `revision` with the one
+  the field, parameter or route arrived at. A server from before revisions
+  sends none, which meets no minimum.
+- **Ignore a response field you do not know.** A later release may add one
+  to any answer.
+
+Read the `stability` beside it for how the feature may change, and the
+`notice` for a break that is coming. [Stability](stability.md) is the whole
+policy: what each label promises, the label a package states for its kinds,
+and what an upgrade may change.
+
+### The API version
 
 Send every request to the `/api/v1` prefix. It is the only prefix served,
-and `versions` lists it with status `served`.
+and `versions` lists it with status `served`; `deprecated` is the other value
+the field declares.
 
-Within v1 the REST surface is **additive only**: fields and endpoints are
-added, never removed or narrowed under the same version, except where a
-feature reports `alpha`, which licenses withdrawing one of its routes
+Under `/api/v1` the API **only gains things**: routes, parameters and fields
+are added, and nothing a stable feature serves is removed, renamed or
+narrowed. A beta feature may break after a notice a release ahead, and an
+experimental one may change or lose a route in any release
 (`POST /api/v1/embeddings/reembed` was withdrawn that way, and re-embedding is
-the operator's `substratectl repository reembed`). A deprecation is
-announced in discovery before a removal: a version's `status` in `versions`
-is `served` today, and `deprecated` is the other value the field declares.
-There is no Kubernetes-style multi-version conversion machinery.
+the operator's `substratectl repository reembed`). A later `/api/v2` would be
+served beside `/api/v1`, for a period the release that adds it states. A kind
+is never served in two shapes at once, and there is no Kubernetes-style
+multi-version conversion machinery
+([stability](stability.md#only-additions-surface-by-surface)). Those promises
+are written for 1.x: the server is below 1.0, and until then a release may
+still break a stable feature, with the steps in its release notes
+([what is not in force yet](stability.md#what-is-not-in-force-yet)).
 
 ## Search
 
@@ -2330,7 +2379,8 @@ is a record of `substrate.reamde.dev/applets/applet`, written like any record
 by the owner's token, the MCP door or the assistant's designer; no app scope
 writes one. Three routes run it, each under the caller's own token, so an
 applet reads and writes what that token may. The wire is
-`internal/substrate/applets.go`. Alpha (`applets` in discovery).
+`internal/substrate/applets.go`. Applets are experimental (the `applets`
+feature in [discovery](#discovery)).
 
 | Route | Body | Answers |
 | --- | --- | --- |
@@ -2497,9 +2547,14 @@ head, or under a history generation the server does not hold, and a list
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 
-Every code a request can receive is above; those thirteen strings are the whole
-closed set, and nothing else appears in `error.code`. The
-[policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
+Every code a request can receive is above, and nothing else appears in
+`error.code`.
+
+The closed set: `auth`, `bad_request`, `compacted`, `conflict`, `forbidden`,
+`function_failed`, `guard`, `internal`, `lossy`, `not_found`, `parked`,
+`rate_limited`, `totp_required`, `unavailable`, `validation`.
+
+The [policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
 holds an agent's write for the owner's review and surfaces as a tool result
 inside the agent loop, never as an HTTP response
 ([0037](decisions/0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md)).

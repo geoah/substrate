@@ -2,16 +2,15 @@ package api
 
 import (
 	"net/http"
-	"slices"
 
 	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Discovery: GET /.well-known/substrate/server.json answers what this
-// deployment serves, so a client reads the stability of each feature, the
-// compatibility of each surface and what registration asks for instead of
-// trying a route. It is unversioned, unauthenticated, and touches no
+// deployment serves, so a client reads the stability and the revision of each
+// feature, the compatibility of each surface and what registration asks for
+// instead of trying a route. It is unversioned, unauthenticated, and touches no
 // repository — the same class of endpoint as /healthz — and its well-known
 // path is what lets an outside system tell whether a domain is a substrate
 // at all before it speaks the rest of the contract.
@@ -26,12 +25,13 @@ type discoveryDoc struct {
 	// Changelog carries the retention horizon: the oldest resumable seq, 0
 	// while nothing is pruned.
 	Changelog changelogInfo `json:"changelog"`
-	// Features is the feature list a client reads instead of feature-probing.
+	// Features is the feature list a client reads instead of feature-probing:
+	// featureTable's entries (features.go), each with its label and revision.
 	Features []featureInfo `json:"features"`
 	// Surfaces is the compatibility verdict per request surface, keyed by the
 	// same names a feature's `surfaces` carries. It is a different axis from
-	// a feature's stability: stability says how far ONE feature's shape has
-	// settled, compatibility says what a client may pin (decision 0053).
+	// a feature's stability: stability says how ONE feature's shape may
+	// change, compatibility says what a client may pin (decision 0053).
 	Surfaces surfacesInfo `json:"surfaces"`
 	// Grammar is how this deployment spells a kind and a record reference —
 	// the one thing a client must agree with the substrate about before it can
@@ -144,113 +144,6 @@ type serverInfo struct {
 
 type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
-}
-
-// featureInfo names one feature, how far its shape has settled, and WHICH
-// surfaces serve it. Stability is one of substrate.StabilityAlpha,
-// StabilityBeta or StabilityStable, and it describes CHANGE, not quality:
-// everything listed is served today.
-//
-// Surfaces is never empty, and each name is a key of the document's
-// top-level `surfaces` object. They are about the feature's OWN operations,
-// never about its records: a trigger and a blob manifest are ordinary
-// records, readable through `/records` and the record path whatever this
-// list says.
-type featureInfo struct {
-	Name      string   `json:"name"`
-	Stability string   `json:"stability"`
-	Surfaces  []string `json:"surfaces"`
-}
-
-// The request surfaces a feature can be served on. A client reads them off
-// discovery instead of trying a route to see whether it exists.
-const (
-	surfaceREST = "rest"
-	surfaceMCP  = "mcp"
-)
-
-// features is what this deployment serves, written out. It is a literal
-// because substrate.Dataset is one interface with one implementation: there
-// is nothing to ask, and every entry below is served wherever this binary
-// runs.
-//
-// Each stability says how far the feature's shape has settled, and `stable`
-// means frozen for v1: additive only, a break announced (see
-// substrate.StabilityStable). `agents` and `embeddings` stay alpha because
-// both shapes are still moving, and `search` beta while the ranked page is
-// young.
-//
-// Each entry's surfaces are the doors that actually exist today, and they are
-// about the feature's OWN verbs, never its records. Search is
-// `GET /records?q=`, embeddings reach a caller as its semantic arm, the
-// changefeed is `/changes` and the `watch=1` tail of `/records`, and
-// everything else is a set of REST verbs.
-//
-// A feature added here is a route added beside it, and a route removed takes
-// its entry: nothing computes the list, so the two are held together by
-// review and by the roster in discovery_errors_watch_test.go.
-var features = []featureInfo{
-	{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-	{Name: "functions", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-	// The bundle entry stands for the lifecycle verbs and catalog install
-	// together: a client reads one entry and gets every route behind it.
-	{Name: "bundles", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-	{Name: "blobs", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-	// The recovery export is one REST verb, `GET /export`, streaming a tar in
-	// the snapshot format (decision 0069). Beta: the archive's layout is the
-	// repository directory's and its snapshot.json is the operator's, both
-	// settled, but this is the surface's first release.
-	{Name: "export", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
-	// The changefeed: paged backward (`GET …/changes?before=`), resumed
-	// forward (`?from=`) and tailed (`?watch=1`, on /changes and on /records).
-	{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-	// Search is `GET /records?q=`: served, and beta while the hit shape (the
-	// per-arm scores beside the page) is young.
-	{Name: "search", Stability: substrate.StabilityBeta, Surfaces: []string{surfaceREST}},
-	// The aggregate read is `GET /records?aggregate=` (decision 0161): alpha
-	// while the observations it reduces are a first release.
-	{Name: "aggregate", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
-	// The repository's unit graph and one conversion through it, `GET /units`
-	// and `GET /units/convert`: alpha while the graph has not shipped.
-	{Name: "units", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
-	// Embeddings are alpha: they reach a caller as the semantic arm of that
-	// same ranked read, and the vector width is a constant in the engine
-	// (vectorDim) that no declaration can move. The provider is a
-	// repository's own llm/provider row, not a host setting an operator can
-	// omit, so the feature is served wherever the substrate is; a repository
-	// that declares no row is told so by its first query, naming the property.
-	{Name: "embeddings", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
-	{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
-	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
-	// alpha while the protocol's stateless revision and the tool set settle.
-	{Name: "mcp", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceMCP}},
-	// App authorization (decision 0194): an app that registered nowhere gets
-	// a scoped token through /oauth/authorize and /oauth/token. Alpha while
-	// the scoped surface is the records route, the record path and the unit
-	// reads alone.
-	{Name: "apps", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}},
-	// Applets (docs/plans/applets.md): records of the seeded applets package
-	// rendered as A2UI v1.0 screens, `POST …/applets/applet/{id}/render`,
-	// `/act` and `/preview`, and the image proxy, `GET /images`, that draws
-	// the images they name. Alpha: the record's format, its steps and its
-	// data model grow with the first applets people keep.
-	{Name: "applets", Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST, surfaceMCP}},
-}
-
-// operatorDefaultsFeature is listed only where the server booted with an
-// operator defaults file: `GET /operator/defaults` is served everywhere, and
-// the entry is what tells a client the operator pays for anything (decision
-// 0235). Alpha while the plan's later phases add OAuth clients and function
-// secrets to it.
-var operatorDefaultsFeature = featureInfo{Name: substrate.FeatureOperatorDefaults, Stability: substrate.StabilityAlpha, Surfaces: []string{surfaceREST}}
-
-// features is the feature list this server announces: the literal, and the
-// operator defaults read where a defaults file is loaded.
-func (h *handler) features() []featureInfo {
-	if !h.operatorDefaults {
-		return features
-	}
-	return append(slices.Clone(features), operatorDefaultsFeature)
 }
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.

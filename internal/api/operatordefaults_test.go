@@ -113,9 +113,6 @@ func TestDiscoveryListsOperatorDefaultsOnlyWithADefaultsFile(t *testing.T) {
 			t.Fatalf("defaults file %v: operatorDefaults listed = %v", loaded, has)
 		}
 	}
-	if slices.ContainsFunc(features, func(f featureInfo) bool { return f.Name == substrate.FeatureOperatorDefaults }) {
-		t.Fatal("the shared feature list gained operatorDefaults: a server with no defaults file would announce it")
-	}
 }
 
 // A call past the allowance answers 403 guard with the quota reason, so a

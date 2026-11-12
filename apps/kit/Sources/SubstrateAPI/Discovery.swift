@@ -55,23 +55,39 @@ public struct Discovery: Codable, Hashable, Sendable {
         }
     }
 
-    /// One feature the deployment serves, how far its shape has settled
-    /// (`alpha`, `beta`, `stable`) and the surfaces that serve it.
+    /// One feature the deployment serves: a group of routes, the promise
+    /// their shape is served under, how far the group has grown and the
+    /// surfaces that serve it.
     public struct Feature: Codable, Hashable, Sendable {
         public var name: String
+        /// `stable` (only additions within 1.x), `beta` (supported; a break
+        /// is announced one minor release ahead, in `notice`) or
+        /// `experimental` (may change or go in any release). Kept as text:
+        /// the set is the server's, and a label this kit has not met is no
+        /// reason to refuse the document.
         public var stability: String
+        /// Starts at 1 and only rises, each time the feature gains something
+        /// a client may check for. 0 is a server from before revisions,
+        /// which meets no minimum a client asks for.
+        public var revision: Int
+        /// A coming break or a deprecation, where the server announces one.
+        public var notice: String?
         public var surfaces: [String]
 
-        public init(name: String, stability: String, surfaces: [String] = ["rest"]) {
+        public init(name: String, stability: String, revision: Int = 1, surfaces: [String] = ["rest"], notice: String? = nil) {
             self.name = name
             self.stability = stability
+            self.revision = revision
             self.surfaces = surfaces
+            self.notice = notice
         }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             name = c.value(.name, or: "")
             stability = c.value(.stability, or: "")
+            revision = max(0, c.value(.revision, or: 0))
+            notice = c.value(.notice, or: nil)
             surfaces = c.value(.surfaces, or: [])
         }
     }
@@ -226,6 +242,13 @@ public struct Discovery: Codable, Hashable, Sendable {
     public var version: ServerVersion? { server.version.flatMap(ServerVersion.init) }
 
     public func feature(_ name: String) -> Feature? { features.first { $0.name == name } }
+
+    /// Whether the server serves a feature, at `revision` or a later one
+    /// where a minimum is asked. The server refuses a request field it does
+    /// not know, so a client asks this before it sends one a revision added.
+    public func serves(_ name: String, atLeast revision: Int = 0) -> Bool {
+        feature(name).map { $0.revision >= revision } ?? false
+    }
 
     /// Whether the server says it serves app authorization (decision 0194).
     /// Its OAuth metadata is the authority on what that covers.

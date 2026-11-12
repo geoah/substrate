@@ -20,9 +20,44 @@ export interface AuthorizationServerMetadata {
   client_id_metadata_document_supported?: boolean
 }
 
+/** One feature a server serves: a group of routes, the promise their shape
+ * is served under and how far the group has grown. */
+export interface ServerFeature {
+  name: string
+  /** `stable` (only additions within 1.x), `beta` (supported; a break is
+   * announced one minor release ahead, in `notice`) or `experimental` (may
+   * change or go in any release). Kept as text: the set is the server's. */
+  stability: string
+  /** Starts at 1 and only rises, each time the feature gains something a
+   * client may check for. A server from before revisions sends none. */
+  revision?: number
+  /** A coming break or a deprecation, where the server announces one. */
+  notice?: string
+}
+
 export interface ServerDocument {
   server?: { version?: string; build?: string }
-  features?: { name: string; stability: string }[]
+  features?: ServerFeature[]
+}
+
+/** Whether a server's document lists a feature, at `atLeast` or a later
+ * revision where a minimum is asked. The server refuses a request field it
+ * does not know, so a client asks this before it sends one a revision
+ * added. A feature with no revision meets no minimum above 0. */
+export function hasFeature(
+  document: ServerDocument | undefined,
+  name: string,
+  atLeast = 0
+): boolean {
+  const features = document?.features
+  if (!Array.isArray(features)) return false
+  const feature = features.find((f) => f.name === name)
+  if (!feature) return false
+  const revision =
+    typeof feature.revision === "number" && feature.revision > 0
+      ? feature.revision
+      : 0
+  return revision >= atLeast
 }
 
 export interface LocatedServer {
@@ -172,7 +207,7 @@ export async function probe(
     )
     if (!verdict.compatible) throw new ServerTooOld(origin, verdict)
   }
-  if (!usable || !document.features.some((f) => f.name === "apps")) {
+  if (!usable || !hasFeature(document, "apps")) {
     throw new NotASubstrate(
       `${host} is a Substrate server too old for apps: it needs an update first.`
     )

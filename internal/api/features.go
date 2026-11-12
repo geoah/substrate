@@ -1,0 +1,276 @@
+package api
+
+import "github.com/geoah/substrate/internal/substrate"
+
+// A feature is one group of routes a client may build on: a name, the label
+// that says how its shape may change (substrate.Stabilities,
+// docs/stability.md) and a revision. featureTable is the one list of them.
+// Discovery serializes it (getDiscovery), and features_test.go holds it to
+// the router both ways: every route the router serves is in exactly one
+// feature, and a feature names only routes the router serves. A route added
+// to the router is therefore added here, in the feature it belongs to.
+//
+// A revision starts at 1 and only goes up. It goes up when the feature gains
+// something a client may want to check for before it uses it: a route, a
+// request field, a parameter, a response field. A client then asks for "at
+// least 3" instead of trying a request to see whether it is refused.
+// testdata/features.golden.json records each feature's routes and revision,
+// and its test refuses a route set that changed under an unchanged revision
+// and a revision that went down; `mise run features:check` refuses the same
+// against the base branch.
+
+// featureInfo is one feature as discovery serves it. Stability is one of
+// substrate.Stabilities, and it describes CHANGE, not quality: everything
+// listed is served today.
+//
+// Surfaces is never empty, and each name is a key of the document's
+// top-level `surfaces` object. They are about the feature's OWN operations,
+// never about its records: a trigger and a blob manifest are ordinary
+// records, readable through `/records` and the record path whatever this
+// list says.
+type featureInfo struct {
+	Name      string   `json:"name"`
+	Stability string   `json:"stability"`
+	Revision  int      `json:"revision"`
+	Surfaces  []string `json:"surfaces"`
+	// Notice announces a coming break to a beta feature, or a deprecation,
+	// one minor release ahead (docs/stability.md).
+	Notice string `json:"notice,omitempty"`
+}
+
+// The request surfaces a feature can be served on. A client reads them off
+// discovery instead of trying a route to see whether it exists.
+const (
+	surfaceREST = "rest"
+	surfaceMCP  = "mcp"
+)
+
+// feature is one row of featureTable: what discovery serves, and the routes
+// the row stands for.
+type feature struct {
+	name      string
+	stability string
+	revision  int
+	surfaces  []string
+	notice    string
+	// routes are the routes this feature alone holds, each `METHOD pattern`
+	// with the pattern as the router registers it (`*` for a route that
+	// answers every method).
+	routes []string
+	// modeOf is the route, held by another feature, that this feature is a
+	// mode of: a parameter of it, with no route of its own.
+	modeOf string
+	// listed says whether this server announces the entry; nil is always.
+	// The routes are the table's either way.
+	listed func(h *handler) bool
+}
+
+func (f feature) info() featureInfo {
+	return featureInfo{Name: f.name, Stability: f.stability, Revision: f.revision, Surfaces: f.surfaces, Notice: f.notice}
+}
+
+// recordsRead is the one list route, which three features are modes of.
+const recordsRead = "GET /api/v1/records"
+
+// featureTable is every feature, strongest promise first. An entry's surfaces
+// are the doors that exist today for the feature's own verbs.
+var featureTable = []feature{
+	{name: "discovery", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /.well-known/substrate/server.json",
+		"GET /healthz",
+	}},
+	// Every list, the body-addressed create and the record path. The ranked
+	// and the aggregate read of the list route are features of their own
+	// below, each with its own label.
+	{name: "records", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		recordsRead,
+		"POST /api/v1/records",
+		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
+		"PUT /api/v1/{a1}/{a2}/{a3}/{a4}",
+		"PATCH /api/v1/{a1}/{a2}/{a3}/{a4}",
+		"DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
+	}},
+	// The error envelope and its closed code set (errorCodes), which every
+	// route under /api and the sign-in door answers with. It holds no route
+	// because it is every route's refusal.
+	{name: "errors", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}},
+	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
+	// and tailed (`?watch=1`, here and on the records route).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/changes",
+	}},
+	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"PUT /api/v1/blobs",
+		"PUT /api/v1/blobs/{digest}",
+		"GET /api/v1/blobs/{digest}",
+	}},
+	{name: "triggers", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/substrate.reamde.dev/core/trigger/status",
+		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/replay",
+		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/run",
+		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/wake",
+		"GET /api/v1/substrate.reamde.dev/core/trigger/{id}/parked",
+		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}/retry",
+		"DELETE /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}",
+		"POST /webhooks/{authority}/{trigger}",
+		"POST /webhooks/{authority}/{trigger}/{key}",
+	}},
+	{name: "functions", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/substrate.reamde.dev/core/function/{name}/call",
+	}},
+	// The bundle entry stands for the status and bind verbs and the catalog
+	// together: a client reads one entry and gets every route behind it. The
+	// lifecycle transitions are a PATCH of the bundle record, on the record
+	// path.
+	{name: "bundles", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/substrate.reamde.dev/core/bundle/status",
+		"GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
+		"POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind",
+		"GET /api/v1/catalog",
+		"GET /api/v1/catalog/{id}",
+		"POST /api/v1/catalog/{id}/install",
+		"POST /api/v1/catalog/{id}/import",
+	}},
+	// The sign-in door: registering, signing in, the credential changes and
+	// the tokens.
+	{
+		name: "auth", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST},
+		notice: "Before 1.0, sign-in names a person, who then picks a repository.",
+		routes: []string{
+			"POST /register/enroll",
+			"POST /register",
+			"POST /login",
+			"POST /password",
+			"POST /totp/enroll",
+			"POST /totp",
+			"POST /repository/delete",
+			"POST /tokens",
+			"GET /tokens",
+			"DELETE /tokens/{id}",
+		},
+	},
+	// App authorization (decision 0194): an app that registered nowhere gets
+	// a scoped token through /oauth/authorize and /oauth/token, the owner
+	// approves it through /authorizations, and the app asks whether it is
+	// still set up. The takeover is the owner's way out of a package an app
+	// keeps (decision 0205).
+	{name: "apps", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /oauth/authorize",
+		"POST /oauth/token",
+		"POST /oauth/revoke",
+		"GET /.well-known/oauth-authorization-server",
+		"GET /.well-known/oauth-protected-resource",
+		"GET /api/v1/authorizations/{request}",
+		"POST /api/v1/authorizations/{request}",
+		"DELETE /api/v1/authorizations/{request}",
+		"POST /api/v1/authorizations/check",
+		"POST /api/v1/vocabulary/takeover",
+	}},
+	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/vocabulary/apply",
+		"POST /api/v1/vocabulary/plan",
+		"GET /api/v1/vocabulary/upgrade",
+		"GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors",
+	}},
+	{name: "merge", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/merge",
+		"POST /api/v1/split",
+	}},
+	// The host OAuth facility that connects an account record to its
+	// provider: the start an owner calls and the callback the provider
+	// redirects to.
+	{name: "connect", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/oauth/start",
+		"GET /api/v1/oauth/callback",
+	}},
+	{name: "sync", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/sync/status",
+	}},
+	{name: "domain", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/repository/domain",
+		"POST /api/v1/repository/domain/verify",
+	}},
+	// The recovery export streams a tar in the snapshot format (decision
+	// 0069).
+	{name: "export", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/export",
+	}},
+	// Search is the list route's `q=`: beta while the hit shape (the per-arm
+	// scores beside the page) is young.
+	{name: "search", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, modeOf: recordsRead},
+	// The two a deployment turns on (SUBSTRATE_METRICS, SUBSTRATE_SITE_DIR).
+	// Their entries are listed everywhere: the list says what this binary
+	// serves and what it promises about it, and whether a deployment has a
+	// site is the document's own `site` object.
+	{name: "metrics", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /metrics",
+	}},
+	{name: "site", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"* /site/*",
+		"GET /favicon.ico",
+	}},
+	// The aggregate read is the list route's `aggregate=` (decision 0161):
+	// experimental while the observations it reduces are a first release.
+	{name: "aggregate", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, modeOf: recordsRead},
+	// Embeddings reach a caller as the semantic arm of the list route's
+	// `q=`, and the vector width is a constant in the engine that no
+	// declaration can move. The provider is a repository's own llm/provider
+	// row, not a host setting an operator can omit, so the feature is served
+	// wherever the substrate is; a repository that declares no row is told
+	// so by its first query, naming the property.
+	{name: "embeddings", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, modeOf: recordsRead},
+	// The repository's unit graph and one conversion through it (decision
+	// 0186).
+	{name: "units", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/units",
+		"GET /api/v1/units/convert",
+	}},
+	// The agent call and chat routes and the two that reach a running turn.
+	// Experimental with the agent kind and the llm package they run on
+	// (substrate/agent.go).
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
+		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
+		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
+		"POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop",
+	}},
+	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
+	// experimental while the protocol's stateless revision and the tool set
+	// settle.
+	{name: "mcp", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceMCP}, routes: []string{
+		"* /mcp",
+		"GET /.well-known/oauth-protected-resource/mcp",
+	}},
+	// Applets (docs/plans/applets.md): records of the seeded applets package
+	// rendered as A2UI v1.0 screens, and the image proxy that draws the
+	// images they name. Experimental: the record's format, its steps and its
+	// data model grow with the first applets people keep.
+	{name: "applets", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST, surfaceMCP}, routes: []string{
+		"POST /api/v1/substrate.reamde.dev/applets/applet/{id}/render",
+		"POST /api/v1/substrate.reamde.dev/applets/applet/{id}/act",
+		"POST /api/v1/substrate.reamde.dev/applets/applet/{id}/preview",
+		"GET /api/v1/images",
+	}},
+	// The read is served everywhere, and the entry is listed only where the
+	// server booted with an operator defaults file: it is what tells a
+	// client the operator pays for anything (decision 0235). Experimental
+	// while the plan's later phases add OAuth clients and function secrets
+	// to it.
+	{
+		name: "operatorDefaults", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST},
+		routes: []string{"GET /api/v1/operator/defaults"},
+		listed: func(h *handler) bool { return h.operatorDefaults },
+	},
+}
+
+// features is the feature list this server announces: the table's entries,
+// in the table's order, less the ones this deployment does not list.
+func (h *handler) features() []featureInfo {
+	out := make([]featureInfo, 0, len(featureTable))
+	for _, f := range featureTable {
+		if f.listed == nil || f.listed(h) {
+			out = append(out, f.info())
+		}
+	}
+	return out
+}

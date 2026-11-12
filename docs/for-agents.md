@@ -19,10 +19,13 @@ there alone ([connecting an assistant](mcp.md)).
 answers before you hold a token. Read three things from it: `grammar`, which
 spells the kind reference (`<authority>/<package>/<name>`), the record path
 and the records route this deployment expects; `features`, the list a client
-reads instead of probing a route, each with a `stability` (`stable`, `beta`,
-`alpha`) and its `surfaces`; and `registration`, which says whether an
-invite code and a second factor are required
-([discovery](api.md#discovery)).
+reads instead of probing a route, each with a `stability` (`stable`, `beta`
+or `experimental`), a `revision` and its `surfaces`; and `registration`,
+which says whether an invite code and a second factor are required
+([discovery](api.md#discovery)). The server refuses a request field it does
+not know, so before you send one that a later release added, check that its
+feature's `revision` has reached the number it arrived at
+([stability](stability.md#the-api)).
 
 **The token comes from the owner.** Every request carries
 `Authorization: Bearer <token>`. The owner mints one for you with

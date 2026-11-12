@@ -33,7 +33,7 @@ function serve(fake: FakeSubstrate, version = "v0.121.0") {
           new Response(
             JSON.stringify({
               server: { version },
-              features: [{ name: "apps" }],
+              features: [{ name: "apps", stability: "beta", revision: 1 }],
             })
           )
         )

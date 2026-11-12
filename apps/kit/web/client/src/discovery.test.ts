@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   NotASubstrate,
   ServerTooOld,
+  hasFeature,
   locate,
   originOf,
   parseSubstrateTXT,
   probe,
+  type ServerDocument,
 } from "./discovery"
 
 describe("parseSubstrateTXT", () => {
@@ -60,7 +62,7 @@ const metadata = {
 }
 const document = {
   server: { version: "v0.121.0" },
-  features: [{ name: "apps", stability: "alpha" }],
+  features: [{ name: "apps", stability: "beta", revision: 1 }],
 }
 
 function serve(routes: Record<string, unknown>) {
@@ -127,6 +129,53 @@ describe("probe", () => {
   it("refuses what is no substrate", async () => {
     serve({})
     await expect(probe(origin)).rejects.toThrow(/is not a Substrate server/)
+  })
+})
+
+describe("hasFeature", () => {
+  const served: ServerDocument = {
+    features: [
+      { name: "records", stability: "stable", revision: 3 },
+      {
+        name: "auth",
+        stability: "beta",
+        revision: 1,
+        notice:
+          "Before 1.0, sign-in names a person, who then picks a repository.",
+      },
+      { name: "apps", stability: "beta" },
+    ],
+  }
+
+  it("answers a feature the server lists, and no other", () => {
+    expect(hasFeature(served, "records")).toBe(true)
+    expect(hasFeature(served, "merge")).toBe(false)
+    expect(hasFeature(undefined, "records")).toBe(false)
+    expect(hasFeature({}, "records")).toBe(false)
+  })
+
+  it("holds a feature to the revision asked for", () => {
+    expect(hasFeature(served, "records", 2)).toBe(true)
+    expect(hasFeature(served, "records", 3)).toBe(true)
+    expect(hasFeature(served, "records", 4)).toBe(false)
+    expect(hasFeature(served, "merge", 0)).toBe(false)
+  })
+
+  it("reads a server from before revisions as meeting no minimum", () => {
+    expect(hasFeature(served, "apps")).toBe(true)
+    expect(hasFeature(served, "apps", 1)).toBe(false)
+    const odd = {
+      features: [{ name: "search", stability: "beta", revision: "2" }],
+    } as unknown as ServerDocument
+    expect(hasFeature(odd, "search")).toBe(true)
+    expect(hasFeature(odd, "search", 1)).toBe(false)
+    const negative = {
+      features: [{ name: "apps", stability: "beta", revision: -1 }],
+    } as unknown as ServerDocument
+    expect(hasFeature(negative, "apps")).toBe(true)
+    expect(
+      hasFeature({ features: "x" } as unknown as ServerDocument, "search")
+    ).toBe(false)
   })
 })
 

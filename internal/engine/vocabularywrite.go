@@ -1258,10 +1258,11 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		explicit, _ := vocabulary.VersionValue(d.Data["version"])
 		v := explicit
 		// The header is a declaration like any other: its own content (the
-		// description, the retired names) changing moves it to stored+1. Only
-		// the document keys compare; the row's engine-owned properties
-		// (`source`, `actors`, the origin and shipped-version stamps) are not
-		// in the stored document, so a stamp alone never moves it.
+		// description, the stability, the retired names) changing moves it to
+		// stored+1. Only the document keys compare; the row's engine-owned
+		// properties (`source`, `actors`, the origin and shipped-version
+		// stamps) are not in the stored document, so a stamp alone never
+		// moves it.
 		storedDoc, held := existing[docKey(d)]
 		switch {
 		case explicit > stored:
@@ -1817,6 +1818,11 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	// the rebuild and the export carry the reservation (decision 0055).
 	if len(g.RetiredKinds) > 0 {
 		header["retired"] = map[string]any{"kinds": anyList(g.RetiredKinds)}
+	}
+	// The stated label alone: a package that states none stores no key, so
+	// its row never claims a promise its header did not make (decision 0256).
+	if g.Stability != "" {
+		header["stability"] = g.Stability
 	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{

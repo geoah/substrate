@@ -6,8 +6,10 @@ by when they need water. Each is a record of
 `substrate.reamde.dev/applets/applet` that names its runtime, what draws its
 screens. Today that is `a2ui`: screens of [A2UI](https://a2ui.org) v1.0
 components, which the substrate runs, so what you tap reads and writes your
-records under your own access, never a model's turn. Applets are alpha. The
-design is
+records under your own access, never a model's turn. Applets are
+experimental: the `applets` package and its routes may change or go in any
+release, and they are outside what a release promises to keep
+([stability](stability.md#outside-the-promise-by-name)). The design is
 [decision 0243](decisions/0243-an-applet-is-a2ui-screens-the-server-runs-and-the-console-gives-applets-a-place.md),
 the runtime
 [decision 0244](decisions/0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md),

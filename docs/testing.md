@@ -715,7 +715,7 @@ runs.
 | Job | Task | Is | Required | Median |
 | --- | ---- | -- | -------- | -----: |
 | conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, a break carries a `BREAKING CHANGE:` footer with its steps, and a release pull request touches only the changelog ([releasing](releasing.md)) | yes | |
-| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes | 27 s |
+| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the four diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), a discovery feature's revision against the base branch's (`features:check`), and a decision number another live branch took first (`decisions:check`) | yes | 27 s |
 | lint go | `ci:lint:go` | `lint:go` (the golangci-lint config check, `go mod tidy -diff` and `go mod verify`, no test infrastructure linked into a binary, then golangci-lint) and the Go formatting check | yes | 43 s |
 | console | `ci:console` | typecheck, lint, format, build | yes | 52 s |
 | console test | `ci:console:test` | the console's vitest suite | yes | 133 s |

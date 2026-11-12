@@ -76,11 +76,24 @@ is automated on purpose: it is the QA step.
    what the boot upgrade logged, and run `substratectl repository verify`
    for each repository. A refusal or a long migration here is a break the
    section has to name.
-6. **Merge.** Squash, as any pull request. The release exists a few minutes
+6. **Check that it says whether it closes the way back.** A release that
+   adds a database migration (`internal/engine/migrations/`), a repository
+   migration (`internal/engine/repomigration_*.go`) or a dialect number
+   (`maxVocabularyDialect`, `maxChangelogDialect`), or whose seeded packages
+   use a declaration key or a value an older server refuses, closes it: an
+   older server refuses the database or the repository afterwards, and the
+   way back is the copy taken before the upgrade
+   ([stability](stability.md#going-back)).
+   `git diff --stat vP.Q.R -- internal/engine/migrations 'internal/engine/repomigration_*.go'`
+   lists the first two since the last tag. The section has to say so under
+   BREAKING CHANGES, in the steps of the change that added it; where it does
+   not, fix the line on that change's pull request (below). Each break in
+   the section says what a rollback takes either way.
+7. **Merge.** Squash, as any pull request. The release exists a few minutes
    later; `gh release view vX.Y.Z` shows the artifacts once `release.yml`
    finishes. Then upgrade the deployment through the runbook
    ([Upgrading](../README.md#upgrading)).
-7. **Send the apps to TestFlight.** No workflow does. From a Mac with the
+8. **Send the apps to TestFlight.** No workflow does. From a Mac with the
    App Store Connect key and the site's settings in its environment
    ([TestFlight](../apps/README.md#testflight)), once the tag exists:
 
@@ -107,7 +120,11 @@ now, with every route, flag, env var and kind reference in backticks.
 
 A break carries its upgrade steps in a `BREAKING CHANGE:` footer, in a
 commit body on the branch. The footer's text is the entry under
-⚠ BREAKING CHANGES, and a person or an agent will follow it literally:
+⚠ BREAKING CHANGES, and a person or an agent will follow it literally. It
+says what a rollback takes where that is more than starting the older
+binary: a change that adds a migration or a dialect number closes the way
+back, and its footer says that the way back is the copy taken before the
+upgrade ([stability](stability.md#going-back)). An example:
 
 ```
 feat(server)!: bind 127.0.0.1 and refuse a non-loopback bind

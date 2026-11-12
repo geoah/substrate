@@ -7,25 +7,35 @@
  * `<name>` (records 0098, 0101). There is NO tenant and NO group: one user
  * owns one repository, and authorities replace the old group concept. */
 
-/** The closed wire error set, plus `network` for a
- * transport failure that never reached the substrate. Clients switch on it. */
-export type ErrorCode =
-  | "bad_request"
+/** The closed set of codes the server answers with, in `error.code`. Clients
+ * switch on it. errorcodes.golden.json is the server's list, and
+ * errorcodes.golden.test.ts holds this union to it. */
+export type ServerErrorCode =
   | "auth"
-  | "totp_required"
+  | "bad_request"
+  | "compacted"
+  | "conflict"
   | "forbidden"
+  | "function_failed"
   | "guard"
+  | "internal"
   | "lossy"
   | "not_found"
-  | "conflict"
-  | "compacted"
-  | "validation"
+  | "parked"
   | "rate_limited"
-  | "internal"
-  | "function_failed"
-  | "unsupported"
+  | "totp_required"
   | "unavailable"
-  | "network"
+  | "validation"
+
+/** The codes the console makes up itself, for a failure that arrived without
+ * one of the server's: `network` where nothing answered, and `unsupported`
+ * for a 501, which is an older server's answer to a verb it does not
+ * implement. No server writes either into an envelope. */
+export type ClientErrorCode = "network" | "unsupported"
+
+/** What an `ApiError` carries: the server's code where the envelope had one,
+ * else the console's own. */
+export type ErrorCode = ServerErrorCode | ClientErrorCode
 
 /** The closed set of `reason`s that narrow an error code for a client that
  * acts on the case. `observed_rederiving` rides an `unavailable` (503): the
@@ -55,7 +65,7 @@ export interface ProblemDetail {
  * re-list from and resume at. `reason` narrows the code where a client acts
  * on the case; a reason the console does not know is read as its code. */
 export interface ErrorPayload {
-  code: Exclude<ErrorCode, "network">
+  code: ServerErrorCode
   reason?: ErrorReason
   message: string
   problems?: string[]

@@ -257,7 +257,7 @@ Code, an app on this device".
 ## Discovery
 
 `server.json` gains `surfaces.mcp` (`endpoint: /mcp`) and the feature
-`mcp`, `alpha`, surface `mcp`.
+`mcp`, `experimental`, surface `mcp`.
 
 ## Tests
 

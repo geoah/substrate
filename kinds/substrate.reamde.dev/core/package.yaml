@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 24
+  version: 25
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -31,6 +31,20 @@ data:
     description:
       type: markdown
       description: what this package is for, in its own words
+    # The label the package states for its kinds (docs/stability.md, decision
+    # record 0256). Authored, not managed, and never defaulted: a header that
+    # states none stores none, and a reader treats that as experimental, the
+    # weakest promise. A kind carries no label of its own, so this is the one
+    # place a client looks. The loader holds the three values.
+    stability:
+      type: enum
+      values:
+        - stable
+        - beta
+        - experimental
+      description: how much the package's kinds may change; stable only gains
+        things, beta announces a break one release ahead, experimental may
+        change in any release, and absent reads as experimental
     # The kind names this package has spent (decision record 0055). Authored,
     # not managed: the author writes a name here to retire it, the engine
     # carries the list into every later header of the package, and a kind

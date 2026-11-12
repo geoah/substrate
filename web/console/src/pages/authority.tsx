@@ -56,7 +56,11 @@ import { kindPurpose } from "@/lib/definition"
 import { hiddenKindsNote } from "@/lib/grid-values"
 import { displayPlural } from "@/lib/kind-names"
 import { kindDescription } from "@/lib/kind-copy"
-import { packageAgent, packagesQueryOptions } from "@/lib/packages"
+import {
+  packageAgent,
+  packageStability,
+  packagesQueryOptions,
+} from "@/lib/packages"
 import { buildTools, toolDescription, toolName, type Tool } from "@/lib/tools"
 import { authorityRoute, packageRoute } from "@/router"
 
@@ -363,6 +367,9 @@ export function PackagePage() {
   const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
   const provider = authority === PROVIDERS_AUTHORITY ? providerInfo(pkg) : null
   const agent = packageAgent(packages.data, `${authority}/${pkg}`)
+  // Read off the package's own row once it is here: a label guessed before
+  // the rows load would call a stable package experimental.
+  const row = packages.data?.get(`${authority}/${pkg}`)
   const agentId = agent ? actorIdentity(agent).record?.id : undefined
   return (
     <TablePage>
@@ -389,6 +396,14 @@ export function PackagePage() {
                   value={`${authority}/${pkg}`}
                   label="Copy the package"
                 />
+              </span>
+            )}
+            {technical && row && (
+              <span>
+                Stability{" "}
+                <span className="text-muted-foreground">
+                  {packageStability(row)}
+                </span>
               </span>
             )}
             <span>{countWord(technical ? kinds.length : primary)}</span>

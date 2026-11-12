@@ -5,28 +5,14 @@ package substrate
 // llm/message RECORDS in substrate.reamde.dev/llm — these types are only the live
 // transport around one invocation.
 //
-// ALPHA (StabilityAlpha, stability.go). The agent kind, the agent-loop
-// vocabulary (llm/provider/llm/thread/llm/message) and the agent call and chat routes
-// may change or be superseded with no notice at all. That is a weaker promise
-// than the rest of this package makes, and the rest is not frozen either: no
-// surface is stable yet, so every other feature reports beta and announces its
-// breaks. Everything an agent does is layerable over the function+trigger+effect
-// core, so the loop is shipped host-side for the streaming path and is the
-// first thing that would be dropped.
-
-// AgentStability is the declared stability of the agent kind, its
-// llm/provider/llm/thread/llm/message vocabulary and the agent call and chat routes: "alpha".
-// It is the cheap machine-visible marker the discovery/features surface
-// reads to mark agents alpha; StabilityAlpha (stability.go) is the value it
-// carries.
-const (
-	// AgentStability marks the agent kind + its core vocabulary + /agents as
-	// alpha.
-	AgentStability = StabilityAlpha
-	// FeatureAgents is the discovery feature key the agent surface is listed
-	// under, carrying AgentStability as its stability.
-	FeatureAgents = "agents"
-)
+// EXPERIMENTAL (StabilityExperimental, stability.go). The agent kind, the
+// agent-loop vocabulary (llm/provider, llm/thread, llm/message) and the agent
+// call and chat routes may change or go in any release. That is a weaker
+// promise than the one the features discovery labels stable or beta carry,
+// and the `agents` entry of that list (internal/api/features.go) is where a
+// client reads it. Everything an agent does is layerable over the
+// function+trigger+effect core, so the loop is shipped host-side for the
+// streaming path and is the first thing that would be dropped.
 
 // AgentResult is one settled agent invocation: the final reply, the thread
 // that recorded it, and the rolled-up tally (sub-agents included).

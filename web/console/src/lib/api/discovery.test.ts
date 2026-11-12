@@ -124,7 +124,9 @@ describe("fetchDoorFeature", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, {
         registration: { totpRequired: false },
-        features: [{ name: "operatorDefaults", stability: "experimental" }],
+        features: [
+          { name: "operatorDefaults", stability: "experimental", revision: 1 },
+        ],
       })
     )
     const [policy, listed, other] = await Promise.all([
@@ -148,10 +150,78 @@ describe("fetchDoorFeature", () => {
     expect(hasFeature(null, "operatorDefaults")).toBe(false)
     expect(
       hasFeature(
-        { features: [{ name: "operatorDefaults", stability: "stable" }] },
+        {
+          features: [
+            {
+              name: "operatorDefaults",
+              stability: "experimental",
+              revision: 1,
+            },
+          ],
+        },
         "operatorDefaults"
       )
     ).toBe(true)
+  })
+})
+
+describe("hasFeature with a minimum revision", () => {
+  const doc = {
+    features: [
+      { name: "records", stability: "stable", revision: 3 },
+      {
+        name: "auth",
+        stability: "beta",
+        revision: 1,
+        notice: "Before 1.0, sign-in names a person.",
+      },
+      // What a server older than the count sends.
+      { name: "triggers", stability: "stable" },
+    ],
+  }
+
+  it("holds at the revision asked for and at any below it", () => {
+    expect(hasFeature(doc, "records", 3)).toBe(true)
+    expect(hasFeature(doc, "records", 2)).toBe(true)
+    expect(hasFeature(doc, "records")).toBe(true)
+  })
+
+  it("fails above the revision the server is at", () => {
+    expect(hasFeature(doc, "records", 4)).toBe(false)
+    expect(hasFeature(doc, "auth", 2)).toBe(false)
+  })
+
+  it("fails for a feature the server does not list, whatever is asked", () => {
+    expect(hasFeature(doc, "units")).toBe(false)
+    expect(hasFeature(doc, "units", 0)).toBe(false)
+    expect(hasFeature(doc, "units", 1)).toBe(false)
+  })
+
+  // A caller asking for a revision is about to send something that revision
+  // added; a server that counts none has none of it, and still lists the
+  // feature for a caller that asks for nothing more.
+  it("reads an entry without a revision as revision 0", () => {
+    expect(hasFeature(doc, "triggers")).toBe(true)
+    expect(hasFeature(doc, "triggers", 0)).toBe(true)
+    expect(hasFeature(doc, "triggers", 1)).toBe(false)
+  })
+
+  it("reads a revision that is not a number as none", () => {
+    const odd = {
+      features: [
+        { name: "records", stability: "stable", revision: "3" as never },
+      ],
+    }
+    expect(hasFeature(odd, "records")).toBe(true)
+    expect(hasFeature(odd, "records", 1)).toBe(false)
+  })
+
+  it("lists a feature whose revision is below 0", () => {
+    const negative = {
+      features: [{ name: "records", stability: "stable", revision: -1 }],
+    }
+    expect(hasFeature(negative, "records")).toBe(true)
+    expect(hasFeature(negative, "records", 1)).toBe(false)
   })
 })
 
@@ -163,7 +233,16 @@ describe("discoveryQueryOptions", () => {
   it("reads the whole document anonymously, even with a session stored", async () => {
     const doc = {
       server: { version: "1.2.3" },
-      features: [{ name: "triggers", stability: "stable" }],
+      features: [
+        { name: "triggers", stability: "stable", revision: 1 },
+        {
+          name: "auth",
+          stability: "beta",
+          revision: 1,
+          notice:
+            "Before 1.0, sign-in names a person, who then picks a repository.",
+        },
+      ],
       surfaces: { rest: { endpoint: "/api/v1" } },
       registration: { inviteRequired: false, totpRequired: true },
     }

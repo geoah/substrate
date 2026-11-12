@@ -1051,7 +1051,13 @@ describe("RegisterPage and the door's own answer", () => {
       if (url === "/.well-known/substrate/server.json")
         return jsonResponse(200, {
           registration: { totpRequired: false },
-          features: [{ name: "operatorDefaults", stability: "experimental" }],
+          features: [
+            {
+              name: "operatorDefaults",
+              stability: "experimental",
+              revision: 1,
+            },
+          ],
         })
       return jsonResponse(201, MINT)
     })
