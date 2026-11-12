@@ -1,20 +1,24 @@
 package substrate
 
-// The stability values a discovery feature carries
-// (GET /.well-known/substrate/server.json). They say what a client may build
-// on, so each one is a promise about CHANGE, not about quality: every surface
-// listed is served and works today.
+// The stability labels (docs/stability.md, decision 0256). A label is a
+// promise about CHANGE, not about quality: everything that carries one is
+// served and works today. It sits in two places and nowhere else: on a
+// package, for its kinds (the header's `stability` key), and on a discovery
+// feature, for its routes (GET /.well-known/substrate/server.json).
 //
-//   - alpha: the shape may change or be withdrawn with no v1 wire break. Pin
-//     the server version if you depend on it.
-//   - beta: served and supported, and the shape is still moving before v1
-//     freezes it. A break is announced, never silent.
-//   - stable: frozen for v1. Changes are additive only.
+//   - stable: only additions within one major version; removed only in the
+//     next.
+//   - beta: supported. A break is announced one minor release ahead, in the
+//     discovery file and in the changelog.
+//   - experimental: may change or go in any release.
 //
-// A surface with an open ticket that restructures or deletes it is beta at
-// best, whatever its age: the stamp reports the freeze, never the mileage.
+// A label never covers stored data: the latest state of every record, an
+// experimental package's included, survives every upgrade.
 const (
-	StabilityAlpha  = "alpha"
-	StabilityBeta   = "beta"
-	StabilityStable = "stable"
+	StabilityStable       = "stable"
+	StabilityBeta         = "beta"
+	StabilityExperimental = "experimental"
 )
+
+// Stabilities is the closed label set, strongest promise first.
+var Stabilities = []string{StabilityStable, StabilityBeta, StabilityExperimental}

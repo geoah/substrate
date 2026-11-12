@@ -1,8 +1,9 @@
 /** The repository's packages as the console reads them: the core `package`
- * rows, one per `<authority>/<package>`, and the one fact on them the console
- * shows a person, who declared the package (decision 0109). A package an
- * agent declared is an app that agent made: its collections read "Made by
- * <agent>" and its package page gathers what it ships. */
+ * rows, one per `<authority>/<package>`, and the facts on them the console
+ * shows: who declared the package (decision 0109) and the stability it
+ * states for its kinds. A package an agent declared is an app that agent
+ * made: its collections read "Made by <agent>" and its package page gathers
+ * what it ships. */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -23,6 +24,16 @@ export interface PackageRow {
   /** The actor whose transaction created the row; absent on a package
    * created before the engine stamped it. */
   declaredBy?: string
+  /** The label the package states for its kinds (`stable`, `beta`,
+   * `experimental`); absent where it states none. */
+  stability?: string
+}
+
+/** The stability to show for a package: the label it states, and
+ * `experimental` where it states none, since a package that promises nothing
+ * is read as promising the least. */
+export function packageStability(row: PackageRow): string {
+  return row.stability ?? "experimental"
 }
 
 /** A page of `package` records → the rows, by id. */
@@ -32,12 +43,14 @@ export function packageRows(
   const out = new Map<string, PackageRow>()
   for (const record of page.records ?? []) {
     const declaredBy = record.properties?.declaredBy
+    const stability = record.properties?.stability
     out.set(record.id, {
       id: record.id,
       ...(typeof record.properties?.publishedFrom === "string"
         ? { publishedFrom: record.properties.publishedFrom }
         : {}),
       ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
+      ...(typeof stability === "string" && stability ? { stability } : {}),
     })
   }
   return out

@@ -675,6 +675,29 @@ or not the code is set ([users and tokens](auth.md)).
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.
 
+## Who may share a server
+
+A server is for one household, or for people who trust each other and you,
+its operator. Running one for people who do not know its operator is not
+supported in 1.x ([stability](stability.md#who-may-share-a-server)). Each
+person registers a repository of their own and no request reads across two,
+but three things assume that trust:
+
+- **The sandbox default.** `SUBSTRATE_SANDBOX` defaults to `best-effort`,
+  which runs a function body with whatever layers the host's kernel gives
+  and without the rest ([the function sandbox](#the-function-sandbox)), and
+  a function one person writes runs on the machine everyone shares.
+- **Names.** Registration takes a repository's name on the registrant's
+  word, so anyone admitted can register a domain they do not hold until
+  [Verify domain](auth.md#verify-domain) says otherwise.
+- **Start-up.** One repository's damaged changelog file refuses the boot, so
+  one person's repository can keep the server down for everyone
+  ([what happens at boot](#what-happens-at-boot)).
+
+You also hold the database, the data root and the credential key, so you can
+read every repository on the server. Give the invite code only to people
+who accept that.
+
 ## A site for the deployment
 
 A deployment can carry its own name and a landing page for signed-out
@@ -1259,6 +1282,9 @@ credential key. A database restored alone is not a rollback: the data root
 still holds what the newer binary wrote, and the older binary's boot meets it,
 refusing the repository or importing its newer rows into the restored copy.
 Rolling *forward* to a binary whose maxima cover the stamps always works.
+Going back to an older server any other way is not supported, and a release
+that closes the way back says so in its notes
+([stability](stability.md#going-back)).
 
 [Quarantine](vocabulary.md#quarantine) is what a tightened contract does: a
 binary that narrows what a declaration may say quarantines each installed

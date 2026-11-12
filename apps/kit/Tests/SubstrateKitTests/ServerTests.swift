@@ -57,7 +57,12 @@ import FoundationNetworking
         #expect(doc.server.build?.count == 40)
         #expect(doc.version == ServerVersion(0, 114, 0))
         #expect(doc.changelog.horizon == 0)
-        #expect(doc.feature("agents")?.stability == "alpha")
+        #expect(doc.feature("records")?.stability == "stable")
+        #expect(doc.feature("apps")?.stability == "beta")
+        #expect(doc.feature("agents")?.stability == "experimental")
+        #expect(doc.feature("agents")?.revision == 1)
+        #expect(doc.feature("agents")?.notice == nil)
+        #expect(doc.feature("auth")?.notice == "Before 1.0, sign-in names a person, who then picks a repository.")
         #expect(doc.feature("search")?.surfaces == ["rest"])
         #expect(doc.surfaces.rest?.endpoint == "/api/v1")
         #expect(doc.grammar.actors.contains("app:<host>"))
@@ -78,6 +83,57 @@ import FoundationNetworking
         #expect(odd.features.isEmpty)
         #expect(!odd.registration.totpRequired)
         #expect(odd.registration.inviteRequired)
+    }
+
+    @Test func aFeaturesRevisionIsReadWhereTheServerSendsOne() throws {
+        let doc = try JSONDecoder().decode(
+            Discovery.self,
+            from: Data(
+                #"""
+                {"features": [
+                  {"name": "records", "stability": "stable", "revision": 3, "surfaces": ["rest"]},
+                  {"name": "apps", "stability": "beta", "surfaces": ["rest"]},
+                  {"name": "search", "stability": "beta", "revision": "2", "notice": 7},
+                  {"name": "blobs", "stability": "stable", "revision": -1}
+                ]}
+                """#.utf8))
+        #expect(doc.feature("records")?.revision == 3)
+        // A server from before revisions sends none.
+        #expect(doc.feature("apps")?.revision == 0)
+        #expect(doc.feature("search")?.revision == 0)
+        #expect(doc.feature("search")?.notice == nil)
+        #expect(doc.feature("blobs")?.revision == 0)
+        #expect(doc.serves("blobs"))
+        // What this kit builds is a feature as a server lists it today.
+        #expect(Discovery.Feature(name: "records", stability: "stable").revision == 1)
+    }
+
+    @Test func aFeatureIsServedFromTheRevisionAskedFor() throws {
+        let doc = Discovery(
+            server: .init(version: "v0.124.0"),
+            features: [
+                .init(name: "records", stability: "stable", revision: 3),
+                .init(name: "apps", stability: "beta", revision: 0),
+            ])
+        #expect(doc.serves("records"))
+        #expect(doc.serves("records", atLeast: 2))
+        #expect(doc.serves("records", atLeast: 3))
+        #expect(!doc.serves("records", atLeast: 4))
+        // No revision is a feature all the same, and no minimum met.
+        #expect(doc.serves("apps"))
+        #expect(!doc.serves("apps", atLeast: 1))
+        #expect(!doc.serves("merge"))
+        #expect(!doc.serves("merge", atLeast: 0))
+    }
+
+    @Test func aFeatureWritesBackWhatItRead() throws {
+        let features = [
+            Discovery.Feature(name: "auth", stability: "beta", revision: 2, notice: "Before 1.0, sign-in names a person."),
+            Discovery.Feature(name: "mcp", stability: "experimental", surfaces: ["mcp"]),
+        ]
+        let data = try JSONEncoder().encode(features)
+        #expect(try JSONDecoder().decode([Discovery.Feature].self, from: data) == features)
+        #expect(!String(decoding: data, as: UTF8.self).contains(#""notice":null"#))
     }
 
     @Test func theMetadataSaysWhichVerbsAndDetailsTheServerKnows() throws {

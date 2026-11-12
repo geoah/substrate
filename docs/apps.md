@@ -323,6 +323,15 @@ The record names the server and proves nothing about the repository on its
 own: a repository that proved its name carries `domainVerifiedAt` on its
 `repository` record ([Verify domain](auth.md#verify-domain)).
 
+`/.well-known/substrate/server.json` also lists the server's features, each
+with a stability and a revision ([discovery](api.md#discovery)). App
+authorization is the `apps` feature, and it is `beta`: supported, with a
+break announced one minor release ahead in that entry's `notice`
+([stability](stability.md)). Before an app sends a request field that a
+later release added, it checks that the feature's `revision` has reached the
+number the field arrived at, because the server refuses a field it does not
+know.
+
 ### Ask for access
 
 Send the browser to the authorization endpoint:
@@ -801,6 +810,15 @@ watch, and at least every two seconds on an agent's stream (`chat` and
 ends with a terminal error frame whose code is `auth`, and an agent's
 stream with an `error` event, before anything more is written. The turn
 itself runs on; the app signs in again to follow it.
+
+### Write while offline
+
+An app that works without a connection keeps its unsent writes in a queue on
+the device and sends them in order once the server answers, each with the
+`ifVersion` it was made against; the app kit's outbox is that queue. The
+server never merges a second history into a repository's changelog, so a
+write it refuses goes back to the person
+([stability](stability.md#offline-use)).
 
 ### Run functions
 

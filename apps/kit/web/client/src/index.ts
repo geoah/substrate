@@ -48,6 +48,7 @@ export { comparePositions, positionAfter, positionBetween } from "./position"
 export {
   NotASubstrate,
   ServerTooOld,
+  hasFeature,
   inspectServer,
   isLoopback,
   locate,
@@ -60,6 +61,7 @@ export type {
   AuthorizationServerMetadata,
   LocatedServer,
   ServerDocument,
+  ServerFeature,
 } from "./discovery"
 export {
   compareServerVersions,

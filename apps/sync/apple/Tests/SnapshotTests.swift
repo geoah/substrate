@@ -30,7 +30,9 @@ final class StatusSnapshotTests: XCTestCase {
 
     func status(_ session: Session, check: String) async -> AppStatus {
         let stub = StubTransport()
-        stub.on("GET", "/.well-known/substrate/server.json", json: #"{"server":{"version":"v0.114.0"},"features":[{"name":"apps","stability":"alpha"}]}"#)
+        stub.on(
+            "GET", "/.well-known/substrate/server.json",
+            json: #"{"server":{"version":"v0.114.0"},"features":[{"name":"apps","stability":"beta","revision":1}]}"#)
         stub.on(
             "GET", "/.well-known/oauth-authorization-server",
             json: #"""

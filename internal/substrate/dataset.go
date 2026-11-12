@@ -12,16 +12,15 @@ import (
 //
 // It is ONE interface, not a core plus optional extensions a consumer
 // type-asserts: a verb declared here is a verb every implementation owes,
-// which is the engine's dataset and the API's hand-written fake
-// (internal/api/fake_test.go). A consumer calls the method; no endpoint has a
-// "this deployment cannot" branch to take.
+// the engine's dataset, the API's scoped and assistant wrappers and its
+// hand-written fake (internal/api/fake_test.go). A consumer calls the method;
+// no endpoint has a "this deployment cannot" branch to take.
 //
-// THE WHOLE INTERFACE IS WHAT v1 FREEZES: a method here is part of the
-// library contract and moves under the rules the REST surface moves under
-// (decision 0053, additive within v1, a break announced). Every feature
-// discovery lists (stability.go) is served from here, which is why that list
-// is a literal, and a feature's own stability stamp is what says how far its
-// shape has settled.
+// The interface is this module's own seam and promises nothing outside it:
+// the package is internal, so a method moves whenever every implementation
+// moves with it. What a client builds on is the routes served from here, and
+// discovery lists them as features, each with its stability
+// (internal/api/features.go).
 type Dataset interface {
 	Repository() RepositoryInfo
 

@@ -236,7 +236,9 @@ func TestDiscoveryOmitsWhatTheSiteDoesNotSet(t *testing.T) {
 func TestDiscoveryOmitsSiteWithoutOne(t *testing.T) {
 	rec := serve(siteHandler(t, nil), http.MethodGet, "/.well-known/substrate/server.json", nil)
 	wantStatus(t, rec, http.StatusOK)
-	if strings.Contains(rec.Body.String(), `"site"`) {
+	// The key, not the word: the `site` feature is listed with or without
+	// one, as its name.
+	if strings.Contains(rec.Body.String(), `"site":`) {
 		t.Fatalf("body = %s, want no site key", rec.Body.String())
 	}
 }

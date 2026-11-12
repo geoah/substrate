@@ -1,0 +1,257 @@
+[
+  {
+    "name": "discovery",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "GET /.well-known/substrate/server.json",
+      "GET /healthz"
+    ]
+  },
+  {
+    "name": "records",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
+      "GET /api/v1/records",
+      "GET /api/v1/{a1}/{a2}/{a3}/{a4}",
+      "PATCH /api/v1/{a1}/{a2}/{a3}/{a4}",
+      "POST /api/v1/records",
+      "PUT /api/v1/{a1}/{a2}/{a3}/{a4}"
+    ]
+  },
+  {
+    "name": "errors",
+    "stability": "stable",
+    "revision": 1,
+    "routes": []
+  },
+  {
+    "name": "changefeed",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/changes"
+    ]
+  },
+  {
+    "name": "blobs",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/blobs/{digest}",
+      "PUT /api/v1/blobs",
+      "PUT /api/v1/blobs/{digest}"
+    ]
+  },
+  {
+    "name": "triggers",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "DELETE /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}",
+      "GET /api/v1/substrate.reamde.dev/core/trigger/status",
+      "GET /api/v1/substrate.reamde.dev/core/trigger/{id}/parked",
+      "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}/retry",
+      "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/replay",
+      "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/run",
+      "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/wake",
+      "POST /webhooks/{authority}/{trigger}",
+      "POST /webhooks/{authority}/{trigger}/{key}"
+    ]
+  },
+  {
+    "name": "functions",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "POST /api/v1/substrate.reamde.dev/core/function/{name}/call"
+    ]
+  },
+  {
+    "name": "bundles",
+    "stability": "stable",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/catalog",
+      "GET /api/v1/catalog/{id}",
+      "GET /api/v1/substrate.reamde.dev/core/bundle/status",
+      "GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
+      "POST /api/v1/catalog/{id}/import",
+      "POST /api/v1/catalog/{id}/install",
+      "POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind"
+    ]
+  },
+  {
+    "name": "auth",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "DELETE /tokens/{id}",
+      "GET /tokens",
+      "POST /login",
+      "POST /password",
+      "POST /register",
+      "POST /register/enroll",
+      "POST /repository/delete",
+      "POST /tokens",
+      "POST /totp",
+      "POST /totp/enroll"
+    ]
+  },
+  {
+    "name": "apps",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "DELETE /api/v1/authorizations/{request}",
+      "GET /.well-known/oauth-authorization-server",
+      "GET /.well-known/oauth-protected-resource",
+      "GET /api/v1/authorizations/{request}",
+      "GET /oauth/authorize",
+      "POST /api/v1/authorizations/check",
+      "POST /api/v1/authorizations/{request}",
+      "POST /api/v1/vocabulary/takeover",
+      "POST /oauth/revoke",
+      "POST /oauth/token"
+    ]
+  },
+  {
+    "name": "vocabulary",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors",
+      "GET /api/v1/vocabulary/upgrade",
+      "POST /api/v1/vocabulary/apply",
+      "POST /api/v1/vocabulary/plan"
+    ]
+  },
+  {
+    "name": "merge",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "POST /api/v1/merge",
+      "POST /api/v1/split"
+    ]
+  },
+  {
+    "name": "connect",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/oauth/callback",
+      "POST /api/v1/oauth/start"
+    ]
+  },
+  {
+    "name": "sync",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/sync/status"
+    ]
+  },
+  {
+    "name": "domain",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "POST /api/v1/repository/domain",
+      "POST /api/v1/repository/domain/verify"
+    ]
+  },
+  {
+    "name": "export",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/export"
+    ]
+  },
+  {
+    "name": "search",
+    "stability": "beta",
+    "revision": 1,
+    "routes": []
+  },
+  {
+    "name": "metrics",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "GET /metrics"
+    ]
+  },
+  {
+    "name": "site",
+    "stability": "beta",
+    "revision": 1,
+    "routes": [
+      "* /site/*",
+      "GET /favicon.ico"
+    ]
+  },
+  {
+    "name": "aggregate",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": []
+  },
+  {
+    "name": "embeddings",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": []
+  },
+  {
+    "name": "units",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/units",
+      "GET /api/v1/units/convert"
+    ]
+  },
+  {
+    "name": "agents",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
+      "POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
+      "POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
+      "POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop"
+    ]
+  },
+  {
+    "name": "mcp",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "* /mcp",
+      "GET /.well-known/oauth-protected-resource/mcp"
+    ]
+  },
+  {
+    "name": "applets",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/images",
+      "POST /api/v1/substrate.reamde.dev/applets/applet/{id}/act",
+      "POST /api/v1/substrate.reamde.dev/applets/applet/{id}/preview",
+      "POST /api/v1/substrate.reamde.dev/applets/applet/{id}/render"
+    ]
+  },
+  {
+    "name": "operatorDefaults",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/operator/defaults"
+    ]
+  }
+]

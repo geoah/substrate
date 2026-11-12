@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"time"
 
@@ -18,10 +19,11 @@ import (
 )
 
 // Error codes of the wire envelope. The set is closed: clients switch on it
-// and nothing else ever appears in `error.code`. The client-error
-// family is 4xx; the server family is split so a client can tell "try again"
-// (unavailable) from "never here" (unsupported) from "genuine fault"
-// (internal). `compacted` is the changelog's one 410 signal.
+// and nothing else ever appears in `error.code` (errorCodes below is the
+// set). The client-error family is 4xx; the server family is split so a
+// client can tell "try again" (unavailable) from a callable's own fault
+// (function_failed) from "genuine fault" (internal). `compacted` is the
+// changelog's one 410 signal.
 const (
 	codeValidation = "validation" // 422
 	codeConflict   = "conflict"   // 409
@@ -56,6 +58,30 @@ const (
 	codeTOTPRequired = "totp_required" // 401
 )
 
+// errorCodes is the closed set: every code constant above, and nothing a
+// handler writes is outside it. The console's union
+// (web/console/src/lib/api/errorcodes.golden.json) and the list in
+// docs/api.md are held to it by errorcodes_test.go, so a code added above is
+// added here, and the golden is regenerated with
+// `go test ./internal/api/ -run TestErrorCodes -update`.
+var errorCodes = []string{
+	codeAuth,
+	codeBadRequest,
+	codeCompacted,
+	codeConflict,
+	codeForbidden,
+	codeFunctionFailed,
+	codeGuard,
+	codeInternal,
+	codeLossy,
+	codeNotFound,
+	codeParked,
+	codeRateLimited,
+	codeTOTPRequired,
+	codeUnavailable,
+	codeValidation,
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -64,7 +90,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
+// writeError is the one emit that takes its code as a string, so it is where
+// the closed set is held for a code that reaches it through a variable: one
+// outside errorCodes is a defect of the handler, and the client is answered
+// `internal` rather than a code it was never told about. Every other emit
+// names a code constant in an ErrorPayload literal, which
+// TestEveryEmittedCodeIsADeclaredConstant holds.
 func writeError(w http.ResponseWriter, status int, code, msg string, problems ...string) {
+	if !slices.Contains(errorCodes, code) {
+		slog.Error("a handler answered with a code outside the closed set", "code", code, "status", status)
+		writeJSON(w, http.StatusInternalServerError, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}})
+		return
+	}
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: code, Message: msg, Problems: problems}})
 }
 
@@ -118,7 +155,14 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: ve.Reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
+		// The one reason that arrives as a value: one outside the closed set
+		// is not sent, and the client acts on the code.
+		reason := ve.Reason
+		if reason != "" && !slices.Contains(substrate.ErrorReasons, reason) {
+			slog.Error("a validation refusal carried a reason outside the closed set", "reason", reason)
+			reason = ""
+		}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrParked):

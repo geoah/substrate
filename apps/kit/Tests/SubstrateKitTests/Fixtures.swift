@@ -11,10 +11,13 @@ func discoveryJSON(version: String = "v0.114.0", totp: Bool = true) -> String {
       "server": {"version": "\#(version)", "build": "0123456789abcdef0123456789abcdef01234567"},
       "changelog": {"horizon": 0},
       "features": [
-        {"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
-        {"name": "search", "stability": "beta", "surfaces": ["rest"]},
-        {"name": "agents", "stability": "alpha", "surfaces": ["rest"]},
-        {"name": "apps", "stability": "alpha", "surfaces": ["rest"]}
+        {"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
+        {"name": "triggers", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
+        {"name": "auth", "stability": "beta", "revision": 1, "surfaces": ["rest"],
+         "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
+        {"name": "apps", "stability": "beta", "revision": 1, "surfaces": ["rest"]},
+        {"name": "search", "stability": "beta", "revision": 1, "surfaces": ["rest"]},
+        {"name": "agents", "stability": "experimental", "revision": 1, "surfaces": ["rest"]}
       ],
       "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"}},
       "grammar": {

@@ -75,7 +75,11 @@ beforeEach(() => {
       asked.push(url)
       if (url === "/.well-known/substrate/server.json")
         return Response.json({
-          features: features.map((name) => ({ name, stability: "beta" })),
+          features: features.map((name) => ({
+            name,
+            stability: "experimental",
+            revision: 1,
+          })),
         })
       if (url === "/api/v1/operator/defaults") {
         if (answer === "network") throw new TypeError("Failed to fetch")

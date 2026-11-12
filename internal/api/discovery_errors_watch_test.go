@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -14,27 +13,6 @@ import (
 const changesPath = "/api/v1/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
-
-// wantFeatureSurfaces is the roster this deployment reports, with the
-// surfaces each entry claims, written out here rather than read off
-// api.features: a feature added to the literal without a route behind it has
-// to be added here too, by hand.
-var wantFeatureSurfaces = map[string][]string{
-	"triggers":   {surfaceREST},
-	"functions":  {surfaceREST},
-	"bundles":    {surfaceREST},
-	"blobs":      {surfaceREST},
-	"export":     {surfaceREST},
-	"changefeed": {surfaceREST},
-	"search":     {surfaceREST},
-	"aggregate":  {surfaceREST},
-	"units":      {surfaceREST},
-	"embeddings": {surfaceREST},
-	"agents":     {surfaceREST},
-	"apps":       {surfaceREST},
-	"mcp":        {surfaceMCP},
-	"applets":    {surfaceREST, surfaceMCP},
-}
 
 func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 	svc := newFakeService()
@@ -68,43 +46,9 @@ func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 		t.Fatalf("server version missing")
 	}
 	// A list, never null: a client that decodes an array must not have to
-	// handle a missing one. What is in it is the two tests below.
+	// handle a missing one. What is in it is features_test.go's.
 	if body := rec.Body.String(); !strings.Contains(body, `"features":[{`) {
 		t.Fatalf("features did not serialize as a list: %s", body)
-	}
-}
-
-// Every feature says which surfaces serve it, and each name is a key of the
-// document's `surfaces` object: a client follows a feature to its door
-// instead of trying a route to see whether it exists.
-func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
-	h := New(Config{Service: newFakeService()})
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
-	doc := decodeJSON[discoveryDoc](t, rec)
-
-	want := wantFeatureSurfaces
-	seen := map[string]bool{}
-	for _, f := range doc.Features {
-		if seen[f.Name] {
-			t.Fatalf("feature %q listed twice", f.Name)
-		}
-		seen[f.Name] = true
-		if len(f.Surfaces) == 0 {
-			t.Fatalf("feature %q names no surface", f.Name)
-		}
-		if _, ok := want[f.Name]; !ok {
-			t.Fatalf("unknown feature %q: a new one has to declare its surfaces here", f.Name)
-		}
-		if !slices.Equal(f.Surfaces, want[f.Name]) {
-			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, want[f.Name])
-		}
-	}
-	for name := range want {
-		if !seen[name] {
-			t.Fatalf("feature %q missing from discovery", name)
-		}
 	}
 }
 
@@ -174,61 +118,6 @@ func TestSearchIsTheRecordsRouteRanking(t *testing.T) {
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "no such API path") {
 		t.Fatalf("GET /api/v1/search = %s, want the router's 404", body)
-	}
-}
-
-// discoveryFeatures reads the feature list one service reports.
-func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
-	t.Helper()
-	h := New(Config{Service: svc})
-	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	got := map[string]string{}
-	for _, f := range decodeJSON[discoveryDoc](t, rec).Features {
-		got[f.Name] = f.Stability
-	}
-	return got
-}
-
-// Every feature carries the stability its shape has reached. `stable` means
-// frozen for v1. `search` stays beta while the ranked page's shape is young,
-// and `agents` and `embeddings` stay alpha because both shapes are still
-// moving.
-// Change a stamp here and in the features literal together, and a stable one
-// only with a decision record, as 0053 scheduled this flip: it is a promise a
-// client has already read.
-func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
-	got := discoveryFeatures(t, newFakeService())
-
-	want := map[string]string{
-		"triggers":              substrate.StabilityStable,
-		"functions":             substrate.StabilityStable,
-		"bundles":               substrate.StabilityStable,
-		"blobs":                 substrate.StabilityStable,
-		"export":                substrate.StabilityBeta,
-		"changefeed":            substrate.StabilityStable,
-		"search":                substrate.StabilityBeta,
-		"aggregate":             substrate.StabilityAlpha,
-		"units":                 substrate.StabilityAlpha,
-		"embeddings":            substrate.StabilityAlpha,
-		substrate.FeatureAgents: substrate.AgentStability,
-		"apps":                  substrate.StabilityAlpha,
-		"mcp":                   substrate.StabilityAlpha,
-		"applets":               substrate.StabilityAlpha,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("features = %+v, want %d entries", got, len(want))
-	}
-	for name, stability := range want {
-		if got[name] != stability {
-			t.Fatalf("feature %q stability = %q, want %q", name, got[name], stability)
-		}
-	}
-	// The agent surface reads its stability off the substrate marker, never a
-	// literal here.
-	if got[substrate.FeatureAgents] != "alpha" {
-		t.Fatalf("agents feature = %q, want alpha", got[substrate.FeatureAgents])
 	}
 }
 

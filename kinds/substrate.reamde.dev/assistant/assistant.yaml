@@ -24,6 +24,9 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: assistant
+  # The built-in assistant is outside the promise (docs/stability.md): its
+  # agents, prompts and models change with the binary.
+  stability: experimental
   # 2: Moss says it runs on the model the substrate ships it with, which the
   #    owner does not set, and names where the owner changes what is out of
   #    its reach.
@@ -49,7 +52,9 @@ data:
   #     Moss uses those tools for one step and the secretary for more. A
   #     send waits for the owner's approval card (decision record 0254), so
   #     neither asks in words first.
-  version: 18
+  # 19: the package states its stability, experimental (decision record
+  #     0256).
+  version: 19
 ---
 # ---- Moss: the owner's assistant, with a name and a temperament ------------
 # Moss grows on what is already there, which is the job: an assistant that
