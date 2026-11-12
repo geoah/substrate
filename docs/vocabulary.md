@@ -50,6 +50,13 @@ data:
   version: 1
 ```
 
+A header's keys are a closed set. `authority` and `package` repeat the id and
+must agree with it, and `version` is the closure's version. Three more are
+optional: `description`; `retired`, the kind names the package has spent
+([retiring a name](#retiring-a-name)); and `stability`, the label the package
+states for its kinds, one of `stable`, `beta` and `experimental`
+([the reserved keys](#the-reserved-keys)).
+
 Each declarable kind has a collection under `substrate.reamde.dev/core`, named
 for the kind. A declaration is read there like any other record, and listed
 through `GET /api/v1/records` with its kind in `filter.kinds`. A
@@ -836,7 +843,8 @@ admitted, validated at load and stored on the declaration, and none changes a
 write. `renamedFrom:`, above, was reserved the same way and is acted on now,
 on a property and on a value entry alike. A kind's `purpose:` sits between the
 two: it changes no write either, but it is not waiting on anything, because
-the reader it exists for is a client. A kind's `ids:` is acted on from the
+the reader it exists for is a client. A package's `stability:` is the same.
+A kind's `ids:` is acted on from the
 start: it decides whether a create may name its record.
 
 **`unique:` marks one value per record.** At most one live record of the kind
@@ -940,6 +948,34 @@ its grant reaches only through a glob
 ([record 0172](decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). A kind's `purpose:` is
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
+
+**`stability:` says how much a package's kinds may change**
+([record 0256](decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md)).
+It sits on the package header and takes one of three values, `stable`,
+`beta` or `experimental`:
+
+```yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ada.example.com/garden
+data:
+  authority: ada.example.com
+  package: garden
+  stability: beta
+  version: 3
+```
+
+It is the package's label for every kind it declares, and no kind carries one
+of its own. An absent `stability:` stores nothing, and a reader treats the
+package as `experimental`, the weakest promise, so a package that never said
+is told apart from one that wrote the word. Any other value is refused,
+naming the three. No write is refused over it: it is the publisher's
+statement, read by a client off the package record, and
+[stability](stability.md) says what each label promises. Through
+`POST /api/v1/vocabulary/apply` a changed label moves the package to its next
+version, like any other change to the header, and dropping the key clears
+it from the record. The key is a package
+header's alone: an authority document and a bundle document refuse it.
 
 **`ids:` says who names a new record of the kind**
 ([record 0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).

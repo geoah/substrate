@@ -268,6 +268,9 @@ var packageDataKeys = map[string]bool{
 	// `retired` is the package's spent kind names (decision 0055): parsed by
 	// parsePackageRetired, refused on every admission door if declared again.
 	"retired": true,
+	// `stability` is the label the package states for its kinds (decision
+	// 0256): parsed by parsePackageStability, stored as written.
+	"stability": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -371,6 +374,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		l.errf("%s: data.package %q, but metadata.id says %q", where, declared, name)
 	}
 	g.Description = l.parseDescription(where+": data", gd.header.Data)
+	l.parsePackageStability(where, gd.header.Data, g)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion

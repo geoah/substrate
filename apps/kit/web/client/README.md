@@ -77,6 +77,16 @@ can't yet …" (`judgeServer`). `parseServerVersion`, `compareServerVersions`
 and `displayServerVersion` order and say a build's version as the Swift kit's
 `ServerVersion` does.
 
+The located server's `document` lists its features, each a group of routes
+with a `stability` (`stable`, `beta` or `experimental`), a `revision` that
+only rises and, where the server announces a coming break, a `notice`.
+`hasFeature(document, name, atLeast)` answers whether the server serves one,
+at `atLeast` or a later revision where a minimum is given. The server refuses
+a request field it does not know, so an app asks this before it sends a field
+that a revision added; a server from before revisions meets no minimum.
+[The stability policy](../../../../docs/stability.md) says what each label
+promises.
+
 ## Ids and positions
 
 `uuidv7()` is the lowercase, time-ordered id a create is written under, so

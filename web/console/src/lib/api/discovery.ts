@@ -25,6 +25,20 @@ export interface AuthPolicy {
   totpRequired: boolean
 }
 
+/** One entry of server.json's `features`: a group of routes the server
+ * serves, with the label that says how far its shape is promised. The label
+ * is read as the string it is, so a value a later server adds still shows. */
+interface Feature {
+  name: string
+  /** `stable`, `beta` or `experimental`. */
+  stability: string
+  /** Counts up from 1 each time the feature gains something a client may
+   * want to check for. Absent from a server older than the count. */
+  revision?: number
+  /** Where the server announces a coming break or a deprecation. */
+  notice?: string
+}
+
 /** The fields of server.json the console reads, every one optional so an
  * older server's document still parses. It mirrors internal/api's
  * discoveryDoc, not a struct in internal/substrate, so it stays unexported
@@ -32,7 +46,7 @@ export interface AuthPolicy {
 interface DiscoveryDoc {
   registration?: Partial<AuthPolicy>
   server?: { version?: string }
-  features?: { name: string; stability: string }[]
+  features?: Feature[]
   surfaces?: Record<string, { endpoint?: string }>
   /** The deployment's own name, logo and landing page, where it sets one.
    * `readSite` (lib/site.ts) checks it before anything uses it. */
@@ -64,12 +78,26 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
   totpRequired: true,
 }
 
-/** Whether the document lists a feature by name. */
+/** Whether the document lists a feature by name and, with `atLeast`, at that
+ * revision or a later one. The server refuses a request field it does not
+ * know, so a caller about to send what revision 3 added asks for at least 3
+ * first.
+ *
+ * An entry without a revision is an older server's, from before revisions
+ * were counted, and nothing a revision added is there: it reads as 0, below
+ * every revision a caller can ask for. */
 export function hasFeature(
   doc: Pick<DiscoveryDoc, "features"> | null | undefined,
-  name: string
+  name: string,
+  atLeast = 0
 ): boolean {
-  return Boolean(doc?.features?.some((f) => f.name === name))
+  const feature = doc?.features?.find((f) => f.name === name)
+  if (!feature) return false
+  const revision =
+    typeof feature.revision === "number" && feature.revision > 0
+      ? feature.revision
+      : 0
+  return revision >= atLeast
 }
 
 /** The IN-FLIGHT request, and only that: doors mounting together share one

@@ -201,7 +201,9 @@ type handler struct {
 	router http.Handler
 }
 
-// New builds the router.
+// New builds the router. Every route it registers is in exactly one feature
+// of featureTable (features.go), which is what discovery tells a client
+// about it; TestEveryRouteIsInOneFeature refuses a route in none.
 func New(cfg Config) http.Handler {
 	now := cfg.Now
 	if now == nil {

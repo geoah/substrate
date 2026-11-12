@@ -8,6 +8,9 @@ and revokes it in **Settings → AI assistants**. The console's page carries
 the same steps with this server's address filled in. The design and its
 reasons are in [the plan](plans/mcp.md) and
 [0230](decisions/0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md).
+The MCP door is experimental: [discovery](api.md#discovery) lists it as the
+`mcp` feature, and its tools may change in any release
+([stability](stability.md)).
 
 ## Connect
 

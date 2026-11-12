@@ -15,6 +15,9 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: console
+  # These kinds are read by a console and move with it: they may change or
+  # go in any release (docs/stability.md).
+  stability: experimental
   # a maturity statement, not a routing key: no envelope carries a version.
   # 2 adds the stats, trend, table, lanes and breakdown blocks, the chart's
   # from, statistic, channel and bands, and the window's open, last, aboutSelf
@@ -27,4 +30,5 @@ data:
   # record 0229).
   # 6 adds the record view's collapsed, the properties the sheet keeps
   # closed until asked.
-  version: 6
+  # 7 states the package's stability, experimental (decision record 0256).
+  version: 7

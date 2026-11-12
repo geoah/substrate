@@ -138,6 +138,18 @@ const ReasonKeyRefused = "key_refused"
 // carries no reason.
 const ReasonStaleRevision = "stale_revision"
 
+// ErrorReasons is the closed set of reasons: every Reason constant above and
+// nothing else. A client switches on a reason, so one it was never told about
+// must not reach it: the API drops a reason outside the list
+// (internal/api problemFor), and the console's union and docs/api.md are held
+// to it (internal/api errorreasons_test.go).
+var ErrorReasons = []string{
+	ReasonKeyRefused,
+	ReasonObservedRederiving,
+	ReasonQuota,
+	ReasonStaleRevision,
+}
+
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
 	Error ErrorPayload `json:"error"`

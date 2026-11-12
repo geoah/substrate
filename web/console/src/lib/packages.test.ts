@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { originWords } from "@/lib/origin"
 
-import { kindOrigin, packageAgent, packageRows } from "./packages"
+import {
+  kindOrigin,
+  packageAgent,
+  packageRows,
+  packageStability,
+} from "./packages"
 
 function row(id: string, declaredBy?: string): SubstrateRecord {
   return {
@@ -34,6 +39,25 @@ describe("packages", () => {
     expect(rows.get("ada.example.com/people")).toEqual({
       id: "ada.example.com/people",
     })
+  })
+
+  it("reads the stability a package states, and experimental where it states none", () => {
+    const labelled = packageRows({
+      records: [
+        {
+          kind: "substrate.reamde.dev/core/package",
+          id: "substrate.reamde.dev/core",
+          properties: { stability: "stable" },
+        } as unknown as SubstrateRecord,
+        row("ada.example.com/tasks", "console"),
+      ],
+    })
+    const core = labelled.get("substrate.reamde.dev/core")!
+    expect(core.stability).toBe("stable")
+    expect(packageStability(core)).toBe("stable")
+    const tasks = labelled.get("ada.example.com/tasks")!
+    expect(tasks.stability).toBeUndefined()
+    expect(packageStability(tasks)).toBe("experimental")
   })
 
   it("names the agent only when an agent declared the package", () => {

@@ -299,6 +299,70 @@ func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
 	}
 }
 
+// THE PACKAGE KIND ADMITS EXACTLY THE LABELS THE LOADER DOES (decision record
+// 0256). A header's `stability` is held twice: by the loader against
+// substrate.Stabilities, and by the write path against the enum core's
+// `package` kind declares, because the header is stored as a record of it. A
+// label only one of them knew would load and then be refused as a row, or be
+// writable as a row no open could load again. The property is authored, so
+// TestManagedPropertiesAreNotDocumentKeys already refuses a `managed` on it.
+func TestThePackageKindAdmitsEveryStability(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	ty, ok := reg.ByIdentity(vocabulary.CoreKind(vocabulary.DocPackage))
+	if !ok {
+		t.Fatal("core declares no package kind")
+	}
+	p, ok := ty.Props["stability"]
+	if !ok {
+		t.Fatal("the package kind declares no stability property, and a header's label is stored on its row")
+	}
+	if got := p.ValueStrings(); !slices.Equal(got, substrate.Stabilities) {
+		t.Errorf("package.stability admits %v, want exactly %v", got, substrate.Stabilities)
+	}
+	if p.Required {
+		t.Error("package.stability is required; a package that states no label stores none")
+	}
+}
+
+// EVERY SEEDED PACKAGE STATES ITS STABILITY, and which one is the promise
+// (docs/stability.md, decision record 0256). A seeded package is in every
+// repository, so one that stated nothing would be read as experimental by
+// default rather than by decision, and a label that moved here moves what
+// every client was told it may build on. Changing a row of this table is a
+// change to the policy page, not a fixture to retune.
+func TestEverySeededPackageStatesItsStability(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	want := map[string]string{
+		kinds.SeedCorePackage:         substrate.StabilityStable,
+		kinds.SeedLLMPackage:          substrate.StabilityExperimental,
+		kinds.SeedConsolePackage:      substrate.StabilityExperimental,
+		kinds.SeedObservationsPackage: substrate.StabilityExperimental,
+		kinds.SeedAssistantPackage:    substrate.StabilityExperimental,
+		kinds.SeedAppletsPackage:      substrate.StabilityExperimental,
+	}
+	for _, name := range kinds.SeedPackages {
+		g, ok := reg.PackageByName(name)
+		if !ok {
+			t.Errorf("the seed does not load %s", name)
+			continue
+		}
+		label, listed := want[name]
+		if !listed {
+			t.Errorf("%s is seeded and this table states no label for it; decide one and add the row", name)
+			continue
+		}
+		if g.Stability != label {
+			t.Errorf("%s states stability %q, want %q", name, g.Stability, label)
+		}
+	}
+}
+
 // A KIND TITLES ITSELF (decision record 0016). The `title` every record
 // carries is one untyped column the engine derives from the kind's
 // displayTemplate; a kind without one stores whatever a writer sent there

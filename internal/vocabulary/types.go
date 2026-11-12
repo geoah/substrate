@@ -945,6 +945,12 @@ type Package struct {
 	// Description is what the package or the authority is for, in the
 	// author's own words.
 	Description string
+	// Stability is the label the package header states for its kinds, one of
+	// substrate.Stabilities, and empty where the header states none: nothing
+	// is defaulted in, so a stored header says only what its author wrote,
+	// and a reader treats an empty one as experimental. Always empty on an
+	// authority row.
+	Stability string
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.

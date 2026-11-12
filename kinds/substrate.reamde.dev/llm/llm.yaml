@@ -21,15 +21,16 @@
 # packages instead — `notifies:` in the loader, which cannot read a trustworthy
 # source, and the quarantine refusal — and record 0077 says why each.
 #
-# ALPHA at v1: this vocabulary and the agent call and chat routes are explicitly
-# ALPHA and UNFROZEN (ruling A12). They may change or be superseded without a
-# v1 wire break.
+# EXPERIMENTAL (docs/stability.md): the header below says so for every kind
+# here, and the agent call and chat routes carry the same label in the
+# discovery file. They may change or go in any release.
 kind: substrate.reamde.dev/core/package
 metadata:
   id: substrate.reamde.dev/llm
 data:
   authority: substrate.reamde.dev
   package: llm
+  stability: experimental
   # a maturity statement, not a routing key: no envelope carries a version.
   # version 3: the `instruction` kind, the owner's standing instructions to
   # one agent, read into its system prompt (decision record 0241).
@@ -39,7 +40,9 @@ data:
   # version 5: the `approval` kind, an agent's call of a function declaring
   # `approval: required`, held until the owner approves or declines it
   # (decision record 0254).
-  version: 5
+  # version 6: the package states its stability, `experimental` (decision
+  # record 0256).
+  version: 6
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

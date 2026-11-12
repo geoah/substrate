@@ -277,6 +277,16 @@ target), and a lookup either one could not finish stops discovery. A server foun
 `probe.repository`: `signIn` sends it as `login_hint` and revokes and
 refuses a token for any other repository (`RepositoryMismatch`).
 
+`probe.discovery` is the server's whole document. Each of its features is a
+group of routes with a `stability` (`stable`, `beta` or `experimental`), a
+`revision` that only rises and, where the server announces a coming break, a
+`notice`. `discovery.serves("records", atLeast: 2)` answers whether the
+server serves a feature at that revision or a later one. The server refuses
+a request field it does not know, so an app asks this before it sends a
+field that a revision added; a server from before revisions reports 0 and
+meets no minimum. [The stability policy](../../docs/stability.md) says what
+each label promises.
+
 An app that is the whole console asks for `scopes: ["full"]` alone (decision
 0204): the server's metadata must list `full`, the approval is whole, and the
 token has no scopes; `Grants.full` reads it as everything.

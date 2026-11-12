@@ -20,6 +20,12 @@ your own repository (`substratectl kinds`, or `GET /api/v1/records` with
 `substrate.reamde.dev/core/kind` in `filter.kinds`), descriptions included, so this page
 is the map and the repository is the source of truth.
 
+A package states how much its kinds may change in its header's `stability`
+([stability](stability.md#on-a-package-for-its-kinds)). Of the packages on
+this page, `core` states `stable`; `llm`, `assistant`, `applets`, `console`
+and `observations` state `experimental`; and the catalogues and the samples
+state none, which reads as `experimental`.
+
 The tables for core are [below](#substratereamdedevcore); what follows first is
 the vocabulary you import or install.
 
@@ -169,8 +175,11 @@ meter to write observations against, `environment/air_temperature`,
 ## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
-filters exactly like vocabulary. This is the whole of what a fresh repository
-speaks:
+filters exactly like vocabulary. The package states `stable`, and two parts
+of it are outside that label and experimental: the `agent` kind, and the
+judge half of `recordpatchpolicy`
+([outside the promise](stability.md#outside-the-promise-by-name)). This is
+the whole of what a fresh repository speaks:
 
 | Kind                 | What it is                                                                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -203,7 +212,12 @@ console-editable and changelog-visible like anything else
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too, and so do the eleven shipped
+`agent`, `bundle`, `actor`) live in core too. A `package` record carries
+what its header states, such as `description`, `retired` and `stability`
+(`stable`, `beta` or `experimental`: the label the package states for its
+kinds, absent where the header states none), beside what the engine stamps,
+such as `version`, `source` and `declaredBy`. Core also holds the eleven
+shipped
 traits: `temporal`, which puts a record on the timeline; `recurring` and
 `override`, the repeat rule and the moved occurrence ([traits](traits.md));
 `sync`, the state a provider's function reports on one connected account;
@@ -225,8 +239,8 @@ so core is not everything (decision record
 [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
 is seeded exactly as core is, so a fresh repository holds these kinds without
 importing anything, and one created before a kind existed receives it at its
-next open. **Agents are alpha**, so all of them are a preview, unfrozen at v1
-and not part of the frozen core:
+next open. The package states `experimental`, so every kind in it may
+change or go in any release ([stability](stability.md)):
 
 | Kind          | What it is                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------ |

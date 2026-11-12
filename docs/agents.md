@@ -1,24 +1,25 @@
 # Agents
 
-**Agents are alpha and not part of the frozen v1 contract.** The `agent`
-kind, the agent-loop vocabulary (`llm/provider`, `llm/thread`, `llm/message`,
-`llm/interaction`), and the agent call and chat routes are all alpha and
-unfrozen at v1. They
-are marked alpha in the docs and in [API discovery](api.md#discovery),
-which lists the agent surface under the `agents` feature carrying the
-stability `alpha`, and they may change, or be superseded, without counting as
-a v1 wire break. Treat agents as a preview.
+**Agents are experimental.** The `agent` kind, the kinds of the
+`substrate.reamde.dev/llm` package an agent runs on (`llm/provider`,
+`llm/thread`, `llm/message`, `llm/interaction` and the rest), and the agent
+call and chat routes may change or go in any release
+([stability](stability.md)). The `llm` package states `experimental` in its
+header, [API discovery](api.md#discovery) lists the routes under the
+`agents` feature with the stability `experimental`, and the `agent` kind is
+one of the two parts of `core` that its `stable` label does not cover
+([outside the promise](stability.md#outside-the-promise-by-name)). The
+records an agent writes are data like any other and survive every upgrade.
 
 This page is about the agents a substrate runs. A program that uses a
 substrate from outside, with a token, reads
 [Using a substrate from an agent](for-agents.md) instead.
 
-The features of the supported REST surface (`triggers`, `functions`,
-`bundles`, `blobs`, `changefeed`) report `stable`: frozen for v1, additive
-only, so there is a frozen surface to retreat to. `export` and `search`
-report `beta`, and `embeddings` is the other `alpha` entry. Read
-[discovery](api.md#discovery) for what each value promises, and pin the
-server version where an alpha break would cost you.
+The records route, the changefeed, triggers and functions are `stable`
+features, so there is a steadier part of the API to build on beside agents.
+Read [discovery](api.md#discovery) for the whole list, and compare
+`server.version` with the release you tested against where a break to an
+experimental feature would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same ways in as a [function](functions.md): a

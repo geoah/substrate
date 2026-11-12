@@ -519,7 +519,13 @@ first label.
   ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
   [0231](docs/decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md),
   [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
-  [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a
+  [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)).
+  A package header's `stability` (`stable`, `beta` or `experimental`; absent
+  stores nothing and reads as `experimental`) is validated and stored the
+  same way and refuses no write: it is the label the package states for its
+  kinds, there is none on a kind, and a client reads it off the package
+  record ([0256](docs/decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md),
+  [docs/stability.md](docs/stability.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's
@@ -559,6 +565,42 @@ first label.
   `internal/substrate`, never a bare `map[string]any`. Move a wire field and the Go test fails; regenerate with
   `go test ./internal/substrate/ -run TestWireGolden -update` and the console's
   test fails until `types.ts` follows. Do not edit the golden by hand.
+- **A route is placed in a feature, and a feature that gains something
+  raises its revision.** The feature list in
+  `GET /.well-known/substrate/server.json` is built from one table,
+  `featureTable` in `internal/api/features.go`: each feature with its
+  stability, its revision and the routes it holds
+  ([0256](docs/decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md),
+  [docs/stability.md](docs/stability.md)). A route added to the router goes
+  into the feature it belongs to, or into a new feature at revision 1, and
+  `TestEveryRouteIsInOneFeature` fails until it does. A feature that gains
+  a route, a parameter, a request field or a response field a client may
+  want to check for goes up one revision, and a revision never comes down.
+  `internal/api/testdata/features.golden.json` records each feature's
+  routes and revision; regenerate it with
+  `go test ./internal/api/ -run TestFeaturesMatchTheGolden -update`, which
+  refuses a route set that changed under an unchanged revision, and do not
+  edit it by hand. `mise run features:check` holds the same against the base
+  branch, so two branches cannot each spend one number. Taking something
+  away is declared, never inferred: a route a feature stops serving is
+  listed in its `removed`, and a feature that goes in `removedFeatures`
+  with the routes it held. Neither list shrinks, an address or a name on
+  one is never used again, and the same guards refuse a route or a feature
+  that left the table without being listed and a `stable` label that went
+  down. A parameter, a request field and a response field are seen by no
+  guard: raising the revision for one is held by review alone. The feature
+  table in
+  `docs/api.md` follows, and `TestDocsListTheFeatures` holds it. A new error code goes into `errorCodes` in
+  `internal/api/errors.go`, then
+  `go test ./internal/api/ -run TestErrorCodes -update`, the
+  `The closed set:` line of `docs/api.md` and the console's
+  `ServerErrorCode` union. A handler names a code constant where it writes
+  one (`TestEveryEmittedCodeIsADeclaredConstant`, which cannot see an
+  envelope spelled as raw JSON: do not write one). A new reason goes into
+  `ErrorReasons` in `internal/substrate/errors.go`, then
+  `go test ./internal/api/ -run TestErrorReasons -update`, the
+  `The closed set of reasons:` line of `docs/api.md` and the console's
+  `ErrorReason` union.
 - **Comments carry constraints, not narration.** Say why a thing must be so,
   or say nothing.
 - **Every commit title is a conventional commit** —
