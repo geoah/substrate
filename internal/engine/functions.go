@@ -248,6 +248,9 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// what drains the spool the last process left.
 	ds.kickSpoolDrain()
 	ds.resumeWebhooks()
+	// The temporary failures whose retry is due, detached for the same
+	// reason (temporaryretry.go).
+	ds.retryTemporaryFailures()
 	// The agent deliveries the last stop interrupted, rerun once at the
 	// open's first pass. Detached for the same reason as the resume
 	// (agents.go rerunInterruptedAgentRuns).
@@ -949,11 +952,13 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		lastErr = err
 		// A deterministic trip — a read or call outside the allowlist, a
 		// blown budget — reproduces on every retry, so it parks immediately
-		// (the errCausalDepth precedent). A timeout is not deterministic
-		// (db load) and rides the attempts. A paged drain that already
+		// (the errCausalDepth precedent). A temporary failure, a timeout
+		// among them, parks now too: the walk of temporary failures retries
+		// it over minutes (temporaryretry.go), where a retry here would
+		// meet the same outage. A paged drain that already
 		// committed pages (errPagedParked) also parks now: re-running it would
 		// only resume the same chain, so leave it to the parked-failure retry.
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
+		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
@@ -1720,9 +1725,10 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 				return err
 			}
 		}
+		text, parkedAt, waiting := ds.parkedError(tr, cause, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
 			ID: foldInt(id), Seq: foldInt(ch.Seq), RecordID: ch.RecordID,
-			Attempts: foldInt(attempts), LastError: cause.Error(), ParkedAt: t.now,
+			Attempts: foldInt(attempts), LastError: text, ParkedAt: parkedAt,
 		}); err != nil {
 			return err
 		}
@@ -1745,8 +1751,12 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 		}); err != nil {
 			return err
 		}
-		if err := t.raiseParkedAlert(tr, vocabulary.RecordPath(ch.Kind, ch.RecordID), cause); err != nil {
-			return err
+		// A failure the walk retries needs no person yet: the alert waits
+		// for the retries to run out.
+		if !waiting {
+			if err := t.raiseParkedAlert(tr, vocabulary.RecordPath(ch.Kind, ch.RecordID), cause); err != nil {
+				return err
+			}
 		}
 		// The park and the record's `erroring` commit together, so a reader
 		// never meets a parked delivery whose record still says `running`.
@@ -2255,7 +2265,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, false, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
+		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
 			errors.Is(err, errAgentThreadOpened) || errors.Is(err, errWebhookUnverified) || errors.Is(err, errAgentWebhookTooLarge) {
 			attempts = attempt + 1
 			break
@@ -2306,9 +2316,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 				return err
 			}
 		}
+		text, parkedAt, waiting := ds.parkedError(tr, lastErr, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
 			ID: foldInt(id), FireID: fid, Attempts: foldInt(attempts),
-			LastError: lastErr.Error(), ParkedAt: t.now, Payload: payload,
+			LastError: text, ParkedAt: parkedAt, Payload: payload,
 		}); err != nil {
 			return err
 		}
@@ -2332,6 +2343,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			startedAt: started, errMsg: lastErr.Error(),
 		}); err != nil {
 			return err
+		}
+		if waiting {
+			return nil
 		}
 		return t.raiseParkedAlert(tr, "", lastErr)
 	})
@@ -3885,8 +3899,9 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 				return err
 			}
 			f.Attempts++
-			f.LastError = derr.Error()
-			f.ParkedAt = t.now
+			text, parkedAt, waiting := ds.parkedError(tr, derr, int(f.Attempts), t.now)
+			f.LastError = text
+			f.ParkedAt = parkedAt
 			if err := t.parkTx(tr.ID, f); err != nil {
 				return err
 			}
@@ -3901,9 +3916,12 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 				return err
 			}
 			// A delivery that fails again is the problem recurring: an alert
-			// the owner resolved by hand reopens.
-			if err := t.raiseParkedAlert(tr, record, derr); err != nil {
-				return err
+			// the owner resolved by hand reopens. One the walk retries again
+			// raises none yet.
+			if !waiting {
+				if err := t.raiseParkedAlert(tr, record, derr); err != nil {
+					return err
+				}
 			}
 			return t.syncPark(settle.sync, derr)
 		})

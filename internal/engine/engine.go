@@ -236,6 +236,9 @@ type options struct {
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
+	// retryNow is the clock the walk of temporary failures reads a retry's
+	// due time on (seams.go WithTestRetryClock); the wall clock when nil.
+	retryNow func() time.Time
 	// now is the TOTP verifier's clock (seams.go WithTestTOTPClock); the wall
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
@@ -578,6 +581,9 @@ type service struct {
 	foreignPackages bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
+	// retryNow is the temporary-failure walk's clock (temporaryretry.go),
+	// never nil.
+	retryNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
 	// valuesBudget is what one change read's before values may read.
@@ -856,6 +862,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.healthNow == nil {
 		o.healthNow = time.Now
 	}
+	if o.retryNow == nil {
+		o.retryNow = time.Now
+	}
 	if !o.searchMatchMaxSet {
 		o.searchMatchMax = -1
 	}
@@ -949,6 +958,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
+		retryNow:           o.retryNow,
 		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
 		chatTurnsPerPerson: o.chatTurnsPerPerson,

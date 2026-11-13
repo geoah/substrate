@@ -479,6 +479,9 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 		return nil, err
 	}
 	if !resp.OK {
+		if resp.Temporary {
+			return nil, &temporaryError{msg: "runner: " + resp.Error}
+		}
 		return nil, fmt.Errorf("runner: %s", resp.Error)
 	}
 	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: state.logs, More: resp.More}, nil
@@ -524,10 +527,12 @@ type frame struct {
 
 // response is a child's final line for one request.
 type response struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error"`
-	Output  any    `json:"output"`
-	Effects []any  `json:"effects"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+	// Temporary, on a failure, says a later attempt may not meet it.
+	Temporary bool  `json:"temporary"`
+	Output    any   `json:"output"`
+	Effects   []any `json:"effects"`
 	// More, present, is the paged-checkpoint continuation (protocol.go): this
 	// page is done, re-invoke with More.Cursor. Absent means drained.
 	More *Continuation `json:"more"`
@@ -1030,7 +1035,9 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 		case <-ctx.Done():
 			p.kill()
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("runner: invocation exceeded %s", timeout)
+				// Temporary: a body that ran out of time may finish when the
+				// provider it waits on answers sooner.
+				return nil, &temporaryError{msg: fmt.Sprintf("runner: invocation exceeded %s", timeout)}
 			}
 			return nil, ctx.Err()
 		case <-p.dead:

@@ -467,6 +467,50 @@ A server outside the image runs bodies on the `python3` on its `PATH`. A
 body whose PEP 723 block asks for a newer `requires-python` than that fails
 when it is registered, not at its first delivery.
 
+### When a delivery fails
+
+How a body says its failure is temporary is part of the interface
+([0266](decisions/0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md)).
+A delivery that fails is either temporary or the body's own:
+
+- **Temporary.** The body raises `host.Temporary`, or lets one of these
+  escape: a network error (`ConnectionError`, `TimeoutError`, a failed name
+  lookup, `urllib.error.URLError`, the `ConnectionError` and `Timeout` of
+  `requests`, the `TransportError` and `TimeoutException` of `httpx`), or an
+  HTTP answer that means "try later", 408, 429, 502, 503 or 504, from
+  `urllib.error.HTTPError` or any exception whose `response.status_code`
+  says so. A body that runs past its `timeout` is temporary too.
+
+  ```python
+  def main(input, host):
+      status, body = fetch_page()
+      if status == 503:
+          raise host.Temporary("the provider answered 503")
+  ```
+
+  The delivery parks at once, and the trigger's cursor moves past it as for
+  any park. Its error starts `temporary, retried automatically at <time>:`,
+  and no alert is raised. The server retries it at that time, and again
+  after each temporary failure, waiting 15 seconds, then 30, then 1, 2, 4,
+  8, 16 and 32 minutes: about an hour in all. A retry that delivers retires
+  the row, as a retry by hand does. Once the waits are spent, the row is set
+  aside for a person like any other park, and the alert is raised. Nothing
+  waits in the meantime: the parked row is the schedule, so a restart or a
+  restore picks it up.
+- **The body's own.** Any other exception. The delivery is tried twice more
+  within an eighth of a second, for a conflict that clears at once, then set
+  aside for a person under `…/parked`. A failure a retry would reproduce, a
+  read or a call outside the function's grants or a spent budget, is set
+  aside at once.
+
+Nothing that may run an agent is retried this way, because a retry would
+run the agent and its writes again: an agent trigger's deliveries settle
+through their own claims ([running an agent](#running-an-agent)), and a
+function granted `permissions.agents` or `permissions.call` has its temporary
+failure set aside for a person at once, like a failure of its own. A row
+already waiting is set aside the same way when its retry falls due, if its
+function has gained such a grant meanwhile.
+
 ## How the body runs
 
 A function's source is prepared **at install**, synchronously, and a body that
@@ -814,6 +858,7 @@ host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
+raise host.Temporary(msg)                         # retried over minutes
 ```
 
 A body run as an agent's tool writes as the agent, and an agent creates a
@@ -1561,7 +1606,9 @@ delivery is retried like any other transient failure.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
   backoff; a deterministic trip like an allowlist or budget violation, an
   installation retired by a redeploy mid-delivery, or a failure after the body
-  ran an agent, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
+  ran an agent, parks on the first, and a temporary failure parks on the
+  first and is retried over minutes,
+  [when a delivery fails](#when-a-delivery-fails)) and the trigger's cursor moves on. A false `when` is a skip, not a
   failure, and so is a guarded write that yielded its version race — a race two
   triggers are designed to have is not an operator's problem
   ([two invocations over one record](#two-invocations-over-one-record)).
