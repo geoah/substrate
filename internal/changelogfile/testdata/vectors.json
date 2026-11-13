@@ -1,0 +1,168 @@
+{
+  "lines": [
+    {
+      "name": "a put that creates a record: one entry, its own transaction",
+      "entry": {
+        "actor": "api",
+        "kind": "ada.example.com/tasks/task",
+        "op": "put",
+        "payload": {
+          "properties": [
+            "name",
+            "dueAt"
+          ],
+          "created": true,
+          "fold": [
+            {
+              "kind": "record",
+              "ref": "ada.example.com/tasks/task",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "version": 1,
+              "delta": {
+                "created": true,
+                "set": {
+                  "name": "Ship the fold",
+                  "dueAt": "2026-08-06T09:00:00Z",
+                  "estimate": 1.5
+                },
+                "title": "Ship the fold",
+                "kindVersion": 3
+              }
+            },
+            {
+              "kind": "manager",
+              "ref": "ada.example.com/tasks/task",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "property": "name",
+              "actor": "api",
+              "tier": "owner",
+              "principal": "01jbx9k0token000000000000a"
+            }
+          ]
+        },
+        "principal": "01jbx9k0token000000000000a",
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4190,
+        "ts": "2026-08-04T10:00:00.183742Z",
+        "txn": 4190
+      },
+      "line": "{\"actor\":\"api\",\"kind\":\"ada.example.com/tasks/task\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":3E0,\"set\":{\"dueAt\":\"2026-08-06T09:00:00Z\",\"estimate\":1.5E0,\"name\":\"Ship the fold\"},\"title\":\"Ship the fold\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"ada.example.com/tasks/task\",\"version\":1E0},{\"actor\":\"api\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"principal\":\"01jbx9k0token000000000000a\",\"property\":\"name\",\"ref\":\"ada.example.com/tasks/task\",\"tier\":\"owner\"}],\"properties\":[\"name\",\"dueAt\"]},\"principal\":\"01jbx9k0token000000000000a\",\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4190,\"sum\":\"sha256:308ac73610024745a83e81276ac52f61d3b8f406156a231984a79199f8731e31\",\"ts\":\"2026-08-04T10:00:00.183742Z\",\"txn\":4190}",
+      "sum": "sha256:308ac73610024745a83e81276ac52f61d3b8f406156a231984a79199f8731e31"
+    },
+    {
+      "name": "the first entry of a merge's transaction, which ends at the next seq",
+      "entry": {
+        "actor": "api",
+        "kind": "ada.example.com/people/person",
+        "op": "delete",
+        "payload": {
+          "fold": [
+            {
+              "kind": "tombstone",
+              "ref": "ada.example.com/people/person",
+              "id": "p2",
+              "version": 3,
+              "finalizer": "substrate.merge"
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "p2",
+        "seq": 4207,
+        "ts": "2026-08-04T10:05:00.000000Z",
+        "txn": 4208
+      },
+      "line": "{\"actor\":\"api\",\"kind\":\"ada.example.com/people/person\",\"op\":\"delete\",\"payload\":{\"fold\":[{\"finalizer\":\"substrate.merge\",\"id\":\"p2\",\"kind\":\"tombstone\",\"ref\":\"ada.example.com/people/person\",\"version\":3E0}]},\"principal\":\"\",\"recordId\":\"p2\",\"seq\":4207,\"sum\":\"sha256:3ad2e34ad66524a131c19b9c51265f56b5317304a81ad492bcfd80a07c35b86c\",\"ts\":\"2026-08-04T10:05:00.000000Z\",\"txn\":4208}",
+      "sum": "sha256:3ad2e34ad66524a131c19b9c51265f56b5317304a81ad492bcfd80a07c35b86c"
+    },
+    {
+      "name": "a delivery a webhook caused, with causedBy and text that escapes",
+      "entry": {
+        "actor": "substrate.webhook",
+        "causedBy": 4299,
+        "kind": "substrate.reamde.dev/core/trigger",
+        "op": "delivery",
+        "payload": {
+          "fold": [
+            {
+              "kind": "park",
+              "ref": "substrate.reamde.dev/core/trigger",
+              "id": "on-hook",
+              "failure": {
+                "id": 4300,
+                "fireId": "f1",
+                "attempts": 3,
+                "lastError": "gate \"closed\" <\u00e9>\u2028",
+                "parkedAt": "2026-08-04T11:00:00Z"
+              }
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "on-hook",
+        "seq": 4300,
+        "ts": "2026-08-04T11:00:00.000001Z",
+        "txn": 4300
+      },
+      "line": "{\"actor\":\"substrate.webhook\",\"causedBy\":4299,\"kind\":\"substrate.reamde.dev/core/trigger\",\"op\":\"delivery\",\"payload\":{\"fold\":[{\"failure\":{\"attempts\":3E0,\"fireId\":\"f1\",\"id\":4.3E3,\"lastError\":\"gate \\\"closed\\\" \\u003c\u00e9\\u003e\\u2028\",\"parkedAt\":\"2026-08-04T11:00:00Z\"},\"id\":\"on-hook\",\"kind\":\"park\",\"ref\":\"substrate.reamde.dev/core/trigger\"}]},\"principal\":\"\",\"recordId\":\"on-hook\",\"seq\":4300,\"sum\":\"sha256:5f6e5c091ea7ad32ca4b7924b305fd84bc711cd6b4243e654e05b7904b68b933\",\"ts\":\"2026-08-04T11:00:00.000001Z\",\"txn\":4300}",
+      "sum": "sha256:5f6e5c091ea7ad32ca4b7924b305fd84bc711cd6b4243e654e05b7904b68b933"
+    },
+    {
+      "entry": {
+        "actor": "function:ada.example.com:inbox:sync",
+        "kind": "ada.example.com/inbox/message",
+        "op": "patch",
+        "payload": {
+          "properties": [
+            "subject"
+          ],
+          "fold": [
+            {
+              "kind": "record",
+              "ref": "ada.example.com/inbox/message",
+              "id": "m1",
+              "version": 7,
+              "delta": {
+                "set": {
+                  "subject": "tab\there\bback\fform\u0001one & <two>",
+                  "size": -0.0,
+                  "bytes": 123456789012345678901234567890
+                },
+                "labels": {}
+              }
+            },
+            {
+              "kind": "annotation",
+              "ref": "ada.example.com/inbox/message",
+              "id": "m1",
+              "key": "owner/note",
+              "value": false
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "m1",
+        "seq": 4301,
+        "ts": "2026-08-04T12:00:00.500000Z",
+        "txn": 4301
+      },
+      "line": "{\"actor\":\"function:ada.example.com:inbox:sync\",\"kind\":\"ada.example.com/inbox/message\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"labels\":{},\"set\":{\"bytes\":1.2345678901234567890123456789E29,\"size\":0,\"subject\":\"tab\\there\\bback\\fform\\u0001one \\u0026 \\u003ctwo\\u003e\"}},\"id\":\"m1\",\"kind\":\"record\",\"ref\":\"ada.example.com/inbox/message\",\"version\":7E0},{\"id\":\"m1\",\"key\":\"owner/note\",\"kind\":\"annotation\",\"ref\":\"ada.example.com/inbox/message\",\"value\":false}],\"properties\":[\"subject\"]},\"principal\":\"\",\"recordId\":\"m1\",\"seq\":4301,\"sum\":\"sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8\",\"ts\":\"2026-08-04T12:00:00.500000Z\",\"txn\":4301}",
+      "name": "a patch a function wrote, with control characters, a negative zero and a number no float holds",
+      "sum": "sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8"
+    }
+  ],
+  "numbers": {
+    "-0": "0",
+    "-2.5E+3": "-2.5E3",
+    "0": "0",
+    "0.000": "0",
+    "0.001": "1E-3",
+    "1": "1E0",
+    "1.5": "1.5E0",
+    "1.50": "1.5E0",
+    "1000": "1E3",
+    "123456789012345678901234567890": "1.2345678901234567890123456789E29",
+    "15e-1": "1.5E0",
+    "18": "1.8E1"
+  }
+}

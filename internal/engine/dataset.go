@@ -940,7 +940,7 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		return err
 	}
 	if t.claimsChangelogDialect {
-		if err := ds.writeManifestBeforeCommit(maxChangelogDialect); err != nil {
+		if err := ds.writeManifestBeforeCommit(ds.svc.maxDialect); err != nil {
 			return err
 		}
 	}

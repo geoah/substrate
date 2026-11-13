@@ -167,6 +167,9 @@ const (
 	// reconcileResumed is an import a previous boot began and did not
 	// complete, finished from the rows already in the table.
 	reconcileResumed = "resumed import"
+	// reconcileConverted is a history in an older changelog dialect, converted
+	// in place and folded again (conversion.go).
+	reconcileConverted = "converted"
 	// reconcileSkipped is a directory with no row and no manifest: nothing
 	// says whose it is, so it is neither imported nor deleted.
 	reconcileSkipped = "skipped: no manifest"
@@ -374,6 +377,12 @@ func (s *service) bareDataset(repo Repository, db *sql.DB, dir string) *dataset 
 // the writer an append needs is opened over the log and closed with the
 // append, so the lock it holds is released before any dataset opens its own.
 func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allowImport bool) error {
+	// A conversion cut short left its directory beside the live one, and
+	// possibly a table that already took the converted lines: finished first,
+	// so the files compared below are the ones the table holds.
+	if err := ds.finishConversion(ctx); err != nil {
+		return err
+	}
 	tableHead, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
 		return err
@@ -415,11 +424,11 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		if !allowImport {
 			return fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, fileHead, tableHead)
 		}
-		n, err := ds.importEntries(ctx, log, tableHead)
+		n, folded, err := ds.importEntries(ctx, log, tableHead)
 		if err != nil {
 			return err
 		}
-		out.Action, out.Entries = reconcileImported, n
+		out.checked, out.Action, out.Entries = folded, reconcileImported, n
 		return discardPendingSealed(ds.dir)
 	}
 	// Equal heads say the rows are all there and nothing about the fold: an
@@ -433,7 +442,18 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		return err
 	}
 	if !incomplete {
-		return mirrorSealedFromTable(ctx, ds.db, fileSealedStore{}, ds.dir)
+		// The sealed files first: a conversion sets the import's marker, and
+		// a boot that resumes it loads sealed/ back into the table, which must
+		// find what the table holds.
+		if err := mirrorSealedFromTable(ctx, ds.db, fileSealedStore{}, ds.dir); err != nil {
+			return err
+		}
+		converted, ok, err := ds.convertHistory(ctx, log)
+		if err != nil || !ok {
+			return err
+		}
+		out.checked, out.Action = converted, reconcileConverted
+		return ds.refoldFromFiles(ctx, converted)
 	}
 	if !allowImport {
 		return importIncompleteErr(ds.info.ID, markedHead)
@@ -450,10 +470,11 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		}
 		out.checked = log
 	}
-	if err := ds.completeImport(ctx, log, markedHead); err != nil {
+	folded, err := ds.completeImport(ctx, log, markedHead)
+	if err != nil {
 		return err
 	}
-	out.Action = reconcileResumed
+	out.checked, out.Action = folded, reconcileResumed
 	return discardPendingSealed(ds.dir)
 }
 
@@ -627,17 +648,18 @@ const (
 // leaves a state the next boot finishes: the file still ahead resumes the
 // rows from the new table head, and equal heads under the marker resume the
 // fold (completeImport). No row is ever inserted twice, because `seq` is the
-// key and the resume starts above what the table holds.
-func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, tableHead int64) (int64, error) {
+// key and the resume starts above what the table holds. It returns the Log it
+// folded, which a conversion replaced when the directory was older.
+func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, tableHead int64) (int64, *changelogfile.Log, error) {
 	batch := rebuildBatch
 	if ds.svc.testImportBatch > 0 {
 		batch = ds.svc.testImportBatch
 	}
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if err := markImportIncomplete(ctx, ds.db, log.Head()); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	// Said before the work: the rows and the two fold passes below log
 	// nothing until the import is done, and a long history takes minutes.
@@ -652,24 +674,30 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 	for {
 		entries, err := cur.Next(batch)
 		if err != nil {
-			return n, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+			return n, nil, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
 		if len(entries) == 0 {
 			break
 		}
 		if err := ds.insertEntries(ctx, entries); err != nil {
-			return n, err
+			return n, nil, err
 		}
 		n += int64(len(entries))
 		prog.tick(cur.Position())
 		if err := ds.importFault(importAfterBatch); err != nil {
-			return n, err
+			return n, nil, err
 		}
 	}
-	if err := ds.refoldFromFiles(ctx, log); err != nil {
-		return n, err
+	// A directory an older release wrote is converted before anything folds
+	// it: the fold reads this binary's dialect alone (conversion.go).
+	log, _, err := ds.convertHistory(ctx, log)
+	if err != nil {
+		return n, nil, err
 	}
-	return n, nil
+	if err := ds.refoldFromFiles(ctx, log); err != nil {
+		return n, nil, err
+	}
+	return n, log, nil
 }
 
 // completeImport finishes an import whose rows are all in the table and whose
@@ -677,14 +705,20 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 // fold pass. sealed/ is loaded again because the direction is still the
 // import's (the files are what is being restored), and the upsert is
 // idempotent. markedHead is the file head the marker recorded; the log's own
-// head is what the refold folds, and the two differ after a catch-up.
-func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) error {
-	ds.svc.log.Warn("substrate: resuming an interrupted import of the repository directory",
+// head is what the refold folds, and the two differ after a catch-up. A
+// conversion sets the same marker, so this is also the end of one a crash cut
+// short. It returns the Log it folded.
+func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) (*changelogfile.Log, error) {
+	ds.svc.log.Warn("substrate: resuming an interrupted import or conversion of the repository directory",
 		"repository", ds.scope.Repository, "markedHead", markedHead, "fileHead", log.Head())
 	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
-		return err
+		return nil, err
 	}
-	return ds.refoldFromFiles(ctx, log)
+	log, _, err := ds.convertHistory(ctx, log)
+	if err != nil {
+		return nil, err
+	}
+	return log, ds.refoldFromFiles(ctx, log)
 }
 
 // importFault runs the test seam at one of the import's durable steps; a nil
@@ -910,7 +944,7 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// Both reader requirements are checked here, before the row and before
 	// insertEntries writes anything: a refusal from the fold, with the rows
 	// already committed, is the outage the manifest exists to prevent.
-	if err := newerChangelogDialect(m.Authority, m.ChangelogDialect); err != nil {
+	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
 		return out, err
 	}
 	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {

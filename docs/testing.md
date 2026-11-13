@@ -134,6 +134,15 @@ history. It runs with the rest of `test:db` and takes about ten seconds.
 go test -count=1 -run TestReleaseAcceptanceDrill -v ./internal/testenv/
 ```
 
+The drill writes its history with the current code, so it proves the current
+code reads itself. `TestKeptDirectories` (`kept_db_test.go`) holds the rest:
+it imports every directory a release's own server wrote
+(`testdata/kept/<tag>`, made by `mise run release:keep <tag>`) under the
+current code and compares every record, every tombstone and every trigger's
+state with what that release served, admitting only what the boot wrote after
+the release's head ([kept directories](stored-format.md#kept-directories)).
+It runs in the `db rest` job and takes a few seconds.
+
 **Run the engine suite on its own when you are working in it.** `go test ./...`
 across the whole tree starves the container, and the cases then fail with
 `connection refused`, which reads like a code failure and is not one. That is
