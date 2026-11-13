@@ -88,7 +88,15 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 		if int64(v.Version) <= held {
 			break
 		}
+		// A version written for a newer dialect is not this server's to
+		// install; the newest it can read is the upgrade (decision 0268).
+		if !readableVersion(v) {
+			continue
+		}
 		b, err := c.readClosure(ctx, id, source, v)
+		if errors.Is(err, ErrNewerDialect) {
+			continue
+		}
 		if err != nil {
 			return result, err
 		}

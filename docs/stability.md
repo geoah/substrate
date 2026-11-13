@@ -184,9 +184,11 @@ or a new kind, with the old one marked `deprecated: true` and kept.
 
 The keys a declaration may carry are a closed set, and a server refuses a
 document carrying a key it does not know. A new key raises the vocabulary
-dialect number, and a package states the number it needs, so an older server
-refuses the package by that number
-([not in force yet](#what-is-not-in-force-yet)).
+dialect number, which a server publishes in discovery as
+`vocabulary.dialect`. A package states the number it needs, in its header and
+beside each version its publisher lists, so an older server installs the
+newest version it can read and refuses a newer one by that number
+([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 
 ### Stored data
 
@@ -335,9 +337,3 @@ The code does not hold these clauses today:
 - **History is complete, and no kind has a retention.** Nothing prunes or
   compacts a changelog, `changelog.horizon` in discovery is 0, and a
   declaration has no key for a retention.
-- **A new declaration key does not raise the vocabulary dialect.** The number
-  has been raised once, for a seeded closure an older server refuses
-  ([vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)),
-  and the `stability` key arrived without raising it. A package has no key to
-  state the number it needs. A server that does not know a key refuses the
-  document that carries it, naming the key.

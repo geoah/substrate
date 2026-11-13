@@ -5,6 +5,7 @@ import (
 
 	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Discovery: GET /.well-known/substrate/server.json answers what this
@@ -25,6 +26,10 @@ type discoveryDoc struct {
 	// Changelog carries the retention horizon: the oldest resumable seq, 0
 	// while nothing is pruned.
 	Changelog changelogInfo `json:"changelog"`
+	// Vocabulary carries the declaration format this server reads, which a
+	// publisher compares with the dialect a package version needs (decision
+	// 0268). Added at the `discovery` feature's revision 2.
+	Vocabulary vocabularyInfo `json:"vocabulary"`
 	// Features is the feature list a client reads instead of feature-probing:
 	// featureTable's entries (features.go), each with its label and revision.
 	Features []featureInfo `json:"features"`
@@ -146,13 +151,20 @@ type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
 }
 
+// vocabularyInfo is the declaration format this server reads: the newest
+// vocabulary dialect, which every older one is below.
+type vocabularyInfo struct {
+	Dialect int `json:"dialect"`
+}
+
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	doc := discoveryDoc{
-		Versions:  []apiVersionInfo{{Name: APIVersion, Status: "served"}},
-		Server:    serverInfo{Version: build.Version(), Build: build.Commit(), Instance: h.svc.InstanceID()},
-		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  h.features(),
+		Versions:   []apiVersionInfo{{Name: APIVersion, Status: "served"}},
+		Server:     serverInfo{Version: build.Version(), Build: build.Commit(), Instance: h.svc.InstanceID()},
+		Changelog:  changelogInfo{Horizon: retentionHorizon()},
+		Vocabulary: vocabularyInfo{Dialect: vocabulary.Dialect},
+		Features:   h.features(),
 		Surfaces: surfacesInfo{
 			REST: surfaceInfo{Endpoint: "/api/" + APIVersion, Compatibility: compatibilitySupported},
 			MCP:  surfaceInfo{Endpoint: mcpPath, Compatibility: compatibilityPreview},

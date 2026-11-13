@@ -51,13 +51,15 @@ data:
 ```
 
 A header's keys are a closed set. `authority` and `package` repeat the id and
-must agree with it, and `version` is the closure's version. Four more are
+must agree with it, and `version` is the closure's version. Five more are
 optional: `description`; `retired`, the kind names the package has spent
 ([retiring a name](#retiring-a-name)); `stability`, the label the package
 states for its kinds, one of `stable`, `beta` and `experimental`
-([the reserved keys](#the-reserved-keys)); and `interface`, the function
+([the reserved keys](#the-reserved-keys)); `interface`, the function
 interface its code is written against
-([functions](functions.md#the-interface)).
+([functions](functions.md#the-interface)); and `dialect`, the vocabulary
+dialect it needs
+([the dialect](#vocabulary-evolution-and-the-dialect-contract)).
 
 Each declarable kind has a collection under `substrate.reamde.dev/core`, named
 for the kind. A declaration is read there like any other record, and listed
@@ -369,33 +371,70 @@ stored closure the binary no longer accepts.
 
 The vocabulary changes over the life of a repository, and v1 fixes how, so a binary
 upgrade or a bundle upgrade can never silently corrupt data already written
-against the old shape. The contract has two halves.
+against the old shape. The contract has three parts.
 
-**A per-repository vocabulary dialect.** Each repository carries a monotonic
-vocabulary-dialect integer naming the shape its stored declaration rows are
-in. It is 2 today. A repository is stamped at the binary's maximum when it
-is created, and one stamped lower is raised to it at its first open. A binary
-whose maximum
-supported dialect is below a repository's stored dialect refuses to open that
-repository with a named error ("the store speaks a newer schema dialect than
-this binary"), rather than opening it and misreading rows written by a newer
-shape; the API surfaces the refusal as `503 repository temporarily
-unavailable`, never as an invalid token, and
-[upgrading the binary](operations.md#upgrading-the-binary) is where that lands
-on an operator. A repository's stored dialect is internal to its own store and
-never appears on the wire, and [API discovery](api.md#discovery) does not
-report the binary's maximum either. The next number is spent when a release
-changes what a stored declaration row holds, together with the step that
-rewrites the rows and stamps the new number in the same transaction.
-Dialect 2 changes no row's shape: it marks this release's seeded `core`
-closure (`oneOf` reference properties, the `quantity` type), which the
-v0.113.0 loader refuses. v0.113.0 reads the manifest's dialect only when it
-imports a directory its database has no repository row for, so the stamp
-refuses that case by name. A database restored with the repository row still
-in it imports the directory without reading the manifest, which is why a
+**The vocabulary dialect.** The dialect is the number of the declaration
+format a server reads: the closed key sets of every declaration document
+([decision 0268](decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md),
+which amends [0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
+It is 3 today. A server refuses a document carrying a key it does not know,
+so every key added to a declaration, removed from one or moved between two
+raises the number, in the release that admits it. Dialect 3 added the package
+header's `stability`, `interface` and `dialect`; dialect 2 marked the seeded
+closure that brought `oneOf` reference properties and the `quantity` type.
+`internal/vocabulary/testdata/dialect.golden.json` records every key set
+under the number it was admitted at: a test refuses a key set that moved
+under an unchanged number, and `mise run dialect:check` holds the same
+against the base branch.
+
+The number is read in three places:
+
+- **Discovery.** A server publishes the dialect it reads as
+  `vocabulary.dialect` in [discovery](api.md#discovery).
+- **A package header.** A package states the dialect it needs under
+  `dialect`:
+
+  ```yaml
+  kind: substrate.reamde.dev/core/package
+  metadata:
+    id: ada.example.com/garden
+  data:
+    authority: ada.example.com
+    package: garden
+    dialect: 3
+    version: 4
+  ```
+
+  A server that reads a lower dialect refuses the package, naming both
+  numbers. A header that states none stores nothing and needs nothing beyond
+  what the server reads.
+- **A publisher's document.** Each version a publisher lists may carry the
+  dialect its closure needs, beside its `closure` and `sha256`
+  ([publishing a package](apps.md#publish-a-package)). The catalog installs
+  the newest version at or above the floor asked for whose dialect the
+  server reads, and a refresh passes over a version written for a newer one,
+  so a publisher that adopts a new key leaves an older server installing the
+  version before. A version that states no dialect is fetched, and passed
+  over the same way when its closure's header states a newer one.
+
+**A repository is stamped with the dialect.** A repository is stamped at the
+binary's dialect when it is created, and one stamped lower is raised to it
+at its first open. A binary whose dialect is below a repository's stamp
+refuses to open that repository with a named error ("the store speaks a
+newer schema dialect than this binary"), rather than opening it and
+misreading rows written in a newer format; the API surfaces the refusal as
+`503 repository temporarily unavailable`, never as an invalid token, and
+[upgrading the binary](operations.md#upgrading-the-binary) is where that
+lands on an operator. A new dialect therefore closes the way back to the
+release before it. A dialect that changes what a stored declaration row
+holds ships the step that rewrites the rows and stamps the new number in
+the same transaction. A release before dialect 3 reads the stamp in the
+directory manifest only when it imports a directory its database has no
+repository row for, so a database restored with the repository row still in
+it imports the directory without reading the manifest, which is why a
 rollback restores the database and the data root together. A change to what
-a row's values may SAY, with the row's shape as it was, is not a dialect: it
-is a
+a row's values may SAY, with the row's shape as it was and no key added, is
+not a dialect: it is a
 [repository migration](operations.md#upgrading-the-binary), code that runs
 once per repository at its first open and rewrites the rows through the
 changelog. The first one wrote the full identity into every stored bare name

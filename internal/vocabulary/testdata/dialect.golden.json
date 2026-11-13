@@ -1,0 +1,360 @@
+{
+  "dialect": 3,
+  "keys": {
+    "actorDataKeys": [
+      "authority",
+      "package",
+      "tier"
+    ],
+    "agentBudgetKeys": [
+      "deadlineSeconds",
+      "depth",
+      "maxParallelTools",
+      "maxToolCalls",
+      "maxToolResultBytes",
+      "maxTurns",
+      "spendCentsPerDay",
+      "toolTimeoutSeconds"
+    ],
+    "agentCompactionKeys": [
+      "enabled",
+      "keepRecentTokens",
+      "replayTools",
+      "reserveTokens"
+    ],
+    "agentContextKeys": [
+      "maxBytes",
+      "pinned"
+    ],
+    "agentDataKeys": [
+      "authority",
+      "budgets",
+      "compaction",
+      "context",
+      "description",
+      "hiddenFromChat",
+      "model",
+      "models",
+      "package",
+      "params",
+      "permissions",
+      "prompt",
+      "provider",
+      "providerInput",
+      "purpose",
+      "resume",
+      "runsOn",
+      "subagents",
+      "tools",
+      "toolsFrom"
+    ],
+    "agentPermissionKeys": [
+      "reads",
+      "writes"
+    ],
+    "agentPinKeys": [
+      "fields",
+      "filter",
+      "first",
+      "kind",
+      "orderBy"
+    ],
+    "agentToolKeys": [
+      "background",
+      "description",
+      "function",
+      "name"
+    ],
+    "agentToolsFromKeys": [
+      "functions"
+    ],
+    "authorityDataKeys": [
+      "description",
+      "version"
+    ],
+    "bundleDataKeys": [
+      "authority",
+      "description",
+      "inputs",
+      "installs",
+      "modules",
+      "oauth2",
+      "package",
+      "requires",
+      "requiresAtLeast"
+    ],
+    "bundleInputKeys": [
+      "description",
+      "inject",
+      "kind"
+    ],
+    "capabilityDataKeys": [
+      "authority",
+      "description",
+      "oneOf",
+      "package",
+      "properties"
+    ],
+    "datatypeDataKeys": [
+      "authority",
+      "base",
+      "comparator",
+      "delta",
+      "description",
+      "max",
+      "min",
+      "package",
+      "pattern",
+      "unit",
+      "units",
+      "values"
+    ],
+    "enumValueKeys": [
+      "deprecated",
+      "label",
+      "renamedFrom",
+      "value"
+    ],
+    "envelopeKeys": [
+      "data",
+      "kind",
+      "metadata",
+      "status"
+    ],
+    "featureScopeKeys": [
+      "access",
+      "scopes"
+    ],
+    "functionArgKeys": [
+      "description",
+      "name",
+      "repeated",
+      "required",
+      "type",
+      "values"
+    ],
+    "functionBudgetKeys": [
+      "calls",
+      "rows"
+    ],
+    "functionDataKeys": [
+      "approval",
+      "arguments",
+      "authority",
+      "confirmation",
+      "description",
+      "effect",
+      "execution",
+      "offer",
+      "package",
+      "permissions",
+      "returns",
+      "runtime",
+      "source",
+      "stream",
+      "timeout"
+    ],
+    "functionOfferKeys": [
+      "agents",
+      "name"
+    ],
+    "functionPermissionKeys": [
+      "agents",
+      "call",
+      "mutations",
+      "network",
+      "reads",
+      "writes"
+    ],
+    "functionReadsKeys": [
+      "budgets",
+      "kinds"
+    ],
+    "idsKeys": [
+      "type"
+    ],
+    "indexKeys": [
+      "properties"
+    ],
+    "kindRetiredKeys": [
+      "properties",
+      "states",
+      "values"
+    ],
+    "labelKeys": [
+      "plural",
+      "singular"
+    ],
+    "linkPropKeys": [
+      "comparator",
+      "delta",
+      "deprecated",
+      "description",
+      "displayName",
+      "max",
+      "min",
+      "pattern",
+      "required",
+      "type",
+      "unit",
+      "units",
+      "values"
+    ],
+    "machineKeys": [
+      "deprecated",
+      "description",
+      "displayName",
+      "done",
+      "dropped",
+      "initial",
+      "proposed",
+      "states",
+      "transitions",
+      "type"
+    ],
+    "mapRuleKeys": [
+      "merge",
+      "path"
+    ],
+    "mappingDataKeys": [
+      "authority",
+      "description",
+      "from",
+      "map",
+      "match",
+      "onAmbiguous",
+      "package",
+      "property",
+      "to",
+      "where"
+    ],
+    "matchRuleKeys": [
+      "fold",
+      "from",
+      "to"
+    ],
+    "metadataKeys": [
+      "annotations",
+      "id",
+      "labels"
+    ],
+    "namesKeys": [
+      "singular"
+    ],
+    "oauth2MetaKeys": [
+      "authorizationEndpoint",
+      "clientInput",
+      "emailEndpoint",
+      "emailProperty",
+      "featureScopes",
+      "revocationEndpoint",
+      "tokenEndpoint"
+    ],
+    "objectPropKeys": [
+      "deprecated",
+      "description",
+      "displayName",
+      "fields",
+      "keyPattern",
+      "keyed",
+      "managed",
+      "repeated",
+      "required",
+      "type",
+      "writer"
+    ],
+    "packageDataKeys": [
+      "authority",
+      "description",
+      "dialect",
+      "interface",
+      "package",
+      "retired",
+      "stability",
+      "version"
+    ],
+    "packageRetiredKeys": [
+      "kinds"
+    ],
+    "propKeys": [
+      "base",
+      "comparator",
+      "default",
+      "delta",
+      "deprecated",
+      "description",
+      "displayName",
+      "done",
+      "dropped",
+      "embed",
+      "fields",
+      "fts",
+      "keyPattern",
+      "keyed",
+      "managed",
+      "max",
+      "mediaTypes",
+      "min",
+      "pattern",
+      "proposed",
+      "renamedFrom",
+      "repeated",
+      "required",
+      "type",
+      "unique",
+      "unit",
+      "units",
+      "values",
+      "writer"
+    ],
+    "referencePropKeys": [
+      "deprecated",
+      "description",
+      "displayName",
+      "inverse",
+      "inverseDescription",
+      "keyPattern",
+      "keyed",
+      "kind",
+      "managed",
+      "mustExist",
+      "onDelete",
+      "properties",
+      "renamedFrom",
+      "repeated",
+      "required",
+      "subject",
+      "trait",
+      "type",
+      "unique",
+      "writer"
+    ],
+    "traitVariantKeys": [
+      "name",
+      "properties"
+    ],
+    "transitionKeys": [
+      "from",
+      "notifies",
+      "onEnter",
+      "stamps",
+      "to"
+    ],
+    "typeDataKeys": [
+      "authority",
+      "description",
+      "displayTemplate",
+      "ids",
+      "indices",
+      "label",
+      "movedFrom",
+      "names",
+      "package",
+      "properties",
+      "purpose",
+      "retired",
+      "traits",
+      "version"
+    ]
+  }
+}

@@ -81,7 +81,14 @@ type Bundle struct {
 	// origin is where a document-published bundle came from, nil for one
 	// the binary ships (published.go).
 	origin *Origin
+	// dialect is the vocabulary dialect the closure's package header says it
+	// needs, 0 where it states none (decision 0268).
+	dialect int64
 }
+
+// Dialect is the vocabulary dialect the closure's package header says it
+// needs, 0 where it states none: what a publisher lists beside the version.
+func (b *Bundle) Dialect() int64 { return b.dialect }
 
 // Closure and ShippedRecord are the catalog's names for the two nested wire
 // shapes, so a caller reads catalog.Closure rather than the substrate

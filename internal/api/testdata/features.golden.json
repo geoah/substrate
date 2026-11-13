@@ -2,7 +2,7 @@
   {
     "name": "discovery",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "GET /.well-known/substrate/server.json",
       "GET /healthz"

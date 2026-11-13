@@ -525,6 +525,13 @@ first label.
   keys therefore land inert and validated, in batches, and there is no `x-`
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
+  A key added, removed or moved raises `vocabulary.Dialect`, which discovery
+  publishes and a package states under `dialect`:
+  `internal/vocabulary/testdata/dialect.golden.json` records the key sets,
+  `go test ./internal/vocabulary/ -run TestDialectKeysMatchTheGolden -update-dialect`
+  refuses sets that moved under an unchanged number, and
+  `mise run dialect:check` holds the same against the base branch
+  ([0268](docs/decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
   could not be honored, and acted on by no server path. A kind's `purpose`
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is

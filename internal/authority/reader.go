@@ -69,11 +69,15 @@ type AuthorityPackage struct {
 }
 
 // AuthorityPackageVersion is one immutable version of a published package:
-// the closure's URL and the digest its bytes must hash to.
+// the closure's URL, the digest its bytes must hash to, and the vocabulary
+// dialect its declarations need (decision 0268), which a server reads before
+// it fetches the closure so it can pass over a version written for a newer
+// one. A server older than the field ignores it.
 type AuthorityPackageVersion struct {
 	Version int    `json:"version"`
 	Closure string `json:"closure"`
 	SHA256  string `json:"sha256"`
+	Dialect int    `json:"dialect,omitempty"`
 }
 
 // AuthorityApp is one app that speaks for the authority.
@@ -365,6 +369,9 @@ func validatePackage(p AuthorityPackage) error {
 	for _, v := range p.Versions {
 		if v.Version <= 0 || seen[v.Version] {
 			return fmt.Errorf("package %s lists a duplicate or nonpositive version", p.Package)
+		}
+		if v.Dialect < 0 {
+			return fmt.Errorf("package %s version %d needs a dialect of at least 1", p.Package, v.Version)
 		}
 		seen[v.Version] = true
 		digest, err := hex.DecodeString(v.SHA256)

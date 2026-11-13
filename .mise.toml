@@ -566,6 +566,12 @@ run = ".mise/frozencheck.sh"
 description = "Refuse a discovery feature whose routes changed under an unchanged revision, or whose revision went down"
 run = ".mise/featurescheck.sh"
 
+# The same against the base branch for the vocabulary dialect: a declaration
+# key that changed under an unchanged vocabulary.Dialect (decision 0268).
+[tasks."dialect:check"]
+description = "Refuse a declaration key set that changed under an unchanged vocabulary dialect, or a dialect that went down"
+run = ".mise/dialectcheck.sh"
+
 # Not in `lint` either: it reads the OTHER branches on origin, so its answer
 # depends on what has been pushed. lint:docs refuses two records with one
 # number in one tree; this refuses a record whose number another live branch
@@ -1249,7 +1255,8 @@ description = "CI job `lint`: every linter and formatter check but Go's and the 
 # does not have one: `kinds:check` holds a changed declaration to a version
 # bump and a new kind's name to docs/terms.md and its family, `frozen:check`
 # holds the files this tree writes once, `features:check` holds a discovery
-# feature's revision to the base branch's, and
+# feature's revision to the base branch's, `dialect:check` the vocabulary
+# dialect to the base branch's, and
 # `decisions:check` holds a decision number against the other branches.
 depends = [
   "fmt:yaml:check",
@@ -1266,6 +1273,7 @@ depends = [
   "kinds:check",
   "frozen:check",
   "features:check",
+  "dialect:check",
   "decisions:check",
 ]
 

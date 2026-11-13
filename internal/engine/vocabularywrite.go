@@ -1829,6 +1829,9 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	if g.Interface != 0 {
 		header["interface"] = g.Interface
 	}
+	if g.Dialect != 0 {
+		header["dialect"] = g.Dialect
+	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
 			"actors": actors, "source": g.Source,

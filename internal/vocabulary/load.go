@@ -275,6 +275,9 @@ var packageDataKeys = map[string]bool{
 	// against (decision 0265): parsed by parsePackageInterface, refused when
 	// this server does not run it.
 	"interface": true,
+	// `dialect` is the vocabulary dialect the package needs (decision 0268):
+	// parsed by parsePackageDialect, refused above Dialect.
+	"dialect": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -380,6 +383,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	g.Description = l.parseDescription(where+": data", gd.header.Data)
 	l.parsePackageStability(where, gd.header.Data, g)
 	l.parsePackageInterface(where, gd.header.Data, g)
+	l.parsePackageDialect(where, gd.header.Data, g)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
