@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"slices"
 	"sync"
 	"time"
+
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // The seams a test outside this package drives: the acceptance drill in
@@ -83,4 +86,19 @@ const (
 // that must act mid-fire (stop the server, retry it by hand) can wait for.
 func WithTestInvokeHook(fn func(function string)) Option {
 	return func(o *options) { o.invokeHook = fn }
+}
+
+// WithTestConversionStep adds one step to the conversion chain, a dialect
+// past the chain the binary carries, which rewrites every line with line: a
+// step no release ships, so a test runs a chain that is not empty over what
+// it imports, as the kept directories' comparison does with the difference
+// it expects of that step. Tests only.
+func WithTestConversionStep(name string, line func(e *changelogfile.Entry) error) Option {
+	return func(o *options) {
+		base := o.conversion
+		if base == nil {
+			base = conversionSteps
+		}
+		o.conversion = append(slices.Clone(base), conversionStep{Dialect: chainDialect(base) + 1, Name: name, Line: line})
+	}
 }

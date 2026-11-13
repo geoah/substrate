@@ -229,10 +229,19 @@ A kept directory is never edited (`mise run frozen:check`).
 
 `TestKeptDirectories` imports each one under the current code, as a restore
 does, and compares every record with what the release served. The current
-code may differ in one way: what its boot writes after the release's head
-(the seeded packages brought to this release's versions, the conversion
-steps). A record nothing after the head wrote must be identical, and one the
-boot wrote must be the release's record with those writes applied, none of
-them taking a value from the hand that set it. Any other difference fails,
-naming the record. A trigger's acknowledged position, last fire and parked
-deliveries are compared the same way.
+code may differ in two ways. A conversion step rewrites lines in place and
+appends nothing, so what each step does to the records a release served is
+written beside the test, one entry per step (`keptConversions`), from what
+the step rewrites and never from what the current code serves; a step that
+changes nothing a release served says that too, and the test refuses a
+chain with a step it does not name. The release's records go through those
+entries first. And the boot writes after the release's head: the seeded
+packages brought to this release's versions. A record nothing after the
+head wrote must be identical to the release's, converted, and one the boot
+wrote must be that record with those writes applied, none of them taking a
+value from the hand that set it. Any other difference fails, naming the
+record. A trigger's acknowledged position, last fire and parked deliveries
+are compared the same way. The records name what the comparison cannot
+see, a secret served as `<redacted>` and a blob by its digest, so the test
+also signs in with the release's password, reads the blob's bytes back, and
+opens every sealed file under the data key.

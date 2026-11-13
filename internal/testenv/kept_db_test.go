@@ -7,13 +7,17 @@ package testenv_test
 // code, the way a restore does (a directory with no row, at boot), and holds
 // what the current code serves to what the release served.
 //
-// The current code may differ on purpose in one way only: what it appends
-// after the release's head, at that boot. The shipped-vocabulary upgrade and
-// the record seed bring the seeded packages to this tree's versions, and the
-// conversion chain rewrites history in place before anything folds it. So the
+// The current code may differ on purpose in two ways only. The conversion
+// chain rewrites history in place before anything folds it, and appends
+// nothing: what each step does to the records a release served is said
+// beside it, in keptConversions, written from what the step rewrites and
+// never read from what the current code serves, and the release's records
+// are taken through those entries before they are compared. And the boot
+// appends after the release's head: the shipped-vocabulary upgrade and the
+// record seed bring the seeded packages to this tree's versions. So the
 // comparison is exact for every record nothing after the head touched, and a
-// record an entry after the head touched must equal the release's record with
-// those entries' values applied. Every entry after the head must be the
+// record an entry after the head touched must equal the release's record,
+// converted, with those entries' values applied. Every entry after the head must be the
 // boot's own (the `substrate` actor), and none may move a value an owner, an
 // app, a function or an agent set: the upgrade never takes a value from the
 // hand that wrote it (decision 0191). Any other difference fails, naming the
@@ -85,11 +89,19 @@ func TestKeptDirectories(t *testing.T) {
 		t.Fatalf("%s keeps no directory: the stored format is held by nothing a release wrote", keptRoot)
 	}
 	for _, tag := range tags {
-		t.Run(tag, func(t *testing.T) { checkKeptDirectory(t, filepath.Join(keptRoot, tag)) })
+		t.Run(tag, func(t *testing.T) {
+			k := checkKeptDirectory(t, filepath.Join(keptRoot, tag), keptConversions)
+			for _, p := range keptMaterial(t, k.e, k.fixture, filepath.Join(keptRoot, tag)) {
+				t.Error(p)
+			}
+		})
 	}
 }
 
-func checkKeptDirectory(t *testing.T, dir string) {
+// checkKeptDirectory imports the directory dir keeps and holds what the
+// current code serves to what the release served, the release's records
+// taken through conversions first; opts are the environment's.
+func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConversion, opts ...testenv.Option) keptImport {
 	var fixture keptFixture
 	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
 	var want keptRecords
@@ -103,13 +115,16 @@ func checkKeptDirectory(t *testing.T, dir string) {
 	// The import writes into the data root, so it gets a copy.
 	root := t.TempDir()
 	copyKept(t, filepath.Join(dir, "repositories"), filepath.Join(root, "repositories"))
-	e := testenv.Start(t, testenv.WithoutRegistration(), testenv.WithRepository(fixture.Repository),
-		testenv.WithDataRoot(root), testenv.WithCredentialKey(fixture.CredentialKey))
+	e := testenv.Start(t, append([]testenv.Option{
+		testenv.WithoutRegistration(), testenv.WithRepository(fixture.Repository),
+		testenv.WithDataRoot(root), testenv.WithCredentialKey(fixture.CredentialKey),
+	}, opts...)...)
 	e.Token = fixture.Token
 
 	upgraded := keptUpgrade(t, e, want.Head)
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
+	dropped := keptConvert(&want, conversions, keptDialect(t, dir, fixture.Repository))
 
 	var diffs []string
 	seen := map[string]bool{}
@@ -120,6 +135,9 @@ func checkKeptDirectory(t *testing.T, dir string) {
 		touched := upgraded[path]
 		switch {
 		case !ok && touched != nil && touched.purged:
+			continue
+		case dropped[path]:
+			diffs = append(diffs, fmt.Sprintf("%s: a conversion step left no record, and it is served now", path))
 			continue
 		case !ok:
 			diffs = append(diffs, fmt.Sprintf("%s: served by %s, missing now", path, fixture.Tag))
@@ -172,6 +190,7 @@ func checkKeptDirectory(t *testing.T, dir string) {
 	}
 	t.Logf("%s: %d records compared, %d of them rewritten by the %d entries the boot appended after head %d",
 		fixture.Tag, len(want.Records), len(upgraded), keptAppended(upgraded), want.Head)
+	return keptImport{e: e, fixture: fixture, got: got, upgraded: upgraded}
 }
 
 // keptTouch is what the entries after the release's head did to one record,
