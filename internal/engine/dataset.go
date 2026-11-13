@@ -206,6 +206,9 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// retryingTemporary is set while a dispatcher pass's walk of the
+	// temporary failures that are due runs (temporaryretry.go).
+	retryingTemporary atomic.Bool
 	// webhookReplays is the door's memory of the signatures it admitted
 	// (webhooksignature.go): memory only, so a restart clears it.
 	webhookReplays webhookReplays

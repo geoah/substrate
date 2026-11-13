@@ -7,8 +7,9 @@ import FoundationNetworking
 #endif
 
 /// One row of a webhook trigger's parked list: a delivery its function
-/// refused, kept with its reason, or one accepted and not settled yet,
-/// which the list carries too and which is no failure.
+/// refused, kept with its reason; one accepted and not settled yet; or one
+/// that failed for a reason expected to pass and that the server retries
+/// itself. The list carries all three, and only the first is a failure.
 public struct ParkedDelivery: Decodable, Sendable, Equatable {
     public let fireID: String?
     public let lastError: String
@@ -46,8 +47,19 @@ public struct ParkedDelivery: Decodable, Sendable, Equatable {
     /// in the server's words.
     public var isPending: Bool { pending ?? lastError.hasPrefix(Self.pendingPrefix) }
 
-    /// Refused for good: neither waiting to run nor running.
-    public var refused: Bool { !running && !isPending }
+    /// The words a server gives a delivery that failed for a reason expected
+    /// to pass and that it retries itself (internal/engine's
+    /// temporaryretry.go temporaryRetryMark). Once its retries run out the
+    /// server rewrites the row to the error it waited on, which is a refusal.
+    public static let waitingPrefix = "temporary, retried automatically at "
+
+    /// Waiting for the server's own retry: not settled, and not to be sent
+    /// again.
+    public var isWaiting: Bool { lastError.hasPrefix(Self.waitingPrefix) }
+
+    /// Refused for good: neither waiting to run, waiting for the server's
+    /// retry, nor running.
+    public var refused: Bool { !running && !isPending && !isWaiting }
 }
 
 public extension SubstrateClient {

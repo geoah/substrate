@@ -32,9 +32,11 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import traceback
+import urllib.error
 
 MAX_LOG_LINES = 200
 MAX_LOG_CHARS = 4096
@@ -171,6 +173,44 @@ def send(req_id, obj, kind="response"):
 
 class HostError(Exception):
     pass
+
+
+class Temporary(Exception):
+    """A failure a later attempt may not meet: the network, a provider that
+    answered "try later", a dependency that is down. A body raises it, as
+    `raise host.Temporary("the provider answered 503")`, and the substrate
+    retries the delivery over minutes instead of setting it aside
+    (docs/functions.md#when-a-delivery-fails). Any other exception says the
+    failure is the body's own."""
+
+
+# The answers an HTTP server gives to say "not now": a timeout, too many
+# requests, and a gateway or service that is down. Any other status is the
+# request's own failure, and a retry sends the same request.
+TRY_LATER_STATUSES = (408, 429, 502, 503, 504)
+
+
+def _temporary(e):
+    """Whether an exception a body let escape is a temporary failure: the
+    body said so, the network failed, or a server answered "try later". The
+    HTTP libraries a body may bring through PEP 723 are read by the class
+    names they publish, so the host imports none of them."""
+    if isinstance(e, Temporary):
+        return True
+    if isinstance(e, (ConnectionError, TimeoutError, socket.timeout, socket.gaierror)):
+        return True
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in TRY_LATER_STATUSES
+    if isinstance(e, urllib.error.URLError):
+        return True
+    for cls in type(e).__mro__:
+        module = cls.__module__ or ""
+        if module.startswith("requests.") and cls.__name__ in ("ConnectionError", "Timeout"):
+            return True
+        if module.startswith("httpx") and cls.__name__ in ("TransportError", "TimeoutException"):
+            return True
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    return status in TRY_LATER_STATUSES
 
 
 # --- the SDK: deterministic ids, paging, typed reads, buffered effects -------
@@ -1381,6 +1421,9 @@ class Host:
     SDK surface (records/functions/agents/effects/ids/page/units/observed)
     namespaced beside them."""
 
+    # The exception a body raises to say its failure is temporary.
+    Temporary = Temporary
+
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
         self._req_id = req_id
@@ -1480,15 +1523,15 @@ def _said(e):
     parked views show as its first line. A body that raises a sentence with
     its technical detail on the lines after it means that sentence, so the
     message is kept whole and in order; the traceback's last line would be
-    the detail. A plain `Exception`, `RuntimeError` or `ValueError`, or a
-    class the body defines for its own refusals, is how a body says a
-    sentence, so its class name is noise; any other built-in class names the
-    bug."""
+    the detail. A plain `Exception`, `RuntimeError` or `ValueError`,
+    `Temporary`, or a class the body defines for its own refusals, is how a
+    body says a sentence, so its class name is noise; any other built-in
+    class names the bug."""
     msg = str(e).strip()
     # A body runs in a bare namespace, so its own classes report the module
     # "builtins" too; a real built-in is one the builtins module names.
     cls = type(e)
-    said = cls in (Exception, RuntimeError, ValueError) or (
+    said = cls in (Exception, RuntimeError, ValueError, Temporary) or (
         cls.__module__ == "builtins" and getattr(builtins, cls.__name__, None) is not cls)
     if msg and said:
         return msg
@@ -1509,7 +1552,10 @@ def invoke(req, req_id):
         return {"ok": False, "error": str(e)}
     except Exception as e:
         tb = traceback.format_exc(limit=3)
-        return {"ok": False, "error": _said(e) + "\n" + tb}
+        resp = {"ok": False, "error": _said(e) + "\n" + tb}
+        if _temporary(e):
+            resp["temporary"] = True
+        return resp
     finally:
         CAPTURE.logs = None
         logs.close()
@@ -1558,7 +1604,7 @@ def main():
             elif op == "deregister":
                 resp = deregister(req)
             elif op == "describe":
-                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 6}
+                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 7}
             elif op == "invoke":
                 resp = invoke(req, req_id)
             else:

@@ -463,7 +463,7 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	defer cancel()
 	state := &readState{spec: spec, backend: backend}
 	state.deliveredKind, state.deliveredID = deliveredRecord(in)
-	resp, err := p.roundtrip(ictx, spec.timeout(),
+	resp, err := p.roundtrip(ictx, allowance{timeout: spec.timeout(), until: time.Now().Add(spec.timeout())},
 		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
 	// Every line the body wrote has reached the backend already, through
 	// state.log, whichever way the exchange ended.
@@ -479,6 +479,9 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 		return nil, err
 	}
 	if !resp.OK {
+		if resp.Temporary {
+			return nil, &temporaryError{msg: "runner: " + resp.Error}
+		}
 		return nil, fmt.Errorf("runner: %s", resp.Error)
 	}
 	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: state.logs, More: resp.More}, nil
@@ -524,10 +527,12 @@ type frame struct {
 
 // response is a child's final line for one request.
 type response struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error"`
-	Output  any    `json:"output"`
-	Effects []any  `json:"effects"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+	// Temporary, on a failure, says a later attempt may not meet it.
+	Temporary bool  `json:"temporary"`
+	Output    any   `json:"output"`
+	Effects   []any `json:"effects"`
 	// More, present, is the paged-checkpoint continuation (protocol.go): this
 	// page is done, re-invoke with More.Cursor. Absent means drained.
 	More *Continuation `json:"more"`
@@ -979,11 +984,12 @@ var errChildGone = errors.New("runner: child gone before the request was written
 // the exchange began. proc.mu serializes exchanges, not the body's threads: a
 // thread an earlier invocation left running that is refused during this
 // exchange lands in this exchange's note.
-func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
+func (p *proc) roundtrip(ctx context.Context, own allowance, f frame, state *readState) (*response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	mark := p.refusalMark()
-	resp, err := p.exchange(ctx, timeout, f, state)
+	resp, err := p.exchange(ctx, f, state)
+	err = own.ended(err)
 	if note := p.refusalNote(mark); note != "" {
 		switch {
 		case err != nil:
@@ -995,6 +1001,33 @@ func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, st
 	return resp, err
 }
 
+// allowance is an exchange's own time: its timeout and when it runs out. The
+// context it runs under may end sooner, at a caller's deadline or a
+// cancellation, which is the caller's end and not this one.
+type allowance struct {
+	timeout time.Duration
+	until   time.Time
+}
+
+// ended is how an exchange that failed answers once its own allowance has run
+// out: the one temporary invocationExceeded, whichever exit found it (the
+// child exiting, a reply the child no longer reads, a frame that went
+// nowhere). Before then, the exchange's own error stands, a caller's end
+// included.
+func (a allowance) ended(err error) error {
+	if err == nil || Temporary(err) || time.Now().Before(a.until) {
+		return err
+	}
+	return invocationExceeded(a.timeout)
+}
+
+// invocationExceeded is an invocation that ran out of its own time, wherever
+// the exchange found it. Temporary: a body that ran out of time may finish
+// when the provider it waits on answers sooner.
+func invocationExceeded(timeout time.Duration) error {
+	return &temporaryError{msg: fmt.Sprintf("runner: invocation exceeded %s", timeout)}
+}
+
 // pastDeadline reports whether ctx's deadline has passed, whether or not its
 // timer has fired yet.
 func pastDeadline(ctx context.Context) bool {
@@ -1003,7 +1036,7 @@ func pastDeadline(ctx context.Context) bool {
 }
 
 // exchange is roundtrip's body, run under proc.mu.
-func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
+func (p *proc) exchange(ctx context.Context, f frame, state *readState) (*response, error) {
 	// The sweep, Reconcile and a sibling roundtrip all kill under proc.mu, so
 	// a process that is alive here is not retired by any of them until this
 	// exchange ends. One that is not alive was retired in the lookup-and-use
@@ -1028,10 +1061,10 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 	for {
 		select {
 		case <-ctx.Done():
+			// The invocation's own allowance running out is the temporary
+			// timeout (allowance.ended); a caller's deadline or cancellation
+			// is the caller's own error.
 			p.kill()
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("runner: invocation exceeded %s", timeout)
-			}
 			return nil, ctx.Err()
 		case <-p.dead:
 			return nil, fmt.Errorf("runner: child exited mid-request%s", p.stderrTail())
@@ -1078,7 +1111,10 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 				// always comes back at or after it.
 				if pastDeadline(ctx) {
 					p.kill()
-					return nil, fmt.Errorf("runner: invocation exceeded %s", timeout)
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
+					return nil, context.DeadlineExceeded
 				}
 				reply["kind"] = frameKindReply
 				reply["reqId"] = f.ReqID
