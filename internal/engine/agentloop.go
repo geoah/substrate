@@ -64,11 +64,28 @@ const (
 var errResumeStopped = errors.New("a stopped thread is not resumed until its owner writes again")
 
 // reasonShutdown is the reason a detached chat turn the server's shutdown
-// ended settles with; reasonStoppedBy names the actor that stopped one.
+// ended settles with; reasonStoppedBy says which type of actor stopped one,
+// in words: a reason is prose, and an actor is named by a link, never by a
+// spelling (decision 0270).
 const reasonShutdown = "stopped: the server shut down during the turn"
 
 func reasonStoppedBy(actor substrate.Actor) string {
-	return "stopped by " + string(actor)
+	return stoppedByPhrase(substrate.ActorTypeOf(actor))
+}
+
+// stoppedByPhrase is the stop reason for an actor of one type.
+func stoppedByPhrase(actorType string) string {
+	switch actorType {
+	case substrate.ActorTypePerson:
+		return "stopped by its owner"
+	case substrate.ActorTypeApp:
+		return "stopped by an app"
+	case substrate.ActorTypeAgent:
+		return "stopped by an agent"
+	case substrate.ActorTypeFunction:
+		return "stopped by a function"
+	}
+	return "stopped by the substrate"
 }
 
 // stoppedCall is the result of a call a stop or the shutdown cut off, in
@@ -646,17 +663,17 @@ type agentTool struct {
 	background bool
 }
 
-// callable is the tool's identity as the message rows stamp it: the actor
-// spelling of the agent or the function behind the alias (record 0025), so
+// callable is the tool's identity as the message rows stamp it: the record
+// path of the agent or the function behind the alias (decision 0270), so
 // rows written under different aliases join on one string. A host function
-// takes its record's function spelling although its writes land under the
-// calling agent. The zero tool, a name the agent does not carry, has none.
+// takes its own record's path although its writes land under the calling
+// agent. The zero tool, a name the agent does not carry, has none.
 func (t agentTool) callable() string {
 	switch {
 	case t.sub != nil:
-		return t.sub.Actor()
+		return vocabulary.RecordPath(kindAgent, t.sub.Identity())
 	case t.fn != nil:
-		return t.fn.Actor()
+		return vocabulary.RecordPath(kindFunction, t.fn.Identity())
 	}
 	return ""
 }
@@ -1552,25 +1569,17 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // the same admission every resume does (budget, opt-out), so a settled
 // thread with nothing new stays settled.
 func (l *agentLoop) recheckResolutions(ctx context.Context) {
-	b := &builder{}
-	kind := b.arg(typeMessage)
-	thread, err := threadMessagesWhere(ctx, l.ds.db, b, "e", l.threadID)
-	if err != nil {
-		return
-	}
-	var n int
-	err = l.ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records e
-		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
-		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(l.openedAt)+`
-		  AND NOT (e.id = ANY(`+b.textArray(l.consumedRows())+`))`,
-		b.args...).Scan(&n)
-	// A job's end posted after the count is in the inbox, and one after the
+	first, err := l.ds.firstResolution(ctx, l.threadID, l.openedAt, l.consumedRows())
+	// A job's end posted after the read is in the inbox, and one after the
 	// close resumes the thread itself.
-	if left := l.closeJobs(); (err != nil || n == 0) && !left {
+	left := l.closeJobs()
+	if err != nil || first == "" {
+		first = left
+	}
+	if first == "" {
 		return
 	}
-	l.ds.resumeNotifiedThread(l.threadID, "")
+	l.ds.resumeNotifiedThread(l.threadID, "", first)
 }
 
 // agentLeaseSlack pads the turn lease past the loop deadline, so only a

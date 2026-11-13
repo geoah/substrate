@@ -7,6 +7,7 @@ package vocabulary
 // length. Package-level keyIntroducedAt: no t.Parallel.
 
 import (
+	"fmt"
 	"maps"
 	"strings"
 	"testing"
@@ -58,8 +59,8 @@ func TestAQuantityBoundsKeysCountTowardTheDialectNeeded(t *testing.T) {
 	}
 	introducing(t, "quantityBoundKeys", "unit", Dialect+1)
 	_, err := LoadFS(fsys)
-	if err == nil || !strings.Contains(err.Error(), "the package states dialect 3, and its declarations use `unit`, which dialect 4 introduced") {
-		t.Fatalf("got %v, want the bound's unit named as dialect 4's", err)
+	if want := fmt.Sprintf("the package states dialect 3, and its declarations use `unit`, which dialect %d introduced", Dialect+1); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }
 
@@ -81,8 +82,8 @@ data:
 	}
 	introducing(t, "shippedRecordDataKeys", "properties", Dialect+1)
 	_, _, err = LoadShipped(tree)
-	if err == nil || !strings.Contains(err.Error(), "its shipped record g.example.com/g/thing/heavy uses `properties`, which dialect 4 introduced") {
-		t.Fatalf("got %v, want the record's key named as dialect 4's", err)
+	if want := fmt.Sprintf("its shipped record g.example.com/g/thing/heavy uses `properties`, which dialect %d introduced", Dialect+1); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }
 
@@ -106,8 +107,8 @@ func TestADocumentsEnvelopeKeysCountTowardTheDialectNeeded(t *testing.T) {
 	}
 	introducing(t, "metadataKeys", "id", Dialect+1)
 	err := built(t, neededHeader)
-	if err == nil || !strings.Contains(err.Error(), "the package states dialect 3, and its declarations use `id`, which dialect 4 introduced") {
-		t.Fatalf("got %v, want metadata's id named as dialect 4's", err)
+	if want := fmt.Sprintf("the package states dialect 3, and its declarations use `id`, which dialect %d introduced", Dialect+1); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }
 
@@ -132,7 +133,7 @@ data:
 	}
 	introducing(t, "agentParamKeys", "temperature", Dialect+1)
 	err := built(t, body)
-	if err == nil || !strings.Contains(err.Error(), "its declarations use `temperature`, which dialect 4 introduced") {
-		t.Fatalf("got %v, want the param named as dialect 4's", err)
+	if want := fmt.Sprintf("its declarations use `temperature`, which dialect %d introduced", Dialect+1); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }

@@ -24,7 +24,7 @@ func TestStoredBodyOnlySignatureNeedsNoReceipt(t *testing.T) {
 	var statements statementLog
 	ds := openInternalDataset(t, WithTestQueryTracer(&statements))
 	const secret = "a-body-only-secret"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSecret, ID: "hooks/bodyonly", Properties: map[string]any{"value": secret},
 	}); err != nil {
 		t.Fatalf("put the secret: %v", err)

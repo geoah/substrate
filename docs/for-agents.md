@@ -35,10 +35,12 @@ with the owner's password, and never take a password as a command line
 argument: every `substratectl` prompt has a `--*-stdin` twin for the
 headless case ([users and tokens](auth.md)).
 
-**Do not set `X-Substrate-Actor`.** A request that names no actor is
-attributed to `api`, which is what the substrate knows about you. The header
-names a door (`console`, `substratectl`), and the machine actors are refused
-to any request ([actors](api.md#actors)).
+**Your writes are the owner's, beside your token.** No request names its
+actor: a full-access token writes as the repository's person, and the
+change feed links the token it came through, so the owner reads your
+writes apart from their own by the token's label
+([actors](api.md#actors)). A token an app got through the authorization
+flow writes as that app instead.
 
 ## Learn the vocabulary before writing
 
@@ -202,8 +204,9 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 ```
 
 The stream is newline-delimited JSON: a `bookmark` frame first, then one
-frame per change with `seq`, `op`, `kind`, `recordId`, `actor` and the
-`affected` records. An empty object is a heartbeat, and a frame carrying
+frame per change with `seq`, `op`, `kind`, `recordId`, `actor` (the id of
+the [actor record](api.md#actors) that wrote it), `onBehalfOf` and `token`
+where set, and the `affected` records. An empty object is a heartbeat, and a frame carrying
 `error` is the last one. Store the last `seq` with its `generation` and
 resume from the pair; a `from` above zero without its `generation` is
 refused. `GET /api/v1/records?watch=1&filter={"kinds":[…]}` is the

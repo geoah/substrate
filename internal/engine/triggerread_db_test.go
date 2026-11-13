@@ -32,7 +32,7 @@ func seedReadBacklog(t *testing.T, ds *dataset, noise int, spread map[string]int
 	t.Helper()
 	ctx := context.Background()
 	put := func(kind, id string) {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: kind, ID: fid(id), Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put %s: %v", kind, err)
@@ -317,7 +317,7 @@ func TestAGlobReadPicksUpAKindFirstWrittenMidDrain(t *testing.T) {
 		t.Fatalf("the first batch read %d entries, want a full batch of %d", len(first), triggerBatch)
 	}
 	for i := range projects {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: readProjectKind, ID: fid(fmt.Sprintf("late-%d", i)), Properties: map[string]any{"name": "late"},
 		}); err != nil {
 			t.Fatalf("put project: %v", err)

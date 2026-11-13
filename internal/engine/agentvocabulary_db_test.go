@@ -29,14 +29,14 @@ func openMossDataset(t *testing.T) (*dataset, *fakeLLM, string) {
 	ds.mu.Lock()
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "anthropic",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	repo := testdb.Repository(t)
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(repo+"/scratch", 0),
 		vocabulary.KindManifest(repo+"/scratch", map[string]any{"singular": "pad"}, map[string]any{
 			"description":     "A practice pad: a name and a long note.",
@@ -116,7 +116,7 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", plant, "", map[string]any{"name": "Fern", "waterEveryDays": 7})}}},
 		fakeTurn{content: "Your plants have a home, and the fern is in it."},
 	)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "start tracking my plants; I have a fern I water weekly"}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -156,9 +156,11 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("Moss's tool rows = %d, want the architect call and the write", len(rows))
 	}
+	// The package's install is when its actor comes to be (decision 0270):
+	// its record is the third write.
 	child, records, kinds, _ := writesOf(t, rows[0])
-	if records != 2 || !slices.Contains(kinds, kindKind) || !slices.Contains(kinds, kindPackage) {
-		t.Fatalf("architect wrote %d records of %v, want the package and the kind", records, kinds)
+	if records != 3 || !slices.Contains(kinds, kindKind) || !slices.Contains(kinds, kindPackage) || !slices.Contains(kinds, kindActor) {
+		t.Fatalf("architect wrote %d records of %v, want the package, its actor and the kind", records, kinds)
 	}
 	arch := toolRows(t, ds, child)
 	if len(arch) != 2 {
@@ -231,7 +233,7 @@ func TestAgentVocabularyApplyMeetsTheOwnersPolicy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: fid("gate-kinds"),
 		Properties: map[string]any{
 			"selector": map[string]any{"kinds": []any{kindKind}, "agents": []any{architectID}},
@@ -269,7 +271,7 @@ func TestAgentVocabularyNeedsTheKindKindNamedInWrites(t *testing.T) {
 	ctx := context.Background()
 	ds, _, repo := openMossDataset(t)
 	for _, writes := range [][]any{{kindPackage}, {"*"}} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			vocabulary.PackageManifest(repo+"/probe", 0),
 			vocabulary.AgentManifest(repo+"/probe", "shaper", map[string]any{
 				"description": "declares nothing", "prompt": "x", "provider": "openai", "model": "gpt-5",
@@ -330,10 +332,10 @@ func TestAgentVocabularyRefusesAStringPlanAndAConversion(t *testing.T) {
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
 	plant := repo + "/garden/plant"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docMaps(gardenDocs(repo))); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docMaps(gardenDocs(repo))); err != nil {
 		t.Fatal(err)
 	}
-	fern, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: plant, Properties: map[string]any{"name": "Fern", "waterEveryDays": 7}})
+	fern, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: plant, Properties: map[string]any{"name": "Fern", "waterEveryDays": 7}})
 	if err != nil {
 		t.Fatal(err)
 	}

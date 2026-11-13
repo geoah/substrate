@@ -1,13 +1,11 @@
 /** One actor (`/actors/:id`): who it is, in plain words, and everything it
  * changed, as History's sentences narrowed to it.
  *
- * Actors are records: the mirror row in `substrate.reamde.dev/core/actor`,
- * or, for a single-writer bundle whose actor IS its authority (record 60),
- * the `authority` mirror. A name in neither still has a real history; it
- * renders without a record, never as a dead end. Technical mode shows the
- * raw actor id, the record behind it and the full changelog table. */
+ * An actor is a `substrate.reamde.dev/core/actor` record the engine writes
+ * for every hand (decision 0270), and the route names it by its id.
+ * Technical mode shows the id, the actor record and the function, agent or
+ * package behind it, and the full changelog table. */
 
-import { useQuery } from "@tanstack/react-query"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
@@ -22,20 +20,16 @@ import { Segmented } from "@/components/ui/segmented"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useHistoryFeed } from "@/hooks/use-history-feed"
 import { actorIdentity } from "@/lib/actor-identity"
-import { actorMirrorsQueryOptions, resolveActor } from "@/lib/api/actors"
+import { useActorDirectory } from "@/lib/actor-directory"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { HISTORY_LAYOUTS } from "@/lib/history"
 import { actorRoute } from "@/router"
 import { cn } from "@/lib/utils"
 
 function ActorMeta({ actorId }: { actorId: string }) {
-  const resolved = useQuery({
-    ...actorMirrorsQueryOptions,
-    select: (mirrors) => resolveActor(mirrors, actorId),
-  })
+  useActorDirectory()
   const identity = actorIdentity(actorId)
   const record = identity.record
-  const mirror = resolved.data
   return (
     <>
       <span className="inline-flex items-center gap-1">
@@ -45,12 +39,7 @@ function ActorMeta({ actorId }: { actorId: string }) {
         <CopyButton value={actorId} label="Copy the actor id" />
       </span>
       {record && <RecordRef kind={record.kind} id={record.id} />}
-      {mirror && (
-        <RecordRef
-          kind={`${CORE_PACKAGE}/${mirror.collection}`}
-          id={mirror.record.id}
-        />
-      )}
+      <RecordRef kind={`${CORE_PACKAGE}/actor`} id={actorId} />
     </>
   )
 }
@@ -65,17 +54,14 @@ export function ActorPage() {
     )
   )
   const table = technical && layout === "table"
+  useActorDirectory()
   const identity = actorIdentity(actorId)
   const feed = useHistoryFeed(
     { actors: [actorId] },
     { enabled: !table, values: true }
   )
   const title =
-    identity.cls === "agent"
-      ? `${identity.name} agent`
-      : identity.via
-        ? `${identity.name}, via ${identity.via}`
-        : identity.name
+    identity.cls === "agent" ? `${identity.name} agent` : identity.name
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

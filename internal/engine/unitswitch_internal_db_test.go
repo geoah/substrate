@@ -109,11 +109,10 @@ func switchedGraph(t *testing.T, ds *dataset) {
 func installThings(t *testing.T, ds *dataset) {
 	t.Helper()
 	ctx := context.Background()
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, thingDeclaration()),
 		},
 	}); err != nil {
@@ -153,7 +152,7 @@ func thingDeclaration() map[string]any {
 }
 
 func putThingErr(ds *dataset, id string, props map[string]any) (*substrate.Record, error) {
-	return ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: thingKind, ID: id, Properties: props})
+	return ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: thingKind, ID: id, Properties: props})
 }
 
 func putThing(t *testing.T, ds *dataset, id string, props map[string]any) *substrate.Record {
@@ -255,11 +254,10 @@ func TestPropertyUnitsNarrows(t *testing.T) {
 	}
 	_, err := putThingErr(ds, fid("n"), map[string]any{"narrow": qty("1", "g")})
 	wantValidation(t, "g, of the component but not listed", err, "g is not one of the declared units kg, lb")
-	err = enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err = enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, withProp(thingDeclaration(), "apart",
 				map[string]any{"type": "quantity", "unit": "kg", "units": []any{"K"}})),
 		},
@@ -300,11 +298,10 @@ func TestBoundRefusesAValueItCannotCompare(t *testing.T) {
 	wantValidation(t, "below 0 kg", err, "must be >= 0 kg")
 	// A bound no admitted unit reaches would refuse every value: refused at
 	// the apply.
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, withProp(thingDeclaration(), "listed",
 				map[string]any{"type": "quantity", "unit": "K", "max": map[string]any{"value": "1", "unit": "kg"}})),
 		},
@@ -324,11 +321,10 @@ func withProp(decl map[string]any, name string, p map[string]any) map[string]any
 func TestDeclarationNamingAnUnknownUnitIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, withProp(thingDeclaration(), "odd",
 				map[string]any{"type": "quantity", "unit": "furlong"})),
 		},
@@ -384,7 +380,7 @@ func openSwitchedObserved(t *testing.T) *dataset {
 
 // putInOneTx writes every input in one transaction, in order.
 func putInOneTx(ds *dataset, ins ...substrate.PutInput) error {
-	return ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
+	return ds.inTx(context.Background(), substrate.ActorPerson, false, func(tx *txn) error {
 		for _, in := range ins {
 			if _, err := tx.put(in); err != nil {
 				return err
@@ -420,7 +416,7 @@ func putMetricErr(ds *dataset, id string, props map[string]any) error {
 		}
 		base[k] = v
 	}
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: metricKind, ID: id, Properties: base})
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: metricKind, ID: id, Properties: base})
 	return err
 }
 
@@ -433,7 +429,7 @@ func observation(metric string, value map[string]any) map[string]any {
 }
 
 func putObservationErr(ds *dataset, id string, props map[string]any) error {
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: obsKind, ID: id, Properties: props})
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: obsKind, ID: id, Properties: props})
 	return err
 }
 
@@ -453,7 +449,7 @@ func TestObservedValueWithoutItsMetricIsRefused(t *testing.T) {
 	if err := putMetricErr(ds, fid("brief"), map[string]any{"unit": "kg"}); err != nil {
 		t.Fatal(err)
 	}
-	err := ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
+	err := ds.inTx(context.Background(), substrate.ActorPerson, false, func(tx *txn) error {
 		if _, err := tx.put(substrate.PutInput{Kind: obsKind, ID: fid("o2"), Properties: observation(fid("brief"), qty("1", "kg"))}); err != nil {
 			return err
 		}
@@ -690,11 +686,10 @@ const otherKind = thingsPackage + "/other"
 
 func installOther(t *testing.T, ds *dataset, weight map[string]any) {
 	t.Helper()
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, thingDeclaration()),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "other"}, map[string]any{
 				"properties": map[string]any{"weight": weight},
@@ -767,11 +762,10 @@ func TestQuantityIndexIsRefused(t *testing.T) {
 	ds := openSwitched(t)
 	decl := thingDeclaration()
 	decl["indices"] = []any{map[string]any{"properties": []any{"weight"}}}
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, decl),
 		},
 	})
@@ -827,11 +821,10 @@ func openParity(t *testing.T, repo string) *dataset {
 func installParityReadings(t *testing.T, ds *dataset) {
 	t.Helper()
 	ctx := context.Background()
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(thingsPackage, 0),
-			vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "reading"}, map[string]any{
 				"properties": map[string]any{
 					"mass": map[string]any{"type": "quantity", "unit": "kg"},
@@ -1268,7 +1261,7 @@ func TestShippedUnitsAnswerAsTheTableDid(t *testing.T) {
 	t.Parallel()
 	ds := openParity(t, testdb.Repository(t))
 	for id, props := range parityReadings {
-		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: fid(id), Properties: props}); err != nil {
+		if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: tableKind, ID: fid(id), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -1377,7 +1370,6 @@ func TestPropertyAggregateConvertsThroughTheGraph(t *testing.T) {
 func thingDocs(decl map[string]any) []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(thingsPackage, 0),
-		vocabulary.ActorManifest(thingsPackage, vocabulary.PackageActor(thingsPackage)),
 		vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, decl),
 	}
 }
@@ -1413,7 +1405,7 @@ func TestDeclarationPreviewReadsTheGraphInOneSnapshot(t *testing.T) {
 		// preview's load as the one that publishes rev.
 		ds.svc.unitGraphs.forget(ds.scope.Repository)
 	}
-	plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs)
+	plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorPerson, docs)
 	ds.svc.unitGraphLoadHook = nil
 	if err != nil {
 		t.Fatalf("plan: %v", err)
@@ -1433,14 +1425,14 @@ func TestDeclarationPreviewReadsTheGraphInOneSnapshot(t *testing.T) {
 		t.Fatalf("the graph cached at revision %d converts lb to kg by %v (%v), want 0.45359237", rev, f, err)
 	}
 	// After the commit the preview reads the new graph and refuses.
-	if plan, err = ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs); err != nil || len(plan.Blockers) != 1 {
+	if plan, err = ds.PlanVocabularyApply(ctx, substrate.ActorPerson, docs); err != nil || len(plan.Blockers) != 1 {
 		t.Fatalf("the preview after the commit: %v %v", plan.Blockers, err)
 	}
 }
 
 // applyThing declares the thing kind with decl.
 func applyThing(ds *dataset, decl map[string]any) error {
-	_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, thingDocs(decl))
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, thingDocs(decl))
 	return err
 }
 
@@ -1538,11 +1530,11 @@ func TestPropertyAggregateReadsEachKindsDelta(t *testing.T) {
 	docs := append(thingDocs(thingDeclaration()), vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "other"}, map[string]any{
 		"properties": map[string]any{"change": map[string]any{"type": "quantity", "unit": "K"}},
 	}))
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the other kind: %v", err)
 	}
 	putThing(t, ds, fid("d"), map[string]any{"change": qty("10", "Cel")})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: fid("t"), Properties: map[string]any{"change": qty("10", "Cel")}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: otherKind, ID: fid("t"), Properties: map[string]any{"change": qty("10", "Cel")}}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -1701,7 +1693,7 @@ func TestKindlessFilterSkipsAnUnrelatedAnchor(t *testing.T) {
 	installOther(t, ds, map[string]any{"type": "quantity", "unit": "K"})
 	putThing(t, ds, fid("heavy"), map[string]any{"weight": qty("2", "kg")})
 	putThing(t, ds, fid("light"), map[string]any{"weight": qty("1", "lb")})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: fid("warm"), Properties: map[string]any{"weight": qty("300", "K")}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: otherKind, ID: fid("warm"), Properties: map[string]any{"weight": qty("300", "K")}}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "kg"), OrderBy: []substrate.Order{{Property: "id"}}})

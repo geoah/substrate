@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // getRuns reads one runs page as the owner.
@@ -25,9 +26,9 @@ func TestChangeRunsCountARunPastTheBatch(t *testing.T) {
 	ctx := context.Background()
 	base := changesHead(t, env).Seq
 	created := map[string]any{"created": true}
-	seedRun(env.ds, 3, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
-	seedRun(env.ds, changeBatch+100, substrate.ActorConsole, runTask, substrate.OpPut, created, "")
-	seedRun(env.ds, 2, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
+	seedRun(env.ds, 3, substrate.ActorPerson, runPerson, substrate.OpPut, created, "")
+	seedRun(env.ds, changeBatch+100, substrate.ActorPerson, runTask, substrate.OpPut, created, "")
+	seedRun(env.ds, 2, substrate.ActorPerson, runPerson, substrate.OpPut, created, "")
 	head := changesHead(t, env)
 
 	page := getRuns(t, env, "first=2")
@@ -39,7 +40,7 @@ func TestChangeRunsCountARunPastTheBatch(t *testing.T) {
 		t.Fatalf("newest run = %+v", newest)
 	}
 	if long.Count != changeBatch+100 || long.Records != changeBatch+100 || long.Verb != substrate.RunVerbCreate ||
-		long.Actor != substrate.ActorConsole || long.NewestSeq != base+changeBatch+103 || long.OldestSeq != base+4 || long.RecordID != "" {
+		long.Actor != vocabulary.ActorID(substrate.ActorPerson) || long.NewestSeq != base+changeBatch+103 || long.OldestSeq != base+4 || long.RecordID != "" {
 		t.Fatalf("long run = %+v, want %d creates over seqs %d..%d", long, changeBatch+100, base+4, base+changeBatch+103)
 	}
 	oldest, err := env.ds.Changes(ctx, base+3, substrate.ChangeFilter{}, 1)
@@ -77,13 +78,13 @@ func TestChangeRunsGroupByVerb(t *testing.T) {
 	env := newDBEnv(t, withSamples("tasks"))
 	created := map[string]any{"created": true}
 	t1, t9 := mintedID("t1"), mintedID("t9")
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, created, t1)
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, created, t9)
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, nil, t1)
-	seedRun(env.ds, 2, substrate.ActorAPI, runTask, substrate.OpPatch, nil, t1)
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpDelete, nil, t9)
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, map[string]any{"restored": true}, t9)
-	seedRun(env.ds, 1, substrate.ActorAPI, runTask, substrate.OpDelete, nil, t9)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpPut, created, t1)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpPut, created, t9)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpPut, nil, t1)
+	seedRun(env.ds, 2, substrate.ActorPerson, runTask, substrate.OpPatch, nil, t1)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpDelete, nil, t9)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpPut, map[string]any{"restored": true}, t9)
+	seedRun(env.ds, 1, substrate.ActorPerson, runTask, substrate.OpDelete, nil, t9)
 
 	// The task kind alone: the repository's own creation writes are runs of
 	// other kinds, under them.
@@ -122,9 +123,9 @@ func TestChangeRunsFoldOverTheFilter(t *testing.T) {
 	env := newDBEnv(t, withSamples("tasks"))
 	base := changesHead(t, env).Seq
 	created := map[string]any{"created": true}
-	seedRun(env.ds, 2, substrate.ActorAPI, runTask, substrate.OpPut, created, "")
-	seedRun(env.ds, 1, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
-	seedRun(env.ds, 2, substrate.ActorAPI, runTask, substrate.OpPut, created, "")
+	seedRun(env.ds, 2, substrate.ActorPerson, runTask, substrate.OpPut, created, "")
+	seedRun(env.ds, 1, substrate.ActorPerson, runPerson, substrate.OpPut, created, "")
+	seedRun(env.ds, 2, substrate.ActorPerson, runTask, substrate.OpPut, created, "")
 
 	page := getRuns(t, env, "first=3")
 	if len(page.Runs) != 3 || page.Runs[0].Kind != runTask || page.Runs[0].Count != 2 ||
@@ -137,10 +138,10 @@ func TestChangeRunsFoldOverTheFilter(t *testing.T) {
 	}
 }
 
-// Two assistants on one device both write as `app:local`: the runs split on
-// the token behind them and the owner's read names each by its token, while
-// an `api` run is named by its token's label and a person's door is never
-// split or named (decision 0230).
+// Two assistants on one device are one local app's actor: the runs split on
+// the token behind them and the owner's read names each by its token, and so
+// do the person's own runs, one for each of its tokens (decisions 0230 and
+// 0270).
 func TestChangeRunsSplitAndNameTheTokenBehindAnApp(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withSamples("tasks"))
@@ -165,20 +166,20 @@ func TestChangeRunsSplitAndNameTheTokenBehindAnApp(t *testing.T) {
 	create(2, claude)
 	create(3, codex)
 	create(1, cursor)
-	create(2, tok1, actorHeader, "console")
-	create(1, tok2, actorHeader, "console")
+	create(2, tok1)
+	create(1, tok2)
 
 	page := getRuns(t, env, "first=10&kinds="+runTask)
 	want := []struct {
 		actor substrate.Actor
 		count int
 		name  string
-	}{{substrate.ActorConsole, 3, ""}, {substrate.ActorAPI, 1, "Cursor"}, {substrate.AppActorLocal, 3, "Codex"}, {substrate.AppActorLocal, 2, "Claude Code"}}
+	}{{substrate.ActorPerson, 1, "tok2"}, {substrate.ActorPerson, 2, "tok1"}, {substrate.ActorPerson, 1, "Cursor"}, {substrate.AppActorLocal, 3, "Codex"}, {substrate.AppActorLocal, 2, "Claude Code"}}
 	if len(page.Runs) != len(want) {
 		t.Fatalf("runs = %+v, want %d", page.Runs, len(want))
 	}
 	for i, w := range want {
-		if r := page.Runs[i]; r.Actor != w.actor || r.Count != w.count || r.PrincipalName != w.name {
+		if r := page.Runs[i]; r.Actor != vocabulary.ActorID(w.actor) || r.Count != w.count || r.TokenName != w.name {
 			t.Fatalf("run %d = %+v, want %s ×%d named %q", i, r, w.actor, w.count, w.name)
 		}
 	}
@@ -192,7 +193,7 @@ func TestChangeRunsSplitAndNameTheTokenBehindAnApp(t *testing.T) {
 		t.Fatal("an assistant's read answered no runs")
 	}
 	for _, r := range runs {
-		if r.PrincipalName != "" {
+		if r.Token != "" || r.TokenName != "" {
 			t.Fatalf("an assistant's read named a token: %+v", r)
 		}
 	}

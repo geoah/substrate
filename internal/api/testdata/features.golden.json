@@ -2,7 +2,7 @@
   {
     "name": "discovery",
     "stability": "stable",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "GET /.well-known/substrate/server.json",
       "GET /healthz"
@@ -11,7 +11,7 @@
   {
     "name": "records",
     "stability": "stable",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
       "GET /api/v1/records",
@@ -30,7 +30,7 @@
   {
     "name": "changefeed",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "GET /api/v1/changes"
     ]
@@ -107,7 +107,7 @@
   {
     "name": "apps",
     "stability": "beta",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "DELETE /api/v1/authorizations/{request}",
       "GET /.well-known/oauth-authorization-server",

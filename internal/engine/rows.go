@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -303,6 +302,11 @@ func changeProps(entries []changeEntry) []any {
 }
 
 func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
+	if t.bulk == nil {
+		if err := t.ensureLinks(actor); err != nil {
+			return err
+		}
+	}
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
 	// transaction that appends more than one entry slices its effect stream at
@@ -328,7 +332,7 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// A bulk run sends its entries in one INSERT (bulkwrite.go) and records
 	// each as below.
 	if t.bulk != nil {
-		t.bulk.entries = append(t.bulk.entries, bulkEntry{actor: actor, op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
+		t.bulk.entries = append(t.bulk.entries, bulkEntry{links: t.linksOf(actor), op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
 		return nil
 	}
 	if err := t.lockChangelog(); err != nil {
@@ -344,21 +348,22 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// until settleChecksums stamps it at commit. The pending entry and the
 	// row must agree on every column the checksum covers, so both sides of
 	// this append stamp the same principal.
+	links := t.linksOf(actor)
 	if err := t.row(`
-		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by)
-		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+		INSERT INTO changelog (seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, caused_by)
+		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
+		t.now, links.actor, links.onBehalfOf, links.token, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
-	t.appended(actor, op, recordID, typ, causedBy, seq, stored)
+	t.appended(links, op, recordID, typ, causedBy, seq, stored)
 	return nil
 }
 
 // appended records one inserted changelog row on the transaction: its seq,
 // its address and the pending line its checksum and file write read, with
 // the payload as stored.
-func (t *txn) appended(actor substrate.Actor, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
+func (t *txn) appended(links writeLinks, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
@@ -369,7 +374,7 @@ func (t *txn) appended(actor substrate.Actor, op substrate.Op, recordID, typ str
 		t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
 	}
 	t.pending = append(t.pending, pendingEntry{
-		Seq: seq, TS: t.now, Actor: string(actor), Principal: t.principal,
+		Seq: seq, TS: t.now, Actor: links.actor, OnBehalfOf: links.onBehalfOf, Token: links.token,
 		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
 		PayloadText: stored,
@@ -539,40 +544,30 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 
 // --- property managers ---
 //
-// The ledger records which actor last had a change ACCEPTED on each property,
-// at which TIER that write stood, and which PRINCIPAL
-// — the token id the door verified — stood behind it. It is
-// attribution on every direct write, and it is load-bearing:
+// The ledger records which actor last had a change ACCEPTED on each property
+// (the id of its actor record, decision 0270), at which TIER that write
+// stood, and which token the door verified stood behind it (the `principal`
+// column). It is attribution on every direct write, and it is load-bearing:
 // mapping recompute yields to any manager row that holds above the machine
-// tier (heldTierIn, record 0113), which is how a hand edit — the owner's or a
-// function's — survives a sync, visibly. Nothing else reads it to decide who
+// tier, which is how a hand edit — the owner's or a function's — survives a
+// sync, visibly. Nothing else reads it to decide who
 // may write — anyone still overwrites anything.
 
-// actorTier resolves an actor's manager tier from DATA, never from the
-// actor's spelling: the three human DOORS — api, console, substratectl — are
-// the owner tier; the engine's own actor is machine; and every actor the
-// registry answers for carries its declared tier — an authority-declared
-// `bundle:<authority>` actor defaults machine, a registered function's or
-// agent's own actor is bundle.
+// actorTier resolves an actor's manager tier from what the hand is: the
+// person is the owner tier; the engine's own hand is machine; an app's token
+// writes at the owner tier, and the owner-only gates read txn.scoped beside
+// it; and a function or agent the registry declares is bundle.
 //
-// An actor the registry does not answer for splits two ways. A RESERVED name
-// (the `substrate` namespace, `bundle:`, `function:`, `agent:`, and the
-// retired `connector:` spelling every repository written before record 0025
-// still carries) is one of
-// the substrate's own writing hands, which a request may never claim
-// (api/auth.go) — an undeclared one is a hand whose declaration is gone, a
-// facility like `substrate.oauth`, or a dispatch mid-uninstall, and none of
-// those is the owner's edit, so it holds at the machine tier and recompute
-// may replace it. Anything else is a name a REQUEST asserted at the door, and
-// a token writes at the owner tier: that write stands exactly where the token
-// stands, whatever door name it chose. An app's token writes as its derived
-// `app:<host>` actor, which resolves to the owner tier above the registry,
-// and the owner-only gates read txn.scoped beside the tier. Nothing here
-// escalates — the same caller can send `api` — and the entry's principal
-// records which token it was. The split is FORWARD-ONLY: a manager row an
-// undeclared reserved actor already holds at the owner tier keeps it, here
-// and through a rebuild, because the fold replays the tier the write
-// recorded, not the tier this function would resolve today.
+// Any other hand splits two ways. A RESERVED one (the `substrate`
+// namespace, `bundle:`, `function:`, `agent:`, and the retired `connector:`
+// prefix) is one of the substrate's own writing hands — a package's install,
+// a callable whose declaration is gone, a facility like the OAuth door, a
+// dispatch mid-uninstall — and none of those is the owner's edit, so it holds
+// at the machine tier and recompute may replace it. Anything else holds at
+// the owner tier. No request names a hand (decision 0270), so nothing here
+// escalates. The split is FORWARD-ONLY: a manager row already stored keeps
+// its tier, here and through a rebuild, because the fold replays the tier
+// the write recorded, not the tier this function would resolve today.
 //
 // Direct writes read their tier off the transaction (txn.tier,
 // set once at inTx and set to bundle explicitly by function/agent
@@ -593,7 +588,7 @@ func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
 
 func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier {
 	switch {
-	case substrate.HumanActors[actor]:
+	case substrate.CanonicalActor(actor) == substrate.ActorPerson:
 		return substrate.TierOwner
 	// The engine's own hand is resolved before the registry, so a declaration
 	// cannot move it: `tier:` is data an installed bundle writes.
@@ -615,42 +610,22 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 	return substrate.TierOwner
 }
 
-// heldTierIn is the tier a stored manager row holds at against recompute
-// under the declarations in reg (record 0113). A row above the machine tier
-// whose actor a live declaration now puts AT the machine tier holds at the
-// machine tier, so re-declaring an actor releases what it already wrote
-// instead of only what it writes next. Everything else keeps the tier the
-// write recorded: a machine row may be recompute's credit to the actor, so
-// promoting the actor must not freeze it; a door name resolves before any
-// declaration; and a package's bundle hand writes under the dispatch stamp,
-// a tier its declaration does not show.
-func heldTierIn(reg *vocabulary.Registry, actor string, stored substrate.Tier) substrate.Tier {
-	if stored == substrate.TierMachine || substrate.HumanActors[substrate.Actor(actor)] ||
-		strings.HasPrefix(actor, substrate.BundleActorPrefix) {
-		return stored
-	}
-	if tier, ok := reg.ActorTier(actor); ok && tier == substrate.TierMachine {
-		return substrate.TierMachine
-	}
-	return stored
-}
-
 func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) error {
-	// The effect carries the principal so a replay reproduces the row without
+	// The effect carries the token so a replay reproduces the row without
 	// reading the entry around it: the fold describes what the write did, in
 	// full.
-	return t.setManagerAs(ref, property, actor, tier, t.principal)
+	return t.setManagerAs(ref, property, actorID(actor), tier, t.tokenOf(actor))
 }
 
-// setManagerAs is setManager with the principal NAMED rather than taken from
-// the transaction. A kind move carries a manager row across whole (move.go), so
-// the hand and the token behind the value it describes are the ones that wrote
-// it, not the ones carrying it.
-func (t *txn) setManagerAs(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string) error {
+// setManagerAs is setManager with the actor record and the token NAMED rather
+// than taken from the transaction. A kind move carries a manager row across
+// whole (move.go), so the hand and the token behind the value it describes
+// are the ones that wrote it, not the ones carrying it.
+func (t *txn) setManagerAs(ref eref, property, actor string, tier substrate.Tier, token string) error {
 	_, err := t.fold(foldOp{
 		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
-		Property: property, Actor: string(actor), Tier: string(tier),
-		Principal: principal,
+		Property: property, Actor: actor, Tier: string(tier),
+		Token: token,
 	})
 	return err
 }
@@ -663,7 +638,7 @@ func (t *txn) deleteManager(ref eref, property string) error {
 	return err
 }
 
-func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string, at time.Time) (bool, error) {
+func (t *txn) applyManager(ref eref, property, actor string, tier substrate.Tier, principal string, at time.Time) (bool, error) {
 	if actor == "" {
 		res, err := t.exec(`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
 			ref.Kind, ref.ID, property)
@@ -690,7 +665,7 @@ func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tie
 		WHERE property_managers.actor     IS DISTINCT FROM EXCLUDED.actor
 		   OR property_managers.tier      IS DISTINCT FROM EXCLUDED.tier
 		   OR property_managers.principal IS DISTINCT FROM EXCLUDED.principal`,
-		ref.Kind, ref.ID, property, string(actor), string(tier), principal, at)
+		ref.Kind, ref.ID, property, actor, string(tier), principal, at)
 	if err != nil {
 		return false, err
 	}

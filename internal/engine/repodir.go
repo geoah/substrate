@@ -156,31 +156,6 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 			return err
 		}
 	}
-	// A directory whose history a boot adopted and whose removal it did not
-	// finish: the table holds every line, so the removal is finished, and
-	// nothing of it is read. With no row the table holds nothing of it after
-	// all (a database restored from before the upgrade), and it is left.
-	for _, id := range adopted {
-		dir, err := changelogfile.RepoDir(s.dataRoot, id)
-		if err != nil {
-			return err
-		}
-		repo, ok := byID[id]
-		if !ok {
-			s.log.Error("substrate: a directory's history was adopted by a database that no longer holds the repository; it is left where it is",
-				"repository", id, "directory", dir)
-			continue
-		}
-		if err := s.through(ctx, rowPass(repo, setAsideAtCheck), func() error {
-			if err := changelogfile.RemoveHistory(dir, s.importStage); err != nil {
-				return fmt.Errorf("substrate/engine: boot check: finish removing the adopted history of %s: %w", id, err)
-			}
-			s.log.Info("substrate: finished removing a directory's adopted history", "repository", id)
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
 	// Said before the work, because an import of a long history takes
 	// minutes: whoever is waiting on the listener learns why it is late.
 	s.log.Info("substrate: boot check started", "repositories", len(repos), "directoriesWithHistory", len(history))
@@ -225,6 +200,47 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 			if out.Action != reconcileOK {
 				s.logReconcile(out)
 			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	// A directory whose history a boot adopted and whose removal it did not
+	// finish, after the rows are reconciled: its history goes only once the
+	// table, which holds every line of it, is converted and folded
+	// (historyUnsettled). Until then the directory is left as it is, at every
+	// start, because it holds the one other copy of each line. With no row
+	// the table holds nothing of it after all (a database restored from
+	// before the upgrade), and it is left.
+	for _, id := range adopted {
+		dir, err := changelogfile.RepoDir(s.dataRoot, id)
+		if err != nil {
+			return err
+		}
+		repo, ok := byID[id]
+		if !ok {
+			s.log.Error("substrate: a directory's history was adopted by a database that no longer holds the repository; it is left where it is",
+				"repository", id, "directory", dir)
+			continue
+		}
+		if err := s.through(ctx, rowPass(repo, setAsideAtCheck), func() error {
+			db, err := s.scopedDB(repo.scope())
+			if err != nil {
+				return err
+			}
+			why, err := s.historyUnsettled(ctx, db)
+			if err != nil {
+				return err
+			}
+			if why != "" {
+				s.log.Warn("substrate: a directory's adopted history is kept until its repository's history is converted",
+					"repository", id, "directory", dir, "reason", why)
+				return nil
+			}
+			if err := changelogfile.RemoveHistory(dir, s.importStage); err != nil {
+				return fmt.Errorf("substrate/engine: boot check: finish removing the adopted history of %s: %w", id, err)
+			}
+			s.log.Info("substrate: finished removing a directory's adopted history", "repository", id)
 			return nil
 		}); err != nil {
 			return err
@@ -335,14 +351,22 @@ func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 	}
 }
 
-// openLocalHistory opens a 0.x directory's segments, cutting an unfinished
-// tail as the release that wrote them would have.
+// openLocalHistory opens a 0.x directory's segments READ-ONLY. THE UPGRADE
+// NEVER HOLDS A WRITABLE HANDLE ON A 0.x DIRECTORY'S HISTORY: an unfinished
+// transaction at the end of the highest segment is left on disk, and every
+// read stops at the head before it. The release that wrote it cut that tail
+// at its next open, but a release that committed a transaction to Postgres
+// and died appending it to the files leaves a whole, checksummed line of it
+// there, the one other copy of a row the table confirmed; only SetAsideHistory
+// and RemoveHistory change anything of the history, behind their gates
+// (giveUpDirectory, reconcileRepositories), and a test holds the engine to
+// that (TestTheUpgradeNeverWritesA0xDirectorysHistory).
 func openLocalHistory(dir string) (dirSource, error) {
 	m, err := changelogfile.ReadManifest(dir)
 	if err != nil {
 		return dirSource{}, err
 	}
-	log, err := changelogfile.Open(changelogfile.ChangelogDir(dir))
+	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
 	if err != nil {
 		return dirSource{}, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 	}
@@ -379,10 +403,13 @@ func (s *service) adoptDirectory(ctx context.Context, repo Repository) (reconcil
 }
 
 // giveUpDirectory is the end of a 0.x directory's import (rule 6), once the
-// table holds every line it does, in its dialect: the directory is set aside
-// first, so no boot reads its history again, then the table is converted and
-// folded, then the set-aside files go. The new archive the next pass starts
-// is published after.
+// table holds every line it does, in its dialect, each row held to its own
+// checksum (compareHistories): the directory is set aside first, so no boot
+// reads its history again, then the table is converted and folded, then the
+// set-aside files go, and only then. A conversion that refuses leaves them,
+// and so does every start after it until the table is converted
+// (reconcileRepositories). The new archive the next pass starts is
+// published after.
 func (s *service) giveUpDirectory(ctx context.Context, ds *dataset, dir string) error {
 	if err := changelogfile.SetAsideHistory(dir, s.importStage); err != nil {
 		return err
@@ -393,7 +420,42 @@ func (s *service) giveUpDirectory(ctx context.Context, ds *dataset, dir string) 
 	if err := s.importStage(importBeforeCleanup); err != nil {
 		return err
 	}
+	why, err := s.historyUnsettled(ctx, ds.db)
+	if err != nil {
+		return err
+	}
+	if why != "" {
+		return fmt.Errorf("substrate/engine: the directory %s keeps its history: %s", dir, why)
+	}
 	return changelogfile.RemoveHistory(dir, s.importStage)
+}
+
+// historyUnsettled says why a repository's table may not yet let a 0.x
+// directory's copy of its history go, "" once it may: the table stands at
+// the chain's changelog dialect, every row held to its checksum by the
+// conversion's walk, with no import marked incomplete. THE OLD COPY OUTLIVES
+// THE DOUBT: until then the directory is the one other copy of each line.
+func (s *service) historyUnsettled(ctx context.Context, db dbx) (string, error) {
+	marked, incomplete, err := importIncomplete(ctx, db)
+	if err != nil {
+		return "", err
+	}
+	if incomplete {
+		return fmt.Sprintf("its import is marked incomplete at head %d", marked), nil
+	}
+	stored, err := readChangelogDialect(ctx, db)
+	if err != nil {
+		return "", err
+	}
+	pending := pendingConversions(s.conversion, stored)
+	if len(pending) == 0 {
+		return "", nil
+	}
+	head, err := tableChangelogHead(ctx, db)
+	if err != nil || head == 0 {
+		return "", err
+	}
+	return fmt.Sprintf("its history is in changelog dialect %d and not yet converted to %d", max(stored, 1), pending[len(pending)-1].Dialect), nil
 }
 
 // importDirectory is pass 1 for a 0.x directory with no row: its manifest
@@ -903,6 +965,14 @@ func tableChangelogHead(ctx context.Context, q dbx) (int64, error) {
 // it after the commit, so a crash left the table ahead), and the
 // directory's are imported (a database restored from a backup older than the
 // data root left the directory ahead).
+//
+// Every row of the table is held to its own checksum too, in the frame it
+// was written in (framedLine), before the directory is given up: a column edited
+// under an intact checksum would pass a comparison of checksums alone, the
+// conversion would then refuse the row, and the directory, set aside by
+// then, would hold the one good copy of it. So the comparison refuses it,
+// naming the seq, and the repository is set aside with its directory as it
+// was.
 func (ds *dataset) compareHistories(ctx context.Context, src dirSource) error {
 	tableDialect, err := readChangelogDialect(ctx, ds.db)
 	if err != nil {
@@ -923,7 +993,7 @@ func (ds *dataset) compareHistories(ctx context.Context, src dirSource) error {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
-		stamps, err := scanStampPage(ctx, ds.db, after, limit)
+		stamps, err := scanChecksumPage(ctx, ds.db, after, limit)
 		if err != nil {
 			return err
 		}
@@ -939,11 +1009,35 @@ func (ds *dataset) compareHistories(ctx context.Context, src dirSource) error {
 			if err != nil {
 				return fmt.Errorf("%w: seq %d: %w", ErrChangelogDiverged, seq, err)
 			}
+			if _, frame := framedLine(stamps[i]); frame == frameNone {
+				return fmt.Errorf("%w: seq %d: the table's row is not the line its checksum was stamped for; the directory, which holds that line, is left as it is to repair the row from",
+					ErrChangelogDiverged, seq)
+			}
 			if !bytes.Equal(sum[:], stamps[i].hash) {
 				return fmt.Errorf("%w: seq %d: the table's line is not the directory's", ErrChangelogDiverged, seq)
 			}
 		}
 		after += int64(limit)
+	}
+	// The rows past the directory's head stand as the table's, so they are
+	// held to their own checksums too before the directory is given up: the
+	// directory may still hold one of them, whole, in a transaction its
+	// release never finished appending (openLocalHistory).
+	for after := both; after < tableHead; {
+		page, err := scanChecksumPage(ctx, ds.db, after, rebuildBatch)
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, row := range page {
+			if _, frame := framedLine(row); frame == frameNone {
+				return fmt.Errorf("%w: seq %d: the table's row is not the line its checksum was stamped for; the directory is left as it is",
+					ErrChangelogDiverged, row.entry.Seq)
+			}
+			after = row.entry.Seq
+		}
 	}
 	return nil
 }
@@ -1035,9 +1129,9 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 			causedBy = sql.NullInt64{Int64: e.CausedBy, Valid: true}
 		}
 		if _, err := t.exec(`
-			INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, txn, hash)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)`,
-			e.Seq, e.TS, e.Actor, e.Principal, e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
+			INSERT INTO changelog (seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, caused_by, txn, hash)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)`,
+			e.Seq, e.TS, e.Actor, e.OnBehalfOf, lineToken(e), e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
 			return fmt.Errorf("substrate/engine: import seq %d: %w", e.Seq, err)
 		}
 	}

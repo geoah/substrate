@@ -23,13 +23,13 @@ import (
 
 func putModelRecord(t *testing.T, ds *dataset, id string, props map[string]any) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: typeModel, ID: id, Properties: props}); err != nil {
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: typeModel, ID: id, Properties: props}); err != nil {
 		t.Fatalf("put llm/model %s: %v", id, err)
 	}
 }
 
 func putModelRecordErr(ds *dataset, id string, props map[string]any) error {
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: typeModel, ID: id, Properties: props})
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: typeModel, ID: id, Properties: props})
 	return err
 }
 
@@ -97,7 +97,7 @@ func TestARowsOwnEntryWinsAndARecordPricesTheRest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openCoreDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "gw", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "gw", Properties: map[string]any{
 		"wire": "openai", "baseURL": "https://gw.example.com/v1", "apiKey": "test-key",
 		"pricing": []any{
 			// An entry with one rate prices the other at zero, as it always has.
@@ -159,7 +159,7 @@ func TestOneModelRecordPerRowAndModel(t *testing.T) {
 	ctx := context.Background()
 	ds := openCoreDataset(t)
 	for _, id := range []string{"gw", "x", "x:y"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{"wire": "openai", "baseURL": "https://gw.example.com/v1"},
 		}); err != nil {
@@ -172,10 +172,10 @@ func TestOneModelRecordPerRowAndModel(t *testing.T) {
 		t.Fatalf("a second record for gw and m: %v", err)
 	}
 	putModelRecord(t, ds, "b", map[string]any{"provider": "gw", "model": "n"})
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeModel, "b", substrate.PatchInput{Properties: map[string]any{"model": "m"}}); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeModel, "b", substrate.PatchInput{Properties: map[string]any{"model": "m"}}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a patch onto a held pair: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeModel, "a", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeModel, "a", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	mustPatchInternal(t, ds, typeModel, "b", map[string]any{"model": "m"})
@@ -253,7 +253,7 @@ func TestRunsOnTakesTheFirstModelANewThreadCanRunOn(t *testing.T) {
 		t.Fatalf("the hold and the diagnostics read %q %q (%v)", id, model, err)
 	}
 
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeProvider, "openai", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeProvider, "openai", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = ds.chooseRunsOn(ctx, ag, "")
@@ -338,7 +338,7 @@ func TestAnAgentMovesToRunsOnInOnePatch(t *testing.T) {
 	ds := openModelsDataset(t)
 	pkg := testdb.Repository(t) + "/crew"
 	id := pkg + "/helper"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.AgentManifest(pkg, "helper", map[string]any{
 			"description": "Helps.", "prompt": "Help.", "provider": "anthropic", "model": "claude-opus-5-5",
@@ -346,7 +346,7 @@ func TestAnAgentMovesToRunsOnInOnePatch(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare the agent: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, kindAgent, id, substrate.PatchInput{Properties: map[string]any{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, kindAgent, id, substrate.PatchInput{Properties: map[string]any{
 		"runsOn":   []any{"anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5"},
 		"provider": nil, "model": nil,
 	}}); err != nil {
@@ -360,7 +360,7 @@ func TestAnAgentMovesToRunsOnInOnePatch(t *testing.T) {
 		t.Fatalf("runsOn %v, provider %q, model %q; want %v alone", ag.RunsOn, ag.Provider, ag.Model, want)
 	}
 	// Naming both is refused, so a half-done move never lands.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, kindAgent, id, substrate.PatchInput{Properties: map[string]any{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, kindAgent, id, substrate.PatchInput{Properties: map[string]any{
 		"provider": "anthropic", "model": "claude-opus-5-5",
 	}}); err == nil || !strings.Contains(err.Error(), "name exactly one of provider, providerInput and runsOn") {
 		t.Fatalf("provider beside runsOn: %v", err)
@@ -380,7 +380,7 @@ func TestARunsOnThreadStaysOnItsModelAcrossTurns(t *testing.T) {
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
 	for _, row := range []string{"first", "second"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeProvider, ID: row,
 			Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + row},
 		}); err != nil {
@@ -391,7 +391,7 @@ func TestARunsOnThreadStaysOnItsModelAcrossTurns(t *testing.T) {
 	putModelRecord(t, ds, "second:m2", map[string]any{"provider": "second", "model": "m2"})
 	pkg := testdb.Repository(t) + "/crew"
 	id := pkg + "/talker"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.AgentManifest(pkg, "talker", map[string]any{
 			"description": "Talks.", "prompt": "Talk.", "runsOn": []any{"first:m1", "second:m2"},
@@ -400,7 +400,7 @@ func TestARunsOnThreadStaysOnItsModelAcrossTurns(t *testing.T) {
 		t.Fatalf("declare the agent: %v", err)
 	}
 	chat := func(thread, message string) (*substrate.AgentResult, error) {
-		return ds.ChatAgent(ctx, substrate.ActorAPI, id, substrate.ChatInput{Thread: thread, Message: message}, nil)
+		return ds.ChatAgent(ctx, substrate.ActorPerson, id, substrate.ChatInput{Thread: thread, Message: message}, nil)
 	}
 
 	fake.script("m1", fakeTurn{content: "one"})
@@ -500,7 +500,7 @@ func TestTwoWritesOfOnePairLandOnce(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openCoreDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "gw",
 		Properties: map[string]any{"wire": "openai", "baseURL": "https://gw.example.com/v1"},
 	}); err != nil {

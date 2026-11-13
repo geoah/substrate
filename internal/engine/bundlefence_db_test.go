@@ -112,7 +112,7 @@ func TestDisableDrainsABundledAgentTriggerDelivery(t *testing.T) {
 	const abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
 
 	// A trigger on the bundle's config type delivering to the bundled agent.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/trigger", ID: "on-greet",
 		Properties: map[string]any{
 			"enabled":  true,
@@ -123,7 +123,7 @@ func TestDisableDrainsABundledAgentTriggerDelivery(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	// The change the trigger delivers on.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: abPackage + "/abconfig", ID: fid("ab-cfg"), Properties: map[string]any{"note": "x"},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
@@ -183,7 +183,7 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	const tbPackage = "toolb.bundles.substrate.reamde.dev/toolb"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "userllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-userllm"},
 	}); err != nil {
@@ -213,7 +213,7 @@ def main(input, host):
 			}}),
 		writer,
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install tool bundle: %v", err)
 	}
 	const uPackage = "userc.test.dev/userc"
@@ -223,7 +223,7 @@ def main(input, host):
 		"tools":       []any{map[string]any{"function": tbPackage + "/writer"}},
 		"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
 	})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(uPackage, 0), user,
 	}); err != nil {
 		t.Fatalf("install user agent: %v", err)
@@ -301,7 +301,7 @@ def main(input, host):
 			}}),
 		caller,
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install caller bundle: %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestHostCallRefusesADisabledBundlesFunction(t *testing.T) {
 	if err := ds.DisableBundle(ctx, tbPackage); err != nil {
 		t.Fatalf("disable tool bundle: %v", err)
 	}
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, callerFn, map[string]any{})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, callerFn, map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("cross-bundle call into a disabled bundle: %v", err)
 	}

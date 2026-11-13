@@ -17,13 +17,13 @@ func TestTheFinalReplyRecordsWhatItLinks(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	widget := crewPackage + "/widget"
 	task := "samples.substrate.reamde.dev/tasks/task"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: task, ID: fid("t-real"), Properties: map[string]any{"name": "real"},
 	}); err != nil {
 		t.Fatalf("put task: %v", err)
 	}
 	for _, id := range []string{fid("w-read"), fid("w-unread")} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: widget, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)

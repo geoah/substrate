@@ -192,7 +192,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0022](0022-rest-is-frozen-graphql-is-a-projection.md) | REST is the frozen v1 contract; GraphQL is a derived projection | superseded |
 | [0023](0023-a-sealed-payload-is-bound-to-its-address.md) | A sealed payload is bound to the address it was written at | accepted |
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | accepted |
-| [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | accepted |
+| [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | superseded |
 | [0026](0026-embedding-vectors-are-1536-wide-or-refused.md) | Embedding vectors are 1536 wide or the provider row is refused | accepted |
 | [0027](0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md) | An edge needs its target at write, outlives a tombstone, and dies with a purge | superseded |
 | [0030](0030-a-blob-outside-postgres-settles-after-its-bytes.md) | A blob outside Postgres settles after its bytes, behind a pending manifest | accepted |
@@ -423,6 +423,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0267](0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md) | A schedule trigger says what it does with runs it missed, and runs the latest by default | accepted |
 | [0268](0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md) | A new declaration key raises the dialect, and a package states the dialect it needs | accepted |
 | [0269](0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md) | A publisher may not rename a kind, and code from outside publishers is experimental | accepted |
+| [0270](0270-every-hand-that-writes-is-an-actor-record.md) | Every hand that writes is an actor record, and a write links three of them | accepted |
 | [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
 | [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |

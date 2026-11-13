@@ -55,7 +55,7 @@ func TestADomainProofIsMintedOnceAndSpentByAVerify(t *testing.T) {
 		{"domainVerifiedAt": "2030-01-01T00:00:00Z"},
 		{"domainProof": "forged0000"},
 	} {
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/repository", id,
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/repository", id,
 			substrate.PatchInput{Properties: props}); err == nil {
 			t.Errorf("a generic patch wrote %v", props)
 		}

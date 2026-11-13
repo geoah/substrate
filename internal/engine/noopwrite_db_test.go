@@ -90,7 +90,7 @@ func TestAnIdenticalWriteMovesNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install the account kind: %v", err)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{

@@ -38,7 +38,7 @@ func provisionRollupAgents(t *testing.T) (*dataset, *fakeLLM) {
 	ds.mu.Lock()
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "rollupllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-rollupllm",
@@ -81,7 +81,7 @@ func provisionRollupAgents(t *testing.T) (*dataset, *fakeLLM) {
 			"permissions": map[string]any{"writes": []any{rollupMemo}},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install rollup package: %v", err)
 	}
 	return ds, fake

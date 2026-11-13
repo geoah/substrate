@@ -29,12 +29,12 @@ func TestGCPassCountsOnlyPurgedRows(t *testing.T) {
 
 	tombstone := func(id string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: raceWidget, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("%s: put: %v", id, err)
 		}
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, id, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("%s: delete: %v", id, err)
 		}
 	}
@@ -50,7 +50,7 @@ func TestGCPassCountsOnlyPurgedRows(t *testing.T) {
 				return
 			}
 			for _, id := range restore {
-				if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+				if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 					Kind: raceWidget, ID: id, Properties: map[string]any{"name": id + " again"},
 				}); err != nil {
 					t.Errorf("%s: restore under the sweep: %v", id, err)

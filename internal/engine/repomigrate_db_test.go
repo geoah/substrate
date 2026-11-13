@@ -40,6 +40,7 @@ var rmEvery = map[int]string{
 	6: "key_the_repository_record_by_its_id",
 	7: "start_paged_drains_over",
 	8: "purge_the_recovery_key",
+	9: "link_actors",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen

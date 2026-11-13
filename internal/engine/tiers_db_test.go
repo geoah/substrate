@@ -1,13 +1,12 @@
 package engine
 
-// The manager tiers as explicit actor data: a bundle write on a mapped
-// property is a VISIBLE pin — legible in
-// propertyMeta, releasable by the null-patch — never a silent recompute
-// freeze; the tier comes from the ACTOR RECORD (a declared actor's `tier:`
-// attribute, a function/agent dispatch context), never from the actor's
-// spelling; the `offer:` write-kind is gone from the v1 contract and its key
-// is refused at decode naming the removal; merge migrates manager rows with
-// their tier and split takes exactly them back.
+// The manager tiers: a bundle write on a mapped property is a VISIBLE pin —
+// legible in propertyMeta, releasable by the null-patch — never a silent
+// recompute freeze; the tier comes from what the hand IS (a function the
+// registry declares, a dispatch context), never from the actor's spelling;
+// the `offer:` write-kind is gone from the v1 contract and its key is refused
+// at decode naming the removal; merge migrates manager rows with their tier
+// and split takes exactly them back.
 
 import (
 	"context"
@@ -22,24 +21,16 @@ import (
 
 const (
 	tierPackage = "tiers.test.dev/tiers"
-	// tierSync is an authority-declared actor with no tier attribute: the machine
-	// tier's connector half, by default.
+	// tierSync is a reserved hand no declaration backs: the machine tier's
+	// connector half.
 	tierSync = substrate.Actor("connector:sync")
-	// tierFixer is a declared actor carrying `tier: bundle` — installed
-	// code by DATA, nothing in the name says so.
-	tierFixer = substrate.Actor("connector:fixer")
+	// tierFixer is the actor of a function the fixture package declares:
+	// installed code, at the bundle tier because the registry declares it.
+	tierFixer = substrate.Actor("function:tiers.test.dev:tiers:fixer")
 
 	typeTierRecord  = tierPackage + "/record"
 	typeTierProfile = tierPackage + "/profile"
 )
-
-// actorManifestTier renders an actor document carrying the explicit tier
-// attribute.
-func actorManifestTier(pkg, actor, tier string) map[string]any {
-	m := vocabulary.ActorManifest(pkg, actor)
-	m["data"].(map[string]any)["tier"] = tier
-	return m
-}
 
 // newTierDataset provisions a repository with one source type mapped onto one
 // profile type and hands back the INTERNAL dataset, so tests can drive
@@ -66,12 +57,16 @@ func newTierDataset(t *testing.T) *dataset {
 	if !ok {
 		t.Fatalf("dataset is a %T", d)
 	}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "tiers", Authority: tierPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(tierPackage, 0),
-			vocabulary.ActorManifest(tierPackage, string(tierSync)),
-			actorManifestTier(tierPackage, string(tierFixer), "bundle"),
+			vocabulary.FunctionManifest(tierPackage, "fixer", map[string]any{
+				"description": "the hand that fixes a profile by hand",
+				"runtime":     vocabulary.RuntimePython,
+				"permissions": map[string]any{"writes": []any{typeTierProfile}},
+				"source":      "def main(input, host):\n    return {}\n",
+			}),
 			vocabulary.KindManifest(tierPackage, map[string]any{"singular": "profile"},
 				map[string]any{
 					"displayTemplate": "{name}",
@@ -149,6 +144,8 @@ func wantMeta(t *testing.T, e *substrate.Record, property, manager string, tier 
 	if !ok {
 		t.Fatalf("%s: no propertyMeta for %s (have %v)", e.ID, property, e.PropertyMeta)
 	}
+	// The manager row links the actor record of the hand (decision 0270).
+	manager = vocabulary.ActorID(substrate.Actor(manager))
 	if m.Manager != manager || m.Tier != tier {
 		t.Fatalf("%s.%s manager = %q tier = %q, want %q at %q", e.ID, property, m.Manager, m.Tier, manager, tier)
 	}
@@ -158,7 +155,8 @@ func wantMeta(t *testing.T, e *substrate.Record, property, manager string, tier 
 // silent freeze: the recompute yields to it exactly as it yields to the owner,
 // propertyMeta says which tier holds the property, the fresher source value
 // stays readable as an alternative, and the owner's null-patch releases it. The
-// actor's tier is its DECLARED attribute (`tier: bundle`), never its spelling.
+// actor's tier is what the hand is, a function the registry declares, never
+// its spelling.
 func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -193,13 +191,13 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	}
 	wantMeta(t, p, "name", string(tierFixer), substrate.TierBundle)
 	alts := p.PropertyMeta["name"].Alternatives
-	if len(alts) != 1 || alts[0].Actor != string(tierSync) || alts[0].Value != "Fresher Name" {
+	if len(alts) != 1 || alts[0].Actor != vocabulary.ActorID(tierSync) || alts[0].Value != "Fresher Name" {
 		t.Fatalf("the yielded source value is not an alternative: %+v", alts)
 	}
 
 	// Release stays the null-patch: the property refills from live sources
 	// on the spot, back at the machine tier.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTierProfile, pid, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": nil},
 	}); err != nil {
 		t.Fatalf("release: %v", err)
@@ -211,13 +209,11 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	wantMeta(t, p, "name", string(tierSync), substrate.TierMachine)
 }
 
-// The tier is DATA on the actor record, never the actor's spelling (ticket
-// 002): an UNDECLARED actor a request could have asserted holds where the
-// token stands, the owner tier, and renaming a declared actor cannot change
-// write semantics, because nothing derives from the name. The declared
-// `tier: bundle` actor above (nothing in its name says bundle) is the
-// other half of the assertion, pinned here side by side. The one thing the
-// name decides is RESERVED or not, and that is the next test.
+// The tier is what the hand is, never the actor's spelling (ticket 002): a
+// name that only LOOKS like a function's holds where a person stands, the
+// owner tier, because no declaration backs it. The declared function above
+// is the other half of the assertion, pinned here side by side. The one thing
+// the name decides is RESERVED or not, and that is the next test.
 func TestTierIsActorDataNotSpelling(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -240,8 +236,9 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 	p := tierGet(t, ds, pid)
 	wantMeta(t, p, "name", string(ghost), substrate.TierOwner)
 
-	// Release, then the DECLARED bundle actor writes: bundle by data.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTierProfile, pid, substrate.PatchInput{
+	// Release, then the declared function writes: bundle, because the
+	// registry declares it.
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": nil},
 	}); err != nil {
 		t.Fatalf("release: %v", err)
@@ -254,10 +251,9 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 	p = tierGet(t, ds, pid)
 	wantMeta(t, p, "name", string(tierFixer), substrate.TierBundle)
 
-	// And the authority-declared connector actor stays machine — the default
-	// attribute, not an inference: its direct write is recompute's to
-	// replace.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTierProfile, pid, substrate.PatchInput{
+	// And the reserved connector hand stays machine: its direct write is
+	// recompute's to replace.
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": nil},
 	}); err != nil {
 		t.Fatalf("release: %v", err)
@@ -312,26 +308,6 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	}
 }
 
-// The loader refuses a tier outside the closed set — the attribute is
-// validated data.
-func TestActorTierValidated(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ds := newTierDataset(t)
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
-		Name: "badtier", Authority: "badtier.test.dev",
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest("badtier.test.dev/badtier", 0),
-			actorManifestTier("badtier.test.dev/badtier", "connector:helper", "superuser"),
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tier must be owner, bundle or machine") {
-		t.Fatalf("bad tier admitted: %v", err)
-	}
-}
-
 // Ticket 002: the `offer:` key on a patch effect left the v1
 // contract. Its presence — true, false or garbage — is refused at decode
 // with an error naming the removal and the replacement pattern; a plain
@@ -380,7 +356,7 @@ func TestMergeCarriesTier(t *testing.T) {
 	ctx := context.Background()
 
 	// The winner is a bare profile with no manager rows at all.
-	winner, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeTierProfile})
+	winner, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeTierProfile})
 	if err != nil {
 		t.Fatalf("put winner: %v", err)
 	}
@@ -393,7 +369,7 @@ func TestMergeCarriesTier(t *testing.T) {
 		t.Fatalf("bundle pin: %v", err)
 	}
 
-	rec, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: typeTierProfile, Winner: winner.ID, Loser: loserID})
+	rec, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: typeTierProfile, Winner: winner.ID, Loser: loserID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -407,7 +383,7 @@ func TestMergeCarriesTier(t *testing.T) {
 	}
 
 	// Split takes exactly the migrated rows back.
-	if _, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: rec.ID}); err != nil {
+	if _, err := ds.Split(ctx, substrate.ActorPerson, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	w = tierGet(t, ds, winner.ID)
@@ -419,195 +395,4 @@ func TestMergeCarriesTier(t *testing.T) {
 	if l.Properties["name"] != "Held Name" {
 		t.Fatalf("the restored loser lost its held value: %v", l.Properties["name"])
 	}
-}
-
-// tierImporter is an actor no declaration knows until a test declares it: an
-// import script's name, holding at the owner tier while undeclared (#583).
-const (
-	tierImporter        = substrate.Actor("importer")
-	tierImporterPackage = "importer.test.dev/importer"
-)
-
-// declareImporterAtMachine applies the package that declares tierImporter at
-// `tier: machine`. Applying it again re-declares the actor unchanged.
-func declareImporterAtMachine(t *testing.T, ds *dataset) {
-	t.Helper()
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
-		Name: "importer", Authority: tierImporterPackage,
-		Manifests: []map[string]any{
-			vocabulary.PackageManifest(tierImporterPackage, 0),
-			actorManifestTier(tierImporterPackage, string(tierImporter), "machine"),
-		},
-	}); err != nil {
-		t.Fatalf("declare the importer at the machine tier: %v", err)
-	}
-}
-
-// tierOrphaned reports whether a profile carries the orphan mark.
-func tierOrphaned(t *testing.T, ds *dataset, id string) bool {
-	t.Helper()
-	marked := true
-	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{typeTierProfile}, Orphaned: &marked}, First: 100,
-	})
-	if err != nil {
-		t.Fatalf("list orphaned profiles: %v", err)
-	}
-	for _, r := range page.Records {
-		if r.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-// A manager row holds at the tier its actor's LIVE declaration gives, where
-// that declaration is the machine tier (#583, record 0113). An importer
-// writing under a name no declaration knows holds at the owner tier, and a
-// sync yields to it; declaring the name at `tier: machine` afterwards
-// releases what it already wrote, in the apply itself, without the owner
-// null-patching each property. The read reports the tier the yield uses.
-func TestDeclaringAnActorAtTheMachineTierReleasesWhatItHolds(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ds := newTierDataset(t)
-	ctx := context.Background()
-
-	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, fid("rec-1"))
-
-	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
-		Properties: map[string]any{"name": "Imported Name"},
-	}); err != nil {
-		t.Fatalf("import patch: %v", err)
-	}
-	tierSyncRecord(t, ds, fid("rec-1"), "Fresher Name", "ada@example.com")
-	p := tierGet(t, ds, pid)
-	if p.Properties["name"] != "Imported Name" {
-		t.Fatalf("a sync overwrote an undeclared actor's owner-tier hold: %v", p.Properties["name"])
-	}
-	wantMeta(t, p, "name", string(tierImporter), substrate.TierOwner)
-
-	declareImporterAtMachine(t, ds)
-	p = tierGet(t, ds, pid)
-	if p.Properties["name"] != "Fresher Name" {
-		t.Fatalf("declaring the importer at the machine tier did not release its hold: %v", p.Properties["name"])
-	}
-	wantMeta(t, p, "name", string(tierSync), substrate.TierMachine)
-}
-
-// Re-declaring an actor at the machine tier reaches a row it already holds
-// even where the value does not move: the stored row still says owner, and
-// the read reports it at the machine tier (#583).
-func TestAStoredOwnerRowOfAMachineActorReadsAsMachine(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ds := newTierDataset(t)
-	ctx := context.Background()
-
-	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, fid("rec-1"))
-	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
-		Properties: map[string]any{"nickname": "ada"},
-	}); err != nil {
-		t.Fatalf("import patch: %v", err)
-	}
-	wantMeta(t, tierGet(t, ds, pid), "nickname", string(tierImporter), substrate.TierOwner)
-
-	declareImporterAtMachine(t, ds)
-	// nickname is mapped by nothing, so no recompute rewrites its row.
-	wantMeta(t, tierGet(t, ds, pid), "nickname", string(tierImporter), substrate.TierMachine)
-}
-
-// The release is recompute's machine-tier rule, not a merge (record 0113): a
-// mapped property the demoted actor wrote that no live source offers is
-// deleted, and a union keeps only its sources' items. What no mapping writes
-// stays. A record only the demoted actor wrote, with no live source, is
-// marked orphaned in the same apply (0092's condition 3, amended).
-func TestDeclaringAnActorAtTheMachineTierDeletesWhatNoSourceOffers(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ds := newTierDataset(t)
-	ctx := context.Background()
-
-	lone, err := ds.Put(ctx, tierImporter, substrate.PutInput{
-		Kind:       typeTierProfile,
-		Properties: map[string]any{"name": "Imported Only", "nickname": "io"},
-	})
-	if err != nil {
-		t.Fatalf("import a profile no source describes: %v", err)
-	}
-	if tierOrphaned(t, ds, lone.ID) {
-		t.Fatal("a profile an owner-tier hand wrote is marked before the declaration")
-	}
-
-	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
-	linked := tierProfileOf(t, ds, fid("rec-1"))
-	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, linked, substrate.PatchInput{
-		Properties: map[string]any{"emails": []any{"ada@example.com", "ada@work.example"}},
-	}); err != nil {
-		t.Fatalf("import addresses: %v", err)
-	}
-
-	declareImporterAtMachine(t, ds)
-
-	p := tierGet(t, ds, lone.ID)
-	if _, ok := p.Properties["name"]; ok {
-		t.Fatalf("a mapped property no source offers survived the release: %v", p.Properties["name"])
-	}
-	if p.Properties["nickname"] != "io" {
-		t.Fatalf("the release touched an unmapped property: %v", p.Properties["nickname"])
-	}
-	if !tierOrphaned(t, ds, lone.ID) {
-		t.Fatal("a profile only the demoted importer wrote, with no source, is not marked orphaned")
-	}
-
-	emails, _ := tierGet(t, ds, linked).Properties["emails"].([]any)
-	if len(emails) != 1 || emails[0] != "ada@example.com" {
-		t.Fatalf("emails after the release = %v, want only the source's address", emails)
-	}
-}
-
-// A repository whose actor was declared at the machine tier before record
-// 0113 holds rows stored at the owner tier that no transition will reach.
-// Re-applying the package that declares the actor releases them (#583).
-func TestReapplyingAMachineActorsPackageReleasesItsStaleHolds(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("db test")
-	}
-	ds := newTierDataset(t)
-	ctx := context.Background()
-
-	declareImporterAtMachine(t, ds)
-	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, fid("rec-1"))
-	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
-		Properties: map[string]any{"name": "Imported Name"},
-	}); err != nil {
-		t.Fatalf("import patch: %v", err)
-	}
-	// The state an older binary left: the write admitted at the owner tier
-	// while the actor was undeclared, and the declaration applied since.
-	if _, err := ds.db.ExecContext(ctx,
-		`UPDATE property_managers SET tier = $3 WHERE record_kind = $1 AND record_id = $2 AND actor = $4`,
-		typeTierProfile, pid, string(substrate.TierOwner), string(tierImporter)); err != nil {
-		t.Fatalf("store the pre-0113 owner row: %v", err)
-	}
-	if got := tierGet(t, ds, pid).Properties["name"]; got != "Imported Name" {
-		t.Fatalf("name before the re-apply = %v", got)
-	}
-
-	declareImporterAtMachine(t, ds)
-	p := tierGet(t, ds, pid)
-	if p.Properties["name"] != "Synced Name" {
-		t.Fatalf("re-applying the importer's package did not release its stale hold: %v", p.Properties["name"])
-	}
-	wantMeta(t, p, "name", string(tierSync), substrate.TierMachine)
 }

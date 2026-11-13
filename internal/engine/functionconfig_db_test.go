@@ -48,7 +48,7 @@ func TestFunctionConfigMatchesTheGolden(t *testing.T) {
 		if kind == kindSecret {
 			id = opMailPackage + "/apiKey"
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -73,7 +73,7 @@ func TestFunctionConfigMatchesTheGolden(t *testing.T) {
 		return read
 	}
 	withClient := config(opMailPackage)
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the own client: %v", err)
 	}
 	withoutClient := config(opMailPackage)
@@ -81,7 +81,6 @@ func TestFunctionConfigMatchesTheGolden(t *testing.T) {
 	const plain = "plain.example.com/plain"
 	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor("plain.example.com", "plain"), []map[string]any{
 		vocabulary.PackageManifest(plain, 1),
-		vocabulary.ActorManifest(plain, vocabulary.PackageActor(plain)),
 		vocabulary.BundleManifest(plain, map[string]any{"installs": []any{plain + "/note"}}),
 		vocabulary.KindManifest(plain, map[string]any{"singular": "note"}, map[string]any{
 			"displayTemplate": "{name}",

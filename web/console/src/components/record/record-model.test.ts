@@ -2,7 +2,8 @@
  * lists and in what order, what a record points to, what a change row says,
  * and who the header says added and last changed it. */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import {
   changeSentence,
@@ -20,6 +21,8 @@ import {
 import type { ReferencingGroup, ReferencingRow } from "@/lib/api/records"
 import type { ChangeRow, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
+
+beforeEach(() => seedActors())
 
 const PERSON = "ada.example.com/people/person"
 const TASK = "ada.example.com/tasks/task"
@@ -174,7 +177,7 @@ describe("outgoingOf", () => {
 const change = (over: Partial<ChangeRow>): ChangeRow => ({
   seq: 1,
   ts: "2026-09-01T00:00:00Z",
-  actor: "console",
+  actor: "act-person",
   op: "put",
   recordId: "t1",
   kind: TASK,
@@ -218,7 +221,7 @@ describe("headerFacts", () => {
       change({
         seq: 2,
         op: "patch",
-        actor: "agent:ada.example.com:llm:helper",
+        actor: "act-agent-llm-helper",
       }),
       change({ seq: 1, payload: { created: true } }),
     ]

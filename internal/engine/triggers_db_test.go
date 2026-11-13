@@ -53,7 +53,7 @@ func TestScheduleFiresMissedOccurrencesInOrder(t *testing.T) {
 	// anchor and now once the fire state is rewound to it.
 	startsAt := nowUTC().Add(-3*time.Hour - 30*time.Minute).Truncate(time.Minute)
 
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -67,7 +67,7 @@ func TestScheduleFiresMissedOccurrencesInOrder(t *testing.T) {
 	}
 
 	// Install the fire-counting function, then the trigger.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "hourly", map[string]any{
 			"description": "mints one task per fire",
 			"runtime":     vocabulary.RuntimePython,
@@ -83,7 +83,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install function: %v", err)
 	}
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -267,18 +267,18 @@ func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
 	ctx := context.Background()
 	open, _ := reopenableWidgetDataset(t)
 	ds := open()
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, widgetsManifest(true)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	triggerID := "on-" + widgetsMirror
 
 	// The owner disables the trigger; re-registration must not re-enable it.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.PatchInput{
 		Properties: map[string]any{"enabled": false},
 	}); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, widgetsManifest(true)); err != nil {
 		t.Fatalf("re-register: %v", err)
 	}
 	tr, _, err := ds.triggerByID(ctx, triggerID)
@@ -290,10 +290,10 @@ func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
 	}
 
 	// The owner deletes it; re-registration must not resurrect the tombstone.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(true)); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, widgetsManifest(true)); err != nil {
 		t.Fatalf("re-register: %v", err)
 	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeTrigger, ID: triggerID})
@@ -315,7 +315,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 
-	agentTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	agentTrigger, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -325,7 +325,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put agent trigger: %v", err)
 	}
-	functionTrigger, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	functionTrigger, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},

@@ -22,10 +22,10 @@ const (
 	requestCollection    = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
 	triggerRunCollection = "/api/v1/substrate.reamde.dev/core/triggerrun"
 
-	actorResolver   = "function:" + storyAuthority + ":" + storyPackage + ":resolveattendees"
-	actorMatcher    = "agent:" + storyAuthority + ":" + storyPackage + ":transcriptMatcher"
-	actorReflection = "agent:" + storyAuthority + ":" + storyPackage + ":actionItemExtractor"
-	actorArbiter    = "agent:" + storyAuthority + ":" + storyPackage + ":changeRequestReviewer"
+	actorResolver   = "function " + storyAuthority + "/" + storyPackage + "/resolveattendees"
+	actorMatcher    = "agent " + storyAuthority + "/" + storyPackage + "/transcriptMatcher"
+	actorReflection = "agent " + storyAuthority + "/" + storyPackage + "/actionItemExtractor"
+	actorArbiter    = "agent " + storyAuthority + "/" + storyPackage + "/changeRequestReviewer"
 )
 
 // The samples' kinds the stories write, rebound to their copies by

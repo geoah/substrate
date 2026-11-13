@@ -21,7 +21,7 @@ private let threads = page(threadJSON(version: 3))
 
 private func asked() -> ToolCall {
     var call = ToolCall(
-        id: "c1", name: "gmail_send", callable: "function:providers.substrate.reamde.dev:google:sendmail",
+        id: "c1", name: "gmail_send", callable: "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/sendmail",
         arguments: #"{"to":["ada@example.com"],"subject":"Lunch","body":"Friday works."}"#,
         output: #"{"output":{"approval":"\#(approvalID)","status":"waiting for the owner's approval"}}"#, ok: true)
     call.changes = [ChangeStamp(seq: 4, op: "put", kind: Kinds.approval, id: approvalID)]

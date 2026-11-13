@@ -167,7 +167,8 @@ substratectl watch
 GET /api/v1/changes?watch=1
 
 {"bookmark": 412, "generation": "7f3a0c2e9b1d4e6f"}
-{"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
+{"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+ "token": "01jbx9k0token000000000000a", "op": "put",
  "kind": "ada.example.com/tasks/task", "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
@@ -179,10 +180,12 @@ initial vocabulary: the shipped declarations were written into the changelog
 as ordinary entries when the repository was created, which is why a first task
 lands well above 1.
 
-`actor` names the client that made the write. This request named none, so it
-is `api`; the console sends `console` and `substratectl` sends `substratectl`.
-[The changelog and watch](changelog.md) is the whole contract, including how to
-resume without a gap.
+`actor` is the id of the [actor record](api.md#actors) that made the write:
+here you, the repository's person, whichever client you used. `token` is the
+id of the token the write came through, which tells your laptop's writes
+from your phone's. An app's or a function's writes name their own actor. `substratectl get substrate.reamde.dev/core/actor <id>` reads
+one. [The changelog and watch](changelog.md) is the whole contract, including
+how to resume without a gap.
 
 ## Where to go next
 

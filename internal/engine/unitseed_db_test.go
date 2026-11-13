@@ -103,7 +103,7 @@ func TestRegistrationSeedsTheUnits(t *testing.T) {
 		t.Errorf("1 lb in kg = %+v, %v", got, err)
 	}
 	for _, c := range changesSince(t, ds, 0) {
-		if (c.Kind == vocabulary.KindUnit || c.Kind == vocabulary.KindConversion) && c.Actor != substrate.ActorSeed {
+		if (c.Kind == vocabulary.KindUnit || c.Kind == vocabulary.KindConversion) && c.Actor != vocabulary.ActorID(substrate.ActorSeed) {
 			t.Fatalf("%s %s was written by %s, want the seed", c.Kind, c.RecordID, c.Actor)
 		}
 	}
@@ -146,10 +146,10 @@ func TestSeedLeavesAnOwnersEditAndDeletion(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn, root := unitSeededRepository(t, true)
 	ctx := context.Background()
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindUnit, "lb", substrate.PatchInput{Properties: map[string]any{"name": "Pfund"}}); err != nil {
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindUnit, "lb", substrate.PatchInput{Properties: map[string]any{"name": "Pfund"}}); err != nil {
 		t.Fatalf("the owner's edit: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "oz-kg", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "oz-kg", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("the owner's deletion: %v", err)
 	}
 	if _, err := ds.Patch(ctx, substrate.ActorSystem, vocabulary.KindUnit, "g", substrate.PatchInput{Properties: map[string]any{"name": "GRAM"}}); err != nil {
@@ -187,7 +187,7 @@ func TestSeedSkipsAConflictingShippedEdge(t *testing.T) {
 			"from": map[string]any{"ref": vocabulary.KindUnit + "/g"}, "to": map[string]any{"ref": vocabulary.KindUnit + "/kg"}, "factor": "0.002",
 		}},
 	} {
-		mustPut(t, ds, substrate.ActorAPI, in)
+		mustPut(t, ds, substrate.ActorPerson, in)
 	}
 	_, ds = reopenSeeded(t, svc, dsn, root)
 	tab := unitsOf(t, ds)
@@ -220,11 +220,10 @@ func TestSeedSkipsAConflictingShippedEdge(t *testing.T) {
 func installPointers(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
 	const pkg = "units.test.dev/pointers"
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "pointers", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "pointer"}, map[string]any{
 				"properties": map[string]any{"to": map[string]any{"type": "reference", "kind": vocabulary.KindUnit}},
 			}),
@@ -246,13 +245,13 @@ func TestSeedSkipsARefreshThatSplitsUsedUnits(t *testing.T) {
 	pointer := installPointers(t, ds)
 	ctx := context.Background()
 	unit := func(id string) map[string]any { return map[string]any{"ref": vocabulary.KindUnit + "/" + id} }
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "widget", Properties: map[string]any{"name": "widget"}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "gadget", Properties: map[string]any{"name": "gadget"}})
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "widget", Properties: map[string]any{"name": "widget"}})
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "gadget", Properties: map[string]any{"name": "gadget"}})
 	mustPut(t, ds, substrate.ActorSystem, substrate.PutInput{Kind: vocabulary.KindConversion, ID: "oz-kg", Properties: map[string]any{
 		"from": unit("widget"), "to": unit("gadget"), "factor": "2",
 	}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: fid("w"), Properties: map[string]any{"to": unit("widget")}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: fid("g"), Properties: map[string]any{"to": unit("gadget")}})
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: pointer, ID: fid("w"), Properties: map[string]any{"to": unit("widget")}})
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: pointer, ID: fid("g"), Properties: map[string]any{"to": unit("gadget")}})
 	for _, ref := range []struct{ kind, id string }{{vocabulary.KindConversion, "st-kg"}, {vocabulary.KindUnit, "st"}} {
 		if _, err := ds.Delete(ctx, substrate.ActorSystem, ref.kind, ref.id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("another writer deletes %s: %v", ref.id, err)
@@ -286,11 +285,10 @@ func TestSeedSkipsARefreshThatSplitsUsedUnits(t *testing.T) {
 func installHolds(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
 	const pkg = "units.test.dev/holds"
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "holds", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "hold"}, map[string]any{
 				"properties": map[string]any{"weight": map[string]any{"type": "quantity"}},
 			}),
@@ -308,10 +306,10 @@ func TestUnitUsesSurviveARebuild(t *testing.T) {
 	svc, ds, _, _ := unitSeededRepository(t, true)
 	hold := installHolds(t, ds)
 	ctx := context.Background()
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: fid("h"), Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: hold, ID: fid("h"), Properties: map[string]any{
 		"weight": map[string]any{"value": "150", "unit": "[lb_av]"},
 	}})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "oz-kg", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "oz-kg", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete an unused conversion: %v", err)
 	}
 	before := foldOf(t, ds)
@@ -324,11 +322,11 @@ func TestUnitUsesSurviveARebuild(t *testing.T) {
 	if after := foldOf(t, ds); string(after) != string(before) {
 		t.Fatalf("the rebuilt fold differs\n%s", firstDifference(before, after))
 	}
-	_, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
+	_, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
 	if err != nil {
 		t.Fatalf("delete lb-kg, which no used unit needs: %v", err)
 	}
-	_, err = ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindUnit, "lb", substrate.DeleteInput{})
+	_, err = ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindUnit, "lb", substrate.DeleteInput{})
 	if !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("delete a used unit after the rebuild: err = %v, want a conflict", err)
 	}
@@ -339,7 +337,7 @@ func TestUnitUsesSurviveARebuild(t *testing.T) {
 func TestExportAndImportKeepTheSeededUnits(t *testing.T) {
 	t.Parallel()
 	svc, ds, _, root := unitSeededRepository(t, true)
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, vocabulary.KindUnit, "lb", substrate.PatchInput{Properties: map[string]any{"name": "Pfund"}}); err != nil {
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, vocabulary.KindUnit, "lb", substrate.PatchInput{Properties: map[string]any{"name": "Pfund"}}); err != nil {
 		t.Fatalf("the owner's edit: %v", err)
 	}
 	before := foldOf(t, ds)
@@ -486,7 +484,7 @@ func TestTheOpenSeedsInBulkBesideAnOwnersUnit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds, dsn, root := unitSeededRepository(t, false)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "furlong", Properties: map[string]any{"name": "furlong"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindUnit, ID: "furlong", Properties: map[string]any{"name": "furlong"}}); err != nil {
 		t.Fatalf("put a unit of the owner's: %v", err)
 	}
 	_ = svc.Close()

@@ -25,7 +25,7 @@ func TestAListByAScalarReferenceWalksTheRefsIndex(t *testing.T) {
 	ctx := context.Background()
 	ds, target, pointer := refIndexDataset(t)
 	for i := range 300 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: pointer, ID: fid("bulk" + strconv.Itoa(i)), Properties: map[string]any{"target": fid("a")},
 		}); err != nil {
 			t.Fatalf("put bulk pointer %d: %v", i, err)
@@ -95,7 +95,7 @@ func TestAListByAScalarReferenceWalksTheRefsIndex(t *testing.T) {
 		`INSERT INTO former_ids (record_kind, former_id, record_id) VALUES ($1, 'old-c', $2)`, target, fid("c")); err != nil {
 		t.Fatalf("plant a former id: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pointer, ID: fid("pold"), Properties: map[string]any{"target": "old-c"},
 	}); err != nil {
 		t.Fatalf("put the pointer at the former id: %v", err)

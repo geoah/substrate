@@ -95,7 +95,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 
 	// The owner revokes from every door: the generic DELETE (`api`), the
 	// console's sign-out and `substratectl logout`.
-	for _, door := range []substrate.Actor{substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI} {
+	for _, door := range []substrate.Actor{substrate.ActorPerson, substrate.ActorPerson, substrate.ActorPerson} {
 		tok, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "door " + string(door)})
 		if err != nil {
 			t.Fatalf("mint for %s: %v", door, err)
@@ -105,7 +105,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 		}
 		mustNotAuthenticate(t, ds, secret, string(door))
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("the owner's revoke of the token the hands could not reach: %v", err)
 	}
 	mustNotAuthenticate(t, ds, secret, "the first token")
@@ -156,7 +156,7 @@ func TestAJudgedProposalCannotRevokeAToken(t *testing.T) {
 	if err != nil || fresh.Properties["decision"] != "proposed" {
 		t.Fatalf("request after the escalation: %+v %v", fresh, err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &fresh.Version,
 	}); err != nil {
 		t.Fatalf("the owner's accept of the token delete: %v", err)

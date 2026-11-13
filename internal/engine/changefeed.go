@@ -59,18 +59,10 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		b.add(`op <> ALL(` + b.textArray(ops) + `)`)
 	}
 	if len(f.Actors) > 0 {
-		actors := make([]string, 0, len(f.Actors))
-		for _, a := range f.Actors {
-			actors = append(actors, string(a))
-		}
-		b.add(`actor = ANY(` + b.textArray(actors) + `)`)
+		b.add(`actor = ANY(` + b.textArray(f.Actors) + `)`)
 	}
 	if len(f.ExcludeActors) > 0 {
-		actors := make([]string, 0, len(f.ExcludeActors))
-		for _, a := range f.ExcludeActors {
-			actors = append(actors, string(a))
-		}
-		b.add(`actor <> ALL(` + b.textArray(actors) + `)`)
+		b.add(`actor <> ALL(` + b.textArray(f.ExcludeActors) + `)`)
 	}
 	if f.RecordID != "" {
 		// A merge and a split each write ONE entry that changes two records:
@@ -345,7 +337,7 @@ func (ds *dataset) ChangeTriggers(ctx context.Context, changes []substrate.Chang
 		return nil, err
 	}
 	reg := ds.registry()
-	self := make([]map[substrate.Actor]bool, len(live))
+	self := make([]map[string]bool, len(live))
 	for i, lt := range live {
 		self[i] = lt.selfActors(reg)
 	}

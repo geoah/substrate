@@ -131,7 +131,7 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 	restore := withMaxPages(3)
 	defer restore()
 
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "pagedsize.test.dev/pagedsize/widget", Properties: map[string]any{"name": "big"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "pagedsize.test.dev/pagedsize/widget", Properties: map[string]any{"name": "big"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 	if err != nil || len(failures) != 1 {
 		t.Fatalf("failures: %v (%d)", err, len(failures))
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err != nil {
@@ -262,7 +262,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	const task = "samples.substrate.reamde.dev/tasks/task"
 
 	// Chain A parks at the cap with cursor 2.
-	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("a"), Properties: map[string]any{"name": "a"}})
+	a, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, ID: fid("a"), Properties: map[string]any{"name": "a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	// followed. Its tasks are absent, so a resume from cursor 3 would leave
 	// b-p-0 missing. Its cursor holds numbers jsonb respells (a negative zero,
 	// a trailing zero), which the rebuild must still match to their digest.
-	b, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("b"), Properties: map[string]any{"name": "b"}})
+	b, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, ID: fid("b"), Properties: map[string]any{"name": "b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 
 	// A's retry resumes from page 2: pages 0 and 1 are erased first.
 	for _, id := range []string{fid("a") + "-p-0", fid("a") + "-p-1"} {
-		if _, err := d2.Delete(ctx, substrate.ActorAPI, task, id, substrate.DeleteInput{}); err != nil {
+		if _, err := d2.Delete(ctx, substrate.ActorPerson, task, id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}

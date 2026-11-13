@@ -46,7 +46,7 @@ func TestAnAppletIsCheckedAgainstTheCatalogAndTheKindsAtItsWrite(t *testing.T) {
 	bad["sources"].(map[string]any)["pads"].(map[string]any)["orderBy"] = "shade"
 	screen := bad["screens"].(map[string]any)["home"].(map[string]any)
 	screen["components"].([]any)[1].(map[string]any)["id"] = "pad-row"
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: applet.Kind, ID: "pads", Properties: bad})
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: applet.Kind, ID: "pads", Properties: bad})
 	var ve *substrate.ValidationError
 	if !errors.As(err, &ve) {
 		t.Fatalf("a broken applet was admitted: %v", err)
@@ -61,7 +61,7 @@ func TestAnAppletIsCheckedAgainstTheCatalogAndTheKindsAtItsWrite(t *testing.T) {
 		}
 	}
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: applet.Kind, ID: "pads", Properties: padsApplet(pad)}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: applet.Kind, ID: "pads", Properties: padsApplet(pad)}); err != nil {
 		t.Fatalf("a sound applet was refused: %v", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestTheDesignerWritesAnAppletAndPreviewsIt(t *testing.T) {
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
 	pad := repo + "/scratch/pad"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pad, Properties: map[string]any{"name": "groceries"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pad, Properties: map[string]any{"name": "groceries"}}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script(mossModel,
@@ -110,7 +110,7 @@ func TestAPreviewHoldsExpandedRecordsToTheAgentsReads(t *testing.T) {
 	ctx := context.Background()
 	ds, _, repo := openMossDataset(t)
 	pad, link := repo+"/scratch/pad", repo+"/scratch/link"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.KindManifest(repo+"/scratch", map[string]any{"singular": "link"}, map[string]any{
 			"description":     "A link to a pad.",
 			"displayTemplate": "{name}",
@@ -122,11 +122,11 @@ func TestAPreviewHoldsExpandedRecordsToTheAgentsReads(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare the link: %v", err)
 	}
-	p, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pad, Properties: map[string]any{"name": "secret", "note": "not yours"}})
+	p, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pad, Properties: map[string]any{"name": "secret", "note": "not yours"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: link, Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: link, Properties: map[string]any{
 		"name": "to the pad", "pad": pad + "/" + p.ID,
 	}}); err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestAPreviewHoldsExpandedRecordsToTheAgentsReads(t *testing.T) {
 	if len(page.Records) != 1 || len(page.Included) != 0 {
 		t.Fatalf("records %d, included %v: the pad reached a preview whose agent reads links alone", len(page.Records), page.Included)
 	}
-	if _, err := reads.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: link}); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := reads.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: link}); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("a preview wrote: %v", err)
 	}
 }

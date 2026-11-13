@@ -244,7 +244,7 @@ func TestAppleHealthAdapterDeletedBatchDeletesItsOutputs(t *testing.T) {
 	if len(outputsOf(t, ds, gone)) == 0 || len(outputsOf(t, ds, kept)) == 0 {
 		t.Fatal("the batches wrote nothing to delete")
 	}
-	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, ahBatch, "applehealth/iphone/step_count/minutes/2026-10-07T04", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(context.Background(), substrate.ActorPerson, ahBatch, "applehealth/iphone/step_count/minutes/2026-10-07T04", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the batch: %v", err)
 	}
 	drainTriggers(t, ds)
@@ -477,7 +477,7 @@ func TestAppleHealthAdapterOwnerCorrectionOutranksTheAdapter(t *testing.T) {
 	// An edit to the adapter's output lasts until the row is delivered again.
 	mustPatch := func(id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, obsObservation, id, substrate.PatchInput{Properties: props}); err != nil {
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, obsObservation, id, substrate.PatchInput{Properties: props}); err != nil {
 			t.Fatalf("patch %s: %v", id, err)
 		}
 	}
@@ -834,7 +834,7 @@ func TestAppleHealthAdapterAccountIDsStayApart(t *testing.T) {
 	for _, src := range []string{"applehealth/phone~2Fa/apple-watch", "applehealth/phone-a/apple-watch"} {
 		mustGet(t, ds, obsSource, src)
 	}
-	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, ahBatch, "applehealth/phone-a/heart_rate/minutes/2026-10-01T10", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(context.Background(), substrate.ActorPerson, ahBatch, "applehealth/phone-a/heart_rate/minutes/2026-10-01T10", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete phone-a's batch: %v", err)
 	}
 	drainTriggers(t, ds)
@@ -959,7 +959,7 @@ func TestAppleHealthAdapterSleepTotalsYieldToSegments(t *testing.T) {
 // no offset on an Europe/Athens account is 05:00 UTC, written at +03:00.
 func TestAppleHealthAdapterReadsEpochAndZonelessDates(t *testing.T) {
 	ds := newAppleHealthAdapter(t)
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, ahAccount, "iphone", substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, ahAccount, "iphone", substrate.PatchInput{
 		Properties: map[string]any{"timezone": "Europe/Athens"},
 	}); err != nil {
 		t.Fatalf("set the account's zone: %v", err)
@@ -1117,7 +1117,7 @@ func TestAppleHealthAdapterRemovedSegmentsRestoreTotals(t *testing.T) {
 		if row.Properties["grouping"] != "seconds" {
 			continue
 		}
-		if _, err := ds.Delete(context.Background(), substrate.ActorAPI, ahBatch, row.ID, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(context.Background(), substrate.ActorPerson, ahBatch, row.ID, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", row.ID, err)
 		}
 		n++
@@ -1176,7 +1176,7 @@ func TestAppleHealthAdapterSleepKeepsItsDurationsInEitherOrder(t *testing.T) {
 // the two instants, never the difference of the wall clocks.
 func TestAppleHealthAdapterMeasuresSleepAcrossOffsetChanges(t *testing.T) {
 	ds := newAppleHealthAdapter(t)
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, ahAccount, "iphone", substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, ahAccount, "iphone", substrate.PatchInput{
 		Properties: map[string]any{"timezone": "Europe/Athens"},
 	}); err != nil {
 		t.Fatalf("set the account's zone: %v", err)

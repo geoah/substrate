@@ -46,11 +46,10 @@ func installLedgerConnector(t *testing.T, ds *dataset, startsAt time.Time) {
 	callable := func(name string) string {
 		return vocabulary.RecordPath("substrate.reamde.dev/core/function", ledgerPkg+"/"+name)
 	}
-	err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "ledger", Authority: ledgerPkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(ledgerPkg, 0),
-			vocabulary.ActorManifest(ledgerPkg, vocabulary.PackageActor(ledgerPkg)),
 			vocabulary.KindManifest(ledgerPkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{
 					"name":   map[string]any{"type": "string"},
@@ -240,7 +239,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	startsAt := nowUTC().Add(-3*time.Hour - 30*time.Minute).Truncate(time.Minute)
 	installLedgerConnector(t, d, startsAt)
 
-	w, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, Properties: map[string]any{"name": "one"}})
+	w, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerWidget, Properties: map[string]any{"name": "one"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -248,7 +247,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerGadget, Properties: map[string]any{"name": "big"}})
+	g, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerGadget, Properties: map[string]any{"name": "big"}})
 	if err != nil {
 		t.Fatalf("put gadget: %v", err)
 	}
@@ -407,7 +406,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	// The parked drain resumes from page 2: pages 0 and 1 are erased first,
 	// and a restart from zero would recreate them.
 	for _, pid := range []string{"p-0", "p-1"} {
-		if _, err := d2.Delete(ctx, substrate.ActorAPI, ledgerTask, pid, substrate.DeleteInput{}); err != nil {
+		if _, err := d2.Delete(ctx, substrate.ActorPerson, ledgerTask, pid, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", pid, err)
 		}
 	}
@@ -434,7 +433,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 
 	// The parked webhook replays the request it arrived with, body read back
 	// from the blob store, without the header the ledger dropped.
-	if _, err := d2.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
+	if _, err := d2.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d2.RetryTriggerFailure(ctx, ledgerHook, hookIDs[0]); err != nil {
@@ -658,7 +657,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -678,7 +677,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 	ds.mu.Lock()
 	ds.deliveryFault = func(*txn) error { return errors.New("the completion failed") }
 	ds.mu.Unlock()
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-claim"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
@@ -863,7 +862,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	installLedgerConnector(t, d, nowUTC().Add(-time.Hour))
 	put := func(ds *dataset, kind, id string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: fid(id), Properties: map[string]any{"name": id}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: fid(id), Properties: map[string]any{"name": id}}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -875,7 +874,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 	}
 	// The pager trigger watches gadgets: it is disabled here so the gadgets
 	// below reach only the mirror.
-	if _, err := d.Patch(ctx, substrate.ActorAPI, typeTrigger, ledgerPager, substrate.PatchInput{Properties: map[string]any{"enabled": false}}); err != nil {
+	if _, err := d.Patch(ctx, substrate.ActorPerson, typeTrigger, ledgerPager, substrate.PatchInput{Properties: map[string]any{"enabled": false}}); err != nil {
 		t.Fatal(err)
 	}
 	put(d, ledgerWidget, "w1")
@@ -891,7 +890,7 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 		t.Fatal("the mirror delivered a kind outside its source")
 	}
 	// Widen the mirror to gadgets: the edit pins the scan position.
-	if _, err := d.Patch(ctx, substrate.ActorAPI, typeTrigger, ledgerMirror, substrate.PatchInput{
+	if _, err := d.Patch(ctx, substrate.ActorPerson, typeTrigger, ledgerMirror, substrate.PatchInput{
 		Properties: map[string]any{"source": map[string]any{"record": map[string]any{"kinds": []any{ledgerWidget, ledgerGadget}}}},
 	}); err != nil {
 		t.Fatalf("widen the trigger: %v", err)
@@ -988,7 +987,7 @@ func TestAClaimAnotherDispatchHoldsIsSkipped(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -998,7 +997,7 @@ func TestAClaimAnotherDispatchHoldsIsSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put trigger: %v", err)
 	}
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-held"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
@@ -1048,7 +1047,7 @@ func TestConcurrentRetriesOfOneAgentFailureRunOneLoop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -1064,7 +1063,7 @@ func TestConcurrentRetriesOfOneAgentFailureRunOneLoop(t *testing.T) {
 		fakeTurn{status: 500}, fakeTurn{status: 500}, fakeTurn{status: 500},
 		fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}}, fakeTurn{content: "kept"},
 	)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-race"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -1144,7 +1143,7 @@ func TestAScanAdvanceLosesToATriggerEdit(t *testing.T) {
 	}
 	// Rows the mirror's source does not match: a pass scans past them.
 	for _, id := range []string{"a", "b", "c"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("unmatched-" + id), Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatal(err)
@@ -1153,7 +1152,7 @@ func TestAScanAdvanceLosesToATriggerEdit(t *testing.T) {
 	scanned := headSeq(t, ds)
 	// The edit lands inside the window: it pins the cursor and bumps the
 	// record.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.PatchInput{
 		Properties: map[string]any{"source": map[string]any{"record": map[string]any{
 			"kinds": []any{"widgets.test.dev/widgets/widget"}, "coalesce": true,
 		}}},
@@ -1183,7 +1182,7 @@ func TestARetryOfARunningClaimAnswersConflict(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -1194,7 +1193,7 @@ func TestARetryOfARunningClaimAnswersConflict(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("keep", fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}}, fakeTurn{content: "kept"})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-running"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -1277,7 +1276,7 @@ func TestAParkedMultipartWebhookKeepsItsPartValuesOutOfTheLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The retry delivers the request as it arrived, values read back.
-	if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
+	if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerWidget, ID: fid("gate"), Properties: map[string]any{"name": "open"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.RetryTriggerFailure(ctx, ledgerHook, ids[0]); err != nil {

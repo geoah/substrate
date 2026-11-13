@@ -796,8 +796,14 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 		if _, live := ds.runningThreads.Load(id); live {
 			continue
 		}
+		// The settlement is the lost run's: it acts for whom that run's lease
+		// line names.
+		rctx, err := ds.actingForRun(ctx, id)
+		if err != nil {
+			return fmt.Errorf("settle lost thread %s: %w", id, err)
+		}
 		var settled bool
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		err = ds.inTx(rctx, substrate.ActorSystem, true, func(t *txn) error {
 			settled = false
 			if err := t.lockRegistryDepShared(); err != nil {
 				return err
@@ -923,7 +929,13 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// The settlement is the interrupted run's: it acts for whom that
+		// run's lease line names.
+		rctx, err := ds.actingForRun(ctx, id)
+		if err != nil {
+			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
+		}
+		err = ds.inTx(rctx, substrate.ActorSystem, true, func(t *txn) error {
 			_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: map[string]any{
 				"status":     threadError,
 				"reason":     interruptedThreadReason,

@@ -460,7 +460,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	const pkg = "titlecrew.example.substrate.reamde.dev/titlecrew"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "substrate.reamde.dev/llm/provider", ID: "default",
 		Properties: map[string]any{"wire": "openai", "baseURL": "https://llm.example.com/v1"},
 	}); err != nil {

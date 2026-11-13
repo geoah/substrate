@@ -8,7 +8,7 @@ not a file read.
 
 ## The declarable kinds
 
-Ten kinds declare everything:
+Nine kinds declare everything:
 
 | Kind                           | Declares                                              | Taught on                                         |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------- |
@@ -21,12 +21,14 @@ Ten kinds declare everything:
 | `substrate.reamde.dev/core/function`      | one pure callable in Python                           | [Functions](functions.md)                        |
 | `substrate.reamde.dev/core/agent`         | one callable whose body is an LLM loop                | [Agents](agents.md)                              |
 | `substrate.reamde.dev/core/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
-| `substrate.reamde.dev/core/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |
 
 A manifest wears the same four-key [envelope](data-model.md#the-envelope) as
-any record. Its `kind:` is one of the ten above, always a core kind whatever
+any record. Its `kind:` is one of the nine above, always a core kind whatever
 package the document declares into, and any other envelope key is a load
-error.
+error. `substrate.reamde.dev/core/actor` was a tenth until vocabulary
+dialect 4: an actor is now a record the substrate writes for everything that
+acts ([actors](api.md#actors)), and a package that ships an actor document is
+refused at load.
 
 A declaration's id is its declared name. For a `kind` that name is the
 kind reference, and it must equal
@@ -36,9 +38,7 @@ them differently is a load error, never a silent rename. A `propertytype`,
 `<authority>/<package>/<name>` form. A `package`'s id is
 `<authority>/<package>`, and a `bundle`'s id is the package it owns
 (`providers.substrate.reamde.dev/google`). An `authority` document's id is the
-DNS name itself, and an `actor`'s id is a bare word, or the
-`bundle:<authority>:<package>` actor of the package that declares it. So the
-closure header, a package, is seven lines:
+DNS name itself. So the closure header, a package, is seven lines:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
@@ -82,8 +82,9 @@ auditable in the [changelog](changelog.md):
 - **The seed, once, at creation.** Creating a repository writes the binary's
   shipped vocabulary, the `substrate.reamde.dev` authority (`core`, `llm` and
   `console`),
-  into the new repository's changelog as ordinary record entries, under the
-  actor `bundle:core`, in the same transaction as the repository itself. The
+  into the new repository's changelog as ordinary record entries, by the
+  core package's [actor](api.md#actors), in the same transaction as the
+  repository itself. The
   provider closures embedded beside it are the catalog, not the seed, and the
   LLM sample is copied in the same creation
   ([getting started](getting-started.md#registration)). After that the tree
@@ -94,7 +95,7 @@ auditable in the [changelog](changelog.md):
   declaration carries a `version`, its package's unless the declaration
   overrides it. The first open of a repository in a process diffs
   the binary's shipped declarations against the stored ones and appends the
-  difference as explicit entries under the actor `substrate`: one transaction
+  difference as explicit entries by the `system` actor: one transaction
   per repository, convergent and idempotent, so an unchanged tree writes
   nothing at all. Only same-or-newer wins, never a downgrade and never a
   prune, and a repository nobody opens is never touched. A version is an
@@ -110,18 +111,18 @@ auditable in the [changelog](changelog.md):
   ([admission](#admission)). The conversions a shipped declaration declares
   (below) still rewrite the records they name inside it.
 - **An install, which is a copy.** Installing a bundle writes that
-  bundle's manifests into the repository's changelog under
-  `bundle:<authority>:<package>`
-  ([Bundles](bundles.md)). The shipped catalog is a source, never a
+  bundle's manifests into the repository's changelog by the package's own
+  actor ([Bundles](bundles.md)). The shipped catalog is a source, never a
   package, and nothing on the serving path reads it.
 
 **A package row names who declared it.** The write that creates a
-`package` row stamps the managed `declaredBy` property with that write's
-actor: `bundle:core` for a seeded package, `bundle:<authority>:<package>` for
-a catalog add, `substrate` for a shipped package a boot upgrade
-adds to an existing repository, the door (`console`, `substratectl`, `api`)
-for a hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
-upgrade or add leaves it alone, so it names the first declarer, and no
+`package` row stamps the managed `declaredBy` property with a reference to
+that write's [actor record](api.md#actors): the core package's for a seeded
+package, the package's own for a catalog add, the system's for a shipped
+package a boot upgrade adds to an existing repository, the person's for a
+hand apply through any client, and a function's or an agent's for a
+callable. Every later apply, upgrade or add leaves it alone, so it names the
+first declarer, and no
 document may write it. A package created before the stamp existed carries none
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md)).
 The package's record read (`GET
@@ -171,9 +172,9 @@ commits; the plan response does not list the held mappings.
 **The package chokepoint** decides who may write a declaration, which is what
 a package is for. Shipped vocabulary, a package whose stored rows say
 `source: builtin`, is writable only through a substrate path: the seed, an
-upgrade, an install, which is what the actors `substrate` and
-`bundle:<authority>:<package>` name. A generic API write into one is
-`forbidden`, and neither actor form can be claimed by a request.
+upgrade, an install, which is what the `system` actor and a package's own
+actor write. A generic API write into one is `forbidden`, and no request
+writes as either: a request's actor is the person or an app.
 
 A **published** package is refused on the same terms. Adding one from the
 catalog (a provider such as
@@ -254,8 +255,7 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   with initialisms uppercase (`displayTemplate`, `oneOf`, `ifVersion`,
   `onEnter`, `endsAt`). Snake spellings are errors, not aliases. A kind name
   and a package name stay `[a-z][a-z0-9]*`; an authority stays a dotted
-  lowercase DNS name; an actor is a bare word or a prefixed machine hand,
-  never a DNS name; enum and state values stay lowercase words.
+  lowercase DNS name; enum and state values stay lowercase words.
 - **Reserved property names.** `title`, `at`, `endsAt` and `dueAt` are the
   four properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
@@ -377,9 +377,12 @@ against the old shape. The contract has three parts.
 format a server reads: the closed key sets of every declaration document
 ([decision 0268](decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md),
 which amends [0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
-It is 3 today. A server refuses a document carrying a key it does not know,
+It is 4 today. A server refuses a document carrying a key it does not know,
 so every key added to a declaration, removed from one or moved between two
-raises the number, in the release that admits it. Dialect 3 added the package
+raises the number, in the release that admits it. Dialect 4 took the actor
+document out, so a package declares no actor
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md));
+dialect 3 added the package
 header's `stability`, `interface` and `dialect`; dialect 2 marked the seeded
 closure that brought `oneOf` reference properties and the `quantity` type.
 `internal/vocabulary/testdata/dialect.golden.json` records every key set

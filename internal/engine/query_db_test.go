@@ -30,7 +30,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
@@ -1667,20 +1667,20 @@ func TestListIntersectsKindsAndImplements(t *testing.T) {
 
 	const taskKind = "samples.substrate.reamde.dev/tasks/task"
 	const personKind = "samples.substrate.reamde.dev/people/person"
-	task := mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	task := mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: taskKind,
 		Properties: map[string]any{
 			"title": "send the rack layout", "dueAt": "2026-08-04T09:00:00Z",
 		},
 	})
-	transcript := mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	transcript := mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/calendar/transcript",
 		Properties: map[string]any{
 			"title": "the standup", "text": "…",
 			"at": "2026-08-03T09:00:00Z", "endsAt": "2026-08-03T09:30:00Z",
 		},
 	})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: personKind, Properties: map[string]any{"name": "Ada"},
 	})
 

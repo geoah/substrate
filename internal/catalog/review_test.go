@@ -42,7 +42,7 @@ func TestPublishedInstallIsBoundToReviewedCandidate(t *testing.T) {
 	next, _ := publishedFixture(t, 1, 2)
 	expect := &PublishedCandidate{Version: preview.CandidateVersion, Digest: preview.CandidateDigest}
 	for _, candidate := range []*PublishedCandidate{expect, {Version: 2, Digest: preview.CandidateDigest}} {
-		if _, _, err := next.InstallReviewed(ctx, substrate.ActorConsole, "example.com/notes", ds, nil, candidate); !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "the publisher listed another version since you reviewed this one; review it again") {
+		if _, _, err := next.InstallReviewed(ctx, substrate.ActorPerson, "example.com/notes", ds, nil, candidate); !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "the publisher listed another version since you reviewed this one; review it again") {
 			t.Fatalf("changed candidate accepted: %v", err)
 		}
 	}
@@ -53,13 +53,13 @@ func TestPublishedInstallIsBoundToReviewedCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := next.InstallReviewed(ctx, substrate.ActorConsole, "example.com/notes", ds, nil, &PublishedCandidate{Version: preview.CandidateVersion, Digest: preview.CandidateDigest}); err != nil {
+	if _, _, err := next.InstallReviewed(ctx, substrate.ActorPerson, "example.com/notes", ds, nil, &PublishedCandidate{Version: preview.CandidateVersion, Digest: preview.CandidateDigest}); err != nil {
 		t.Fatal(err)
 	}
 	if len(ds.installed) != 1 || ds.installed[0].PublishedDigest != preview.CandidateDigest {
 		t.Fatalf("installed %+v", ds.installed)
 	}
-	if _, _, err := next.InstallConfirmed(ctx, substrate.ActorConsole, "example.com/notes", ds, nil); err != nil {
+	if _, _, err := next.InstallConfirmed(ctx, substrate.ActorPerson, "example.com/notes", ds, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(ds.installed) != 2 {
@@ -100,7 +100,7 @@ func TestApprovedInstallBindsEveryDependencyBeforeWriting(t *testing.T) {
 	} {
 		ds := &reviewDataset{}
 		expect := InstallExpectations{root.ID: nil, safe.ID: nil, reviewed.ID: want}
-		if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) {
+		if _, _, err := next.InstallApproved(ctx, substrate.ActorPerson, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) {
 			t.Fatalf("changed dependency accepted: %v", err)
 		}
 		if len(ds.installed) != 0 {
@@ -109,7 +109,7 @@ func TestApprovedInstallBindsEveryDependencyBeforeWriting(t *testing.T) {
 	}
 	ds := &reviewDataset{}
 	expect := InstallExpectations{root.ID: nil, safe.ID: nil, current.ID: {Version: current.Version, Digest: current.origin.SHA256}}
-	if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); err != nil {
+	if _, _, err := next.InstallApproved(ctx, substrate.ActorPerson, root.ID, ds, expect); err != nil {
 		t.Fatal(err)
 	}
 	if len(ds.installed) != 3 || ds.installed[1].PublishedDigest != current.origin.SHA256 {
@@ -117,7 +117,7 @@ func TestApprovedInstallBindsEveryDependencyBeforeWriting(t *testing.T) {
 	}
 	delete(expect, safe.ID)
 	ds.installed = nil
-	if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) || len(ds.installed) != 0 {
+	if _, _, err := next.InstallApproved(ctx, substrate.ActorPerson, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) || len(ds.installed) != 0 {
 		t.Fatalf("unapproved dependency installed: %v", err)
 	}
 }

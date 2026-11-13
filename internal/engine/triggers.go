@@ -135,21 +135,21 @@ func (t *trigger) callableActor() string {
 	}
 }
 
-// selfActors is every actor whose writes this trigger never delivers: the
+// selfActors is the id of every actor whose writes this trigger never delivers: the
 // callable's own, and for a function the actors of the agents it may run
 // under `permissions.agents` (record 0121). A callee function's effects
 // commit under the caller's actor, but an agent's thread, messages and tool
 // effects commit under the agent's, so without this a function watching a
 // kind its agent writes would wake again on every row the agent wrote. The
 // cost: the function also misses those agents' writes from their other runs.
-func (t *trigger) selfActors(reg *vocabulary.Registry) map[substrate.Actor]bool {
-	self := map[substrate.Actor]bool{substrate.Actor(t.callableActor()): true}
+func (t *trigger) selfActors(reg *vocabulary.Registry) map[string]bool {
+	self := map[string]bool{actorID(substrate.Actor(t.callableActor())): true}
 	if t.Callable == nil {
 		return self
 	}
 	for _, id := range t.Callable.Caps.Agents {
 		if ag, err := reg.ResolveAgent(id); err == nil {
-			self[substrate.Actor(ag.Actor())] = true
+			self[actorID(substrate.Actor(ag.Actor()))] = true
 		}
 	}
 	return self
@@ -741,22 +741,29 @@ func (t *txn) refuseOpenShippedWebhook(tr *trigger) error {
 // it anyway.
 func shippedBy(ctx context.Context, q dbx, reg *vocabulary.Registry, id string) (string, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT DISTINCT actor FROM changelog WHERE record_id = $1 AND kind = $2 AND actor LIKE $3 ORDER BY actor`,
-		id, typeTrigger, substrate.BundleActorPrefix+"%")
+		`SELECT DISTINCT actor FROM changelog WHERE record_id = $1 AND kind = $2 ORDER BY actor`, id, typeTrigger)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = rows.Close() }()
+	var hands []string
 	for rows.Next() {
 		var hand string
 		if err := rows.Scan(&hand); err != nil {
+			_ = rows.Close()
 			return "", err
 		}
-		if pkg := publisherOf(reg, substrate.Actor(hand)); pkg != "" {
+		hands = append(hands, hand)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	for _, hand := range hands {
+		if pkg := publisherOf(reg, actorKeyIn(ctx, q, hand)); pkg != "" {
 			return pkg, nil
 		}
 	}
-	return "", rows.Err()
+	return "", nil
 }
 
 // publisherOf is the package a bundle hand writes for when the repository
@@ -764,10 +771,7 @@ func shippedBy(ctx context.Context, q dbx, reg *vocabulary.Registry, id string) 
 // any other hand. The seed's hand is the builtin core's. A package reg does
 // not hold is not consulted.
 func publisherOf(reg *vocabulary.Registry, hand substrate.Actor) string {
-	if hand == substrate.ActorSeed {
-		return vocabulary.PackageCore
-	}
-	rest, ok := strings.CutPrefix(string(hand), substrate.BundleActorPrefix)
+	rest, ok := strings.CutPrefix(string(substrate.CanonicalActor(hand)), substrate.BundleActorPrefix)
 	authority, name, split := strings.Cut(rest, ":")
 	if !ok || !split {
 		return ""

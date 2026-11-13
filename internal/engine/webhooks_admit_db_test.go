@@ -110,8 +110,9 @@ func TestAWebhookDeliveryCommitsInOneTransaction(t *testing.T) {
 			if err := ds.db.QueryRowContext(ctx, `SELECT actor FROM changelog WHERE seq = $1`, e.seq).Scan(&actor); err != nil {
 				t.Fatal(err)
 			}
-			if actor != string(actorWebhook) {
-				t.Fatalf("%s: manifest entry %d names actor %q, want %q", c.name, e.seq, actor, actorWebhook)
+			// The webhook door is the system's hand (decision 0270).
+			if actor != actorID(actorWebhook) {
+				t.Fatalf("%s: manifest entry %d names actor %q, want %q", c.name, e.seq, actor, actorID(actorWebhook))
 			}
 			manifests = append(manifests, e.id)
 		}

@@ -113,7 +113,7 @@ The answer is `{metric?, property?, unit?, bucket?, exact, rows: [{start, end, g
 
 - `kind` + `id`: one record's changes. `kinds`, `actors` narrow. `values: true` adds the values before and after.
 - Next page: pass `cursor` as `before` and the page's `generation` beside it.
-- `op` is `put`, `patch`, `delete`, `merge` or `split`; `actor` says who (`console`, `api`, `app:…`, `agent:…`, `function:…`).
+- `op` is `put`, `patch`, `delete`, `merge` or `split`; `actor` is a `core/actor` record's id.
 
 ## Recipes
 

@@ -38,7 +38,7 @@ func TestAnIdlePassSendsNoStatementPerTrigger(t *testing.T) {
 				if src["schedule"] != nil {
 					arm = "schedule"
 				}
-				if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+				if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 					Kind: typeTrigger, ID: fmt.Sprintf("idle-%s-%d", arm, added),
 					Properties: map[string]any{"source": src, "callable": mirror},
 				}); err != nil {
@@ -91,7 +91,7 @@ func TestADeliveryReachesTheTriggersAfterItInTheSamePass(t *testing.T) {
 	ctx := context.Background()
 	ds := openCursorDataset(t)
 	const pkg = "widgets.test.dev/widgets"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "tally", map[string]any{
 			"description": "tallies every task the mirror writes",
 			"runtime":     vocabulary.RuntimePython,
@@ -107,7 +107,7 @@ def main(input, host):
 		t.Fatalf("install the tally: %v", err)
 	}
 	// After the mirror's trigger (on-mirror.…) in id order.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "on-tally",
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{taskKind}}},
@@ -119,7 +119,7 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("pass: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pkg + "/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -154,7 +154,7 @@ func hourlyFunction(t *testing.T, ds *dataset, owed int) loadedTrigger {
 	t.Helper()
 	ctx := context.Background()
 	const pkg = "widgets.test.dev/widgets"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "hourly", map[string]any{
 			"description": "mints one task per fire",
 			"runtime":     vocabulary.RuntimePython,
@@ -170,7 +170,7 @@ def main(input, host):
 		t.Fatalf("install the hourly function: %v", err)
 	}
 	startsAt := nowUTC().Add(-time.Duration(owed)*time.Hour + 30*time.Minute).Truncate(time.Minute)
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -213,7 +213,7 @@ func TestAPassDoesNotRedeliverWhatAWakeDeliveredSinceItBegan(t *testing.T) {
 	}))
 	const mirrorID = "on-mirror.widgets.test.dev/widgets"
 	hourly := hourlyFunction(t, ds, 2)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "widgets.test.dev/widgets/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -290,7 +290,7 @@ func TestATurnWithWorkReadsTheHeadItsTurnBeganWith(t *testing.T) {
 			mirrored.Add(1)
 		}
 	}))
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "on-coalesce",
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{"widgets.test.dev/widgets/widget"}, "coalesce": true}},
@@ -302,7 +302,7 @@ func TestATurnWithWorkReadsTheHeadItsTurnBeganWith(t *testing.T) {
 	}
 	put := func(name string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: "widgets.test.dev/widgets/widget", ID: fid("w1"), Properties: map[string]any{"name": name},
 		}); err != nil {
 			t.Fatalf("put widget: %v", err)

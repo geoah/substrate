@@ -220,7 +220,7 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 	// Deleted and written again before the triggers run, the input starts
 	// over at revision 1 while its derivation still holds 2: the derivation
 	// keeps 2 and takes the new value.
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the LDL: %v", err)
 	}
 	if _, err := r.put(t, r.labresult, fid("quest/2026-09-14/ldl"), result("labs/ldl_cholesterol_mass", "150", "mg/dL", 1, nil)); err != nil {
@@ -232,7 +232,7 @@ func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
 		t.Errorf("after the input was written again: value %v at revision %v; want 3.879 at 2", v, ldl["revision"])
 	}
 
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.labresult, fid("quest/2026-09-14/ldl"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the LDL: %v", err)
 	}
 	drain()
@@ -370,7 +370,7 @@ func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testin
 		t.Fatalf("load the catalog: %v", err)
 	}
 	reinstall := func() error {
-		_, _, err := c.Install(ctx, substrate.ActorAPI, vocabulary.AuthorityPublisher+"/health", r.ds)
+		_, _, err := c.Install(ctx, substrate.ActorPerson, vocabulary.AuthorityPublisher+"/health", r.ds)
 		return err
 	}
 	// The older metric, as the closure's own hand wrote it.
@@ -394,11 +394,11 @@ func TestHealthReinstallRefusesWhileBloodGlucoseHoldsPlainMmolPerLiter(t *testin
 		}
 	}
 	stranded("the re-install over a plain mmol/L reading", reinstall())
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("meter/1"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.observation, fid("meter/1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the reading: %v", err)
 	}
 	stranded("the re-install over a deleted plain mmol/L reading", reinstall())
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("meter/1"), substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.observation, fid("meter/1"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge the reading: %v", err)
 	}
 	if err := reinstall(); err != nil {

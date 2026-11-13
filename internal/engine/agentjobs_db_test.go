@@ -33,7 +33,7 @@ func provisionJobAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "jobsllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-jobsllm",
@@ -90,7 +90,7 @@ def main(input, host):
 		}),
 		agent("digger", map[string]any{"provider": "jobsllm", "model": "jdig"}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install jobs package: %v", err)
 	}
 	return ds, fake
@@ -378,7 +378,7 @@ func TestStopCancelsBackgroundJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stopped, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, res.Thread)
+	stopped, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, res.Thread)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestStopCancelsBackgroundJobs(t *testing.T) {
 	if n := len(fake.requestsOf("jlead")); n != 2 {
 		t.Fatalf("%d model calls, want 2", n)
 	}
-	if _, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, res.Thread); err == nil {
+	if _, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, res.Thread); err == nil {
 		t.Fatal("a second stop found something to stop")
 	}
 }
@@ -428,7 +428,7 @@ func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
 			return err
 		}
 		go func() {
-			res, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, thread)
+			res, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)
 			if err != nil {
 				t.Errorf("stop: %v", err)
 			}
@@ -443,7 +443,7 @@ func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, jobsPackage+"/lead", substrate.ChatInput{Message: "find the deed"}, log.emit); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, jobsPackage+"/lead", substrate.ChatInput{Message: "find the deed"}, log.emit); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	thread := log.snapshot()[0].Thread
@@ -544,5 +544,68 @@ func TestInterruptedJobSettlesFailed(t *testing.T) {
 	done := toolCompletedRows(t, ds, res.Thread)
 	if len(done) != 1 || !strings.Contains(done[0]["output"].(string), "interrupted") {
 		t.Fatalf("toolCompleted %v", done)
+	}
+}
+
+// actingForSince is each history line after seq that an agent's hand or the
+// engine wrote, with the id of the actor record it acts for: what the
+// later-work tests hold to the thread's person.
+func actingForSince(t *testing.T, ds *dataset, after int64) map[int64][2]string {
+	t.Helper()
+	rows, err := ds.db.QueryContext(context.Background(), `
+		SELECT seq, kind, on_behalf_of FROM changelog WHERE seq > $1 AND kind <> $2 AND op <> 'delivery' ORDER BY seq`,
+		after, kindActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int64][2]string{}
+	for rows.Next() {
+		var seq int64
+		var kind, behalf string
+		if err := rows.Scan(&seq, &kind, &behalf); err != nil {
+			t.Fatal(err)
+		}
+		out[seq] = [2]string{kind, behalf}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// Work an agent's thread does after the request that started it has returned
+// acts for whom the thread acts for: the person who started it. A background
+// job and the turn its end resumes run on the background context, and read
+// the person back from the line that opened the thread (decision 0270).
+func TestABackgroundJobAndItsResumeActForThePersonWhoStartedTheThread(t *testing.T) {
+	ds, fake := provisionJobAgents(t)
+	ctx := substrate.WithOnBehalfOf(context.Background(), substrate.ActorPerson)
+	held, release := heldTurn(t)
+	fake.script("jlead",
+		fakeTurn{calls: []fakeCall{{name: "digger", args: `{"input":"dig the archive"}`}}},
+		fakeTurn{content: "started the dig"},
+		fakeTurn{content: "the dig is done"},
+	)
+	fake.script("jdig", fakeTurn{content: "found the deed", release: held})
+	res, err := ds.CallAgent(ctx, jobsPackage+"/lead", "find the deed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreground := maxSeqOf(t, ds)
+	release()
+	waitFor(t, "the resume's reply", func() bool {
+		_, props := threadStatusOf(t, ds, res.Thread)
+		return props[propThreadLastReply] == "the dig is done"
+	})
+	person := actorID(substrate.ActorPerson)
+	later := actingForSince(t, ds, foreground)
+	if len(later) == 0 {
+		t.Fatal("the job and the resume wrote nothing after the request returned: the test proves nothing")
+	}
+	for seq, line := range later {
+		if line[1] != person {
+			t.Errorf("seq %d (%s), written after the request returned, acts for %q, want the person", seq, line[0], line[1])
+		}
 	}
 }

@@ -160,7 +160,6 @@ func verbsHub(t *testing.T, env *dbEnv, triggers map[string]string) (account, re
 		Name: "hub", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "account"}, map[string]any{
 				"traits":          []any{vocabulary.TraitSyncCore},
 				"displayTemplate": "{name}",

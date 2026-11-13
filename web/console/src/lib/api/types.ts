@@ -366,7 +366,15 @@ export interface PropertyChange {
 export interface Change {
   seq: number
   ts: string
+  /** The id of the `substrate.reamde.dev/core/actor` record that wrote the
+   * entry (decision 0270). */
   actor: string
+  /** The id of the actor record the write acted for: the person behind an
+   * app's write, or behind installed code a person's request started. */
+  onBehalfOf?: string
+  /** The id of the token record the write stood behind: a person's or an
+   * app's. Only the owner's reads carry it. */
+  token?: string
   op: string
   recordId: string
   /** The changed record's kind reference. */
@@ -701,10 +709,12 @@ export interface ChangeRun {
   oldestSeq: number
   newestTs: string
   oldestTs: string
-  /** The name of the token behind an app's or an `api` run (its app's
-   * claimed name, else its label), which tells apart two assistants that both
-   * write as `app:local`. Only the owner's reads carry it (decision 0230). */
-  principalName?: string
+  /** The id of the token behind a person's or an app's run, and its name
+   * (its app's claimed name, else its label), which tell apart two assistants
+   * on one device and the person's own sign-ins. Only the owner's reads carry
+   * them (decisions 0230 and 0270). */
+  token?: string
+  tokenName?: string
 }
 
 /** The `runs=1` history page (`substrate.ChangeRunPage`): `first` counts
@@ -1105,10 +1115,11 @@ export interface AuthorizationApp {
   uri?: string
   /** The claimed `uri` is on another host than the client id. */
   uriHostDiffers?: boolean
-  /** What the app's changes are recorded as: `app:<authority>` for a
-   * verified app, `app:local` for one whose access goes to this device,
-   * `app:<host>` otherwise (decision 0209). */
-  actor: string
+  /** The name the app's changes read under, the publisher its actor record
+   * names: its authority for a verified app, `local` for one whose access
+   * goes to this device, its client id's host otherwise (decisions 0209 and
+   * 0270). */
+  appearsAs: string
   /** The app's publisher is confirmed by its authority's `_substrate`
    * record and document, and the access goes to that authority. */
   verified: boolean

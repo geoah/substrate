@@ -914,14 +914,9 @@ type Package struct {
 	Authority string
 	// Name is the package's own word ("core", "google", "tasks"), empty on an
 	// authority row.
-	Name    string
-	Version int64
-	Source  string
-	Actors  []string
-	// ActorTiers is each declared actor's manager tier — an explicit
-	// attribute of the actor document (`tier: owner|bundle|machine`,
-	// machine by default), never derived from the actor's spelling.
-	ActorTiers    map[string]substrate.Tier
+	Name          string
+	Version       int64
+	Source        string
 	PropertyTypes map[string]*PropertyType
 	DatatypeOrder []string
 	Traits        map[string]*Trait
@@ -1285,57 +1280,15 @@ func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
 	return nil, errors.New(bareNameProblem("", "trait", iface, names))
 }
 
-// Actors lists every declared actor across authorities.
-func (r *Registry) Actors() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	seen := map[string]bool{}
-	var out []string
-	for _, name := range r.order {
-		for _, a := range r.packages[name].Actors {
-			if !seen[a] {
-				seen[a] = true
-				out = append(out, a)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// ActorPackage returns the authority that declared an actor.
-func (r *Registry) ActorPackage(actor string) (string, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, name := range r.order {
-		for _, a := range r.packages[name].Actors {
-			if a == actor {
-				return name, true
-			}
-		}
-	}
-	return "", false
-}
-
-// ActorTier resolves an actor's manager tier from registry DATA:
-// a declared actor document's explicit tier attribute (machine by default),
-// and the bundle tier for every registered function's and agent's own
-// actor. Nothing here reads the actor's spelling — an unknown actor is simply
-// not the registry's to answer.
+// ActorTier resolves an actor's manager tier from registry DATA: the bundle
+// tier for every registered function's and agent's own actor. A package
+// declares no actor of its own (decision 0270), so its hand is the engine's
+// to resolve; an unknown actor is simply not the registry's to answer.
 func (r *Registry) ActorTier(actor string) (substrate.Tier, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, name := range r.order {
 		g := r.packages[name]
-		for _, a := range g.Actors {
-			if a != actor {
-				continue
-			}
-			if tier, ok := g.ActorTiers[a]; ok {
-				return tier, true
-			}
-			return substrate.TierMachine, true
-		}
 		for _, fn := range g.Functions {
 			if fn.Actor() == actor {
 				return substrate.TierBundle, true

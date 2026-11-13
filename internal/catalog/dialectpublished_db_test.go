@@ -64,7 +64,7 @@ func TestAnOlderServerInstallsTheLastVersionItUnderstands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if got := shipped(); got != "1" {

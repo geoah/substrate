@@ -10,7 +10,7 @@ import { FUNCTION_KIND } from "@/lib/core-kinds"
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   PROVIDERS_AUTHORITY,
-  actorIdentity,
+  functionIdentity,
   providerInfo,
   type ProviderInfo,
 } from "@/lib/actor-identity"
@@ -326,7 +326,7 @@ export function toolName(tool: Pick<Tool, "ref"> | string): string {
   if (host) return host
   const { authority, pkg, name } = splitKind(ref)
   if (authority === PROVIDERS_AUTHORITY) {
-    return actorIdentity(`function:${authority}:${pkg}:${name}`).name
+    return functionIdentity(`${authority}/${pkg}/${name}`).name
   }
   return capitalise(nameWords(name).join(" "))
 }

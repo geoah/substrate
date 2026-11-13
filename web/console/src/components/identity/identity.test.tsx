@@ -13,7 +13,8 @@ import {
   RouterProvider,
 } from "@tanstack/react-router"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { ActorRef } from "./actor-ref"
 import { KindCard, KindRef } from "./kind-ref"
@@ -30,6 +31,8 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { packageRows, packagesQueryOptions } from "@/lib/packages"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
+
+beforeEach(() => seedActors())
 
 afterEach(() => {
   cleanup()
@@ -241,32 +244,30 @@ describe("ReferenceValue", () => {
 })
 
 describe("ActorRef", () => {
-  it("names a request-asserted actor You, on a person disc, not a letter", async () => {
-    renderWith(<ActorRef actor="console" />)
+  it("names the person You, on a person disc, not a letter", async () => {
+    renderWith(<ActorRef actor="act-person" />)
     const link = await screen.findByRole("link")
     expect(link.textContent).toBe("You")
-    expect(link.getAttribute("href")).toBe("/actors/console")
+    expect(link.getAttribute("href")).toBe("/actors/act-person")
     const mark = link.querySelector("[data-slot=actor-mark]")
     expect(mark?.getAttribute("data-actor")).toBe("you")
     expect(mark?.querySelector("svg")).not.toBeNull()
   })
 
   it("shows the raw actor inline only in technical mode", async () => {
-    renderWith(<ActorRef actor="agent:ada.localhost:llm:substrate" />)
+    renderWith(<ActorRef actor="act-agent-llm-substrate" />)
     expect((await screen.findByRole("link")).textContent).toBe("Substrateagent")
     cleanup()
-    renderWith(<ActorRef actor="agent:ada.localhost:llm:substrate" />, {
+    renderWith(<ActorRef actor="act-agent-llm-substrate" />, {
       technical: true,
     })
     expect((await screen.findByRole("link")).textContent).toContain(
-      "agent:ada.localhost:llm:substrate"
+      "act-agent-llm-substrate"
     )
   })
 
   it("marks a provider's function with the provider's badge", async () => {
-    renderWith(
-      <ActorRef actor="function:providers.substrate.reamde.dev:google:synccontacts" />
-    )
+    renderWith(<ActorRef actor="act-fn-google-synccontacts" />)
     const link = await screen.findByRole("link")
     expect(link.textContent).toBe("GGoogle Contacts sync")
     expect(link.querySelector("[data-slot=provider-badge]")).not.toBeNull()
@@ -385,7 +386,9 @@ describe("KindCard", () => {
             kind: "substrate.reamde.dev/core/package",
             id: "samples.substrate.reamde.dev/people",
             properties: {
-              declaredBy: "agent:ada.example.com:llm:notekeeper",
+              declaredBy: {
+                ref: "substrate.reamde.dev/core/actor/act-agent-llm-notekeeper",
+              },
             },
           } as unknown as SubstrateRecord,
         ],

@@ -52,7 +52,7 @@ func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string
 // A trait-backed property (`at`, `endsAt`) lands in its column as a put's
 // would.
 func (ds *dataset) PlantRecord(ctx context.Context, kindIdent, id string, props map[string]any) error {
-	return ds.inTx(ctx, substrate.ActorAPI, true, func(t *txn) error {
+	return ds.inTx(ctx, substrate.ActorPerson, true, func(t *txn) error {
 		t.migrating = true
 		row, err := t.loadRow(eref{Kind: kindIdent, ID: id}, true)
 		if err != nil {
@@ -81,7 +81,7 @@ func (ds *dataset) PlantRecord(ctx context.Context, kindIdent, id string, props 
 		if err != nil || !res.changed {
 			return err
 		}
-		return t.appendChange(substrate.ActorAPI, substrate.OpPut, id, kindIdent,
+		return t.appendChange(substrate.ActorPerson, substrate.OpPut, id, kindIdent,
 			map[string]any{"created": true, "properties": sortedKeys(authored)})
 	})
 }

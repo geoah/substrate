@@ -338,7 +338,7 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 		return "", fmt.Errorf("%w: oauth is not configured on this substrate", substrate.ErrValidation)
 	}
 	if ds.actorTier(actor) != substrate.TierOwner {
-		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not %s", substrate.ErrForbidden, actor)
+		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not %s", substrate.ErrForbidden, handWords(actor))
 	}
 	if _, scoped := substrate.ScopesFrom(ctx); scoped {
 		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not an app's token", substrate.ErrForbidden)

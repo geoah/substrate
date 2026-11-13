@@ -189,7 +189,7 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	}
 	sawPackage, sawAuthority := false, false
 	for _, ch := range changesSince(t, ds2, head) {
-		if ch.Actor != substrate.ActorSystem {
+		if ch.Actor != vocabulary.ActorID(substrate.ActorSystem) {
 			t.Fatalf("upgrade entry %d is attributed to %q", ch.Seq, ch.Actor)
 		}
 		switch ch.RecordID {
@@ -211,13 +211,13 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 		t.Fatalf("the upgraded authority row is at version %d, want %d", v, want)
 	}
 	// The upgraded repository takes a view like a fresh one does.
-	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "token", Properties: unmeasuredRecordView(),
 	}); err != nil {
 		t.Fatalf("write a record view on the upgraded repository: %v", err)
 	}
 	// And the declaration is the user's to read, not to write.
-	_, err = ds2.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+	_, err = ds2.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{{
 		"kind":     "substrate.reamde.dev/core/kind",
 		"metadata": map[string]any{"id": recordViewKind},
 		"data": map[string]any{
@@ -322,7 +322,7 @@ func cataloguesAtConsole(t *testing.T, fixture string) *catalog.Catalog {
 // first, from a catalog cataloguesAtConsole built.
 func installAtConsole(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, name string) {
 	t.Helper()
-	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, vocabulary.AuthorityPublisher+"/"+name, ds); err != nil {
+	if _, _, err := c.Install(context.Background(), substrate.ActorPerson, vocabulary.AuthorityPublisher+"/"+name, ds); err != nil {
 		t.Fatalf("install %s on binary N: %v", name, err)
 	}
 }
@@ -365,7 +365,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	}
 	installAtConsole(t, cataloguesAtConsole(t, console1), ds1, "health")
 	sleep, workout := kindSleep, kindWorkout
-	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, workout, substrate.PatchInput{
+	if _, err := ds1.Patch(ctx, substrate.ActorPerson, recordViewKind, workout, substrate.PatchInput{
 		Properties: map[string]any{"name": "My runs"},
 	}); err != nil {
 		t.Fatalf("edit the workout view on binary N: %v", err)
@@ -400,7 +400,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 			}},
 		},
 	}
-	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine", Properties: own,
 	}); err != nil {
 		t.Fatalf("write the owner's view on binary N: %v", err)
@@ -412,7 +412,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 	v2["sections"] = append(slices.Clone(own["sections"].([]any)), map[string]any{"stats": map[string]any{
 		"items": []any{map[string]any{"metric": metric + "/health/heart_rate", "reducer": "avg", "show": "number"}},
 	}})
-	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine-v2", Properties: v2,
 	}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("binary N admitted a version 2 view: %v", err)
@@ -454,7 +454,7 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 			t.Errorf("the upgrade changed %s:\n got %v\nwant %v", id, rec.Properties, before)
 		}
 		// The view still writes under the version 2 grammar, as it stands.
-		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: recordViewKind, ID: id, Properties: rec.Properties,
 		}); err != nil {
 			t.Errorf("re-put %s after the upgrade: %v", id, err)
@@ -479,12 +479,12 @@ func TestBootUpgradeMovesAConsole1RepositoryWithLiveViewsToConsole2(t *testing.T
 		}
 	}
 	// An owner patch lands, and so does the version 2 view binary N refused.
-	if _, err := ds2.Patch(ctx, substrate.ActorAPI, recordViewKind, sleep, substrate.PatchInput{
+	if _, err := ds2.Patch(ctx, substrate.ActorPerson, recordViewKind, sleep, substrate.PatchInput{
 		Properties: map[string]any{"intro": "Last night."},
 	}); err != nil {
 		t.Fatalf("patch the sleep view after the upgrade: %v", err)
 	}
-	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine-v2", Properties: v2,
 	}); err != nil {
 		t.Fatalf("a version 2 view was refused after the upgrade: %v", err)
@@ -528,7 +528,7 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 	} else if table := got.Properties["sections"].([]any)[0].(map[string]any)["table"].(map[string]any); table["sameAs"] != "metric" {
 		t.Fatalf("binary N's lab result view lists by %v, want sameAs metric", table)
 	}
-	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, lab, substrate.PatchInput{
+	if _, err := ds1.Patch(ctx, substrate.ActorPerson, recordViewKind, lab, substrate.PatchInput{
 		Properties: map[string]any{"name": "My analyte"},
 	}); err != nil {
 		t.Fatalf("edit the lab result view on binary N: %v", err)
@@ -547,7 +547,7 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 			}},
 		},
 	}
-	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine", Properties: own,
 	}); err != nil {
 		t.Fatalf("write the owner's view on binary N: %v", err)
@@ -566,7 +566,7 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 	}}}
 	v3 := map[string]map[string]any{"mine-sharing": sharing, "mine-hiding": hiding}
 	for id, v := range v3 {
-		if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: recordViewKind, ID: id, Properties: v,
 		}); !errors.Is(err, substrate.ErrValidation) {
 			t.Fatalf("binary N admitted the version 3 view %s: %v", id, err)
@@ -600,14 +600,14 @@ func TestBootUpgradeMovesAConsole2RepositoryWithLiveViewsToConsole3(t *testing.T
 		if !reflect.DeepEqual(rec.Properties, before) {
 			t.Errorf("the upgrade changed %s:\n got %v\nwant %v", id, rec.Properties, before)
 		}
-		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: recordViewKind, ID: id, Properties: rec.Properties,
 		}); err != nil {
 			t.Errorf("re-put %s after the upgrade: %v", id, err)
 		}
 	}
 	for id, v := range v3 {
-		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: recordViewKind, ID: id, Properties: v,
 		}); err != nil {
 			t.Errorf("the version 3 view %s was refused after the upgrade: %v", id, err)
@@ -645,7 +645,7 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 	}
 	installAtConsole(t, cataloguesAtConsole(t, console3), ds1, "labs")
 	report := kindLabreport
-	if _, err := ds1.Patch(ctx, substrate.ActorAPI, recordViewKind, report, substrate.PatchInput{
+	if _, err := ds1.Patch(ctx, substrate.ActorPerson, recordViewKind, report, substrate.PatchInput{
 		Properties: map[string]any{"name": "My report"},
 	}); err != nil {
 		t.Fatalf("edit the lab report view on binary N: %v", err)
@@ -658,7 +658,7 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 			"kind": labresult, "via": "report", "nest": "derivedFrom", "limit": 100,
 		}}},
 	}
-	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine", Properties: own,
 	}); err != nil {
 		t.Fatalf("write the owner's view on binary N: %v", err)
@@ -668,7 +668,7 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 	tiles["sections"] = []any{map[string]any{"table": map[string]any{
 		"kind": labresult, "via": "report", "nest": "derivedFrom", "show": "tiles",
 	}}}
-	if _, err := ds1.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds1.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine-tiles", Properties: tiles,
 	}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("binary N admitted the version 4 view: %v", err)
@@ -701,13 +701,13 @@ func TestBootUpgradeMovesAConsole3RepositoryWithLiveViewsToConsole4(t *testing.T
 		if !reflect.DeepEqual(rec.Properties, before) {
 			t.Errorf("the upgrade changed %s:\n got %v\nwant %v", id, rec.Properties, before)
 		}
-		if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: recordViewKind, ID: id, Properties: rec.Properties,
 		}); err != nil {
 			t.Errorf("re-put %s after the upgrade: %v", id, err)
 		}
 	}
-	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds2.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "mine-tiles", Properties: tiles,
 	}); err != nil {
 		t.Errorf("the version 4 view was refused after the upgrade: %v", err)
@@ -720,7 +720,7 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 	r := openObserved(t)
 	ds := r.ds
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "token", Properties: aRecordView(r.metric),
 	}); err != nil {
 		t.Fatalf("a well-formed view was refused: %v", err)
@@ -730,7 +730,7 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 	// now, and a view on a record with no window of its own names neither.
 	open := aRecordView(r.metric)
 	open["window"] = map[string]any{"start": "createdAt", "open": true}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "open", Properties: open,
 	}); err != nil {
 		t.Fatalf("a view whose window has a start alone and open was refused: %v", err)
@@ -743,7 +743,7 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		map[string]any{"metric": r.metric + "/health/heart_rate", "reducer": "durationIn", "low": 133.0, "high": 152.0, "unit": "min"},
 		map[string]any{"metric": r.metric + "/health/heart_rate", "reducer": "percentile", "rank": 0.9},
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "zones", Properties: zones,
 	}); err != nil {
 		t.Fatalf("a trend of time in a heart rate zone was refused: %v", err)
@@ -756,7 +756,7 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 	hiding["sections"].([]any)[6].(map[string]any)["stats"].(map[string]any)["empty"] = "hide"
 	hiding["sections"].([]any)[7].(map[string]any)["trend"].(map[string]any)["empty"] = "hide"
 	hiding["sections"].([]any)[4].(map[string]any)["chart"].(map[string]any)["empty"] = "hide"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: recordViewKind, ID: "hiding", Properties: hiding,
 	}); err != nil {
 		t.Fatalf("a chart, a stats and a trend block that hide when empty were refused: %v", err)
@@ -849,7 +849,7 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			v := aRecordView(r.metric)
 			tc.mutate(v)
-			_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 				Kind: recordViewKind, ID: "broken", Properties: v,
 			})
 			if !errors.Is(err, substrate.ErrValidation) {
@@ -905,9 +905,9 @@ func TestReinstallReplacesAnUneditedViewAndKeepsTheOwnersOne(t *testing.T) {
 
 	install("shipped one")
 	patch(substrate.ActorSystem, "machine", map[string]any{"intro": "the engine's"})
-	patch(substrate.ActorAPI, "edited", map[string]any{"intro": "mine"})
-	patch(substrate.ActorConsole, "trimmed", map[string]any{"fold": nil})
-	if _, err := ds.Delete(ctx, substrate.ActorCLI, recordViewKind, "deleted", substrate.DeleteInput{}); err != nil {
+	patch(substrate.ActorPerson, "edited", map[string]any{"intro": "mine"})
+	patch(substrate.ActorPerson, "trimmed", map[string]any{"fold": nil})
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, recordViewKind, "deleted", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete a view: %v", err)
 	}
 	install("shipped two")

@@ -65,7 +65,7 @@ func wantReadiness(t *testing.T, ds *dataset, id, readiness, message string) {
 
 // chatOn runs one chat turn of the crew's chatter and returns its error.
 func chatOn(ds *dataset) error {
-	_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/chatter",
+	_, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, crewPackage+"/chatter",
 		substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
 	return err
 }
@@ -112,7 +112,7 @@ func TestOwnKeyRefusedFailsOnlyItsRepository(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	other := secondRepository(t, ds)
-	if _, err := other.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := other.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "chatllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-chatllm"},
 	}); err != nil {
@@ -224,7 +224,7 @@ func TestOperatorEmbedRefusalFailsEmbeddingsAndBacksOffTheDrain(t *testing.T) {
 		if err := enginetest.InstallShelf(ctx, d); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Atlas", "description": "saxophone almanac chapter"},
 		}); err != nil {
 			t.Fatal(err)
@@ -318,7 +318,7 @@ func TestOperatorEmbedProbeGoesToARepositoryWithWork(t *testing.T) {
 	if err := enginetest.InstallShelf(ctx, busy); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := busy.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := busy.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Atlas", "description": "saxophone almanac chapter"},
 	}); err != nil {
 		t.Fatal(err)
@@ -383,10 +383,10 @@ func TestDeletedRowsRefusalIsForgotten(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	recreate := func(key string) {
 		t.Helper()
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, typeProvider, "chatllm", substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, typeProvider, "chatllm", substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete the row: %v", err)
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": key,
 			"pricing": []any{map[string]any{"model": "chat", "inputPer1M": "1", "outputPer1M": "5"}},
 		}}); err != nil {

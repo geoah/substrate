@@ -89,7 +89,7 @@ func TestSyncStartSkipsADeletedRecord(t *testing.T) {
 	ds := newRaceDataset(t)
 	ctx := context.Background()
 	w := racePut(t, ds, map[string]any{"name": "a"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, w.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, w.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	gone, err := ds.Get(ctx, raceWidget, w.ID)
@@ -319,7 +319,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 	a := racePut(t, ds, map[string]any{"name": "a"})
 	b := racePut(t, ds, map[string]any{"name": "b"})
 
-	rec, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
+	rec, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 		t.Fatalf("merge replay minted a record: %d live merge records", n)
 	}
 	// And through the surface verb too.
-	again, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
+	again, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: a.Kind, Winner: a.ID, Loser: b.ID})
 	if err != nil {
 		t.Fatalf("surface merge replay: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 	}
 
 	// Split, then replay the split effect.
-	if _, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: rec.ID}); err != nil {
+	if _, err := ds.Split(ctx, substrate.ActorPerson, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if err := ds.inTx(ctx, raceActor, false, func(tx *txn) error {

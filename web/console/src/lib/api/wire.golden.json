@@ -283,7 +283,7 @@
     "state": false
   },
   "AuthorizationApp": {
-    "actor": true,
+    "appearsAs": true,
     "clientId": true,
     "host": true,
     "local": true,
@@ -656,10 +656,12 @@
     "affected": false,
     "hash": false,
     "kind": true,
+    "onBehalfOf": false,
     "op": true,
     "payload": false,
     "recordId": true,
     "seq": true,
+    "token": false,
     "ts": true
   },
   "ChangePage": {
@@ -673,10 +675,12 @@
     "affected": false,
     "hash": false,
     "kind": true,
+    "onBehalfOf": false,
     "op": true,
     "payload": false,
     "recordId": true,
     "seq": true,
+    "token": false,
     "triggers": false,
     "ts": true
   },
@@ -688,9 +692,10 @@
     "newestTs": true,
     "oldestSeq": true,
     "oldestTs": true,
-    "principalName": false,
     "recordId": false,
     "records": true,
+    "token": false,
+    "tokenName": false,
     "verb": true
   },
   "ChangeRunPage": {

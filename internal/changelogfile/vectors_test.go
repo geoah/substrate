@@ -22,10 +22,14 @@ type lineVectors struct {
 	Lines []struct {
 		Name  string `json:"name"`
 		Entry struct {
-			Seq       int64           `json:"seq"`
-			TS        string          `json:"ts"`
-			Actor     string          `json:"actor"`
-			Principal string          `json:"principal"`
+			Seq        int64  `json:"seq"`
+			TS         string `json:"ts"`
+			Actor      string `json:"actor"`
+			OnBehalfOf string `json:"onBehalfOf"`
+			Token      string `json:"token"`
+			// Principal is the key a line of changelog dialect 1 carried,
+			// present on every line written then and on none written since.
+			Principal *string         `json:"principal"`
 			Op        string          `json:"op"`
 			RecordID  string          `json:"recordId"`
 			Kind      string          `json:"kind"`
@@ -64,8 +68,11 @@ func TestTheLineVectors(t *testing.T) {
 				t.Fatal(err)
 			}
 			e := Entry{
-				Seq: v.Entry.Seq, TS: ts, Actor: v.Entry.Actor, Principal: v.Entry.Principal, Op: v.Entry.Op,
-				RecordID: v.Entry.RecordID, Kind: v.Entry.Kind, Txn: v.Entry.Txn, Payload: v.Entry.Payload,
+				Seq: v.Entry.Seq, TS: ts, Actor: v.Entry.Actor, OnBehalfOf: v.Entry.OnBehalfOf, Token: v.Entry.Token,
+				Op: v.Entry.Op, RecordID: v.Entry.RecordID, Kind: v.Entry.Kind, Txn: v.Entry.Txn, Payload: v.Entry.Payload,
+			}
+			if v.Entry.Principal != nil {
+				e.Principal, e.HasPrincipal = *v.Entry.Principal, true
 			}
 			if v.Entry.CausedBy != nil {
 				e.CausedBy, e.CausedByOK = *v.Entry.CausedBy, true
@@ -85,7 +92,7 @@ func TestTheLineVectors(t *testing.T) {
 				t.Fatalf("decode the vector's line: %v", err)
 			}
 			if backSum != sum || back.Seq != e.Seq || !back.TS.Equal(e.TS) || back.Actor != e.Actor ||
-				back.Principal != e.Principal || back.Op != e.Op || back.RecordID != e.RecordID || back.Kind != e.Kind ||
+				back.OnBehalfOf != e.OnBehalfOf || back.Token != e.Token || back.Principal != e.Principal || back.Op != e.Op || back.RecordID != e.RecordID || back.Kind != e.Kind ||
 				back.Txn != e.Txn || back.CausedByOK != e.CausedByOK || back.CausedBy != e.CausedBy {
 				t.Fatalf("the line decodes to %+v, want %+v", back, e)
 			}

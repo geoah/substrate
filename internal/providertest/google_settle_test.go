@@ -135,7 +135,7 @@ func (g *googleFailing) account(t *testing.T, id string, streams ...string) {
 // or a reconnect alike.
 func (g *googleFailing) connect(t *testing.T, id string) {
 	t.Helper()
-	consent, err := g.ds.StartOAuth(context.Background(), substrate.ActorAPI,
+	consent, err := g.ds.StartOAuth(context.Background(), substrate.ActorPerson,
 		vocabulary.RecordPath(googleAccountKind, id))
 	if err != nil {
 		t.Fatalf("start the consent for %s: %v", id, err)
@@ -147,7 +147,7 @@ func (g *googleFailing) connect(t *testing.T, id string) {
 // delivers.
 func (g *googleFailing) edit(t *testing.T, id string) {
 	t.Helper()
-	if _, err := g.ds.Patch(context.Background(), substrate.ActorAPI, googleAccountKind, id, substrate.PatchInput{
+	if _, err := g.ds.Patch(context.Background(), substrate.ActorPerson, googleAccountKind, id, substrate.PatchInput{
 		Properties: map[string]any{"syncFrequency": "hourly"},
 	}); err != nil {
 		t.Fatalf("edit %s: %v", id, err)

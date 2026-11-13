@@ -141,10 +141,11 @@ func TestADefinitionBearingRowRefusesTheOpen(t *testing.T) {
 }
 
 // declarationKindRefs is every kind a declaration row stores as: the gate reads
-// them all, so the test plants into each one in turn.
+// them all, so the test plants into each one in turn. An actor is a record the
+// engine writes, never a declaration (decision 0270): the gate never reads its
+// row, so a `definition` on one cannot rebuild an authority.
 var declarationKindRefs = []string{
 	"substrate.reamde.dev/core/authority", "substrate.reamde.dev/core/package",
-	"substrate.reamde.dev/core/actor",
 	"substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/trait",
 	"substrate.reamde.dev/core/propertytype", "substrate.reamde.dev/core/recordmapping",
 	"substrate.reamde.dev/core/function", "substrate.reamde.dev/core/agent",

@@ -149,6 +149,187 @@
       "line": "{\"actor\":\"function:ada.example.com:inbox:sync\",\"kind\":\"ada.example.com/inbox/message\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"labels\":{},\"set\":{\"bytes\":1.2345678901234567890123456789E29,\"size\":0,\"subject\":\"tab\\there\\bback\\fform\\u0001one \\u0026 \\u003ctwo\\u003e\"}},\"id\":\"m1\",\"kind\":\"record\",\"ref\":\"ada.example.com/inbox/message\",\"version\":7E0},{\"id\":\"m1\",\"key\":\"owner/note\",\"kind\":\"annotation\",\"ref\":\"ada.example.com/inbox/message\",\"value\":false}],\"properties\":[\"subject\"]},\"principal\":\"\",\"recordId\":\"m1\",\"seq\":4301,\"sum\":\"sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8\",\"ts\":\"2026-08-04T12:00:00.500000Z\",\"txn\":4301}",
       "name": "a patch a function wrote, with control characters, a negative zero and a number no float holds",
       "sum": "sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8"
+    },
+    {
+      "name": "a person's put through a sign-in, the token beside it",
+      "entry": {
+        "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+        "kind": "substrate.reamde.dev/core/contact",
+        "op": "put",
+        "payload": {
+          "created": true,
+          "fold": [
+            {
+              "delta": {
+                "created": true,
+                "kindVersion": 2,
+                "set": {
+                  "name": "Grace"
+                },
+                "title": "Grace"
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 1
+            },
+            {
+              "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "name",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "owner",
+              "token": "01jbx9k0token000000000000a"
+            }
+          ],
+          "properties": [
+            "name"
+          ]
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4812,
+        "token": "01jbx9k0token000000000000a",
+        "ts": "2026-11-13T10:00:00.000000Z",
+        "txn": 4812
+      },
+      "line": "{\"actor\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"kind\":\"substrate.reamde.dev/core/contact\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":2E0,\"set\":{\"name\":\"Grace\"},\"title\":\"Grace\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":1E0},{\"actor\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"name\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"owner\",\"token\":\"01jbx9k0token000000000000a\"}],\"properties\":[\"name\"]},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4812,\"sum\":\"sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a\",\"token\":\"01jbx9k0token000000000000a\",\"ts\":\"2026-11-13T10:00:00.000000Z\",\"txn\":4812}",
+      "sum": "sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a"
+    },
+    {
+      "name": "an app's patch, on behalf of the person, with the app's token",
+      "entry": {
+        "actor": "5fz1hzkw85g0a9ytnkzrj7tzth",
+        "kind": "substrate.reamde.dev/core/contact",
+        "onBehalfOf": "6nk6ekkczdgh399nt2pqpccjz0",
+        "op": "patch",
+        "payload": {
+          "fold": [
+            {
+              "delta": {
+                "set": {
+                  "name": "Grace Hopper"
+                },
+                "title": "Grace Hopper"
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 2
+            },
+            {
+              "actor": "5fz1hzkw85g0a9ytnkzrj7tzth",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "name",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "owner",
+              "token": "01jbx9k0token000000000000c"
+            }
+          ],
+          "properties": [
+            "name"
+          ]
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4813,
+        "token": "01jbx9k0token000000000000c",
+        "ts": "2026-11-13T10:00:01.000000Z",
+        "txn": 4813
+      },
+      "line": "{\"actor\":\"5fz1hzkw85g0a9ytnkzrj7tzth\",\"kind\":\"substrate.reamde.dev/core/contact\",\"onBehalfOf\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"set\":{\"name\":\"Grace Hopper\"},\"title\":\"Grace Hopper\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":2E0},{\"actor\":\"5fz1hzkw85g0a9ytnkzrj7tzth\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"name\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"owner\",\"token\":\"01jbx9k0token000000000000c\"}],\"properties\":[\"name\"]},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4813,\"sum\":\"sha256:5925e70574c9a9bb6555af4da7b79acf401090d9f47e0a606d82a86a6950a07c\",\"token\":\"01jbx9k0token000000000000c\",\"ts\":\"2026-11-13T10:00:01.000000Z\",\"txn\":4813}",
+      "sum": "sha256:5925e70574c9a9bb6555af4da7b79acf401090d9f47e0a606d82a86a6950a07c"
+    },
+    {
+      "name": "a sync on a schedule, on behalf of no one and behind no token",
+      "entry": {
+        "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+        "kind": "providers.substrate.reamde.dev/google/contact",
+        "op": "put",
+        "payload": {
+          "created": true,
+          "fold": [
+            {
+              "delta": {
+                "created": true,
+                "kindVersion": 4,
+                "set": {
+                  "displayName": "Grace Hopper"
+                },
+                "title": "Grace Hopper"
+              },
+              "id": "c-grace",
+              "kind": "record",
+              "ref": "providers.substrate.reamde.dev/google/contact",
+              "version": 1
+            },
+            {
+              "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+              "id": "c-grace",
+              "kind": "manager",
+              "property": "displayName",
+              "ref": "providers.substrate.reamde.dev/google/contact",
+              "tier": "bundle"
+            }
+          ],
+          "properties": [
+            "displayName"
+          ]
+        },
+        "recordId": "c-grace",
+        "seq": 4814,
+        "ts": "2026-11-13T11:00:00.000000Z",
+        "txn": 4815
+      },
+      "line": "{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"kind\":\"providers.substrate.reamde.dev/google/contact\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":4E0,\"set\":{\"displayName\":\"Grace Hopper\"},\"title\":\"Grace Hopper\"},\"id\":\"c-grace\",\"kind\":\"record\",\"ref\":\"providers.substrate.reamde.dev/google/contact\",\"version\":1E0},{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"id\":\"c-grace\",\"kind\":\"manager\",\"property\":\"displayName\",\"ref\":\"providers.substrate.reamde.dev/google/contact\",\"tier\":\"bundle\"}],\"properties\":[\"displayName\"]},\"recordId\":\"c-grace\",\"seq\":4814,\"sum\":\"sha256:bf419f0fb0b03b69212a9819ac0155ab08b9c48e25e5e6689fc60aebb2ceb777\",\"ts\":\"2026-11-13T11:00:00.000000Z\",\"txn\":4815}",
+      "sum": "sha256:bf419f0fb0b03b69212a9819ac0155ab08b9c48e25e5e6689fc60aebb2ceb777"
+    },
+    {
+      "name": "the engine merging what the sync offered",
+      "entry": {
+        "actor": "4drfnb8304hpgtvb7z1p4es7ze",
+        "kind": "substrate.reamde.dev/core/contact",
+        "op": "patch",
+        "payload": {
+          "fold": [
+            {
+              "delta": {
+                "set": {
+                  "emails": [
+                    "grace@example.com"
+                  ]
+                }
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 3
+            },
+            {
+              "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "emails",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "machine"
+            }
+          ],
+          "managers": {
+            "emails": "71zvrabc2sg10aaafhtvd8wqp5"
+          },
+          "mechanism": "mapping",
+          "properties": [
+            "emails"
+          ],
+          "triggeredBy": "71zvrabc2sg10aaafhtvd8wqp5"
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4815,
+        "ts": "2026-11-13T11:00:00.000000Z",
+        "txn": 4815
+      },
+      "line": "{\"actor\":\"4drfnb8304hpgtvb7z1p4es7ze\",\"kind\":\"substrate.reamde.dev/core/contact\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"set\":{\"emails\":[\"grace@example.com\"]}},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":3E0},{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"emails\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"machine\"}],\"managers\":{\"emails\":\"71zvrabc2sg10aaafhtvd8wqp5\"},\"mechanism\":\"mapping\",\"properties\":[\"emails\"],\"triggeredBy\":\"71zvrabc2sg10aaafhtvd8wqp5\"},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4815,\"sum\":\"sha256:5cc01c6b0c09318208ed58eee268acb98d10dc5e5d47874aa2c5b37cee34602e\",\"ts\":\"2026-11-13T11:00:00.000000Z\",\"txn\":4815}",
+      "sum": "sha256:5cc01c6b0c09318208ed58eee268acb98d10dc5e5d47874aa2c5b37cee34602e"
     }
   ],
   "numbers": {

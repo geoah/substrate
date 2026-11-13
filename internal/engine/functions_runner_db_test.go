@@ -475,7 +475,7 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, winManifest()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, winManifest()); err != nil {
 		t.Fatalf("declare the timeline kinds: %v", err)
 	}
 	fn := pyFn("timeline", map[string]any{
@@ -486,7 +486,7 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	}
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s/%s: %v", kind, id, err)
 		}
 	}

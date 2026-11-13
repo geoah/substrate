@@ -1,7 +1,8 @@
 /** The pure half of the record page's provenance: sources fold by mapping, dedupe by
  * record and sort by title; an actor string reads as the thing it is. */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { LinkedRecord, SubstrateRecord } from "@/lib/api/types"
 import {
@@ -18,6 +19,8 @@ import {
   tierLabel,
   unionMembers,
 } from "./provenance"
+
+beforeEach(() => seedActors())
 
 const BEEPER = "providers.substrate.reamde.dev/beeper/user"
 const GITHUB = "providers.substrate.reamde.dev/github/user"
@@ -162,13 +165,12 @@ describe("mappingLabel", () => {
   })
 })
 
-const GOOGLE_SYNC =
-  "function:providers.substrate.reamde.dev:google:synccontacts"
-const LINEAR_SYNC = "function:providers.substrate.reamde.dev:linear:linearsync"
+const GOOGLE_SYNC = "act-fn-google-synccontacts"
+const LINEAR_SYNC = "act-fn-linear-linearsync"
 
 describe("holderOf", () => {
   it("names the owner's hand You, a provider by its name, anything else by its own", () => {
-    expect(holderOf({ manager: "console", tier: "owner" })).toMatchObject({
+    expect(holderOf({ manager: "act-person", tier: "owner" })).toMatchObject({
       mark: "you",
       label: "You",
     })
@@ -177,7 +179,7 @@ describe("holderOf", () => {
       label: "Google",
     })
     expect(
-      holderOf({ manager: "agent:ada.localhost:llm:substrate", tier: "bundle" })
+      holderOf({ manager: "act-agent-llm-substrate", tier: "bundle" })
     ).toMatchObject({ mark: "actor", label: "Substrate" })
     expect(holderOf({})).toBeUndefined()
   })
@@ -201,7 +203,7 @@ describe("tierLabel", () => {
     expect(tierLabel("owner")).toBe("Yours")
     expect(tierLabel("machine")).toBe("Synced")
     expect(tierLabel("bundle", GOOGLE_SYNC)).toBe("Set by provider")
-    expect(tierLabel("bundle", "agent:ada.localhost:llm:substrate")).toBe(
+    expect(tierLabel("bundle", "act-agent-llm-substrate")).toBe(
       "Set by an agent"
     )
   })
@@ -244,7 +246,7 @@ describe("unionMembers", () => {
 
 describe("departsFromDefault", () => {
   it("is quiet for the owner's own value", () => {
-    expect(departsFromDefault({ manager: "console", tier: "owner" })).toBe(
+    expect(departsFromDefault({ manager: "act-person", tier: "owner" })).toBe(
       false
     )
     expect(departsFromDefault(undefined)).toBe(false)
@@ -253,16 +255,14 @@ describe("departsFromDefault", () => {
   it("speaks for a provider, an agent, or a source that differs", () => {
     expect(
       departsFromDefault({
-        manager: "function:providers.substrate.reamde.dev:google:sync",
+        manager: "act-fn-google-sync",
         tier: "machine",
       })
     ).toBe(true)
-    expect(
-      departsFromDefault({ manager: "agent:ada.example.com:llm:scribe" })
-    ).toBe(true)
+    expect(departsFromDefault({ manager: "act-agent-llm-scribe" })).toBe(true)
     expect(
       departsFromDefault({
-        manager: "console",
+        manager: "act-person",
         tier: "owner",
         alternatives: [{ actor: "x.example.com", value: 1, updatedAt: "" }],
       })
@@ -291,8 +291,8 @@ describe("everyValueYours", () => {
         rec(
           { name: "A", note: "" },
           {
-            name: { manager: "console", tier: "owner" },
-            note: { manager: "agent:ada.example.com:llm:scribe" },
+            name: { manager: "act-person", tier: "owner" },
+            note: { manager: "act-agent-llm-scribe" },
           }
         )
       )
@@ -305,8 +305,8 @@ describe("everyValueYours", () => {
         rec(
           { name: "A", note: "B" },
           {
-            name: { manager: "console", tier: "owner" },
-            note: { manager: "agent:ada.example.com:llm:scribe" },
+            name: { manager: "act-person", tier: "owner" },
+            note: { manager: "act-agent-llm-scribe" },
           }
         )
       )

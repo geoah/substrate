@@ -91,7 +91,8 @@ func (e *authorizeEnv) lastActor(kind, id string) substrate.Actor {
 	if len(changes) == 0 {
 		e.t.Fatalf("no changelog entry for %s/%s", kind, id)
 	}
-	return changes[len(changes)-1].Actor
+	key, _ := vocabulary.ActorKeyOf(changes[len(changes)-1].Actor)
+	return key
 }
 
 // listOf lists through the records route with a filter, as bearer.
@@ -193,7 +194,7 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 	wantStatus(t, view, http.StatusOK)
 	got := decodeJSON[substrate.AuthorizationRequest](t, view)
 	if got.App.Host != "notes.example.org" || got.App.Name != "Notes" || got.App.Local ||
-		got.App.Actor != "app:notes.example.org" {
+		got.App.AppearsAs != "notes.example.org" {
 		t.Fatalf("app = %+v", got.App)
 	}
 	if got.Repository != repo || got.DefaultLifetimeDays != 30 {
@@ -306,7 +307,7 @@ func TestAListWithNoKindsNamesEveryReadableKindAndNoOther(t *testing.T) {
 	}
 }
 
-func TestAnAppsTokenWritesAsItsOwnActorWhateverActorItNames(t *testing.T) {
+func TestAnAppsTokenWritesAsItsOwnActorWhateverActorItSends(t *testing.T) {
 	t.Parallel()
 	e := newAuthorizeEnv(t, withSamples("tasks"))
 	app := e.grant("write:"+taskKind, []string{"write:" + taskKind})
@@ -314,7 +315,7 @@ func TestAnAppsTokenWritesAsItsOwnActorWhateverActorItNames(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/"+id, strings.NewReader(`{"properties":{}}`))
 	req.Header.Set("Authorization", "Bearer "+app)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(actorHeader, "console")
+	req.Header.Set(retiredActorHeader, "console")
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, req)
 	wantStatus(t, rec, http.StatusCreated)
@@ -1008,14 +1009,6 @@ func TestAnAppAskingForFullAccessGetsAFullAccessTokenNamingIt(t *testing.T) {
 	req.Host = "substrate.example.com"
 	req.Header.Set("Authorization", "Bearer "+e.owner)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(actorHeader, "bob")
-	bob := httptest.NewRecorder()
-	e.h.ServeHTTP(bob, req)
-	wantErrorCode(t, bob, http.StatusForbidden, codeForbidden)
-	if !strings.Contains(bob.Body.String(), "granting full access is the owner's act") {
-		t.Fatalf("the refusal says %s", bob.Body.String())
-	}
-
 	rec := e.approveShown(id, []string{"full"}, 30)
 	wantStatus(t, rec, http.StatusOK)
 	tok := e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))

@@ -100,7 +100,6 @@ func TestAReappliedBodyRunsAfterItsPackageWasTornDown(t *testing.T) {
 	// down.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
-		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
 		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}); err != nil {

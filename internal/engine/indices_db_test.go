@@ -187,11 +187,11 @@ func TestAnIndexRebuildDoesNotStallAnotherRepositorysWrite(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openCoreDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("name")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("name")); err != nil {
 		t.Fatalf("declare the meter kind: %v", err)
 	}
 	other := secondRepository(t, ds)
-	if _, err := other.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := other.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(lampPackage, 0),
 		vocabulary.KindManifest(lampPackage,
 			map[string]any{"singular": "lamp"},
@@ -204,7 +204,7 @@ func TestAnIndexRebuildDoesNotStallAnotherRepositorysWrite(t *testing.T) {
 	release := holdRecords(t, db, false)
 	applied := make(chan error, 1)
 	go func() {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("email"))
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("email"))
 		applied <- err
 	}()
 	waitFor(t, "the rebuild to wait on the held reader", func() bool {
@@ -213,7 +213,7 @@ func TestAnIndexRebuildDoesNotStallAnotherRepositorysWrite(t *testing.T) {
 
 	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	started := time.Now()
-	_, werr := other.Put(wctx, substrate.ActorAPI, substrate.PutInput{
+	_, werr := other.Put(wctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: lampKind, ID: fid("l1"), Properties: map[string]any{"name": "on"},
 	})
 	took := time.Since(started)
@@ -247,7 +247,7 @@ func failTheBuild(t *testing.T, ds *dataset, db *sql.DB, fn string) (<-chan erro
 	release := holdRecords(t, db, false)
 	applied := make(chan error, 1)
 	go func() {
-		_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, meterVocabulary("email"))
+		_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, meterVocabulary("email"))
 		applied <- err
 	}()
 	scratch := "idx_" + derivedID(meterKind, "0") + "_new"
@@ -274,7 +274,7 @@ func TestAFailedIndexBuildDropsItsScratchIndex(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openCoreDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("name")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("name")); err != nil {
 		t.Fatalf("declare the meter kind: %v", err)
 	}
 	db := rawDB(t, ds)
@@ -300,7 +300,7 @@ func TestAScratchIndexADeadBuildLeftIsDroppedBeforeTheNextBuild(t *testing.T) {
 	ctx := context.Background()
 	open, closeSvc := reopenableWidgetDataset(t)
 	ds := open()
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("name")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("name")); err != nil {
 		t.Fatalf("declare the meter kind: %v", err)
 	}
 	db := rawDB(t, ds)
@@ -363,7 +363,7 @@ func TestAScratchIndexADeadBuildLeftIsDroppedBeforeTheNextBuild(t *testing.T) {
 
 	// The retried apply drops the leftover and builds the new definition.
 	killTheBuild()
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("email")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("email")); err != nil {
 		t.Fatalf("the retried apply: %v", err)
 	}
 	requireCurrentIndex(t, db, "'email'")
@@ -384,7 +384,7 @@ func TestTwoRepositoriesDeclaringOneIndexBuildItOnce(t *testing.T) {
 	release := holdRecords(t, db, true)
 	first := make(chan error, 1)
 	go func() {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("name"))
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("name"))
 		first <- err
 	}()
 	waitFor(t, "the first build to wait on the held writer", func() bool {
@@ -392,7 +392,7 @@ func TestTwoRepositoriesDeclaringOneIndexBuildItOnce(t *testing.T) {
 	})
 	second := make(chan error, 1)
 	go func() {
-		_, err := other.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meterVocabulary("name"))
+		_, err := other.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meterVocabulary("name"))
 		second <- err
 	}()
 	// The second is parked once its own index statement waits too (a build

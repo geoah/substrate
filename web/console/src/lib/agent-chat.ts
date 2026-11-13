@@ -5,7 +5,8 @@
  *
  * Nothing here is sent to the API: display names are the console's own. */
 
-import { actorIdentity, agentName } from "@/lib/actor-identity"
+import { actorIDOf } from "@/lib/actor-directory"
+import { agentName } from "@/lib/actor-identity"
 import type { AgentEvent } from "@/lib/api/agents"
 import { deliveryNoticeOf, type ToolCallView } from "@/lib/api/transcript"
 import {
@@ -27,7 +28,12 @@ import {
   valueIdentity,
 } from "@/lib/agent-grants"
 import type { ChangeOp, Decision } from "@/lib/changerequests"
-import { AGENT_KIND, FUNCTION_KIND, KIND_KIND } from "@/lib/core-kinds"
+import {
+  AGENT_KIND,
+  CORE_PACKAGE,
+  FUNCTION_KIND,
+  KIND_KIND,
+} from "@/lib/core-kinds"
 import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
@@ -52,10 +58,25 @@ function capitalise(text: string): string {
 /** An agent's name as a person reads it; one rule, the actor mark's. */
 export { agentName }
 
-/** The actor string an agent writes under (decision 0025), from its record id
- * `<authority>/<package>/<name>`. */
+/** The id of the actor record an agent writes as (decision 0270), from the
+ * agent's record id `<authority>/<package>/<name>`; "" while the console has
+ * not read it. */
 export function agentActor(id: string): string {
-  return `agent:${id.split("/").join(":")}`
+  return actorIDOf("agent", id) ?? ""
+}
+
+/** The function or agent a stamped callable names: the record path the engine
+ * stamps a tool call and its row with
+ * (`substrate.reamde.dev/core/function/<authority>/<package>/<name>`). */
+export function callableRecord(
+  callable: string
+): { kind: "function" | "agent"; id: string } | undefined {
+  for (const kind of ["function", "agent"] as const) {
+    const prefix = `${CORE_PACKAGE}/${kind}/`
+    if (callable.startsWith(prefix))
+      return { kind, id: callable.slice(prefix.length) }
+  }
+  return undefined
 }
 
 /** The agent a thread ran, as the agent record's id. */
@@ -834,12 +855,12 @@ export function resolveTool(
   callable?: string
 ): ResolvedTool {
   const tools = agentTools(agent)
-  const stamped = callable ? actorIdentity(callable) : undefined
-  if (stamped?.record && stamped.cls === "agent") {
-    return { subagent: stamped.record.id }
+  const stamped = callable ? callableRecord(callable) : undefined
+  if (stamped?.kind === "agent") {
+    return { subagent: stamped.id }
   }
-  if (stamped?.record && stamped.cls === "function") {
-    const id = stamped.record.id
+  if (stamped?.kind === "function") {
+    const id = stamped.id
     const tool = tools.find((t) => t.name === name && t.function === id)
     return { function: id, description: tool?.description }
   }
@@ -857,14 +878,13 @@ export function resolveTool(
   return host && !agent ? { function: host } : {}
 }
 
-/** The callable a call named, in the actor spelling its rows are stamped
- * with (decision 0025): the stamp, else the same spelling of what the name
- * resolves to, else the name itself. */
+/** The callable a call named, as the record path its rows are stamped with:
+ * the stamp, else the path of what the name resolves to, else the name
+ * itself. */
 export function callableOf(call: ToolCallView, resolved: ResolvedTool): string {
   if (call.callable) return call.callable
-  if (resolved.subagent) return agentActor(resolved.subagent)
-  if (resolved.function)
-    return `function:${resolved.function.split("/").join(":")}`
+  if (resolved.subagent) return `${CORE_PACKAGE}/agent/${resolved.subagent}`
+  if (resolved.function) return `${CORE_PACKAGE}/function/${resolved.function}`
   return call.name
 }
 

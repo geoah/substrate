@@ -47,7 +47,7 @@ func provisionDeadlineAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "deadlinellm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-deadlinellm",
@@ -92,7 +92,7 @@ func provisionDeadlineAgents(t *testing.T) (*dataset, *fakeLLM) {
 		}),
 		agent("napper", map[string]any{"provider": "deadlinellm", "model": "dnap"}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install deadline package: %v", err)
 	}
 	return ds, fake
@@ -209,7 +209,7 @@ func TestAgentDeadlineInsideAModelCallSettlesOverbudgetOnOneThread(t *testing.T)
 	// the first turn's write and spend, and is neither retried nor parked.
 	ctx := context.Background()
 	ds, fake := provisionDeadlineAgents(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -224,7 +224,7 @@ func TestAgentDeadlineInsideAModelCallSettlesOverbudgetOnOneThread(t *testing.T)
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", deadlineNote, fid("n-early"), map[string]any{"name": "early"})}}},
 		fakeTurn{content: "too late", release: held},
 	)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-deadline"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -345,7 +345,7 @@ func TestAgentFinalPhaseNudgeStaysOutOfLaterRuns(t *testing.T) {
 	)
 	fake.script("dnap", fakeTurn{content: "rested", arrived: arrived, release: held})
 	wait := releaseNearTheDeadline(ds, "chronicler", arrived, release)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, substrate.ChatInput{Message: q1}, func(substrate.AgentEvent) {})
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, chronicler, substrate.ChatInput{Message: q1}, func(substrate.AgentEvent) {})
 	wait()
 	if err != nil {
 		t.Fatalf("chat 1: %v", err)
@@ -362,7 +362,7 @@ func TestAgentFinalPhaseNudgeStaysOutOfLaterRuns(t *testing.T) {
 	}
 
 	fake.script("dchron", fakeTurn{content: r2, promptTokens: 900}, fakeTurn{content: "SUMMARY ONE"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, chronicler, substrate.ChatInput{Thread: res.Thread, Message: q2}, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, chronicler, substrate.ChatInput{Thread: res.Thread, Message: q2}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat 2: %v", err)
 	}
 	reqs = fake.requestsOf("dchron")

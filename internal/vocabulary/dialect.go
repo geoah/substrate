@@ -18,8 +18,10 @@ import (
 // version it can read instead of failing on the newest one listed.
 //
 // 1 and 2 are the dialects before the number was held to the keys; 3 adds
-// a package header's `stability`, `interface` and `dialect`.
-const Dialect = 3
+// a package header's `stability`, `interface` and `dialect`; 4 takes the actor
+// document out, because an actor is a record the substrate writes for
+// everything that acts (decision 0270).
+const Dialect = 4
 
 // keyIntroducedAt is the dialect each declaration key arrived in, by the
 // closed key set that holds it, for every key after dialect 2; a key it does
@@ -41,8 +43,8 @@ var keyIntroducedAt = map[string]map[string]int64{
 var closedKeySets = map[string]map[string]bool{
 	"envelopeKeys": envelopeKeys, "metadataKeys": metadataKeys,
 	"packageDataKeys": packageDataKeys, "packageRetiredKeys": packageRetiredKeys,
-	"authorityDataKeys": authorityDataKeys, "actorDataKeys": actorDataKeys,
-	"datatypeDataKeys": datatypeDataKeys, "capabilityDataKeys": capabilityDataKeys,
+	"authorityDataKeys": authorityDataKeys,
+	"datatypeDataKeys":  datatypeDataKeys, "capabilityDataKeys": capabilityDataKeys,
 	"traitVariantKeys": traitVariantKeys,
 	"typeDataKeys":     typeDataKeys, "kindRetiredKeys": kindRetiredKeys,
 	"namesKeys": namesKeys, "indexKeys": indexKeys, "labelKeys": labelKeys, "idsKeys": idsKeys,
@@ -89,7 +91,7 @@ func (l *loader) noteKey(set map[string]bool, k string) {
 // (documentFrom), toward the package it builds.
 func (l *loader) noteDocuments(gd *packageDocs) {
 	docs := []*Document{gd.header}
-	for _, list := range [][]Document{gd.actors, gd.capabilities, gd.datatypes, gd.types, gd.mappings, gd.functions, gd.agents, gd.bundles} {
+	for _, list := range [][]Document{gd.capabilities, gd.datatypes, gd.types, gd.mappings, gd.functions, gd.agents, gd.bundles} {
 		for i := range list {
 			docs = append(docs, &list[i])
 		}

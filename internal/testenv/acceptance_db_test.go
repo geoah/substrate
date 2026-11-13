@@ -48,6 +48,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/testenv"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
 
@@ -981,8 +982,8 @@ func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
 	}
 	patchRecord(t, e, subjectKind, d.subjectID, map[string]any{"properties": map[string]any{"name": subjectHold, "note": "held by hand"}})
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
-		t.Errorf("subject name provenance = %v, want manager api with two alternatives", meta)
+	if alts, _ := meta["alternatives"].([]any); meta["manager"] != vocabulary.ActorID(substrate.ActorPerson) || len(alts) != 2 {
+		t.Errorf("subject name provenance = %v, want the person's actor as manager with two alternatives", meta)
 	}
 }
 
@@ -1368,7 +1369,7 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("task tombstones after the restore = %v", tombs)
 	}
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
+	if alts, _ := meta["alternatives"].([]any); meta["manager"] != vocabulary.ActorID(substrate.ActorPerson) || len(alts) != 2 {
 		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
 	}
 	file := getRecord(t, e, fileKind, idReport)

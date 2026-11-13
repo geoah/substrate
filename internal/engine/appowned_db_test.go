@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -42,8 +43,8 @@ func installAppPackage(t *testing.T) substrate.Dataset {
 		t.Fatalf("the app declares its package: %v", err)
 	}
 	row := mustGet(t, ds, kindPackageRef, apPackage)
-	if got := row.Properties["declaredBy"]; got != string(apApp) {
-		t.Fatalf("declaredBy = %v, want %s", got, apApp)
+	if ref, _ := row.Properties["declaredBy"].(map[string]any); ref[vocabulary.ReferenceValueKey] != vocabulary.ActorRef(vocabulary.ActorID(apApp))["ref"] {
+		t.Fatalf("declaredBy = %v, want a link to %s", row.Properties["declaredBy"], apApp)
 	}
 	if client, ok := row.Properties["declaredByClient"]; ok {
 		t.Fatalf("declaredByClient was stamped: %v", client)
@@ -62,8 +63,8 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installAppPackage(t)
-	set := mustPut(t, ds, substrate.ActorConsole, substrate.PutInput{Kind: apSet, Properties: map[string]any{"reps": "8"}})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, apDocs("reps", "weight")); err != nil {
+	set := mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: apSet, Properties: map[string]any{"reps": "8"}})
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, apDocs("reps", "weight")); err != nil {
 		t.Fatalf("the owner edits a package an app declared: %v", err)
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, apApp, apDocs("reps", "weight", "rpe")); err != nil {
@@ -71,10 +72,10 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	}
 	kind := mustGet(t, ds, apKindRef, apSet)
 
-	if _, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, ""); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, apPackage, ""); !errors.Is(err, substrate.ErrValidation) {
 		t.Errorf("a takeover without its confirmation: %v", err)
 	}
-	if _, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, swAuthority+"/other"); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, apPackage, swAuthority+"/other"); !errors.Is(err, substrate.ErrValidation) {
 		t.Errorf("a takeover confirming another package: %v", err)
 	}
 	for _, hand := range []substrate.Actor{apApp, substrate.AppActor("notes.example.org"), "agent:" + swAuthority + ":coach:planner", substrate.ActorSystem, "bundle:" + swAuthority + ":training", ""} {
@@ -82,24 +83,24 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 			t.Errorf("%q took the package over: %v", hand, err)
 		}
 	}
-	if _, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, swAuthority+"/missing", swAuthority+"/missing"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, swAuthority+"/missing", swAuthority+"/missing"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Errorf("a takeover of a package nobody holds: %v", err)
 	}
-	if _, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, "substrate.reamde.dev/core", "substrate.reamde.dev/core"); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, "substrate.reamde.dev/core", "substrate.reamde.dev/core"); !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("a takeover of a package no app declared: %v", err)
 	}
 
-	row, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, apPackage)
+	row, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, apPackage, apPackage)
 	if err != nil {
 		t.Fatalf("the owner takes the package over: %v", err)
 	}
-	if row.Properties["declaredBy"] != string(substrate.ActorConsole) {
+	if ref, _ := row.Properties["declaredBy"].(map[string]any); ref[vocabulary.ReferenceValueKey] != vocabulary.ActorRef(vocabulary.ActorID(substrate.ActorPerson))["ref"] {
 		t.Fatalf("declaredBy after the takeover = %v", row.Properties["declaredBy"])
 	}
-	// The answer says who it was taken from: the app's actor, since no
+	// The answer says who it was taken from: the app's publisher, since no
 	// client id was stamped.
-	if row.Properties["takenOverFrom"] != string(apApp) {
-		t.Fatalf("takenOverFrom = %v, want %s", row.Properties["takenOverFrom"], apApp)
+	if want := strings.TrimPrefix(string(apApp), substrate.AppActorPrefix); row.Properties["takenOverFrom"] != want {
+		t.Fatalf("takenOverFrom = %v, want %s", row.Properties["takenOverFrom"], want)
 	}
 	if _, ok := row.Properties["declaredByClient"]; ok {
 		t.Fatalf("declaredByClient after the takeover: %v", row.Properties["declaredByClient"])
@@ -110,7 +111,7 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	if got := mustGet(t, ds, apSet, set.ID); got.Properties["reps"] != "8" || got.DeletedAt != nil {
 		t.Fatalf("the takeover moved a record: %+v", got)
 	}
-	if _, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, apPackage); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, apPackage, apPackage); !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("a second takeover: %v", err)
 	}
 	// The package is written by every hand after the takeover as it was
@@ -123,23 +124,23 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 func TestOwnerEditsPublishedPackageImmediatelyAfterTakeover(t *testing.T) {
 	_, ds := newCoreDataset(t)
 	ctx := context.Background()
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorConsole, apDocs("reps"), nil, substrate.BundleInstall{
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, apDocs("reps"), nil, substrate.BundleInstall{
 		Published: true, PublishedFrom: "https://example.com/authority.json", PublishedDigest: "test", ShippedVersion: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, apDocs("reps", "weight")); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, apDocs("reps", "weight")); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("published declaration write: %v", err)
 	}
-	row, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, apPackage)
+	row, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, apPackage, apPackage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if row.Properties["source"] != "installed" || row.Properties["publishedFrom"] != nil {
 		t.Fatalf("takeover: %+v", row.Properties)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, apDocs("reps", "weight")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, apDocs("reps", "weight")); err != nil {
 		t.Fatalf("owner's immediate declaration write: %v", err)
 	}
-	mustPut(t, ds, substrate.ActorConsole, substrate.PutInput{Kind: apSet, Properties: map[string]any{"weight": "80"}})
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: apSet, Properties: map[string]any{"weight": "80"}})
 }

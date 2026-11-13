@@ -92,13 +92,8 @@ func TestUsageLabelsAnonymized(t *testing.T) {
 
 func TestActorClass(t *testing.T) {
 	for actor, want := range map[string]string{
-		"console": "console", "substratectl": "cli", "api": "api",
-		"substrate": "system", "substrate.oauth": "oauth", "substrate.webhook": "webhook",
-		"app:reamde.dev":                            "app",
-		"function:substrate.reamde.dev:core:x":      "function",
-		"agent:substrate.reamde.dev:assistant:moss": "agent",
-		"bundle:core":                               "bundle",
-		"mneme-v6-contacts":                         "other",
+		"person": "person", "app": "app", "function": "function", "agent": "agent",
+		"package": "package", "system": "system", "": "other", "console": "other",
 	} {
 		if got := ActorClass(actor); got != want {
 			t.Errorf("ActorClass(%q) = %q, want %q", actor, got, want)

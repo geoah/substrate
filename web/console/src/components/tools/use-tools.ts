@@ -176,7 +176,5 @@ export function useTools(only?: string): ToolsModel {
 /** An agent record's display name, the actor mark's. */
 export { agentName }
 
-/** An agent record id as its actor string. */
-export function agentActor(id: string): string {
-  return `agent:${id.split("/").join(":")}`
-}
+/** The id of the actor record an agent writes as, from its record id. */
+export { agentActor } from "@/lib/agent-chat"

@@ -18,7 +18,7 @@ func TestPurgeRecomputesTheSubjectOfAnOldTombstone(t *testing.T) {
 	ctx := context.Background()
 	installContactSource(t, ds)
 
-	sam, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	sam, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: subjPerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
 	})
 	if err != nil {

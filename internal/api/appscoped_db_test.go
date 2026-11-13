@@ -115,7 +115,10 @@ func appScopedActors(t *testing.T, env *dbEnv, kind, id string) []substrate.Acto
 	}
 	out := make([]substrate.Actor, 0, len(changes))
 	for _, c := range changes {
-		out = append(out, c.Actor)
+		// The hand the linked actor record is: the server derived it in this
+		// process (decision 0270).
+		key, _ := vocabulary.ActorKeyOf(c.Actor)
+		out = append(out, key)
 	}
 	return out
 }
@@ -468,7 +471,7 @@ func TestAnAppCallsTheFunctionsItsScopeNamesWhereTheirReachIsCovered(t *testing.
 		t.Fatalf("the call reached the engine %d times, scoped %v; want once, unscoped", n, scoped)
 	}
 	runs, err := e.ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{Kinds: []string{corePackage + "/triggerrun"}}})
-	if err != nil || len(runs.Records) != 1 || runs.Records[0].Properties["caller"] != appActor || runs.Records[0].Properties["callable"] != e.summarize {
+	if err != nil || len(runs.Records) != 1 || !linksActorRecord(runs.Records[0].Properties["caller"], appActor) || runs.Records[0].Properties["callable"] != e.summarize {
 		t.Fatalf("the call's audit = %+v, %v; want one run of %s by the app", runs, err, e.summarize)
 	}
 	// A function that calls a covered function is covered through it.

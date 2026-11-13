@@ -46,7 +46,7 @@ func TestADamagedGrantNeverReadsAsFullAccess(t *testing.T) {
 			if _, err := ds.Tokens(ctx); !errors.Is(err, substrate.ErrCorrupt) {
 				t.Fatalf("the listing with a damaged grant = %v, want it refused as corrupt", err)
 			}
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
 				t.Fatalf("the owner revokes the damaged token: %v", err)
 			}
 		})
@@ -98,7 +98,7 @@ func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
 	ownerBefore, appBefore := score(ctx), score(app)
 	const hidden = "samples.substrate.reamde.dev/tasks/project"
 	for i := range 40 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: hidden, ID: fid(fmt.Sprintf("p%d", i)),
 			Properties: map[string]any{"name": "flight flight " + strings.Repeat("long hidden words ", 30)},
 		}); err != nil {
@@ -136,7 +136,7 @@ func TestAChatAnAppOpensIsItsMessageAndItsThreadToRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) == 0 || changes[0].Actor != actor {
+	if len(changes) == 0 || changes[0].Actor != actorID(actor) {
 		t.Fatalf("the first message row = %+v, want the user message under %s", changes, actor)
 	}
 	if _, err := ds.Patch(app, actor, typeThread, res.Thread, substrate.PatchInput{

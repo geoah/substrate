@@ -8,6 +8,9 @@ enum Kinds {
     static let core = "substrate.reamde.dev/core"
     static let llm = "substrate.reamde.dev/llm"
     static let agent = "\(core)/agent"
+    /// A function's declaration. A tool call's `callable` is the record
+    /// path of the function or the agent it ran (decision 0270).
+    static let function = "\(core)/function"
     /// A kind's own declaration, as a `vocabulary` call's documents name it.
     static let kind = "\(core)/kind"
     static let request = "\(core)/recordpatchrequest"

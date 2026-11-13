@@ -450,7 +450,7 @@ func installShipped(t *testing.T, ds substrate.Dataset, id string) {
 	if _, ok := cat.ByID(id); !ok {
 		t.Fatalf("the catalog serves no %s (dropped: %v)", id, cat.Warnings())
 	}
-	if _, _, err := cat.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := cat.Install(context.Background(), substrate.ActorPerson, id, ds); err != nil {
 		if uvProvisionFailed(err) {
 			skipOrFailf(t, "uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
 		}
@@ -550,7 +550,7 @@ func installTriggers(t *testing.T, ds substrate.Dataset, dir string, ids ...stri
 // would.
 func putDataDoc(t *testing.T, ds substrate.Dataset, m map[string]any) *substrate.Record {
 	t.Helper()
-	return putDataDocAs(t, ds, substrate.ActorAPI, m)
+	return putDataDocAs(t, ds, substrate.ActorPerson, m)
 }
 
 // putDataDocAs is putDataDoc under another hand: a record a provider's
@@ -794,7 +794,7 @@ func mustGet(t *testing.T, ds substrate.Dataset, kind, id string) *substrate.Rec
 // mustPut is Put under the API actor with the error folded into the test.
 func mustPut(t *testing.T, ds substrate.Dataset, in substrate.PutInput) *substrate.Record {
 	t.Helper()
-	return mustPutAs(t, ds, substrate.ActorAPI, in)
+	return mustPutAs(t, ds, substrate.ActorPerson, in)
 }
 
 // mustPutAs is mustPut under another hand: a row an earlier sync left

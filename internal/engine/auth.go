@@ -40,6 +40,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
+	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -1102,6 +1103,13 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if err != nil {
 		return zero, "", err
 	}
+	// An app's approval is when its actor comes to be (decision 0270): the
+	// record its writes will link, written beside the token they stand on.
+	if in.ClientID != "" {
+		if err := t.ensureActors(authorize.AppActorFor(in.ClientID, in.AppAuthority, in.AppLocal)); err != nil {
+			return zero, "", err
+		}
+	}
 	return substrate.TokenInfo{
 		ID: ent.ID, Label: in.Label, Created: ent.CreatedAt, ExpiresAt: in.ExpiresAt,
 		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
@@ -1228,7 +1236,7 @@ func (s *service) RevokeToken(ctx context.Context, tokenSecret, clientID string)
 	if clientID != "" && clientID != info.ClientID {
 		return nil
 	}
-	_, err = ds.Delete(ctx, substrate.ActorAPI, kindToken, info.ID, substrate.DeleteInput{})
+	_, err = ds.Delete(ctx, substrate.ActorPerson, kindToken, info.ID, substrate.DeleteInput{})
 	if errors.Is(err, substrate.ErrNotFound) {
 		return nil
 	}

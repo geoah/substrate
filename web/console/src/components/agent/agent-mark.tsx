@@ -2,8 +2,7 @@
  * a purple disc), sized for the chat. */
 
 import { ActorMark } from "@/components/identity/actor-ref"
-import { actorIdentity } from "@/lib/actor-identity"
-import { agentActor } from "@/lib/agent-chat"
+import { agentIdentity } from "@/lib/actor-identity"
 
 export function AgentMark({
   id,
@@ -13,5 +12,5 @@ export function AgentMark({
   id: string
   size?: "xs" | "sm" | "md" | "lg"
 }) {
-  return <ActorMark identity={actorIdentity(agentActor(id))} size={size} />
+  return <ActorMark identity={agentIdentity(id)} size={size} />
 }

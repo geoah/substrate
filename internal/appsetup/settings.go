@@ -69,7 +69,7 @@ func WriteSettings(ctx context.Context, ds substrate.Dataset, actor substrate.Ac
 			err = errors.New("a setting could not be saved")
 		}
 	}()
-	if !substrate.HumanActors[actor] {
+	if !substrate.IsPerson(actor) {
 		return substrate.ErrForbidden
 	}
 	for _, v := range values {

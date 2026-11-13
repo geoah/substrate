@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react"
 import type { ReactElement, ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
@@ -48,6 +49,8 @@ vi.mock("@/router", () => ({
 }))
 
 import { ChangeRequestDetailPage } from "./change-request-detail"
+
+beforeEach(() => seedActors())
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 const CREDENTIAL_KIND = "samples.substrate.reamde.dev/vault/credential"
@@ -628,7 +631,10 @@ describe("ChangeRequestDetailPage", () => {
             manager: "learner.substrate",
             updatedAt: "2026-08-14T00:00:00Z",
           },
-          decidedAt: { manager: "console", updatedAt: "2026-08-14T01:00:00Z" },
+          decidedAt: {
+            manager: "act-person",
+            updatedAt: "2026-08-14T01:00:00Z",
+          },
         },
       }),
       { target }
@@ -658,7 +664,10 @@ describe("ChangeRequestDetailPage", () => {
             manager: "learner.substrate",
             updatedAt: "2026-08-14T00:00:00Z",
           },
-          decidedAt: { manager: "console", updatedAt: "2026-08-14T01:00:00Z" },
+          decidedAt: {
+            manager: "act-person",
+            updatedAt: "2026-08-14T01:00:00Z",
+          },
         },
       }),
       { target }

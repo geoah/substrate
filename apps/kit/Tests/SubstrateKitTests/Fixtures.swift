@@ -26,8 +26,7 @@ func discoveryJSON(version: String = "v0.114.0", totp: Bool = true) -> String {
         "record": "<authority>/<package>/<kind>/<id>",
         "collection": "/api/v1/records",
         "recordPath": "/api/v1/{authority}/{package}/{kind}/{id}",
-        "actors": ["api", "console", "cli", "bundle:<authority>:<package>", "function:<authority>:<package>:<name>",
-                   "agent:<authority>:<package>:<name>", "app:<host>", "substrate"]
+        "actorTypes": ["person", "app", "function", "agent", "package", "system"]
       },
       "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens", "password": "/password",
                     "totp": "/totp", "authorize": "/oauth/authorize", "token": "/oauth/token"},

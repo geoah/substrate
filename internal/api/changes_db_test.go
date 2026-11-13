@@ -44,7 +44,6 @@ func changesInstallTrigger(t *testing.T, env *dbEnv) changesTrigger {
 	ct := changesTrigger{widget: pkg + "/widget", trigger: "on-" + pkg + "/fail"}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"}, map[string]any{
 			"properties": map[string]any{"name": map[string]any{"type": "string"}},
 		}),
@@ -54,7 +53,7 @@ func changesInstallTrigger(t *testing.T, env *dbEnv) changesTrigger {
 			"source":      "def main(input, host):\n    raise Exception(\"boom\")\n",
 		}),
 	}
-	if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the widget package: %v", err)
 	}
 	if _, err := env.ds.Put(ctx, substrate.ActorSystem, substrate.PutInput{
@@ -202,7 +201,7 @@ func TestChangesCarryValuesOnlyWhenAsked(t *testing.T) {
 	env := newDBEnv(t)
 	pkg := env.repository + "/changes"
 	item := pkg + "/item"
-	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "item"}, map[string]any{
 			"properties": map[string]any{

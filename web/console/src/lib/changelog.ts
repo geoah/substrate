@@ -6,6 +6,7 @@
  * lacks: `authority` expands to its kinds (still server-side), time becomes a
  * seq seek plus a paging floor (see api/changes.ts). */
 
+import { isSystemActor } from "@/lib/actor-directory"
 import type { ChangeFeedFilter } from "@/lib/api/changes"
 import type { AffectedRecord, ChangeRow, KindInfo } from "@/lib/api/types"
 import { CORE_PACKAGE } from "@/lib/api/http"
@@ -328,7 +329,7 @@ export function changelogFacetFields(opts: {
 
 /** Managers credit value sources, which can differ from the committing actor. */
 export function changeSources(row: ChangeRow): string[] {
-  if (row.actor !== "substrate") return []
+  if (!isSystemActor(row.actor)) return []
   const managers = row.payload?.managers
   if (!managers || typeof managers !== "object" || Array.isArray(managers))
     return []

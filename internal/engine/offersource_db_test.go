@@ -2,6 +2,8 @@ package engine_test
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -48,20 +50,22 @@ func TestPropertyMetaNamesTheSourceRecordBehindEachOfferAndTheManager(t *testing
 
 	got := mustGet(t, ds, sam.Kind, sam.ID)
 	name := got.PropertyMeta["name"]
-	if name.Manager != string(owner) || name.Tier != substrate.TierOwner || name.Source != "" {
+	if name.Manager != vocabulary.ActorID(owner) || name.Tier != substrate.TierOwner || name.Source != "" {
 		t.Fatalf("an owner hold names a source: %+v", name)
 	}
+	// The alternatives come in the order of their actors' ids.
 	want := []altTuple{
-		{string(people), "Samuel Jones", gPath},
-		{string(slack), "Sam Jones", sPath},
+		{vocabulary.ActorID(people), "Samuel Jones", gPath},
+		{vocabulary.ActorID(slack), "Sam Jones", sPath},
 	}
+	slices.SortFunc(want, func(a, b altTuple) int { return strings.Compare(a.actor, b.actor) })
 	if alts := altsOf(got, "name"); len(alts) != 2 || alts[0] != want[0] || alts[1] != want[1] {
 		t.Fatalf("held name alternatives = %v, want %v", alts, want)
 	}
 	// displayName is slack's alone and nothing held it: machine-held, and
 	// the manager names the record the value was read from.
 	dn := got.PropertyMeta["displayName"]
-	if dn.Manager != string(slack) || dn.Tier != substrate.TierMachine || dn.Source != sPath {
+	if dn.Manager != vocabulary.ActorID(slack) || dn.Tier != substrate.TierMachine || dn.Source != sPath {
 		t.Fatalf("displayName = %+v, want slack's %s at machine", dn, sPath)
 	}
 
@@ -75,17 +79,19 @@ func TestPropertyMetaNamesTheSourceRecordBehindEachOfferAndTheManager(t *testing
 	}
 	got = mustGet(t, ds, sam.Kind, sam.ID)
 	name = got.PropertyMeta["name"]
-	if name.Manager != string(slack) || name.Tier != substrate.TierMachine || name.Source != sPath {
+	if name.Manager != vocabulary.ActorID(slack) || name.Tier != substrate.TierMachine || name.Source != sPath {
 		t.Fatalf("released name = %+v, want slack's %s at machine", name, sPath)
 	}
-	if alts := altsOf(got, "name"); len(alts) != 1 || alts[0] != want[0] {
-		t.Fatalf("released name alternatives = %v, want %v", alts, want[:1])
+	// Google's alone: slack's is now the value.
+	google := altTuple{vocabulary.ActorID(people), "Samuel Jones", gPath}
+	if alts := altsOf(got, "name"); len(alts) != 1 || alts[0] != google {
+		t.Fatalf("released name alternatives = %v, want %v", alts, google)
 	}
 	// A union: the stored value is the union across both mirrors, the
 	// manager is the latest contributing one, and its offer — a strict subset
 	// of the stored items — backs the value rather than competing with it.
 	emails := got.PropertyMeta["emails"]
-	if emails.Manager != string(slack) || emails.Tier != substrate.TierMachine || emails.Source != sPath {
+	if emails.Manager != vocabulary.ActorID(slack) || emails.Tier != substrate.TierMachine || emails.Source != sPath {
 		t.Fatalf("released emails = %+v, want slack's %s at machine", emails, sPath)
 	}
 	if n := len(emails.Alternatives); n != 0 {

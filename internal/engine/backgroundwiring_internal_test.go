@@ -64,7 +64,7 @@ func TestTheDetachedSitesGoThroughSpawn(t *testing.T) {
 	}
 
 	ds.maybeJudge("request1", &policyRule{id: "policy1", judge: "judge.test.dev/judge/reviewer"})
-	ds.resumeNotifiedThread("thread1", "")
+	ds.resumeNotifiedThread("thread1", "", "row1")
 	ds.warmFunctions()
 	ds.reindexFrom = 1
 	ds.startSearchReindex()

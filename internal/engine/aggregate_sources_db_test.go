@@ -560,7 +560,7 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 		t.Errorf("separate: %d rows, want one per source, the link ignored", len(res.Rows))
 	}
 
-	if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, fid("scale"), substrate.DeleteInput{}); err != nil {
+	if _, err := f.ds.Delete(ctx, substrate.ActorPerson, link, fid("scale"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the link: %v", err)
 	}
 	f.mustPut(t, link, fid("a"), map[string]any{"name": "a", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fid("healthconnect"))}})
@@ -575,7 +575,7 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 	}}, "the source links the priority policy reads")
 
 	for _, id := range []string{"a", "b"} {
-		if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, fid(id), substrate.DeleteInput{}); err != nil {
+		if _, err := f.ds.Delete(ctx, substrate.ActorPerson, link, fid(id), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete link %s: %v", id, err)
 		}
 	}

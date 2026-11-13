@@ -254,7 +254,7 @@ func (e *dbEnv) declare(t *testing.T, docs string) {
 			batch = append(batch, doc)
 		}
 	}
-	if _, err := e.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, batch); err != nil {
+	if _, err := e.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, batch); err != nil {
 		t.Fatalf("apply vocabulary: %v", err)
 	}
 }

@@ -125,14 +125,15 @@ public struct Discovery: Codable, Hashable, Sendable {
         public var record: String
         public var collection: String
         public var recordPath: String
-        public var actors: [String]
+        /// The types of actor record a write links (decision 0270).
+        public var actorTypes: [String]
 
-        public init(kind: String = "", record: String = "", collection: String = "", recordPath: String = "", actors: [String] = []) {
+        public init(kind: String = "", record: String = "", collection: String = "", recordPath: String = "", actorTypes: [String] = []) {
             self.kind = kind
             self.record = record
             self.collection = collection
             self.recordPath = recordPath
-            self.actors = actors
+            self.actorTypes = actorTypes
         }
 
         public init(from decoder: Decoder) throws {
@@ -141,7 +142,7 @@ public struct Discovery: Codable, Hashable, Sendable {
             record = c.value(.record, or: "")
             collection = c.value(.collection, or: "")
             recordPath = c.value(.recordPath, or: "")
-            actors = c.value(.actors, or: [])
+            actorTypes = c.value(.actorTypes, or: [])
         }
     }
 

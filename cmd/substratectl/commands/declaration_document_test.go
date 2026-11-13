@@ -164,7 +164,7 @@ func TestOrdinaryRecordStillNestsItsProperties(t *testing.T) {
 func TestEveryMetaKindTakesTheDeclarationPath(t *testing.T) {
 	for _, short := range []string{
 		"kind", "authority", "trait", "propertytype",
-		"function", "agent", "bundle", "recordmapping", "actor",
+		"function", "agent", "bundle", "recordmapping",
 	} {
 		ref := "substrate.reamde.dev/core/" + short
 		if _, ok := declarationKindOf(ref); !ok {
@@ -175,6 +175,9 @@ func TestEveryMetaKindTakesTheDeclarationPath(t *testing.T) {
 		"samples.substrate.reamde.dev/people/person",
 		"substrate.reamde.dev/core/token",
 		"substrate.reamde.dev/core/triggerrun",
+		// An actor is a record the engine writes, no declaration (decision
+		// 0270).
+		"substrate.reamde.dev/core/actor",
 		"task",
 	} {
 		if _, ok := declarationKindOf(ref); ok {

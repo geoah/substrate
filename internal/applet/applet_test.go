@@ -484,7 +484,7 @@ func TestAFilterBindingThatResolvesToNothingIsDropped(t *testing.T) {
 
 func TestOpenNavigatesToTheRecordsScreen(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
-	frame, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	frame, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "library", UI: map[string]any{}},
 		Shown:  &substrate.AppletShown{Screen: "library", Version: 3},
 		Action: substrate.AppletAction{Name: "open", Context: map[string]any{"id": "dune"}},
@@ -516,7 +516,7 @@ func TestAConfirmedStepRunsNothingUntilConfirmed(t *testing.T) {
 		State:  substrate.AppletState{Screen: "book", Params: map[string]any{"id": "dune"}, UI: map[string]any{}},
 		Action: substrate.AppletAction{Name: "remove", Context: map[string]any{"title": "Dune"}},
 	}
-	frame, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, in)
+	frame, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +524,7 @@ func TestAConfirmedStepRunsNothingUntilConfirmed(t *testing.T) {
 		t.Fatalf("an unconfirmed remove ran: confirm %q, state %+v", frame.Confirm, frame.State)
 	}
 	in.Confirmed = true
-	frame, err = runtime(f).Act(context.Background(), substrate.ActorConsole, rec, in)
+	frame, err = runtime(f).Act(context.Background(), substrate.ActorPerson, rec, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestAddingASearchResultEnsuresItsAuthorOnce(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
 	rt := runtime(f)
 	ctx := context.Background()
-	search, err := rt.Act(ctx, substrate.ActorConsole, rec, substrate.AppletActInput{
+	search, err := rt.Act(ctx, substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "add", UI: map[string]any{"search": map[string]any{"q": "left hand"}}},
 		Shown:  &substrate.AppletShown{Screen: "add", Version: 3},
 		Action: substrate.AppletAction{Name: "search"},
@@ -560,7 +560,7 @@ func TestAddingASearchResultEnsuresItsAuthorOnce(t *testing.T) {
 	}
 	hit := results[0].(map[string]any)
 	for range 2 {
-		frame, err := rt.Act(ctx, substrate.ActorConsole, rec, substrate.AppletActInput{
+		frame, err := rt.Act(ctx, substrate.ActorPerson, rec, substrate.AppletActInput{
 			State:  search.State,
 			Shown:  &search.Shown,
 			Action: substrate.AppletAction{Name: "addResult", Context: hit},
@@ -589,7 +589,7 @@ func TestAddingASearchResultEnsuresItsAuthorOnce(t *testing.T) {
 func TestARefusedStepNamesItsActionAndStep(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
 	f.refuse = &substrate.ValidationError{Problems: []string{"props.title: required"}}
-	_, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	_, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "add", UI: map[string]any{"form": map[string]any{"title": "", "author": "Someone New"}}},
 		Action: substrate.AppletAction{Name: "save"},
 	})
@@ -604,7 +604,7 @@ func TestARefusedStepNamesItsActionAndStep(t *testing.T) {
 		Problems: []string{"props.revision: 2 is below the stored revision 3; a rewrite never lowers it, so this is a stale delivery"},
 		Reason:   substrate.ReasonStaleRevision,
 	}
-	_, err = runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	_, err = runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "add", UI: map[string]any{"form": map[string]any{"title": "A Title", "author": "Someone New"}}},
 		Action: substrate.AppletAction{Name: "save"},
 	})
@@ -615,7 +615,7 @@ func TestARefusedStepNamesItsActionAndStep(t *testing.T) {
 
 func TestSetAndNowWriteWhatTheyName(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
-	frame, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	frame, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "book", Params: map[string]any{"id": "earthsea"}, UI: map[string]any{}},
 		Action: substrate.AppletAction{Name: "finish"},
 	})
@@ -710,7 +710,7 @@ func TestAScreenIsEnteredByItsInitHoweverItIsReached(t *testing.T) {
 // for it: an edit that never loaded is not the owner clearing the notes.
 func TestAPatchLeavesOutWhatTheStateDoesNotHold(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
-	_, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	_, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "book", Params: map[string]any{"id": "dune"}, UI: map[string]any{"edit": map[string]any{}}},
 		Shown:  &substrate.AppletShown{Screen: "book", Version: 3, Params: map[string]any{"id": "dune"}},
 		Action: substrate.AppletAction{Name: "saveNotes"},
@@ -729,7 +729,7 @@ func TestAPatchLeavesOutWhatTheStateDoesNotHold(t *testing.T) {
 func TestNoStepOfAnActionCarriesTheRequestsKey(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
 	ctx := substrate.WithIdempotencyKey(context.Background(), "tap-1")
-	_, err := runtime(f).Act(ctx, substrate.ActorConsole, rec, substrate.AppletActInput{
+	_, err := runtime(f).Act(ctx, substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "add", UI: map[string]any{"form": map[string]any{"title": "Kindred", "author": "Octavia E. Butler"}}},
 		Action: substrate.AppletAction{Name: "save"},
 	})
@@ -859,7 +859,7 @@ func TestOnlyTheAppletsOwnFailuresAreSaidToTheOwner(t *testing.T) {
 // actions that delete.
 func TestADeleteIsAskedAndDrawnAsOne(t *testing.T) {
 	f, rec := seeded(), booksApplet(t)
-	frame, err := runtime(f).Act(context.Background(), substrate.ActorConsole, rec, substrate.AppletActInput{
+	frame, err := runtime(f).Act(context.Background(), substrate.ActorPerson, rec, substrate.AppletActInput{
 		State:  substrate.AppletState{Screen: "book", Params: map[string]any{"id": "dune"}, UI: map[string]any{}},
 		Action: substrate.AppletAction{Name: "remove", Context: map[string]any{"title": "Dune"}},
 	})

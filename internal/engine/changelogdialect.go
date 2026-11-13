@@ -28,8 +28,12 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// DIALECT 1 IS THE ONLY RUNG: the ops, fold effects and entry frame this
-// binary writes. A change that teaches the writer a spelling an older binary's
+// THE RUNGS. Dialect 1 named a line's actor by its spelling and its token as
+// `principal`; dialect 2 dropped the recovery key's wrap from its lines
+// (decision 0264, conversion_0002_drop_recovery_wrap.go); dialect 3, the ops,
+// fold effects and entry frame this binary writes, links the three actor
+// records a write records (decision 0270, conversion_0003_link_actors.go).
+// Each step rewrites the rung below into its own. A change that teaches the writer a spelling an older binary's
 // fold would refuse or misread (a new fold effect kind, a new op, a payload
 // shape an old decoder reads differently) bumps maxChangelogDialect in the
 // same commit, and changelogdialect_internal_test.go is what makes the first
@@ -57,7 +61,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 2
+const maxChangelogDialect = 3
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay.
 // No dialect is on the wire: it is exported for the tests outside this package

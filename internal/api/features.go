@@ -102,15 +102,18 @@ var removedFeatures = []removedFeature{}
 // are the doors that exist today for the feature's own verbs.
 var featureTable = []feature{
 	// Revision 2: `vocabulary.dialect`, the declaration format the server
-	// reads (decision 0268).
-	{name: "discovery", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// reads (decision 0268). Revision 3: `grammar.actorTypes`, the types of
+	// actor record a write links, in place of the actor spellings (decision
+	// 0270).
+	{name: "discovery", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /.well-known/substrate/server.json",
 		"GET /healthz",
 	}},
 	// Every list, the body-addressed create and the record path. The ranked
 	// and the aggregate read of the list route are features of their own
-	// below, each with its own label.
-	{name: "records", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// below, each with its own label. Revision 3: a property's manager and
+	// each alternative link the actor record of their hand (decision 0270).
+	{name: "records", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -124,8 +127,12 @@ var featureTable = []feature{
 	// `set_aside`, a repository the server's start set aside.
 	{name: "errors", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
-	// and tailed (`?watch=1`, here and on the records route).
-	{name: "changefeed", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
+	// change links the actor record that wrote it, the one it acted for
+	// (`onBehalfOf`) and the token behind it (`token`), a run its token
+	// (`token`, `tokenName`), and `actors=` takes actor record ids (decision
+	// 0270).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/changes",
 	}},
 	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
@@ -188,8 +195,11 @@ var featureTable = []feature{
 	// a scoped token through /oauth/authorize and /oauth/token, the owner
 	// approves it through /authorizations, and the app asks whether it is
 	// still set up. The takeover is the owner's way out of a package an app
-	// keeps (decision 0205).
-	{name: "apps", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// keeps (decision 0205). Revision 2: a package row says who keeps it
+	// (`keptBy`, decision 0258). Revision 3: the approval page's app says the
+	// name its changes appear as (`appearsAs`), in place of an actor spelling
+	// (decision 0270).
+	{name: "apps", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /oauth/authorize",
 		"POST /oauth/token",
 		"POST /oauth/revoke",

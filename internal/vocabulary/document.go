@@ -95,15 +95,17 @@ const (
 	DocRecordMapping = "recordmapping"
 	DocFunction      = "function"
 	DocAgent         = "agent"
-	DocActor         = "actor"
 	DocBundle        = "bundle"
+	// DocActor is the actor kind's local name. An actor is a record the
+	// engine writes for everything that acts (decision 0270), not a document
+	// a package declares, so it is no schema kind.
+	DocActor = "actor"
 )
 
 var schemaDocumentKinds = map[string]bool{
 	DocAuthority: true, DocPackage: true, DocKind: true, DocTrait: true,
 	DocPropertyType: true, DocRecordMapping: true, DocFunction: true,
-	DocAgent: true,
-	DocActor: true, DocBundle: true,
+	DocAgent: true, DocBundle: true,
 }
 
 // VocabularyDocumentKind reports whether a local name is one of the schema kinds —
@@ -261,7 +263,9 @@ func ParseShipped(data []byte) ([]Document, []ShippedRecord, error) {
 			continue
 		}
 		ref := mstr(raw, "kind")
-		if authority, _, _ := SplitKindRef(ref); authority == "" || IsDeclarationRef(ref) {
+		// An actor document is refused as the manifest it once was, not
+		// admitted as a record: the substrate writes every actor record.
+		if authority, _, _ := SplitKindRef(ref); authority == "" || IsDeclarationRef(ref) || ref == CoreKind(DocActor) {
 			doc, errs := documentFrom(raw)
 			problems = append(problems, errs...)
 			if len(errs) == 0 {
@@ -374,6 +378,8 @@ func documentFrom(raw map[string]any) (Document, []string) {
 		errf("manifest: kind is required — a kind reference like %q", CoreKind(DocKind))
 	case authority+"/"+pkg != PackageCore:
 		errf("manifest: kind %q: schema manifests are records of the %s kinds", ref, PackageCore)
+	case local == DocActor:
+		errf("manifest: kind %q: an actor is a record the substrate writes for everything that acts, and a package declares none — drop the document", ref)
 	case !schemaDocumentKinds[local]:
 		errf("manifest: unknown kind %q", ref)
 	}
@@ -478,16 +484,6 @@ func PackageManifest(pkg string, version int64) map[string]any {
 		"data": map[string]any{
 			"authority": authority, "package": name, "version": version,
 		},
-	}
-}
-
-// ActorManifest renders an actor document.
-func ActorManifest(pkg, actor string) map[string]any {
-	authority, name := SplitPackageRef(pkg)
-	return map[string]any{
-		"kind":     CoreKind(DocActor),
-		"metadata": map[string]any{"id": actor},
-		"data":     map[string]any{"authority": authority, "package": name},
 	}
 }
 

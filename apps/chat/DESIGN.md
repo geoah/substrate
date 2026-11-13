@@ -143,10 +143,11 @@ Resolving an interaction or a request must carry the version the owner read
 (`internal/engine/write.go:650`); a `409` means it moved: the card re-reads
 and asks again, never retries blind.
 
-**The actor.** Requests send no `X-Substrate-Actor`: an app token's writes
-are recorded as `app:<host>` and its token is labelled with the client's
-host; a password sign-in's are `api`, its token labelled "Substrate Chat on
-<device>". `console` would claim a door this app is not.
+**The actor.** A request names no actor: the server derives it from the
+token (decision 0270). An app token's writes link the app's actor record and
+act for the person, its token labelled with the client's host; a password
+sign-in's link the person's, its token labelled "Substrate Chat on <device>",
+which is what tells them apart in History.
 
 ### Streams: every event, every exit
 

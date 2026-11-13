@@ -27,7 +27,6 @@ func regressInstallBundle(t *testing.T, env *dbEnv) regressBundle {
 	b := regressBundle{id: pkg, config: pkg + "/widgetconfig", item: pkg + "/widget"}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "the widgets bundle",
 			"inputs":      map[string]any{"client": map[string]any{"kind": b.config}},
@@ -41,7 +40,7 @@ func regressInstallBundle(t *testing.T, env *dbEnv) regressBundle {
 			"properties": map[string]any{"name": map[string]any{"type": "string"}},
 		}),
 	}
-	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the widgets bundle: %v", err)
 	}
 	return b

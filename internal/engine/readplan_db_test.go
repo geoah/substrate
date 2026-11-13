@@ -200,7 +200,7 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 	// Other threads' messages, so a read that scans the kind shows it.
 	const noiseThreads, perThread = 12, 100
 	for th := range noiseThreads {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for i := range perThread {
 				if _, err := tx.put(substrate.PutInput{
 					Kind: typeMessage, ID: fmt.Sprintf("n%02d-%03d", th, i),
@@ -221,7 +221,7 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 	for i, turn := range []struct{ role, content string }{
 		{"user", "hello"}, {"assistant", "hi"}, {msgRoleSystem, `{"event":"recordResolved"}`}, {"tool", "out"}, {"assistant", "bye"},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeMessage, ID: "m" + strconv.Itoa(i),
 			Properties: map[string]any{"role": turn.role, "content": turn.content, "turn": i, msgRelThread: thread},
 		}); err != nil {
@@ -246,7 +246,7 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 	nextTurn := func() int64 {
 		t.Helper()
 		var next int64
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			var err error
 			next, err = tx.nextThreadTurn(thread)
 			return err
@@ -275,8 +275,8 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
-	// The re-check counts system rows written after the run opened; opened
-	// an hour from now, it finds none and resumes nothing.
+	// The re-check reads the first system row written after the run opened;
+	// opened an hour from now, it finds none and resumes nothing.
 	recheck := func() { loop.recheckResolutions(ctx) }
 
 	answers := func(when, wantTranscript string, wantNext int64, wantProse string) {
@@ -307,7 +307,7 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 		{"the transcript", "SELECT e.id, e.props FROM records e", func() { transcript() }, 0},
 		{"the next turn", "max((e.props->>'turn')::bigint)", func() { nextTurn() }, 0},
 		{"the resume budget", "SELECT count(*) FROM records e", func() { resolutions() }, 4},
-		{"the re-check", "SELECT count(*) FROM records e", recheck, 5},
+		{"the re-check", "ORDER BY e.created_at, e.id LIMIT 1", recheck, 5},
 		{"the recent prose", "SELECT e.props->>'role', e.props->>'content' FROM records e", func() { prose() }, 2},
 	} {
 		q := log.sent(t, read.marker, read.run)
@@ -325,7 +325,7 @@ func TestReadPlanThreadReadsSeekTheRefsIndex(t *testing.T) {
 	// decide, and the turn is back.
 	undo := oweRefs(t, ds, typeMessage, msgRelThread)
 	answers("refs owed", "m0,m1,m2,m3,m4", 5, "user:hello,assistant:hi,assistant:bye")
-	if q := log.sent(t, "SELECT count(*) FROM records e", recheck); strings.Contains(q.sql, "FROM refs r") {
+	if q := log.sent(t, "ORDER BY e.created_at, e.id LIMIT 1", recheck); strings.Contains(q.sql, "FROM refs r") {
 		t.Fatalf("with refs owed the re-check still reads refs:\n%s", q.sql)
 	}
 	undo()
@@ -398,7 +398,7 @@ func TestReadPlanResolutionSweepReadsEachMessageOnce(t *testing.T) {
 	const quiet, perThread = 12, 20
 	messages := 0
 	for th := range quiet {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			id := fmt.Sprintf("quiet-%02d", th)
 			if err := putThread(tx, id, threadOK, settlesLater); err != nil {
 				return err
@@ -430,7 +430,7 @@ func TestReadPlanResolutionSweepReadsEachMessageOnce(t *testing.T) {
 		{"thread-deleted", threadOK, msgRoleSystem},
 	}
 	for _, th := range late {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			if err := putThread(tx, th.id, th.status, settledAgo); err != nil {
 				return err
 			}
@@ -443,10 +443,10 @@ func TestReadPlanResolutionSweepReadsEachMessageOnce(t *testing.T) {
 		}
 		messages += 2
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeMessage, "row-deleted-001", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeMessage, "row-deleted-001", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the row: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, "thread-deleted", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeThread, "thread-deleted", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the thread: %v", err)
 	}
 	analyzeTables(t, ds)
@@ -502,7 +502,7 @@ func TestReadPlanRepeatedReferenceFilterSeeksTheRefsIndex(t *testing.T) {
 	log := &queryLog{}
 	ds, target, pointer := refIndexDataset(t, WithTestQueryTracer(log))
 	// Every bulk pointer has seen a; only p3 has seen c.
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		for i := range 400 {
 			if _, err := tx.put(substrate.PutInput{
 				Kind: pointer, ID: fid(fmt.Sprintf("bulk%03d", i)), Properties: map[string]any{"alsoSeen": []any{fid("a")}},
@@ -555,7 +555,7 @@ func TestReadPlanRepeatedReferenceFilterSeeksTheRefsIndex(t *testing.T) {
 		`INSERT INTO former_ids (record_kind, former_id, record_id) VALUES ($1, 'old-c', $2)`, target, fid("c")); err != nil {
 		t.Fatalf("plant a former id: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pointer, ID: fid("pold"), Properties: map[string]any{"alsoSeen": []any{fid("b"), "old-c"}},
 	}); err != nil {
 		t.Fatalf("put the pointer at the former id: %v", err)
@@ -588,7 +588,7 @@ func TestReadPlanReferencingMatchesSeekThePage(t *testing.T) {
 	ds, target, pointer := refIndexDataset(t, WithTestQueryTracer(log))
 	const hot, batch = 2000, 500
 	for from := 0; from < hot; from += batch {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for i := from; i < from+batch; i++ {
 				if _, err := tx.put(substrate.PutInput{
 					Kind: pointer, ID: bulkIDBelowFixtures(i), Properties: map[string]any{"target": fid("b")},
@@ -649,7 +649,7 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	ds := openCoreDataset(t, WithTestQueryTracer(log))
 	const pkg = "readplan.test.dev/readplan"
 	doc, note := pkg+"/doc", pkg+"/note"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "readplan", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
@@ -669,24 +669,24 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	png, err := ds.PutBlob(ctx, substrate.ActorAPI, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
+	png, err := ds.PutBlob(ctx, substrate.ActorPerson, substrate.BlobUpload{MediaType: "image/png", Name: "a.png"}, []byte("first"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	txt, err := ds.PutBlob(ctx, substrate.ActorAPI, substrate.BlobUpload{MediaType: "text/plain", Name: "b.txt"}, []byte("second"), "")
+	txt, err := ds.PutBlob(ctx, substrate.ActorPerson, substrate.BlobUpload{MediaType: "text/plain", Name: "b.txt"}, []byte("second"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	// Every doc names both blobs, carries an annotation of its own and
 	// points at a note of its own, which names the txt.
 	for i := range 60 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: note, ID: fid(fmt.Sprintf("n%02d", i)),
 			Properties: map[string]any{"name": strconv.Itoa(i), "file": txt.Digest},
 		}); err != nil {
 			t.Fatalf("put note %d: %v", i, err)
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: doc, ID: fid(fmt.Sprintf("d%02d", i)),
 			Properties: map[string]any{
 				"name": strconv.Itoa(i), "file": png.Digest, "files": []any{txt.Digest, png.Digest},
@@ -698,12 +698,12 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 		}
 	}
 	// d01 absorbs a merged doc, so its former id is one record's alone.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: doc, ID: fid("gone"), Properties: map[string]any{"name": "gone"},
 	}); err != nil {
 		t.Fatalf("put the doc to merge: %v", err)
 	}
-	if _, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: doc, Winner: fid("d01"), Loser: fid("gone")}); err != nil {
+	if _, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: doc, Winner: fid("d01"), Loser: fid("gone")}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 
@@ -809,7 +809,7 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 	ds, target, pointer := refIndexDataset(t)
 	const pkg = "readplan.test.dev/plain"
 	tagged := pkg + "/tagged"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "plain", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
@@ -827,7 +827,7 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 		"s2": {vocabulary.RecordPath(target, fid("b"))},
 		"s3": {fid("c")},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: tagged, ID: fid(id), Properties: map[string]any{"alsoSeen": seen},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
@@ -887,7 +887,7 @@ func TestReadPlanAReferenceSplitSeeksTheRefsIndex(t *testing.T) {
 	ds, target, pointer := refIndexDataset(t, WithTestQueryTracer(log))
 	const pkg = "readplan.test.dev/split"
 	plain := pkg + "/plain"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "split", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
@@ -899,7 +899,7 @@ func TestReadPlanAReferenceSplitSeeksTheRefsIndex(t *testing.T) {
 	}
 	// Every bulk pointer points at a; q1 holds c's path, q2 c's bare id and
 	// q3 a's.
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		for i := range 400 {
 			if _, err := tx.put(substrate.PutInput{
 				Kind: pointer, ID: fid(fmt.Sprintf("bulk%03d", i)), Properties: map[string]any{"target": fid("a")},
@@ -957,7 +957,7 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 	const pkg = "readplan.test.dev/timeline"
 	meeting, series, exception := pkg+"/meeting", pkg+"/series", pkg+"/exception"
 	temporal := vocabulary.TraitTemporalCore + "(range)"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "timeline", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
@@ -993,7 +993,7 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 	}
 	from, to := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	stamp := func(at time.Time) string { return at.Format(time.RFC3339) }
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		// Sixty meetings in the window, an hour apart, each annotated.
 		for i := range 60 {
 			at := from.Add(time.Duration(i) * time.Hour)
@@ -1040,7 +1040,7 @@ func TestReadPlanWindowSeeksOverridesAndHydratesEachPart(t *testing.T) {
 	// series' pointers reads them and filters them out.
 	const hot, batch = 2000, 500
 	for start := 0; start < hot; start += batch {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for i := start; i < start+batch; i++ {
 				slot := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Hour)
 				if _, err := tx.put(substrate.PutInput{

@@ -512,7 +512,7 @@ describe("foldRequest", () => {
       clientId: "https://sync.example.com/client.json",
       host: "sync.example.com",
       local: false,
-      actor: "app:sync.example.com",
+      appearsAs: "sync.example.com",
       verified: false,
       publisher: { listed: false },
     },

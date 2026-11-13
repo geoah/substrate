@@ -21,9 +21,12 @@
   },
   "input.envelope(record).change": {
     "actor": "string",
+    "actorPackage": "string, optional",
+    "actorType": "string",
     "changed": "array of string, optional",
     "id": "string",
     "kind": "string",
+    "onBehalfOf": "string, optional",
     "op": "string",
     "seq": "number"
   },

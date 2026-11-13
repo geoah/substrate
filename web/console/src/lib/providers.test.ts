@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
@@ -32,6 +33,8 @@ import { noteServerDate, resetServerClock } from "@/lib/api/http"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { shortDate } from "@/lib/format"
 import { syncFieldsOf } from "@/lib/sync"
+
+beforeEach(() => seedActors())
 
 function record(
   id: string,
@@ -1176,7 +1179,7 @@ describe("what a provider did", () => {
       "substrate.reamde.dev/core/triggerrun"
     )
 
-  it("names the bundle and its functions as actors", () => {
+  it("links the actor records of the package and its functions", () => {
     expect(
       providerActors(G, [
         `${G}/synccontacts`,
@@ -1184,9 +1187,9 @@ describe("what a provider did", () => {
         `${G}/syncgmail`,
       ])
     ).toEqual([
-      "bundle:providers.substrate.reamde.dev:google",
-      "function:providers.substrate.reamde.dev:google:synccontacts",
-      "function:providers.substrate.reamde.dev:google:syncgmail",
+      "act-fn-google-synccontacts",
+      "act-fn-google-syncgmail",
+      "act-pkg-google",
     ])
   })
 

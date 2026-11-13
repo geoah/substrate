@@ -14,7 +14,7 @@ import Testing
 
     @Test func aWriteShowsTheValuesItWasAskedForAndTheTitleItAnsweredWith() throws {
         let call = ToolCall(
-            id: "w1", name: "write", callable: "function:substrate.reamde.dev:core:write",
+            id: "w1", name: "write", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write",
             arguments: #"{"op":"patch","kind":"\#(pad)","id":"p1","input":{"properties":{"note":"tent, stove"}}}"#,
             output: #"{"record":{"kind":"\#(pad)","id":"p1","properties":{"name":"Packing list","note":"tent, stove","title":"Packing list"}}}"#,
             ok: true)
@@ -35,7 +35,7 @@ import Testing
 
     @Test func aProposalCarriesItsKindTargetValuesAndReason() throws {
         let call = ToolCall(
-            id: "c1", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            id: "c1", name: "propose", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/propose",
             arguments: #"{"op":"patch","kind":"\#(pad)","target":"p1","diff":{"properties":{"note":"hike on Sunday"}},"rationale":"Moves it."}"#,
             output: #"{"id":"aaaaaaaaaaaa"}"#, ok: true)
         let asked = try #require(proposedChange(call))

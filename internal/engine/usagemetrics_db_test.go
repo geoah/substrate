@@ -19,7 +19,7 @@ func TestUsageMetricsCountAWriteAndReadTheInventory(t *testing.T) {
 	ds := newRaceDataset(t)
 	// A series names its repository by its name, as the kinds it labels do.
 	name := ds.Repository().Authority
-	changes := metrics.Changes.WithLabelValues(metrics.Repository(name), metrics.Name(name, raceWidget), "put", "api")
+	changes := metrics.Changes.WithLabelValues(metrics.Repository(name), metrics.Name(name, raceWidget), "put", "person")
 	before := counterValue(t, changes)
 
 	racePut(t, ds, map[string]any{"name": "one"})

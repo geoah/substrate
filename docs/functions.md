@@ -295,7 +295,9 @@ change:
   op: update
   kind: providers.substrate.reamde.dev/github/account
   id: gh-acct-1
-  actor: bundle:providers.substrate.reamde.dev:github
+  actor: 6p9v4bajncg4dt8pjq5mznar32
+  actorType: package
+  actorPackage: providers.substrate.reamde.dev/github
   changed:
     - tokenStatus
 record:
@@ -309,7 +311,20 @@ repository:
 ```
 
 `change` says what moved (`op` is `create`, `update` or `delete`, and
-`changed` names the properties when the payload carries them). `record` is the
+`changed` names the properties when the payload carries them) and who moved
+it. `actor` is the id of the [actor record](api.md#actors) that wrote the
+change, and `onBehalfOf`, present only where it acted for someone, the id of
+the one it acted for. `actorType` is that actor's type (`person`, `app`,
+`function`, `agent`, `package` or `system`), and `actorPackage`, present for
+a function's, an agent's or a package's actor, is the package whose code or
+installs it is, as `<authority>/<package>`. The two let a `when:` guard tell
+a package's own code apart without reading a record:
+`change.actorType == "function" && change.actorPackage ==
+"providers.substrate.reamde.dev/google"` is the Google provider's sync
+functions, and its first-sync triggers skip their writes with
+`!("actorPackage" in change && change.actorPackage ==
+"providers.substrate.reamde.dev/google" && change.actorType == "function")`.
+`record` is the
 row's state **now**, not the old value, and is `null` after a delete, and its
 `properties` carry everything the record points at, each as an object holding
 the referent's path under `ref`. `version` is the row's edit counter as this
@@ -1612,10 +1627,11 @@ delivery is retried like any other transient failure.
   External consumers get an at-least-once floor, made safe by the same id
   composition.
 - **No loops.** Every function-authored write records the change that caused
-  it, and a trigger never delivers writes carrying its own callable's actor.
-  That actor is `function:<authority>:<package>:<name>` (an agent's is
-  `agent:<authority>:<package>:<name>`), so two packages declaring a callable of
-  one name are two actors and neither reads as the other's echo. A function
+  it, and a trigger never delivers writes made by its own callable's
+  [actor record](api.md#actors). A function and an agent are each an actor
+  record of their own, linking the callable's record, so two packages
+  declaring a callable of one name are two actors and neither reads as the
+  other's echo. A function
   that grants agents under `permissions.agents` is not delivered those
   agents' writes either ([running an agent](#running-an-agent)). A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
@@ -1766,8 +1782,8 @@ repository.
 `{"ran": n}`, the number of deliveries that applied effects (a `wake` of a
 record trigger that another walk holds answers 0), and a forget
 answers no body at all. Every settled
-dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under the
-`substrate` actor, in the transaction that commits its effects and its cursor
+dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row as the
+`system` [actor](api.md#actors), in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the
 applied-effects summary. The callable lands twice from the one value —
@@ -1843,9 +1859,11 @@ the call API of a function that declares `permissions.network`, or whose
 `triggerrun` row with mode `call` and no `trigger`, because what such a body
 sends out (a message, a review) leaves nothing else in the repository
 ([decision 0119](decisions/0119-a-direct-call-of-a-networked-function-writes-a-run-row.md)).
-The row names the callable, the `caller` (the request's actor: `api`,
-`console`, `substratectl`), the `principal` (the id of the token that made the
-call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
+The row names the callable, the `caller` (a reference to the
+[actor record](api.md#actors) that made the call: the person, or the app
+whose token it was), the `token` (the id of the token that made the call,
+which the deprecated `principal` held before), `startedAt` and `finishedAt`,
+the status, the applied-effects summary,
 `outputBytes`, and `output` itself when it encodes to at most 4096 bytes of
 JSON and carries no NUL (U+0000), which no row stores. A call that settles writes it in the transaction that commits its
 effects and its idempotency key, as `ok`. A call whose body ran and failed
@@ -1855,8 +1873,8 @@ the body started (provisioning, spawn). A call refused before its body runs
 (an unknown function, input outside `arguments:`, a disabled bundle) and the
 replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
 never pruned. A function with no network grant still writes no row: its
-effects in the changelog are its whole trace, attributed to the token behind
-the call.
+effects in the changelog are its whole trace, made by the function on
+behalf of the person whose request called it.
 
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count

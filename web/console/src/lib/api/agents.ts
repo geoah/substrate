@@ -490,7 +490,6 @@ function openAgentStream(
     try {
       const headers: Record<string, string> = {
         Accept: "application/x-ndjson",
-        "X-Substrate-Actor": "console",
       }
       if (init.body !== undefined) headers["Content-Type"] = "application/json"
       const token = getToken()

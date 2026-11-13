@@ -328,3 +328,22 @@ type AppAddon struct {
 	Version  int64  `json:"version"`
 	AddonFor string `json:"addonFor"`
 }
+
+// The actor a request acts FOR rides the context beside the principal: a
+// write a person's request starts in installed code (an agent the person
+// runs, a function the person calls) is the code's, on behalf of the person
+// (decision 0270). The only writer is `withRequestAuth`; a dispatch the
+// trigger pass fires later runs on the server's own context and acts for no
+// one.
+type onBehalfOfKey struct{}
+
+// WithOnBehalfOf binds the actor a request acts for to ctx.
+func WithOnBehalfOf(ctx context.Context, actor Actor) context.Context {
+	return context.WithValue(ctx, onBehalfOfKey{}, actor)
+}
+
+// OnBehalfOfFrom returns the actor the request acts for, "" when none.
+func OnBehalfOfFrom(ctx context.Context) Actor {
+	a, _ := ctx.Value(onBehalfOfKey{}).(Actor)
+	return a
+}

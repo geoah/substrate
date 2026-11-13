@@ -262,7 +262,8 @@ describe("Conversation", () => {
         kind: "toolStarted",
         id: "c1",
         tool: "lookup",
-        callable: "function:substrate.reamde.dev:core:query",
+        callable:
+          "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query",
         args: '{"q":"cups"}',
       })
     )

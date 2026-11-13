@@ -226,14 +226,14 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	importVocabulary(t, ds, "tasks")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("t-1"),
 		Properties: map[string]any{"name": "written by hand"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	out, effects, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{
+	out, effects, err := ds.CallFunction(ctx, substrate.ActorPerson, vocabulary.HostFunctionQuery, map[string]any{
 		"kind": "samples.substrate.reamde.dev/tasks/task", "id": fid("t-1"),
 	})
 	if err != nil {
@@ -246,7 +246,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		t.Fatalf("the query answer does not hold the record: %v", out)
 	}
 
-	out, _, err = ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{
+	out, _, err = ds.CallFunction(ctx, substrate.ActorPerson, vocabulary.HostFunctionQuery, map[string]any{
 		"kind": "samples.substrate.reamde.dev/tasks/task",
 	})
 	if err != nil {
@@ -263,7 +263,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 		vocabulary.HostFunctionWrite:   {"op": "delete", "kind": "samples.substrate.reamde.dev/tasks/task", "id": fid("t-1")},
 		vocabulary.HostFunctionAsk:     {"questions": []any{map[string]any{"id": "q", "prompt": "really?"}}},
 	} {
-		_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, id, args)
+		_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, id, args)
 		if !errors.Is(err, substrate.ErrForbidden) {
 			t.Fatalf("%s answered a direct call: %v", id, err)
 		}
@@ -274,7 +274,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 
 	// The card is enforced on the way in, like every other function's, because it
 	// is an ordinary declared `arguments:` list.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery,
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, vocabulary.HostFunctionQuery,
 		map[string]any{"nonsense": true}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("an undeclared argument was admitted: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestTriggerRefusesAHostFunctionCallable(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	importVocabulary(t, ds, "tasks")
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "on-task-query",
 		Properties: map[string]any{
 			"enabled": true,
@@ -330,7 +330,7 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-shelved"),
 		Properties: map[string]any{"name": "shelved"},
 	}); err != nil {
@@ -393,7 +393,7 @@ func TestAgentQueryHoldsEveryReferencingTargetToTheAllowlist(t *testing.T) {
 		if source != "" {
 			props["source"] = source
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, ID: id, Properties: props}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -449,7 +449,7 @@ func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	for _, id := range []string{fid("w-mon"), fid("w-tue")} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: crewPackage + "/widget", ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatal(err)
@@ -534,12 +534,12 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 			"source":      "def main(input, host): return {\"effects\": []}",
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the pure authority: %v", err)
 	}
 	trigger := func(id, fn string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeTrigger, ID: id,
 			Properties: map[string]any{
 				"enabled": true,

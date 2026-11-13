@@ -17,7 +17,7 @@ func TestAgentEditViewsAndReplacesText(t *testing.T) {
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
 	pad := repo + "/scratch/pad"
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pad, Properties: map[string]any{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pad, Properties: map[string]any{
 		"name": "plan", "note": "one\ntwo\nthree\ntwo again",
 	}})
 	if err != nil {
@@ -65,7 +65,7 @@ func TestAgentEditRefusesAndAppliesNothing(t *testing.T) {
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
 	pad := repo + "/scratch/pad"
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pad, Properties: map[string]any{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pad, Properties: map[string]any{
 		"name": "plan", "note": "a\nb\na",
 	}})
 	if err != nil {

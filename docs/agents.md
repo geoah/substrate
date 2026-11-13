@@ -25,10 +25,10 @@ An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
 call API, a sub-agent call, chat, and a function body that names it under
-`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its actor is
-`agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
-function's so an agent and a function of one name in one package are two
-writers; its dispatch stamps the
+`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its
+[actor record](api.md#actors) is of type `agent` and links the agent's
+record, its own machine hand, held apart from a function's so an agent and a
+function of one name in one package are two writers; its dispatch stamps the
 bundle tier on its writes, exactly like a function's. A
 bundled agent obeys its bundle's
 [lifecycle](bundles.md#install-and-lifecycle): while the bundle is
@@ -454,12 +454,12 @@ opens the child thread.
 
 **Every tool row names its callable beside its alias.** `name` on a
 `toolCalls` entry and on the tool row is the name the model saw, which is the
-agent's alias. The engine also stamps `callable` on both: the identity behind
-the alias in the spelling the changelog's actor column uses
-([0025](decisions/0025-an-actor-carries-the-full-authority.md)),
-`function:<authority>:<package>:<name>` for a function tool and
-`agent:<authority>:<package>:<name>` for a sub-agent. A host function is a
-function record, so `query` is `function:substrate.reamde.dev:core:query`
+agent's alias. The engine also stamps `callable` on both: the record path of
+the function or agent behind the alias,
+`substrate.reamde.dev/core/function/<authority>/<package>/<name>` for a
+function tool and `substrate.reamde.dev/core/agent/<authority>/<package>/<name>`
+for a sub-agent. A host function is a function record, so `query` is
+`substrate.reamde.dev/core/function/substrate.reamde.dev/core/query`
 whatever an agent aliased it to. Two agents that alias one function
 differently write tool rows that list together on `callable`, and renaming
 an alias keeps the function's history. The chat stream's tool events carry
@@ -891,10 +891,8 @@ data:
 
 **`functions` gates what a function writes.** It lists function references,
 matched exactly against the function whose body returned the effect and
-against the root of its call chain, whose actor
-(`function:<authority>:<package>:<name>`,
-[0025](decisions/0025-an-actor-carries-the-full-authority.md)) the write lands
-under. The rule covers the function wherever it runs: a trigger delivery, a
+against the root of its call chain, whose [actor](api.md#actors) the write
+lands under. The rule covers the function wherever it runs: a trigger delivery, a
 schedule or webhook fire, each page of a drain, a direct call, and an agent's
 tool call, where `agents` can narrow it further. A run that no agent loop
 surrounds meets only the rules whose `functions` names it, so a rule without
@@ -1732,7 +1730,10 @@ again by its id:
   later. An unknown thread is `404 not_found`.
 - `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` stops the running
   chat turn and answers `200` with its settled result once the settle
-  committed: `status: "stopped"`, `reason: "stopped by <actor>"`, and the
+  committed: `status: "stopped"`, a `reason` that says which type of
+  [actor](api.md#actors) stopped it (`"stopped by its owner"`,
+  `"stopped by an app"`, `"stopped by an agent"`, `"stopped by a function"`
+  or `"stopped by the substrate"`), and the
   text streamed so far as `reply`, which also lands as the turn's assistant
   message row. A sub-agent thread the turn was waiting on settles `stopped`
   with it. Every attached stream ends with the same `done`. With no chat

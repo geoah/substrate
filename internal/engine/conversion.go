@@ -12,8 +12,12 @@ package engine
 // refused, as it always was.
 //
 // WHAT A STEP IS HANDED: one history line, which it rewrites in place. The
-// runner re-encodes the line and recomputes its checksum; the step may not
-// move the line's seq or txn. A step that needs nothing else declares Line
+// runner holds the row to its stored checksum first and stops the whole
+// conversion at a row that does not verify (walkedLine), then re-encodes the
+// line the step left and recomputes its checksum only where the line
+// changed; the step may not move the line's seq or txn. So a conversion never
+// stamps a row it could not verify, and a line a step leaves as it found it
+// keeps its checksum. A step that needs nothing else declares Line
 // alone. One that reads differently in each repository (a kind is the
 // repository's own only under its own authority) declares ForRepository
 // instead, which the runner calls once per repository it converts, with
@@ -187,6 +191,7 @@ type conversionPass struct {
 // import; the step's own test says what the lines become).
 var conversionSteps = []conversionStep{
 	{Dialect: 2, Name: "drop_recovery_wrap", Line: convertDropRecoveryWrap},
+	{Dialect: 3, Name: "link_actors", Line: linkActorsLine},
 }
 
 // The conversion's steps, as the import's test seam names them
@@ -355,7 +360,10 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 			break
 		}
 		for _, row := range page {
-			e := row.entry.fileEntry()
+			e, err := walkedLine(row)
+			if err != nil {
+				return fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
+			}
 			seq, txnSeq := e.Seq, e.Txn
 			after = seq
 			if err := pass.Line(&e); err != nil {
@@ -368,6 +376,9 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 			if err != nil {
 				return fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
 			}
+			// The row was held to its stored checksum before the step ran,
+			// so an unchanged checksum is a line the step left as it found
+			// it, and keeps the checksum it had.
 			if bytes.Equal(row.hash, sum[:]) {
 				continue
 			}
@@ -376,10 +387,10 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 				causedBy = sql.NullInt64{Int64: e.CausedBy, Valid: true}
 			}
 			if _, err := t.exec(`
-				UPDATE changelog SET ts = $2, actor = $3, principal = $4, op = $5, record_id = $6, kind = $7,
-					payload = $8::jsonb, caused_by = $9, txn = $10, hash = $11
+				UPDATE changelog SET ts = $2, actor = $3, on_behalf_of = $4, principal = $5, op = $6, record_id = $7,
+					kind = $8, payload = $9::jsonb, caused_by = $10, txn = $11, hash = $12
 				WHERE seq = $1`,
-				e.Seq, e.TS, e.Actor, e.Principal, e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
+				e.Seq, e.TS, e.Actor, e.OnBehalfOf, lineToken(e), e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
 				return fmt.Errorf("substrate/engine: convert seq %d: %w", e.Seq, err)
 			}
 			changed[seq] = true
@@ -387,6 +398,59 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 		prog.tick(changelogfile.Position{Seq: done + after})
 	}
 	return nil
+}
+
+// lineFrame is the key set a row's line was encoded in, which only its
+// stored checksum tells: the table keeps a line's token in its `principal`
+// column whatever key the line held it under.
+type lineFrame int
+
+const (
+	// frameNone is a row whose stored checksum no frame reproduces: it is
+	// not the line that was stamped.
+	frameNone lineFrame = iota
+	// frameToken is this binary's: from changelog dialect 3 a line writes
+	// `token`, and only where one stood (decision 0270).
+	frameToken
+	// framePrincipal is changelog dialects 1 and 2's: `principal` on every
+	// line, an empty one included.
+	framePrincipal
+)
+
+// tokenFrameDialect is the changelog dialect whose lines are the first in
+// frameToken: a history stamped there or later holds no row in an earlier
+// frame.
+const tokenFrameDialect = 3
+
+// framedLine is the line a row of the table holds, in the frame whose
+// encoding reproduces the row's stored checksum. Exactly one can, because
+// the two frames' key sets differ.
+func framedLine(row checksumRow) (changelogfile.Entry, lineFrame) {
+	e := row.entry.fileEntry()
+	if _, sum, err := changelogfile.Encode(e); err == nil && bytes.Equal(sum[:], row.hash) {
+		return e, frameToken
+	}
+	old := e
+	old.Principal, old.HasPrincipal, old.Token = e.Token, true, ""
+	if _, sum, err := changelogfile.Encode(old); err == nil && bytes.Equal(sum[:], row.hash) {
+		return old, framePrincipal
+	}
+	return e, frameNone
+}
+
+// walkedLine is the line a step is handed for a row: the one its stored
+// checksum was computed over, so a step below dialect 3 sees the key the
+// line was written with. A row no frame reproduces stops the conversion,
+// naming its seq. A conversion never gives a line a checksum it did not have
+// a right to: the walk stamps a fresh checksum on every line a step
+// rewrites, and a step that rewrote a damaged row would leave it verifying.
+func walkedLine(row checksumRow) (changelogfile.Entry, error) {
+	e, frame := framedLine(row)
+	if frame == frameNone {
+		return e, fmt.Errorf("substrate/engine: seq %d: its stored checksum is the checksum of no line the row could hold, so the history is not converted; repair or restore the row first",
+			row.entry.Seq)
+	}
+	return e, nil
 }
 
 // conversionPass is what step does in this repository, built in the
@@ -411,7 +475,9 @@ func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversi
 				} else {
 					lines := make([]changelogfile.Entry, len(rows))
 					for i, r := range rows {
-						lines[i] = r.entry.fileEntry()
+						if lines[i], versionsErr = walkedLine(r); versionsErr != nil {
+							return nil, versionsErr
+						}
 					}
 					versions, versionsErr = declarationVersions(lines)
 				}

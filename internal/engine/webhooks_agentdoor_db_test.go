@@ -24,7 +24,7 @@ import (
 // a function or an agent, and returns its id.
 func putWebhookTrigger(t *testing.T, ds *dataset, callable string, webhook map[string]any) string {
 	t.Helper()
-	tr, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"webhook": webhook},
@@ -107,7 +107,7 @@ const sigBundlePackage = "sighook.test.dev/sighook"
 func installSignedAgentBundle(t *testing.T, ds *dataset, fake *fakeLLM, clientSecret string) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "sighookllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-sighookllm"},
 	}); err != nil {
@@ -141,10 +141,10 @@ func installSignedAgentBundle(t *testing.T, ds *dataset, fake *fakeLLM, clientSe
 			"provider": "sighookllm", "model": "sighook",
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the signed agent bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: sigBundlePackage + "/sigconfig", ID: fid("default"),
 		Properties: map[string]any{"clientId": "client-1", "clientSecret": clientSecret},
 	}); err != nil {
@@ -194,7 +194,7 @@ func TestAnAgentWebhookChecksItsBundlesClientSecret(t *testing.T) {
 	hooked := vocabulary.RecordPath(kindAgent, sigBundlePackage+"/hooked")
 	authority := testdb.Repository(t)
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"webhook": map[string]any{"signature": agentSignature()}},
@@ -232,7 +232,7 @@ func TestAnAgentWebhookChecksItsBundlesClientSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("receive the stored forged request: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: later,
 		Properties: map[string]any{
 			"source":   map[string]any{"webhook": map[string]any{"headers": kept, "signature": agentSignature()}},
@@ -302,7 +302,7 @@ func TestAnAgentWebhookStoredForAFunctionIsHeldToOneMiB(t *testing.T) {
 		},
 	})
 	fits := receive("a 1 MiB body", binary(1<<20))
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: hook,
 		Properties: map[string]any{"source": map[string]any{"webhook": map[string]any{"maxBody": substrate.WebhookInlineMax}}, "callable": keeper},
 	}); err != nil {

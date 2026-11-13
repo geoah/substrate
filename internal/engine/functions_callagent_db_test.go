@@ -23,7 +23,7 @@ const relayPackage = "relay.test.dev/relay"
 func installRelay(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "loopllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-loopllm",
@@ -139,7 +139,7 @@ def main(input, host):
 			"tools": []any{map[string]any{"function": relayPackage + "/looper"}},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install relay: %v", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestFunctionBodyRunsAnAgent(t *testing.T) {
 	installRelay(t, ds, fake)
 
 	fake.script("sub", fakeTurn{content: "the scribe's answer"})
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/asker", map[string]any{"q": "what is a widget?"})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/asker", map[string]any{"q": "what is a widget?"})
 	if err != nil {
 		t.Fatalf("call asker: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestFunctionBodyRunsAnAgent(t *testing.T) {
 	}
 
 	// Without the grant the runner refuses before the agent runs.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/sneak", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/sneak", nil); err == nil ||
 		!strings.Contains(err.Error(), "call allowlist") {
 		t.Fatalf("an ungranted agent call: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestAgentToolCallingItsRunnerIsRecursion(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"looper", `{}`}}},
 		fakeTurn{content: "gave up"},
 	)
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/looper", nil)
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/looper", nil)
 	if err != nil {
 		t.Fatalf("call looper: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestAgentRunSettlesAtTheCallersDeadline(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	fake.script("slow", fakeTurn{content: "too late", release: release})
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/hasty", nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/hasty", nil); err == nil {
 		t.Fatal("a body whose agent outlived its timeout succeeded")
 	}
 	var status string
@@ -238,7 +238,7 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	installRelay(t, ds, fake)
 
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -249,7 +249,7 @@ func TestAgentRunFromADeliveryCarriesItsCause(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("loop", fakeTurn{content: "done"})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-cause"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -290,7 +290,7 @@ func TestAgentsGrantIsResolvedAtLoad(t *testing.T) {
 		"both lists":    {"agents": []any{crewPackage + "/scribe"}, "call": []any{crewPackage + "/scribe"}},
 		"bare name":     {"agents": []any{"scribe"}},
 	} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			vocabulary.PackageManifest("bad.test.dev/bad", 0),
 			vocabulary.FunctionManifest("bad.test.dev/bad", "caller", map[string]any{
 				"description": "names an agent it cannot run",
@@ -318,7 +318,7 @@ func TestAgentCallRefusesASecretInItsInput(t *testing.T) {
 		secret = "sk-relay-supersecret-35"
 	)
 	scribe := crewPackage + "/scribe"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "a bundle whose function hands its secret to an agent",
@@ -340,12 +340,12 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install the bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: cfg, Properties: map[string]any{"apiToken": secret},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
 	}
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, pkg+"/leaker", nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, pkg+"/leaker", nil)
 	// The refusal reaches the body as a host-call error and returns in its
 	// traceback, so it is matched by text.
 	if err == nil || !strings.Contains(err.Error(), errSecretInAgentInput.Error()) {
@@ -367,7 +367,7 @@ func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	installRelay(t, ds, fake)
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -380,7 +380,7 @@ func TestFunctionIsNotDeliveredItsAgentsWrites(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-by-editor"), map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-seed"), Properties: map[string]any{"name": "seed"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -447,14 +447,14 @@ func TestKeyedFunctionCallBindsToTheAgentThread(t *testing.T) {
 	ctx := substrate.WithIdempotencyKey(context.Background(), "flaky-key-1")
 
 	fake.script("sub", fakeTurn{content: "noted"})
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/flaky", nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/flaky", nil); err == nil {
 		t.Fatal("the flaky body succeeded")
 	}
 	threads := agentThreadsOf(t, ds, "scribe")
 	if len(threads) != 1 {
 		t.Fatalf("the first attempt opened %d scribe threads, want one", len(threads))
 	}
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relayPackage+"/flaky", nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relayPackage+"/flaky", nil)
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), threads[0]["__id"].(string)) {
 		t.Fatalf("the repeat under the key: %v, want a conflict naming thread %v", err, threads[0]["__id"])
 	}
@@ -471,7 +471,7 @@ func TestDeliveryParksAfterItsAgentRan(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	installRelay(t, ds, fake)
 
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -482,7 +482,7 @@ func TestDeliveryParksAfterItsAgentRan(t *testing.T) {
 		t.Fatalf("put trigger: %v", err)
 	}
 	fake.script("sub", fakeTurn{content: "noted"})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-flaky"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -514,7 +514,7 @@ func TestDeliveryClaimsWhenItsAgentOpensAThread(t *testing.T) {
 	installRelay(t, ds, fake)
 	ctx := context.Background()
 
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -526,7 +526,7 @@ func TestDeliveryClaimsWhenItsAgentOpensAThread(t *testing.T) {
 	}
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fake.script("sub", fakeTurn{content: "noted", arrived: arrived, release: release})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-stop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -586,7 +586,7 @@ func TestDeliveryYieldAfterItsAgentRanSettlesAsSkip(t *testing.T) {
 	installRelay(t, ds, fake)
 	ctx := context.Background()
 
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -600,7 +600,7 @@ func TestDeliveryYieldAfterItsAgentRanSettlesAsSkip(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "patch", crewPackage+"/widget", fid("w-yield"), map[string]any{"name": "bumped"})}}},
 		fakeTurn{content: "renamed"},
 	)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-yield"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)

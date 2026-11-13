@@ -543,7 +543,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 		ID: req.ID,
 		App: substrate.AuthorizationApp{
 			ClientID: req.Client.ID, Host: req.Client.Host, Local: req.Client.Local,
-			Name: doc.Name, URI: doc.URI, Actor: string(requestActor(req, doc)),
+			Name: doc.Name, URI: doc.URI, AppearsAs: strings.TrimPrefix(string(requestActor(req, doc)), substrate.AppActorPrefix),
 			URIHostDiffers: doc.URI != "" && hostname(doc.URI) != hostname(req.Client.ID),
 			Verified:       doc.Publisher.Verified,
 			Publisher: substrate.AuthorizationPublisher{
@@ -764,7 +764,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		// plans nothing: what a request with details sets up, or finds in
 		// place, and full access are approved as the owner, through a human
 		// door.
-		if (len(req.Details) > 0 || scope.RequestsWhole(req.Scopes)) && !substrate.HumanActors[actor] {
+		if (len(req.Details) > 0 || scope.RequestsWhole(req.Scopes)) && !substrate.IsPerson(actor) {
 			return authorize.Approval{}, notTheOwnersDoor{actor: actor, full: scope.RequestsFull(req.Scopes), mcp: scope.RequestsMCP(req.Scopes)}
 		}
 		doc, err := shownApp(req)
@@ -940,8 +940,8 @@ func withoutProgress(rows []substrate.AuthorizationSetup) []substrate.Authorizat
 	return out
 }
 
-// notTheOwnersDoor refuses an approval of a request with details from a door
-// that is not a human's.
+// notTheOwnersDoor refuses an approval of a request with details from a hand
+// that is not the person's.
 type notTheOwnersDoor struct {
 	actor     substrate.Actor
 	full, mcp bool
@@ -955,7 +955,7 @@ func (e notTheOwnersDoor) Error() string {
 	case e.mcp:
 		what = "granting an assistant's access"
 	}
-	return what + " is the owner's act, through the console, substratectl or the API, never as " + string(e.actor)
+	return what + " is the person's act, through a sign-in of their own, never an app's"
 }
 
 // writeAuthorizationAnswerError answers the store's refusals of an approval
@@ -1267,7 +1267,7 @@ func (h *handler) revokeMinted(ctx context.Context, ds substrate.Dataset, id str
 		// attempt and the next one still runs.
 		actx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		_, err := ds.Delete(actx, substrate.ActorAPI, tokenType, id, substrate.DeleteInput{})
+		_, err := ds.Delete(actx, substrate.ActorPerson, tokenType, id, substrate.DeleteInput{})
 		if err == nil || errors.Is(err, substrate.ErrNotFound) {
 			return true
 		}

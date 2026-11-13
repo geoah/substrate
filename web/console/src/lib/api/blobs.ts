@@ -40,7 +40,7 @@ export function readBlobInfo(value: unknown): BlobInfo | undefined {
 }
 
 function headers(): Record<string, string> {
-  const out: Record<string, string> = { "X-Substrate-Actor": "console" }
+  const out: Record<string, string> = {}
   const token = getToken()
   if (token) out.Authorization = `Bearer ${token}`
   return out

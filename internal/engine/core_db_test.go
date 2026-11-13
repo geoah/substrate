@@ -20,13 +20,13 @@ const (
 	beeper = substrate.Actor("connector:beeper")
 	engram = substrate.Actor("engram")
 	gcal   = substrate.Actor("connector:calendar")
-	owner  = substrate.ActorAPI
+	owner  = substrate.ActorPerson
 )
 
 func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -219,12 +219,12 @@ func TestMetadataNamespaces(t *testing.T) {
 		wantErr(t, err, substrate.ErrForbidden, "foreign annotation namespace")
 	}
 	// A machine hand is bound to its own actor name, whatever it writes
-	// under: the refusal names the actor and the key.
+	// under: the refusal names the hand, in words, and the key.
 	fn := substrate.FunctionActor("samples.substrate.reamde.dev", "tasks", "sweep")
 	_, err := ds.Patch(ctx, fn, task.Kind, task.ID, substrate.PatchInput{
 		Labels: map[string]any{"owner/starred": true},
 	})
-	wantRefusal(t, err, substrate.ErrForbidden, fmt.Sprintf("actor %q may not write key", fn))
+	wantRefusal(t, err, substrate.ErrForbidden, "the function samples.substrate.reamde.dev/tasks/sweep may not write key")
 	mustPatch(t, ds, fn, task.Kind, task.ID, substrate.PatchInput{
 		Labels: map[string]any{string(fn) + "/swept": true},
 	})
@@ -782,7 +782,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "calendar")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -885,7 +885,7 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 	}
 	rows := changesSince(t, ds, before)
 	if len(rows) != 2 || rows[0].Op != substrate.OpDelete || rows[1].Op != substrate.OpGC ||
-		rows[1].Payload["reason"] != "purged" || rows[1].Actor != owner {
+		rows[1].Payload["reason"] != "purged" || rows[1].Actor != vocabulary.ActorID(owner) {
 		t.Fatalf("want a delete then a purged gc row by the caller, got %+v", rows)
 	}
 
@@ -1054,7 +1054,7 @@ func TestPatchOnATombstoneIsNotFound(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "calendar")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
@@ -1178,7 +1178,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -1514,7 +1514,7 @@ func TestConnectorKindsRemoved(t *testing.T) {
 		if _, err := ds.KindByRef(ctx, typ); err == nil {
 			t.Fatalf("%s still resolves as a kind", typ)
 		}
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typ, Properties: map[string]any{"name": "x"},
 		})
 		if err == nil || !errors.Is(err, substrate.ErrValidation) {
@@ -1579,7 +1579,7 @@ func TestPatchNullDeletesAPropertyAndAStateValueTransitions(t *testing.T) {
 func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
 	t.Parallel()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{

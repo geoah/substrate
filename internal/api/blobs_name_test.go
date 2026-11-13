@@ -46,7 +46,7 @@ func (b *echoBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobInfo, 
 func putNamedBlob(t *testing.T, ds *echoBlobDS, target string, header map[string]string) *substrate.BlobInfo {
 	t.Helper()
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 	req := httptest.NewRequest(http.MethodPut, target, strings.NewReader("payload")).WithContext(ctx)
 	for k, v := range header {
 		req.Header.Set(k, v)
@@ -104,7 +104,7 @@ func TestBlobNameComesFromTheQueryOrTheDisposition(t *testing.T) {
 func TestBlobMediaTypeIsOptional(t *testing.T) {
 	ds := &echoBlobDS{}
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/blobs",
 		strings.NewReader("payload")).WithContext(ctx)
@@ -138,7 +138,7 @@ func TestBlobReadSaysItsName(t *testing.T) {
 		map[string]string{"Content-Type": "application/pdf"})
 
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 	req := httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	h.getBlob(rec, req)

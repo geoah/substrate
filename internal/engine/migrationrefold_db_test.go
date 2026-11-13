@@ -117,6 +117,7 @@ var refoldLedgerFloors = map[string]string{
 	"key_the_repository_record_by_its_id": "0020_repository_ids",
 	"start_paged_drains_over":             "0021_identity_columns_byte_order",
 	"purge_the_recovery_key":              "0023_secrets_left_behind",
+	"link_actors":                         "0024_changelog_on_behalf_of",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its
@@ -298,11 +299,10 @@ func installRefoldTriggers(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	const pkg = "refold.test.dev/refold"
 	callable := vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/noop")
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "refold", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.FunctionManifest(pkg, "noop", map[string]any{
 				"description": "the triggers' callable; no dispatch runs it",
 				"runtime":     vocabulary.RuntimePython,

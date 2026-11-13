@@ -15,7 +15,7 @@ export function exportFileName(disposition: string | null): string {
 
 /** Read the archive and hand it to the browser as a download. */
 export async function downloadExport(): Promise<string> {
-  const headers: Record<string, string> = { "X-Substrate-Actor": "console" }
+  const headers: Record<string, string> = {}
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
   const res = await fetch(rootPath("export"), { headers })

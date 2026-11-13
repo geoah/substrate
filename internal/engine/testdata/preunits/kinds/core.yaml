@@ -81,50 +81,10 @@ data:
   # repoints every reference at it (decision record 0078). What a repository
   # that predates the move keeps is four dormant, EMPTY kinds.
 ---
-# The substrate's own actors: the doors a human write comes through, and the
-# engine's own hand. Attribution, not authorization (§3). The machine hands
-# that carry a prefix — `bundle:<authority>:<package>`,
-# `function:<authority>:<package>:<name>` and
-# `agent:<authority>:<package>:<name>` — are minted by the substrate at
-# dispatch from the identity that runs, never declared, and never claimable by
-# a request.
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: api
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the console's writes: the browser app, holding a token like any other client
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: console
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the operator's CLI
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: substratectl
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the engine's own writes: mapping recompute, the declaration mirrors, merge
-# execution, the boot-time vocabulary upgrade, and the auth paths that write
-# the credential and token records. A bare word: the actor domain is closed,
-# so nothing has to be forward-qualified to stay out of the vocabulary's way.
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: substrate
-data:
-  authority: substrate.reamde.dev
-  package: core
----
+# The four actor documents this tree shipped are left out: the loader
+# refuses an actor document (decision 0270), and the kept directories hold
+# them as a repository wrote them.
+#
 # when a thing sits on the timeline — an instant, or a span
 kind: substrate.reamde.dev/core/trait
 metadata:

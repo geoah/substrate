@@ -34,7 +34,6 @@ func googleManifest() enginetest.Manifest {
 		Name: "google.people", Authority: googlePackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(googlePackage, 1),
-			vocabulary.ActorManifest(googlePackage, string(people)),
 			vocabulary.KindManifest(googlePackage,
 				map[string]any{"singular": "contact"},
 				map[string]any{
@@ -72,7 +71,6 @@ func slackManifest() enginetest.Manifest {
 		Name: "slack", Authority: slackPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(slackPackage, 1),
-			vocabulary.ActorManifest(slackPackage, string(slack)),
 			vocabulary.KindManifest(slackPackage,
 				map[string]any{"singular": "slackuser"},
 				map[string]any{
@@ -167,8 +165,6 @@ func dirManifest() enginetest.Manifest {
 		Name: "dir", Authority: dirPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(dirPackage, 1),
-			vocabulary.ActorManifest(dirPackage, string(dirsync)),
-			vocabulary.ActorManifest(dirPackage, string(dirsync2)),
 			vocabulary.KindManifest(dirPackage,
 				map[string]any{"singular": "entry"},
 				map[string]any{
@@ -207,7 +203,7 @@ func dirMapping() map[string]any {
 // the account-owned entry kind and its mapping onto person.
 func installPeopleSourcesWithDir(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install the account kind: %v", err)
 	}
 	installSources(t, ds,
@@ -230,7 +226,6 @@ func crmManifest() enginetest.Manifest {
 		Name: "crm", Authority: crmPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(crmPackage, 1),
-			vocabulary.ActorManifest(crmPackage, string(crmsync)),
 			vocabulary.KindManifest(crmPackage,
 				map[string]any{"singular": "lead"},
 				map[string]any{
@@ -307,7 +302,7 @@ func syncSource(t *testing.T, ds substrate.Dataset, actor substrate.Actor, typ, 
 // newConversation is a slack channel with the account its type requires.
 func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 	t.Helper()
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
@@ -570,15 +565,15 @@ func TestSamScenario(t *testing.T) {
 	if meta == nil {
 		t.Fatalf("no propertyMeta on a managed person: %+v", p)
 	}
-	if meta["name"].Manager != string(owner) {
+	if meta["name"].Manager != vocabulary.ActorID(owner) {
 		t.Fatalf("name manager = %q, want the owner", meta["name"].Manager)
 	}
 	alts := meta["name"].Alternatives
-	if len(alts) != 1 || alts[0].Actor != string(people) || alts[0].Value != "Samuel Jones" {
+	if len(alts) != 1 || alts[0].Actor != vocabulary.ActorID(people) || alts[0].Value != "Samuel Jones" {
 		t.Fatalf("name alternatives = %+v", alts)
 	}
 	// An accepted recompute records the WINNING SOURCE's actor, not system.
-	if meta["phones"].Manager != string(people) {
+	if meta["phones"].Manager != vocabulary.ActorID(people) {
 		t.Fatalf("phones manager = %q, want %s", meta["phones"].Manager, people)
 	}
 
@@ -588,7 +583,7 @@ func TestSamScenario(t *testing.T) {
 			continue
 		}
 		foundMapping = true
-		if change.Actor != substrate.ActorSystem || change.Payload["triggeredBy"] != string(people) {
+		if change.Actor != vocabulary.ActorID(substrate.ActorSystem) || change.Payload["triggeredBy"] != vocabulary.ActorID(people) {
 			t.Fatalf("mapping attribution = %s, %+v", change.Actor, change.Payload)
 		}
 	}
@@ -605,7 +600,7 @@ func TestSamScenario(t *testing.T) {
 		t.Fatalf("release did not refill in the same transaction: %v", released.Properties["name"])
 	}
 	p = mustGet(t, ds, sam.Kind, sam.ID)
-	if p.PropertyMeta["name"].Manager != string(people) {
+	if p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
 		t.Fatalf("refilled manager = %q, want %s", p.PropertyMeta["name"].Manager, people)
 	}
 	if len(p.PropertyMeta["name"].Alternatives) != 0 {
@@ -642,7 +637,7 @@ func TestSamScenario(t *testing.T) {
 	// Slack's differing address shows as an alternative beside the hold.
 	var slackOffer bool
 	for _, alt := range merged.PropertyMeta["emails"].Alternatives {
-		if alt.Actor == string(slack) {
+		if alt.Actor == vocabulary.ActorID(slack) {
 			slackOffer = true
 		}
 	}
@@ -653,7 +648,7 @@ func TestSamScenario(t *testing.T) {
 	var migrated bool
 	for _, m := range moved["managers"].([]any) {
 		row, _ := m.(map[string]any)
-		if row["property"] == "displayName" && row["actor"] == string(slack) {
+		if row["property"] == "displayName" && row["actor"] == vocabulary.ActorID(slack) {
 			migrated = true
 		}
 	}
@@ -737,7 +732,7 @@ func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
 	if p.Properties["name"] != "Alexandros P." {
 		t.Fatalf("latest source = %v, want google's", p.Properties["name"])
 	}
-	if p.PropertyMeta["name"].Manager != string(people) {
+	if p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
 		t.Fatalf("manager = %q, want the winning source's actor", p.PropertyMeta["name"].Manager)
 	}
 }
@@ -797,7 +792,6 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 		Name: "promoter", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:promoter"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "promoterrow"},
 				map[string]any{
@@ -1372,7 +1366,6 @@ func TestObjectPropertyValidation(t *testing.T) {
 		Name: "nested", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:nested"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "row"},
 				map[string]any{"properties": map[string]any{
@@ -1391,7 +1384,6 @@ func TestObjectPropertyValidation(t *testing.T) {
 		Name: "toodeep", Authority: deep,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(deep, 1),
-			vocabulary.ActorManifest(deep, "connector:toodeep"),
 			vocabulary.KindManifest(deep,
 				map[string]any{"singular": "row"},
 				map[string]any{"properties": map[string]any{
@@ -1426,7 +1418,6 @@ func TestHotMapTargets(t *testing.T) {
 		Name: "library", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:library"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "work"},
 				map[string]any{"properties": map[string]any{
@@ -1497,7 +1488,7 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 	// `name.displayName` maps onto person.name, a string: an int source
 	// field fails the path type-check.
 	broken := googleManifest()
-	data, _ := broken.Manifests[2]["data"].(map[string]any)
+	data, _ := broken.Manifests[1]["data"].(map[string]any)
 	props, _ := data["properties"].(map[string]any)
 	name, _ := props["name"].(map[string]any)
 	fields, _ := name["fields"].(map[string]any)
@@ -1528,7 +1519,7 @@ func TestAReferenceMayPinAMappingSource(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	withFriend := googleManifest()
-	data, _ := withFriend.Manifests[2]["data"].(map[string]any)
+	data, _ := withFriend.Manifests[1]["data"].(map[string]any)
 	props, _ := data["properties"].(map[string]any)
 	props["friend"] = map[string]any{"type": "reference", "kind": googlePackage + "/contact"}
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, withFriend); err != nil {
@@ -1947,7 +1938,7 @@ func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
 	if _, still := p.PropertyMeta["displayName"]; still {
 		t.Fatalf("displayName keeps a manager after its mapping went: %+v", p.PropertyMeta["displayName"])
 	}
-	if p.Properties["name"] != "Samuel Jones" || p.PropertyMeta["name"].Manager != string(people) {
+	if p.Properties["name"] != "Samuel Jones" || p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
 		t.Fatalf("name = %v (%+v), want google's after slack's mapping went", p.Properties["name"], p.PropertyMeta["name"])
 	}
 	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
@@ -2007,7 +1998,7 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 // offeredBy reports whether actor offers an alternative for property.
 func offeredBy(r *substrate.Record, property string, actor substrate.Actor) bool {
 	for _, alt := range r.PropertyMeta[property].Alternatives {
-		if alt.Actor == string(actor) {
+		if alt.Actor == vocabulary.ActorID(actor) {
 			return true
 		}
 	}
@@ -2134,7 +2125,6 @@ func slotlessManifest() enginetest.Manifest {
 		Name: "cards", Authority: slotlessPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(slotlessPackage, 1),
-			vocabulary.ActorManifest(slotlessPackage, string(people)),
 			vocabulary.KindManifest(slotlessPackage,
 				map[string]any{"singular": "card"},
 				map[string]any{
@@ -2220,14 +2210,14 @@ func TestAMappingSynthesizesItsSubjectSlot(t *testing.T) {
 		t.Fatalf("get the card: %v", err)
 	}
 	meta := full.PropertyMeta["person"]
-	if want := "mapping:" + enginetest.SamplePackage("people") + "/cardperson"; meta.Manager != want {
+	if want := vocabulary.ActorID(substrate.Actor("mapping:" + enginetest.SamplePackage("people") + "/cardperson")); meta.Manager != want {
 		t.Fatalf("person manager = %q, want %q", meta.Manager, want)
 	}
 	if meta.Tier != substrate.TierMachine {
 		t.Fatalf("person tier = %q", meta.Tier)
 	}
 	// The connector still owns what it actually wrote.
-	if m := full.PropertyMeta["fullName"]; m.Manager != string(people) {
+	if m := full.PropertyMeta["fullName"]; m.Manager != vocabulary.ActorID(people) {
 		t.Fatalf("fullName manager = %q, want the connector", m.Manager)
 	}
 }

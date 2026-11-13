@@ -33,7 +33,7 @@ func TestAgentProviderInputResolution(t *testing.T) {
 	}
 	put := func(id, model string) {
 		t.Helper()
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: id, Properties: map[string]any{"wire": "openai", "baseURL": "https://ai.example.com", "apiKey": "test-key", "pricing": []any{map[string]any{"model": model, "inputPer1M": "1", "outputPer1M": "1"}}}})
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: id, Properties: map[string]any{"wire": "openai", "baseURL": "https://ai.example.com", "apiKey": "test-key", "pricing": []any{map[string]any{"model": model, "inputPer1M": "1", "outputPer1M": "1"}}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func TestAgentProviderInputResolution(t *testing.T) {
 	}
 	check("default", "gateway/preferred")
 	for _, id := range []string{"default", "openai", "anthropic", "gemini"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, typeProvider, id, substrate.DeleteInput{}); err != nil && !errors.Is(err, substrate.ErrNotFound) {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, typeProvider, id, substrate.DeleteInput{}); err != nil && !errors.Is(err, substrate.ErrNotFound) {
 			t.Fatal(err)
 		}
 	}
@@ -89,7 +89,7 @@ func TestPublishedAgentRequiresDailyCap(t *testing.T) {
 			vocabulary.BundleManifest(pkg, map[string]any{"inputs": map[string]any{"model": map[string]any{"kind": typeProvider}}, "installs": []any{pkg + "/run"}}),
 			vocabulary.AgentManifest(pkg, "run", data),
 		}
-		_, err := ds.InstallBundleClosure(context.Background(), substrate.ActorAPI, docs, nil, substrate.BundleInstall{Published: true})
+		_, err := ds.InstallBundleClosure(context.Background(), substrate.ActorPerson, docs, nil, substrate.BundleInstall{Published: true})
 		if (err == nil) != (cap == 100) {
 			t.Fatalf("cap %v: %v", cap, err)
 		}
@@ -107,20 +107,20 @@ func TestAgentProviderInputAdmissionDoors(t *testing.T) {
 		vocabulary.BundleManifest(pkg, map[string]any{"description": "Coach", "inputs": map[string]any{"model": map[string]any{"kind": typeProvider}}, "installs": []any{pkg + "/run"}}),
 		agent,
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kindAgent, ID: pkg + "/run", Properties: agent["data"].(map[string]any)}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kindAgent, ID: pkg + "/run", Properties: agent["data"].(map[string]any)}); err != nil {
 		t.Fatal(err)
 	}
 	agent["data"].(map[string]any)["providerInput"] = "missing"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kindAgent, ID: pkg + "/run", Properties: agent["data"].(map[string]any)}); err == nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kindAgent, ID: pkg + "/run", Properties: agent["data"].(map[string]any)}); err == nil {
 		t.Fatal("put admitted missing input")
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err == nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err == nil {
 		t.Fatal("apply admitted missing input")
 	}
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorAPI, docs, nil, substrate.BundleInstall{}); err == nil {
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, docs, nil, substrate.BundleInstall{}); err == nil {
 		t.Fatal("install admitted missing input")
 	}
 }
@@ -136,10 +136,10 @@ func TestPublishedAgentRequiresProviderInput(t *testing.T) {
 			"budgets": map[string]any{"spendCentsPerDay": 100},
 		}),
 	}
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorAPI, docs, nil, substrate.BundleInstall{Published: true}); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "providerInput") {
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, docs, nil, substrate.BundleInstall{Published: true}); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "providerInput") {
 		t.Fatalf("published direct provider admitted: %v", err)
 	}
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorAPI, docs, nil, substrate.BundleInstall{}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, docs, nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("owner's direct provider refused: %v", err)
 	}
 }

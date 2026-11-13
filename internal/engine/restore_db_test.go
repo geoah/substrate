@@ -178,7 +178,7 @@ func TestRestoreFillsTheDefaultARequiredPropertyGainedWhileTheRecordWasATombston
 		cvWidget, gone.ID).Scan(&actor, &tier); err != nil {
 		t.Fatalf("read the manager row: %v", err)
 	}
-	if actor != string(owner) || tier != string(substrate.TierOwner) {
+	if actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
 		t.Fatalf("the filled value's manager = %q at %q", actor, tier)
 	}
 	var queued int
@@ -284,7 +284,7 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 	var actor string
 	if err := db.QueryRow(`SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'dimensions'`,
-		cvWidget, gone.ID).Scan(&actor); err != nil || actor != string(lib) {
+		cvWidget, gone.ID).Scan(&actor); err != nil || actor != vocabulary.ActorID(lib) {
 		t.Fatalf("the renamed value's manager = %q, %v; want %q", actor, err, lib)
 	}
 

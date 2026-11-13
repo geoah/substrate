@@ -96,7 +96,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 	// re-import drops, so the plan nulls it, and its hash covers that row. A
 	// key on the vocabulary alone would keep serving the old hash, which the
 	// door refuses.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind:       homeAuthority + "/tasks/task",
 		Properties: map[string]any{"mine": "a value the re-import drops"},
 	}); err != nil {
@@ -123,7 +123,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 	// carries, never a superseded one. A refused take writes nothing, so it
 	// leaves the cached plan standing.
 	stale := &substrate.ConversionConfirm{PlanHash: afterPut.PlanHash, ChangelogSeq: afterPut.ChangelogSeq}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, stale); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, stale); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("a confirmation of a superseded plan: err = %v, want ErrConflict", err)
 	}
 	if again := preview(t, c, ds, tasksSampleID, &held); !reflect.DeepEqual(again, cached) {
@@ -131,7 +131,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 	}
 	wantPreviews(t, ds, 5, "a read after a refused take")
 	confirm := &substrate.ConversionConfirm{PlanHash: cached.PlanHash, ChangelogSeq: cached.ChangelogSeq}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, confirm); err != nil {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, confirm); err != nil {
 		t.Fatalf("the door refused the cached preview's confirmation: %v", err)
 	}
 

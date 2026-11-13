@@ -25,7 +25,7 @@ type measureLog struct {
 }
 
 func (l *measureLog) hook(actor substrate.Actor, check string) {
-	if actor != substrate.ActorAPI {
+	if actor != substrate.ActorPerson {
 		return
 	}
 	l.mu.Lock()
@@ -49,16 +49,16 @@ func TestAWriteOfAPlainKindRunsNoMeasuredValueCheck(t *testing.T) {
 	_ = log.take()
 
 	rec := racePut(t, ds, map[string]any{"name": "plain"})
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, raceWidget, rec.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, raceWidget, rec.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": "still plain"},
 	}); err != nil {
 		t.Fatalf("patch: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, rec.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, rec.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	gone := racePut(t, ds, map[string]any{"name": "purged"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, gone.ID, substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, gone.ID, substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 	if got := log.take(); len(got) != 0 {
@@ -66,7 +66,7 @@ func TestAWriteOfAPlainKindRunsNoMeasuredValueCheck(t *testing.T) {
 	}
 
 	// The counter is live: a unit write runs the unit graph's check.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindUnit, ID: "zzmeasure",
 		Properties: map[string]any{"name": "measure test unit", "code": "[zzmeasure]"},
 	}); err != nil {
@@ -79,7 +79,7 @@ func TestAWriteOfAPlainKindRunsNoMeasuredValueCheck(t *testing.T) {
 	// A repository holding observed points of another kind is no different.
 	ds.observedKinds.note("other.test.dev/other/reading")
 	other := racePut(t, ds, map[string]any{"name": "other"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, other.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, other.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := log.take(); len(got) != 0 {
@@ -90,7 +90,7 @@ func TestAWriteOfAPlainKindRunsNoMeasuredValueCheck(t *testing.T) {
 	// asks whether the record leaving the fold left one behind.
 	ds.observedKinds.note(raceWidget)
 	held := racePut(t, ds, map[string]any{"name": "held"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, held.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, held.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if got := log.take(); !slices.Equal(got, []string{measureObservedProbe}) {

@@ -276,25 +276,25 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 
 	// The owner names one relay contact, hides another, promotes a third and
 	// merges a fourth into Grace's.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, edited),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, edited),
 		substrate.PatchInput{Properties: map[string]any{"name": "Review thread"}}); err != nil {
 		t.Fatalf("name: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, hidden),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, hidden),
 		substrate.PatchInput{Properties: map[string]any{"prominence": "hidden"}}); err != nil {
 		t.Fatalf("hide: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, known),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, known),
 		substrate.PatchInput{Properties: map[string]any{"prominence": "known"}}); err != nil {
 		t.Fatalf("promote: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindContact, Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindContact, Properties: map[string]any{
 		"name": "Linus", "memberOf": []any{relayRef(vocabulary.KindContact, relayContactOf(t, ds, member))},
 	}}); err != nil {
 		t.Fatalf("an owner's contact naming a relay contact: %v", err)
 	}
 	graceContact := relayContactOf(t, ds, grace)
-	if _, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{
+	if _, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{
 		Kind: vocabulary.KindContact, Winner: graceContact, Loser: relayContactOf(t, ds, merged),
 	}); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -439,7 +439,7 @@ func TestRepositoryMigrationOfReplyRelaysIsSilentWithoutGoogle(t *testing.T) {
 	}
 	_ = svc.Close()
 	s, ds := relayOpen(t, dsn, root, repo)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindContact, Properties: map[string]any{"emails": []any{"reply+AAEXAMPLE0000@reply.github.com"}},
 	}); err != nil {
 		t.Fatal(err)

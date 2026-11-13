@@ -306,7 +306,6 @@ func TestRebuildReproducesTheOriginStamp(t *testing.T) {
 	const origin = "samples.example.com/gizmo"
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "a copied sample", "installs": []any{pkg + "/gizmo"},
 		}),
@@ -817,12 +816,10 @@ func firstTaskID(t *testing.T, ds substrate.Dataset) string {
 
 // retiredActor is exactly what AuthorityActor minted before record 0025, for
 // an authority whose first label was `gmail`.
-// THE RETIRED SPELLING (record 0025). An actor is part of the hashed
-// changelog preimage, so an entry written as `connector:gmail` before actors
-// carried the full authority keeps that string for the life of the
-// repository. Nothing translates it on read: the fold replays the actor and
-// the tier the entry recorded, and the door still refuses a request that
-// tries to claim it.
+// THE RETIRED SPELLING (record 0025). A hand that still writes under it links
+// the actor record its spelling derives (decision 0270), never the spelling:
+// the fold replays the link and the tier the entry recorded, and a rebuild
+// reproduces both.
 const retiredActor = substrate.Actor("connector:gmail")
 
 func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
@@ -842,13 +839,13 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 		`SELECT actor FROM changelog ORDER BY seq DESC LIMIT 1`).Scan(&stored); err != nil {
 		t.Fatalf("read the head entry's actor: %v", err)
 	}
-	if stored != string(retiredActor) {
-		t.Fatalf("the entry stored actor %q, want %q verbatim", stored, retiredActor)
+	if stored != vocabulary.ActorID(retiredActor) {
+		t.Fatalf("the entry stored actor %q, want the link %q", stored, vocabulary.ActorID(retiredActor))
 	}
 
-	// The retired spelling is still reserved, so no request can write as it.
+	// The retired spelling is still reserved: its hand is the substrate's.
 	if !substrate.ReservedActor(retiredActor) {
-		t.Fatalf("actor %q is claimable by a request", retiredActor)
+		t.Fatalf("actor %q is not the substrate's", retiredActor)
 	}
 
 	// It gains no standing from the rename: undeclared and reserved is the
@@ -861,8 +858,8 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 		task.Kind, task.ID).Scan(&actor, &tier); err != nil {
 		t.Fatalf("read the name manager: %v", err)
 	}
-	if actor != string(retiredActor) || tier != string(substrate.TierMachine) {
-		t.Fatalf("the manager row is %q at %q, want %q at the machine tier", actor, tier, retiredActor)
+	if actor != vocabulary.ActorID(retiredActor) || tier != string(substrate.TierMachine) {
+		t.Fatalf("the manager row is %q at %q, want %q at the machine tier", actor, tier, vocabulary.ActorID(retiredActor))
 	}
 
 	before := foldOf(t, ds)

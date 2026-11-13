@@ -80,7 +80,6 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetest.Manifest {
 	manifests := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
-		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
 		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget"}, map[string]any{
 			// Only `name` indexes: the scenario knobs must not pollute the
 			// lexical arm the host-read search test asserts on.
@@ -137,7 +136,6 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	_, ds := newDataset(t)
 	docs := []map[string]any{
 		vocabulary.PackageManifest(fnPackage, 0),
-		vocabulary.ActorManifest(fnPackage, vocabulary.PackageActor(fnPackage)),
 		vocabulary.KindManifest(fnPackage, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
@@ -167,7 +165,7 @@ func process(t *testing.T, ds substrate.Dataset) int {
 func actorChanges(t *testing.T, ds substrate.Dataset, function string) []substrate.Change {
 	t.Helper()
 	out, err := ds.Changes(context.Background(), 0, substrate.ChangeFilter{
-		Actors: []substrate.Actor{substrate.FunctionActor(vocabulary.SplitKindRef(function))},
+		Actors: []string{vocabulary.ActorID(substrate.FunctionActor(vocabulary.SplitKindRef(function)))},
 	}, 500)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
@@ -524,7 +522,7 @@ def main(input, host):
 			record["fromStart"] = true
 		}
 		tr := trigOn(fn, record)
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
 			t.Fatalf("put the %s trigger: %v", fn, err)
 		}
 	}
@@ -547,7 +545,7 @@ def main(input, host):
 	}
 	// An edit keeps the cursor: fromStart is read when the trigger is created.
 	tr := trigOn("late", map[string]any{"kinds": []any{widgetType}, "fromStart": true})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "substrate.reamde.dev/core/trigger", ID: tr.ID, Properties: tr.Properties}); err != nil {
 		t.Fatalf("edit the late trigger: %v", err)
 	}
 	process(t, ds)

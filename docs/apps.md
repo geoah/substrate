@@ -83,10 +83,11 @@ write and the hosts each declares, its triggers, and everything its code
 reaches with what reaches it and the scope that covers it; the account's
 kind and id; the webhook's trigger, whether
 it is on and whether it has a key, which is never shared; the name the app's
-changes are recorded under, which history shows as the app's and never as
-yours: `app:` and the verified authority, `app:local` for an app whose
-access goes to this device, or `app:` and the host of its client id; and the `authorization_details` as the app sent
-them, to copy.
+changes appear under, which history shows as the app's and never as yours
+(`app.appearsAs`, since revision 3 of the `apps` feature): the verified
+authority, `local` for an app whose access goes to this device, or the host
+of its client id, the `publisher` its [actor record](api.md#actors) will
+carry; and the `authorization_details` as the app sent them, to copy.
 
 Approving a request that sets something up runs the set up on your server,
 as you, before the app receives anything: the packages first, each after
@@ -214,12 +215,15 @@ unverified app may still ask for everything a verified one may, `full`
 included; for `full` the page adds that nothing confirms which program
 receives a token equal to the owner's password.
 
-The token records the verified authority, and the app writes as
-`app:<authority>`. An app whose access went to a loopback address writes as
-`app:local`, and any other as `app:` and the host of its client id. Its
-label and annotation keys go under its actor's namespace, and a token may
-still write keys under `app:` and the host of its client id, the namespace
-an earlier binary gave it.
+The token records the verified authority, and the app writes as an
+[actor record](api.md#actors) of type `app` whose `publisher` is that
+authority. An app whose access went to a loopback address writes as the app
+whose publisher is `local`, and any other as the one whose publisher is the
+host of its client id; the approval writes the record. Its label and
+annotation keys go under its namespace, `app:` and its publisher
+(`app:example.org/…`, `app:local/…`), and a token may still write keys under
+`app:` and the host of its client id, the namespace an earlier binary gave
+it.
 
 The page shows the publisher it checked, and an approval and the token
 exchange check it again: when the record was withdrawn or now names
@@ -484,10 +488,11 @@ the scope that would, and each function its `reads`, `writes` and declared
 `network` hosts.
 
 The owner sees one row per entry and approves them with the scopes or not
-at all, as themselves: a request that carries entries is approved through
-the console, `substratectl` or the API, and an approval under any other
-`X-Substrate-Actor` is refused with `403` before anything is planned, the
-request still waiting for the owner. The approval runs the set up before the
+at all, as themselves: a request that carries entries is approved with a
+full-access token, through the console, `substratectl` or the API, and an
+approval that writes as anything but the person (an app's or an assistant's
+token) is refused with `403` before anything is planned, the request still
+waiting for the owner. The approval runs the set up before the
 code exists, so the code can take longer to arrive than for scopes alone:
 the set up has up to 15 minutes, and the request then waits up to 10 more
 for the approval page to come back and send the browser on, so an app that
@@ -726,16 +731,16 @@ door and that trigger's parked list
 
 Everything else answers `403`: the vocabulary, the catalog, a function
 call from a token with no `call:` scope, the agent call API, the export and
-the token endpoints. Writes are attributed to the app's own actor, whatever
-`X-Substrate-Actor` says: `app:<authority>` for an app whose publisher was
-verified, `app:local` for one whose access went to a loopback address, and
-`app:<host>` of its client id otherwise
-([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)); no
-request can claim that name. Two apps of one publisher, or on one host,
-share it, and the changelog's principal (the token, which names the exact
-client id) tells them apart. Labels and annotations an app writes go in its
-own namespace, the actor and a slash (`app:example.org/…`), like an
-agent's or a function's.
+the token endpoints. Writes are made by the app's own
+[actor record](api.md#actors), on behalf of the person: its `publisher` is
+its authority for an app whose publisher was verified, `local` for one whose
+access went to a loopback address, and the host of its client id otherwise
+([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)),
+and no request names another. Two apps of one publisher, or on one host,
+share it, and the write's `token` (which names the exact client id) tells
+them apart. Labels and annotations an app writes go in its own namespace,
+`app:`, its publisher and a slash (`app:example.org/…`), like an agent's or
+a function's.
 
 ### Talk to agents
 
@@ -747,8 +752,7 @@ records their chats are made of:
   naming a thread of another agent does;
 - `POST /api/v1/substrate.reamde.dev/core/agent/{id}/chat`, the id one
   path segment (`%2F` for its slashes), streaming as it does for the owner.
-  The message is written as the app's own actor (`app:<authority>`,
-  `app:local` or `app:<host>`, as above); the agent runs under
+  The message is written by the app's own actor, as above; the agent runs under
   its own permissions, so it reads and writes what it would in the
   owner's chat. A chat's `context` may name only records the app's own
   token reads; any other path is refused with the `404 not_found` a read
@@ -765,8 +769,8 @@ A `decide:<pattern>` scope reaches the change requests
 (`substrate.reamde.dev/core/recordpatchrequest`) whose `thread` is a thread
 of a matching agent: list and read, and a `PATCH` of `decision` to
 `accepted` or `rejected` with the request's `ifVersion`, optionally an
-`adjustedDiff` on an accept and a note under the app's own namespace (its
-actor and `/note`: `app:example.org/note` for an app example.org
+`adjustedDiff` on an accept and a note under the app's own namespace (`app:`,
+its publisher and `/note`: `app:example.org/note` for an app example.org
 publishes). The accept applies the change as the owner's would,
 and the decision is recorded as the app's. An accept that would revoke a
 token or write an account is refused. `decide:` without `agents:` decides
@@ -793,8 +797,9 @@ as for the owner), the history pages (`before`, `first`), the run summaries
 ([the change feed](changelog.md)). Each carries only the rows of records
 the token reads, through its read and write scopes and the rows `agents:`
 and `decide:` reach, and each row names alone: `seq`, `ts`, `op`, `kind`,
-`recordId`, `actor`, and `affected` cut to records the token reads. No
-`payload`, `hash` or trigger states. A history page stays full while more
+`recordId`, `actor`, `onBehalfOf` where set, and `affected` cut to records
+the token reads. No `payload`, `hash`, `token` or trigger states, and a run
+summary carries no `token` or `tokenName`. A history page stays full while more
 lies below, so its cursor is right whatever the token cannot see between
 its rows. `values=1` and `q` answer `403` on every route; a `kinds` entry
 the token cannot read answers `404`.
@@ -842,7 +847,7 @@ scopes do not match is answered `404`, as a kind it cannot read is; one it reach
 whose reach its scopes do not cover answers `403` naming what is missing
 (`read <kind>`, `write <kind>`). The call runs under the function's own
 permissions, as a trigger's does: the app's actor is the caller, and the
-function's effects land as the function's.
+function's effects land as the function's, on behalf of the person.
 
 The approval page lists, under a `call:` scope, the functions it matches
 today with each one's reach and whether the request's other scopes cover
@@ -958,11 +963,13 @@ in Safari rather than typing a password into the app, and the app holds the
 session in the Keychain and hands it to the console it runs. A request names it
 alone, with no `authorization_details`; anything beside it is refused. The
 approval page leads with a warning, offers nothing to uncheck, and takes the
-approval only through a human door. Approving mints a token without scopes,
+approval only from the person, never from an app's or an assistant's token.
+Approving mints a token without scopes,
 which is full access, keeping the app's client id and name: the owner sees
 it under Apps, the app revokes it at the revocation endpoint or deletes its
-own record (`token_id`) as a sign-in does, and its writes are the owner's,
-not `app:<host>`. A server lists `full` in `scopes_supported` when it can
+own record (`token_id`) as a sign-in does, and its writes are the person's,
+with its token beside them, never an app actor's. A server lists `full` in
+`scopes_supported` when it can
 grant it.
 
 ## Running it

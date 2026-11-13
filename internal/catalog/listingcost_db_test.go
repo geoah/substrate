@@ -37,7 +37,7 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	importSamples(t, loadCatalog(t), base, peopleSampleID)
 	const live = 40
 	for range live {
-		if _, err := base.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := base.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: homeAuthority + "/people/person",
 		}); err != nil {
 			t.Fatalf("put a person: %v", err)

@@ -10,6 +10,7 @@ import { AppWindow, Bot, Box, ShieldCheck, UserRound, Zap } from "lucide-react"
 import { IdentityCard, IdentityHoverCard } from "./identity-hover-card"
 import { ProviderBadge } from "./provider-badge"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useActorDirectory } from "@/lib/actor-directory"
 import { actorIdentity, type ActorIdentity } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
 import { cn } from "@/lib/utils"
@@ -71,8 +72,8 @@ export function ActorRef({
   inlineId = true,
   className,
 }: {
-  /** The actor string as stored (`console`, `agent:<authority>:<pkg>:<name>`,
-   * `substrate`, …). */
+  /** The id of the actor record a change, a manager or a stored value
+   * links (decision 0270). */
   actor: string
   /** The name of the token behind the write where the server resolved one
    * ("Claude Code"): it heads the mark, and the actor's own words move to the
@@ -81,12 +82,13 @@ export function ActorRef({
   /** Where a click goes: the actor view, the actor's declaration record
    * (falling back to the actor view), or nowhere. */
   link?: "actor" | "record" | false
-  /** Technical mode shows the raw actor string beside the name; a surface
-   * that shows it elsewhere, with a copy button, turns this off. */
+  /** Technical mode shows the actor's id beside the name; a surface that
+   * shows it elsewhere, with a copy button, turns this off. */
   inlineId?: boolean
   className?: string
 }) {
   const [technical] = useTechnicalDetails()
+  useActorDirectory()
   const identity = actorIdentity(actor)
   const record = identity.record ? splitKind(identity.record.kind) : undefined
   const trigger =
@@ -121,13 +123,7 @@ export function ActorRef({
         <IdentityCard
           mark={<ActorMark identity={identity} />}
           title={name || identity.name}
-          sub={
-            name
-              ? identity.name
-              : identity.via
-                ? `via ${identity.via}`
-                : undefined
-          }
+          sub={name ? identity.name : undefined}
           description={identity.description}
           reference={actor}
         />

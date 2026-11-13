@@ -321,7 +321,7 @@ func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
 func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mediaType string) error {
 	props := map[string]any{
 		blobPropDigest:    digest,
-		blobPropCreatedBy: string(actor),
+		blobPropCreatedBy: vocabulary.ActorRef(actorID(actor)),
 		blobStateStatus:   string(substrate.BlobPending),
 	}
 	if name != "" {
@@ -374,7 +374,7 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 		// may name any declared state); a tombstoned manifest resurrects.
 		props := map[string]any{
 			blobPropDigest: digest, blobPropSize: size,
-			blobPropCreatedBy: string(actor),
+			blobPropCreatedBy: vocabulary.ActorRef(actorID(actor)),
 			blobStateStatus:   string(substrate.BlobStored),
 		}
 		// Name and mime type are optional: an empty one is written as nothing

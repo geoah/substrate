@@ -30,7 +30,7 @@ func TestSetupCarriesEveryApprovedCandidateToInstall(t *testing.T) {
 			{ID: "example.com/binary", Shipped: 4},
 		},
 	}}
-	err := NewRunner(cat).setUpRow(context.Background(), newFakeDataset(), substrate.ActorAPI, pkgDetail(row.Package.ID, 1), row)
+	err := NewRunner(cat).setUpRow(context.Background(), newFakeDataset(), substrate.ActorPerson, pkgDetail(row.Package.ID, 1), row)
 	if !errors.Is(err, substrate.ErrConflict) {
 		t.Fatal(err)
 	}

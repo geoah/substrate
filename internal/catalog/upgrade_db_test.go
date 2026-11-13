@@ -238,7 +238,7 @@ func TestUpgradePreview(t *testing.T) {
 
 	// The offered upgrade is the install verb, unchanged, and afterwards the
 	// preview reads current again.
-	if _, _, err := moved.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
+	if _, _, err := moved.Install(ctx, substrate.ActorPerson, tasksBundleID, ds); err != nil {
 		t.Fatalf("install the moved closure: %v", err)
 	}
 	up, err = moved.Upgrade(ctx, tasksBundleID, ds, nil)
@@ -257,7 +257,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// A live row holding the very property binary N+1 drops.
-	guarded, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	guarded, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind:       "samples.substrate.reamde.dev/tasks/task",
 		Properties: map[string]any{"url": "https://example.com/issue/1"},
 	})
@@ -295,7 +295,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 		t.Fatalf("the preview does not plan the null step beside the blocker: %+v", up.ConversionPlan)
 	}
 	// The preview's blocker IS the install door's refusal.
-	if _, _, err := blocked.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
+	if _, _, err := blocked.Install(ctx, substrate.ActorPerson, tasksBundleID, ds); err == nil {
 		t.Fatal("the install door admitted the closure the preview reported blocked")
 	} else if !strings.Contains(err.Error(), `"name"`) {
 		t.Errorf("the refusal does not name the property the preview named: %v", err)
@@ -316,13 +316,13 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	if up == nil || !up.Available || len(up.Blockers) != 0 || !up.Lossy || up.Work != 1 || up.PlanHash == "" {
 		t.Fatalf("a lossy drop previews as %+v", up)
 	}
-	if _, _, err := lossy.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err == nil {
+	if _, _, err := lossy.Install(ctx, substrate.ActorPerson, tasksBundleID, ds); err == nil {
 		t.Fatal("the install door admitted a lossy plan without a confirmation")
 	} else if !errors.Is(err, substrate.ErrLossyConversion) || !strings.Contains(err.Error(), `"url"`) {
 		t.Errorf("the refusal is not the lossy one naming the property: %v", err)
 	}
 	confirm := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
-	if _, _, err := lossy.InstallConfirmed(ctx, substrate.ActorAPI, tasksBundleID, ds, confirm); err != nil {
+	if _, _, err := lossy.InstallConfirmed(ctx, substrate.ActorPerson, tasksBundleID, ds, confirm); err != nil {
 		t.Fatalf("the confirmed install must land: %v", err)
 	}
 	got, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", guarded.ID)
@@ -411,7 +411,7 @@ func TestInstallOverAHigherStoredVersionIsOfferedTheNextShipped(t *testing.T) {
 
 	// The install of binary N's closure: the bundle document changed back, so
 	// the package moves past what the store holds, never back to shipped.
-	if _, _, err := current.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
+	if _, _, err := current.Install(ctx, substrate.ActorPerson, tasksBundleID, ds); err != nil {
 		t.Fatalf("install over the hand-applied package: %v", err)
 	}
 	installed := closureVersions(t, ds, b)["package "+tasksBundleID]
@@ -465,7 +465,7 @@ func TestInstallOverAHigherStoredVersionIsOfferedTheNextShipped(t *testing.T) {
 	// rises (stored+1), the package's never falls back, and the preview
 	// reads current again.
 	before := closureVersions(t, ds, b)
-	if _, _, err := next.Install(ctx, substrate.ActorAPI, tasksBundleID, ds); err != nil {
+	if _, _, err := next.Install(ctx, substrate.ActorPerson, tasksBundleID, ds); err != nil {
 		t.Fatalf("install the next closure: %v", err)
 	}
 	after := closureVersions(t, ds, b)

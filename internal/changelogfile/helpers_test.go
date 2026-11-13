@@ -14,7 +14,7 @@ import (
 func entryAt(seq int64) Entry {
 	return Entry{
 		Seq: seq, TS: time.Date(2026, 9, 5, 10, 0, 0, int(seq)*1000, time.UTC),
-		Actor: "api", Principal: "k7abc", Op: "put",
+		Actor: "api", Token: "k7abc", Op: "put",
 		RecordID: fmt.Sprintf("rec%d", seq), Kind: "ada.example.com/task",
 		Txn:     seq,
 		Payload: json.RawMessage(fmt.Sprintf(`{"seq":%d,"n":1.50}`, seq)),

@@ -180,7 +180,12 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	seen := map[string]bool{}
 	for _, ch := range rows {
 		seen[ch.Kind] = true
-		if ch.Actor != owner {
+		// The deploy's functions and agents are actors from it: their
+		// records are the system's.
+		if ch.Kind == "substrate.reamde.dev/core/actor" {
+			continue
+		}
+		if ch.Actor != vocabulary.ActorID(owner) {
 			t.Fatalf("schema change attributed to %q", ch.Actor)
 		}
 	}
@@ -1058,47 +1063,41 @@ def main(input, host):
 	}
 }
 
-// An actor's id does not embed its authority (alone among the schema kinds), so a
-// document may CLAIM any authority. Redeclaring a shipped actor into an installed
-// authority must refuse — otherwise the projection overwrites the shipped row and
-// the write silently unwinds at the next boot.
-func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
+// NO REQUEST WRITES AN ACTOR RECORD (decision 0270): the engine writes every
+// one. A batch that carries an actor document is refused naming why, and the
+// generic put and patch are refused like any other record the substrate
+// manages. The person's record is untouched.
+func TestActorRecordsRefuseEveryRequestWrite(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-
-	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.PackageManifest(swPackage, 0),
-	}); err != nil {
-		t.Fatalf("apply authority: %v", err)
-	}
+	person := vocabulary.ActorID(substrate.ActorPerson)
 
 	// Through the batch verb.
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.ActorManifest(swPackage, "api"),
+		vocabulary.PackageManifest(swPackage, 0),
+		{
+			"kind": "substrate.reamde.dev/core/actor", "metadata": map[string]any{"id": "substrate"},
+			"data": map[string]any{"authority": swAuthority, "package": "widgets"},
+		},
 	})
-	wantErr(t, err, substrate.ErrForbidden, "batch redeclares a shipped actor")
+	wantErr(t, err, substrate.ErrValidation, "an actor is a record the substrate writes")
 
 	// Through the generic put.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "substrate.reamde.dev/core/actor", ID: "substrate",
-		Properties: map[string]any{"authority": swAuthority, "package": "widgets"},
+		Kind: "substrate.reamde.dev/core/actor", ID: person,
+		Properties: map[string]any{"type": "system", "name": "a forged hand"},
 	})
-	wantErr(t, err, substrate.ErrForbidden, "put hijacks a shipped actor")
+	wantErr(t, err, substrate.ErrForbidden, "managed by the substrate")
 
-	// Through a patch that retargets the row's authority.
-	_, err = ds.Patch(ctx, owner, "substrate.reamde.dev/core/actor", "api", substrate.PatchInput{
-		Properties: map[string]any{"authority": swAuthority, "package": "widgets"},
+	// Through a patch of the person's own record.
+	_, err = ds.Patch(ctx, owner, "substrate.reamde.dev/core/actor", person, substrate.PatchInput{
+		Properties: map[string]any{"type": "system"},
 	})
-	wantErr(t, err, substrate.ErrForbidden, "patch retargets a shipped actor")
+	wantErr(t, err, substrate.ErrForbidden, "managed by the substrate")
 
-	// The shipped rows are untouched.
-	for _, id := range []string{"api", "console", "substratectl", "substrate"} {
-		row := mustGet(t, ds, "substrate.reamde.dev/core/actor", id)
-		if row.Properties["authority"] != "substrate.reamde.dev" || row.Properties["package"] != "core" ||
-			row.Properties["source"] != "builtin" {
-			t.Fatalf("shipped actor row %s = %v", id, row.Properties)
-		}
+	if row := mustGet(t, ds, "substrate.reamde.dev/core/actor", person); row.Properties["type"] != substrate.ActorTypePerson {
+		t.Fatalf("the person's actor record = %v", row.Properties)
 	}
 }
 
@@ -1268,7 +1267,6 @@ func dkDocs(members ...map[string]any) []map[string]any {
 	}
 	return append([]map[string]any{
 		vocabulary.PackageManifest(dkPackage, 0),
-		vocabulary.ActorManifest(dkPackage, vocabulary.PackageActor(dkPackage)),
 		vocabulary.BundleManifest(dkPackage, map[string]any{
 			"description": "the drop-kind bundle",
 			"installs":    installs,

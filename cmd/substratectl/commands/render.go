@@ -200,6 +200,13 @@ func printDocuments(w io.Writer, records []*substrate.Record) error {
 
 const changeHeader = "SEQ      OP        TYPE                                 RECORD           ACTOR"
 
+// formatChange is one change as a line. The actor is the id of its actor
+// record, which `get substrate.reamde.dev/core/actor <id>` reads, followed by
+// the one it acted for where there is one.
 func formatChange(c substrate.Change) string {
-	return fmt.Sprintf("%-8d %-9s %-36s %-16s %s", c.Seq, c.Op, dash(c.Kind), dash(c.RecordID), dash(string(c.Actor)))
+	actor := dash(c.Actor)
+	if c.OnBehalfOf != "" {
+		actor += " for " + c.OnBehalfOf
+	}
+	return fmt.Sprintf("%-8d %-9s %-36s %-16s %s", c.Seq, c.Op, dash(c.Kind), dash(c.RecordID), actor)
 }

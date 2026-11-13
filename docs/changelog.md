@@ -13,7 +13,8 @@ One entry, as the wire carries it, for the task created on the
 ```json
 {"seq": 4190,
  "ts": "2026-08-04T10:00:00.183742Z",
- "actor": "api",
+ "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+ "token": "01jbx9k0token000000000000a",
  "op": "put",
  "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
@@ -22,16 +23,20 @@ One entry, as the wire carries it, for the task created on the
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
-`actor` names what wrote ([the actor domain](api.md#actors) is closed) and is
-the caller's own claim; the entry also stores a **principal**
-beside it, the id of the token the door resolved from the bearer secret,
-which no caller can name. Two tokens writing as `api` are one actor and two
-principals. The entry's checksum covers it, and it is not a secret: it is a
-token record's id, which the repository's own reader can already list. It has
-no field of its own on the wire; a write's recorded effects name it beside
-each property manager they set. A write no token stands behind — the seed, the
-boot upgrade, a background worker, registration and login — carries an empty
-principal. `op` is the mutation
+`actor` is the id of the [actor record](api.md#actors) that wrote the entry:
+here the person. `onBehalfOf` is the id of the one it acted for, present only
+where it acted for someone: an app always acts for the person, and a
+function or an agent acts for the person when a person's request started it.
+`token` is the id of the token record the write stood behind, present only
+where one did: the person's sign-in, or the app's token. The server derives
+all three from the bearer secret and the code that runs, and no caller names
+any of them. Two sign-ins of one person are one actor and two tokens. A
+write no token stands behind (the seed, the boot upgrade, a background
+worker, a sync on a schedule, registration and login) carries no `token`.
+The entry's checksum covers the three. The token is not a secret, since it is a
+token record's id, which the repository's own reader can already list, but
+it is the owner's to read: a change an app's token or an assistant's reads
+carries no `token`. `op` is the mutation
 that made the row (`put`, `patch`, `delete`, `merge`, `split`, plus the
 engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. `payload` names what
@@ -175,8 +180,10 @@ Two guarantees consumers may lean on:
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
   engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
-  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`,
-  `affected` and the entry's `hash` (below); a row of `/changes` adds
+  carries `seq`, `ts`, `actor`, `onBehalfOf` and `token` where set, `op`,
+  `kind`, `recordId`, `payload`, `affected` and the entry's `hash` (below);
+  since revision 2 of the `changefeed` feature, `actor` is an actor record's
+  id and `onBehalfOf` and `token` are beside it. A row of `/changes` adds
   `triggers` ([watching](#watching)).
 
 ## Change verbs
@@ -263,12 +270,14 @@ one object per line, keys sorted, the checksum in `sum`
 ([pieces](stored-format.md#pieces)):
 
 ```json
-{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
+{"actor":"6nk6ekkczdgh399nt2pqpccjz0","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","token":"01jbx9k0token000000000000a","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 `sum` is `sha256:` plus the hex digest of the same line with the `sum` key
 absent, and the `hash` column and the wire field hold the same 32 bytes.
-`causedBy` appears only on an entry a delivery caused. `txn` is the seq of the
+`causedBy` appears only on an entry a delivery caused, `onBehalfOf` only where
+the actor acted for another and `token` only where a token stood behind the
+write ([the stored format](stored-format.md#the-line)). `txn` is the seq of the
 last entry of the transaction that appended the line: a transaction of one
 entry has `txn` equal to `seq`, and a merge, which writes the loser's
 tombstone and the winner's entry in one commit, gives both lines the second
@@ -320,7 +329,10 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-2 today, the ops, fold effects and entry frame this release writes: the record
+3 today, the ops, fold effects and entry frame this release writes: every
+entry linking its actor, the one it acted for and its token as records
+([decision 0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)),
+which is what dialect 3 added, the record
 ops and the `delivery` op with the seven effects a trigger's bookkeeping
 replays through
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
@@ -365,7 +377,8 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 
 {"bookmark": 4189, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
- "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd", "actor": "api",
+ "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd", "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+ "token": "01jbx9k0token000000000000a",
  "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "version": 1}]}
 ```
 
@@ -391,6 +404,8 @@ The same endpoint pages backward through history with `before=`, and filters
 the same way in watch and history modes alike. Every filter parameter is plural
 and takes a repeated parameter or a comma-separated list: `kinds`, `ops`,
 `actors`, and their negations `excludeKinds`, `excludeOps`, `excludeActors`.
+`actors` and `excludeActors` take [actor record](api.md#actors) ids, and
+match a row by its `actor`.
 `q` matches free text across the row's kind, actor, record id and payload
 text. `values=1` narrows nothing: it adds each record's
 [before and after values](#values-on-request) to the rows. Scoping the feed to one record takes **both** `recordId` and
@@ -429,8 +444,8 @@ misses nothing and double-sees nothing.
 ### Run summaries
 
 `runs=1` turns the history page into run summaries: consecutive rows of the
-filtered feed that share an actor, a kind and a verb, each with its count, so
-a client says "added 60 tasks" from one read
+filtered feed that share an actor, a kind, a verb and a token, each with its
+count, so a client says "added 60 tasks" from one read
 ([0126](decisions/0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md)).
 The verb is `create` for a `put` whose payload carries `created: true`,
 `restore` for one carrying `restored: true`, `update` for any other `put` and
@@ -442,14 +457,24 @@ run.
 GET /api/v1/changes?runs=1&first=2
 
 {"runs": [
-  {"actor": "api", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
+  {"actor": "5fz1hzkw85g0a9ytnkzrj7tzth", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
    "count": 3, "records": 1, "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
-   "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…"},
-  {"actor": "console", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
+   "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…",
+   "token": "01jbx9k0token000000000000c", "tokenName": "Chat"},
+  {"actor": "6nk6ekkczdgh399nt2pqpccjz0", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
    "count": 60, "records": 60,
-   "newestSeq": 4187, "oldestSeq": 4128, "newestTs": "…", "oldestTs": "…"}],
+   "newestSeq": 4187, "oldestSeq": 4128, "newestTs": "…", "oldestTs": "…",
+   "token": "01jbx9k0token000000000000a", "tokenName": "laptop"}],
  "cursor": 4128, "head": 4190, "generation": "7f3a0c2e9b1d4e6f"}
 ```
+
+A run splits on the token, so two of the person's sign-ins are two runs, and
+so are two assistants on one device, which are one local app's actor
+([0230](decisions/0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md)).
+On the owner's reads a run whose writes stood behind a token carries it:
+`token`, its id, and `tokenName`, the app's claimed name or the token's
+label, a revoked token's included. An app's and an assistant's reads carry
+neither.
 
 `first` counts runs (default 50, at most 500), and a page never ends inside
 one: the server reads each run to the row that breaks it, so the oldest run's

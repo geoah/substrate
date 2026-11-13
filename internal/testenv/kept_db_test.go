@@ -18,7 +18,7 @@ package testenv_test
 // comparison is exact for every record nothing after the head touched, and a
 // record an entry after the head touched must equal the release's record,
 // converted, with those entries' values applied. Every entry after the head must be the
-// boot's own (the `substrate` actor), and none may move a value an owner, an
+// boot's own (the system's actor record), and none may move a value an owner, an
 // app, a function or an agent set: the upgrade never takes a value from the
 // hand that wrote it (decision 0191). Any other difference fails, naming the
 // record.
@@ -45,6 +45,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testenv"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const keptRoot = "testdata/kept"
@@ -133,6 +134,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	keptAnnotations(t, e, fixture.Repository, want.Head, upgraded)
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
+	hands := keptHands(got)
 	dropped := keptConvert(&want, conversions, keptDialect(t, dir, fixture.Repository))
 
 	var diffs []string
@@ -173,7 +175,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 				}
 				continue
 			}
-			for _, d := range p.touched.check(p.release, p.now, kindVersion) {
+			for _, d := range p.touched.check(p.release, p.now, kindVersion, hands) {
 				diffs = append(diffs, fmt.Sprintf("%s: %s", path, d))
 			}
 		}
@@ -187,7 +189,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 			diffs = append(diffs, fmt.Sprintf("%s: served now, not by %s, and no entry after the head created it", path, fixture.Tag))
 			continue
 		}
-		for _, d := range touched.check(nil, now.Read, kindVersion) {
+		for _, d := range touched.check(nil, now.Read, kindVersion, hands) {
 			diffs = append(diffs, fmt.Sprintf("%s: %s", path, d))
 		}
 	}
@@ -260,9 +262,28 @@ func keptAppended(m map[string]*keptTouch) int {
 }
 
 // The hands a shipped write may not take a value from: everything but the
-// substrate itself and the packages it ships (decision 0191).
-func ownersHand(manager string) bool {
-	return manager != string(substrate.ActorSystem) && !strings.HasPrefix(manager, "bundle:")
+// system and the packages (decision 0191). A manager names its hand by its
+// actor record's id (decision 0270), so hands holds each record's type.
+func ownersHand(manager string, hands map[string]string) bool {
+	switch hands[manager] {
+	case "system", "package":
+		return false
+	}
+	return true
+}
+
+// keptHands is the type of every actor record the current code serves, by
+// id.
+func keptHands(got map[string]keptRecord) map[string]string {
+	out := map[string]string{}
+	for _, rec := range got {
+		if rec.Read["kind"] != vocabulary.CoreKind(vocabulary.DocActor) {
+			continue
+		}
+		props, _ := rec.Read["properties"].(map[string]any)
+		out[fmt.Sprint(rec.Read["id"])], _ = props["type"].(string)
+	}
+	return out
 }
 
 // check holds the record the current code serves to the release's (nil when
@@ -274,7 +295,7 @@ func ownersHand(manager string) bool {
 // version; the kind version is the one the boot's write validated against,
 // the kind's as the current code declares it (kindVersion); and everything
 // else is the release's.
-func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind string) json.Number) []string {
+func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind string) json.Number, hands map[string]string) []string {
 	var out []string
 	var want map[string]any
 	if release != nil {
@@ -297,7 +318,7 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 	}
 	wrote := false
 	for _, e := range k.entries {
-		if e.actor != string(substrate.ActorSystem) {
+		if e.actor != vocabulary.ActorID(substrate.ActorSystem) {
 			out = append(out, fmt.Sprintf("seq %d after the head was written by %q, not by the boot", e.seq, e.actor))
 		}
 		for _, p := range e.affected.Properties {
@@ -305,7 +326,7 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 				if name == "" {
 					continue
 				}
-				if m, ok := meta[name].(map[string]any); ok && ownersHand(fmt.Sprint(m["manager"])) {
+				if m, ok := meta[name].(map[string]any); ok && ownersHand(fmt.Sprint(m["manager"]), hands) {
 					out = append(out, fmt.Sprintf("seq %d moved %s, which %v set", e.seq, name, m["manager"]))
 				}
 			}
@@ -453,7 +474,7 @@ func keptUpgrade(t *testing.T, e *testenv.Env, head int64) map[string]*keptTouch
 						written[fmt.Sprint(n)] = true
 					}
 				}
-				k.entries = append(k.entries, keptEntry{seq: row.Seq, ts: row.TS, actor: string(row.Actor), affected: a, written: written})
+				k.entries = append(k.entries, keptEntry{seq: row.Seq, ts: row.TS, actor: row.Actor, affected: a, written: written})
 			}
 		}
 		if err := sc.Err(); err != nil {
@@ -822,14 +843,16 @@ func copyKept(t *testing.T, src, dst string) {
 func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 	t.Parallel()
 	const t0, t1 = "2026-11-13T00:00:00Z", "2026-11-13T01:00:00Z"
+	system, person := vocabulary.ActorID(substrate.ActorSystem), vocabulary.ActorID(substrate.ActorPerson)
+	hands := map[string]string{system: "system", person: "person"}
 	ts, err := time.Parse(time.RFC3339, t1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	release := keptDecode(t, []byte(`{"id":"x","kind":"a.example.com/p/k","labels":{},"version":1,"kindVersion":1,
 		"createdAt":"`+t0+`","updatedAt":"`+t0+`","properties":{"shipped":"1","owned":"2"},
-		"propertyMeta":{"shipped":{"manager":"substrate","tier":"machine","updatedAt":"`+t0+`"},
-		                "owned":{"manager":"api","tier":"owner","updatedAt":"`+t0+`"}}}`))
+		"propertyMeta":{"shipped":{"manager":"`+system+`","tier":"machine","updatedAt":"`+t0+`"},
+		                "owned":{"manager":"`+person+`","tier":"owner","updatedAt":"`+t0+`"}}}`))
 	touch := func(actor, property string) *keptTouch {
 		return &keptTouch{entries: []keptEntry{{seq: 10, ts: ts, actor: actor, written: map[string]bool{property: true}, affected: substrate.AffectedRecord{
 			Kind: "a.example.com/p/k", ID: "x", Version: 2,
@@ -841,24 +864,24 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		m := keptClone(release)
 		m["version"], m["updatedAt"], m["kindVersion"] = json.Number("2"), t1, json.Number("4")
 		m["properties"].(map[string]any)["shipped"] = "3"
-		m["propertyMeta"].(map[string]any)["shipped"] = map[string]any{"manager": "substrate", "tier": "machine", "updatedAt": t1}
+		m["propertyMeta"].(map[string]any)["shipped"] = map[string]any{"manager": system, "tier": "machine", "updatedAt": t1}
 		if edit != nil {
 			edit(m)
 		}
 		return m
 	}
-	if d := touch("substrate", "shipped").check(release, now(nil), kindVersion); len(d) != 0 {
+	if d := touch(system, "shipped").check(release, now(nil), kindVersion, hands); len(d) != 0 {
 		t.Fatalf("the record the entry describes was refused: %v", d)
 	}
 	marked := func() *keptTouch {
-		k := touch("substrate", "shipped")
+		k := touch(system, "shipped")
 		k.annotations = []keptAnnotation{{key: "substrate/mark", value: float64(2)}}
 		return k
 	}
 	mark := func(v string) func(m map[string]any) {
 		return func(m map[string]any) { m["annotations"] = map[string]any{"substrate/mark": json.Number(v)} }
 	}
-	if d := marked().check(release, now(mark("2")), kindVersion); len(d) != 0 {
+	if d := marked().check(release, now(mark("2")), kindVersion, hands); len(d) != 0 {
 		t.Fatalf("the annotation the entry set was refused: %v", d)
 	}
 	meta := func(m map[string]any) map[string]any {
@@ -868,17 +891,17 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		touch *keptTouch
 		now   map[string]any
 	}{
-		"a manager row at another tier":  {touch("substrate", "shipped"), now(func(m map[string]any) { meta(m)["tier"] = "owner" })},
-		"a manager row stamped elsewhen": {touch("substrate", "shipped"), now(func(m map[string]any) { meta(m)["updatedAt"] = t0 })},
-		"another manager":                {touch("substrate", "shipped"), now(func(m map[string]any) { meta(m)["manager"] = "api" })},
-		"another kind version":           {touch("substrate", "shipped"), now(func(m map[string]any) { m["kindVersion"] = json.Number("1") })},
-		"a value no entry wrote":         {touch("substrate", "shipped"), now(func(m map[string]any) { m["properties"].(map[string]any)["owned"] = "9" })},
-		"an annotation no entry wrote":   {touch("substrate", "shipped"), now(mark("2"))},
+		"a manager row at another tier":  {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["tier"] = "owner" })},
+		"a manager row stamped elsewhen": {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["updatedAt"] = t0 })},
+		"another manager":                {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["manager"] = person })},
+		"another kind version":           {touch(system, "shipped"), now(func(m map[string]any) { m["kindVersion"] = json.Number("1") })},
+		"a value no entry wrote":         {touch(system, "shipped"), now(func(m map[string]any) { m["properties"].(map[string]any)["owned"] = "9" })},
+		"an annotation no entry wrote":   {touch(system, "shipped"), now(mark("2"))},
 		"another annotation value":       {marked(), now(mark("3"))},
-		"a write that is not the boot's": {touch("api", "shipped"), now(nil)},
-		"a write over the owner's value": {touch("substrate", "owned"), now(nil)},
+		"a write that is not the boot's": {touch(person, "shipped"), now(nil)},
+		"a write over the owner's value": {touch(system, "owned"), now(nil)},
 	} {
-		if d := c.touch.check(release, c.now, kindVersion); len(d) == 0 {
+		if d := c.touch.check(release, c.now, kindVersion, hands); len(d) == 0 {
 			t.Errorf("%s compared equal", name)
 		}
 	}

@@ -390,7 +390,7 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 	if strings.HasPrefix(string(t.actor), substrate.AgentActorPrefix) {
 		if fn := t.effectBy; fn != nil {
 			return fmt.Errorf("%w: %q is not a minted id: function %s runs as %s's tool and writes as the agent, so its new %s takes a minted id. The function has to derive it with host.ids.minted(<key>), which names the same record for the same key",
-				substrate.ErrValidation, id, fn.Identity(), t.actor, ty.Identity)
+				substrate.ErrValidation, id, fn.Identity(), handWords(t.actor), ty.Identity)
 		}
 		return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Leave the id out and the substrate mints one",
 			substrate.ErrValidation, id, ty.Identity)
@@ -1421,7 +1421,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				if err := t.setManager(sp.ref(), name, actor, substrate.TierMachine); err != nil {
 					return nil, err
 				}
-				managers[name] = string(actor)
+				managers[name] = actorID(actor)
 			default:
 				actor, tier := t.actor, t.propTier(sp.ref(), name)
 				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
@@ -1457,7 +1457,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 		if t.recomputing {
 			payload["mechanism"] = "mapping"
-			payload["triggeredBy"] = string(t.recomputeInitiator)
+			payload["triggeredBy"] = actorID(t.recomputeInitiator)
 		}
 		if len(sp.states) > 0 {
 			payload["states"] = row.States
@@ -1810,7 +1810,7 @@ func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, ref eref, accepted []s
 		}
 		if !t.mayWriteProp(p.Writer, t.propTier(ref, name)) {
 			return fmt.Errorf("%w: %s.%s is written by the %q role, not %s",
-				substrate.ErrForbidden, ty.Identity, name, p.Writer, t.actor)
+				substrate.ErrForbidden, ty.Identity, name, p.Writer, handWords(t.actor))
 		}
 	}
 	return nil
@@ -2582,7 +2582,7 @@ func validatePatchShape(c coercer, ty *vocabulary.Kind, in substrate.PatchInput)
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	if _, err := coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels); err != nil {
+	if _, err := coerceLabels(context.Background(), substrate.ActorPerson, "", in.Labels); err != nil {
 		return err
 	}
 	return nil
@@ -2600,7 +2600,7 @@ func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) 
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	_, err = coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels)
+	_, err = coerceLabels(context.Background(), substrate.ActorPerson, "", in.Labels)
 	return err
 }
 
@@ -2637,7 +2637,7 @@ func (t *txn) authorizeRequestOp(op, targetKind string) error {
 	}
 	if !t.effEmitSet {
 		return fmt.Errorf("%w: %s may not accept a change request — no effective emit ceiling was carried into acceptance",
-			substrate.ErrForbidden, t.actor)
+			substrate.ErrForbidden, handWords(t.actor))
 	}
 	for _, e := range t.effEmit {
 		if e == targetKind {
@@ -2645,7 +2645,7 @@ func (t *txn) authorizeRequestOp(op, targetKind string) error {
 		}
 	}
 	return fmt.Errorf("%w: %s may not materialize a %s through an accepted %s request — %s is not in its effective emit allowlist",
-		substrate.ErrForbidden, t.actor, targetKind, op, targetKind)
+		substrate.ErrForbidden, handWords(t.actor), targetKind, op, targetKind)
 }
 
 // isRequestRefusal reports whether an error from materializing an accepted
@@ -3110,7 +3110,7 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 				substrate.ErrForbidden, ty.Identity)
 		}
 		return nil, fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
-			substrate.ErrForbidden, ty.Identity, t.actor, t.tier)
+			substrate.ErrForbidden, ty.Identity, handWords(t.actor), t.tier)
 	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen
 	// config/accounts when disabled (engine/bundles.go); purge is internal.
@@ -3146,6 +3146,13 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 		// failures and fire state. A restore re-initializes at its own moment.
 		if row.Kind == typeTrigger {
 			if err := t.dropTriggerBookkeeping(id); err != nil {
+				return nil, err
+			}
+		}
+		// An app whose last token is revoked is an approval that is gone: its
+		// actor record is disabled, never deleted (decision 0270).
+		if row.Kind == kindToken {
+			if err := t.disableRevokedApp(row.Props); err != nil {
 				return nil, err
 			}
 		}

@@ -1671,8 +1671,8 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.changes = []substrate.Change{
-		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
-		{Seq: 43, TS: testNow, Actor: "connector:gmail", Op: substrate.OpPatch, RecordID: "m3", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage"},
+		{Seq: 42, TS: testNow, Actor: "6nk6ekkczdgh399nt2pqpccjz0", Op: substrate.OpPut, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
+		{Seq: 43, TS: testNow, Actor: "5fz1hzkw85g0a9ytnkzrj7tzth", OnBehalfOf: "6nk6ekkczdgh399nt2pqpccjz0", Op: substrate.OpPatch, RecordID: "m3", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage"},
 	}
 	out, _ := h.mustRun("watch", "--from", "41", "--generation", "gen-test", "--kinds", "samples.substrate.reamde.dev/tasks/task,samples.substrate.reamde.dev/messaging/conversationmessage")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -1685,10 +1685,12 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 	if lines[1] != changeHeader {
 		t.Errorf("header line = %q", lines[1])
 	}
-	if !strings.HasPrefix(lines[2], "42 ") || !strings.Contains(lines[2], "put") || !strings.Contains(lines[2], "api") {
+	// The actor is the id of its actor record, and the one it acted for
+	// follows it.
+	if !strings.HasPrefix(lines[2], "42 ") || !strings.Contains(lines[2], "put") || !strings.HasSuffix(lines[2], " 6nk6ekkczdgh399nt2pqpccjz0") {
 		t.Errorf("change line = %q", lines[2])
 	}
-	if !strings.HasPrefix(lines[3], "43 ") || !strings.Contains(lines[3], "connector:gmail") {
+	if !strings.HasPrefix(lines[3], "43 ") || !strings.HasSuffix(lines[3], " 5fz1hzkw85g0a9ytnkzrj7tzth for 6nk6ekkczdgh399nt2pqpccjz0") {
 		t.Errorf("change line = %q", lines[3])
 	}
 }
@@ -1715,7 +1717,7 @@ func TestWatchPrintsTheReplacementCursorOnARefusedOne(t *testing.T) {
 func TestWatchSendsFilters(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.mustRun("watch", "--from", "7", "--generation", "gen-test", "--kinds", taskKind+","+alertKind, "--ops", "put", "--actors", "api")
+	h.mustRun("watch", "--from", "7", "--generation", "gen-test", "--kinds", taskKind+","+alertKind, "--ops", "put", "--actors", "6nk6ekkczdgh399nt2pqpccjz0")
 	// The fake records only the path; assert the request happened at all and
 	// that the client built the query without error.
 	var saw bool
@@ -1735,8 +1737,8 @@ func TestGetWatchStreamsCollectionChanges(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.changes = []substrate.Change{
-		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
-		{Seq: 43, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPatch, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
+		{Seq: 42, TS: testNow, Actor: "6nk6ekkczdgh399nt2pqpccjz0", Op: substrate.OpPut, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
+		{Seq: 43, TS: testNow, Actor: "6nk6ekkczdgh399nt2pqpccjz0", Op: substrate.OpPatch, RecordID: "t9", Kind: "samples.substrate.reamde.dev/tasks/task"},
 	}
 	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-w")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -1752,7 +1754,7 @@ func TestStreamChangesSkipsHeartbeats(t *testing.T) {
 	// The collection watch shares the ndjson decoder; drive it directly.
 	body := strings.NewReader(`{"bookmark":10}
 {}
-{"seq":11,"ts":"2026-08-02T12:00:00Z","actor":"api","op":"put","recordId":"t9","type":"samples.substrate.reamde.dev/tasks/task"}
+{"seq":11,"ts":"2026-08-02T12:00:00Z","actor":"6nk6ekkczdgh399nt2pqpccjz0","op":"put","recordId":"t9","type":"samples.substrate.reamde.dev/tasks/task"}
 `)
 	var buf bytes.Buffer
 	if err := streamChanges(&buf, new(bytes.Buffer), body); err != nil {
@@ -1964,23 +1966,6 @@ func TestNoServerConfiguredIsAClearError(t *testing.T) {
 	_, _, err := h.run("get", "samples.substrate.reamde.dev/tasks/task")
 	if err == nil || !strings.Contains(err.Error(), "no substrate server configured") {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestActorFlagIsSent(t *testing.T) {
-	h := newHarness(t)
-	h.writeConfig()
-	seedTask(h)
-	h.mustRun("--actor", "gmail.google.connectors.substrate.reamde.dev", "get", "samples.substrate.reamde.dev/tasks/task")
-	// The fake records the auth header only; assert via a direct client too.
-	cl := newClient(h.server, "substrate_tok_geoah_test", nil)
-	cl.actor = "gmail.google.connectors.substrate.reamde.dev"
-	req, err := cl.newRequest(context.Background(), "GET", pathRecords, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if req.Header.Get("X-Substrate-Actor") != "gmail.google.connectors.substrate.reamde.dev" {
-		t.Fatalf("actor header = %q", req.Header.Get("X-Substrate-Actor"))
 	}
 }
 

@@ -116,8 +116,9 @@ repository: the token implies it, and there is nothing else to configure.
 `SUBSTRATE_SERVER` and `SUBSTRATE_TOKEN` override the file, and flags override
 both; `SS_SERVER` and `SS_TOKEN` are the one accepted alias, read only when the
 canonical variable is unset. `--context` picks a stored context by name.
-`--actor` names the [actor](api.md#actors) a write is attributed to, and
-defaults to `substratectl`.
+A write takes no actor flag: the server derives the
+[actor](api.md#actors) from the token, so a sign-in's writes are the
+person's, with the token beside them.
 
 ## Reading
 
@@ -344,7 +345,10 @@ full `<kind>/<id>` path where the declaration names no kind.
 
 `substratectl watch` streams [the changelog](changelog.md), one line per committed change,
 resumable with `--from` and `--generation` (the opening line prints both) and
-filterable by `--kinds`, `--actors` and `--ops`. A cursor from a history the
+filterable by `--kinds`, `--actors` and `--ops`. A line ends with the id of
+the change's [actor record](api.md#actors), and ` for ` and the id of the
+one it acted for where there is one; `--actors` takes those ids, and
+`substratectl get substrate.reamde.dev/core/actor <id>` reads one. A cursor from a history the
 server has since replaced is refused with the head to resume from. To
 narrow to one kind instead, `substratectl get <kind> -w` streams that
 one kind's changes.
@@ -446,9 +450,11 @@ yours like any other
 `apply`, `patch`, `delete`, `bundle uninstall` and `bundle purge` of it are
 refused by nothing. Its package row still names the app that declared it;
 `substratectl takeover <authority>/<package> --confirm <authority>/<package>`
-rewrites that: `declaredBy` becomes the actor you write as, `takenOverFrom`
-names the app, and nothing else moves. It prints the app it took the package
-from, cannot be handed back, and without `--confirm` repeating the package
+rewrites that: `declaredBy` links your own actor record, `takenOverFrom`
+names the app by its client id or its publisher, and nothing else moves. It
+prints the app it took the package from and the actor record that now
+declares it (`declared by substrate.reamde.dev/core/actor/<id>`), cannot be
+handed back, and without `--confirm` repeating the package
 it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`

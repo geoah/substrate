@@ -256,6 +256,9 @@ const OWN_WORDS: Record<string, readonly string[]> = {
   // A page title's size, and a unit's printed note.
   "./components/identity/page-title.ts": ["a branch on the sample kind page"],
   "./lib/units.ts": ["a branch on the sample kind note"],
+  // An actor record's type (decision 0270).
+  "./lib/actor-identity.ts": ["a branch on the sample kind person"],
+  "./lib/history.ts": ["a branch on the sample kind person"],
 }
 
 describe("the console's source", () => {

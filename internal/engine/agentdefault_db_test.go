@@ -21,13 +21,13 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	fake := provisionAgents(t, ds)
 	// Moss names the `anthropic` row; point it at the fake server, on the
 	// wire the fake speaks.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "anthropic",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(offersPackage, 0),
 		vocabulary.BundleManifest(offersPackage, map[string]any{
 			"description": "a bundle offering one function",
@@ -47,7 +47,7 @@ func TestDefaultAgentPinsMemoriesAndTakesOfferedTools(t *testing.T) {
 	putMemory(t, ds, fid("old"), "The owner lives in Lisbon.", map[string]any{"active": false})
 
 	fake.script(mossModel, fakeTurn{content: "hello"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	reqs := fake.requestsOf(mossModel)

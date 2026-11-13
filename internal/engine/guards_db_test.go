@@ -55,7 +55,6 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 		Name: "google.gmail", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:gmail"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "accountconfig"},
 				map[string]any{"properties": map[string]any{
@@ -367,7 +366,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 

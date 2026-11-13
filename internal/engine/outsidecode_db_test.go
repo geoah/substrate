@@ -69,7 +69,7 @@ def main(input, host):
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = ds.CallFunction(ctx, substrate.ActorAPI, pkg+"/probe", nil)
+	_, _, err = ds.CallFunction(ctx, substrate.ActorPerson, pkg+"/probe", nil)
 	if err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("undeclared host must fail at proxy: %v", err)
 	}

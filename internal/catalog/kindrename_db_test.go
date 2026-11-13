@@ -55,10 +55,10 @@ func TestARenameIsRefusedAtThePublishersDoor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatalf("install version 1: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "publisher.example/notes/note", ID: noteID, Properties: map[string]any{"name": "kept"},
 	}); err != nil {
 		t.Fatalf("write a note: %v", err)
@@ -75,7 +75,7 @@ func TestARenameIsRefusedAtThePublishersDoor(t *testing.T) {
 	if err != nil || plan == nil || !strings.Contains(strings.Join(plan.Blockers, "; "), reason) {
 		t.Fatalf("the upgrade preview = %+v %v, want it blocked naming the reason", plan, err)
 	}
-	_, _, err = c.Install(ctx, substrate.ActorAPI, id, ds)
+	_, _, err = c.Install(ctx, substrate.ActorPerson, id, ds)
 	if err == nil || !strings.Contains(err.Error(), reason) || !strings.Contains(err.Error(), "deprecated: true") {
 		t.Fatalf("installing the renaming version = %v, want it refused saying what to do instead", err)
 	}
@@ -121,7 +121,7 @@ func TestARenameIsRefusedWhereTheRepositoryHoldsNoOldKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = c.Install(ctx, substrate.ActorAPI, id, ds)
+	_, _, err = c.Install(ctx, substrate.ActorPerson, id, ds)
 	if err == nil || !strings.Contains(err.Error(), "a kind is renamed only by the packages this server ships") {
 		t.Fatalf("installing a release that renames a kind this repository never held = %v, want it refused", err)
 	}
@@ -162,7 +162,7 @@ func TestARemovedKindIsRefusedAtThePublishersDoor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatalf("install version 1: %v", err)
 	}
 	release(2, "memo")
@@ -175,7 +175,7 @@ func TestARemovedKindIsRefusedAtThePublishersDoor(t *testing.T) {
 	if err != nil || plan == nil || !strings.Contains(strings.Join(plan.Blockers, "; "), "removes "+id+"/note") {
 		t.Fatalf("the upgrade preview = %+v %v, want it blocked naming the removed kind", plan, err)
 	}
-	_, _, err = c.Install(ctx, substrate.ActorAPI, id, ds)
+	_, _, err = c.Install(ctx, substrate.ActorPerson, id, ds)
 	if err == nil || !strings.Contains(err.Error(), "removes "+id+"/note") {
 		t.Fatalf("installing the version that drops note = %v, want it refused", err)
 	}

@@ -89,7 +89,7 @@ func installShippedProvider(t *testing.T, ds *dataset, id string) {
 	if err != nil {
 		t.Fatalf("load the catalog: %v", err)
 	}
-	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(context.Background(), substrate.ActorPerson, id, ds); err != nil {
 		t.Fatalf("install %s: %v", id, err)
 	}
 }
@@ -139,7 +139,7 @@ func installFirecrawlCopy(t *testing.T, ds *dataset, offered bool) string {
 	for i := range docs {
 		docs[i], _ = rename(docs[i]).(map[string]any)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the copy: %v", err)
 	}
 	for _, d := range data {
@@ -147,7 +147,7 @@ func installFirecrawlCopy(t *testing.T, ds *dataset, offered bool) string {
 		meta, _ := d["metadata"].(map[string]any)
 		body, _ := d["data"].(map[string]any)
 		props, _ := body["properties"].(map[string]any)
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: d["kind"].(string), ID: meta["id"].(string), Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: d["kind"].(string), ID: meta["id"].(string), Properties: props}); err != nil {
 			t.Fatalf("put the copy's %v: %v", meta["id"], err)
 		}
 	}
@@ -289,7 +289,7 @@ func TestOperatorFunctionKeyReachesOnlyTheListedConsumers(t *testing.T) {
 
 	// Another package's function with an empty apiKey of its own.
 	const other = "other.test.dev/keyed"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(other, 0),
 		vocabulary.BundleManifest(other, map[string]any{"description": "a keyed bundle", "installs": []any{other + "/websearch"}}),
 		vocabulary.FunctionManifest(other, "websearch", map[string]any{
@@ -299,7 +299,7 @@ func TestOperatorFunctionKeyReachesOnlyTheListedConsumers(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install the other bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kindSecret, ID: other + "/apiKey", Properties: map[string]any{"required": true}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kindSecret, ID: other + "/apiKey", Properties: map[string]any{"required": true}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, charge, err = functionConfig(t, ds, other+"/websearch")
@@ -413,7 +413,7 @@ func TestOperatorFunctionKeyRefusedAtTheAllowance(t *testing.T) {
 	// it settles at the price. A body that lost the check would post to
 	// Firecrawl's own origin with the operator's key, and the confined egress
 	// refuses that connect, so the error below would not be this one.
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlProvider+"/webscrape", map[string]any{"url": "http://not-https.example.com"})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, firecrawlProvider+"/webscrape", map[string]any{"url": "http://not-https.example.com"})
 	if err == nil || !strings.Contains(err.Error(), "url must be an absolute https:// URL") {
 		t.Fatalf("webscrape of an http url = %v, want the body's refusal", err)
 	}
@@ -421,7 +421,7 @@ func TestOperatorFunctionKeyRefusedAtTheAllowance(t *testing.T) {
 		t.Fatalf("ledger = %+v, want one call settled at 0.6", l)
 	}
 
-	_, _, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlProvider+"/websearch", map[string]any{"query": "anything"})
+	_, _, err = ds.CallFunction(ctx, substrate.ActorPerson, firecrawlProvider+"/websearch", map[string]any{"query": "anything"})
 	if !errors.Is(err, substrate.ErrAllowance) || !strings.Contains(err.Error(), "today's allowance from Example") ||
 		!strings.Contains(err.Error(), "add your own key") {
 		t.Fatalf("websearch past the allowance = %v, want the allowance refusal", err)
@@ -510,7 +510,7 @@ func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
 	ds := openInternalDataset(t)
 	fake := provisionAgents(t, ds)
 	// Moss names the `anthropic` row; the fake speaks the openai wire.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "anthropic",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-anthropic"},
 	}); err != nil {
@@ -520,7 +520,7 @@ func TestDefaultAgentTakesFirecrawlsTools(t *testing.T) {
 	installFirecrawlCopy(t, ds, true)
 
 	fake.script(mossModel, fakeTurn{content: "hello"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	reqs := fake.requestsOf(mossModel)
@@ -654,7 +654,7 @@ func spendFunctionCents(t *testing.T, ds *dataset, cents float64) {
 // meterTrigger writes a trigger of `stamp` from source and answers its id.
 func meterTrigger(t *testing.T, ds *dataset, source map[string]any) string {
 	t.Helper()
-	rec, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: typeTrigger, Properties: map[string]any{
+	rec, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: typeTrigger, Properties: map[string]any{
 		"enabled": true, "source": source,
 		"callable": vocabulary.RecordPath(kindFunction, meterPackage+"/stamp"),
 	}})
@@ -721,7 +721,7 @@ func TestAnOperatorPaidRecordTriggerWaitsForTheReset(t *testing.T) {
 	// rec-<that id>.
 	ping := func(name string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: fid(name), Properties: map[string]any{"name": name}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: meterPing, ID: fid(name), Properties: map[string]any{"name": name}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -891,7 +891,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	}
 
 	// The first run fits, and spends 0.6 of the 1 cent.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
 		t.Fatal(err)
 	}
 	process()
@@ -901,7 +901,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationLeavesItsRecordAsItWas(t *testing
 	}
 
 	// The owner's edit is owed a run that does not fit: the walk holds it.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, meterAccount, fid("acct"), substrate.PatchInput{Properties: map[string]any{"name": "second"}}); err != nil {
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, meterAccount, fid("acct"), substrate.PatchInput{Properties: map[string]any{"name": "second"}}); err != nil {
 		t.Fatal(err)
 	}
 	process()
@@ -955,7 +955,7 @@ func TestAnOperatorPaidSyncHeldAtItsReservationKeepsALaterWrite(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openMeterDataset(t, 1)
 	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterAccount}}})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: meterAccount, ID: fid("acct"), Properties: map[string]any{"name": "first"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
@@ -1103,7 +1103,7 @@ func TestAHandsWakeOfAnOperatorPaidTriggerIsRefusedAtTheAllowance(t *testing.T) 
 	ds, _ := openMeterDataset(t, 1)
 	trigger := meterTrigger(t, ds, map[string]any{"record": map[string]any{"kinds": []any{meterPing}}})
 	spendFunctionCents(t, ds, 0.6)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: meterPing, ID: fid("w"), Properties: map[string]any{"name": "w"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: meterPing, ID: fid("w"), Properties: map[string]any{"name": "w"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.WakeTrigger(ctx, trigger); !errors.Is(err, substrate.ErrAllowance) || !strings.Contains(err.Error(), "today's allowance from Example") {
@@ -1121,7 +1121,7 @@ func TestAnOperatorPaidCallTheRunnerNeverStartedSettlesAtNothing(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openMeterDataset(t, 100)
 	const relay = "relay.example.com/relay"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(relay, 0),
 		vocabulary.BundleManifest(relay, map[string]any{"description": "calls fussy", "installs": []any{relay + "/relay"}}),
 		vocabulary.FunctionManifest(relay, "relay", map[string]any{
@@ -1149,16 +1149,16 @@ def main(input, host):
 	}
 
 	// The body registered at install and runs: the price.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, meterPackage+"/fussy", nil); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, meterPackage+"/fussy", nil); err != nil {
 		t.Fatalf("the first call: %v", err)
 	}
 	// Every process of the repository is retired; fussy cannot register again.
 	runner.Shared.Reconcile(ctx, ds.Repository().ID, nil)
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, meterPackage+"/fussy", nil)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, meterPackage+"/fussy", nil)
 	if err == nil || !strings.Contains(err.Error(), "fussy registers once") {
 		t.Fatalf("a call after the retirement = %v, want the failed registration", err)
 	}
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, relay+"/relay", nil)
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, relay+"/relay", nil)
 	if err != nil {
 		t.Fatalf("the relay: %v", err)
 	}

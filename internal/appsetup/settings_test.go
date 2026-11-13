@@ -39,7 +39,7 @@ data:
 	if err := ValidateSettings(rows, nil); err == nil || !strings.Contains(err.Error(), substrate.BlockNeedsSetting) {
 		t.Fatalf("required empty: %v", err)
 	}
-	missing := NewRunner(cat).Run(context.Background(), ds, substrate.ActorConsole, details, rows, everything(), RunOptions{}, func([]string) bool { return true })
+	missing := NewRunner(cat).Run(context.Background(), ds, substrate.ActorPerson, details, rows, everything(), RunOptions{}, func([]string) bool { return true })
 	if missing.Failure == nil || missing.Failure.Message != "Check the settings and add-ons, then approve again." {
 		t.Fatalf("missing settings failure: %+v", missing.Failure)
 	}
@@ -59,7 +59,7 @@ data:
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&captured, nil)))
 	defer slog.SetDefault(old)
-	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorConsole, details, rows, everything(), RunOptions{Settings: values}, func([]string) bool { return true })
+	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorPerson, details, rows, everything(), RunOptions{Settings: values}, func([]string) bool { return true })
 	if out.Failure != nil {
 		t.Fatal(out.Failure)
 	}
@@ -76,7 +76,7 @@ data:
 		t.Fatal("secret leaked")
 	}
 	ds.putErr = func(substrate.PutInput) error { return errors.New(values[0].Value) }
-	err = WriteSettings(context.Background(), ds, substrate.ActorConsole, values)
+	err = WriteSettings(context.Background(), ds, substrate.ActorPerson, values)
 	if err == nil || strings.Contains(err.Error()+captured.String(), values[0].Value) {
 		t.Fatal("write error leaked")
 	}

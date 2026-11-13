@@ -163,7 +163,6 @@ const (
 func lqDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(lqPackage, 0),
-		vocabulary.ActorManifest(lqPackage, vocabulary.PackageActor(lqPackage)),
 		vocabulary.BundleManifest(lqPackage, map[string]any{
 			"description": "a bundle carrying one agent",
 			"installs":    []any{lqConfigType, lqAgent},
@@ -308,7 +307,6 @@ const (
 func trDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(trPackage, 0),
-		vocabulary.ActorManifest(trPackage, vocabulary.PackageActor(trPackage)),
 		vocabulary.BundleManifest(trPackage, map[string]any{
 			"description": "a bundle carrying one function",
 			"installs":    []any{trNoteKind, trFunction},

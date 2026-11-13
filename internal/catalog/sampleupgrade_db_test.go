@@ -108,7 +108,7 @@ func TestSampleUpgradePreviewReadsTheOriginStamp(t *testing.T) {
 
 	// Taking it is the import door, unconfirmed, and afterwards the copy
 	// reads current and pristine at the new version.
-	if _, _, err := moved.Import(ctx, substrate.ActorAPI, tasksSampleID, ds); err != nil {
+	if _, _, err := moved.Import(ctx, substrate.ActorPerson, tasksSampleID, ds); err != nil {
 		t.Fatalf("import the moved sample: %v", err)
 	}
 	held = heldStatus(t, ds, landed)
@@ -153,7 +153,7 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 
 	// The bare re-import is refused under the lossy code, naming the edits,
 	// and the edit stays.
-	_, _, err = c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	_, _, err = c.Import(ctx, substrate.ActorPerson, tasksSampleID, ds)
 	if !errors.Is(err, substrate.ErrLossyConversion) {
 		t.Fatalf("a bare re-import over an edited copy: err = %v, want ErrLossyConversion", err)
 	}
@@ -167,18 +167,18 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	// A confirmation past the head, or for another plan, is refused the way
 	// a lossy plan's is (decision 0067, issue #641).
 	ahead := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq + 1}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, ahead); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, ahead); !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("a confirmation past the head: err = %v, want ErrConflict", err)
 	}
 	wrong := &substrate.ConversionConfirm{PlanHash: "cafe", ChangelogSeq: up.ChangelogSeq}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, wrong); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, wrong); !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("a confirmation for another plan: err = %v, want ErrConflict", err)
 	}
 
 	// The confirmation the preview handed out lands the re-import, and the
 	// copy reads pristine again.
 	confirm := &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, confirm); err != nil {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, confirm); err != nil {
 		t.Fatalf("the confirmed re-import: %v", err)
 	}
 	held = heldStatus(t, ds, landed)
@@ -200,7 +200,7 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	editKind(t, ds, homeAuthority+"/tasks/task", "theirs")
 	header := vocabulary.PackageManifest(landed, b.Version+1)
 	header["data"].(map[string]any)["description"] = "my tasks, edited"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{header}); err != nil {
 		t.Fatalf("edit the package header: %v", err)
 	}
 	held = heldStatus(t, ds, landed)
@@ -222,7 +222,7 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	// the hash binds moved.
 	editKind(t, ds, homeAuthority+"/tasks/task", "later")
 	confirm = &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
-	if _, _, err := moved.ImportConfirmed(ctx, substrate.ActorAPI, tasksSampleID, ds, confirm); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := moved.ImportConfirmed(ctx, substrate.ActorPerson, tasksSampleID, ds, confirm); !errors.Is(err, substrate.ErrConflict) {
 		t.Errorf("a confirmation from before a later edit: err = %v, want ErrConflict", err)
 	}
 }
@@ -266,7 +266,7 @@ func TestSampleUpgradeIsBlockedByARequiresFloorTheRepositoryDoesNotMeet(t *testi
 		}
 	}
 	// The preview's blocker IS the door's refusal.
-	if _, _, err := moved.Import(ctx, substrate.ActorAPI, tasksSampleID, ds); err == nil {
+	if _, _, err := moved.Import(ctx, substrate.ActorPerson, tasksSampleID, ds); err == nil {
 		t.Fatal("the import door admitted a closure whose floor is not met")
 	} else if !strings.Contains(err.Error(), "requiresAtLeast") {
 		t.Errorf("the refusal does not name the floor: %v", err)
@@ -339,12 +339,12 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 		"a package the batch lacks":      samplesPlacehldr + "/drinks",
 		"the package the batch declares": landed,
 	} {
-		if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: origin}); !errors.Is(err, substrate.ErrValidation) {
+		if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{Origin: origin}); !errors.Is(err, substrate.ErrValidation) {
 			t.Errorf("origin %s (%q): err = %v, want ErrValidation", name, origin, err)
 		}
 	}
 
-	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: notesSample}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{Origin: notesSample}); err != nil {
 		t.Fatalf("apply the rehomed closure with its origin: %v", err)
 	}
 	held := heldStatus(t, ds, landed)
@@ -362,25 +362,25 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 	// Edited since, the re-apply naming the origin replaces the edit, so it
 	// takes the confirmation its own preview hands out.
 	editKind(t, ds, landed+"/note", "mine")
-	plan, err := ds.PlanVocabularyApplyWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: notesSample})
+	plan, err := ds.PlanVocabularyApplyWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{Origin: notesSample})
 	if err != nil {
 		t.Fatalf("plan the re-apply: %v", err)
 	}
 	if !plan.DiscardsEdits || plan.PlanHash == "" {
 		t.Fatalf("the plan over an edited copy reads %+v, want discardsEdits with a hash", plan)
 	}
-	bare, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, docs)
+	bare, err := ds.PlanVocabularyApply(ctx, substrate.ActorPerson, docs)
 	if err != nil {
 		t.Fatalf("plan the re-apply without an origin: %v", err)
 	}
 	if bare.DiscardsEdits || bare.PlanHash == plan.PlanHash {
 		t.Errorf("a plan claiming no origin discards edits or hashes like one that does: %+v", bare)
 	}
-	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: notesSample}); !errors.Is(err, substrate.ErrLossyConversion) {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{Origin: notesSample}); !errors.Is(err, substrate.ErrLossyConversion) {
 		t.Fatalf("an unconfirmed re-apply over an edited copy: err = %v, want ErrLossyConversion", err)
 	}
 	confirm := &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
-	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{Origin: notesSample, Confirm: confirm}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{Origin: notesSample, Confirm: confirm}); err != nil {
 		t.Fatalf("the confirmed re-apply: %v", err)
 	}
 	wantOrigin(t, heldStatus(t, ds, landed), notesSample, b.Version, false)
@@ -392,7 +392,7 @@ func TestAHandRehomedApplyRecordsItsOrigin(t *testing.T) {
 	// it replaces the package as it always has and stamps nothing new, but
 	// the stamp already there stays with the row.
 	editKind(t, ds, landed+"/note", "again")
-	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorAPI, docs, substrate.VocabularyApply{}); err != nil {
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, substrate.ActorPerson, docs, substrate.VocabularyApply{}); err != nil {
 		t.Fatalf("a re-apply naming no origin: %v", err)
 	}
 	wantOrigin(t, heldStatus(t, ds, landed), notesSample, b.Version, false)

@@ -28,7 +28,7 @@ func provisionApprovalAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "apprllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-apprllm"},
 	}); err != nil {
@@ -85,7 +85,7 @@ def main(input, host):
 			"permissions": map[string]any{"writes": []any{apprSent}},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the approvals package: %v", err)
 	}
 	return ds, fake
@@ -188,7 +188,7 @@ func TestApprovedCallRunsExactlyAndReports(t *testing.T) {
 		t.Fatalf("the tool result %v", out)
 	}
 
-	if err := decideApproval(t, ds, substrate.ActorAPI, a.ID, approvalApproved); err != nil {
+	if err := decideApproval(t, ds, substrate.ActorPerson, a.ID, approvalApproved); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	waitFor(t, "the resume's reply", func() bool {
@@ -217,7 +217,7 @@ func TestApprovedCallRunsExactlyAndReports(t *testing.T) {
 		t.Fatalf("the resume did not carry the outcome: %d requests", len(reqs))
 	}
 	// Decided once: a second decision is refused by the machine.
-	if err := decideApproval(t, ds, substrate.ActorAPI, a.ID, approvalDenied); err == nil {
+	if err := decideApproval(t, ds, substrate.ActorPerson, a.ID, approvalDenied); err == nil {
 		t.Fatal("a done approval took a second decision")
 	}
 }
@@ -235,7 +235,7 @@ func TestDeclinedCallNeverRunsAndReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := approvalsOf(t, ds, res.Thread)[0]
-	if err := decideApproval(t, ds, substrate.ActorAPI, a.ID, approvalDenied); err != nil {
+	if err := decideApproval(t, ds, substrate.ActorPerson, a.ID, approvalDenied); err != nil {
 		t.Fatalf("decline: %v", err)
 	}
 	waitFor(t, "the resume's reply", func() bool {
@@ -281,7 +281,7 @@ func TestSubagentApprovalIsAskedOnTheRootConversation(t *testing.T) {
 	if child == "" || child == res.Thread {
 		t.Fatalf("requestedIn = %q, want the mailer's own thread", child)
 	}
-	if err := decideApproval(t, ds, substrate.ActorAPI, held[0].ID, approvalApproved); err != nil {
+	if err := decideApproval(t, ds, substrate.ActorPerson, held[0].ID, approvalApproved); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the root's resume", func() bool {
@@ -299,7 +299,7 @@ func TestSubagentApprovalIsAskedOnTheRootConversation(t *testing.T) {
 		apprSent, vocabulary.DerivedMintedID("hi")).Scan(&wrote); err != nil {
 		t.Fatal(err)
 	}
-	if wrote != ag.Actor() {
+	if wrote != actorID(substrate.Actor(ag.Actor())) {
 		t.Fatalf("the approved call wrote as %q, want the mailer %q", wrote, ag.Actor())
 	}
 }
@@ -321,17 +321,17 @@ func TestApprovalIsTheOwnersAlone(t *testing.T) {
 	if err := decideApproval(t, ds, substrate.Actor(ag.Actor()), a.ID, approvalApproved); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an agent approving: %v, want forbidden", err)
 	}
-	if err := decideApproval(t, ds, substrate.ActorAPI, a.ID, approvalDone); !errors.Is(err, substrate.ErrForbidden) &&
+	if err := decideApproval(t, ds, substrate.ActorPerson, a.ID, approvalDone); !errors.Is(err, substrate.ErrForbidden) &&
 		!errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("the owner marking it done: %v, want refused", err)
 	}
 	version := a.Version
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMApproval, a.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMApproval, a.ID, substrate.PatchInput{
 		Properties: map[string]any{"arguments": map[string]any{"text": "changed"}}, IfVersion: &version,
 	}); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("changing the arguments: %v, want forbidden", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindLLMApproval, ID: "forged",
 		Properties: map[string]any{
 			msgRelThread: res.Thread, "agent": apprPackage + "/mailer", "function": apprSend, "tool": "send",
@@ -384,7 +384,7 @@ func TestInterruptedApprovalSettlesFailedAndNeverRuns(t *testing.T) {
 	// schedule left out: the state a stop between the claim and the end
 	// leaves behind.
 	version := a.Version
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		_, err := tx.patch(eref{Kind: vocabulary.KindLLMApproval, ID: a.ID}, substrate.PatchInput{
 			Properties: map[string]any{propApprovalState: approvalApproved}, IfVersion: &version,
 		})
@@ -393,7 +393,7 @@ func TestInterruptedApprovalSettlesFailedAndNeverRuns(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		tx.approvalRun = true
 		_, err := tx.patch(eref{Kind: vocabulary.KindLLMApproval, ID: a.ID}, substrate.PatchInput{
 			Properties: map[string]any{propApprovalState: approvalRunning},
@@ -422,5 +422,51 @@ func TestInterruptedApprovalSettlesFailedAndNeverRuns(t *testing.T) {
 	}
 	if envs := decidedRows(t, ds, res.Thread); len(envs) != 1 {
 		t.Fatalf("a second sweep reported again: %v", envs)
+	}
+}
+
+// An approved call runs when the person decides it, on the background
+// context, and acts for whom the asking agent's thread acts for: the person
+// who started it. So does the turn its report resumes (decision 0270).
+func TestAnApprovedCallActsForThePersonWhoStartedTheThread(t *testing.T) {
+	ds, fake := provisionApprovalAgents(t)
+	ctx := substrate.WithOnBehalfOf(context.Background(), substrate.ActorPerson)
+	fake.script("amail",
+		fakeTurn{calls: []fakeCall{{name: "send", args: `{"text":"hello"}`}}},
+		fakeTurn{content: "It is waiting for your approval."},
+		fakeTurn{content: "Sent."},
+	)
+	res, err := ds.CallAgent(ctx, apprPackage+"/mailer", "send hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := approvalsOf(t, ds, res.Thread)
+	if len(held) != 1 {
+		t.Fatalf("approvals on the thread = %d, want 1", len(held))
+	}
+	if err := decideApproval(t, ds, substrate.ActorPerson, held[0].ID, approvalApproved); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	decided := maxSeqOf(t, ds)
+	waitFor(t, "the resume's reply", func() bool {
+		_, props := threadStatusOf(t, ds, res.Thread)
+		return props[propThreadLastReply] == "Sent."
+	})
+	if !sentLive(t, ds, "hello") {
+		t.Fatal("the approved call did not run: the test proves nothing")
+	}
+	person := actorID(substrate.ActorPerson)
+	later := actingForSince(t, ds, decided)
+	sent := false
+	for seq, line := range later {
+		if line[0] == apprSent {
+			sent = true
+		}
+		if line[1] != person {
+			t.Errorf("seq %d (%s), written after the decision, acts for %q, want the person", seq, line[0], line[1])
+		}
+	}
+	if !sent {
+		t.Fatal("no line holds the approved call's write")
 	}
 }

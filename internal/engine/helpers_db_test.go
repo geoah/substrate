@@ -273,9 +273,14 @@ func maxSeq(t *testing.T, ds substrate.Dataset) int64 {
 	}
 }
 
+// changesSince is every change after `after`, but the actor records a hand's
+// first write lays down beside it (decision 0270): what a test counts is the
+// writes it made.
 func changesSince(t *testing.T, ds substrate.Dataset, after int64) []substrate.Change {
 	t.Helper()
-	out, err := ds.Changes(context.Background(), after, substrate.ChangeFilter{}, 500)
+	out, err := ds.Changes(context.Background(), after, substrate.ChangeFilter{
+		ExcludeKinds: []string{"substrate.reamde.dev/core/actor"},
+	}, 500)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
 	}

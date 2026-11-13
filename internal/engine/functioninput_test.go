@@ -64,15 +64,19 @@ func TestFunctionInputMatchesTheGolden(t *testing.T) {
 	structShape(shapes, "input", reflect.TypeOf(runner.Input{}))
 
 	at := time.Date(2026, 11, 13, 9, 30, 0, 0, time.UTC)
+	// A change links its actor record, and the one it acted for where there
+	// is one; the delivery adds what the actor is (decision 0270).
+	app, waterer := substrate.AppActorLocal, substrate.FunctionActor("example.com", "garden", "water")
 	created := substrate.Change{
 		Seq: 7, Op: substrate.OpPut, Kind: "example.com/garden/plant", RecordID: "p1",
-		Actor: "app:local", Payload: map[string]any{"created": true, "properties": []any{"name"}},
+		Actor: actorID(app), OnBehalfOf: actorID(substrate.ActorPerson),
+		Payload: map[string]any{"created": true, "properties": []any{"name"}},
 	}
-	deleted := substrate.Change{Seq: 8, Op: substrate.OpDelete, Kind: "example.com/garden/plant", RecordID: "p1", Actor: "app:local"}
+	deleted := substrate.Change{Seq: 8, Op: substrate.OpDelete, Kind: "example.com/garden/plant", RecordID: "p1", Actor: actorID(waterer)}
 	plant := &substrate.Record{ID: "p1", Kind: "example.com/garden/plant", Version: 1, Properties: map[string]any{"name": "fern"}}
 	mapShape(shapes, "input.envelope(record)", []map[string]any{
-		runner.Envelope(created, plant, "example.com"),
-		runner.Envelope(deleted, nil, "example.com"),
+		withActorFacts(runner.Envelope(created, plant, "example.com"), app),
+		withActorFacts(runner.Envelope(deleted, nil, "example.com"), waterer),
 	})
 	mapShape(shapes, "input.envelope(schedule)", []map[string]any{
 		runner.FireEnvelope("f1", at, "example.com"),

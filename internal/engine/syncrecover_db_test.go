@@ -111,11 +111,10 @@ func installScheduledJobSync(t *testing.T, ds *dataset, pkg, jobKind, source str
 	// Half an hour back: exactly one occurrence lies between the anchor and
 	// now once the fire state is rewound to it.
 	startsAt := nowUTC().Add(-30 * time.Minute).Truncate(time.Minute)
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "job"}, map[string]any{
 				"traits":          []any{vocabulary.TraitSyncCore},
 				"displayTemplate": "{name}",
@@ -154,7 +153,7 @@ func installScheduledJobSync(t *testing.T, ds *dataset, pkg, jobKind, source str
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: jobKind, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)

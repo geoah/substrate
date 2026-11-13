@@ -33,7 +33,7 @@ func TestBundleStatusesSayWhatEachPackageIsFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	crm, notes := env.repository+"/crm", env.repository+"/notes"
-	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorAPI, []map[string]any{
+	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(crm, 0),
 		vocabulary.KindManifest(crm, map[string]any{"singular": "account"}, map[string]any{
 			"displayTemplate": "{label}",

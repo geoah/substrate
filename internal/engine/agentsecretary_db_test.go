@@ -56,7 +56,7 @@ func TestSecretaryTakesTheGoogleToolsAlone(t *testing.T) {
 			vocabulary.PackageManifest(pkg, 0),
 			vocabulary.BundleManifest(pkg, map[string]any{"description": "a stand-in bundle", "installs": installs}),
 		}
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, append(docs, fns...)); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, append(docs, fns...)); err != nil {
 			t.Fatalf("install %s: %v", pkg, err)
 		}
 	}
@@ -68,7 +68,7 @@ func TestSecretaryTakesTheGoogleToolsAlone(t *testing.T) {
 		fakeTurn{content: "Nothing from Sam about Friday yet."},
 	)
 	fake.script(secretaryModel, fakeTurn{content: "No mail from Sam mentions Friday."})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "did Sam write about Friday?"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "did Sam write about Friday?"}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}

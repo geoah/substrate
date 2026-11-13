@@ -179,8 +179,8 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 		}
 		b := bucket(pkg)
 		// The bundle closure counts every member kind, present and future:
-		// anything but the header, the actors and the bundle itself.
-		if d.Kind != DocAuthority && d.Kind != DocPackage && d.Kind != DocActor && d.Kind != DocBundle {
+		// anything but the header and the bundle itself.
+		if d.Kind != DocAuthority && d.Kind != DocPackage && d.Kind != DocBundle {
 			b.memberIDs = append(b.memberIDs, d.ID)
 		}
 		switch d.Kind {
@@ -190,8 +190,6 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 				continue
 			}
 			b.header = &d
-		case DocActor:
-			b.actors = append(b.actors, d)
 		case DocTrait:
 			b.capabilities = append(b.capabilities, d)
 		case DocPropertyType:
@@ -232,7 +230,6 @@ type packageDocs struct {
 	// header is the group's own document: a `package`, or the `authority`
 	// document of an authority row.
 	header       *Document
-	actors       []Document
 	capabilities []Document
 	datatypes    []Document
 	types        []Document
@@ -305,8 +302,6 @@ var kindRetiredKeys = map[string]bool{"properties": true, "values": true, "state
 // unmoved version is an upgrade no repository receives.
 var authorityDataKeys = map[string]bool{"description": true, "version": true}
 
-var actorDataKeys = map[string]bool{"authority": true, "package": true, "tier": true}
-
 var datatypeDataKeys = map[string]bool{
 	"authority": true, "package": true, "base": true, "pattern": true, "min": true, "max": true,
 	"values": true, "description": true,
@@ -347,7 +342,6 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		Authority:     authority,
 		Name:          name,
 		Source:        source,
-		ActorTiers:    map[string]substrate.Tier{},
 		PropertyTypes: map[string]*PropertyType{},
 		Traits:        map[string]*Trait{},
 		Kinds:         map[string]*Kind{},
@@ -371,7 +365,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		if gd.header.Kind != DocAuthority {
 			l.errf("%s: an authority names no package, so it declares no members", where)
 		}
-		if len(gd.memberIDs) > 0 || len(gd.actors) > 0 || len(gd.bundles) > 0 {
+		if len(gd.memberIDs) > 0 || len(gd.bundles) > 0 {
 			l.errf("%s: a declaration lives in a package — name one in data.package", where)
 		}
 		return g
@@ -397,68 +391,6 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
-	}
-
-	sortDocs(gd.actors)
-	for _, d := range gd.actors {
-		where := "actor " + d.ID
-		l.checkKeys(where, d.Data, actorDataKeys)
-		if !ValidActor(d.ID) {
-			l.errf("%s: must be a lowercase dotted name", where)
-			continue
-		}
-		// A MINTED HAND IS NEVER DECLARED FOR SOMEBODY ELSE. The engine
-		// derives `bundle:`, `function:` and `agent:` actors from the identity
-		// that writes (substrate/actor.go), and an actor DECLARATION carries a
-		// tier — so an authority able to name another's hand here would set
-		// the tier that hand's writes stand at (registry ActorTier, consulted
-		// before the reserved-name fallback in engine actorTier).
-		//
-		// A dispatch hand is minted per call and declared by nobody. A bundle
-		// hand has one legal declarer, the package it names, which is the
-		// PackageActor a package declares so its own tier and mapping
-		// precedence are legible. The retired `connector:` spelling stays
-		// declarable: repositories written before record 0025 store those
-		// declarations and must keep loading, and since nothing mints one, no
-		// live writer can take a tier from it.
-		switch {
-		case strings.HasPrefix(d.ID, substrate.FunctionActorPrefix),
-			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
-			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
-			continue
-		case strings.HasPrefix(d.ID, substrate.AppActorPrefix):
-			l.errf("%s: an app's actor is derived from the token the owner approved, so it is never declared", where)
-			continue
-		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != PackageActor(identity):
-			l.errf("%s: a bundle actor belongs to the package it names — %s may declare %q and no other",
-				where, identity, PackageActor(identity))
-			continue
-		}
-		if slices.Contains(g.Actors, d.ID) {
-			l.errf("%s: declared twice in %s", where, name)
-			continue
-		}
-		// The manager tier is an EXPLICIT attribute of the actor: declared data,
-		// never inferred from the actor's spelling. Authority-declared actors
-		// are the sync machinery, so machine is the default.
-		tier := substrate.TierMachine
-		switch declared := mstr(d.Data, "tier"); declared {
-		case "":
-		case string(substrate.TierOwner), string(substrate.TierBundle), string(substrate.TierMachine):
-			tier = substrate.Tier(declared)
-		default:
-			l.errf("%s: tier must be owner, bundle or machine, got %q", where, declared)
-			continue
-		}
-		if d.ID == identity && tier != substrate.TierMachine {
-			// Record 60: a package-named actor has no record row of its own —
-			// the package row is it, and that row carries no tier to
-			// round-trip.
-			l.errf("%s: a package-named actor is the closure's own hand — its tier is machine", where)
-			continue
-		}
-		g.Actors = append(g.Actors, d.ID)
-		g.ActorTiers[d.ID] = tier
 	}
 
 	// Custom property types: refinements of a base type.
@@ -728,7 +660,6 @@ func (l *loader) localName(where, identity, pkg string) (string, bool) {
 var declarationDataKeys = map[string]map[string]bool{
 	DocAuthority:     authorityDataKeys,
 	DocPackage:       packageDataKeys,
-	DocActor:         actorDataKeys,
 	DocKind:          typeDataKeys,
 	DocTrait:         capabilityDataKeys,
 	DocPropertyType:  datatypeDataKeys,

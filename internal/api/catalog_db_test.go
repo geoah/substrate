@@ -92,7 +92,7 @@ func catalogEditCopy(t *testing.T, env *dbEnv, kind string) {
 		}
 	}
 	def["properties"] = props
-	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorAPI, []map[string]any{{
+	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorPerson, []map[string]any{{
 		"kind": corePackage + "/kind", "metadata": map[string]any{"id": kind}, "data": def,
 	}}); err != nil {
 		t.Fatalf("edit %s: %v", kind, err)
@@ -125,7 +125,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	t.Parallel()
 	cat := catalogShipped(t)
 	env := catalogEnv(t, cat)
-	if _, _, err := cat.Install(t.Context(), substrate.ActorAPI, googleBundleID, env.ds); err != nil {
+	if _, _, err := cat.Install(t.Context(), substrate.ActorPerson, googleBundleID, env.ds); err != nil {
 		t.Fatalf("install google: %v", err)
 	}
 	env.wrap = func(ds substrate.Dataset) substrate.Dataset { return catalogPreviewFails{ds} }
@@ -311,7 +311,7 @@ func TestCatalogAddCarriesTheConfirmation(t *testing.T) {
 	t.Parallel()
 	const id = "widgets.example.com/widgets"
 	env := catalogEnv(t, catalogWidgets(t, "2", "name"))
-	if _, _, err := catalogWidgets(t, "1", "name", "color").Install(t.Context(), substrate.ActorAPI, id, env.ds); err != nil {
+	if _, _, err := catalogWidgets(t, "1", "name", "color").Install(t.Context(), substrate.ActorPerson, id, env.ds); err != nil {
 		t.Fatalf("install binary N's widgets: %v", err)
 	}
 	widget := id + "/widget"
@@ -437,7 +437,7 @@ func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogWithOtherReadinglist(t))
 	pkg := env.repository + "/readinglist"
-	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorAPI, []map[string]any{
+	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.BundleManifest(pkg, map[string]any{"installs": []any{pkg + "/page"}}),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "page"}, map[string]any{
@@ -464,7 +464,7 @@ func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
 	t.Parallel()
 	cat := catalogWithOtherReadinglist(t)
 	env := catalogEnv(t, cat, withSamples("messaging"))
-	if _, _, err := cat.Install(t.Context(), substrate.ActorAPI, rlBundleID, env.ds); err != nil {
+	if _, _, err := cat.Install(t.Context(), substrate.ActorPerson, rlBundleID, env.ds); err != nil {
 		t.Fatalf("install the reading list verbatim: %v", err)
 	}
 	if !catalogEntry(t, env, rlBundleID).Installed {
@@ -660,7 +660,7 @@ func TestCatalogReadsNeverCountLiveRecords(t *testing.T) {
 		t.Fatalf("load binary N+1's catalog: %v", err)
 	}
 	env := catalogEnv(t, next)
-	if _, _, err := catalogShipped(t).Install(t.Context(), substrate.ActorAPI, googleBundleID, env.ds); err != nil {
+	if _, _, err := catalogShipped(t).Install(t.Context(), substrate.ActorPerson, googleBundleID, env.ds); err != nil {
 		t.Fatalf("install binary N's google: %v", err)
 	}
 	counted := new(atomic.Int64)

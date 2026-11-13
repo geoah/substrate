@@ -14,7 +14,8 @@ display form is the kind's declared `label` (decision 0117), **incoming** → th
 which is its authority (decision 0074), **measure** (and `measures:`) → a
 unit's linear component, which a declaration names with `unit:` (decision
 0186), **tier** in the catalog's sense (an entry's `tier`) → who keeps the
-package, the entry's `keptBy` (decision 0258), **tenant** and
+package, the entry's `keptBy` (decision 0258), **principal** → `token`, the
+token record a write stood behind (decision 0270), **tenant** and
 **identity** → nothing, there are none.
 
 ## The shape of things
@@ -53,13 +54,13 @@ package, the entry's `keptBy` (decision 0258), **tenant** and
 | **merge** | Joining two records of one kind so the winner absorbs the loser's place in the graph. |
 | **split** | The undo of exactly one recorded merge. |
 | **tier** | A property manager's standing against recompute: `owner` > `bundle` > `machine`. Recompute overwrites only machine-held properties. |
-| **actor** | What wrote a property or record. Attribution, never authorization. |
+| **actor** | One hand that writes, as a record of `substrate.reamde.dev/core/actor` the engine writes: the repository's `person`, an `app` the person approved, an installed `function` or `agent`, a `package`'s own hand, or the `system`. A history line, a change event, a manager row and every stored attribution link it by its id, beside `onBehalfOf`, the actor it acted for, and `token`, the token it stood behind. No package declares one and no request names one. Attribution, never authorization. Decision record 0270. |
 
 ## Declarations
 
 | Term | What it is |
 | ---- | ---------- |
-| **vocabulary** | Everything declarable, held as ordinary records: authorities, packages, kinds, property types, traits, recordmappings, functions, agents, bundles and actors. Applied through `POST /api/v1/vocabulary/apply`. |
+| **vocabulary** | Everything declarable, held as ordinary records: authorities, packages, kinds, property types, traits, recordmappings, functions, agents and bundles. Applied through `POST /api/v1/vocabulary/apply`. |
 | **registry** | The live, in-memory vocabulary a repository rebuilds from its own stored declarations when it opens. |
 | **dialect** | A monotonic integer stamped on each repository naming a shape it speaks. A binary older than the stamp refuses to open the repository. There are two, refused the same way and stamped differently: the **vocabulary dialect** over its stored declarations, stamped at the repository's first open, and the **changelog dialect** over the entries in its changelog, claimed by the transaction that appends them. |
 | **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, a package's `declaredBy`, the quarantine marks, a bundle's lifecycle bools, and the decision stamps `decidedAt` and `resolvedAt`. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. The one exception is a declaration's `version`, which the engine resolves itself: an incoming value is honored only when it moves past the stored one, and anything else (absent, echoed, lower) is stamped server-side. Not projection's *managed properties*, which is the ownership rule over a record's values. |
@@ -134,7 +135,7 @@ package, the entry's `keptBy` (decision 0258), **tenant** and
 | ---- | ---------- |
 | **token** | A bearer credential, itself a record. Without `scopes` it has full access to its repository; an app's token carries the scopes the owner approved. |
 | **scope** | One entry of an app's token: `read:<pattern>` or `write:<pattern>` over kind references, `agents:<pattern>` or `decide:<pattern>` over agent ids, `call:<pattern>` over function ids, `webhook:<trigger id>` naming one webhook trigger, `~` standing for the repository's authority ([apps](apps.md)). Not a provider's OAuth scopes, which an account's `grantedScopes` lists. |
-| **app** | A program that asked for access through the authorization flow, named by its client id URL ([apps](apps.md)). Its writes are the actor `app:<authority>` when its publisher is verified, `app:local` when its access went to a loopback address, and `app:<host>` of its client id otherwise (decision record 0209). Not a provider, and not a bundle. |
+| **app** | A program that asked for access through the authorization flow, named by its client id URL ([apps](apps.md)). Its writes are made by its actor record, on behalf of the person, whose `publisher` is its authority when its publisher is verified, `local` when its access went to a loopback address, and the host of its client id otherwise (decision records 0209 and 0270). Not a provider, and not a bundle. |
 | **authority document** | The JSON file an authority publishes about itself at the URL its `_substrate` TXT record names (`doc=`): its name, the apps that speak for it by client id, and the packages it publishes. An app the document lists, whose callback is on the authority, is a verified app ([apps](apps.md#name-your-publisher), decision record 0209). |
 | **domain** | A repository's or a publisher's authority as DNS holds it, where its `_substrate` TXT record lives. **Verify domain** proves a repository controls its name's DNS (`domainVerifiedAt`, decision record 0208); the word names the DNS side of an authority and nothing else, so a kind, a package and a route still name the authority. |
 | **set up** | What approving an app's request runs on the owner's server, as the owner, before the code exists: the catalog packages its `authorization_details` name installed or upgraded, its account created, its webhook enabled ([apps](apps.md#ask-for-set-up), decision record 0202). Each detail is one row whose `action` is `install`, `upgrade`, `create`, `enable` or `none`, and which carries `blocked`, with a reason, where it cannot run. |

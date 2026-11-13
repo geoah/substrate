@@ -71,11 +71,10 @@ func supersedeDatasetOn(t *testing.T, ds *dataset, startsAt time.Time, ops ...an
 		"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
 		"missed": "all",
 	}}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: supersedePkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(supersedePkg, 0),
-			vocabulary.ActorManifest(supersedePkg, vocabulary.PackageActor(supersedePkg)),
 			vocabulary.KindManifest(supersedePkg, map[string]any{"singular": "job"}, map[string]any{
 				"traits":          []any{vocabulary.TraitSyncCore},
 				"displayTemplate": "{name}",
@@ -120,7 +119,7 @@ func supersedeDatasetOn(t *testing.T, ds *dataset, startsAt time.Time, ops ...an
 // setJobSync replaces the job sync function's body.
 func setJobSync(t *testing.T, ds *dataset, source string) {
 	t.Helper()
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI,
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson,
 		[]map[string]any{supersedeFunction("jobsync", source)}); err != nil {
 		t.Fatalf("apply jobsync: %v", err)
 	}
@@ -152,7 +151,7 @@ func setMissed(t *testing.T, ds *dataset, triggerID, missed string) {
 		t.Fatalf("%s has no schedule: %+v", triggerID, rec.Properties)
 	}
 	schedule["missed"] = missed
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.PatchInput{
 		Properties: map[string]any{"source": source},
 	}); err != nil {
 		t.Fatalf("set %s missed %s: %v", triggerID, missed, err)
@@ -212,7 +211,7 @@ func TestAScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
 	s := nowUTC().Add(-150 * time.Minute).Truncate(time.Minute)
 	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
 	ds := supersedeDataset(t, s, "update")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -290,7 +289,7 @@ func TestAScheduleFireOfTheSameFunctionLeavesARecordParkParked(t *testing.T) {
 	ds := supersedeDataset(t, s, "create")
 
 	// The job's creation parks on the record trigger.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -388,7 +387,7 @@ func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) 
 	ds, fake := openAgentDataset(t)
 	s := nowUTC().Add(-90 * time.Minute).Truncate(time.Minute)
 	s1 := s.Add(time.Hour)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{

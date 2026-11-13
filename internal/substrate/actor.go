@@ -5,24 +5,23 @@ import (
 	"strings"
 )
 
-// Actor is the attributed identity of a writer ("console", "substratectl",
-// "bundle:example.com:mail", "substrate"). Attribution, not
-// authorization.
+// Actor is the key of a writing hand inside one process ("person",
+// "bundle:example.com:mail", "substrate"): what the engine decides a writer's
+// tier, its namespace and its echo on. Attribution, not authorization. It is
+// never stored and never on the wire: a stored write links the hand's
+// `substrate.reamde.dev/core/actor` record (decision 0270).
 //
-// THE ACTOR DOMAIN is closed:
+// THE KEYS are closed:
 //
-//	console                          a write from the console
-//	substratectl                     a write from the operator's CLI
-//	api                              a write from a client holding a token, door unnamed
+//	person                                  the repository's person, through any of its tokens
 //	bundle:<authority>:<package>            an install, and the package's own hand
 //	function:<authority>:<package>:<name>   a function's effect
 //	agent:<authority>:<package>:<name>      an agent's effect
 //	app:<host>                              a write by an app's token
 //	substrate                               the engine's own hand
 //
-// The three human doors are attribution the CALLER declares
-// (`X-Substrate-Actor`); the rest are derived by the substrate, and a request
-// may never claim one (ReservedActor).
+// Every one is derived by the substrate from the token or the code that
+// runs; no request names one.
 //
 // A machine hand carries the FULL AUTHORITY and the PACKAGE, never a first
 // label, and the separator is a colon because `<actor>/<name>` label and
@@ -32,13 +31,6 @@ import (
 type Actor string
 
 const (
-	// ActorAPI is the default attribution for an authenticated write that
-	// names no door: a client holds a token, and that is all the substrate
-	// knows about it. The console sends ActorConsole and substratectl sends
-	// ActorCLI; both are ordinary claimable names.
-	ActorAPI     Actor = "api"
-	ActorConsole Actor = "console"
-	ActorCLI     Actor = "substratectl"
 	// ActorSystem is the engine's own hand — recompute, mirrors, merge
 	// execution, the boot-time vocabulary upgrade, and the auth paths that
 	// write the credential and token records. A bare word, not a DNS name: the actor
@@ -145,10 +137,8 @@ func IsBundleActor(a Actor) bool {
 	return strings.HasPrefix(string(a), BundleActorPrefix) && len(string(a)) > len(BundleActorPrefix)
 }
 
-// HumanActors are the three doors a request may attribute itself to. They are
-// ordinary claimable names — attribution is not authorization — and they are
-// the whole of what a human write can say about itself.
-var HumanActors = map[Actor]bool{ActorAPI: true, ActorConsole: true, ActorCLI: true}
+// IsPerson reports whether actor is the repository's person.
+func IsPerson(a Actor) bool { return a == ActorPerson }
 
 type assistantKey struct{}
 
@@ -160,12 +150,12 @@ func WithAssistant(ctx context.Context) context.Context {
 	return context.WithValue(ctx, assistantKey{}, true)
 }
 
-// OwnersHand reports whether actor acts as the repository's owner: one of
-// the person's doors, or an app's actor on a request the MCP door marked.
+// OwnersHand reports whether actor acts as the repository's owner: the
+// person, or an app's actor on a request the MCP door marked.
 // Code the assistant runs writes under its own actor (`function:`,
 // `agent:`), which the mark never covers.
 func OwnersHand(ctx context.Context, actor Actor) bool {
-	if HumanActors[actor] {
+	if IsPerson(actor) {
 		return true
 	}
 	marked, _ := ctx.Value(assistantKey{}).(bool)
@@ -201,4 +191,96 @@ func NamesItsRecords(a Actor) bool {
 	return s == HostActorNamespace || strings.HasPrefix(s, HostActorNamespace+".") ||
 		IsBundleActor(a) ||
 		strings.HasPrefix(s, FunctionActorPrefix)
+}
+
+// AN ACTOR IS A RECORD (decision 0270). Every hand that writes is one record
+// of `substrate.reamde.dev/core/actor`, with a type and a link to what it is,
+// and a history line, a change event and a stored value name it by that
+// record's id, never by a spelling. The Actor values above are what the engine
+// passes around inside one process to decide a writer's tier, its namespace
+// and its echo: keys, never stored and never on the wire. CanonicalActor says
+// which record a key is, and vocabulary.ActorID the record's id.
+
+// The types of actor, the values of an actor record's `type`.
+const (
+	ActorTypePerson   = "person"
+	ActorTypeApp      = "app"
+	ActorTypeFunction = "function"
+	ActorTypeAgent    = "agent"
+	ActorTypePackage  = "package"
+	ActorTypeSystem   = "system"
+)
+
+// ActorTypes are the six, in the order a reader lists them.
+var ActorTypes = []string{ActorTypePerson, ActorTypeApp, ActorTypeFunction, ActorTypeAgent, ActorTypePackage, ActorTypeSystem}
+
+// ActorPerson is the key of the repository's one person, whichever of its
+// tokens it writes through: which client a write came from is on its token.
+const ActorPerson Actor = "person"
+
+// CanonicalActor is the key of the actor record a writing hand is. The doors,
+// and any label a person's request once claimed for itself, are the person; the engine's hands (`substrate`, `substrate.oauth`,
+// `substrate.webhook`, a policy's judge) are the system; the seed is the core
+// package; a mapping's hold on a subject slot is its package. Every other
+// key is its own.
+func CanonicalActor(a Actor) Actor {
+	s := string(a)
+	switch {
+	case a == "":
+		return ""
+	case a == ActorPerson, a == "api", a == "console", a == "substratectl":
+		// The three doors a person's request once named itself by.
+		return ActorPerson
+	case s == HostActorNamespace || strings.HasPrefix(s, HostActorNamespace+".") || strings.HasPrefix(s, "policy:"):
+		return ActorSystem
+	case a == ActorSeed:
+		return BundleActor("substrate.reamde.dev", "core")
+	case strings.HasPrefix(s, "mapping:"):
+		// `mapping:<authority>/<package>/<name>`: the declaration's package.
+		parts := strings.Split(strings.TrimPrefix(s, "mapping:"), "/")
+		if len(parts) == 3 {
+			return BundleActor(parts[0], parts[1])
+		}
+	case !ReservedActor(a) && !strings.HasPrefix(s, actorByIDPrefix):
+		// Any other name a full-access token's request claimed through the
+		// retired actor header: a label of the person's own.
+		return ActorPerson
+	}
+	return a
+}
+
+// ActorTypeOf is the type of the actor record a key is, "" for a key no type
+// covers.
+func ActorTypeOf(a Actor) string {
+	c := CanonicalActor(a)
+	s := string(c)
+	switch {
+	case c == ActorPerson:
+		return ActorTypePerson
+	case c == ActorSystem:
+		return ActorTypeSystem
+	case IsAppActor(c):
+		return ActorTypeApp
+	case strings.HasPrefix(s, FunctionActorPrefix):
+		return ActorTypeFunction
+	case strings.HasPrefix(s, AgentActorPrefix):
+		return ActorTypeAgent
+	case IsBundleActor(c), strings.HasPrefix(s, retiredConnectorPrefix):
+		return ActorTypePackage
+	}
+	return ""
+}
+
+// actorByIDPrefix marks a key that names an actor record by its id alone: a
+// stored link whose hand this process cannot tell, kept so that it round-trips
+// to the same id (vocabulary.ActorID).
+const actorByIDPrefix = "id:"
+
+// ActorByID is the key of the actor record id names, for a stored link whose
+// hand is not known.
+func ActorByID(id string) Actor { return Actor(actorByIDPrefix + id) }
+
+// ActorIDOf reports the id an ActorByID key names.
+func ActorIDOf(a Actor) (string, bool) {
+	return strings.CutPrefix(string(a), actorByIDPrefix)
 }

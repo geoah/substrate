@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func TestABlobStoresUnderAnAppsActor(t *testing.T) {
@@ -43,7 +44,11 @@ func TestABlobStoresUnderAnAppsActor(t *testing.T) {
 		t.Fatal("the app's upload wrote no manifest")
 	}
 	for _, row := range rows {
-		if row.Kind != "substrate.reamde.dev/core/blob" || row.RecordID != info.Digest || row.Actor != actor {
+		// The app's first write is when its actor record comes to be.
+		if row.Kind == "substrate.reamde.dev/core/actor" {
+			continue
+		}
+		if row.Kind != "substrate.reamde.dev/core/blob" || row.RecordID != info.Digest || row.Actor != vocabulary.ActorID(actor) {
 			t.Fatalf("the app's upload wrote %s/%s as %q, want the manifest as %s", row.Kind, row.RecordID, row.Actor, actor)
 		}
 	}

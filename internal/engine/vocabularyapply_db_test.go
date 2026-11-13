@@ -30,7 +30,6 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 			Name: "broken", Authority: badPackage,
 			Manifests: []map[string]any{
 				vocabulary.PackageManifest(badPackage, 0),
-				vocabulary.ActorManifest(badPackage, vocabulary.PackageActor(badPackage)),
 				vocabulary.FunctionManifest(badPackage, "mangle", map[string]any{
 					"description": "a body that must compile at registration",
 					"runtime":     vocabulary.RuntimePython,
@@ -40,7 +39,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 			},
 		}
 	}
-	err := enginetest.Install(ctx, ds, substrate.ActorAPI,
+	err := enginetest.Install(ctx, ds, substrate.ActorPerson,
 		manifest("def main(input, host)\n    return {}\n")) // missing colon
 	if err == nil || !strings.Contains(err.Error(), "failed to prepare") {
 		t.Fatalf("invalid source admitted: %v", err)
@@ -49,7 +48,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 		t.Fatal("the failed batch activated")
 	}
 	// The corrected body admits.
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI,
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson,
 		manifest("def main(input, host):\n    return {}\n")); err != nil {
 		t.Fatalf("valid source refused: %v", err)
 	}
@@ -75,7 +74,7 @@ func TestApplyPublishesAChangedMappingsOffersAndValues(t *testing.T) {
 
 	// Sam by hand with an address only, so the contact's name lands at the
 	// machine tier and its second address is an offer beside the owner's list.
-	sam, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	sam, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: subjPerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
 	})
 	if err != nil {

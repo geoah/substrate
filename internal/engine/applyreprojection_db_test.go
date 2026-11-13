@@ -40,7 +40,6 @@ func rpProviderCatalog(t *testing.T, version int64, remarkIndexed bool) *catalog
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(rpPackage, version),
-		vocabulary.ActorManifest(rpPackage, vocabulary.PackageActor(rpPackage)),
 		vocabulary.BundleManifest(rpPackage, map[string]any{
 			"description": "a provider whose upgrade indexes a property its rows carry",
 			"installs":    []any{rpMeter},

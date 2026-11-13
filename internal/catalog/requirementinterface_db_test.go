@@ -63,7 +63,7 @@ func TestARequirementOnAnInterfaceTheServerLacksIsRefusedWithThatReason(t *testi
 		t.Fatal(err)
 	}
 
-	_, _, err = c.Install(ctx, substrate.ActorAPI, app, ds)
+	_, _, err = c.Install(ctx, substrate.ActorPerson, app, ds)
 	if err == nil {
 		t.Fatal("an install whose requirement's code is written against an interface this server lacks landed")
 	}
@@ -146,7 +146,7 @@ func TestARefreshSaysWhyAReleaseCannotInstall(t *testing.T) {
 
 	first := version("app", 1, "", "")
 	c := publish(authority.AuthorityPackage{Package: "app", Versions: []authority.AuthorityPackageVersion{first}})
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, app, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, app, ds); err != nil {
 		t.Fatalf("install the first release: %v", err)
 	}
 

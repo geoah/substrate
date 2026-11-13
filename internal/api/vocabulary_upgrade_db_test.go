@@ -159,7 +159,7 @@ func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
 		},
 	})
 	env := upgradeReopenedEnv(t, func(ctx context.Context, ds substrate.Dataset) {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: llmPackageRef + "/provider", ID: "guarded",
 			Properties: map[string]any{"label": "a string label", "wire": "openai", "baseURL": "https://llm.example.com/v1"},
 		}); err != nil {

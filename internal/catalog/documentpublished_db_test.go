@@ -46,7 +46,7 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatal(err)
 	}
 	app, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "Notes", ClientID: "https://app.example/client.json", ClientName: "Notes", AppPackages: map[string]int64{id: 1}, AppSoftwareVersion: "1.0", AppAddons: []substrate.AppAddon{{Package: "publisher.example/addon", Version: 1, AddonFor: id}}})
@@ -84,7 +84,7 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 	if err != nil || len(plan.Holders) != 2 || !plan.ReviewRequired {
 		t.Fatalf("narrowing: %+v %v", plan, err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("held narrowing: %v", err)
 	}
 	row, err := ds.Get(ctx, "substrate.reamde.dev/core/package", id)
@@ -94,12 +94,12 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 	// A same-version rewrite and a lower version both fail inside admission.
 	versions = nil
 	release(2, "")
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("mutable release: %v", err)
 	}
 	versions = nil
 	release(1, "")
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); !errors.Is(err, substrate.ErrConflict) {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("downgrade: %v", err)
 	}
 	if err := os.Remove(docPath); err != nil {
@@ -114,11 +114,11 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 	if err := ds.RecordAppBuild(ctx, map[string]int64{id: 9}, "forged"); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("missing principal: %v", err)
 	}
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "substrate.reamde.dev/core/token", ID: app.ID, Properties: map[string]any{"appPackages": map[string]any{id: 9}}})
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "substrate.reamde.dev/core/token", ID: app.ID, Properties: map[string]any{"appPackages": map[string]any{id: 9}}})
 	if err == nil {
 		t.Fatal("generic put forged build facts")
 	}
-	taken, err := ds.TakeOverPackage(ctx, substrate.ActorAPI, id, id)
+	taken, err := ds.TakeOverPackage(ctx, substrate.ActorPerson, id, id)
 	if err != nil || taken.Properties["source"] != "installed" || taken.Properties["takenOverFrom"] != "publisher.example" || taken.Properties["publishedFrom"] != nil {
 		t.Fatalf("takeover: %+v %v", taken, err)
 	}
@@ -159,7 +159,7 @@ func TestARefreshDoesNotFollowADocumentThatMoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatal(err)
 	}
 	docs["publisher.example"] = document(t.TempDir(), 1, 2)
@@ -203,7 +203,7 @@ func TestARefreshLeavesAPackageTheBinaryNowShipsToTheCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatal(err)
 	}
 	install.Packages[0].Versions = listed

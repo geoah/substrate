@@ -103,7 +103,7 @@ func TestADueScheduleFireCountsAsInFlightWhileItRuns(t *testing.T) {
 	}
 
 	// A disabled trigger owes nothing the dispatcher is going to run.
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, typeTrigger, supersedeSync, substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, typeTrigger, supersedeSync, substrate.PatchInput{
 		Properties: map[string]any{"enabled": false},
 	}); err != nil {
 		t.Fatalf("disable: %v", err)

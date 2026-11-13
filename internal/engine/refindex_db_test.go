@@ -40,7 +40,7 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 	ds := openInternalDataset(t, opts...)
 	target := refIndexPackage + "/target"
 	pointer := refIndexPackage + "/pointer"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "refindex", Authority: refIndexPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(refIndexPackage, 0),
@@ -57,7 +57,7 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 		t.Fatalf("install: %v", err)
 	}
 	for _, id := range []string{"a", "b", "c"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: target, ID: fid(id), Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put target %s: %v", id, err)
@@ -70,7 +70,7 @@ func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 		if at != "a" {
 			alsoSeen = append(alsoSeen, fid(at))
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: pointer, ID: fid(id),
 			Properties: map[string]any{"note": id, "target": fid(at), "alsoSeen": alsoSeen},
 		}); err != nil {
@@ -88,7 +88,7 @@ func analyzedRefIndex(t *testing.T, ds *dataset, pointer string) {
 	t.Helper()
 	ctx := context.Background()
 	for i := range 300 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: pointer, ID: fid("bulk" + strconv.Itoa(i)), Properties: map[string]any{"target": fid("a")},
 		}); err != nil {
 			t.Fatalf("put bulk pointer %d: %v", i, err)
@@ -400,7 +400,7 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 	}
 	// End to end: a pointer stored under x, two hops from c, answers a
 	// reverse read of c.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pointer, ID: fid("px"), Properties: map[string]any{"target": "x"},
 	}); err != nil {
 		t.Fatalf("put the pointer at x: %v", err)
@@ -439,7 +439,7 @@ func TestAHotTargetsReferencingPageCountsOnlyWhenAsked(t *testing.T) {
 	// per batch, through the ordinary put.
 	const hot, batch = 2000, 500
 	for from := 0; from < hot; from += batch {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for i := from; i < from+batch; i++ {
 				if _, err := tx.put(substrate.PutInput{
 					Kind: pointer, ID: fid(fmt.Sprintf("h%04d", i)),

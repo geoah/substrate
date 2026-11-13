@@ -308,7 +308,7 @@ func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
 	ds.mu.Unlock()
 	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "archllm", "editllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm", "namellm", "tersellm"} {
 		model := strings.TrimSuffix(id, "llm")
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{
 				// Every row carries its own endpoint and its own key: there
@@ -325,7 +325,7 @@ func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
 	// compactllm is the one row that declares a context window, so its agent
 	// is the one that compacts: a window of 1000 tokens, which the compactor's
 	// reserve of 200 puts the threshold at 800 under.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "compactllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-compactllm",
@@ -600,7 +600,7 @@ def main(input, host):
 		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/c"}}),
 		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewPackage + "/b"}}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install crew authority: %v", err)
 	}
 	return fake
@@ -699,7 +699,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	// Admission: a trigger naming an unknown agent never lands.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}}},
@@ -708,7 +708,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a trigger naming an unknown agent landed")
 	}
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -727,7 +727,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	)
 	fake.script("sub", fakeTurn{content: "the summary"})
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-fixed"),
 		Properties: map[string]any{"name": "raw"},
 	}); err != nil {
@@ -750,7 +750,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		SELECT actor FROM changelog WHERE record_id = $1 ORDER BY seq LIMIT 1`, fid("t-classified")).Scan(&taskActor); err != nil {
 		t.Fatal(err)
 	}
-	if substrate.Actor(taskActor) != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/classifier")) {
+	if taskActor != vocabulary.ActorID(substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/classifier"))) {
 		t.Fatalf("the tool effect's actor is %q, not the agent's", taskActor)
 	}
 
@@ -992,7 +992,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	ctx := context.Background()
 	const abPackage = "abundle.bundles.substrate.reamde.dev/abundle"
 	for _, id := range []string{"greetllm", "callerllm"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id},
 		}); err != nil {
@@ -1015,7 +1015,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 			}}),
 		greeter,
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install agent bundle: %v", err)
 	}
 	const hostPackage = "hostcrew.test.dev/hostcrew"
@@ -1023,7 +1023,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"description": "delegates to greeter", "prompt": "You delegate.",
 		"provider": "callerllm", "model": "caller", "subagents": []any{abPackage + "/greeter"},
 	})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(hostPackage, 0), caller,
 	}); err != nil {
 		t.Fatalf("install caller agent: %v", err)
@@ -1054,7 +1054,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrGuard) {
 		t.Fatalf("disabled bundle's agent answered a call: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrGuard) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrGuard) {
 		t.Fatalf("disabled bundle's agent answered a chat: %v", err)
 	}
 	// Sub-agent dispatch: the caller's hop is refused as a tool result — the
@@ -1095,7 +1095,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 	if _, err := ds.CallAgent(ctx, greeter, "hi"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("uninstalled bundle's agent answered a call: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, greeter, substrate.ChatInput{Message: "hi"}, nil); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("uninstalled bundle's agent answered a chat: %v", err)
 	}
 }
@@ -1108,7 +1108,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	// invoked DIRECTLY (no ceiling) still writes.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-ceiling"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -1182,7 +1182,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	// thread id.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -1198,7 +1198,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 		fakeTurn{calls: []fakeCall{{"keyecho", `{}`}}}, // attempt 2: the same logical call
 		fakeTurn{content: "kept"},                      // attempt 2: settles
 	)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-idem"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -1274,7 +1274,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "first"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatalf("open thread: %v", err)
 	}
@@ -1286,7 +1286,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	cctx, leave := context.WithCancel(ctx)
 	defer leave()
 	go func() {
-		_, err := ds.ChatAgent(cctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
+		_, err := ds.ChatAgent(cctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived // the first continuation holds the lease, parked at the model
@@ -1297,7 +1297,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 		t.Fatalf("the first continuation's client: %v, want context.Canceled", err)
 	}
 
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "sneak"}, nil); !errors.Is(err, substrate.ErrConflict) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "sneak"}, nil); !errors.Is(err, substrate.ErrConflict) {
 		close(release)
 		t.Fatalf("a second active turn was admitted: %v", err)
 	}
@@ -1323,7 +1323,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 
 	// The settled thread admits the next turn.
 	fake.script("chat", fakeTurn{content: "third"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "again"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "again"}, nil); err != nil {
 		t.Fatalf("post-settle turn: %v", err)
 	}
 }
@@ -1350,7 +1350,7 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("chat", fakeTurn{content: "first"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatalf("open thread: %v", err)
 	}
@@ -1360,11 +1360,11 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 	fake.script("chat", fakeTurn{content: "second", arrived: arrived, release: release})
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
 		close(release)
 		t.Fatalf("delete the thread: %v", err)
 	}
@@ -1405,7 +1405,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	// A custom baseURL without a row apiKey refuses to resolve at all.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "leaky",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL},
 	}); err != nil {
@@ -1415,7 +1415,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 		t.Fatalf("a row-defined baseURL resolved without a row-defined apiKey: %v", err)
 	}
 	// The anthropic wire has an endpoint of its own but still needs a key.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "keyless-anthropic",
 		Properties: map[string]any{"wire": "anthropic"},
 	}); err != nil {
@@ -1435,7 +1435,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	}
 	// An openai row with no baseURL used to mean "the host's gateway". There
 	// is no host gateway, so it now refuses and says which key it wants.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "hosted",
 		Properties: map[string]any{"label": "hosted", "wire": "openai", "apiKey": "row-key-hosted"},
 	}); err != nil {
@@ -1448,7 +1448,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	// End to end: a chat against a custom-endpoint agent — the fake server
 	// sees the ROW's bearer and nothing else.
 	fake.script("chat", fakeTurn{content: "done"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	auths := fake.authsSeen()
@@ -1468,7 +1468,7 @@ func TestProviderRowCacheBlockResolves(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "gateway",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "k",
@@ -1484,7 +1484,7 @@ func TestProviderRowCacheBlockResolves(t *testing.T) {
 	if pc.cacheTTL != "1h" || !pc.cfg.CacheKey || !pc.cfg.CacheBreakpoints {
 		t.Fatalf("cache = ttl %q key %v breakpoints %v", pc.cacheTTL, pc.cfg.CacheKey, pc.cfg.CacheBreakpoints)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "gateway",
 		Properties: map[string]any{"cache": map[string]any{"ttl": "1h"}},
 	}); err == nil {
@@ -1502,7 +1502,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "hello there"})
 
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -1525,7 +1525,7 @@ func TestAgentChatRoundTrip(t *testing.T) {
 	}
 
 	fake.script("chat", fakeTurn{content: "again"})
-	res2, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, func(substrate.AgentEvent) {})
+	res2, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Thread: res.Thread, Message: "more"}, func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("continue: %v", err)
 	}
@@ -1599,7 +1599,7 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 	// inbox — a malformed proposal never becomes a silent no-op approval.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-mal"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -1628,7 +1628,7 @@ func TestProposeDeleteRefusesADiff(t *testing.T) {
 	// and the function SDK hold.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-doomed"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -1676,7 +1676,7 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	// exist yet); on accept it mints exactly once.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-good"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -1721,7 +1721,7 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read create request: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, createID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, createID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &createEnt.Version,
 	}); err != nil {
 		t.Fatalf("accept create: %v", err)
@@ -1757,7 +1757,7 @@ func TestProposeDiffValidation(t *testing.T) {
 				}},
 			}}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install gauge authority: %v", err)
 	}
 	gauge, err := ds.resolveType(gaugePackage + "/gauge")
@@ -2056,7 +2056,7 @@ func TestAFailedMessageInsertSettlesTheThreadError(t *testing.T) {
 		log := newEventLog()
 		started := time.Now()
 		go func() {
-			_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, hurryPackage+"/hurried", substrate.ChatInput{Message: "go"}, log.emit)
+			_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, hurryPackage+"/hurried", substrate.ChatInput{Message: "go"}, log.emit)
 		}()
 		waitArrived(t, writing, "the sub-agent's tool row write")
 		time.Sleep(time.Until(started.Add(1500 * time.Millisecond)))
@@ -2096,7 +2096,7 @@ func installHurriedAgent(t *testing.T, ds *dataset) {
 		data["prompt"] = "You are " + name + "."
 		return vocabulary.AgentManifest(hurryPackage, name, data)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(hurryPackage, 0),
 		agent("hurried", map[string]any{
 			"provider": "rootllm", "model": "root",
