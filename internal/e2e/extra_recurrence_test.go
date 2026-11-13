@@ -17,7 +17,9 @@ import (
 // the rules Google emits, the instance overrides, the cancellations, and the
 // this-and-following split, each followed by the range queries a calendar
 // client would make. OCC-01 is a schedule of another kind on the same read.
-const (
+// The calendar sample's series, as its copy names it: bindSamples rebinds
+// both.
+var (
 	seriesCollection = "/api/v1/samples.substrate.reamde.dev/calendar/calendareventseries"
 	seriesKind       = "samples.substrate.reamde.dev/calendar/calendareventseries"
 )
@@ -630,7 +632,7 @@ func xoClosure() []map[string]any {
 				"names":           map[string]any{"singular": "doselog"},
 				"description":     "One dose, done or skipped; absence in the logs is what missed means.",
 				"displayTemplate": "{status}",
-				"traits":          []any{"substrate.reamde.dev/core/temporal(point)", "samples.substrate.reamde.dev/scheduling/occurrencelog"},
+				"traits":          []any{"substrate.reamde.dev/core/temporal(point)", sampleHome() + "/scheduling/occurrencelog"},
 				"properties": map[string]any{
 					"status": map[string]any{
 						"type": "state", "description": "done or skipped",

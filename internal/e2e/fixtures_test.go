@@ -22,14 +22,18 @@ const (
 	requestCollection    = "/api/v1/substrate.reamde.dev/core/recordpatchrequest"
 	triggerRunCollection = "/api/v1/substrate.reamde.dev/core/triggerrun"
 
-	transcriptKind = "samples.substrate.reamde.dev/calendar/transcript"
-	eventKind      = "samples.substrate.reamde.dev/calendar/calendarevent"
-	taskKind       = "samples.substrate.reamde.dev/tasks/task"
-
 	actorResolver   = "function:" + storyAuthority + ":" + storyPackage + ":resolveattendees"
 	actorMatcher    = "agent:" + storyAuthority + ":" + storyPackage + ":transcriptMatcher"
 	actorReflection = "agent:" + storyAuthority + ":" + storyPackage + ":actionItemExtractor"
 	actorArbiter    = "agent:" + storyAuthority + ":" + storyPackage + ":changeRequestReviewer"
+)
+
+// The samples' kinds the stories write, rebound to their copies by
+// bindSamples.
+var (
+	transcriptKind = "samples.substrate.reamde.dev/calendar/transcript"
+	eventKind      = "samples.substrate.reamde.dev/calendar/calendarevent"
+	taskKind       = "samples.substrate.reamde.dev/tasks/task"
 )
 
 // resolveAttendeesTemplate mirrors what a calendar importer's linker does:
@@ -111,7 +115,7 @@ def main(input, host):
 // resolveAttendeesSource is the resolver's body, naming the work calendar
 // STORY-01 created.
 func resolveAttendeesSource() string {
-	return strings.ReplaceAll(resolveAttendeesTemplate, "@WORK_CALENDAR_ID@", eid("work"))
+	return landed(strings.ReplaceAll(resolveAttendeesTemplate, "@WORK_CALENDAR_ID@", eid("work")), sampleHome())
 }
 
 // importedEventID is the id the resolver files an import's event under: "ev-"
@@ -222,11 +226,8 @@ func storyDocuments(providerID string) []map[string]any {
 			"runtime":     "python",
 			"timeout":     "PT10S",
 			"permissions": map[string]any{
-				"reads": map[string]any{"kinds": []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization"}},
-				"writes": []string{
-					"samples.substrate.reamde.dev/calendar/calendarevent",
-					"samples.substrate.reamde.dev/people/person",
-				},
+				"reads":  map[string]any{"kinds": []string{personKind, orgKind}},
+				"writes": []string{eventKind, personKind},
 			},
 			"source": resolveAttendeesSource(),
 		}),
@@ -246,7 +247,7 @@ func storyDocuments(providerID string) []map[string]any {
 			"permissions": map[string]any{
 				"reads": map[string]any{"kinds": []string{transcriptKind, eventKind}},
 			},
-			"source": scoreCandidatesSource,
+			"source": landed(scoreCandidatesSource, sampleHome()),
 		}),
 		doc("substrate.reamde.dev/core/agent", storyPkg+"/transcriptMatcher", map[string]any{
 			"authority":   storyAuthority,
@@ -263,7 +264,7 @@ func storyDocuments(providerID string) []map[string]any {
 				{"function": storyPkg + "/scorecandidates"},
 			},
 			"permissions": map[string]any{
-				"reads":  map[string]any{"kinds": []string{transcriptKind, eventKind, "samples.substrate.reamde.dev/people/person"}},
+				"reads":  map[string]any{"kinds": []string{transcriptKind, eventKind, personKind}},
 				"writes": []string{transcriptKind, storyPkg + "/matchverdict"},
 			},
 			"budgets": map[string]any{"maxTurns": 8, "maxToolCalls": 12, "deadlineSeconds": 120},
@@ -288,7 +289,7 @@ func storyDocuments(providerID string) []map[string]any {
 				{"function": "substrate.reamde.dev/core/propose"},
 			},
 			"permissions": map[string]any{
-				"reads":  map[string]any{"kinds": []string{transcriptKind, taskKind, "samples.substrate.reamde.dev/people/person"}},
+				"reads":  map[string]any{"kinds": []string{transcriptKind, taskKind, personKind}},
 				"writes": []string{"substrate.reamde.dev/core/recordpatchrequest"},
 			},
 			"budgets": map[string]any{"maxTurns": 10, "maxToolCalls": 12, "deadlineSeconds": 120},

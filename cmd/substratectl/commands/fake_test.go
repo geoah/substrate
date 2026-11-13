@@ -93,8 +93,9 @@ type fakeSubstrate struct {
 	// vocabularyDelay holds the vocabulary apply's and the plan's answer back
 	// this long, as a server admitting a large batch does.
 	vocabularyDelay time.Duration
-	// installRefusesLossy makes a bare POST .../install (no confirmation in
-	// the body) answer the server's 403 `lossy`, as a lossy plan does.
+	// installRefusesLossy makes a bare POST .../add of a published package
+	// (no confirmation in the body) answer the server's 403 `lossy`, as a
+	// lossy plan does.
 	installRefusesLossy bool
 	// putValidation, when set, makes a record write answer the server's 422
 	// validation envelope carrying these problems — the refusal `apply` meets
@@ -267,12 +268,11 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/sync/status", f.handleSyncStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)
-	// The sample door: the server rehomes the closure and answers with the
-	// LANDED bundle's status, whose id is the repository's own authority.
-	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
-	// The provider door: the id lands as named. The body, when there is one,
-	// is the confirmation of a lossy plan, kept in lastBody for the test.
-	mux.HandleFunc("POST /api/v1/catalog/{id}/install", f.handleCatalogInstall)
+	// The add route: a sample is rehomed and answered with the LANDED
+	// bundle's status, whose id is the repository's own authority; a
+	// published package lands as named. The body, when there is one, is the
+	// confirmation of a lossy plan, kept in lastBody for the test.
+	mux.HandleFunc("POST /api/v1/catalog/{id}/add", f.handleCatalogAdd)
 	mux.HandleFunc("POST /api/v1/vocabulary/plan", f.handleVocabularyPlan)
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
@@ -514,10 +514,15 @@ func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, substrate.Listed(f.catalog))
 }
 
-// handleCatalogInstall stands in for the provider door: the bundle lands under
-// the id the request named, and the status comes back.
-func (f *fakeSubstrate) handleCatalogInstall(w http.ResponseWriter, r *http.Request) {
+// handleCatalogAdd stands in for the add route, which the package's keeper
+// steers: a sample (every one is under the samples authority) is copied, and
+// anything else is its publisher's.
+func (f *fakeSubstrate) handleCatalogAdd(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	if strings.HasPrefix(r.PathValue("id"), "samples.substrate.reamde.dev/") {
+		f.copySample(w, r)
+		return
+	}
 	f.mu.Lock()
 	_, confirmed := f.lastBody["confirm"]
 	refuse := f.installRefusesLossy && !confirmed
@@ -570,11 +575,10 @@ func (f *fakeSubstrate) handleShippedUpgrade(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, substrate.Listed(f.shipped))
 }
 
-// handleCatalogImport stands in for the sample door: it answers the status of
-// the bundle as it LANDED: the sample's package under this repository's own
-// authority, never the shipped id the request named.
-func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
+// copySample answers a sample's add with the status of the bundle as it
+// LANDED: the sample's package under this repository's own authority, never
+// the shipped id the request named.
+func (f *fakeSubstrate) copySample(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	pkg := id
 	if _, after, ok := strings.Cut(id, "/"); ok {

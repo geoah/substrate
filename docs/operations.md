@@ -353,7 +353,7 @@ file the server behaves as the section above says. With it:
   `apiKey` secret for that package is empty, and none of the repository's
   settings beside it, so a `baseUrl` the person wrote never reaches a call the
   operator pays for. The key never becomes a record. A copy of the package
-  under the repository's own authority, such as an earlier import of the
+  under the repository's own authority, such as an earlier copy of the
   Firecrawl sample, never gets it
   ([decision 0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
 - Every operator-paid call first reserves its worst-case cost against the
@@ -988,7 +988,7 @@ it trusts:
   moved reference site and a search over a moved `fts` flag answer for the
   previous declaration of that row.
 
-  A `POST …/vocabulary/apply` and a provider upgrade (the catalog's install
+  A `POST …/vocabulary/apply` and a provider upgrade (the catalog's add
   over an older version) use the same pass for the search index and the
   observed index. Their transaction holds the registry lock every write
   waits on, so it re-derives only the refs rows of the rows carrying a
@@ -1335,8 +1335,8 @@ body (`content-type`, `content-length`, `content-encoding`, `user-agent`,
 as absent until the record lists it under `source.webhook.headers`. Before
 deploying that binary, run
 `substratectl get substrate.reamde.dev/core/trigger -o yaml`, find every
-webhook arm, and add the names each callable reads; a re-import of a shipped
-sample does the same for its own trigger but discards a hand-set `key`
+webhook arm, and add the names each callable reads; adding a shipped
+sample again does the same for its own trigger but discards a hand-set `key`
 ([functions](functions.md#triggers)).
 
 **A migration this binary does not carry stops the boot.** The runner records

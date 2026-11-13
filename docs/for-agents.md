@@ -84,12 +84,12 @@ unique per kind, never per repository.
    `console`, `observations` and `assistant` packages. Every other
    kind arrives from the catalog: the owner takes a catalog package from the
    console (a provider from Providers, a sample from All data's Add a
-   collection), with `substratectl install` or `substratectl import
+   collection), with `substratectl add
    <authority>/<package>`, or with
-   `POST /api/v1/catalog/<authority>%2F<package>/install` or `…/import`. A
-   provider, or a catalogue such as `substrate.reamde.dev/health`, installs
+   `POST /api/v1/catalog/<authority>%2F<package>/add`. A
+   provider, or a catalogue such as `substrate.reamde.dev/health`, lands
    under the authority that publishes it, so its kinds keep their shipped
-   names. A sample's import lands under the owner's own authority, so the
+   names. A sample is copied under the owner's own authority, so the
    kind you then write is `<owner authority>/tasks/task`, not the catalog's
    id ([getting started](getting-started.md)).
 

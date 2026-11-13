@@ -1,12 +1,13 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-five bundles, in the two tiers
+The catalog in the binary serves twenty-five bundles, in the two sorts
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fifteen in the published tier (eleven providers and four well-known
-catalogues) and ten samples. The tier says only who keeps a package; each
+draws: fifteen published packages (eleven providers and four well-known
+catalogues) and ten samples. `keptBy` says only who keeps a package; each
 entry also says whether it is a provider, what it brings and which provider
 an add-on extends
-([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)),
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md),
+[0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)),
 so the console lists the providers on Providers and offers the catalogues as
 standard collections under Add a collection. This page covers the eleven
 providers and four of the samples; the catalogues (`health`, `labs`, `environment` and
@@ -28,7 +29,7 @@ ships no function. Apple Health has no API to read, so its provider receives
 what the Health Auto Export app on the phone sends to a webhook. WHOOP and
 Apple Health each also ship an adapter that turns their mirror rows into
 [observations](observations.md#the-adapters), and require the `health`
-catalogue it writes, which installing either installs first. Three also
+catalogue it writes, which adding either adds first. Three also
 ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
@@ -41,10 +42,10 @@ Do not treat the mirror as confirmation that a send happened.
 **Four samples**: LLM, notes, the reading list and Pebble.
 Garmin and Google Fit providers, with their health adapters, are planned and
 not shipped.
-Each is a worked example to read and copy, imported under the repository's own
+Each is a worked example to read and copy, added under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
-imported it as an upgrade offer read off the copy's origin stamp, taken by
-importing again
+added it as an upgrade offer read off the copy's origin stamp, taken by
+adding it again
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md);
 [0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
 0048 amends).
@@ -55,11 +56,11 @@ package that owns that kind
 provider declares a person or task property: the `people` and `tasks`
 samples ship the five SUGGESTED MAPPINGS, and each mapping synthesises its
 subject slot on the source kind when it installs
-([0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)). An import
+([0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)). Adding a sample
 keeps a
 suggested mapping only where the provider it reads is installed and fits it,
 and reports the rest `waiting`, `blocked` or `ready`: see
-[suggested mappings](bundles.md#suggested-mappings) for the door, and each
+[suggested mappings](bundles.md#suggested-mappings) for the rule, and each
 provider section below for the mappings pointed at it.
 
 This is the map. The source of truth is each bundle's own manifests, under
@@ -153,7 +154,7 @@ provider's own sync token gives them full-plus-incremental with no window.
 ## LLM (sample)
 
 Package `samples.substrate.reamde.dev/llm`: the decision-loop lessons, three
-agents and the scratchpad they practise on. Nothing imports it for you; the
+agents and the scratchpad they practise on. Nothing adds it for you; the
 owner's assistant, Moss, ships with the binary instead
 ([builtin kinds](builtin-kinds.md#substratereamdedevassistant)). Its agents
 name the seeded `openai` row, so key that row and they run.
@@ -179,11 +180,11 @@ prices are.
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
-vocabulary, so it imports on a fresh substrate, and its two functions stand on
+vocabulary, so it lands on a fresh substrate, and its two functions stand on
 their own with no model at all:
 
 ```bash
-substratectl import samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
+substratectl add samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
 substratectl function call stats --input '{"text": "hello world"}'
 ```
 
@@ -198,7 +199,7 @@ which is the capability envelope in one closure.
 Both agents name `provider: openai`, so running them wants that
 `llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
 Calling an agent is an API call, not a CLI verb. The path segment is the
-agent's id, `<authority>/notes/notekeeper` once the import has rehomed it, with
+agent's id, `<authority>/notes/notekeeper` once adding it has rehomed it, with
 each slash written `%2F`; a bare `notekeeper` is refused
 ([calling an agent](agents.md#calling-an-agent)):
 
@@ -286,10 +287,10 @@ their own, `enabledGmailWrite` (`gmail.modify`) and `enabledCalendarWrite`
   against a person's emails, and mapping `names[].displayName`,
   `emailAddresses[].value` and `phoneNumbers[].value`) and
   `googleaddressperson` (from `emailaddress`, matching `address`, and mapping
-  the address alone, because the hub carries no name). Import `people` with
-  this provider installed and both land; import it first and both are reported
+  the address alone, because the hub carries no name). Add `people` with
+  this provider installed and both land; add it first and both are reported
   `waiting` for this package, and a later install does not land them on its
-  own: import `people` again
+  own: add `people` again
   ([suggested mappings](bundles.md#suggested-mappings)).
 
 **All four scopes are wired.** The requested union is derived per consent from
@@ -543,9 +544,9 @@ writes to GitHub; `submitreview` is the one write.
   declaration as a SUGGESTED MAPPING (`githubuserperson`, beside
   `googlecontactperson`, `googleaddressperson` and `linearuserperson`): it
   matches the profile's `email` against a person's emails and maps the name, the
-  `login` as the display name, and the email. Import `people` with this provider
-  installed and it lands; import it first and it is reported `waiting`, and
-  importing `people` again after the install is what lands it ([suggested
+  `login` as the display name, and the email. Add `people` with this provider
+  installed and it lands; add it first and it is reported `waiting`, and
+  adding `people` again after the install is what lands it ([suggested
   mappings](bundles.md#suggested-mappings)).
 
 **Four toggles on the account decide the scopes and the walk.** `enabledUser`
@@ -716,10 +717,10 @@ The two samples ship them as SUGGESTED MAPPINGS. `people` declares
 `linearuserperson`, matching a member's `email` against a person's `emails`
 and mapping `name`, `displayName` and the address; `tasks` declares
 `linearissuetask`, matching an issue's `url` against a task's `url` and
-mapping `issueTitle` onto the task's name beside the link. Import either
-sample with this provider installed and its mapping lands; import it first and
-the mapping is reported `waiting` for this package, and installing this
-package afterwards is not enough on its own: import that sample again
+mapping `issueTitle` onto the task's name beside the link. Add either
+sample with this provider installed and its mapping lands; add it first and
+the mapping is reported `waiting` for this package, and adding this
+package afterwards is not enough on its own: add that sample again
 ([suggested mappings](bundles.md#suggested-mappings)). A projected task's
 `status` is not mapped and cannot be: a state moves through its declared
 transitions, never through a mapping
@@ -1482,7 +1483,7 @@ image only, never in a release. It shipped a `slack-events` webhook trigger,
 enabled and keyless, and upgrading to 22 leaves that record in place: a POST
 to it starts a `slacksync` walk. In order: stop the Socket Mode bridge,
 `substratectl delete substrate.reamde.dev/core/trigger slack-events`, upgrade
-the Slack bundle, install Slack live events and write its keyed trigger, then
+the Slack bundle, add Slack live events and write its keyed trigger, then
 point the bridge at the new URL.
 
 The token is a secret on the `config` record, origin-pinned: the sync sends
@@ -2144,7 +2145,7 @@ cut. An agent that takes `webscrape` must name `webdocument` in its own
 intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
-**A copy of the old sample.** A repository that imported the Firecrawl sample
+**A copy of the old sample.** A repository that copied the Firecrawl sample
 keeps it under its own authority, with `scrapepage` and its own key, and the
 operator's key never reaches it. Its tools derive other names
 (`websearch` when an agent names it, `firecrawl_websearch` when its owner
@@ -2214,7 +2215,7 @@ the capture came from the Double click & hold gesture. It requires
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
 `<authority>` is the repository's own authority;
 `substratectl trigger status` prints the path in its `WEBHOOK` column. It is
-open as shipped: the import makes it the repository's own trigger, which the
+open as shipped: adding the sample makes it the repository's own trigger, which the
 server does not hold to a key the way it holds a provider's
 ([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
 Setting `source.webhook.key` on the `pebble-webhook`

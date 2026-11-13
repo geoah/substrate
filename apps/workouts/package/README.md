@@ -32,7 +32,7 @@ under [coach/](coach/).
 them as a `published` package, and the owner does not edit them (decisions
 O1 and O2, 2026-11-02, in
 [decisions.md](../docs/decisions.md#open-since-1100)), which is the
-published tier's ordinary rule rather than a lock of the app's. The records
+ordinary rule for a package its publisher keeps rather than a lock of the app's. The records
 stay the owner's, and so do the bundle's Pause and Resume. The owner's one
 way to change the kinds is **Take over…** on the package's page, after which
 the package is theirs and stops upgrading; the app keeps writing records to

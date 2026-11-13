@@ -35,14 +35,14 @@ struct Client: Sendable {
         return try await api.send("GET", "api/v1/catalog").decode(Page.self).items
     }
 
-    /// `install` for a provider (also its upgrade), `import` for a sample.
-    /// The server installs what the bundle requires first and builds its
-    /// indexes in the same request, so it is given minutes, not seconds, and
-    /// never sent twice: a second install while the first still runs only
-    /// queues behind it.
-    func catalog(_ verb: String, _ id: String) async throws {
+    /// Adds one catalog package (also its upgrade): the server lands a
+    /// provider under the authority that publishes it and copies a sample.
+    /// It adds what the bundle requires first and builds its indexes in the
+    /// same request, so it is given minutes, not seconds, and never sent
+    /// twice: a second add while the first still runs only queues behind it.
+    func add(_ id: String) async throws {
         try await api.send(
-            "POST", "api/v1/catalog/\(segment(id))/\(verb)", body: .json(Data("{}".utf8)),
+            "POST", "api/v1/catalog/\(segment(id))/add", body: .json(Data("{}".utf8)),
             timeout: Self.serverWork, retries: 0)
     }
 

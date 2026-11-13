@@ -1248,7 +1248,7 @@ export interface AuthorizationPackage {
   settings?: AuthorizationSetting[]
   id: string
   description?: string
-  tier?: string
+  keptBy?: CatalogKeeper
   required: number
   held?: number
   shipped?: number
@@ -1828,8 +1828,8 @@ export interface BundleUpgrade extends ConversionPlan {
   blockers?: string[]
 }
 
-/** The optional body of `POST /api/v1/catalog/{id}/install` and `/import`
- * (api catalogTakeRequest): the consent a lossy or edit-replacing plan needs
+/** The optional body of `POST /api/v1/catalog/{id}/add` (api
+ * catalogAddRequest): the consent a lossy or edit-replacing plan needs
  * (decision 0067), and, for a document-published package, the version and
  * digest the owner reviewed, answered 409 when the publisher listed another
  * version since. */
@@ -1857,13 +1857,12 @@ export interface ShippedUpgrade {
   upgrade: BundleUpgrade
 }
 
-/** Which of the two catalog doors a shipped closure takes (decision records
- * 0048 and 0238). A `published` package INSTALLS under the authority that
- * publishes it; a `sample` IMPORTS under this repository's own authority and
- * is the repository's to edit afterwards. It says who keeps the
- * declarations, never what the package is for: `provider`, `brings` and
- * `addonFor` say that. */
-export type CatalogTier = "published" | "sample"
+/** Who keeps a catalog package once it is added (decision record 0258): a
+ * PUBLISHED package is kept by its `publisher` and lands under the authority
+ * that publishes it; a SAMPLE is kept by the `repository`, copied under its
+ * own authority and the repository's to edit afterwards. It says nothing about
+ * what the package is for: `provider`, `brings` and `addonFor` say that. */
+export type CatalogKeeper = "publisher" | "repository"
 
 /** What taking a closure gives a reader, read from its declarations
  * (substrate.Brings*, decision record 0238): an account to connect, tools
@@ -1892,12 +1891,11 @@ export interface CatalogBundle {
    * the catalog by authority, then by package. */
   package: string
   description: string
-  /** The owned package's incremental declaration version. A sample has no
-   * upgrade path, so its version is offered to nothing; an import records it
-   * as the copy's `originVersion`. */
+  /** The owned package's incremental declaration version. Adding a sample
+   * records it as the copy's `originVersion`. */
   version: number
-  /** `published` or `sample`: which door its button takes. */
-  tier: CatalogTier
+  /** Who keeps the package once it is added, and so where adding it lands. */
+  keptBy: CatalogKeeper
   /** Whether it connects the substrate to an outside service: what the
    * Providers page lists. Every closure the binary ships among its providers
    * (Apple's devices push, so its closure declares no account), and any

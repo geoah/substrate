@@ -85,7 +85,7 @@ auditable in the [changelog](changelog.md):
   into the new repository's changelog as ordinary record entries, under the
   actor `bundle:core`, in the same transaction as the repository itself. The
   provider closures embedded beside it are the catalog, not the seed, and the
-  LLM sample is imported in the same creation
+  LLM sample is copied in the same creation
   ([getting started](getting-started.md#registration)). After that the tree
   has no standing over that repository: nothing
   re-projects it at open, and nothing is ever pruned. A shipped package the
@@ -118,10 +118,10 @@ auditable in the [changelog](changelog.md):
 **A package row names who declared it.** The write that creates a
 `package` row stamps the managed `declaredBy` property with that write's
 actor: `bundle:core` for a seeded package, `bundle:<authority>:<package>` for
-a catalog install or import, `substrate` for a shipped package a boot upgrade
+a catalog add, `substrate` for a shipped package a boot upgrade
 adds to an existing repository, the door (`console`, `substratectl`, `api`)
 for a hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
-upgrade or re-import leaves it alone, so it names the first declarer, and no
+upgrade or add leaves it alone, so it names the first declarer, and no
 document may write it. A package created before the stamp existed carries none
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md)).
 The package's record read (`GET
@@ -175,8 +175,8 @@ upgrade, an install, which is what the actors `substrate` and
 `bundle:<authority>:<package>` name. A generic API write into one is
 `forbidden`, and neither actor form can be claimed by a request.
 
-A **published** package is refused on the same terms. Installing one from the
-catalog's published tier (a provider such as
+A **published** package is refused on the same terms. Adding one from the
+catalog (a provider such as
 `providers.substrate.reamde.dev/google`, or a catalogue such as
 `substrate.reamde.dev/labs`) writes `source: published` on its package row and
 its declarations,
@@ -188,19 +188,19 @@ lifecycle verb on its bundle
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 
 Everything else, the kinds the repository declares itself and the sample
-packages it imported, is the user's to write.
+packages it added, is the user's to write.
 
 **A token creates a new package only under the repository's own authority**
 ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). Every other authority reaches a repository from
-the binary: the seed, the boot upgrade, a catalog install or a sample import,
-which rehomes its closure onto the repository's authority anyway. A `POST
+the binary: the seed, the boot upgrade, or a catalog add,
+which rehomes a sample's closure onto the repository's authority anyway. A `POST
 …/vocabulary/apply` (or `substratectl apply -f`) that would create a package
 under any other authority is `403`, whoever writes it: the owner's doors, an
-app, an agent or a function. The refusal names `substratectl install
-<package>` and `POST /api/v1/catalog/{id}/install`, the door that brings a
+app, an agent or a function. The refusal names `substratectl add
+<package>` and `POST /api/v1/catalog/{id}/add`, the route that brings a
 provider or a catalogue. A package the repository already holds under another
 authority keeps the rules above: an `installed` copy applied by hand before
-this rule stays editable, and its next install promotes it to `published`.
+this rule stays editable, and adding it again promotes it to `published`.
 
 Opening a repository rebuilds its registry from the stored declaration
 records, shipped, published and installed alike, each carrying the source its
@@ -870,7 +870,7 @@ stored entry into every later document of the same package or kind, so a
 document that omits the list does not lift it and the list never shrinks
 while the row stands; and a declaration of a retired name is refused on every
 path with the same sentence, `a retired name is never declared again`: the
-apply verb, a bundle install or a sample import (a rehomed sample that
+apply verb, a bundle install or adding a sample (a rehomed sample that
 declares a name the repository retired under the same package is refused
 too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
 tree itself. A retired name is not a `deprecated:` one: `deprecated:` keeps

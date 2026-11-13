@@ -309,7 +309,7 @@ func (p *planner) ownedBlock(ctx context.Context, id string) (*packageProblem, e
 func (p *planner) packageBlock(ctx context.Context, b *catalog.Bundle, id string, need int64) (*packageProblem, error) {
 	st := p.statuses[id]
 	switch {
-	case b.Tier == substrate.TierSample:
+	case b.KeptBy == substrate.KeptByRepository:
 		return sample(), nil
 	case st != nil && st.Quarantined:
 		return quarantined(id), nil
@@ -350,7 +350,7 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if b != nil {
 		// Shipped is the version approving would install: the binary's, or
 		// the newest the publisher lists at the floor or later.
-		info.Description, info.Tier, info.Shipped, info.Publisher = b.Description, b.Tier, b.Version, publisherOf(b)
+		info.Description, info.KeptBy, info.Shipped, info.Publisher = b.Description, b.KeptBy, b.Version, publisherOf(b)
 		info.OAuthHosts = slices.Clone(b.OAuthHosts)
 		if origin := b.Origin(); origin != nil {
 			info.AddonFor = origin.AddonFor
@@ -465,7 +465,7 @@ func (p *planner) publishedChain(ctx context.Context, b *catalog.Bundle, actionO
 			if dep != nil {
 				step.Description, step.Shipped, step.Publisher = dep.Description, dep.Version, publisherOf(dep)
 				switch {
-				case dep.Tier == substrate.TierSample:
+				case dep.KeptBy == substrate.KeptByRepository:
 					problem = sample()
 				default:
 					if problem, err = p.stepBlock(ctx, dep, floor); err != nil {

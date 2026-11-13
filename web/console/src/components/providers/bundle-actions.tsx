@@ -43,9 +43,8 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogQueryOptions,
+  addBundle,
   fetchCatalogItem,
-  importBundle,
-  installBundle,
   type BundleInstallResult,
 } from "@/lib/api/catalog"
 import {
@@ -84,19 +83,15 @@ import { shortDateTime } from "@/lib/format"
 import { bundleParams, removalLadder, type LadderStep } from "@/lib/providers"
 import { cn } from "@/lib/utils"
 
-/** The words a row's door is called by: a provider is ADDED (the everyday
- * word for its install), a sample IMPORTED. */
-
-/** Take a row's shipped closure through its own door, with the consent its
- * preview needs: the install verb for a provider, the import verb for a
- * sample, whose closure lands rehomed over the copy this repository holds
- * (decision record 0070). */
+/** Add a row's shipped closure again, with the consent its preview needs.
+ * The one add route takes every package (decision record 0258); a sample's
+ * closure lands rehomed over the copy this repository holds (decision record
+ * 0070). */
 function takeAgain(
   row: BundleRow,
   upgrade = row.upgrade
 ): Promise<BundleInstallResult> {
-  const door = row.tier === "sample" ? importBundle : installBundle
-  return door(row.catalog?.id ?? row.id, confirmationOf(upgrade))
+  return addBundle(row.catalog?.id ?? row.id, confirmationOf(upgrade))
 }
 
 /** A step whose freshly read preview replaces something the reader has not
@@ -209,7 +204,7 @@ export function TakeButton({
         type: "success",
         title:
           plan.bundles.length === 1
-            ? row.tier === "sample"
+            ? row.keptBy === "repository"
               ? // A sample lands under THIS repository's authority, not the
                 // id the reader clicked (decision record 0048).
                 technical
@@ -963,7 +958,7 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
   const [confirming, setConfirming] = useState(false)
   const ready = readyMappings({ catalog: item })
   const importing = useMutation({
-    mutationFn: () => importBundle(item.id, confirmationOf(item.upgrade)),
+    mutationFn: () => addBundle(item.id, confirmationOf(item.upgrade)),
     onSuccess: (status) => {
       setConfirming(false)
       toast.add({

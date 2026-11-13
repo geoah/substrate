@@ -412,6 +412,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0255](0255-a-providers-writes-ride-toggles-of-their-own-and-a-seeded-secretary-takes-the-providers-tools-by-pattern.md) | A provider's writes ride toggles of their own, and a seeded secretary takes the providers' tools by pattern | accepted |
 | [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
 | [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
+| [0258](0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md) | One catalog route adds a package, and `keptBy` says who keeps it | accepted |
 | [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |
 | [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
 | [0263](0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md) | The API's tests of engine behavior run on the real engine, and its stand-in is deleted | accepted |

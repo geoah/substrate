@@ -106,7 +106,7 @@ describe("seedBundleStatus", () => {
     package: "tasks",
     description: "",
     version: 1,
-    tier: "sample",
+    keptBy: "repository",
     installed: false,
     closure: {
       kinds: null,

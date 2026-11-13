@@ -515,8 +515,8 @@ data:
 
 // credsVocabulary is an OAuth-shaped credential the user declares: a client
 // id beside three sealed values, the shape a provider's input record and its
-// `accountconfig` account carry. The installed google provider is the
-// provider-tier counterpart.
+// `accountconfig` account carry. The installed google provider is its
+// published counterpart.
 const credsVocabulary = `
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -876,9 +876,9 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 // and declares the drill's own packages, editing one kind afterwards.
 func (d *drill) seedVocabulary(t *testing.T, e *testenv.Env) {
 	for _, id := range sampleImports {
-		e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
+		e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, nil)
 	}
-	e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googlePkg)+"/install", nil, nil)
+	e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googlePkg)+"/add", nil, nil)
 	e.ApplyVocabularyYAML(autoVocabulary)
 	e.ApplyVocabularyYAML(crmKind)
 	e.ApplyVocabularyYAML(mirrorVocabulary("dira", "contact", "synca"))
@@ -1090,7 +1090,7 @@ func (d *drill) writeSecondRepository(t *testing.T, e *testenv.Env) {
 	d.second = e.RegisterUser(secondAuthority, secondPassword, d.secondIdentity.Recipient().String())
 	l := d.second.For(t)
 	for _, id := range sampleImports {
-		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
+		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, nil)
 	}
 	for i, name := range []string{"first", "second", "third"} {
 		putRecord(t, l, secondTask, fmt.Sprintf("%026d", 100+i), map[string]any{

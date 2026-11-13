@@ -5,9 +5,10 @@
 // it ships beside them (a provider's triggers, the llm sample's provider
 // rows).
 //
-// Every entry carries a TIER, and the tier is the tree it came from (decision
-// record 0048). A PUBLISHED package (kinds/) INSTALLS under the authority that
-// publishes it. A SAMPLE (samples/) IMPORTS: the closure is rehomed onto the
+// Every entry says who KEEPS it, and that is the tree it came from (decision
+// records 0048 and 0258). A PUBLISHED package (kinds/) is kept by its
+// publisher and lands under the authority that publishes it. A SAMPLE
+// (samples/) is kept by the repository: the closure is rehomed onto the
 // repository's own authority first, so what lands is the repository's to edit.
 // What an entry is FOR is a second answer, read from its declarations
 // (decision record 0238): whether it is a provider, what it brings, and which
@@ -103,7 +104,7 @@ type (
 // on import, so what lands is its package under the repository's authority
 // (decision record 0048) and the shipped id addresses the catalog entry alone.
 func (b *Bundle) LandedID(homeAuthority string) string {
-	if b.Tier != substrate.TierSample || homeAuthority == "" {
+	if b.KeptBy != substrate.KeptByRepository || homeAuthority == "" {
 		return b.ID
 	}
 	return homeAuthority + "/" + b.Package
@@ -151,9 +152,9 @@ type Catalog struct {
 // fails to parse is dropped with a recorded warning rather than failing the
 // whole catalog — a broken neighbor never bricks the shipped set.
 //
-// A root also says which TIER its closures are (decision record 0048): the
-// tier is the tree a closure came from and nothing else, so nothing infers it
-// from an authority's spelling.
+// A root also says who KEEPS its closures (decision record 0048): that is the
+// tree a closure came from and nothing else, so nothing infers it from an
+// authority's spelling.
 func Load(roots ...Root) (*Catalog, error) {
 	c := &Catalog{byID: map[string]*Bundle{}}
 	for _, root := range roots {
@@ -181,7 +182,7 @@ func Load(roots ...Root) (*Catalog, error) {
 // it requires (WHOOP requires health), and a sample is the user's copy, which
 // extends nothing it would be listed under.
 func (c *Catalog) addonFor(b *Bundle) string {
-	if b.Tier != substrate.TierPublished || slices.Contains(b.Brings, substrate.BringsAccount) {
+	if b.KeptBy != substrate.KeptByPublisher || slices.Contains(b.Brings, substrate.BringsAccount) {
 		return ""
 	}
 	for _, id := range b.Requires {
@@ -231,10 +232,10 @@ func LoadWithReader(reader *authority.Reader, seeded []string, roots ...Root) (*
 	return c, nil
 }
 
-// Root is one shipped tree and the tier every closure in it takes.
+// Root is one shipped tree and who keeps every closure in it.
 type Root struct {
-	// Tier is substrate.TierPublished or substrate.TierSample.
-	Tier string
+	// KeptBy is substrate.KeptByPublisher or substrate.KeptByRepository.
+	KeptBy string
 	// Provider says every closure in the tree is a provider: the publisher
 	// put it among its providers, which is the one statement a closure that
 	// declares no account (Apple's devices push) can make.
@@ -245,13 +246,13 @@ type Root struct {
 // ProviderRoot is a tree of providers (kinds/providers.…): published packages
 // that connect the substrate to an outside service.
 func ProviderRoot(fsys fs.FS) Root {
-	return Root{Tier: substrate.TierPublished, Provider: true, FS: fsys}
+	return Root{KeptBy: substrate.KeptByPublisher, Provider: true, FS: fsys}
 }
 
 // PublishedRoot is a tree of published packages that are not providers (the
 // seed authority's catalogues), whose closures install under the authority
 // they name.
-func PublishedRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierPublished, FS: fsys} }
+func PublishedRoot(fsys fs.FS) Root { return Root{KeptBy: substrate.KeptByPublisher, FS: fsys} }
 
 // Shipped is the binary's three trees, each with the role its closures take
 // (decision records 0048 and 0238): the providers, the catalogues beside the
@@ -261,9 +262,9 @@ func Shipped() []Root {
 	return []Root{ProviderRoot(kinds.Providers()), PublishedRoot(kinds.Catalogues()), SampleRoot(samples.Samples())}
 }
 
-// SampleRoot is a tree of copyable packages (samples/), whose closures import
+// SampleRoot is a tree of copyable packages (samples/), whose closures are copied
 // under the repository's own authority.
-func SampleRoot(fsys fs.FS) Root { return Root{Tier: substrate.TierSample, FS: fsys} }
+func SampleRoot(fsys fs.FS) Root { return Root{KeptBy: substrate.KeptByRepository, FS: fsys} }
 
 // packageDirs lists the directories holding manifests, in lexical order.
 func packageDirs(fsys fs.FS) ([]string, error) {
@@ -304,8 +305,8 @@ func (c *Catalog) load(root Root, dir string) error {
 		c.warnings = append(c.warnings, fmt.Sprintf("%s: duplicate bundle id %s", dir, b.ID))
 		return nil
 	}
-	b.Tier = root.Tier
-	b.Provider = root.Provider || b.Tier == substrate.TierPublished && slices.Contains(b.Brings, substrate.BringsAccount)
+	b.KeptBy = root.KeptBy
+	b.Provider = root.Provider || b.KeptBy == substrate.KeptByPublisher && slices.Contains(b.Brings, substrate.BringsAccount)
 	c.bundles = append(c.bundles, b)
 	c.byID[b.ID] = b
 	return nil
@@ -597,7 +598,7 @@ func (c *Catalog) SeedInstall(ctx context.Context, ds substrate.Dataset, id stri
 	if !ok {
 		return fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	if b.Tier != substrate.TierPublished {
+	if b.KeptBy != substrate.KeptByPublisher {
 		return fmt.Errorf("%w: %s is not a published package", substrate.ErrValidation, b.ID)
 	}
 	resolved, err := c.ResolveFor(ctx, id, 0, ds)
@@ -656,9 +657,9 @@ func (c *Catalog) installResolved(ctx context.Context, b *Bundle, ds substrate.D
 	//
 	// A PUBLISHED install says so: its packages land `source: published`,
 	// which is what closes them to the repository's token afterwards, and what
-	// promotes a package an earlier install left `installed`. The TIER decides
-	// it, so nothing here restates a list of ids. The same closure applied by
-	// hand (`substratectl apply -f` of these very files) carries no tier and
+	// promotes a package an earlier install left `installed`. Who KEEPS it
+	// decides, so nothing here restates a list of ids. The same closure applied
+	// by hand (`substratectl apply -f` of these very files) says no keeper and
 	// stays the repository's own, which record 0047 sanctions and which is the
 	// only way to hold a published package's declarations open to editing.
 	//
@@ -707,8 +708,8 @@ func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset
 			}
 		}
 	}
-	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierPublished, Confirm: confirm}
-	if b.Tier == substrate.TierPublished {
+	opts := substrate.BundleInstall{Published: b.KeptBy == substrate.KeptByPublisher, Confirm: confirm}
+	if b.KeptBy == substrate.KeptByPublisher {
 		opts.ShippedVersion = b.Version
 		if b.origin != nil {
 			opts.PublishedFrom = b.origin.DocumentURL
@@ -776,7 +777,7 @@ func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id
 		return nil, nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
 
-	if b.Tier != substrate.TierSample {
+	if b.KeptBy != substrate.KeptByRepository {
 		return nil, nil, fmt.Errorf("%w: %s is a published package, which installs under the authority that publishes it: use install, not import",
 			substrate.ErrValidation, b.ID)
 	}
@@ -792,7 +793,7 @@ func (c *Catalog) SeedImport(ctx context.Context, ds substrate.Dataset, id strin
 	if !ok {
 		return fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	if b.Tier != substrate.TierSample {
+	if b.KeptBy != substrate.KeptByRepository {
 		return fmt.Errorf("%w: %s is not a sample", substrate.ErrValidation, b.ID)
 	}
 	_, _, err := c.importSample(ctx, b, ds, nil)
@@ -876,7 +877,7 @@ func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.
 			// it is placed all the same: the planner reads it as a server
 			// update, and the admission refuses it.
 			dep, err := c.ResolveFor(ctx, req, b.RequiresAtLeast[req], ds)
-			if err != nil || dep.Tier != substrate.TierPublished {
+			if err != nil || dep.KeptBy != substrate.KeptByPublisher {
 				// Placed too, so a second bundle requiring it reports it
 				// no second time.
 				placed[req] = true
@@ -929,7 +930,7 @@ func (c *Catalog) installable(ctx context.Context, actor substrate.Actor, id str
 // install is the one admission both doors run: every shipped data document is
 // converted and validated BEFORE the schema apply, then the schema closure and
 // the delivery wiring commit as a single repository transaction. `opts` is
-// where the tier arrives: `Published` for a published package, zero for a
+// where its keeper arrives: `Published` for a published package, zero for a
 // sample.
 func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, vocabularyDocs, dataDocs []map[string]any, opts substrate.BundleInstall) error {
 	// Pre-admit every data document BEFORE the schema apply: a malformed
@@ -979,7 +980,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 	}
 	// The gate is `held`, which the cache key does not carry, so it runs
 	// before the cache is asked.
-	if b.Tier == substrate.TierSample && (held == nil || held.Origin != b.ID || ds.Repository().Authority == "") {
+	if b.KeptBy == substrate.KeptByRepository && (held == nil || held.Origin != b.ID || ds.Repository().Authority == "") {
 		return nil, nil
 	}
 	return c.plans.plan(ctx, ds, b.ID, func() (*substrate.BundleUpgrade, error) {
@@ -990,7 +991,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, 
 // planUpgrade counts the preview Upgrade answers, uncached.
 func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
 	var vocabularyDocs []map[string]any
-	if b.Tier == substrate.TierSample {
+	if b.KeptBy == substrate.KeptByRepository {
 		home := ds.Repository().Authority
 		// The same closure Import lands: the suggested mappings this
 		// repository can resolve, rehomed. A closure that still names the

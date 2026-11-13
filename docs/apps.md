@@ -443,7 +443,7 @@ that cannot be installed blocks the row of the package that needs it.
 | --- | --- | --- |
 | `server-update` | the catalog ships the package, or one it requires, below the version needed | none: only a newer server ships it |
 | `not-shipped` | this server ships no catalog at all, or a package the catalog ships requires one it does not | none |
-| `not-published` | neither the catalog nor an authority document this server can read offers the package, or one it requires, at the version needed (the owner's own packages and the samples they imported included); `problem` carries the catalog's words, which name the package and the reason | none |
+| `not-published` | neither the catalog nor an authority document this server can read offers the package, or one it requires, at the version needed (the owner's own packages and the samples they added included); `problem` carries the catalog's words, which name the package and the reason | none |
 | `sample` | the package, or one it requires, is a sample, which the owner adds from All data | `/data` |
 | `quarantined` | the repository's copy of the package, or of one it requires, is quarantined | its provider page |
 | `declared-by-owner` | the owner declared the package, or one it requires, by hand (its package record is `installed` and no provider install stamped it, whether it declares kinds or only functions or traits), and installing or upgrading the published one would replace theirs; one they hold as a bundle at the version needed is in place and left alone | its provider page |
@@ -930,9 +930,9 @@ named in full, and `~` may stand for its authority. How a kind binds it,
 An agent's id is its authority, package and name,
 `ada.example.com/notes/notekeeper`.
 `~` in place of the authority is the repository's own authority, the one an
-imported sample lives under: `read:~/tasks/*` becomes
+added sample lives under: `read:~/tasks/*` becomes
 `read:ada.example.com/tasks/*` on the approval page and in the token, and
-`agents:~/notes/*` the agents imported with the notes sample. Some things no
+`agents:~/notes/*` the agents added with the notes sample. Some things no
 scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,

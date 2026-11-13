@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-02
 decision-makers: George Antoniadis
-amended-by: 0238
+amended-by: 0238, 0258
 ---
 
 # 0048. Providers are published packages; samples are copied and owned

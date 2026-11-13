@@ -184,7 +184,7 @@ func run() error {
 	}
 	if err := operatorDefaults.CheckPackages(func(id string) bool {
 		b, ok := cat.ByID(id)
-		return ok && b.Tier == substrate.TierPublished
+		return ok && b.KeptBy == substrate.KeptByPublisher
 	}); err != nil {
 		return fmt.Errorf("SUBSTRATE_OPERATOR_DEFAULTS: %w", err)
 	}

@@ -245,7 +245,7 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	if b.Version != version || version < 1 {
 		return nil, fmt.Errorf("closure version %d does not match listed version %d", b.Version, version)
 	}
-	b.Tier = substrate.TierPublished
+	b.KeptBy = substrate.KeptByPublisher
 	b.Provider = slices.Contains(b.Brings, substrate.BringsAccount)
 	return b, nil
 }

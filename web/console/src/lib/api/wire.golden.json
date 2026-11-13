@@ -359,6 +359,7 @@
     "functions": false,
     "held": false,
     "id": true,
+    "keptBy": false,
     "kinds": false,
     "oauthHosts": false,
     "providerInputs": false,
@@ -368,7 +369,6 @@
     "requires": false,
     "settings": false,
     "shipped": false,
-    "tier": false,
     "triggers": false
   },
   "AuthorizationPackagePublisher": {
@@ -608,6 +608,7 @@
     "description": true,
     "id": true,
     "inputs": false,
+    "keptBy": true,
     "modified": false,
     "name": true,
     "oauthHosts": false,
@@ -619,7 +620,6 @@
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,
-    "tier": true,
     "version": true
   },
   "CatalogInput": {
@@ -636,6 +636,7 @@
     "id": true,
     "inputs": false,
     "installed": true,
+    "keptBy": true,
     "modified": false,
     "name": true,
     "oauthHosts": false,
@@ -647,7 +648,6 @@
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,
-    "tier": true,
     "upgrade": false,
     "version": true
   },

@@ -53,7 +53,7 @@ function tasks(authority: string, installed: boolean) {
     package: "tasks",
     description: "",
     version: 1,
-    tier: "sample",
+    keptBy: "repository",
     installed,
     closure: {
       kinds: [`${authority}/tasks/task`],
@@ -202,7 +202,7 @@ describe("SampleList", () => {
           fetchMock.mock.calls
             .filter(([, init]) => init?.method === "POST")
             .map(([url]) => String(url))
-        ).toEqual([`${CATALOG_PATH}/${encodeURIComponent(OTHER.id)}/import`])
+        ).toEqual([`${CATALOG_PATH}/${encodeURIComponent(OTHER.id)}/add`])
       )
     }
   )

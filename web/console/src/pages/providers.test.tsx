@@ -88,9 +88,9 @@ function bundle(over: Partial<CatalogItem>): CatalogItem {
     package: "x",
     description: "",
     version: 1,
-    tier: "published",
+    keptBy: "publisher",
     // The fixtures are providers unless they say otherwise.
-    provider: over.tier !== "sample",
+    provider: over.keptBy !== "repository",
     closure: EMPTY,
     installed: false,
     ...over,
@@ -103,7 +103,7 @@ function sample(pkg: string, requires?: string[]): CatalogItem {
     name: pkg,
     authority: "samples.substrate.reamde.dev",
     package: pkg,
-    tier: "sample",
+    keptBy: "repository",
     requires,
   })
 }
@@ -220,7 +220,7 @@ interface Wire {
   catalog?: CatalogItem[]
   shipped?: ShippedUpgrade[]
   fresh?: (id: string) => CatalogItem | undefined
-  take?: (id: string, verb: string) => Response
+  take?: (id: string) => Response
   triggerStatuses?: TriggerStatus[]
 }
 
@@ -298,21 +298,18 @@ describe("ProvidersPage", () => {
           ? jsonResponse(200, found)
           : jsonResponse(404, { error: { code: "not_found", message: id } })
       }
-      if (
-        (path.endsWith("/install") || path.endsWith("/import")) &&
-        method === "POST"
-      ) {
-        const verb = path.endsWith("/install") ? "install" : "import"
+      if (path.endsWith("/add") && method === "POST") {
         const id = decodeURIComponent(
-          path.slice(CATALOG_PATH.length + 1, -(verb.length + 1))
+          path.slice(CATALOG_PATH.length + 1, -"/add".length)
         )
         const pkg = id.split("/").pop()!
+        const copied = catalog.find((i) => i.id === id)?.keptBy === "repository"
         return (
-          wire.take?.(id, verb) ??
+          wire.take?.(id) ??
           jsonResponse(
             200,
             status({
-              id: verb === "import" ? `${HOME}/${pkg}` : id,
+              id: copied ? `${HOME}/${pkg}` : id,
               name: pkg,
               package: pkg,
             })
@@ -339,18 +336,16 @@ describe("ProvidersPage", () => {
     fetchMock.mockReset()
   })
 
-  /** The catalog doors the page went through, in order. */
+  /** The catalog adds the page made, in order. */
   function doors(): string[] {
     return fetchMock.mock.calls
       .filter(
-        ([url, init]) =>
-          /\/(install|import)$/.test(String(url)) && init?.method === "POST"
+        ([url, init]) => /\/add$/.test(String(url)) && init?.method === "POST"
       )
       .map(([url]) => {
         const u = String(url)
-        const verb = u.endsWith("/install") ? "install" : "import"
-        return `${verb} ${decodeURIComponent(
-          u.slice(CATALOG_PATH.length + 1, -(verb.length + 1))
+        return `add ${decodeURIComponent(
+          u.slice(CATALOG_PATH.length + 1, -"/add".length)
         )}`
       })
   }
@@ -358,8 +353,7 @@ describe("ProvidersPage", () => {
   function bodies(): { confirm?: unknown }[] {
     return fetchMock.mock.calls
       .filter(
-        ([url, init]) =>
-          /\/(install|import)$/.test(String(url)) && init?.method === "POST"
+        ([url, init]) => /\/add$/.test(String(url)) && init?.method === "POST"
       )
       .map(([, init]) => {
         const raw = init?.body
@@ -525,15 +519,15 @@ describe("ProvidersPage", () => {
     expect(within(await card("Google")).queryByText(GOOGLE_ID)).toBeNull()
   })
 
-  it("adds the whole chain leaves first, each through its own door, then opens the provider", async () => {
+  it("adds the whole chain leaves first, each through the one add route, then opens the provider", async () => {
     renderPage(<ProvidersPage />)
     const google = await card("Google")
     fireEvent.click(within(google).getByRole("button", { name: "Add" }))
     await waitFor(() => expect(doors()).toHaveLength(3))
     expect(doors()).toEqual([
-      `install ${BASE.id}`,
-      `install ${SHARED.id}`,
-      `install ${GOOGLE_ID}`,
+      `add ${BASE.id}`,
+      `add ${SHARED.id}`,
+      `add ${GOOGLE_ID}`,
     ])
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -566,7 +560,7 @@ describe("ProvidersPage", () => {
     const second = await screen.findByText(problems[1])
     expect(first.tagName).toBe("LI")
     expect(first.parentElement).toBe(second.parentElement)
-    expect(doors()).toEqual([`install ${BASE.id}`, `install ${SHARED.id}`])
+    expect(doors()).toEqual([`add ${BASE.id}`, `add ${SHARED.id}`])
     expect(navigate).not.toHaveBeenCalled()
   })
 
@@ -605,14 +599,14 @@ describe("ProvidersPage", () => {
       id: "samples.substrate.reamde.dev/aaa",
       name: "aaa",
       package: "aaa",
-      tier: "sample",
+      keptBy: "repository",
       requires: ["samples.substrate.reamde.dev/bbb"],
     })
     const b = bundle({
       id: "samples.substrate.reamde.dev/bbb",
       name: "bbb",
       package: "bbb",
-      tier: "sample",
+      keptBy: "repository",
       requires: ["samples.substrate.reamde.dev/aaa"],
     })
     serve({ catalog: [a, b, { ...LINEAR, requires: [a.id] }] })
@@ -687,7 +681,7 @@ describe("ProvidersPage", () => {
       expect(within(broken).getByText("kind x: unknown key")).toBeTruthy()
     })
 
-    it("updates a moved sample copy through the import door", async () => {
+    it("updates a moved sample copy through the add route", async () => {
       serve({
         statuses: [peopleStatus()],
         catalog: [
@@ -703,7 +697,7 @@ describe("ProvidersPage", () => {
       })
       renderPage(<ProvidersPage />, true)
       fireEvent.click(await screen.findByRole("button", { name: /Update/ }))
-      await waitFor(() => expect(doors()).toEqual([`import ${PEOPLE.id}`]))
+      await waitFor(() => expect(doors()).toEqual([`add ${PEOPLE.id}`]))
       expect(bodies()[0].confirm).toBeUndefined()
     })
 

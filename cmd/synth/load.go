@@ -458,7 +458,7 @@ func (c *client) install(ctx context.Context, pkg string) error {
 	if err != nil || (held && !upgrade) {
 		return err
 	}
-	st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(pkg)+"/install", []byte("{}"), nil)
+	st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(pkg)+"/add", []byte("{}"), nil)
 	if err != nil {
 		return err
 	}
@@ -498,7 +498,7 @@ func (c *client) importSamples(ctx context.Context, samples []string, stdout io.
 		if held && !upgrade {
 			continue
 		}
-		st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(s)+"/import", []byte("{}"), nil)
+		st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(s)+"/add", []byte("{}"), nil)
 		if err != nil {
 			return nil, err
 		}

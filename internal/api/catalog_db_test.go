@@ -57,21 +57,20 @@ func catalogDetail(t *testing.T, env *dbEnv, bearer, id string) substrate.Catalo
 	return decodeJSON[substrate.CatalogItem](t, rec)
 }
 
-// catalogTake takes each catalog entry through its door (import or install)
-// as the owner.
-func catalogTake(t *testing.T, env *dbEnv, verb string, ids ...string) {
+// catalogAdd adds each catalog entry as the owner.
+func catalogAdd(t *testing.T, env *dbEnv, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/"+verb, env.token, nil)
+		rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", env.token, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
 }
 
-// catalogImportReadinglist imports the reading-list sample the way the
-// console does: the samples it requires first, each rehomed.
-func catalogImportReadinglist(t *testing.T, env *dbEnv) {
+// catalogAddReadinglist adds the reading-list sample the way the console
+// does: the samples it requires first, each rehomed.
+func catalogAddReadinglist(t *testing.T, env *dbEnv) {
 	t.Helper()
-	catalogTake(t, env, "import", peopleBundleID, "samples.substrate.reamde.dev/messaging", rlBundleID)
+	catalogAdd(t, env, peopleBundleID, "samples.substrate.reamde.dev/messaging", rlBundleID)
 }
 
 // catalogEditCopy redeclares kind, one of an imported copy's, with one more
@@ -182,30 +181,30 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	}
 }
 
-// The catalog list carries each entry's TIER on the wire: the console's two
-// sections and the door each row offers are read from it, so google is a
-// provider and the reading list is a sample (decision record 0048).
-func TestCatalogListCarriesTheTier(t *testing.T) {
+// The catalog list says who keeps each entry on the wire: the console's two
+// sections and what adding a row lands are read from it, so google is kept by
+// its publisher and the reading list by the repository (decision record 0258).
+func TestCatalogListSaysWhoKeepsEachPackage(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogShipped(t))
 	listing := catalogListing(t, env, env.token)
 	want := map[string]string{
-		googleBundleID: substrate.TierPublished,
-		rlBundleID:     substrate.TierSample,
+		googleBundleID: substrate.KeptByPublisher,
+		rlBundleID:     substrate.KeptByRepository,
 	}
-	for id, tier := range want {
+	for id, keptBy := range want {
 		item, ok := listing[id]
 		if !ok {
 			t.Errorf("bundle %q missing from catalog list", id)
 			continue
 		}
-		if item.Tier != tier {
-			t.Errorf("%s tier = %q, want %q", id, item.Tier, tier)
+		if item.KeptBy != keptBy {
+			t.Errorf("%s keptBy = %q, want %q", id, item.KeptBy, keptBy)
 		}
 	}
 	for id, item := range listing {
-		if item.Tier == "" {
-			t.Errorf("bundle %q carries no tier, so the console cannot place it", id)
+		if item.KeptBy == "" {
+			t.Errorf("bundle %q says nobody keeps it, so the console cannot place it", id)
 		}
 	}
 }
@@ -226,7 +225,7 @@ func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogShipped(t))
-	catalogImportReadinglist(t, env)
+	catalogAddReadinglist(t, env)
 	if up := catalogEntry(t, env, rlBundleID).Upgrade; up != nil {
 		t.Errorf("a preview with nothing to say rides the entry: %+v", up)
 	}
@@ -303,12 +302,12 @@ data:
 	return cat
 }
 
-// The install body's confirmation reaches the engine as BundleInstall.Confirm
+// The add body's confirmation reaches the engine as BundleInstall.Confirm
 // (decision 0067): binary N+1's widgets provider drops a color two widgets
 // carry, a bare POST hands the door none and the engine refuses the lossy
 // plan, a confirmation for another plan is the engine's conflict, and the
-// previewed one lands the drop. The provider lands under its tier.
-func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
+// previewed one lands the drop. The provider lands as its publisher's.
+func TestCatalogAddCarriesTheConfirmation(t *testing.T) {
 	t.Parallel()
 	const id = "widgets.example.com/widgets"
 	env := catalogEnv(t, catalogWidgets(t, "2", "name"))
@@ -324,7 +323,7 @@ func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
 		t.Fatalf("the moved provider previews %+v, want a lossy upgrade", up)
 	}
 
-	path := "/api/v1/catalog/" + url.PathEscape(id) + "/install"
+	path := "/api/v1/catalog/" + url.PathEscape(id) + "/add"
 	wantErrorCode(t, env.do(t, http.MethodPost, path, env.token, nil), http.StatusForbidden, codeLossy)
 	if got := env.get(t, widget, "w1"); got.Properties["color"] != "red" {
 		t.Fatalf("a refused install dropped the color: %+v", got)
@@ -352,7 +351,7 @@ func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
 func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogShipped(t))
-	catalogImportReadinglist(t, env)
+	catalogAddReadinglist(t, env)
 	if !catalogEntry(t, env, rlBundleID).Installed {
 		t.Error("an imported sample reads as available, so the console offers it again")
 	}
@@ -367,7 +366,7 @@ func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
 	t.Parallel()
 	cat := catalogShipped(t)
 	env := catalogEnv(t, cat)
-	catalogImportReadinglist(t, env)
+	catalogAddReadinglist(t, env)
 	catalogEditCopy(t, env, env.repository+"/readinglist/page")
 	imported := map[string]bool{peopleBundleID: false, "samples.substrate.reamde.dev/messaging": false, rlBundleID: true}
 	for id, item := range catalogListing(t, env, env.token) {
@@ -410,9 +409,9 @@ func TestCatalogMatchesAnImportedSampleByItsOrigin(t *testing.T) {
 			t.Parallel()
 			env := catalogEnv(t, catalogWithOtherReadinglist(t))
 			if imported == rlBundleID {
-				catalogImportReadinglist(t, env)
+				catalogAddReadinglist(t, env)
 			} else {
-				catalogTake(t, env, "import", imported)
+				catalogAdd(t, env, imported)
 			}
 			for _, id := range []string{rlBundleID, otherReadinglistBundleID} {
 				installed, origin := catalogProvenance(t, env, id)
@@ -455,13 +454,16 @@ func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
 	}
 }
 
-// A sample INSTALLED verbatim is held under the SHIPPED id, which is still a
-// door while the providers name sample packages under `requires:`. The listing
-// has to see that one too, or the console offers an install that already ran.
+// A sample INSTALLED verbatim is held under the SHIPPED id, which no route
+// does any more but a provider's `requires:` still may. The listing has to
+// see that one too, or the console offers an add that already ran.
 func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
 	t.Parallel()
-	env := catalogEnv(t, catalogWithOtherReadinglist(t), withSamples("messaging"))
-	catalogTake(t, env, "install", rlBundleID)
+	cat := catalogWithOtherReadinglist(t)
+	env := catalogEnv(t, cat, withSamples("messaging"))
+	if _, _, err := cat.Install(t.Context(), substrate.ActorAPI, rlBundleID, env.ds); err != nil {
+		t.Fatalf("install the reading list verbatim: %v", err)
+	}
 	if !catalogEntry(t, env, rlBundleID).Installed {
 		t.Error("a verbatim-installed sample reads as available, so the console offers it again")
 	}
@@ -472,7 +474,7 @@ func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
 func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogShipped(t))
-	catalogTake(t, env, "install", googleBundleID)
+	catalogAdd(t, env, googleBundleID)
 	if !catalogEntry(t, env, googleBundleID).Installed {
 		t.Fatal("the installed provider reads as available")
 	}
@@ -548,7 +550,7 @@ func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
 	}
 	tokens := map[string]string{env.repository: env.token, other: otherToken}
 	for _, tok := range tokens {
-		rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(otherReadinglistBundleID)+"/import", tok, nil)
+		rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(otherReadinglistBundleID)+"/add", tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
 	previews := map[string]*atomic.Int64{env.repository: new(atomic.Int64), other: new(atomic.Int64)}

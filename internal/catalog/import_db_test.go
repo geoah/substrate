@@ -256,13 +256,13 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 	var pending []*catalog.Bundle
 	installed := map[string]bool{}
 	for _, b := range c.Bundles() {
-		if b.Tier != substrate.TierSample {
+		if b.KeptBy != substrate.KeptByRepository {
 			continue
 		}
 		pending = append(pending, b)
 		for _, req := range b.Requires {
 			rb, ok := c.ByID(req)
-			if !ok || rb.Tier != substrate.TierPublished || installed[rb.ID] {
+			if !ok || rb.KeptBy != substrate.KeptByPublisher || installed[rb.ID] {
 				continue
 			}
 			if _, _, err := c.Install(ctx, substrate.ActorAPI, rb.ID, ds); err != nil {
@@ -284,7 +284,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 		pending = next
 	}
 	for _, b := range c.Bundles() {
-		if b.Tier != substrate.TierSample {
+		if b.KeptBy != substrate.KeptByRepository {
 			continue
 		}
 		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))

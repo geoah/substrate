@@ -1,6 +1,6 @@
 package catalog_test
 
-// A PROVIDER package is published: the catalog's published tier installs its
+// A PROVIDER package is published: its publisher keeps it, and the catalog installs its
 // closure with `source: published`, the repository's own token may not write
 // its declarations afterwards, and everything else about it stays the user's:
 // the records of its kinds, and every bundle lifecycle verb (decision record
@@ -173,8 +173,8 @@ func whoopClosure(t *testing.T) []map[string]any {
 
 // A provider install writes `published` on the package it lands and on the
 // declarations inside it; a sample install, through the very same verb, stays
-// `installed`. The tier is what the two installs differ by, not the shape of
-// the closure.
+// `installed`. Who keeps the package is what the two installs differ by, not
+// the shape of the closure.
 func TestProviderInstallLandsPublished(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
@@ -190,7 +190,7 @@ func TestProviderInstallLandsPublished(t *testing.T) {
 		t.Errorf("kind source = %q, want %q", got, vocabulary.SourcePublished)
 	}
 
-	// A sample is the other tier: installed, and the repository's own.
+	// A sample is the repository's to keep: installed, and its own.
 	const peopleID = "samples.substrate.reamde.dev/people"
 	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleID, ds); err != nil {
 		t.Fatalf("install %s: %v", peopleID, err)
@@ -407,7 +407,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 		t.Fatalf("a hand-applied closure landed source %q, want %q", got, vocabulary.SourceInstalled)
 	}
 
-	// The same closure through the catalog's published tier promotes it, package
+	// The same closure added as its publisher's promotes it, package
 	// row and declarations together. The promotion moves `source` alone, which
 	// is the engine's, so no declaration changed and every version stays
 	// (issue #643).

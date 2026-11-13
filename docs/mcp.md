@@ -89,7 +89,7 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | `write` | put, patch or delete one record |
 | `decide` | accept or reject a change request |
 | `apply` | declare or change vocabulary; `plan` previews |
-| `packages` | the catalog, install, import, status, enable, disable, bind, upgrades |
+| `packages` | the catalog, add, status, enable, disable, bind, upgrades |
 | `call` | run a function |
 | `chat` | talk to an agent, or stop its turn |
 | `triggers` | status, sync status, wake, run, replay, parked deliveries |

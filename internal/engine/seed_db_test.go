@@ -776,9 +776,9 @@ func TestDeclarationAuthority(t *testing.T) {
 	}
 	// The refusal names the doors that do bring another authority's package.
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, fresh("providers.substrate.reamde.dev"))
-	if err == nil || !strings.Contains(err.Error(), "substratectl install providers.substrate.reamde.dev/evil") ||
-		!strings.Contains(err.Error(), "/api/v1/catalog/{id}/install") {
-		t.Fatalf("the refusal does not name the install door: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "substratectl add providers.substrate.reamde.dev/evil") ||
+		!strings.Contains(err.Error(), "/api/v1/catalog/{id}/add") {
+		t.Fatalf("the refusal does not name the add route: %v", err)
 	}
 	// The substrate's own hands are not bound: a catalog install writes as
 	// the bundle it installs.

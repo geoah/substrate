@@ -1124,13 +1124,13 @@ on every output where given, and takes `stored=` where the body has
 already read the records.
 
 The example is an adapter in a sample, so `home` is the sample's placeholder
-authority. The import rewrites every mention of it to the repository's own
+authority. Adding the sample rewrites every mention of it to the repository's own
 authority, inside the function's code as everywhere else, so the body names
 the kinds of the copy the repository holds
 ([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
 
 ```python
-home = "samples.substrate.reamde.dev"  # the import rewrites it
+home = "samples.substrate.reamde.dev"  # adding the sample rewrites it
 device = "chest"
 docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],
@@ -1333,7 +1333,7 @@ data:
   position a replay from 0 sets, so the trigger also delivers the matching
   changes written before it existed. It is read once, when the trigger is
   created: an edit never moves the cursor. An adapter sample declares it, so
-  importing the adapter after its provider has synced converts the rows
+  adding the adapter after its provider has synced converts the rows
   already there.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
@@ -1379,7 +1379,7 @@ data:
   the app that sets it up, which writes both at once
   ([apps](apps.md#ask-for-set-up)). An install of a package that ships one
   enabled with neither is refused. The owner's own trigger, and one an
-  imported sample shipped, keep the open endpoint. A trigger an older server
+  added sample shipped, keep the open endpoint. A trigger an older server
   let its owner enable keyless stays as it was: the server logs it whenever
   the repository opens, and the next write must key it or turn it off
   ([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).

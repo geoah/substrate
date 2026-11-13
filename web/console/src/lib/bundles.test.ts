@@ -104,7 +104,7 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
       functions: ["c"],
     },
     installed: false,
-    tier: "published",
+    keptBy: "publisher",
     ...over,
   }
 }
@@ -153,7 +153,7 @@ describe("mergeBundles", () => {
     expect(rows.map((r) => r.installed)).toEqual([false, true])
   })
 
-  it("reads the tier from the catalog entry", () => {
+  it("reads who keeps the package from the catalog entry", () => {
     const rows = mergeBundles(
       [],
       [
@@ -163,14 +163,16 @@ describe("mergeBundles", () => {
           name: "tasks",
           authority: "samples.substrate.reamde.dev",
           package: "tasks",
-          tier: "sample",
+          keptBy: "repository",
         }),
       ],
       "ada.example.com"
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["providers.substrate.reamde.dev/google"].tier).toBe("published")
-    expect(byId["ada.example.com/tasks"].tier).toBe("sample")
+    expect(byId["providers.substrate.reamde.dev/google"].keptBy).toBe(
+      "publisher"
+    )
+    expect(byId["ada.example.com/tasks"].keptBy).toBe("repository")
   })
 
   it("keys a sample by the id it LANDS under, so its status folds onto it", () => {
@@ -189,7 +191,7 @@ describe("mergeBundles", () => {
           name: "tasks",
           authority: "samples.substrate.reamde.dev",
           package: "tasks",
-          tier: "sample",
+          keptBy: "repository",
         }),
       ],
       "ada.example.com"
@@ -212,7 +214,7 @@ describe("mergeBundles", () => {
         authority,
         package: "tasks",
         description: `Tasks as ${authority} ships them.`,
-        tier: "sample",
+        keptBy: "repository",
         closure: {
           traits: null,
           triggers: null,
@@ -283,7 +285,7 @@ describe("mergeBundles", () => {
           `${HOME}/tasks/${kinds[other as keyof typeof kinds]}`,
         ])
         expect(offered.upgrade).toBeUndefined()
-        expect(rows.filter((r) => r.tier === "sample")).toHaveLength(2)
+        expect(rows.filter((r) => r.keptBy === "repository")).toHaveLength(2)
       }
     )
 
@@ -319,7 +321,7 @@ describe("mergeBundles", () => {
       ])
       const own = rows.find((r) => r.status)!
       expect(own.catalog).toBeUndefined()
-      expect(own.tier).toBeUndefined()
+      expect(own.keptBy).toBeUndefined()
     })
 
     it("supplies a missing requirement from its own publisher and a met one from the held copy", () => {
@@ -329,7 +331,7 @@ describe("mergeBundles", () => {
           name: "pebble",
           authority,
           package: "pebble",
-          tier: "sample",
+          keptBy: "repository",
           requires: [`${authority}/tasks`],
           ...over,
         })
@@ -406,14 +408,18 @@ describe("mergeBundles", () => {
           name: "tasks",
           authority: "samples.substrate.reamde.dev",
           package: "tasks",
-          tier: "sample",
+          keptBy: "repository",
           installed: true,
         }),
       ],
       "ada.example.com"
     )
-    expect(rows.map((r) => [r.key, r.id, r.tier])).toEqual([
-      ["samples.substrate.reamde.dev/tasks", "ada.example.com/tasks", "sample"],
+    expect(rows.map((r) => [r.key, r.id, r.keptBy])).toEqual([
+      [
+        "samples.substrate.reamde.dev/tasks",
+        "ada.example.com/tasks",
+        "repository",
+      ],
       [
         "held samples.substrate.reamde.dev/tasks",
         "samples.substrate.reamde.dev/tasks",
@@ -441,7 +447,7 @@ describe("mergeBundles", () => {
           name: "tasks",
           authority: "samples.substrate.reamde.dev",
           package: "tasks",
-          tier: "sample",
+          keptBy: "repository",
           installed: true,
           closure: {
             traits: null,
@@ -458,7 +464,7 @@ describe("mergeBundles", () => {
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe("samples.substrate.reamde.dev/tasks")
-    expect(rows[0].tier).toBe("sample")
+    expect(rows[0].keptBy).toBe("repository")
     expect(rows[0].installed).toBe(true)
     // Its closure is NOT rehomed: the kinds it holds are under the authority
     // the tree spells, so a rehomed preview would link nowhere.
@@ -476,7 +482,7 @@ describe("mergeBundles", () => {
           name: "tasks",
           authority: "samples.substrate.reamde.dev",
           package: "tasks",
-          tier: "sample",
+          keptBy: "repository",
           requires: [
             "samples.substrate.reamde.dev/people",
             "substrate.reamde.dev/core",
@@ -501,9 +507,9 @@ describe("mergeBundles", () => {
     expect(rows[0].requires).toEqual(["samples.substrate.reamde.dev/people"])
   })
 
-  it("an applied-only bundle claims no tier: the catalog states it, nothing derives it", () => {
+  it("an applied-only bundle claims no keeper: the catalog states it, nothing derives it", () => {
     const rows = mergeBundles([status({ id: "x.example.com/x" })], [])
-    expect(rows[0].tier).toBeUndefined()
+    expect(rows[0].keptBy).toBeUndefined()
     expect(rows[0].requires).toEqual([])
   })
 })
@@ -528,16 +534,16 @@ describe("packageRole", () => {
         name: "tasks",
         authority: "samples.substrate.reamde.dev",
         package: "tasks",
-        tier: "sample",
+        keptBy: "repository",
       }),
     ],
     "ada.example.com"
   )
   const role = (id: string) => packageRole(rows.find((r) => r.id === id)!).short
 
-  // Decision record 0238: the tier says who keeps a package, and what it is
-  // for comes from the catalog, so a catalogue is no provider.
-  it("names each package by what it is for, not by its tier", () => {
+  // Decision record 0238: who keeps a package is not what it is for. What it
+  // is for comes from the catalog, so a catalogue is no provider.
+  it("names each package by what it is for, not by who keeps it", () => {
     expect(role("providers.substrate.reamde.dev/google")).toBe("Provider")
     expect(role("providers.substrate.reamde.dev/slacklive")).toBe("Add-on")
     expect(role("substrate.reamde.dev/clinical")).toBe("Standard collection")
@@ -1574,27 +1580,27 @@ describe("the requirement chain: what one button has to take", () => {
         id: "s.example.com/pebble",
         name: "pebble",
         package: "pebble",
-        tier: "sample",
+        keptBy: "repository",
         requires: ["s.example.com/tasks"],
       }),
       catalog({
         id: "s.example.com/tasks",
         name: "tasks",
         package: "tasks",
-        tier: "sample",
+        keptBy: "repository",
         requires: ["s.example.com/people", "s.example.com/scheduling"],
       }),
       catalog({
         id: "s.example.com/people",
         name: "people",
         package: "people",
-        tier: "sample",
+        keptBy: "repository",
       }),
       catalog({
         id: "s.example.com/scheduling",
         name: "scheduling",
         package: "scheduling",
-        tier: "sample",
+        keptBy: "repository",
       }),
     ]
   )
@@ -1635,11 +1641,11 @@ describe("the requirement chain: what one button has to take", () => {
       [
         catalog({
           id: "s.example.com/pebble",
-          tier: "sample",
+          keptBy: "repository",
           requires: ["s.example.com/tasks"],
           requiresAtLeast: { "s.example.com/tasks": 4 },
         }),
-        catalog({ id: "s.example.com/tasks", tier: "sample" }),
+        catalog({ id: "s.example.com/tasks", keptBy: "repository" }),
       ]
     )
     const chain = missingChain(
@@ -1692,10 +1698,10 @@ describe("the requirement chain: what one button has to take", () => {
         catalog({
           id: "s.example.com/pebble",
           name: "pebble",
-          tier: "sample",
+          keptBy: "repository",
           requires: ["s.example.com/tasks", "s.example.com/nowhere"],
         }),
-        catalog({ id: "s.example.com/tasks", tier: "sample" }),
+        catalog({ id: "s.example.com/tasks", keptBy: "repository" }),
       ]
     )
     const row = rows.find((r) => r.id === "s.example.com/pebble")!
@@ -1755,7 +1761,7 @@ describe("what a sample's mappings link", () => {
     [
       catalog({
         id: "s.example.com/people",
-        tier: "sample",
+        keptBy: "repository",
         suggestedMappings: [
           {
             id: "s.example.com/people/fromgithub",

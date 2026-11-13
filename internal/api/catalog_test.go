@@ -37,23 +37,12 @@ func newCatalogStubEnv(t *testing.T, ds substrate.Dataset) *testEnv {
 	return newStubEnv(t, ds, func(c *Config) { c.Catalog = cat })
 }
 
-// The two doors are not interchangeable: a PROVIDER installs under the
-// authority that publishes it, so importing one is refused and the refusal
-// names the verb that does work.
-func TestCatalogImportRefusesAProvider(t *testing.T) {
+// Adding a sample is an owner action, exactly as adding a published package
+// is: a request attributed to a machine is refused before the closure is
+// touched.
+func TestCatalogAddOfASampleRefusesNonOwner(t *testing.T) {
 	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/import", stubToken, nil)
-	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-	if body := rec.Body.String(); !strings.Contains(body, "install") {
-		t.Errorf("the refusal does not name the verb that works: %s", body)
-	}
-}
-
-// Import is an owner action, exactly as install is: a request attributed to a
-// machine is refused before the closure is touched.
-func TestCatalogImportRefusesNonOwner(t *testing.T) {
-	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/import", stubToken, nil,
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/add", stubToken, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
@@ -61,9 +50,9 @@ func TestCatalogImportRefusesNonOwner(t *testing.T) {
 // An unknown id is refused by the CATALOG, not by the router, so the message
 // names the bundle. A bare 404 would also come back from a path that routes
 // nowhere, which is why the body is what this asserts.
-func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
+func TestCatalogAddOfAnUnknownPackageNamesIt(t *testing.T) {
 	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/import", stubToken, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/add", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "nope.example.com/nothing") {
 		t.Errorf("the refusal does not name the bundle asked for: %s", body)
@@ -110,30 +99,30 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
-// Install is an owner action: a request ATTRIBUTED to something other than
-// the owner is refused before the closure is touched. The actor rides on the
-// header now — attribution, not authorization — so this is the same refusal
-// reached a shorter way.
-func TestCatalogInstallRefusesNonOwner(t *testing.T) {
+// Adding a published package is an owner action: a request ATTRIBUTED to
+// something other than the owner is refused before the closure is touched.
+// The actor rides on the header now — attribution, not authorization — so
+// this is the same refusal reached a shorter way.
+func TestCatalogAddOfAPublishedPackageRefusesNonOwner(t *testing.T) {
 	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/install", stubToken, nil,
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/add", stubToken, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
 
-// The install body declares its keys: one it does not is refused before the
+// The add body declares its keys: one it does not is refused before the
 // catalog is asked.
-func TestCatalogInstallRefusesAnUndeclaredKey(t *testing.T) {
+func TestCatalogAddRefusesAnUndeclaredKey(t *testing.T) {
 	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", stubToken, map[string]any{"force": true})
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/add", stubToken, map[string]any{"force": true})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 // A reviewed candidate that is not the one the catalog would install is the
 // conflict naming a fresh review, before any repository read.
-func TestCatalogInstallRejectsAStaleReview(t *testing.T) {
+func TestCatalogAddRejectsAStaleReview(t *testing.T) {
 	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", stubToken, map[string]any{"expect": map[string]any{"version": 1, "digest": "stale"}})
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/add", stubToken, map[string]any{"expect": map[string]any{"version": 1, "digest": "stale"}})
 	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
 	if !strings.Contains(rec.Body.String(), "the publisher listed another version since you reviewed this one; review it again") {
 		t.Fatal(rec.Body.String())

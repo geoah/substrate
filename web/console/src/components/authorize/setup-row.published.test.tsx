@@ -19,7 +19,7 @@ const row: AuthorizationSetup = {
   package: {
     id: "substrate.reamde.dev/training",
     description: "Strength sessions down to the set.",
-    tier: "published",
+    keptBy: "publisher",
     required: 2,
     shipped: 3,
     publisher: {

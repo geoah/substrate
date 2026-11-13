@@ -242,7 +242,7 @@ func (b *Bundle) spellings(shipped, home string, view suggestedView) []string {
 // own authority, exactly as the import's rehome does. An identity outside this
 // closure's authority (a provider mirror in `from`) is returned untouched.
 func (b *Bundle) landedSpelling(id, home string) string {
-	if b.Tier != substrate.TierSample || home == "" || b.Authority == "" {
+	if b.KeptBy != substrate.KeptByRepository || home == "" || b.Authority == "" {
 		return id
 	}
 	rest, ok := strings.CutPrefix(id, b.Authority+"/")

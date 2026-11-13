@@ -194,7 +194,7 @@ type AuthorizationBlock struct {
 type AuthorizationPackage struct {
 	ID          string `json:"id"`
 	Description string `json:"description,omitempty"`
-	Tier        string `json:"tier,omitempty"`
+	KeptBy      string `json:"keptBy,omitempty"`
 	Required    int64  `json:"required"`
 	Held        int64  `json:"held,omitempty"`
 	Shipped     int64  `json:"shipped,omitempty"`

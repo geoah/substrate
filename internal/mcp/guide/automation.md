@@ -60,7 +60,7 @@ A `substrate.reamde.dev/core/trigger` is an ordinary data record (`write` it, or
 
 - A connected account implements the core `sync` trait (`syncState`, `syncMessage`, `lastSyncedAt`, `syncRequestedAt`, `syncPaused`, `syncProgress`, `syncError`, `syncStreams`). A provider's bundle ships the sync function and the schedule trigger that fires it.
 - `triggers {action: "sync"}` joins every account with its triggers: `{kind, id, title, state, health, paused, tokenStatus, lastSyncedAt, progress, error, streams, parked, triggers: [...]}`. A parked delivery of a stream function marks that stream erroring.
-- Connecting an account is the owner's, on the console's Providers page (it needs their browser); installing the provider package is `packages {action: "install"}` (guide topic `packages`).
+- Connecting an account is the owner's, on the console's Providers page (it needs their browser); adding the provider package is `packages {action: "add"}` (guide topic `packages`).
 
 ## Change-request policies
 

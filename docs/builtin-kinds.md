@@ -5,14 +5,14 @@ packages a repository is seeded with, `substrate.reamde.dev/core`,
 `substrate.reamde.dev/llm`, `substrate.reamde.dev/console`,
 `substrate.reamde.dev/observations` and `substrate.reamde.dev/assistant`
 (agents, no kinds), the four well-known catalogues it can
-install (`health`, `labs`, `environment` and `clinical`, under the same
+add (`health`, `labs`, `environment` and `clinical`, under the same
 authority), the
 LLM sample copied onto the repository's own authority at registration, and
-the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
+the other sample packages it can add. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
-spells it, a sample's under the placeholder authority an import rewrites. Which door a
-package takes, what an import rewrites and how an upgrade is offered are in
-[bundles](bundles.md#the-two-doors); the provider packages, and the four
+spells it, a sample's under the placeholder authority adding it rewrites. Where a
+package lands, what adding a sample rewrites and how an upgrade is offered are in
+[bundles](bundles.md#adding-a-package); the provider packages, and the four
 samples this page does not table (notes, llm, readinglist and pebble, whose
 kinds are described beside the functions and agents that write them), are in
 the [bundles catalog](bundles-catalog.md). Every declaration is queryable in
@@ -27,7 +27,7 @@ and `observations` state `experimental`; and the catalogues and the samples
 state none, which reads as `experimental`.
 
 The tables for core are [below](#substratereamdedevcore); what follows first is
-the vocabulary you import or install.
+the vocabulary you add.
 
 ## samples.substrate.reamde.dev/people (a sample)
 
@@ -41,8 +41,8 @@ This sample also ships four **suggested mappings** onto its own `person`, from
 GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user`.
 Each is admitted only where you already hold the
 provider it reads, and reported `waiting` for that provider otherwise
-([suggested mappings](bundles.md#suggested-mappings)). Installing the provider
-afterwards does not land it: import this sample again, and then a GitHub
+([suggested mappings](bundles.md#suggested-mappings)). Adding the provider
+afterwards does not land it: add this sample again, and then a GitHub
 identity and the same human's address-book contact converge on one record of
 yours.
 
@@ -93,16 +93,16 @@ It ships one **suggested mapping** too, from Linear's `issue` onto its own
 `task`: matched on the issue's URL, carrying the heading and the link, and
 never `status`, which is a state and moves only through its own transitions.
 Like every suggested mapping it lands only where the Linear provider is already
-installed, and importing this sample again is what lands it afterwards
+installed, and adding this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
 ## substrate.reamde.dev/health (a well-known catalogue)
 
-A person's body, sleep and training. Installed from the catalog, never
+A person's body, sleep and training. Added from the catalog, never
 copied: it lands under `substrate.reamde.dev` and upgrades from the catalog
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-The Apple Health and WHOOP providers require it, so installing either
-installs it.
+The Apple Health and WHOOP providers require it, so adding either
+adds it.
 
 | Kind      | What it is                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------- |
@@ -121,8 +121,8 @@ either unit reads as one series
 
 ## substrate.reamde.dev/labs (a well-known catalogue)
 
-Blood tests and what a lab reports. It requires `health`, and installing it
-installs `health` first.
+Blood tests and what a lab reports. It requires `health`, and adding it
+adds `health` first.
 
 | Kind        | What it is                                                                                            |
 | ----------- | ----------------------------------------------------------------------------------------------------- |
@@ -144,7 +144,7 @@ a lab report and a lab result, and a lab trend on the seeded `metric` kind.
 
 The medical record a care provider keeps about you, one kind per HL7 FHIR R4
 resource ([clinical records](clinical.md)). It requires `labs`, whose
-reports and results are its test results, and installing it installs `labs`
+reports and results are its test results, and adding it adds `labs`
 and `health` first.
 
 | Kind                 | What it is                                                                                       |
@@ -238,7 +238,7 @@ The second package the binary seeds: the agent runtime's own data, out of core
 so core is not everything (decision record
 [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
 is seeded exactly as core is, so a fresh repository holds these kinds without
-importing anything, and one created before a kind existed receives it at its
+adding anything, and one created before a kind existed receives it at its
 next open. The package states `experimental`, so every kind in it may
 change or go in any release ([stability](stability.md)):
 
@@ -317,10 +317,10 @@ it at its next open.
 | `collectionview` | A saved view a package ships for one collection, a tab after All ([saved views](console.md#a-collection)): `appliesTo`, a reference to the kind's declaration; `name`; `where`, one filter condition per property; `sort` (`property:asc` or `:desc`); the `columns` it shows, in order; the property it `group`s by; `nest`, false to show a nesting collection flat; and `default`, the tab a bare address opens on until the reader picks one (decision record [0229](decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)). |
 | `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet, and the rarely read ones it keeps `collapsed`; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart`, `spans`, `stats` (tiles, dials and bars against a baseline), `trend` (daily, weekly or monthly strips), `table` (records of one kind as rows), `breakdown` (shares of the record's own properties) or `lanes` (declared, not yet drawn) ([record views](console.md#record-views)). |
 
-A sample, a catalogue or a provider ships its views as records; a re-import
+A sample, a catalogue or a provider ships its views as records; adding it again
 or an upgrade replaces a view only that package and the engine wrote and
 leaves one any other hand edited or deleted as it was left
-([the two doors](bundles.md#the-two-doors)). The console package ships
+([adding a package](bundles.md#adding-a-package)). The console package ships
 collection views in `views.yaml`: two of `llm/memory`, **Active** (the
 default) and **Retired**, and six of `core/contact`, **People** (known
 persons, the default), **Organizations**, **Groups**, **Bots**, **To sort**

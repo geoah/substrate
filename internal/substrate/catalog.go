@@ -6,21 +6,23 @@ package substrate
 // this one, so this one cannot import it back. internal/catalog embeds
 // CatalogBundle and keeps the closure documents beside it, unexported.
 
-// The two catalog TIERS (decision records 0048 and 0238). A closure's tier is
-// decided by the shipped tree it came from, never by its authority's shape,
-// and it says who keeps the declarations, nothing about what they are for:
+// Who keeps a catalog package (decision record 0258): its publisher, or the
+// repository that adds it. It is decided by the shipped tree a closure came
+// from, never by its authority's shape, and it says nothing about what the
+// package is for:
 //
-//   - TierPublished is a package a publisher owns (kinds/, and every package
-//     an authority document publishes). It INSTALLS as a copy under the
-//     authority it names, and the publisher ships each change with a version
-//     bump the upgrade preview offers.
-//   - TierSample is a package the user copies (samples/). It IMPORTS under the
-//     repository's own authority and is the user's afterwards: writable through
-//     the API, and offered the shipped upgrade through the origin stamp its
-//     import left, taken by importing again (decision record 0070).
+//   - KeptByPublisher is a PUBLISHED package (kinds/, and every package an
+//     authority document publishes). Adding it lands its declarations under
+//     the authority it names, and the publisher ships each change with a
+//     version bump the upgrade preview offers.
+//   - KeptByRepository is a SAMPLE (samples/). Adding it copies it under the
+//     repository's own authority, and it is the repository's afterwards:
+//     writable through the API, and offered the shipped upgrade through the
+//     origin stamp the copy left, taken by adding it again (decision record
+//     0070).
 const (
-	TierPublished = "published"
-	TierSample    = "sample"
+	KeptByPublisher  = "publisher"
+	KeptByRepository = "repository"
 )
 
 // What a closure gives a reader, each read from what it declares (decision
@@ -66,9 +68,9 @@ type CatalogBundle struct {
 	// preview compares the two to say the shipped sample moved (decision
 	// record 0070).
 	Version int64 `json:"version"`
-	// Tier is "published" or "sample": which of the two doors this closure
-	// takes, and which of the two authorities it lands under.
-	Tier string `json:"tier"`
+	// KeptBy is "publisher" or "repository": who keeps the package once it is
+	// added, and so which of the two authorities it lands under.
+	KeptBy string `json:"keptBy"`
 	// Provider is whether the package connects the substrate to an outside
 	// service: every closure the binary ships under its providers tree, whose
 	// publisher put it there to say so (Apple's devices push, so its closure
