@@ -69,6 +69,9 @@ type options struct {
 	// laneWorkers is how many schedule fires one pass runs at once
 	// (WithTriggerLaneWorkers); scheduleLaneWorkers when zero.
 	laneWorkers int
+	// chatTurnsPerPerson is how many detached chat turns one person runs at
+	// once (WithChatTurnsPerPerson).
+	chatTurnsPerPerson int
 	// healthFailingAfter is how long a trigger's deliveries must all have
 	// parked before its failing alert opens (WithHealthFailingAfter); zero or
 	// less is DefaultHealthFailingAfter.
@@ -164,10 +167,28 @@ type options struct {
 	// Postgres commit, so a test can fail a step or stop the process there.
 	// Tests only.
 	commitFault func(stage string) error
+	// commitTx is the COMMIT's own test seam (dataset.go commitTx): it is
+	// handed the COMMIT and answers in its place, so a test can hold a
+	// COMMIT, or answer one before Postgres has. Tests only.
+	commitTx func(commit func() error) error
+	// tokenProof is the token cache's test seam (dataset.go settleTokens):
+	// run before each attempt to prove a doubted commit ended, and an error
+	// fails the attempt. Tests only.
+	tokenProof func() error
+	// tokenProofAttempt replaces how long one attempt at that proof waits.
+	// Tests only.
+	tokenProofAttempt time.Duration
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
 	measureHook func(actor substrate.Actor, check string)
+	// changeReadHook is the change tail's test seam (seams.go
+	// WithTestChangeReadHook): a hook run with the repository each time a
+	// stream's Changes reads the changelog's rows. Tests only.
+	changeReadHook func(repository string)
+	// tailHeadHook runs once the change tail has read the head it opens at
+	// (changetail.go tailHead). Tests only.
+	tailHeadHook func()
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
@@ -337,6 +358,11 @@ func WithOrphanCollection(grace time.Duration) Option {
 // configuration does, and so does one above TriggerDeliverySlots, because
 // no pass could ever run more than the process does.
 func WithTriggerLaneWorkers(n int) Option { return func(o *options) { o.laneWorkers = n } }
+
+// WithChatTurnsPerPerson sets how many detached chat turns one person runs at
+// once (SUBSTRATE_CHAT_TURNS_PER_PERSON, agents.go ChatAgent). Zero, or not
+// given, is maxRunningChatTurns.
+func WithChatTurnsPerPerson(n int) Option { return func(o *options) { o.chatTurnsPerPerson = n } }
 
 // WithHealthFailingAfter sets how long every delivery of a trigger must have
 // parked, since its newest ok run, before the dispatcher opens the trigger's
@@ -549,6 +575,8 @@ type service struct {
 	// laneWorkers is how many schedule fires one pass's schedule lane runs
 	// at once (functions.go scheduleLane).
 	laneWorkers int
+	// chatTurnsPerPerson is the chat turns one person runs at once.
+	chatTurnsPerPerson int
 	// deliverySlots is the process-wide semaphore every dispatcher pass
 	// takes a slot of for each delivery it runs, record trigger walks and
 	// schedule fires alike (functions.go takeDeliverySlot), so the
@@ -652,6 +680,10 @@ type service struct {
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs unitGraphCache
+	// tokens is the token lookups this process answered (tokencache.go),
+	// and proofs the waits that lift a doubted commit's fence (dataset.go).
+	tokens tokenCache
+	proofs tokenProofs
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -695,9 +727,19 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testCommitTx and testTokenProof are the options' COMMIT and token
+	// proof seams (dataset.go). Tests only.
+	testCommitTx          func(commit func() error) error
+	testTokenProof        func() error
+	testTokenProofAttempt time.Duration
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
+	// testChangeReadHook is the options' change tail seam (changetail.go).
+	// Tests only.
+	testChangeReadHook func(repository string)
+	// testTailHeadHook is the options' tailHeadHook. Tests only.
+	testTailHeadHook func()
 	// testBulkFault and testSeedPath are the options' bulk seed seams
 	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
 	testBulkFault func(stage string) error
@@ -853,6 +895,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.laneWorkers == 0 {
 		o.laneWorkers = scheduleLaneWorkers
 	}
+	if o.chatTurnsPerPerson == 0 {
+		o.chatTurnsPerPerson = maxRunningChatTurns
+	}
+	if o.chatTurnsPerPerson < 0 {
+		return nil, fmt.Errorf("substrate/engine: %d chat turns per person: at least 1, and 0 is the default of %d (WithChatTurnsPerPerson)", o.chatTurnsPerPerson, maxRunningChatTurns)
+	}
 	if o.laneWorkers < 0 || o.laneWorkers > TriggerDeliverySlots {
 		return nil, fmt.Errorf("substrate/engine: %d trigger lane workers: a lane runs at least 1 and at most the %d deliveries the whole process runs at once, and 0 is the default of %d (WithTriggerLaneWorkers)", o.laneWorkers, TriggerDeliverySlots, scheduleLaneWorkers)
 	}
@@ -921,6 +969,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		healthNow:          o.healthNow,
 		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
+		chatTurnsPerPerson: o.chatTurnsPerPerson,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
 		operatorDefaults:   o.operatorDefaults,
@@ -942,20 +991,26 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		datasets:         map[string]*dataset{},
 		opening:          map[string]chan struct{}{},
 
-		testImportFault:   o.importFault,
-		testImportBatch:   o.importBatch,
-		conversion:        conversionSteps,
-		maxDialect:        maxChangelogDialect,
-		testCommitFault:   o.commitFault,
-		testMeasureHook:   o.measureHook,
-		testBulkFault:     o.bulkFault,
-		testSeedPath:      o.seedPath,
-		testSnapshotFault: o.snapshotFault,
-		progressEvery:     o.progressEvery,
-		testInvokeHook:    o.invokeHook,
-		testDigestHook:    o.digestHook,
-		checked:           map[string]*changelogfile.Log{},
-		digestUnread:      !o.operator && !o.dirReadOnly,
+		testImportFault:       o.importFault,
+		testImportBatch:       o.importBatch,
+		conversion:            conversionSteps,
+		maxDialect:            maxChangelogDialect,
+		testCommitFault:       o.commitFault,
+		testCommitTx:          o.commitTx,
+		testTokenProof:        o.tokenProof,
+		testTokenProofAttempt: o.tokenProofAttempt,
+		proofs:                tokenProofs{slots: make(chan struct{}, tokenProofWaits)},
+		testMeasureHook:       o.measureHook,
+		testChangeReadHook:    o.changeReadHook,
+		testTailHeadHook:      o.tailHeadHook,
+		testBulkFault:         o.bulkFault,
+		testSeedPath:          o.seedPath,
+		testSnapshotFault:     o.snapshotFault,
+		progressEvery:         o.progressEvery,
+		testInvokeHook:        o.invokeHook,
+		testDigestHook:        o.digestHook,
+		checked:               map[string]*changelogfile.Log{},
+		digestUnread:          !o.operator && !o.dirReadOnly,
 
 		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
 		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
