@@ -1406,8 +1406,8 @@ func TestObjectPropertyValidation(t *testing.T) {
 }
 
 // `title` is a legal map target through its storage column, and `body` is one
-// through the declared, column-backed property a kind carries (#68), so a
-// source's text reaches the work it describes.
+// as the property a kind declares (decision 0273), so a source's text reaches
+// the work it describes.
 func TestHotMapTargets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -176,15 +176,7 @@ func relayRerun(t *testing.T, svc *service, dsn, root, repo string) (*service, *
 	if err := svc.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	maint, err := OpenScopedDB(dsn, repo, RoleMaint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = maint.Close() }()
-	if _, err := maint.ExecContext(context.Background(),
-		`DELETE FROM repository_migrations WHERE repository = (SELECT id FROM repositories WHERE authority = $1) AND version >= 5`, repo); err != nil {
-		t.Fatalf("forget migration 5: %v", err)
-	}
+	MakeMigrationPending(t, dsn, repo, 5)
 	return relayOpen(t, dsn, root, repo)
 }
 

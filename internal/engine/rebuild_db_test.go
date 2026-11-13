@@ -734,7 +734,6 @@ func recordDeltaOf(t *testing.T, ch substrate.Change) map[string]any {
 		Delta *struct {
 			Set   map[string]any `json:"set"`
 			Title *string        `json:"title"`
-			Body  *string        `json:"body"`
 		} `json:"delta"`
 	}
 	if err := json.Unmarshal(raw, &ops); err != nil {
@@ -750,9 +749,6 @@ func recordDeltaOf(t *testing.T, ch substrate.Change) map[string]any {
 		}
 		if op.Delta.Title != nil {
 			out["title"] = *op.Delta.Title
-		}
-		if op.Delta.Body != nil {
-			out["body"] = *op.Delta.Body
 		}
 	}
 	if len(out) == 0 {

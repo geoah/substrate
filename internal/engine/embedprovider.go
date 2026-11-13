@@ -567,13 +567,9 @@ func currentChunkHashes(ctx context.Context, q dbx, kind, prop string) (map[stri
 // embedColumn names the records column a column-backed embeddable property is
 // stored in, for the SQL that reads embeddable values in bulk (embedValue is
 // the same rule for one loaded row). `embed` is string-family only, so of the
-// column-backed properties only `body` and `title` can be text; a declared body
-// is records.body (decision 0041) and never a props key.
+// column-backed properties only `title` can be text.
 func embedColumn(prop string) (string, bool) {
-	switch prop {
-	case substrate.PropBody:
-		return "body", true
-	case substrate.PropTitle:
+	if prop == substrate.PropTitle {
 		return "title", true
 	}
 	return "", false

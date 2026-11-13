@@ -29,11 +29,10 @@ const (
 	TierMachine Tier = "machine"
 )
 
-// Hot property names: the three declared properties that occupy their own
-// storage column, spelled as the DSL and the wire spell them.
+// Hot property names: the properties that occupy their own storage column,
+// spelled as the DSL and the wire spell them.
 const (
 	PropTitle  = "title"
-	PropBody   = "body"
 	PropAt     = "at"
 	PropEndsAt = "endsAt"
 	PropDueAt  = "dueAt"

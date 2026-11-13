@@ -172,16 +172,9 @@ func TestRepositoryMigrationNamesStoredWritersByActorType(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = raw.Close() })
-	// A repository from before the migration has no row of it.
-	maint, err := engine.OpenScopedDB(dsn, repo, engine.RoleMaint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := maint.ExecContext(ctx,
-		`DELETE FROM repository_migrations WHERE repository = (SELECT id FROM repositories WHERE authority = $1 OR id = $1) AND version = 10`, repo); err != nil {
-		t.Fatalf("forget migration 10: %v", err)
-	}
-	_ = maint.Close()
+	// A repository from before the migration has no row of it, nor of any
+	// after it.
+	engine.MakeMigrationPending(t, dsn, repo, 10)
 	planted := changelogHead(t, raw)
 	_ = svc.Close()
 

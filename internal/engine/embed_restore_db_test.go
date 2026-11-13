@@ -462,13 +462,11 @@ func raw0(t *testing.T, dsn string) *sql.DB {
 	return scopedDB(t, dsn, testdb.Repository(t))
 }
 
-// TestADeclaredBodyIsEmbedded: a declared `body` is a column-backed property
-// (decision 0041), stored in records.body and never in props, and every path
-// that reads an embeddable value must read it there. Before, the drain, the
-// re-embed and the import reconcile all read props, so a body declared
-// `embed: true` (mail, issue and comment bodies) never got a vector: the drain
-// applied an empty plan, the re-embed queued nothing and a restore queued
-// nothing.
+// TestADeclaredBodyIsEmbedded: a body declared `embed: true` (mail, issue and
+// comment bodies) gets its vectors from the drain, the re-embed and the
+// import reconcile. When a body lived in a column of its own, every one of
+// them read props and none got a vector; it is an ordinary property now
+// (decision 0273), read where every other is.
 func TestADeclaredBodyIsEmbedded(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

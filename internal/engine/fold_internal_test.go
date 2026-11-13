@@ -57,9 +57,9 @@ func TestDeltaRoundTripsThroughTheLog(t *testing.T) {
 		{
 			name: "creation",
 			after: &erow{
-				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it", Body: "prose",
+				ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Title: "Ship it",
 				States: map[string]string{"status": "open"},
-				Props:  map[string]any{"description": "a delta", "count": 2.0, "flag": false, "empty": ""},
+				Props:  map[string]any{"description": "a delta", "body": "prose", "count": 2.0, "flag": false, "empty": ""},
 				Labels: map[string]any{"owner/pinned": true},
 				At:     &at, DueAt: &due,
 				Finalizers:  []string{"substrate.merge"},
@@ -205,7 +205,7 @@ func TestUnchangedRowDescribesNothing(t *testing.T) {
 		Labels: map[string]any{},
 	}
 	d := diffRow(row.clone(), row)
-	if d.Created || d.Set != nil || d.Del != nil || d.Title != nil || d.Body != nil ||
+	if d.Created || d.Set != nil || d.Del != nil || d.Title != nil ||
 		d.At != nil || d.EndsAt != nil || d.DueAt != nil ||
 		d.States != nil || d.Labels != nil || d.Finalizers != nil || d.KindVersion != 0 {
 		raw, _ := json.Marshal(d)

@@ -292,11 +292,11 @@ func backfillable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
 // in the states column, which the step can remove. A state has to be one: a
 // create enters `initial` and no write clears a state, so a counted refusal
 // would fire on every kind with records and name a migration nobody can run.
-// A property living in its own column (a hot trait property, the title, the
-// body) is not under `props`, so the count the narrowing takes stays the
-// answer for those.
+// A property living in its own column (a hot trait property, the title) is
+// not under `props`, so the count the narrowing takes stays the answer for
+// those.
 func nullable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
-	if p.Name == substrate.PropTitle || p.Name == substrate.PropBody {
+	if p.Name == substrate.PropTitle {
 		return false
 	}
 	if _, hot := hotColumns[p.Name]; hot && ty.UsesHot(p.Name) {

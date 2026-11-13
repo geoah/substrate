@@ -23,7 +23,6 @@ type Record struct {
 	FormerIDs []string `json:"formerIds,omitempty"`
 
 	Title string `json:"-"`
-	Body  string `json:"-"`
 
 	// Trait-backed hot columns (RFC 3339). Which of these a type uses
 	// is declared by its capabilities; unmapped ones are nil.

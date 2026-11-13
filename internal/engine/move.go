@@ -6,7 +6,7 @@ package engine
 //
 // A declaration carrying `movedFrom` whose named kind the repository still
 // declares carries that kind's live rows onto it: same id, same properties,
-// states, labels, annotations, body, temporal columns, property managers and
+// states, labels, annotations, temporal columns, property managers and
 // sealed material, with every reference at a moving kind repointed. The old
 // rows are tombstoned and the old kind is left declared and empty; nothing is
 // pruned and no name is retired (record 0055).
@@ -642,12 +642,9 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 		}
 		props[k] = v
 	}
-	// `body` and the temporal columns are columns on the row rather than keys
-	// under props, and a state is neither: all three travel as the declared
-	// properties they are, or the moved record arrives without them.
-	if row.Body != "" {
-		props["body"] = row.Body
-	}
+	// The temporal columns are columns on the row rather than keys under
+	// props, and a state is neither: both travel as the declared properties
+	// they are, or the moved record arrives without them.
 	for name, v := range map[string]*time.Time{"at": row.At, "endsAt": row.EndsAt, "dueAt": row.DueAt} {
 		if v != nil {
 			props[name] = v.UTC().Format(time.RFC3339Nano)

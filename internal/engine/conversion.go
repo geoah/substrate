@@ -192,6 +192,7 @@ type conversionPass struct {
 var conversionSteps = []conversionStep{
 	{Dialect: 2, Name: "drop_recovery_wrap", Line: convertDropRecoveryWrap},
 	{Dialect: 3, Name: "link_actors", Line: linkActorsLine},
+	{Dialect: 4, Name: "move_body_into_properties", Line: moveBodyIntoProperties},
 }
 
 // The conversion's steps, as the import's test seam names them

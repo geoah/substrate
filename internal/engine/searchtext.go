@@ -10,8 +10,10 @@ import (
 // bumps this number and the next open re-derives every row's `fts`
 // (reindexSearch in searchindex.go). 1 is the rule set before the number
 // existed: the bands alone. 3 is the unit graph (decision 0186): a quantity
-// indexes its digits and its stored unit id, not a printed symbol.
-const searchIndexVersion = 3
+// indexes its digits and its stored unit id, not a printed symbol. 4 is
+// `body` an ordinary property (decision 0273): it indexes in its place among
+// the long text, and a row of an unknown kind indexes its title alone.
+const searchIndexVersion = 4
 
 // searchText is one band's text as the index reads it: the text, then the
 // variants to_tsvector cannot derive from it.

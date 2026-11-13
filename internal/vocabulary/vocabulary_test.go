@@ -2895,23 +2895,9 @@ data:
 `,
 		// The column-backed `title` and temporal properties may not be
 		// redeclared: two declarations of one name means the write path
-		// validates against the wrong one. `body` is declarable (#68), but
-		// only text-family: the hot column is text, so a non-text `body` names
-		// a column that cannot hold its value.
+		// validates against the wrong one.
 		"title is reserved": typ(`  names: {singular: contact}
   properties: {title: {type: string}}
-`),
-		"body must be text-family": typ(`  names: {singular: contact}
-  properties: {body: {type: int}}
-`),
-		// repeated text and keyed text are ordinarily fine; on `body` they name a
-		// list or map the single scalar column cannot hold, so the body guard
-		// refuses them where the datatype alone would pass.
-		"body cannot be repeated": typ(`  names: {singular: contact}
-  properties: {body: {type: text, repeated: true}}
-`),
-		"body cannot be keyed": typ(`  names: {singular: contact}
-  properties: {body: {type: text, keyed: true}}
 `),
 		"at is reserved": typ(`  names: {singular: contact}
   properties: {at: {type: datetime}}
@@ -3391,16 +3377,15 @@ data:
 		}
 	})
 
-	// The rewrite moves a key of `props`: body lives in its own column and a
-	// state in the states column, so neither renames, in either direction.
-	t.Run("body on either side is an error", func(t *testing.T) {
+	// `body` is an ordinary property (decision 0273), so it renames in either
+	// direction like any other.
+	t.Run("body on either side renames", func(t *testing.T) {
 		for _, props := range []string{
 			"    body: {type: text, renamedFrom: caption}\n",
 			"    label: {type: string, renamedFrom: body}\n",
 		} {
-			_, err := vocabulary.LoadFS(mk(props))
-			if err == nil || !strings.Contains(err.Error(), "body is column-backed and never renames") {
-				t.Fatalf("%s: error = %v", strings.TrimSpace(props), err)
+			if _, err := vocabulary.LoadFS(mk(props)); err != nil {
+				t.Fatalf("%s: %v", strings.TrimSpace(props), err)
 			}
 		}
 	})

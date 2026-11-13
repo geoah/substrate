@@ -880,15 +880,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		if p == nil {
 			continue
 		}
-		// `body` is the one column-backed property a kind may declare (#68). The
-		// column holds one text value, so a declared body is a single text or
-		// markdown property: a non-text datatype names a column that cannot hold
-		// its value, and a repeated or keyed body has no scalar the column can
-		// store, so every write to it would fail in splitProps.
-		if pname == "body" && (!IsLongText(p.Datatype) || p.Repeated || p.Keyed) {
-			l.errf("%s: data.properties.body: the built-in body column holds one text value; declare body as a single text or markdown property", where)
-			continue
-		}
 		t.Props[pname] = p
 		if p.Machine == nil {
 			continue
@@ -934,8 +925,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	// still declares (both present is not a rename), and a built-in column
 	// never renames into a declared property. The engine moves each live
 	// record's value from the old name to the new one at admission
-	// (engine/rename.go), and it moves a key of `props`: `body` lives in its
-	// own column, so neither side of a rename may be body, and two properties
+	// (engine/rename.go), and it moves a key of `props`, so two properties
 	// naming the same previous name would both claim its value. A state
 	// property's key set has no renamedFrom (its value lives in the states
 	// column), and a stored state renamed into a value is the kind change the
@@ -952,9 +942,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		}
 		if _, reserved := reservedProps[rf]; reserved {
 			l.errf("%s.renamedFrom: %q is a built-in property — it never renames", pwhere, rf)
-		}
-		if rf == "body" || pname == "body" {
-			l.errf("%s.renamedFrom: body is column-backed and never renames", pwhere)
 		}
 		if other, taken := renamedFrom[rf]; taken {
 			l.errf("%s.renamedFrom: %q is also the previous name of %q, and one property takes a renamed value", pwhere, rf, other)
@@ -1343,11 +1330,8 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 // already arrives on every record, and validating a second declaration of the
 // name against the wrong one is the danger. `title` is derived (ADR 0016) and
 // `at`/`endsAt`/`dueAt` arrive through a temporal trait, so all four stay
-// reserved. `body` is NOT here: it is a declarable, column-backed text
-// property now (ADR 0041, the body half of #68). A kind that declares `body`
-// gets the hot body column (columnProp), refused only when its datatype is
-// not text-family; a kind that does not declare `body` carries none, and a
-// write naming it is refused like any undeclared property.
+// reserved. `body` is not one: it is an ordinary property a kind may declare
+// with any datatype (decision 0273).
 var reservedProps = map[string]string{
 	"title":  "every record carries `title`; a derived one is a displayTemplate",
 	"at":     "`at` is the temporal trait's, bound with `" + HotBinding("at") + "`",

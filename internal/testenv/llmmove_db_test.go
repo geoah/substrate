@@ -448,7 +448,7 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 	// What is left is what the entries must reproduce exactly.
 	rows, err := db.Query(
 		`SELECT kind, id, coalesce(props::text, ''), coalesce(title, ''),
-		        coalesce(body, ''), coalesce(labels::text, ''), version, kind_version,
+		        coalesce(labels::text, ''), version, kind_version,
 		        deleted_at IS NOT NULL, coalesce(array_to_string(finalizers, ','), ''),
 		        coalesce(at::text, ''), coalesce(ends_at::text, ''), coalesce(due_at::text, ''),
 		        coalesce(states::text, '')
@@ -459,15 +459,15 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 	defer func() { _ = rows.Close() }()
 	var b strings.Builder
 	for rows.Next() {
-		var kind, id, props, title, body, labels, finalizers, at, endsAt, dueAt, states string
+		var kind, id, props, title, labels, finalizers, at, endsAt, dueAt, states string
 		var version, kindVersion int64
 		var deleted bool
-		if err := rows.Scan(&kind, &id, &props, &title, &body, &labels, &version, &kindVersion,
+		if err := rows.Scan(&kind, &id, &props, &title, &labels, &version, &kindVersion,
 			&deleted, &finalizers, &at, &endsAt, &dueAt, &states); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%d\x1f%t\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n",
-			kind, id, props, title, body, labels, version, kindVersion, deleted, finalizers, at, endsAt, dueAt, states)
+		fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%d\x1f%t\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n",
+			kind, id, props, title, labels, version, kindVersion, deleted, finalizers, at, endsAt, dueAt, states)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)

@@ -239,8 +239,7 @@ carry a property whose declaration moved, since every other row derives the
 same indexes under either declaration. Every row of the kind re-derives
 instead where the change reaches all of them: the kind is declared on one
 side of the batch only (new, or dropped, as an uninstall drops a parked
-package's kinds), its body's `fts` flag moves, the order of its indexed
-properties moves, or its rows belong to a package that does not parse. The
+package's kinds), the order of its indexed properties moves, or its rows belong to a package that does not parse. The
 refs rows are re-derived inside the transaction, so a reverse read is
 current when the batch answers. The search index is re-derived after the
 commit, by the background pass the boot upgrade uses
@@ -259,9 +258,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Reserved property names.** `title`, `at`, `endsAt` and `dueAt` are the
   four properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
-  three arrive through the `temporal` trait. `body` is not reserved: a kind
-  that declares it as a text-family property gets the hot `body` column, and a
-  kind that does not declare it carries none. The built-in `title` is not a
+  three arrive through the `temporal` trait. `body` is not reserved: it is an
+  ordinary property, declared with any type, as any other name is
+  ([decision record 0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)).
+  The built-in `title` is not a
   kind's display storage either: a kind that has a heading declares its own
   property for it (`name`, `summary`, `subject`) and renders the title with a
   `displayTemplate`, which is what the engine writes into the column. On a
@@ -277,8 +277,8 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   property); a LIST HEAD (`{names[].displayName}` the first entry's field of a
   repeated object, `{assignees[].login}` the first referent's property of a
   repeated reference, `{emails[]}` the first value of a repeated scalar); one
-  of the derived tokens `{snippet}` (the opening of the record's longest text,
-  a declared `body` included), `{localName}` and `{id}`; or one of the
+  of the derived tokens `{snippet}` (the opening of the record's longest text),
+  `{localName}` and `{id}`; or one of the
   column-backed names every record carries (`{title}`, `{at}`, `{endsAt}`,
   `{dueAt}`). `{localName}` and `{id}` yield to a real property of that name.
   `{snippet}` never does, so it means the same on every kind, and a kind that
@@ -292,9 +292,8 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   which is what lets a mirror whose provider sends arrays title itself
   ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
   A state property renders the state the record is in (`{status}` is `open`),
-  an instant renders as the RFC 3339 value a read returns, and a declared
-  `body` renders its text, though all three live outside the record's other
-  properties.
+  and an instant renders as the RFC 3339 value a read returns, though both
+  live outside the record's other properties.
   Every token is checked against the kind's own declarations at load, so a typo
   fails on the manifest and not as an empty title: a `[]` head that is not
   repeated is refused naming the plain spelling, and a sensitive property never
@@ -681,10 +680,9 @@ record carries (a restored tombstone may hold a dropped name): a destination
 that exists would merge two properties, and is refused, the live case with
 the count. A trigger's or a policy's CEL guard naming the old property is not
 checked, because an expression is compiled against the record it runs on and
-not against a declaration: rewrite it with the rename. `body`
-never renames in either direction, because it is a column and not a key of the
-record's properties; a state property carries no `renamedFrom:`; and two
-properties may not name the same previous name.
+not against a declaration: rewrite it with the rename. A state property
+carries no `renamedFrom:`, and two properties may not name the same previous
+name.
 
 The cost is the live count: a kind with a thousand records carrying the old
 name rewrites a thousand rows and appends a thousand entries in one
@@ -1388,7 +1386,7 @@ rows: the fold derives both from the package's stored declaration, which it
 reads for nothing else, so `repository rebuild` and a boot import reproduce
 them. A source record of another package keeps the reference row of the
 subject slot a quarantined mapping gave its kind, the same way. A package whose stored declaration no longer parses has nothing to
-derive them from, and a rebuild indexes its records by title and body alone,
+derive them from, and a rebuild indexes its records by title alone,
 with no reference rows. The fold snapshot names such a package under
 `unparsed_packages`. Uninstalling a quarantined bundle re-indexes its
 remaining records the same way.

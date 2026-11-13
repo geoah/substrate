@@ -721,6 +721,9 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if _, err := t.convertRecords(candidate, st.conversions); err != nil {
 			return err
 		}
+		if _, err := t.dropHiddenBodies(st.usableAgain); err != nil {
+			return err
+		}
 		// The refs index and `fts` are projections of stored values against
 		// the DECLARATION (refs.go, fold.go foldFTS), so a declaration that
 		// moves a reference site or an `fts` flag changes what the same stored
@@ -901,6 +904,11 @@ type vocabularyStage struct {
 	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
 	conversionGuards []string
+	// usableAgain are the kinds of the batch's packages the live registry
+	// does not hold (new, uninstalled before, or quarantined): their records
+	// may hold a body repository migration 11 kept while no usable
+	// declaration hid it (dropHiddenBodies).
+	usableAgain []*vocabulary.Kind
 }
 
 // guards is every refuse-breakage guard line the staged batch refuses on, read
@@ -1170,7 +1178,27 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// here (admitConversion).
 		conversions:      conversions,
 		conversionGuards: renameGuards(current, candidate, conversions.renames),
+		usableAgain:      kindsNewToTheRegistry(current, candidate, touched),
 	}, nil
+}
+
+// kindsNewToTheRegistry are the kinds the candidate declares in touched
+// packages the current registry does not hold.
+func kindsNewToTheRegistry(current, candidate *vocabulary.Registry, touched map[string]bool) []*vocabulary.Kind {
+	var out []*vocabulary.Kind
+	for _, aname := range sortedKeys(touched) {
+		if cur, _ := current.PackageByName(aname); cur != nil {
+			continue
+		}
+		cand, _ := candidate.PackageByName(aname)
+		if cand == nil {
+			continue
+		}
+		for _, tn := range cand.KindOrder {
+			out = append(out, cand.Kinds[tn])
+		}
+	}
+	return out
 }
 
 // resolveDeclarationVersions is where THE API MAINTAINS THE VERSION: nobody
@@ -2431,8 +2459,8 @@ func declarationData(short string, props map[string]any) map[string]any {
 // would otherwise send `title` into a declaration's data and be told the loader
 // does not know the key.
 var columnBackedProp = map[string]bool{
-	substrate.PropTitle: true, substrate.PropBody: true,
-	substrate.PropAt: true, substrate.PropEndsAt: true, substrate.PropDueAt: true,
+	substrate.PropTitle: true,
+	substrate.PropAt:    true, substrate.PropEndsAt: true, substrate.PropDueAt: true,
 }
 
 // anyStrings reads a jsonb string list property.
@@ -2570,6 +2598,13 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 // candidate each. The test seam's packages (WithTestInadmissible) are refused
 // before anything installs, as a binary whose contract tightened refuses them.
 func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
+	return ds.admitStoredInto(ds.reg, built)
+}
+
+// admitStoredInto is admitStored over any registry: the live one at open, or
+// a repository migration's own, which learns what the open is about to admit
+// without installing into the live registry or writing a quarantine mark.
+func (ds *dataset) admitStoredInto(reg *vocabulary.Registry, built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
 	candidates := built
 	if refuse := ds.svc.testInadmissible; len(refuse) > 0 {
 		candidates = nil
@@ -2582,12 +2617,12 @@ func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*voc
 			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: "refused by the test seam"})
 		}
 	}
-	if err := ds.reg.InstallAll(candidates); err == nil {
+	if err := reg.InstallAll(candidates); err == nil {
 		return candidates, parked, quarantined
 	}
-	// The failed InstallAll removed everything it added, so ds.reg is clean
+	// The failed InstallAll removed everything it added, so reg is clean
 	// again for the subset.
-	good, inadmissible := ds.admissibleSubset(candidates)
+	good, inadmissible := admissibleInto(reg, candidates)
 	admitted := make(map[string]bool, len(good))
 	for _, g := range good {
 		admitted[g.Identity] = true
@@ -2607,11 +2642,13 @@ func (ds *dataset) setParked(s *parkedSet) {
 	ds.parked = s
 }
 
-// admissibleSubset installs the maximal subset of built packages that admits
-// into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over UNITS: a unit that depends on a sibling admits
+// admissibleInto installs the maximal subset of built packages that admits
+// into reg and returns the rest as quarantined, with each one's admission
+// error. reg is the live registry at open, or the scratch registry a
+// repository migration builds to project from or to read what the open will
+// admit. It is a fixpoint over UNITS: a unit that depends on a sibling admits
 // once that sibling is in, and a failed InstallAll self-removes everything it
-// added, so ds.reg is left holding exactly the admissible subset. n (installed
+// added, so reg is left holding exactly the admissible subset. n (installed
 // packages) is small, so the O(n^2) worst case is fine.
 //
 // The unit is one package, EXCEPT for the seeded ones, which are one unit
@@ -2619,12 +2656,6 @@ func (ds *dataset) setParked(s *parkedSet) {
 // core's `agent`, so neither admits while the other is absent, and a fixpoint
 // over single packages would quarantine both — the whole repository — over a
 // cycle that is by construction always satisfied.
-func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
-	return admissibleInto(ds.reg, built)
-}
-
-// admissibleInto is admissibleSubset over any registry: the live one at open,
-// or the scratch registry a repository migration builds to project from.
 func admissibleInto(reg *vocabulary.Registry, built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
 	remaining := admissionUnits(built)
 	for {
@@ -2750,6 +2781,18 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 		}
 		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(g.Identity), g.Identity, substrate.PatchInput{
 			Properties: map[string]any{propPackageQuarantined: nil, propPackageQuarantineReason: nil},
+		}); err != nil {
+			return err
+		}
+		// Its kinds are usable again: a body repository migration 11 kept
+		// while they were not is hidden by them now.
+		kinds := make([]*vocabulary.Kind, 0, len(g.KindOrder))
+		for _, tn := range g.KindOrder {
+			kinds = append(kinds, g.Kinds[tn])
+		}
+		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			_, err := t.dropHiddenBodies(kinds)
+			return err
 		}); err != nil {
 			return err
 		}
@@ -3186,9 +3229,6 @@ func ftsShape(reg kindLookup, ident string) string {
 	b.WriteString("declared;")
 	for _, name := range ty.PropOrder {
 		b.WriteString(propertyFTSShape(name, ty.Props[name]))
-	}
-	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() {
-		b.WriteString("body")
 	}
 	return b.String()
 }

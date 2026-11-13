@@ -36,7 +36,6 @@ type erow struct {
 	ID      string
 	Kind    string
 	Title   string
-	Body    string
 	States  map[string]string
 	At      *time.Time
 	EndsAt  *time.Time
@@ -82,7 +81,7 @@ func (r *erow) clone() *erow {
 	return &c
 }
 
-const recordCols = `id, kind, title, body, states, at, ends_at, due_at, props, labels,
+const recordCols = `id, kind, title, states, at, ends_at, due_at, props, labels,
 	version, kind_version, created_at, updated_at, deleted_at, to_jsonb(finalizers)`
 
 type scanner interface {
@@ -104,7 +103,7 @@ type recordScan struct {
 
 func (es *recordScan) dests() []any {
 	return []any{
-		&es.r.ID, &es.r.Kind, &es.r.Title, &es.r.Body, &es.states, &es.r.At, &es.r.EndsAt, &es.r.DueAt,
+		&es.r.ID, &es.r.Kind, &es.r.Title, &es.states, &es.r.At, &es.r.EndsAt, &es.r.DueAt,
 		&es.props, &es.labels, &es.r.Version, &es.r.KindVersion, &es.r.CreatedAt, &es.r.UpdatedAt, &es.r.DeletedAt, &es.finalizers,
 	}
 }
@@ -201,19 +200,18 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 	}
 	row := t.row(`
 		INSERT INTO records (
-			id, kind, title, body, states, at, ends_at, due_at, props, labels,
+			id, kind, title, states, at, ends_at, due_at, props, labels,
 			finalizers, fts, version, kind_version, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb,
-			ARRAY(SELECT jsonb_array_elements_text($11::jsonb)),
-			setweight(to_tsvector('english', $12), 'A') ||
-			setweight(to_tsvector('english', $13), 'B') ||
-			setweight(to_tsvector('english', $14), 'C'),
-			1, $18, $15, $15
+			$1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, $9::jsonb,
+			ARRAY(SELECT jsonb_array_elements_text($10::jsonb)),
+			setweight(to_tsvector('english', $11), 'A') ||
+			setweight(to_tsvector('english', $12), 'B') ||
+			setweight(to_tsvector('english', $13), 'C'),
+			1, $17, $14, $14
 		)
 		ON CONFLICT (repository, kind, id) DO UPDATE SET
 			title      = EXCLUDED.title,
-			body       = EXCLUDED.body,
 			states     = EXCLUDED.states,
 			at         = EXCLUDED.at,
 			ends_at    = EXCLUDED.ends_at,
@@ -223,13 +221,12 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 			finalizers = EXCLUDED.finalizers,
 			fts        = EXCLUDED.fts,
 			kind_version = EXCLUDED.kind_version,
-			deleted_at = CASE WHEN $16::bool THEN NULL ELSE records.deleted_at END,
+			deleted_at = CASE WHEN $15::bool THEN NULL ELSE records.deleted_at END,
 			version    = records.version + 1,
-			updated_at = $15
-		WHERE $17::bool
-		   OR ($16::bool AND records.deleted_at IS NOT NULL)
+			updated_at = $14
+		WHERE $16::bool
+		   OR ($15::bool AND records.deleted_at IS NOT NULL)
 		   OR records.title      IS DISTINCT FROM EXCLUDED.title
-		   OR records.body       IS DISTINCT FROM EXCLUDED.body
 		   OR records.states     IS DISTINCT FROM EXCLUDED.states
 		   OR records.at         IS DISTINCT FROM EXCLUDED.at
 		   OR records.ends_at    IS DISTINCT FROM EXCLUDED.ends_at
@@ -238,7 +235,7 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 		   OR records.labels     IS DISTINCT FROM EXCLUDED.labels
 		   OR records.finalizers IS DISTINCT FROM EXCLUDED.finalizers
 		RETURNING version, (xmax = 0)`,
-		r.ID, r.Kind, r.Title, r.Body, states, r.At, r.EndsAt, r.DueAt, props, labels,
+		r.ID, r.Kind, r.Title, states, r.At, r.EndsAt, r.DueAt, props, labels,
 		finalizers, fts[0], fts[1], fts[2], t.now, resurrect, force, r.KindVersion)
 	err = row.Scan(&version, &created)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -130,7 +130,7 @@ did to each property it moved, before and after, in name order:
 added, or any property of a creation), and `after` is absent where the entry
 cleared it. The values are the ones a read of the record renders, under the
 same names: the declared properties, `title` where the kind does not render
-it from a template, a declared `body`, the instants, and each state. A
+it from a template, the instants, and each state. A
 sensitive property reads `<redacted>` on both sides, exactly as a record read
 renders it, and a kind the repository no longer declares carries no values.
 
@@ -329,7 +329,7 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-3 today, the ops, fold effects and entry frame this release writes: every
+4 today, the ops, fold effects and entry frame this release writes: every
 entry linking its actor, the one it acted for and its token as records
 ([decision 0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)),
 which is what dialect 3 added, the record
@@ -344,7 +344,9 @@ and every `manager` effect carrying the stamp a property rename moved with it
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
 Dialect 2 spells nothing dialect 1 did not: it is a history
 [conversion step 2](stored-format.md#conversions) has emptied of the recovery
-wrap.
+wrap. Dialect 4 carries a record's `body` among its properties, never as a
+delta field of its own
+([decision 0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)).
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread, and a change to a shape the history already
 holds ships a [conversion step](stored-format.md#conversions) to it, which

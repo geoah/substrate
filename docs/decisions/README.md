@@ -426,6 +426,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0270](0270-every-hand-that-writes-is-an-actor-record.md) | Every hand that writes is an actor record, and a write links three of them | accepted |
 | [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
+| [0273](0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md) | Body is an ordinary property, and no property name is stored apart | accepted |
 | [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |

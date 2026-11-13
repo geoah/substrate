@@ -43,7 +43,6 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 	relation := `SELECT ` + b.arg(string(props)) + `::jsonb AS props, ` +
 		b.arg(string(rawStates)) + `::jsonb AS states, ` +
 		b.arg(row.Title) + `::text AS title, ` +
-		b.arg(row.Body) + `::text AS body, ` +
 		b.arg(row.At) + `::timestamptz AS at, ` +
 		b.arg(row.EndsAt) + `::timestamptz AS ends_at, ` +
 		b.arg(row.DueAt) + `::timestamptz AS due_at`
@@ -83,7 +82,7 @@ func (t *txn) covers(m *vocabulary.Mapping, srcTy *vocabulary.Kind, row *erow) (
 
 // whereColumns are the record columns the one-row relation in covers
 // selects, so the only columns a where can read.
-var whereColumns = map[string]bool{"title": true, "body": true, "at": true, "ends_at": true, "due_at": true}
+var whereColumns = map[string]bool{"title": true, "at": true, "ends_at": true, "due_at": true}
 
 // whereProps is the part of a source row's properties a where reads: only
 // the names it declares. The source's own write asks covers before its
