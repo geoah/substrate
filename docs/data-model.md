@@ -351,7 +351,7 @@ are written and filtered the same way.
 | `email`            | refined `string`, RFC 5322 mailbox                          |
 | `url`              | refined `string`, absolute URL                              |
 | `phone`            | refined `string`, E.164 normalized                          |
-| `timezone`         | IANA zone name                                              |
+| `timezone`         | IANA zone name, spelled as the IANA database spells it, its aliases included (`US/Pacific`); `Local`, the empty string and any other spelling a host's own zone files load (`Europe/athens` on a case-insensitive disk, `posixrules`) are refused on write, because none names the same zone on every host. A value a record already holds is kept, a restore included |
 | `recurrence`       | RFC 5545 RRULE string                                       |
 | `enum`             | one of declared `values`                                    |
 | `state`            | a state machine: `states`, `initial`, `transitions`, stamps |
