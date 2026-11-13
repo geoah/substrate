@@ -419,5 +419,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0266](0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md) | A temporary failure is retried over minutes, and the body says which it is | accepted |
 | [0267](0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md) | A schedule trigger says what it does with runs it missed, and runs the latest by default | accepted |
 | [0268](0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md) | A new declaration key raises the dialect, and a package states the dialect it needs | accepted |
+| [0269](0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md) | A publisher may not rename a kind, and code from outside publishers is experimental | accepted |
 | [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |

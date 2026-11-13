@@ -124,14 +124,19 @@ func movedTargets(moves []kindMove) map[string]string {
 	return out
 }
 
-// userDoorMoveGuards is the apply door's whole answer to `movedFrom`: the key
-// is stored, and any move it would imply is refused. See the file header.
+// userDoorMoveGuards is the answer to `movedFrom` at every door but the boot
+// upgrade of the shipped packages: the apply door, a catalog install, import
+// and upgrade, a publisher's refresh and an app's approval all stage through
+// stageVocabularyBatch, and any move the batch would imply is refused. A
+// publisher may not rename a kind (decision 0269): other repositories hold
+// records of it under its name, so the refusal says what to do instead. See
+// the file header.
 func userDoorMoveGuards(moves []kindMove) []string {
 	var problems []string
 	for _, m := range moves {
 		problems = append(problems, fmt.Sprintf(
-			"kind %s: data.movedFrom names %s, which this repository still declares: movedFrom is honored for the shipped vocabulary only in this build, so the key is stored and no records move",
-			m.to.Identity, m.from))
+			"kind %s: data.movedFrom renames %s, and a kind is renamed only by the packages this server ships: other repositories hold records of it under its name. Keep %s declared, mark it `deprecated: true`, and declare %s beside it without movedFrom",
+			m.to.Identity, m.from, m.from, m.to.Identity))
 	}
 	return problems
 }

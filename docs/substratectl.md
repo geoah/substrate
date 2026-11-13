@@ -487,8 +487,10 @@ This reads the authority's live document and prints the version entry to
 add, with the `dialect` the closure's header states, where it states one
 ([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)). `--document authority.json` reads a development document instead; its
 existing closure paths are relative to that file's directory.
-`--allow-narrowing` acknowledges removal or renaming from the newest listed
-closure. The command uploads nothing. It refuses changed published
+`--allow-narrowing` acknowledges a removal or a renamed property from the
+newest listed closure. A renamed kind, a kind declaring `movedFrom`, is
+refused with the flag or without it: a published kind's name is permanent.
+The command uploads nothing. It refuses changed published
 versions, downgrades, invalid closures and unexpected digests.
 
 Next: the [web console](console.md), the same repository in a browser.

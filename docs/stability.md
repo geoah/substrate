@@ -178,7 +178,11 @@ remapped enum value) rewrites the stored records in the same step
 Nothing converts a record between versions as it is read.
 
 So an incompatible change to a stable kind is made beside it: a new property,
-or a new kind, with the old one marked `deprecated: true` and kept.
+or a new kind, with the old one marked `deprecated: true` and kept. A kind is
+never renamed, whatever its package's label: other repositories hold records
+of it under its name, and every door a published package comes through
+refuses a `movedFrom` that would move them
+([vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 
 ### Declarations
 
@@ -217,6 +221,15 @@ naming a version it does not run. A release of the server supports the
 current Python release and the one before. The image carries the current
 one, and [the interface](functions.md#the-interface) says what holds the one
 before.
+
+Code from outside publishers is `experimental` at 1.0: the functions a
+package installed from another authority's document ships, whatever its own
+label says. How an app's approval reviews that code, and how the server
+confines it, may change in any release
+([code from outside authorities](functions.md#code-from-outside-authorities)).
+No field in discovery or on a package record carries this label: a package
+installed from a publisher's document carries `publishedFrom`, and that is
+the code it covers.
 
 ## Upgrading
 

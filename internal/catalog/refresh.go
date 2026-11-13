@@ -239,6 +239,12 @@ func CompareClosures(old, next *Bundle) (narrows, additive bool) {
 		if _, ok := before[key]; !ok && mstr(doc, "kind") != vocabulary.PackageCore+"/kind" {
 			additive = false
 		}
+		// A new kind that names another in movedFrom is a rename, which a
+		// published package may not make (decision 0269): never additive,
+		// whether or not a repository holds the kind it names.
+		if _, ok := before[key]; !ok && mstr(mmap(doc, "data"), "movedFrom") != "" {
+			additive = false
+		}
 	}
 	return narrows, additive && !narrows
 }

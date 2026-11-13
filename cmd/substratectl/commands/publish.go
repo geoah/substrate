@@ -51,7 +51,7 @@ func (a *app) publishCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "validate without publishing")
-	cmd.Flags().BoolVar(&allow, "allow-narrowing", false, "allow removal or renaming from the newest release")
+	cmd.Flags().BoolVar(&allow, "allow-narrowing", false, "allow a removal or a renamed property from the newest release; a renamed kind is always refused")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "candidate closure file")
 	cmd.Flags().StringVar(&document, "document", "", "authority document file; otherwise read the live document")
 	cmd.Flags().StringVar(&closure, "closure", "", "URL or development path to list for this release")
@@ -67,6 +67,10 @@ func checkPublication(ctx context.Context, reader *authority.Reader, id string, 
 	candidate, err := catalog.ParseClosure(raw, id, version)
 	if err != nil {
 		return entry, err
+	}
+	if renames := candidate.KindRenames(); len(renames) > 0 {
+		return entry, fmt.Errorf("the candidate renames a kind, which a published package may not do: %s. "+
+			"Keep the old kind declared, mark it `deprecated: true`, and declare the new one beside it without movedFrom", strings.Join(renames, "; "))
 	}
 	source, err := reader.Read(ctx, candidate.Authority, true)
 	if err != nil {
