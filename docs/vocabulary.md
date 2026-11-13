@@ -609,11 +609,20 @@ refuses the move; an optional property only the new kind declares is admitted.
 A kind a `recordmapping` names at either end, or one that declares a subject
 reference, is not moved. These checks are asked only while the old kind holds
 live rows: an old kind left declared and empty trips none of them ([decision
-0257](decisions/0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md)). Through `POST …/vocabulary/apply` the key is stored
-and no records move: a `movedFrom:` naming a kind the repository still
-declares is refused, naming the shipped tree as the one path that moves
-records in this build. This is how the agent runtime's four kinds left `core`
-for `substrate.reamde.dev/llm`.
+0257](decisions/0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md)).
+This is how the agent runtime's four kinds left `core` for
+`substrate.reamde.dev/llm`.
+
+Every other door refuses a move: the apply door, a catalog install, import
+and upgrade, a publisher's refresh and an app's approval. A `movedFrom:`
+naming a kind the repository still declares is refused, and
+`substratectl publish --check` refuses a release that declares one at all. A
+publisher may not rename a kind, because other repositories hold records of
+it under its name
+([decision 0269](decisions/0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md)):
+it keeps the old kind, marks it `deprecated: true`, and declares the new one
+beside it. A `movedFrom:` naming a kind the repository does not declare
+moves nothing and is stored as written.
 
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:

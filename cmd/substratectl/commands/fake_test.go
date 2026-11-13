@@ -275,6 +275,7 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/catalog/{id}/install", f.handleCatalogInstall)
 	mux.HandleFunc("POST /api/v1/vocabulary/plan", f.handleVocabularyPlan)
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
+	mux.HandleFunc("GET /api/v1/catalog/{id}", f.handleCatalogEntry)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
 	// The recovery export: a tar the test seeds (export_test.go).
 	mux.HandleFunc("GET /api/v1/export", f.handleExport)
@@ -512,6 +513,19 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, substrate.Listed(f.catalog))
+}
+
+// handleCatalogEntry serves one entry of the seeded catalog, or the 404 the
+// API answers for an id it does not list.
+func (f *fakeSubstrate) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	for _, e := range f.catalog {
+		if e.ID == r.PathValue("id") {
+			writeJSON(w, http.StatusOK, e)
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found", "message": "no such catalog entry"}})
 }
 
 // handleCatalogInstall stands in for the provider door: the bundle lands under

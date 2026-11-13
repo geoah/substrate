@@ -15,6 +15,7 @@ import {
   blockStatus,
   chainLines,
   codeWords,
+  runsOutsideCode,
   consolePath,
   declaredHosts,
   factCounts,
@@ -889,5 +890,39 @@ describe("what a package's code reaches", () => {
     )
     expect(reachWords({ reach: [] })).toBeUndefined()
     expect(reachWords({})).toBeUndefined()
+  })
+})
+
+describe("runsOutsideCode", () => {
+  const publisher = {
+    authority: "publisher.example",
+    documentUrl:
+      "https://publisher.example/.well-known/substrate/authority.json",
+  }
+  const fn = [
+    { id: "substrate.reamde.dev/core/function/publisher.example/p/f" },
+  ]
+  it("is a publisher's package that ships functions, or one it brings first", () => {
+    expect(
+      runsOutsideCode({ id: "p", required: 1, publisher, functions: fn })
+    ).toBe(true)
+    expect(
+      runsOutsideCode({
+        id: "p",
+        required: 1,
+        requires: [{ id: "q", action: "install", publisher, functions: fn }],
+      })
+    ).toBe(true)
+  })
+  it("is not this server's code, a publisher's package with none, or one already in place", () => {
+    expect(runsOutsideCode({ id: "p", required: 1, functions: fn })).toBe(false)
+    expect(runsOutsideCode({ id: "p", required: 1, publisher })).toBe(false)
+    expect(
+      runsOutsideCode({
+        id: "p",
+        required: 1,
+        requires: [{ id: "q", action: "none", publisher, functions: fn }],
+      })
+    ).toBe(false)
   })
 })

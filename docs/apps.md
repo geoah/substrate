@@ -1039,9 +1039,18 @@ Check the candidate with `substratectl publish --check` before uploading
 it: it prints the version's entry, with the dialect the header states. Upload the immutable closure first, update the authority document
 second, and release the app build requesting that version last. A changed
 digest at an existing version and a version below the newest published
-version fail the check. Removing or renaming declarations needs
-`--allow-narrowing`; connected builds can still hold the server upgrade
-back until they check in with a sufficient floor or their access ends.
+version fail the check. Removing a declaration needs `--allow-narrowing`,
+but for a kind: removing a kind any listed version published is refused,
+with the flag or without it, and so is renaming a kind with `movedFrom`:
+keep the old kind, mark it `deprecated: true`, and declare the new one
+beside it
+([decision 0269](decisions/0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md)).
+Connected builds can still hold the server upgrade back until they check in
+with a sufficient floor or their access ends.
+
+Functions a published package ships are `experimental` at 1.0, whatever the
+package's label: their review and their confinement may change in any
+release ([stability](stability.md#a-packages-code)).
 
 For packages whose agents use provider inputs, approval offers a provider
 picker for each input. Each option shows the provider label and the model

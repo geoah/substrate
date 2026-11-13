@@ -49,12 +49,16 @@ const PACKAGES = [
 /** The page over a repository whose package rows are `records`, or still
  * loading where none are given. Every other read is answered empty: the head
  * is what these cases read. */
-function renderPage(technical: boolean, records?: SubstrateRecord[]) {
+function renderPage(
+  technical: boolean,
+  records?: SubstrateRecord[],
+  functions: SubstrateRecord[] = []
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
   client.setQueryData(kindsQueryOptions.queryKey, [])
-  client.setQueryData(functionsQueryOptions.queryKey, [])
+  client.setQueryData(functionsQueryOptions.queryKey, functions)
   client.setQueryData(catalogQueryOptions.queryKey, [])
   client.setQueryData(bundleStatusesQueryOptions.queryKey, [])
   client.setQueryData(repositoryQueryOptions.queryKey, {
@@ -136,5 +140,66 @@ describe("PackagePage and the package's stability", () => {
     params = { authority: "ada.example.com", pkg: "nothing" }
     renderPage(true, PACKAGES)
     expect(stabilityFact()).toBeUndefined()
+  })
+})
+
+/** The words of the head's meta line that say the code's own label, or
+ * undefined where the line has none. */
+function codeFact(): string | undefined {
+  const meta = document.querySelector('[data-slot="page-meta"]')
+  return [...(meta?.children ?? [])]
+    .map((el) => el.textContent ?? "")
+    .find((text) => text.startsWith("Code"))
+}
+
+describe("PackagePage and code from outside publishers", () => {
+  const sync = {
+    kind: "substrate.reamde.dev/core/function",
+    id: "publisher.example/notes/sync",
+    properties: { name: "sync" },
+  } as unknown as SubstrateRecord
+  const published = packageRecord("publisher.example/notes", {
+    stability: "stable",
+    publishedFrom:
+      "https://publisher.example/.well-known/substrate/authority.json",
+  })
+
+  afterEach(() => {
+    cleanup()
+    params = { authority: "substrate.reamde.dev", pkg: "core" }
+  })
+
+  // Where a person decides, beside the publisher's own label and apart from
+  // it: the code a publisher's document installed is experimental at 1.0.
+  it("says the code of a package a publisher's document installed is experimental", () => {
+    params = { authority: "publisher.example", pkg: "notes" }
+    renderPage(false, [published], [sync])
+    expect(codeFact()).toBe("Code experimental")
+  })
+
+  it("keeps the publisher's own label as it states it", () => {
+    params = { authority: "publisher.example", pkg: "notes" }
+    renderPage(true, [published], [sync])
+    expect(stabilityFact()).toBe("Stability stable")
+    expect(codeFact()).toBe("Code experimental")
+  })
+
+  it("says nothing of a package that ships no code, or of this server's own", () => {
+    params = { authority: "publisher.example", pkg: "notes" }
+    renderPage(false, [published])
+    expect(codeFact()).toBeUndefined()
+    cleanup()
+    params = { authority: "ada.example.com", pkg: "tasks" }
+    renderPage(
+      false,
+      [packageRecord("ada.example.com/tasks", {})],
+      [
+        {
+          ...sync,
+          id: "ada.example.com/tasks/sweep",
+        },
+      ]
+    )
+    expect(codeFact()).toBeUndefined()
   })
 })

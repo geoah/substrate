@@ -1516,6 +1516,8 @@ describe("ProviderPage", () => {
       expect(
         within(dialog).getByText(`function ${GOOGLE}/sync: version 3 → 4`)
       ).toBeTruthy()
+      // The binary ships this one: its code is not another publisher's.
+      expect(within(dialog).queryByText("Code: experimental.")).toBeNull()
       fireEvent.click(
         within(dialog).getByRole("button", {
           name: "Approve the changes and update",
@@ -1528,6 +1530,45 @@ describe("ProviderPage", () => {
       expect(
         await within(dialog).findByText(
           /The publisher listed another version since you reviewed this one/
+        )
+      ).toBeTruthy()
+    })
+
+    it("says, in the review, that code a publisher outside this server published is experimental", async () => {
+      serve({
+        catalog: [
+          {
+            ...CATALOG,
+            publisher: {
+              authority: "tools.example.com",
+              name: "Example Tools",
+              documentUrl:
+                "https://tools.example.com/.well-known/substrate.json",
+            },
+            upgrade: {
+              available: true,
+              from: 3,
+              to: 4,
+              work: 0,
+              lossy: false,
+              reviewRequired: true,
+              candidateVersion: 4,
+              candidateDigest: "sha256:abc",
+              changes: [
+                { kind: "function", id: `${GOOGLE}/sync`, from: 3, to: 4 },
+              ],
+            },
+          },
+        ],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText("Code: experimental.")).toBeTruthy()
+      expect(
+        within(dialog).getByText(
+          /Its code comes from a publisher outside this server/
         )
       ).toBeTruthy()
     })

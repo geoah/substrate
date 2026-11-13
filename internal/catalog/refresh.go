@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -173,6 +174,13 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 	}
 	plan.CandidateVersion = b.Version
 	plan.CandidateDigest = b.origin.SHA256
+	// A rename is refused whatever the repository holds; the preview names
+	// it once, where the engine's own dry run did not.
+	for _, refusal := range b.RenameRefusals() {
+		if !slices.Contains(plan.Blockers, refusal) {
+			plan.Blockers = append(plan.Blockers, refusal)
+		}
+	}
 	old, err := c.heldClosure(ctx, b, ds)
 	if err != nil {
 		plan.Blockers = append(plan.Blockers, err.Error())
@@ -183,6 +191,12 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 	// Code whose reach grows past the held closure's waits for the owner
 	// (decision 0215), whatever else the comparison concludes.
 	plan.ReviewRequired = !additive || len(ReachGrows(old.Reach(), b.Reach())) > 0
+	// A kind the held version published is not the publisher's to remove:
+	// no review takes such a release (installed refuses it).
+	for _, kind := range RemovedKinds(old, b) {
+		plan.Blockers = append(plan.Blockers, removedKindRefusal(b, kind))
+		plan.ReviewRequired = true
+	}
 	if narrows {
 		tokens, err := ds.Tokens(ctx)
 		if err != nil {
@@ -198,6 +212,12 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 		}
 	}
 	return plan, nil
+}
+
+// removedKindRefusal says why a release that drops a published kind is not
+// taken.
+func removedKindRefusal(b *Bundle, kind string) string {
+	return fmt.Sprintf("version %d removes %s, a kind the publisher published; a published kind stays declared (deprecated: true), so this release is not taken", b.Version, kind)
 }
 
 // BuildHolders names only live builds that explicitly recorded a lower floor.
@@ -243,6 +263,12 @@ func CompareClosures(old, next *Bundle) (narrows, additive bool) {
 	}
 	for key, doc := range after {
 		if _, ok := before[key]; !ok && mstr(doc, "kind") != vocabulary.PackageCore+"/kind" {
+			additive = false
+		}
+		// A new kind that names another in movedFrom is a rename, which a
+		// published package may not make (decision 0269): never additive,
+		// whether or not a repository holds the kind it names.
+		if _, ok := before[key]; !ok && mstr(mmap(doc, "data"), "movedFrom") != "" {
 			additive = false
 		}
 	}

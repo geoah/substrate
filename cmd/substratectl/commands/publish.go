@@ -51,7 +51,7 @@ func (a *app) publishCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "validate without publishing")
-	cmd.Flags().BoolVar(&allow, "allow-narrowing", false, "allow removal or renaming from the newest release")
+	cmd.Flags().BoolVar(&allow, "allow-narrowing", false, "allow a removed or renamed property from the newest release; a removed or renamed kind is always refused")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "candidate closure file")
 	cmd.Flags().StringVar(&document, "document", "", "authority document file; otherwise read the live document")
 	cmd.Flags().StringVar(&closure, "closure", "", "URL or development path to list for this release")
@@ -67,6 +67,10 @@ func checkPublication(ctx context.Context, reader *authority.Reader, id string, 
 	candidate, err := catalog.ParseClosure(raw, id, version)
 	if err != nil {
 		return entry, err
+	}
+	if renames := candidate.KindRenames(); len(renames) > 0 {
+		return entry, fmt.Errorf("the candidate renames a kind, which a published package may not do: %s. "+
+			"Keep the old kind declared, mark it `deprecated: true`, and declare the new one beside it without movedFrom", strings.Join(renames, "; "))
 	}
 	source, err := reader.Read(ctx, candidate.Authority, true)
 	if err != nil {
@@ -89,6 +93,7 @@ func checkPublication(ctx context.Context, reader *authority.Reader, id string, 
 		return entry, err
 	}
 	var newest authority.AuthorityPackageVersion
+	var published []authority.AuthorityPackageVersion
 	for _, p := range source.Document.Packages {
 		if p.Package != candidate.Package {
 			continue
@@ -103,6 +108,26 @@ func checkPublication(ctx context.Context, reader *authority.Reader, id string, 
 			if v.Version > newest.Version {
 				newest = v
 			}
+			if int64(v.Version) != version {
+				published = append(published, v)
+			}
+		}
+	}
+	// Every kind any published version declared stays declared, whatever
+	// --allow-narrowing says: repositories that took that version hold its
+	// records under the kind's name (decision 0269).
+	for _, v := range published {
+		body, err := reader.Closure(ctx, source, v)
+		if err != nil {
+			return entry, fmt.Errorf("read published version %d to check the kinds it declared: %w", v.Version, err)
+		}
+		held, err := catalog.ParseClosure(body, id, int64(v.Version))
+		if err != nil {
+			return entry, fmt.Errorf("published version %d: %w", v.Version, err)
+		}
+		if removed := catalog.RemovedKinds(held, candidate); len(removed) > 0 {
+			return entry, fmt.Errorf("the candidate removes %s, which version %d published, and a published package may not remove a kind. "+
+				"Keep it declared and mark it `deprecated: true`", strings.Join(removed, ", "), v.Version)
 		}
 	}
 	if newest.Version > 0 {

@@ -445,7 +445,10 @@ upgrade with one runs only with `--allow-data-loss` on `install <package>` or
 confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
 sample copy edited since it was imported reads `edited copy` in the column
 and says under the table that importing it again replaces those edits, under
-the same flag.
+the same flag. The CODE column reads `experimental` for a package whose code
+a publisher outside this server published, its own or that of a package
+taking it brings first ([stability](stability.md)), and `install` prints the
+same before it installs.
 `substratectl apply --allow-data-loss` does the same for a vocabulary change
 of your own. `-o json` prints the same rows.
 
@@ -490,8 +493,11 @@ closure uses no key a dialect introduced. A header that states less than its
 keys need is refused, naming the key
 ([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)). `--document authority.json` reads a development document instead; its
 existing closure paths are relative to that file's directory.
-`--allow-narrowing` acknowledges removal or renaming from the newest listed
-closure. The command uploads nothing. It refuses changed published
+`--allow-narrowing` acknowledges a removed or renamed property from the
+newest listed closure. A kind any listed version published and the
+candidate drops, and a renamed kind, a kind declaring `movedFrom`, are
+refused with the flag or without it: a published kind's name is permanent.
+The command uploads nothing. It refuses changed published
 versions, downgrades, invalid closures and unexpected digests.
 
 Next: the [web console](console.md), the same repository in a browser.

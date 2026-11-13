@@ -7,6 +7,7 @@
  * with its full reference and its purpose. Bounded registry data, so no
  * paging. */
 
+import { OUTSIDE_CODE_WORDS } from "@/lib/app-setup"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
@@ -405,6 +406,11 @@ export function PackagePage() {
                 <span className="text-muted-foreground">
                   {packageStability(row)}
                 </span>
+              </span>
+            )}
+            {published && tools.length > 0 && (
+              <span title={OUTSIDE_CODE_WORDS}>
+                Code <span className="text-muted-foreground">experimental</span>
               </span>
             )}
             {technical && row && tools.length > 0 && (
