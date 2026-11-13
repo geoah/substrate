@@ -1039,8 +1039,9 @@ Check the candidate with `substratectl publish --check` before uploading
 it: it prints the version's entry, with the dialect the header states. Upload the immutable closure first, update the authority document
 second, and release the app build requesting that version last. A changed
 digest at an existing version and a version below the newest published
-version fail the check. Removing a declaration needs `--allow-narrowing`.
-Renaming a kind with `movedFrom` is refused, with the flag or without it:
+version fail the check. Removing a declaration needs `--allow-narrowing`,
+but for a kind: removing a kind any listed version published is refused,
+with the flag or without it, and so is renaming a kind with `movedFrom`:
 keep the old kind, mark it `deprecated: true`, and declare the new one
 beside it
 ([decision 0269](decisions/0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md)).

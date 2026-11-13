@@ -134,9 +134,7 @@ func movedTargets(moves []kindMove) map[string]string {
 func userDoorMoveGuards(moves []kindMove) []string {
 	var problems []string
 	for _, m := range moves {
-		problems = append(problems, fmt.Sprintf(
-			"kind %s: data.movedFrom renames %s, and a kind is renamed only by the packages this server ships: other repositories hold records of it under its name. Keep %s declared, mark it `deprecated: true`, and declare %s beside it without movedFrom",
-			m.to.Identity, m.from, m.from, m.to.Identity))
+		problems = append(problems, vocabulary.KindRenameRefusal(m.to.Identity, m.from))
 	}
 	return problems
 }

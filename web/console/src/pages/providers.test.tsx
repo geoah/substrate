@@ -441,6 +441,42 @@ describe("ProvidersPage", () => {
     })
   })
 
+  it("says beside Add that code a publisher outside this server published is experimental", async () => {
+    serve({
+      catalog: [
+        PEOPLE,
+        {
+          ...BASE,
+          publisher: {
+            authority: "tools.example.com",
+            documentUrl: "https://tools.example.com/.well-known/substrate.json",
+          },
+          closure: {
+            ...EMPTY,
+            functions: ["providers.substrate.reamde.dev/base/fetch"],
+          },
+        },
+        SHARED,
+        GOOGLE,
+        LINEAR,
+      ],
+    })
+    renderPage(<ProvidersPage />)
+    // Google brings base first, whose code a publisher's document ships.
+    const google = await card("Google")
+    expect(within(google).getByRole("button", { name: "Add" })).toBeTruthy()
+    const label = within(google).getByTitle(
+      /Its code comes from a publisher outside this server/
+    )
+    expect(label.textContent).toBe("Code experimental")
+    const linear = await card("Linear")
+    expect(
+      within(linear).queryByTitle(
+        /Its code comes from a publisher outside this server/
+      )
+    ).toBeNull()
+  })
+
   it("names the step a provider that is here has reached", async () => {
     serve({ statuses: [googleStatus()] })
     renderPage(<ProvidersPage />)

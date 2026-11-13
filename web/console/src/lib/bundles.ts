@@ -573,6 +573,22 @@ export function missingChain(nodes: RequirementNode[]): RequirementNode[] {
   return out
 }
 
+/** Whether taking the row runs code a publisher outside this server
+ * published: its own closure's functions, or those of a package the take
+ * brings first (missingChain). A publisher's document is what marks an entry
+ * as another's, the fact the approval page reads too (runsOutsideCode in
+ * lib/app-setup). Such code is `experimental` at 1.0 whatever the package's
+ * own label says (docs/stability.md). */
+export function takeRunsOutsideCode(
+  row: BundleRow,
+  chain: RequirementNode[]
+): boolean {
+  const outside = (r: BundleRow | undefined) =>
+    Boolean(r?.catalog?.publisher) &&
+    (r?.catalog?.closure.functions ?? []).length > 0
+  return outside(row) || missingChain(chain).some((node) => outside(node.row))
+}
+
 /** What one press of the row's button will do: the bundles to take, leaves
  * first and the row itself last, or the one sentence saying why nothing can
  * be taken at all. Nothing is ever half-planned: a chain that cannot finish

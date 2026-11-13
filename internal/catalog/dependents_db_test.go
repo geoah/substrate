@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/authority"
@@ -17,13 +18,14 @@ import (
 
 // WHAT HAPPENS TO A PACKAGE WHOSE REQUIREMENT CHANGES OR GOES (F11, "Not
 // verified", in pull request 1313). `publisher.example/journal` requires
-// `publisher.example/base` and references its `item` kind. This test records
-// what the server does today, and it is the defect the finding suspected:
-// neither a version of `base` that drops `item` nor uninstalling `base` is
-// checked against `journal`. Both are admitted, and `journal` is quarantined
-// at the next open, its records unreadable until the requirement is back.
-// Decision record 0269 names it; the fix belongs to a later step. When a door
-// refuses either change, this test fails and its assertions turn around.
+// `publisher.example/base` and references its `item` kind. A version of
+// `base` that drops `item` is refused: a published kind stays (decision
+// record 0269), so `journal` keeps what it references. Uninstalling `base` is
+// still not checked against `journal`: it is admitted, and `journal` is
+// quarantined at the next open, its records unreadable until the requirement
+// is back. Decision record 0269 names it; that fix belongs to a later step.
+// When the uninstall is refused, its case fails and its assertions turn
+// around.
 func TestADependentPackageIsNotCheckedWhenItsRequirementChanges(t *testing.T) {
 	const base, journal = "publisher.example/base", "publisher.example/journal"
 	setup := func(t *testing.T) (*reopenableDataset, *catalog.Catalog, func(int, bool)) {
@@ -91,11 +93,12 @@ func TestADependentPackageIsNotCheckedWhenItsRequirementChanges(t *testing.T) {
 			t.Fatal("journal is quarantined before anything changed")
 		}
 		release(2, false)
-		if _, _, err := c.Install(context.Background(), substrate.ActorAPI, base, r.ds); err != nil {
-			t.Fatalf("today the change is admitted; a refusal here is the fix landing: %v", err)
+		_, _, err := c.Install(context.Background(), substrate.ActorAPI, base, r.ds)
+		if err == nil || !strings.Contains(err.Error(), base+"/item") {
+			t.Fatalf("installing the version that drops item = %v, want it refused naming the kind", err)
 		}
-		if !quarantined(t, r.reopen(t)) {
-			t.Fatal("journal was not quarantined at the next open; the defect this test records is gone, so turn it around")
+		if quarantined(t, r.reopen(t)) {
+			t.Fatal("journal was quarantined though the change was refused")
 		}
 	})
 

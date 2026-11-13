@@ -683,6 +683,12 @@ func (c *Catalog) installResolved(ctx context.Context, b *Bundle, ds substrate.D
 func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) ([]substrate.SuggestedMapping, error) {
 	var expected int64
 	var narrows bool
+	// A closure a publisher's document serves renames no kind, whatever this
+	// repository holds: every door it arrives through (an install, a
+	// refresh, an app's approval) installs it here.
+	if refusals := b.RenameRefusals(); b.origin != nil && len(refusals) > 0 {
+		return nil, fmt.Errorf("%w: %s", substrate.ErrValidation, strings.Join(refusals, "; "))
+	}
 	if b.origin != nil {
 		row, err := ds.Get(ctx, vocabulary.PackageCore+"/package", b.ID)
 		if err != nil && !errors.Is(err, substrate.ErrNotFound) {
@@ -695,6 +701,9 @@ func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset
 			old, err := c.heldClosure(ctx, b, ds)
 			if err != nil {
 				return nil, err
+			}
+			if removed := RemovedKinds(old, b); len(removed) > 0 {
+				return nil, fmt.Errorf("%w: %s", substrate.ErrValidation, removedKindRefusal(b, strings.Join(removed, ", ")))
 			}
 			narrows, _ = CompareClosures(old, b)
 

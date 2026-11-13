@@ -229,7 +229,14 @@ confines it, may change in any release
 ([code from outside authorities](functions.md#code-from-outside-authorities)).
 No field in discovery or on a package record carries this label: a package
 installed from a publisher's document carries `publishedFrom`, and that is
-the code it covers.
+the code it covers. The console and `substratectl` say so where a person
+decides, from what the catalog and an approval already carry (a publisher,
+and functions in the closure, the packages a take brings first included):
+an app's approval page, the package's page, the providers listing beside
+Add and the review of an update show "Code: experimental" beside the label
+the publisher states, which stays as the publisher wrote it, and
+`substratectl install` prints it before it installs and `substratectl
+catalog` in its CODE column.
 
 ## Upgrading
 
