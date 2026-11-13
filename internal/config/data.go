@@ -7,15 +7,10 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-// MinChangelogSegmentBytes is the smallest segment size accepted. Below it a
-// busy repository rotates every few writes, and every rotation is an fsync,
-// a sidecar and a new file.
-const MinChangelogSegmentBytes int64 = 1 << 20
-
-// Data says where the server keeps every repository's directory: the
-// changelog segments, the sealed store's files, the manifest and the blob
-// bytes, one subdirectory per repository under
-// <Root>/repositories. It is part of Config and also loadable on its own,
+// Data says where the server keeps what Postgres does not hold of a
+// repository: its blob bytes and its webhook spool, one subdirectory per
+// repository under <Root>/repositories, and, by default, the archive
+// (decision 0262). It is part of Config and also loadable on its own,
 // because substratectl's operator hat opens the engine over a DSN and needs
 // the same root without the rest of the server's configuration.
 type Data struct {
@@ -23,10 +18,6 @@ type Data struct {
 	// process's working directory, and a store that moves when the server is
 	// restarted from another directory is a store that has lost its bytes.
 	Root string `envconfig:"SUBSTRATE_DATA_ROOT" required:"true"`
-	// ChangelogSegmentBytes is the size past which the active changelog
-	// segment rotates: the writer fsyncs, writes the finished file's sidecar
-	// digest and opens the next file. 256 MiB by default.
-	ChangelogSegmentBytes int64 `envconfig:"SUBSTRATE_CHANGELOG_SEGMENT_BYTES" default:"268435456"`
 }
 
 // LoadData reads the data root configuration alone, validated, for a command
@@ -42,17 +33,13 @@ func LoadData() (Data, error) {
 	return d, nil
 }
 
-// Validate refuses a root that is not an absolute path and a segment size
-// under MinChangelogSegmentBytes, naming the variable in either case.
+// Validate refuses a root that is not an absolute path, naming the variable.
 func (d Data) Validate() error {
 	if d.Root == "" {
-		return fmt.Errorf("SUBSTRATE_DATA_ROOT is unset: it is the directory every repository's changelog, sealed store and blobs live under, and there is no default")
+		return fmt.Errorf("SUBSTRATE_DATA_ROOT is unset: it is the directory every repository's blobs, webhook spool and, by default, archive live under, and there is no default")
 	}
 	if !filepath.IsAbs(d.Root) {
 		return fmt.Errorf("SUBSTRATE_DATA_ROOT %q must be an absolute path", d.Root)
-	}
-	if d.ChangelogSegmentBytes < MinChangelogSegmentBytes {
-		return fmt.Errorf("SUBSTRATE_CHANGELOG_SEGMENT_BYTES is %d: it must be at least %d (1 MiB)", d.ChangelogSegmentBytes, MinChangelogSegmentBytes)
 	}
 	return nil
 }

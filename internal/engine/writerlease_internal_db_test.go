@@ -403,11 +403,10 @@ func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
 	ctx := context.Background()
 	var lease *writerLease
 	armed := false
-	// The seam fires with the changelog lines PREPARED and the commit not yet
-	// run, holding the changelog lock: exactly where a write that queued
-	// behind another one arrives.
+	// The seam fires with the commit not yet run, holding the changelog
+	// lock: exactly where a write that queued behind another one arrives.
 	ds := newRaceDataset(t, WithTestCommitFault(func(stage string) error {
-		if stage == commitAfterPrepare && armed {
+		if stage == commitBeforeCommit && armed {
 			lease.lost.Store(true)
 		}
 		return nil
@@ -451,11 +450,6 @@ func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("%d widget rows after the refused write, want the one that landed", n)
-	}
-	// And the prepared lines were cut: the file is back at the table's head,
-	// not a line ahead of it.
-	if fileHead := ds.writer.Head(); fileHead != head {
-		t.Fatalf("the refused write left the file at seq %d with the table at %d", fileHead, head)
 	}
 
 	// The refusal LATCHED NOTHING: with the lease back, writing works.

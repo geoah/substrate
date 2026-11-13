@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -351,6 +352,28 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 	return s.eraseRepositoryOn(ctx, cp, id, nil)
 }
 
+// ErrRepositoryBeingDeleted is the refusal of a repository whose deletion
+// began and did not finish (decision 0279, rule 7): the server finishes it
+// at its next start, once the archive answers.
+var ErrRepositoryBeingDeleted = fmt.Errorf("%w: the repository's deletion began; the server finishes it at its next start", substrate.ErrNotFound)
+
+// The deletion's durable steps, as its test seam names them
+// (testEraseFault).
+const (
+	eraseAfterBegan         = "after the row said the deletion began"
+	eraseAfterMark          = "after the archive's deletion mark was written"
+	eraseAfterArchiveObject = "after one of the archive's objects was deleted"
+	eraseAfterArchive       = "after the archive was deleted"
+	eraseAfterDirectory     = "after the directory was removed"
+)
+
+func (s *service) eraseStage(stage string) error {
+	if s.testEraseFault == nil {
+		return nil
+	}
+	return s.testEraseFault(stage)
+}
+
 // eraseRepository erases a repository whole: every repository-scoped row, then
 // the control-plane row if one was ever written. It exists for two callers: a
 // creation that failed (eraseFailedCreation, which decides whether the
@@ -369,21 +392,21 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 //   - It VERIFIES the scope is empty afterwards — scoped tables AND the
 //     control-plane row — and returns an error if anything survived, so a caller
 //     can changelog it and the boot sweeper can reclaim what a crash left.
-//   - The DIRECTORY GOES FIRST, then the rows. A crash between the two leaves
-//     a row with no directory, which the next boot writes out again from the
-//     tables (repodir.go, case 5): consistent, and complete. The other order
-//     would leave a directory with no row, which the next boot IMPORTS as a
-//     repository whose registration was reported failed.
+//   - The ARCHIVE AND THE DIRECTORY GO FIRST, then the rows. A crash between
+//     the two leaves a row with neither, whose next archive pass writes the
+//     archive again from the tables. The other order would leave an archive
+//     with no row, which the next boot RESTORES as a repository that was
+//     deleted, or whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
 	return s.eraseRepositoryOn(ctx, s.maint, id, nil)
 }
 
 // eraseRepositoryOn is eraseRepository on a given control-plane handle: the
 // registration's locked connection, so the cleanup needs no second one. A
-// person's delete passes fence, which runs first in the erase's transaction,
-// before the directory goes: it holds the factors the request proved for as
-// long as the erase runs (auth.go credentialStandsOn), and its refusal leaves
-// the repository whole.
+// person's delete passes fence, which runs in the transaction that records
+// that the deletion began, before anything is removed: it holds the factors
+// the request proved until the deletion is decided (auth.go
+// credentialStandsOn), and its refusal leaves the repository whole.
 func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string, fence func(*sql.Tx) error) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -395,19 +418,20 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 		ds.close()
 	}
 	s.mu.Unlock()
-	// And the Log a reconcile kept for its first open: it vouches for
-	// segments this erase removes, which a repository created again under
-	// the same name must not inherit.
-	s.takeChecked(id)
 
+	// The row says the deletion began before anything is removed: from here
+	// no archive pass runs on it, and a boot that finds the row finishes the
+	// deletion (rule 7). A person's fence runs in the transaction that
+	// records it, so a change of the factors either committed first, and the
+	// fence refuses with the repository whole, or waits for that commit and
+	// meets a deletion already begun, which nothing undoes.
 	tx, err := cp.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// The changelog lock before the factor fence: it is first in the lock
-	// order, and holding it is what lets the token cache prove that this
-	// transaction ended (commitFencingTokens).
+	// The changelog lock before the factor fence, as it is first in the lock
+	// order: a change of the factors takes it before the credential's row.
 	if err := lockTokens(ctx, tx, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
@@ -416,12 +440,58 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE repositories SET deletion_began_at = coalesce(deletion_began_at, now()) WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
+	}
+	// The deletion ends any take of the repository: no boot replaces it
+	// from a copy staged before.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM archive_takes WHERE repository_id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: end its take: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
+	}
+	if err := s.eraseStage(eraseAfterBegan); err != nil {
+		return err
+	}
+	if err := s.eraseArchive(ctx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: delete its archive: %w", id, err)
+	}
+	if err := s.eraseStage(eraseAfterArchive); err != nil {
+		return err
+	}
+	if err := s.eraseLocal(ctx, cp, id); err != nil {
+		return err
+	}
+	// Named by no take now; a boot removes it too.
+	_ = os.RemoveAll(filepath.Join(s.dataRoot, takeRootDir, id))
+	return nil
+}
+
+// eraseLocal removes what the server holds of a repository: its directory,
+// then every row, in one transaction. A deletion runs it after the archive's
+// part; a take of the archive runs it alone, the archive left whole.
+func (s *service) eraseLocal(ctx context.Context, cp controlPlane, id string) error {
 	dir, err := changelogfile.RepoDir(s.dataRoot, id)
 	if err != nil {
 		return err
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
+	}
+	if err := s.eraseStage(eraseAfterDirectory); err != nil {
+		return err
+	}
+
+	tx, err := cp.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The repository's tokens go in this transaction: the changelog lock
+	// first, so the token cache can prove it ended (commitFencingTokens).
+	if err := lockTokens(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	for _, table := range repositoryScopedTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository = $1`, id); err != nil {
@@ -514,7 +584,7 @@ var repositoryScopedTables = []string{
 	"idempotency_keys", "search_index", "index_reprojections",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest", "observed_index",
 	"unit_graph", "unit_uses", "unit_uses_index",
-	"operator_spend_reservations",
+	"operator_spend_reservations", "archive_records", "archive_objects",
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {

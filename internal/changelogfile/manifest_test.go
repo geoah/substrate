@@ -155,7 +155,7 @@ func TestWriteManifestRefusals(t *testing.T) {
 		want   error
 	}{
 		{"format 0", func(m *Manifest) { m.Format = 0 }, ErrManifestFormat},
-		{"format 3", func(m *Manifest) { m.Format = 3 }, ErrManifestFormat},
+		{"format 4", func(m *Manifest) { m.Format = 4 }, ErrManifestFormat},
 		{"no authority", func(m *Manifest) { m.Authority = "" }, ErrManifestIncomplete},
 		{"no id", func(m *Manifest) { m.ID = "" }, ErrManifestIncomplete},
 		{"authority is not one", func(m *Manifest) { m.Authority = "a/b" }, ErrRepositoryAuthority},

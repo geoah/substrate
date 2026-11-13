@@ -30,7 +30,7 @@ func TestRepositoryRewrapRefusesWithoutCredentialKey(t *testing.T) {
 	}
 }
 
-// A directory with no repository.json is refused by name, nothing is
+// A directory with no manifest is refused by name, nothing is
 // synthesized, and the recovery key never reaches stdout or stderr. No
 // database is opened: the harness clears DATABASE_URL and no --dsn is given.
 func TestRepositoryRewrapRefusesADirectoryWithNoManifest(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRepositoryRewrapRefusesADirectoryWithNoManifest(t *testing.T) {
 	if err == nil {
 		t.Fatal("a directory with no manifest rewrapped")
 	}
-	if !strings.Contains(err.Error(), "repository.json") {
+	if !strings.Contains(err.Error(), "no manifest") {
 		t.Fatalf("the refusal must name the manifest: %v", err)
 	}
 	if _, serr := os.Stat(filepath.Join(dir, "repository.json")); serr == nil {
@@ -98,7 +98,7 @@ func TestRepositoryRewrapReadsAnAgeKeygenFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = h.run("repository", "rewrap", dir, "--identity-file", keyFile)
-	if err == nil || !strings.Contains(err.Error(), "repository.json") {
+	if err == nil || !strings.Contains(err.Error(), "no manifest") {
 		t.Fatalf("the keygen file was not read through to the manifest check: %v", err)
 	}
 

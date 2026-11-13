@@ -74,6 +74,9 @@ type Config struct {
 	// Data is the data root every repository directory lives under. Its own
 	// type, because the operator hat loads it without the rest (LoadData).
 	Data Data
+	// Archive is where each repository is copied after its writes commit
+	// (archive.go).
+	Archive Archive
 	// InviteCode gates the ONE door into a fresh substrate: registering
 	// creates a repository and its user, and with a code set the door
 	// admits only a request that presents it. UNSET, THE DOOR READS NO CODE
@@ -90,16 +93,15 @@ type Config struct {
 	// the previews say so (decision 0067). In records; 0 removes the ceiling.
 	ConversionCeiling int64 `envconfig:"SUBSTRATE_CONVERSION_CEILING" default:"10000"`
 
-	// DigestBytesPerSecond caps the rate the process hashes its
-	// repositories' finished changelog segments at, behind their opens, over
-	// every repository together: hashing is one core busy for as long as
-	// the bytes last, and unpaced it starved the function bodies beside it
-	// on a four-core box. The digests also pause while any function or
-	// agent runs, whatever the cap. 0 removes the cap; a value above 0 and
-	// below MinDigestBytesPerSecond is refused, since it is a unit mistake
-	// (8 for 8 MiB) that would make a history of gigabytes take years with
-	// nothing logged.
-	DigestBytesPerSecond int64 `envconfig:"SUBSTRATE_DIGEST_BYTES_PER_SECOND" default:"8388608"`
+	// ArchiveBytesPerSecond caps the rate the process's archive passes copy
+	// at, over every repository together: a pass encodes and checksums each
+	// line, one core busy for as long as the bytes last, and unpaced that
+	// starved the function bodies beside it on a four-core box. The passes
+	// also pause while any function or agent runs, whatever the cap. 0
+	// removes the cap; a value above 0 and below MinArchiveBytesPerSecond is
+	// refused, since it is a unit mistake (8 for 8 MiB) that would make a
+	// history of gigabytes take years with nothing logged.
+	ArchiveBytesPerSecond int64 `envconfig:"SUBSTRATE_ARCHIVE_BYTES_PER_SECOND" default:"8388608"`
 
 	// OrphanGrace turns the GC sweep's ORPHAN COLLECTION on and sets its
 	// grace window: a mapping target whose live sources are all gone, whose
@@ -261,10 +263,10 @@ func Load() (Config, error) {
 	return c, err
 }
 
-// MinDigestBytesPerSecond is the smallest cap SUBSTRATE_DIGEST_BYTES_PER_SECOND
-// admits above zero: 64 KiB per second, under which a value is a unit
-// mistake rather than a rate anyone wants.
-const MinDigestBytesPerSecond int64 = 64 << 10
+// MinArchiveBytesPerSecond is the smallest cap
+// SUBSTRATE_ARCHIVE_BYTES_PER_SECOND admits above zero: 64 KiB per second,
+// under which a value is a unit mistake rather than a rate anyone wants.
+const MinArchiveBytesPerSecond int64 = 64 << 10
 
 // Validate refuses a configuration the service cannot run safely, before any
 // repository opens. A setting that would otherwise be dropped in silence (a
@@ -277,11 +279,14 @@ func (c Config) Validate() error {
 	if err := c.Data.Validate(); err != nil {
 		return err
 	}
+	if err := c.Archive.Validate(); err != nil {
+		return err
+	}
 	if c.RepositoryConnections < MinRepositoryConnections {
 		return fmt.Errorf("SUBSTRATE_REPOSITORY_CONNECTIONS is %d: it is the number of Postgres connections every repository shares, one repository takes half of them, and it must be at least %d so each repository gets two", c.RepositoryConnections, MinRepositoryConnections)
 	}
-	if c.DigestBytesPerSecond < 0 || (c.DigestBytesPerSecond > 0 && c.DigestBytesPerSecond < MinDigestBytesPerSecond) {
-		return fmt.Errorf("SUBSTRATE_DIGEST_BYTES_PER_SECOND is %d: it caps the bytes per second the process hashes of its repositories' changelogs behind the open, in bytes, so it is 0 (no cap) or at least %d (64 KiB); 8388608 (8 MiB) is the default", c.DigestBytesPerSecond, MinDigestBytesPerSecond)
+	if c.ArchiveBytesPerSecond < 0 || (c.ArchiveBytesPerSecond > 0 && c.ArchiveBytesPerSecond < MinArchiveBytesPerSecond) {
+		return fmt.Errorf("SUBSTRATE_ARCHIVE_BYTES_PER_SECOND is %d: it caps the bytes per second the process's archive passes copy, in bytes, so it is 0 (no cap) or at least %d (64 KiB); 8388608 (8 MiB) is the default", c.ArchiveBytesPerSecond, MinArchiveBytesPerSecond)
 	}
 	if c.OrphanGrace < 0 {
 		return errors.New("SUBSTRATE_ORPHAN_GRACE must not be negative: unset or 0 collects no orphans, and a positive duration (168h) is the window a marked record waits out before the sweep takes it")

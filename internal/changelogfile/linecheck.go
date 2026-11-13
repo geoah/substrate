@@ -295,17 +295,3 @@ func validTS(ts []byte) bool {
 	_, err := time.Parse(TSFormat, string(ts))
 	return err == nil
 }
-
-// lineSum reads a line's seq and sum without verifying either: from the tail
-// when the line is laid out as Encode lays one out, else by decoding it. It
-// is for a line a verified walk has already checked.
-func lineSum(line []byte) (int64, [32]byte, error) {
-	if t, ok := parseTail(line); ok {
-		return t.seq, t.sum, nil
-	}
-	e, sum, err := Decode(line)
-	if err != nil {
-		return 0, sum, err
-	}
-	return e.Seq, sum, nil
-}

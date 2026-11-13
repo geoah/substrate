@@ -394,8 +394,8 @@ Deleting the repository takes the same factors, and nothing else:
 POST /repository/delete  # {"repository","password","totpCode"} → 204
 ```
 
-It erases every record, token and file the repository holds and frees the
-name for the next registration
+It erases every record, token and file the repository holds, its archive
+included, and frees the name for the next registration
 ([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
 The console offers it under Settings, Danger zone.
 

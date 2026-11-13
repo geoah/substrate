@@ -169,10 +169,16 @@ boot.
 | `SUBSTRATE_SITE_DIR`           | unset (no site)                        | An absolute path to a site directory: a `site.yaml` naming the brand the console's sign-in, register and landing pages show, and files served at `/site/`. An invalid `site.yaml` refuses the boot, naming the problem. See [a site for the deployment](#a-site-for-the-deployment). |
 | `SUBSTRATE_OPERATOR_DEFAULTS`  | unset (no operator defaults)           | An absolute path to the operator defaults file: the LLM providers, embeddings and provider function keys the operator pays for on behalf of every repository, and the daily allowance bounding them. It may not sit inside `SUBSTRATE_SITE_DIR`. An invalid file refuses the boot, naming the problem. See [operator defaults](#operator-defaults). |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
-| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<id>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
-| `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
+| `SUBSTRATE_DATA_ROOT`          | required                               | The directory that holds what Postgres does not: `repositories/<id>/` with each repository's blob bytes and webhook spool, and, unless `SUBSTRATE_ARCHIVE` names another place, the archive under `archive/`. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
+| `SUBSTRATE_ARCHIVE`            | unset: `<SUBSTRATE_DATA_ROOT>/archive` | Where each repository is copied after its writes commit ([the archive](#the-archive)): unset is a directory under the data root; an absolute path is that directory; `s3://<bucket>[/<prefix>]` is a bucket of an S3-compatible service, reached with the `SUBSTRATE_ARCHIVE_S3_*` settings below; `off` writes no archive, so back Postgres up. Any other value refuses the boot, naming the variable. No request is made at boot: a store that cannot be reached is a delay the server reports, never a boot that fails. |
+| `SUBSTRATE_ARCHIVE_INTERVAL`   | `10s`                                  | How often each repository's archive pass runs: with the store answering, the longest a confirmed write waits before it is in the archive. A positive duration. |
+| `SUBSTRATE_ARCHIVE_S3_ENDPOINT` | unset: Amazon's                       | The URL of an S3-compatible service that is not Amazon's own, such as `https://s3.example.com`. |
+| `SUBSTRATE_ARCHIVE_S3_REGION`  | `us-east-1`                            | The region the requests are signed for. |
+| `SUBSTRATE_ARCHIVE_S3_PATH_STYLE` | `false`                             | Names the bucket in the path rather than the host name, which most services other than Amazon's need. |
+| `SUBSTRATE_ARCHIVE_S3_ACCESS_KEY_ID` | unset: `AWS_ACCESS_KEY_ID`       | The access key id the requests are signed with. Unset together with the secret, both are read from `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN`). An S3 archive with neither refuses the boot. |
+| `SUBSTRATE_ARCHIVE_S3_SECRET_ACCESS_KEY` | unset: `AWS_SECRET_ACCESS_KEY` | The secret access key. Never logged: the boot line and the metrics name the store by its endpoint, bucket and prefix. |
 | `SUBSTRATE_REPOSITORY_CONNECTIONS` | `16`                            | The Postgres connections every repository of the process shares, however many repositories it has opened. One repository takes at most half of them, and never more than eight, so two busy repositories cannot take the whole pool. A process holds at most this cap plus 12 more: 4 for the admin pool, 5 for the maintenance pool, 2 for repository migrations running at once (each dials a connection of its own) and 1 for a commit-time catch-up after a foreign writer. The default therefore holds a process to 16 + 12 = 28. Keep the cap plus 12, for every process on the database, under the cluster's `max_connections`. At least 4; a lower value refuses the boot, naming the variable. |
-| `SUBSTRATE_DIGEST_BYTES_PER_SECOND` | `8388608`                        | The most bytes per second the process hashes of its repositories' finished changelog segments behind their opens, over every repository together ([what happens at boot](#what-happens-at-boot)). Hashing is one core busy for as long as the bytes last, so the default, 8 MiB, keeps it under half a core on a four-core arm64 box, where a 27 GB history takes about an hour; the digests also pause while any function or agent runs, whatever the cap, for at most 30 s before each megabyte. `0` removes the cap; a negative value, or one above `0` and below `65536`, refuses the boot, naming the variable. |
+| `SUBSTRATE_ARCHIVE_BYTES_PER_SECOND` | `8388608`                       | The most bytes per second the process's archive passes copy, over every repository together ([the archive](#the-archive)). A pass encodes and checksums every line it copies, one core busy for as long as the bytes last, so the default, 8 MiB, keeps it under half a core on a four-core arm64 box, where the first pass over a 27 GB history takes about an hour; the passes also pause while any function or agent runs, whatever the cap, for at most 30 s at a time. `0` removes the cap; a negative value, or one above `0` and below `65536`, refuses the boot, naming the variable. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
 | `SUBSTRATE_ORPHAN_GRACE`       | — (unset: nothing is collected)        | Turns the GC sweep's **orphan collection** on, and sets the window a marked record waits out first (`168h`, `720h`). A mapping target with no live source, nothing above the machine tier holding a property, and nothing live pointing at it is tombstoned once its mark is older than this. Unset or `0` collects nothing, which is the default: the mark is derived either way and `filter.orphaned` lists it. See [collecting orphaned mapping targets](#collecting-orphaned-mapping-targets). |
 | `SUBSTRATE_TRIGGER_INTERVAL`   | `5s`                                   | How often the trigger dispatcher checks every repository for a delivery due, so the longest a record write waits for the trigger it fires. Each tick lists the repositories and runs one pass per idle repository, at most eight passes at once; a host with many repositories may want a slower tick, a test suite that waits on deliveries a faster one. Zero or negative refuses the boot, naming the variable. |
@@ -181,12 +187,12 @@ boot.
 | `SUBSTRATE_REQUEST_BURST_PER_PERSON` | `500`                           | How many requests one person may send at once before `SUBSTRATE_REQUESTS_PER_PERSON` paces them: five seconds of the default rate, so a page that loads many things at once is not paced. At least `1` beside a positive rate; a lower value refuses the boot, naming the variable. |
 | `SUBSTRATE_CHAT_TURNS_PER_PERSON` | `4`                                | How many chat turns with an agent one person runs at once. Each holds a model call and keeps running after its client leaves; one more is refused `409 conflict` until one finishes or is stopped. `0` is the default; a negative value refuses the boot, naming the variable. |
 | `SUBSTRATE_HEALTH_FAILING_AFTER` | `1h`                              | How long every delivery of a trigger must have parked, since its newest `ok` run, before the dispatcher opens its `trigger.failing/<trigger id>` alert and `trigger status` and `sync status` read `failing`; a parked delivery of the trigger must still stand. The next `ok` delivery, dispatched or retried by hand, resolves the alert whatever the window, and so do the end of its last standing park and the next pass after it is disabled or deleted. Zero or negative refuses the boot, naming the variable. See [driving triggers](functions.md#driving-triggers). |
-| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
+| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; an export or a copy of an archive moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_DNS_RESOLVER` | the system's resolver | The DNS server (`host:port`) every `_substrate` TXT lookup asks: Verify domain ([decision 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)), an app's publisher (0209) and a published package's document (0212). A TXT answer is only as trustworthy as the resolver that fetched it and few zones are signed, so point this at a validating resolver for DNSSEC. Each lookup is bounded at 5 seconds. A value that is not `host:port` refuses the boot. |
 | `SUBSTRATE_INSECURE_AUTHORITY_DOCS` | unset | **For testing an unpublished authority document.** A comma-separated list of `authority=path`: each named authority's document is read from the file in place of its `_substrate` TXT record when the server decides whether an app is verified (see [name your publisher](apps.md#name-your-publisher)). Nothing limits it to development: whoever writes the file decides which apps read as that authority's. The approval page says a file on this server verified the publisher, not DNS, and the token records `appAuthorityFromFile`. Boots with a warning naming each authority, and refuses to boot when a file cannot be read. |
 | `SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES` | `false`                | **Local development only.** Lets a token create a package under any authority, not only its repository's own ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). The provider end-to-end suite and `mise run test:e2e` set it, because they apply kinds under fixed authorities and shipped provider files rewired at a local mock. Boots with a warning. Never set it where the substrate is reachable: any token may then declare packages under names its repository does not own. |
-| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), and the Go runtime. The usage series say what each repository does: `substrate_changes_total{repository,kind,op,actor}` (every committed changelog entry; `actor` is the hand, `console`, `cli`, `api`, `app`, `function`, `agent`, `bundle`, `system`, `oauth`, `webhook` or `other`), `substrate_function_invocations_total{repository,function,mode,outcome}` and `substrate_function_invocation_seconds{function}`, `substrate_agent_runs_total{repository,agent,mode,status}`, `substrate_llm_tokens_total{repository,agent,provider,model,type}`, `substrate_llm_cost_usd_total{repository,agent,provider,model,payer}` (`payer` is `operator` or `owner`), `substrate_auth_events_total{repository,event}` (`registered`, `login`, `login_failed`, `repository_deleted`), `substrate_mcp_tool_calls_total{repository,tool,outcome}`, and three gauges read from each open repository at most every five minutes, in the background and only while something scrapes: `substrate_repository_records{repository,kind}` (live records), `substrate_repository_package_kinds{repository,package,origin}` (kinds per declared package; `origin` is `builtin`, `published`, `sample`, named by the shipped sample it came from, or `own`) and `substrate_repository_first_change_timestamp_seconds{repository}`. `SUBSTRATE_METRICS_ANONYMIZE` decides how they name things. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
+| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), the archive's `substrate_archive_pending_entries`, `substrate_archive_delay_seconds`, `substrate_archive_last_pass_timestamp_seconds`, `substrate_archive_failed_passes`, `substrate_archive_missing_blobs`, `substrate_archive_pending_blobs` and `substrate_archive_stopped` gauges (by `repository`; see [the archive](#the-archive)), and the Go runtime. The usage series say what each repository does: `substrate_changes_total{repository,kind,op,actor}` (every committed changelog entry; `actor` is the hand, `console`, `cli`, `api`, `app`, `function`, `agent`, `bundle`, `system`, `oauth`, `webhook` or `other`), `substrate_function_invocations_total{repository,function,mode,outcome}` and `substrate_function_invocation_seconds{function}`, `substrate_agent_runs_total{repository,agent,mode,status}`, `substrate_llm_tokens_total{repository,agent,provider,model,type}`, `substrate_llm_cost_usd_total{repository,agent,provider,model,payer}` (`payer` is `operator` or `owner`), `substrate_auth_events_total{repository,event}` (`registered`, `login`, `login_failed`, `repository_deleted`), `substrate_mcp_tool_calls_total{repository,tool,outcome}`, and three gauges read from each open repository at most every five minutes, in the background and only while something scrapes: `substrate_repository_records{repository,kind}` (live records), `substrate_repository_package_kinds{repository,package,origin}` (kinds per declared package; `origin` is `builtin`, `published`, `sample`, named by the shipped sample it came from, or `own`) and `substrate_repository_first_change_timestamp_seconds{repository}`. `SUBSTRATE_METRICS_ANONYMIZE` decides how they name things. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
 | `SUBSTRATE_METRICS_ANONYMIZE`  | `true`                                 | Hashes the names the usage series carry: the repository becomes `repo:<hash>`, a kind, package, function or agent under the repository's own authority `own:<hash>` of what follows the authority (so one sample imported by two people reads as one name), any other authority's `ext:<hash>`, and a provider row or a model the owner named `own:<hash>`. What the substrate ships (`substrate.reamde.dev` and its subdomains, the seeded provider rows and the models their shipped `llm/model` records name) stays in clear, those names being the features, and so does a model an operator entry serves. The hash is keyed by `SUBSTRATE_CREDENTIAL_KEY`, so it is stable across restarts and unreadable to a dashboard viewer without the key. `false` labels everything with its name, for a box whose operator should read what each person does. Either way a repository puts at most 1000 distinct names of its own on the usage series, and every name past that reads `overflow`; deleting a repository drops its usage series but its account events. The operational series above keep the repository's name either way, since acting on them needs it. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
@@ -200,35 +206,37 @@ boot.
 | `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llm/provider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. A refused dial fails with `egress blocked by the server's dial gate: 10.0.0.7:4000; allow it with SUBSTRATE_EGRESS_ALLOW=10.0.0.7`. These dials honor `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`: with a proxy set, the server dials the proxy, so the gate checks the proxy's address and never the destination's. A proxy on a private address has to be listed here, and from then on the proxy alone decides what a repository-chosen URL reaches. An entry that is neither a CIDR nor an address is ignored, and the boot warns naming it. |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
-data root: without it, sealed material is unreadable
+archive: without it, sealed material is unreadable
 ([backups](#backups)).
 
 ## The repository directory
 
-Every repository owns one directory under the data root, named by its id,
-and that directory is the truth on disk and the unit a backup copies
-([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
-The id is minted at registration (`rnd-` and 26 characters) and never
-changes; the name is the repository's authority, which `repository.json`
-carries beside it:
+The `changelog` table is a repository's history, and Postgres alone confirms
+a write
+([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)).
+The data root holds what Postgres does not: one directory per repository,
+named by its id
+([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)),
+with its blob bytes and its webhook spool, and, by default, the
+[archive](#the-archive):
 
 ```
 $SUBSTRATE_DATA_ROOT/
   instance                          # this server's instance id, minted at its first boot
   repositories/
     rnd-0vrkvsgbs6bnz2sjy4196kccck/ # one per repository, named by its id
-      repository.json               # the manifest: format, id, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId
-      snapshot.json                 # only in a snapshot, or a directory restored from one: the head seq and checksum the copy holds, and the blobs it needs
-      changelog/
-        000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
-        000000000000001.ndjson.sha256   # the digest of a finished segment
-        000000000482113.ndjson
       blobs/
-        blob-sha256-<hex>           # the bytes, content addressed (the fs blob store)
-      sealed/
-        secret-<hex>.json           # one file per sealed row: the ref with ':' as '-'
+        blob-sha256-<hex>           # the bytes, content addressed
       spool/
         <ordinal>-hook-<id>.webhook # a webhook request answered 202 and not yet in the changelog, sealed under the DEK
+  archive/                          # the archive, unless SUBSTRATE_ARCHIVE names another place
+    repositories/
+      rnd-0vrkvsgbs6bnz2sjy4196kccck/
+        manifests/<epoch>.json      # the manifest and the mark: format 3, the highest epoch read
+        changelog/1/                # the history in pieces, under its changelog dialect
+        blobs/
+        sealed/
+        spool/
 ```
 
 `instance` names this server to a domain's `_substrate` record
@@ -240,57 +248,353 @@ stable for the data root's life, so anyone can tell that two hostnames reach
 one server; a lost data root mints a new one, and stamps already written
 stay.
 
-The changelog segments are newline-delimited JSON, one entry per line, each
-line carrying its own SHA-256 checksum
-([the checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)).
-The directory is `repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck/` for a
-repository with that id; `repository.json` carries the id and the name, and
-`substratectl repository list` prints both, so a person finds a repository's
-directory by its name there. The manifest also carries the DEK wrapped
-under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
-column, so a copy restored onto a host with the same key opens without
-anything else. The key itself is never in the directory; `dekKeyId` names it
-(16 hex digits of a one-way hash over the key), so a host holding another key
-is told which key the directory wants. Every file under `sealed/` is
+The id is minted at registration (`rnd-` and 26 characters) and never
+changes; the name is the repository's authority. `substratectl repository
+list` prints both, so a person finds a repository's directory by its name
+there. The repository's data-encryption key (DEK) is in its `repositories`
+row, wrapped under `SUBSTRATE_CREDENTIAL_KEY`, and the archive's manifest
+carries the same bytes, so a copy restored onto a host with the same key
+opens without anything else. The credential key itself is in neither;
+`dekKeyId` names it (16 hex digits of a one-way hash over the key), so a host holding
+another key is told which key a repository wants. Every sealed value is
 ciphertext under that DEK and nothing else: the server refuses a plain
 payload and never tries the host key on one, so a recovery through the
 recovery key is complete
 ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 
-The manifest is also the directory's record of what a binary must understand
-to read it: `changelogDialect` is the repository's
-[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in) and
-`vocabularyDialect` its
-[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
-each the same number the repository's stamp holds. The server rewrites the
-manifest when a stamp moves: at the open that stamps the vocabulary dialect,
-and in the first write a new binary appends, which claims the changelog
-dialect and writes the manifest before it commits or appends. So a copy of the
-directory never holds segments its manifest understates, at any instant
-between a new binary's first write and the next restart. There is one manifest
-format, `format` 1; a manifest naming any other is refused rather than guessed
-at.
-
-Postgres is the commit point and the live index, and the directory is written
-first: the repository's one writer stages the write's sealed files under
-`sealed/<file>.json.pending` and its changelog lines, every byte but the last
-line's newline, in the active segment and fsyncs them; the write commits to
-the `changelog` table; the writer then renames the pending files into place
-and writes that newline. A write is acknowledged only after all of it. A
-pending sealed file and a transaction without its final newline are not the
-directory's records: every reader skips them, and whether Postgres committed
-them is the boot catch-up's to decide from the table, which writes a committed
-one out again and drops an uncommitted one
-([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
-Blob bytes go straight to `blobs/`. At boot the server compares every
-directory with every `repositories` row ([what happens at boot](#what-happens-at-boot)).
+A release before the archive kept each repository's history here too: a
+manifest, the changelog's segment files and a file per sealed value beside
+the blobs (a 0.x directory). The boot takes such a directory's history into
+the database and removes those files, keeping the blobs and the spool
+([what happens at boot](#what-happens-at-boot)).
 
 The root is as private as its mode. The server creates directories `0700` and
 files `0600`; give the root to the substrate's user alone, because anything
-that can read it reads every repository's changelog and blobs in the clear
+that can read it reads every repository's blobs, and the history of an
+archive kept under it, in the clear
 ([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
-Only the sealed files are ciphertext. Encrypt the volume for encryption at
-rest; the substrate does not.
+Only the sealed values and the spool are ciphertext. Encrypt the volume for
+encryption at rest; the substrate does not.
+
+## The archive
+
+Each repository's **archive** is a copy of it the server writes after its
+writes commit: its history in pieces, every blob its records hold, its sealed
+values (ciphertext under its DEK), its webhook spool, and a manifest whose
+`head`, the **mark**, says how far the copy reaches
+([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md),
+[decision 0277](decisions/0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md)).
+It is the backup, what a restore reads and what the owner's export hands out
+([backups](#backups)). [The stored format](stored-format.md#the-archive) is its
+layout, object by object.
+
+**Where it goes.** `SUBSTRATE_ARCHIVE` names the store
+([configuration](#configuration)):
+
+- **Unset**: a directory, `<SUBSTRATE_DATA_ROOT>/archive`. A blob is
+  hard-linked from `repositories/<id>/blobs/` where the two are on one file
+  system, so its bytes take no second copy of the disk. That copy shares
+  the data root's disk, and a linked blob is the same file as the live one,
+  so it survives the loss of the database but not of that disk: copy it
+  elsewhere ([backups](#backups)), or point the archive elsewhere.
+- **An absolute path**: that directory. A path on another disk keeps the
+  copy when the data root's disk is lost.
+- **`s3://<bucket>[/<prefix>]`**: a bucket of an S3-compatible service,
+  reached with the `SUBSTRATE_ARCHIVE_S3_*` settings. The prefix lets one
+  bucket hold several servers' archives.
+- **`off`**: no archive. The backup is then Postgres's own, a dump or a
+  continuous copy of its WAL, taken with the data root's `repositories/`,
+  where the blob bytes are and nowhere else.
+
+**No call to the store waits forever.** A list, a delete, or the wait for a
+get's response is given 2 minutes; a put's or a get's body fails once a minute
+passes with no byte moving, and a transfer that keeps moving is never cut. The
+boot lists the archive once, to find what it holds that the database does
+not: a store that cannot be reached, or that takes the connection and never
+answers, delays the boot by at most that bound, and the boot goes on without
+it, restoring nothing from it until a later boot. A restore that has begun is
+the exception: its repository is marked, and the boot refuses until the
+archive answers rather than serve a repository whose history is half in.
+
+**A pass runs every ten seconds.** While the server has a repository open,
+it runs a pass over it every `SUBSTRATE_ARCHIVE_INTERVAL` (`10s`). A pass
+holds the store to what the database recorded of its last publication, then
+reads the repository from one repeatable-read snapshot and writes the blobs
+and spooled requests the store lacks, the sealed values that changed and the
+pieces from the mark to the snapshot's head, then records the manifest's
+bytes as about to be published, puts it (the pass's one commit point),
+records the publication, and last deletes what the publication dropped
+([how a pass writes it](stored-format.md#how-a-pass-writes-it),
+[the archive's contract](#the-archives-contract)). A pass that finds nothing
+new writes nothing. With the store answering, a confirmed
+write waits at most an interval before it is in the archive. A server stopped
+cleanly runs one last pass over each repository it has open, bounded at 30 s,
+so its archive is at the head it stopped at.
+
+**The passes yield to real work.** A pass encodes and checksums every line it
+copies, so the process's passes together copy at most
+`SUBSTRATE_ARCHIVE_BYTES_PER_SECOND` (8 MiB by default), and pause while any
+function body or agent loop runs in the process, for at most 30 s at a time.
+The first pass over a long history copies all of it: about an hour for 27 GB
+at the default, after an upgrade from a release before the archive, a new
+archive, or a move to a new store. A process stopped in the middle of it
+copies the history again from the start ([the first copy and a
+restart](#the-archives-contract)).
+
+**What a lost store costs.** A write confirmed and not yet archived is in
+Postgres alone, and is lost if Postgres's storage is lost before the next
+pass finishes. A crash or a restart of Postgres loses nothing. Zero loss is a
+synchronous replica of Postgres, which the substrate does not set up.
+
+**A store that fails delays the archive and nothing else.** A pass that
+fails leaves the archive at its last manifest; the server goes on serving,
+the next interval tries again, and the delay grows. The server logs
+`substrate: an archive pass failed; the server goes on serving, and the
+archive falls behind until a pass finishes` with the error when passes start
+failing, and `substrate: the archive is written again` with `failedPasses`
+when one finishes. How far behind is too far is not decided, and nothing
+stops the server for it
+([#1314](https://github.com/geoah/substrate/issues/1314)); alert on the delay
+yourself. With `SUBSTRATE_METRICS` on, each open repository reports seven
+gauges, labeled `repository` with its name:
+
+| Series | What it says |
+| --- | --- |
+| `substrate_archive_pending_entries` | Changelog entries committed and not yet in the archive. |
+| `substrate_archive_delay_seconds` | The age of the oldest entry not yet in the archive; 0 when the archive holds every entry. |
+| `substrate_archive_last_pass_timestamp_seconds` | When the last pass that finished ended; 0 before the first. |
+| `substrate_archive_failed_passes` | Passes in a row that did not finish; 0 after one that did. |
+| `substrate_archive_missing_blobs` | Blobs the archived records hold whose bytes the archive lacks, because this server had lost them; every pass tries them again. |
+| `substrate_archive_pending_blobs` | Blobs the archived records hold that the archive has not copied yet: a pass copies 1 GiB of them and publishes, and the next copies more. |
+| `substrate_archive_stopped` | 1 while the archive is not as the database left it ([the contract's rule 4](#the-archives-contract)): the passes write nothing until an operator resolves it. |
+
+`substratectl repository list` shows each repository's mark, the seq its
+archive holds every line up to and how long ago it was written, and
+`repository inspect` how far that is behind the changelog's head and how
+many blobs it lacks ([operator recovery](#operator-recovery)). An archive is
+a complete copy at its head only with `0 behind the head` and `0 blob(s)
+missing`: a blob whose bytes the server lost is named in the manifest
+(`missingBlobs`) rather than held up the archive. Both are what the last pass
+reported, read from the database; `inspect` reads nothing of the store and
+says so (`as last published`). `repository verify` reads the archive back:
+every line of the newest manifest's pieces against the table's checksums,
+every sealed value it selects, and every blob it holds, hashed against its
+name, and, with the archive at the table's head, that every blob the records
+hold is in it or named missing. What it could not prove it prints as `NOT
+VERIFIED` with the reason, and each such reason is a finding but one: no
+pass has published a copy to the store yet. A manifest gone from a store a
+pass published to, a store that cannot be read, and history in an earlier
+changelog dialect than the table's (until the next pass writes it again)
+fail the check. Before counting on a copy, check both.
+
+### The archive's contract
+
+What the archive holds against, and what it does not, written down
+([decision 0279](decisions/0279-the-archive-holds-against-a-written-contract.md)).
+A review of the archive holds the code to this; a case this section excludes
+by name is not a defect, and a rule that does not hold is.
+
+**What the archive is.** A copy of what one database holds, made after the
+commit. Postgres decides what happened and answers every read. The archive
+may be behind, and how far is measured and reported. While the database
+holds a repository's rows, nothing automatic takes the archive's word over
+the database's.
+
+**What the store must do.** Four operations: put, get, list, delete.
+
+- A put writes a whole object or nothing. A get returns a whole object,
+  "not there", or an error, and the three can be told apart. A list returns
+  every name under a prefix or an error, never a part of them; the S3 store
+  follows every page to the end, and an error in any page fails the whole
+  listing.
+- After a put or a delete has succeeded, a later get or list sees it.
+- A put or a delete that failed or timed out has an unknown outcome: it may
+  be applied later, at any time, whole.
+- Nothing else is assumed: no conditional write, no order between requests
+  in flight.
+
+A local directory and S3-class object stores do this. The directory store
+writes under another name and renames, inside its put.
+
+**Words.** An **archive** is one life of a repository's copy in a store,
+under its own id (`repositories/<repository id>/<archive id>/…`, its
+manifests under `repositories/<repository id>/manifests/<archive id>/`).
+An archive id sorts by when it was made. A new archive starts when a
+repository is created, when it is imported (from an archive, an export or a
+directory), and when an operator resolves a disagreement; an archive is never
+continued by anything but the database life that started it. A **manifest**
+is the one commit point of a pass: it carries an epoch and lists every
+history piece, sealed value and spooled request it selects; blobs are
+selected by the records, by digest. The **record** is what the database
+keeps per repository about its archive (the `archive_records` and
+`archive_objects` tables): the archive id; the manifest it last published,
+its name and bytes; the exact bytes of the manifest it is about to publish,
+if any; and one row for every object it has put or is deleting, written
+before the request is sent.
+
+**The rules.**
+
+1. **A name never holds two contents, and a pass never selects an object it
+   cannot vouch for.** Every object's name carries the id of the pass that
+   put it (and a checksum of its bytes where its content does not name it
+   already); a manifest's name carries its epoch and the hash of its bytes.
+   A manifest selects only objects the pass put itself, or that the manifest
+   it started from selected. An object no manifest selects is reused only by
+   the process that put it; after a restart it is only ever deleted. Once a
+   manifest has dropped an object, no later manifest selects that name.
+2. **One snapshot.** A manifest describes the repository at one history
+   position: every line up to it and none after, and the sealed values and
+   the blobs as one database snapshot at that position saw them. Everything
+   it selects was put, and the put succeeded, before the manifest is sent.
+3. **One publication at a time, finished exactly.** Before a manifest is
+   sent, its exact bytes are recorded as about to be published. A pass that
+   finds one recorded puts those same bytes again and records it published;
+   it never builds a different manifest in its place. Publication, and what
+   may now be deleted, are recorded in one database transaction.
+4. **The database goes on only in an archive that is as it left it.** Every
+   pass, an idle one included, starts by listing the repository's manifests
+   and marks (one list request per open repository per interval, so a
+   manifest that lands late is met at the next tick whether or not anything
+   changed):
+   - the recorded archive has published nothing, and no manifest of it or
+     of a newer archive is listed: go on (a recorded first manifest is put
+     again; otherwise a first pass with names of its own);
+   - the recorded archive is the newest listed, no deletion mark covers it,
+     and its newest manifest is the recorded one, or the one about to be
+     published: go on;
+   - something published, and nothing of the repository listed at all: the
+     store was emptied or replaced. A new archive starts, logged at error;
+   - anything else (a newer or a different manifest than recorded, two
+     manifests of the highest epoch, a newer archive, a deletion mark over
+     the recorded archive, the published manifest gone): **stop**. The pass
+     writes nothing and deletes nothing. The server keeps serving and says
+     so: the log, `substrate_archive_stopped`, `repository inspect`. The
+     operator decides (below). Nothing is ever merged.
+
+   **Taking the archive never removes anything of the database until the
+   whole snapshot it will install has been read, checked and is on local
+   disk**: every piece against its checksum and every line against its own,
+   every sealed value against its version and opened under the data key,
+   every spooled request, and every blob of the archive against its digest,
+   copied to `<data root>/archive-take/<id>/<stage>/` with `staged.json`
+   written last. **A staged copy has no authority of its own.** Only a take
+   recorded in the database starts or continues a replacement, and it
+   installs only the copy staged for exactly that choice: the repository,
+   the archive and the manifest, by name and by the hash the manifest's
+   name carries. `archive resolve --take-archive` stages, in a directory of
+   its own, before it records the choice; a read or a check that fails
+   records nothing and changes nothing, an earlier choice's copy included,
+   says why, and the choice is still the operator's. A second choice is
+   staged beside the first and replaces it only once it is recorded. The
+   record is the control plane's (`archive_takes`), so it outlives the
+   repository's rows: the boot that carries the choice out stages the
+   recorded manifest again only if its copy is not there whole, then drops
+   the repository's rows and files and restores from that copy alone,
+   never reading the store again, and the restore's last transaction ends
+   the take. A crash between the staging and the replacement leaves the
+   repository whole and the copy staged, and once the choice is recorded
+   the next boot replaces it; a copy staged with no choice recorded is
+   removed by an ordinary boot, never installed. A crash after the rows
+   went leaves no row, the record and the copy, which the next boot
+   restores from. A deletion of the repository ends its take in the
+   transaction that begins the deletion. The boot reads `archive-take/`
+   only to find the copy a record names, and removes every other.
+5. **A pass deletes only what the record accounts for**, and only after the
+   publication that drops it is recorded: what the manifest it started from
+   selected and the new one does not, the manifest before itself, and its
+   own database's objects from earlier processes that no manifest selected.
+   It never deletes an object the record does not hold. A row says a delete
+   is about to be sent before it is sent.
+6. **Lines are compared in one place only**: the first boot over a directory
+   a release before the archive wrote. Every line both hold is compared,
+   before the history is converted, so both are in one dialect; then the
+   directory is set aside, the history converted, and a new archive
+   published. No per-line record of a conversion is kept.
+7. **A deleted repository stays deleted.** A deletion records on the
+   repository's row that it began (from then on nothing serves it, no pass
+   runs on it, and a boot finishes it), writes a mark under an id of its own
+   past every archive the store shows and the one recorded, then removes
+   every other object of the repository. A mark covers every archive older
+   than it: no boot restores one, whatever lands later, and no pass writes
+   in one. Bringing it back is an explicit import, which starts an archive
+   past the mark.
+8. **Readers.** A restore with no rows takes the newest archive's newest
+   manifest, when no mark covers it, checks every object it selects as it
+   reads it, installs that one snapshot and its record together, and starts a
+   new archive. Two manifests of the highest epoch are reported and not
+   chosen between. A manifest a newer one replaced is not a recovery point.
+   `repository verify` and `repository inspect` say what they proved and what
+   they did not: the recorded manifest is there; every object it selects is
+   there with its bytes; every line's checksum; objects the record does not
+   hold, as a count, which a listing that fails makes unknown and a finding,
+   never zero. An archive in an older dialect than the table, a store
+   that could not be read, and an object that went while it was read (read
+   again once) are reported as not verified, never as fine.
+
+**What it does not hold against.**
+
+- **Two databases publishing into one archive.** Not supported and not
+  safe: each stops when it sees the other's manifest, and by then either may
+  have deleted what the other still selects.
+- **A store that shows an old or a partial listing, or loses an object after
+  answering.** Not supported. `repository verify` finds a loss when it is
+  run and can read the store; it cannot prove the store hides no other
+  manifest.
+- **Postgres's storage lost.** What was confirmed after the last published
+  manifest is missing from the repository rebuilt from the copy.
+- **The database restored from a backup while the server runs.** Stop the
+  server first.
+- **A directory store on a network mount that hangs in the kernel**, where
+  no timeout reaches.
+- **Bytes after deletion.** A put applied late can leave an object no
+  manifest selects. Nothing reads it, and `verify` counts it; the archive
+  does not promise that deleted bytes are gone from the store.
+
+**Why a database restored from a backup is safe without being declared.** A
+restored database has forgotten what it did after the backup. If that
+forgotten future published a manifest that is in the store, rule 4 sees a
+manifest the record does not hold and stops. If its manifest was still in
+flight, the restored database goes on, and when the manifest lands it is
+either below the current epoch (ignored, reported, and left) or at or above
+it (rule 4 stops at the next pass). A delete from the forgotten future
+targets only an object a publication it recorded had dropped, which rule 4
+saw, or an object no manifest selected, which rule 1 never selects after a
+restart. A put from it lands under a name nothing else has. So nothing the
+current manifest selects is removed by a request the database has
+forgotten. After restoring Postgres, still run `archive resolve
+--keep-database`, which starts a clean archive at once.
+
+**When the passes stop.** `substratectl --dsn … archive report <repository>`
+lists every archive and mark the store holds of the repository and says
+what the database and the archive's newest manifest each hold that the
+other lacks: the lines (compared only when both are in one changelog
+dialect), the sealed values by ref, the blobs by digest. Then, with the
+server stopped:
+
+- `archive resolve <repository> --keep-database` starts a new archive the
+  next pass writes from the database whole. The old archive stays in the
+  store; `archive remove <repository> <archive id>` removes it, and refuses
+  the archive the database writes and a deletion mark.
+- `archive resolve <repository> --take-archive` stages the newest archive's
+  newest manifest whole on local disk, checked (above), records the choice,
+  and has the next boot replace the repository by that copy: every row and
+  file the server holds of it goes, the archive's snapshot comes in, and a
+  new archive starts. What the database held that the archive lacks is
+  lost. A snapshot that does not read or check whole is refused when the
+  command runs, and nothing changes. Run again, it records the later
+  choice in place of the earlier; `--keep-database` after it ends the take.
+- `archive import <repository id> <archive id>` restores a repository the
+  database does not hold from one archive, past a deletion mark.
+
+**The first copy of a long history, and a restart.** An object no manifest
+selected is only ever deleted after a restart (rule 1), so a process stopped
+in the middle of a pass loses what that pass put. A pass copies blobs 1 GiB
+at a time and publishes between, so a restart loses at most a step of them.
+The history cannot be cut that way, because a manifest is one snapshot: a
+process stopped in the middle of the first copy of a long history (after an
+upgrade, or a new archive) copies it again from the start. Let the first pass
+finish before a planned restart: `repository inspect` shows the archive
+behind the head while it runs, and `0 behind the head` when it is done.
 
 ## There is no LLM configuration
 
@@ -326,8 +630,8 @@ Three consequences an operator meets:
   that. There is no REST verb for it: it is an operator command,
   run on the box ([operator recovery](#operator-recovery)). A gateway swapped behind an unchanged row and model name
   is invisible to the provenance columns, so that case takes `reembed --all`.
-- A repository restored from its directory queues every embeddable property
-  by itself, because the vectors were never in the directory
+- A repository restored from its archive queues every embeddable property
+  by itself, because the vectors were never in the archive
   ([backups](#backups)).
 
 ## Operator defaults
@@ -495,8 +799,8 @@ A blob is two halves: a **manifest**, which is an ordinary record keyed by the
 content digest, and the **bytes**. The manifest is always in Postgres and is
 always the truth. The bytes are always at
 `$SUBSTRATE_DATA_ROOT/repositories/<id>/blobs/<digest>`, inside the
-repository directory beside the changelog, so one copy of the directory is a
-whole backup.
+repository directory beside the spool, and the
+[archive](#the-archive) holds a copy of every blob a record holds.
 
 There is nothing to configure: one store, no variable
 ([0075](decisions/0075-v1-ships-the-fs-blob-backend-alone.md)). A host that
@@ -880,8 +1184,8 @@ it trusts:
   ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
   `repository inspect` shows the id of the host key the DEK is wrapped under.
   A payload that does not open under the DEK refuses that open, naming the
-  ref: nothing can recover its material, so delete the row from `sealed` (and
-  its file under `sealed/`) and have the user re-enter the secret it held (a
+  ref: nothing can recover its material, so delete the row from `sealed`
+  and have the user re-enter the secret it held (a
   provider token: reconnect the account; the login credential: `user reset`),
   then open again.
 - **A repository a release before ids left keyed by its name takes its id
@@ -890,8 +1194,8 @@ it trusts:
   name to a minted id and rewraps the data key under it; then the spooled
   webhook requests are sealed again under the id, `repository.json` is
   rewritten in format 2 and the directory renamed from the name to the id.
-  A directory from before ids with no row, being restored, takes a new id the
-  same way before its import. One whose name a repository in the database
+  A 0.x directory from before ids with no row, being restored, takes a new
+  id the same way before its import. One whose name a repository in the database
   holds is that repository's only when both hold the same data key; one whose
   name another repository took since the copy was made refuses the boot and
   is left exactly as it was. The conversion holds the writer lease under the
@@ -904,52 +1208,86 @@ it trusts:
   done. A boot stopped between the rows and the directory is finished by the
   next. An older server cannot open a converted repository; the way back is
   the copy taken before the upgrade.
-- **The data root is reconciled with the `repositories` table**, directory
-  by directory and row by row, before anything else writes. Five cases: a
-  directory and a row whose heads and last checksums agree open; a table ahead
-  of its file (a crash between the commit and the newline that ends the
-  transaction in the file, or an unfinished transaction at the end of the
-  active segment, which the open cuts whole: one the process died before
-  committing, or the prefix a torn write left)
-  has the missing entries appended to the file, whole transactions at a time,
-  and its sealed files rewritten from the table; a file
-  ahead of its table, or a directory with no row, is **imported**, which
-  creates the row from `repository.json`, stamps the repository with the
-  `changelogDialect` and `vocabularyDialect` the manifest recorded, loads
-  `sealed/` into the table, inserts the missing entries with their checksums
-  and folds them through `fold.go` (this is the restore path, and the only
-  one). A directory in an older changelog dialect is converted between its
-  entries going in and their fold, and a repository the database already
-  holds in one is converted here too, before anything opens it
-  ([conversions](stored-format.md#conversions)). A manifest whose `changelogDialect` or `vocabularyDialect` is above
-  the binary's maximum **refuses the boot** with the same named error the open
-  gives ("the changelog speaks a newer dialect than this binary can replay",
-  "the store speaks a newer schema dialect than this binary"); so does a
-  manifest carrying no wrapped DEK, and one whose DEK does not open every
-  file under `sealed/`, named by file. Each refusal
-  comes before the row is created, so a refused directory reserves its
-  authority for nothing and leaves no row for a later boot to export an
-  empty repository from. The import writes
-  an `import_progress` row before its first batch of entries commits and
-  deletes it in the transaction that commits the last fold pass. A boot that
-  dies in between leaves the row, and the next boot check resumes the import
-  from the table's head: no entry is inserted twice and nothing is appended.
-  Until then a read-only open of the repository refuses; a seq present in
-  both with different checksums, a line whose `sum` does not verify, or a
-  finished segment whose first or last line is not what its name and its
-  neighbours say **refuses the boot**, naming the repository and the seq or
-  the file, and repairs nothing (one refusal an operator reads, rather than a
-  repository half-open beside the others). A finished segment whose bytes do
-  not match its sidecar is found after the open instead, and refuses the
-  repository's writes (below); a
-  row with no directory has its directory written out from the tables, once,
-  which is how a repository whose directory was moved away gets one back. A
-  directory under `repositories/` named by an id, or by an authority
-  (`ada.example.com`) as a release before ids named it, with no row and no
-  `repository.json` is logged and skipped: nothing says whose it is, so it is
-  neither imported nor deleted. Any other entry under `repositories/` (a
-  `tmp`, a `Backup-2026`, anything whose name is neither) refuses the boot and
-  names the entry; move it out of the data root.
+- **The boot check takes in every history the database lacks**, before
+  anything else writes, in three passes
+  ([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)).
+  It logs `substrate: boot check started` with the number of repositories
+  and of 0.x directories, and `substrate: repository checked` with the
+  `action` for each repository it changed.
+  0. **A deletion that began is finished**, and a repository its operator
+     chose to replace by its archive (`archive resolve --take-archive`) loses
+     its rows and its files once the copy staged for the recorded choice is
+     whole, so step 2 restores it from that copy.
+  1. **A 0.x directory**, the manifest, segment files and sealed files a
+     release before the archive wrote under the data root, gives the table
+     what the table lacks and then gives its history up
+     ([the contract's rule 6](#the-archives-contract)). One with no row is
+     **imported** whole: the row is created from its `repository.json`,
+     stamped with the `changelogDialect` and `vocabularyDialect` the
+     manifest recorded, its sealed files loaded into the table and its lines
+     inserted with their checksums. One with a row is held to the table
+     **line for line**, every seq both hold, in the one dialect both are in:
+     a line that differs, or a seq either side skips, refuses the boot and
+     names it. Past the shorter one's head the longer one's lines stand: the
+     table's, which a release before the archive left ahead when it died
+     between its commit and the append to the file, and the directory's,
+     which a database restored from a backup older than the data root leaves
+     behind it, and which are imported. The directory is then set aside
+     (`repository.json` renamed to `repository.json.adopted`) before the
+     history is converted, so no boot ever compares a converted table with
+     it; its manifest, segments and sealed files are removed after; its
+     blobs and spool stay where they are. A directory under `repositories/`
+     named by an id, or by an authority (`ada.example.com`) as a release
+     before ids named it, with no row and no `repository.json` is logged and
+     skipped: nothing says whose it is, so it is neither imported nor
+     deleted. Any other entry under `repositories/` (a `tmp`, a
+     `Backup-2026`, anything whose name is neither) refuses the boot and
+     names the entry; move it out of the data root.
+  2. **The archive**, where the server writes one: a repository it holds and
+     the database does not is **restored** from the newest archive's newest
+     manifest, the row created from it as above, into a new archive
+     ([the contract's rule 8](#the-archives-contract)). An archive a deletion
+     mark covers is not restored (`archive import` brings it back), and one
+     holding two manifests of its highest epoch is logged at error and not
+     chosen from. A repository the database holds is never taken from the
+     archive at the boot: its passes hold the archive to the record and stop
+     at anything they do not recognize, and the operator decides. A store
+     that cannot be listed, or a repository's archive that cannot be read,
+     is logged at error and skipped, and the next boot reads it again.
+  3. **Every row**: an import or a conversion a previous boot began is
+     finished, and a history below this binary's changelog dialect is
+     converted ([conversions](stored-format.md#conversions)), before anything
+     opens it.
+
+  No copy of a history is ever compared with the table across a
+  conversion: a 0.x directory is compared before it, and whether an archive
+  is this database's is decided by the record, never by its lines.
+
+  Every import is one path: the lines past the table's head go in with
+  their checksums, the history is converted to this binary's dialect, and
+  the records are rebuilt from the table through `fold.go`. The import
+  writes an `import_progress` row before its first batch of lines commits
+  and deletes it in the transaction that commits the last fold pass. A boot
+  that dies in between leaves the row, and the next boot check resumes the
+  import from the table's head: no line is inserted twice and nothing is
+  appended. Until then an open of the repository refuses. A manifest whose
+  `changelogDialect` or `vocabularyDialect` is above the binary's maximum
+  **refuses the boot** with the same named error the open gives ("the
+  changelog speaks a newer dialect than this binary can replay", "the store
+  speaks a newer schema dialect than this binary"); so does a manifest
+  carrying no wrapped DEK, one whose DEK this host's
+  `SUBSTRATE_CREDENTIAL_KEY` does not open, one whose DEK does not open
+  every sealed value, and one naming a repository whose name another
+  repository in the database holds. Each refusal comes before the row is
+  created, so a refused restore reserves its name for nothing. In a restore
+  and in an import that has begun, a line whose `sum` does not verify, a
+  piece that is not the run its name says, and an archive whose pieces do
+  not reach its head **refuse the boot** too, and so does a 0.x directory
+  that disagrees with its table at a seq. Each names the repository and the
+  seq or the object, and repairs nothing (one refusal an operator reads,
+  rather than a repository half-open beside the others). To boot without
+  it, move `repositories/<id>/` out of the archive, or the directory out of
+  the data root.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -1058,17 +1396,16 @@ a request uses.
 
 **A purge erases the record's sealed material.** When the GC sweep purges a
 tombstone, or `DELETE ?purge=true` purges a record, the record's rows in
-`sealed` and their files under `sealed/` go in the same transaction. A
-tombstone keeps them, so a restore reads its secrets again. Every open of
-a repository as its writer, the server's and an operator command's alike,
-and each sweep after it, also erase every sealed row that no record, live or
-tombstoned, holds the ref of: the rows purges in earlier releases left
-behind, and any an imported copy carries. So `repository snapshot`, which
-opens the repository first, never meets one, and `repository verify`, which
-opens it read-only, names each such row or file as an orphan until the next
-open erases it. The
-erasure covers the live table and the directory only, so every earlier copy
-that held the record's secrets keeps their ciphertext
+`sealed` go in the same transaction, and the archive's next pass deletes
+their copies. A tombstone keeps them, so a restore reads its secrets again.
+Every open of a repository as its writer, the server's and an operator
+command's alike, and each sweep after it, also erase every sealed row that
+no record, live or tombstoned, holds the ref of: the rows purges in earlier
+releases left behind, and any an imported copy carries. So the archive never
+copies one, and `repository verify`, which opens the repository read-only,
+names each such row as an orphan until the next open erases it. The erasure
+covers the live table and the archive only, so every earlier copy that held
+the record's secrets keeps their ciphertext
 ([a rotated or deleted secret stays in older backups](#a-rotated-or-deleted-secret-stays-in-older-backups)).
 
 The trigger dispatcher runs each repository's pass in a goroutine of its own,
@@ -1151,7 +1488,7 @@ this is the one loop that deletes records nobody asked it to delete
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
-scale. The segment files lean on the same shape: one writer process per
+scale. The archive passes lean on the same shape: one writer process per
 repository.
 
 ## One writer per repository, and a second is refused
@@ -1159,39 +1496,32 @@ repository.
 **Two processes on one database are refused at open**, whether or not they
 share a data root
 ([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)).
-A repository has two exclusions over it, and they cover different halves:
-
-- **The data root's flock.** The writer holds an exclusive advisory lock on
-  `<repository>/changelog/.lock` for as long as the repository is open, so a
-  second process on the SAME data root is refused with a named error instead
-  of appending behind the first one's back.
-- **The database's writer lease.** The server takes a Postgres session-level
-  advisory lock per repository, on one connection pinned for the life of the
-  process, when it opens the repository — at the boot check, before the
-  directory import and before any write. That covers the case the flock
-  cannot see: a second server under a DATA ROOT OF ITS OWN, which holds none
-  of the first one's file locks.
+The exclusion is **the database's writer lease**: the server takes a Postgres
+session-level advisory lock per repository, keyed by its id, on one
+connection pinned for the life of the process, when it opens the repository
+(at the boot check, before any import and before any write). It holds
+whatever the second process's data root or archive is.
 
 A server that cannot take the lease **does not boot**. The error names the
 repository and the rule:
 
 ```text
-substrate/engine: boot check: repository ada.example.com: substrate/engine: another
-process is this repository's writer: repository ada.example.com. One server per
-database: this one refuses to open the repository rather than write it from a
-directory of its own. If no server is running, the holder is a connection that has
-not gone away yet; the lease is the advisory lock hashtext(current_schema() ||
-'|writer|' || 'ada.example.com')::bigint, visible in pg_locks. Held by pid 4242,
-application_name "substrate-writer-…", client_addr 192.0.2.10, backend_start
-2026-01-01T00:00:00Z
+substrate/engine: boot check: repository ada.example.com (id rnd-0vrkvsgbs6bnz2sjy4196kccck):
+substrate/engine: another process is this repository's writer: repository
+rnd-0vrkvsgbs6bnz2sjy4196kccck. One server per database: this one refuses to open the
+repository rather than write it from a directory of its own. If no server is running,
+the holder is a connection that has not gone away yet; the lease is the advisory lock
+hashtext(current_schema() || '|writer|' || 'rnd-0vrkvsgbs6bnz2sjy4196kccck')::bigint,
+visible in pg_locks. Held by pid 4242, application_name "substrate-writer-…",
+client_addr 192.0.2.10, backend_start 2026-01-01T00:00:00Z
 ```
 
 **To see who holds one**, compute the key and ask `pg_locks`. The key is
-`hashtext(current_schema() || '|writer|' || <repository>)::bigint`, composed
+`hashtext(current_schema() || '|writer|' || <repository id>)::bigint`, composed
 the way every other advisory lock the engine takes is:
 
 ```sql
-WITH k AS (SELECT hashtext(current_schema() || '|writer|' || 'ada.example.com')::bigint AS key)
+WITH k AS (SELECT hashtext(current_schema() || '|writer|' || 'rnd-0vrkvsgbs6bnz2sjy4196kccck')::bigint AS key)
 SELECT l.pid, a.application_name, a.client_addr, a.backend_start, a.state
   FROM pg_locks l JOIN pg_stat_activity a USING (pid), k
  WHERE l.locktype = 'advisory' AND l.objsubid = 1
@@ -1248,21 +1578,17 @@ stop that one, and run one server.
 
 **A repository is leased before it is published.** The control-plane row is
 what another process sees, so the lease is taken before it, on both paths that
-write one: a registration takes it before the seed, and the boot import of a
-restored directory takes it before the row it builds from the manifest. Either
-one that fails hands it back. Without that order a second server could see the
-new row and claim the repository — erasing it under a failing registration, or,
-for an import, writing a directory out of the changelog table the import had
-not filled yet while the restored history sat unimported on disk.
+write one: a registration takes it before the seed, and the boot's restore of
+an archive or a 0.x directory takes it before the row it builds from the
+manifest. Either one that fails hands it back. Without that order a second
+server could see the new row and claim the repository — erasing it under a
+failing registration, or, for a restore, serving a repository whose history
+the import had not brought in yet.
 
 **The read-only hat takes no lease.** `repository verify` and `repository
-reembed` open with no changelog writer and no lease on purpose, which is what
-leaves them safe to run beside a live server; every other operator command
-opens as a writer and now meets the lease before it meets the flock. The
-cross-writer repair stays behind all of this: a process that does find rows in
-the changelog table its own directory lacks appends them before its own lines
-and logs an error naming the condition, so a lease a restart let slip leaves
-the directories whole rather than latched.
+reembed` open with no lease on purpose, which is what leaves them safe to run
+beside a live server; every other operator command opens as a writer and
+meets the lease.
 
 ## Upgrading the binary
 
@@ -1282,11 +1608,12 @@ in an env var, a default or the boot is listed there; the
 section as its body. [Releasing](releasing.md) says how a section is written
 and how a release is cut.
 
-**Take a backup before you deploy** ([backups](#backups): a snapshot of each
-repository, taken with `--base` of the previous upgrade's so it costs only
-what was written since, and a database dump if the downtime allows one). An
-upgrade that applies a schema migration closes the rollback for the whole
-database, and the copy you take beforehand is the only way back.
+**Take a backup before you deploy** ([backups](#backups)). Stop the server,
+whose last pass leaves each repository's archive at the head it stopped at,
+then copy the database (a dump), the data root and the archive, if it is
+kept elsewhere. An upgrade that applies a schema migration closes the
+rollback for the whole database, and the copy you take beforehand is the
+only way back.
 
 **Each repository carries two dialect stamps, and each refuses a binary that
 is behind it.** The
@@ -1310,15 +1637,32 @@ steps.
 **Rolling the image back is only safe while both stamps and the schema still
 fit.** An older binary refuses a repository stamped above its maxima and a
 database holding a migration it does not carry (below), so the way back from
-either is to restore the database and the data root together, both from the
-copies taken before the upgrade, and boot the older binary under the same
-credential key. A database restored alone is not a rollback: the data root
-still holds what the newer binary wrote, and the older binary's boot meets it,
-refusing the repository or importing its newer rows into the restored copy.
+either is to restore the database, the data root and the archive together,
+all from the copies taken before the upgrade, and boot the older binary under
+the same credential key. A database restored alone is not a rollback: the
+archive still holds what the newer binary wrote, and the older binary's boot
+meets it, refusing the repository or importing its newer lines into the
+restored copy.
 Rolling *forward* to a binary whose maxima cover the stamps always works.
 Going back to an older server any other way is not supported, and a release
 that closes the way back says so in its notes
 ([stability](stability.md#going-back)).
+
+**From a release before the archive.** A release before the archive kept
+each repository's history in its directory under the data root, and wrote
+it there before every commit. The first boot of a release with the archive
+holds each such directory to the table, imports any line it holds past the
+table's head, removes its manifest, segments and sealed files, and keeps its
+blobs and spool ([what happens at boot](#what-happens-at-boot)); the archive's
+first passes then copy every repository whole, paced as
+[the archive](#the-archive) says. That boot applies migration 0022, which
+adds the archive's mark to the `repositories` row, so the way back to the
+older release is the database and the data root copied before the upgrade,
+restored together: the older binary refuses the migration and reads no
+archive. `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` and
+`SUBSTRATE_DIGEST_BYTES_PER_SECOND` are no longer read; a host that still
+sets either boots and ignores it, and `SUBSTRATE_ARCHIVE_BYTES_PER_SECOND` is
+the pacing that took the digest's place.
 
 [Quarantine](vocabulary.md#quarantine) is what a tightened contract does: a
 binary that narrows what a declaration may say quarantines each installed
@@ -1344,7 +1688,7 @@ each migration's version, name and sha256 in `schema_migrations` as it applies
 it, and every boot reads that table back before applying anything. A recorded
 version the binary does not embed means a newer binary migrated the database,
 and the binary refuses to open it: every step after the runner (the orphan
-sweep, the declared indexes, the data root import) writes to the schema, and
+sweep, the declared indexes, the boot check) writes to the schema, and
 an older binary does not know the shape it would be writing to. The refusal
 names each such row by its recorded name, which is the migration file's name
 (`0002_something`); the tree's history says which release added that file. The
@@ -1354,8 +1698,8 @@ credential key, as for any rollback (above). This is the database's own downgrad
 refusal, beside the two per-repository ones above, and it closes the rollback
 even when no repository was written: a new binary that carries a migration
 applies it at its first boot. The operator commands that open the engine
-refuse the same database: `repository rebuild`, `repository
-rotate-generation`, `repository snapshot` and `user reset` run the same
+refuse the same database: `repository rebuild`, `repository reindex`,
+`repository rotate-generation` and `user reset` run the same
 runner, and `repository verify` and `repository reembed` read the same table
 (below). `repository list` and `inspect` read the tables directly and do not.
 
@@ -1411,14 +1755,14 @@ its refs rows and observed points as they stand, and its kind is queued in
 `index_reprojections`, so the background pass after the open re-derives the
 refs rows, search bands and observed points of every row of it under the
 loaded vocabulary. A
-migration is written to find nothing to do the second time, because a
-repository directory imported into a fresh database carries its changelog and
-not the database's ledger, so every migration runs once more there. That is
-also how a directory from an older installation, or from one that never
-opened it under the newer binary, is brought up to date: the
-[boot import](#the-repository-directory) folds it from its segments, the
-migrations run at its first open, the rewrite lands in this installation's
-changelog for the repository, and the ledger row in this database. A process
+migration is written to find nothing to do the second time, because an
+archive restored into a fresh database carries its changelog and not the
+database's ledger, so every migration runs once more there. That is also how
+an archive from an older installation, or from one that never opened it
+under the newer binary, is brought up to date: the
+[boot check](#what-happens-at-boot) folds it from its lines, the migrations
+run at its first open, the rewrite lands in this installation's changelog for
+the repository, and the ledger row in this database. A process
 that opened the data root read-only cannot run one, and refuses a repository
 with a pending migration by name. The first
 migration, `0001_qualify_bare_declaration_names`, writes the full identity
@@ -1459,170 +1803,121 @@ for a store older than the migration that added each, and nothing else.
 
 ## Backups
 
-**A backup is the data root plus the credential key, kept apart.** Every
-repository's directory under `$SUBSTRATE_DATA_ROOT/repositories/` holds its
-changelog, its sealed store and (on the `fs` blob store) its blob bytes
-([the repository directory](#the-repository-directory)), and nothing in the
-database is needed to bring it back: the `changelog` table is an index of the
-files, the `records` table is their fold, and both are rebuilt on import. A
-copy of the directory and the key that opens its sealed files is a complete
-backup. A write is acknowledged only once its changelog lines and sealed files
-are on disk, so a copy taken after a response holds every write the server
-acknowledged; a write the directory could not take is refused and rolled back
-([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
+**The archive is the backup, and the credential key is kept apart from it.**
+Each repository's archive holds its history, every blob its records hold,
+its sealed values and its spool, and its manifest carries the wrapped DEK
+([the archive](#the-archive)). Nothing in the database is needed to bring a
+repository back: a server whose database does not hold a repository restores
+it from the archive at boot. An archive and the key that opens its sealed
+values are a complete backup as of its mark: a write is in it once a pass
+after its commit has finished, about ten seconds later with the store
+answering.
 
-**Copy the root at any moment, then verify the copy.** Finished segments and
-blobs never change, the active segment only grows, and the manifest, the
-sidecars and the sealed files are replaced atomically, so a copy taken
-mid-write is usually consistent or short by its last transaction, which the
-importer cuts whole (every line names the seq its transaction ends at, so a
-prefix of one is never taken for history, and a transaction still missing its
-final newline, like a `.pending` file under `sealed/`, is a write the
-directory has not committed, which the importer ignores). Four windows remain: a copy that reads a segment while the
-server finishes it can hold the segment with a sidecar that does not match
-yet; a copy that reads `sealed/` before `changelog/` can hold a line whose
-sealed file it missed; one that reads `sealed/` after `changelog/`, as
-`rsync` does, can hold the file of a secret written or erased meanwhile,
-which no record in the copy holds and the scratch server's open erases;
-and a copy that reads `blobs/` before `changelog/`
-can hold a blob manifest marked `stored` whose bytes it missed, because an
-upload writes the bytes first and the `stored` manifest after
-([the blob store](#the-blob-store)), and `rsync` reads `blobs/` before
-`changelog/`. So a copy is a backup once
-[`repository verify`](#operator-recovery) passes on it: boot a scratch server
-over the copy with an empty database, which imports it, then verify with
-`SUBSTRATE_CREDENTIAL_KEY` set, so every sealed file is opened and a copy that
-missed one fails where the files alone could not tell. A copy that fails is
-retaken. A cron running this is enough:
+**Keep the archive off the server's disk.** The default,
+`<SUBSTRATE_DATA_ROOT>/archive`, is on the server's own disk and shares its
+blobs' files. Point `SUBSTRATE_ARCHIVE` at another disk or a bucket, or copy
+the directory elsewhere. A copy taken while passes run can catch a pass
+between its steps and hold a manifest whose pieces or blobs it read before
+they were written; a copy of a stopped server's archive, whose close ran one
+last pass, is whole. So a copy is a backup once
+[`repository verify`](#operator-recovery) passes on it: restore it into a
+scratch server with an empty database, then verify with
+`SUBSTRATE_CREDENTIAL_KEY` set, so every sealed value is opened. A copy that
+fails is retaken. A cron running this is enough for the default directory:
 
 ```
-rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
+rsync -a --delete "$SUBSTRATE_DATA_ROOT"/archive/ backup-host:/srv/substrate-backup/archive/
 ```
 
-**The webhook spool rides with the directory.** `spool/` holds the webhook
+**The webhook spool rides with the archive.** `spool/` holds the webhook
 requests the door answered `202` and the drain has not recorded in the
 changelog yet, each sealed under the repository's DEK
 ([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
-A snapshot copies it with the server stopped, and an export reads it under
-the writer mutex that pins its point, so both carry every request answered
-before the point, and the restored server's first trigger dispatcher pass
-drains them. A file whose request the copied changelog already holds is
-deleted and delivers nothing twice. A live copy has one more window than the
-four above: `rsync` reads `changelog/` before `spool/`, so a request the
-drain records between those two reads is in neither, and `repository verify`
-cannot see the gap. Where that matters, take a snapshot or an export.
+A pass copies every request answered before its snapshot, and the restored
+server's first trigger dispatcher pass drains them. A file whose request the
+restored changelog already holds is deleted and delivers nothing twice. A
+request answered after the last pass is in the data root alone until the
+next one.
 
-**A snapshot is a copy with a recorded point, taken with the server stopped.**
-[`repository snapshot <repository> <destination root>`](#operator-recovery)
-writes `<destination root>/repositories/<id>/`, the layout a data root
-has, and `snapshot.json` last. That file names the point: the head seq, that
-entry's checksum, when the copy was taken, and the digests the copy carries
-under `blobs/`. A directory carrying one is a copy that finished; the boot
-ignores the file, and `repository verify` on the restored repository prints the
-point and checks that the entry it names is in the files with that checksum
-([decision 0065](decisions/0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md)).
-
-```
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
-```
-
-**A snapshot with a base copies only what changed.** Pass the destination
-root of an earlier snapshot of the same repository as `--base`, on the same
-filesystem. Every finished segment the base holds under the same name, size
-and sidecar digest, up to the head the base recorded, and every blob the
-base's `snapshot.json` lists, becomes a hard link to the base's file. Neither
-the source's file nor the base's is read again: the base's own checks read
-those bytes when it was taken. The rest (the segments written since, the
-active segment, the sealed files, the new blobs, the manifest) is verified,
-copied and read back as a snapshot without a base does it. The new snapshot
-is a whole directory, so deleting the base later leaves it intact, and it
-can be the next one's base. A file the filesystem refuses to link is copied
-and read back. A snapshot of a 50 GB history taken a day after its base
-costs the bytes of that day, which makes a snapshot before every upgrade a
-matter of seconds once the first one exists. Keep each upgrade's snapshot
-until the next one is taken from it.
-
-```
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-10-06 --base /srv/substrate-backup/2026-09-08
-```
-
-The `changelog` table is compared with the files only from the end of
-what the base holds; the rows below it were compared when the base was
-taken. Run `repository verify` beside the running server before the stop to
-compare them all. A linked file is read only when its base was written, so
-damage to the base after that is carried into every snapshot that links it,
-and hard links share one file between them. A restore still finds such
-damage: the boot import reads every line against its `sum`. To check a snapshot's every byte, restore it
-into a scratch server with an empty database and run `repository verify`
-there, with the key. A filesystem snapshot (ZFS, LVM, a cloud volume) of the
-stopped data root and database volume is an equally good backup, taken in
-seconds, where the deployment has one.
-
-**An owner downloads the same snapshot from a running server.**
-`GET /api/v1/export` streams the repository as a tar laid out as a data root,
-`snapshot.json` last
-([decision 0069](decisions/0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md));
+**An owner downloads the archive from a running server.**
+`GET /api/v1/export` streams the repository's archive as one tar, as of one
+committed point
+([decision 0278](decisions/0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md));
 [`substratectl export`](substratectl.md#exporting) is the client, and the
-bearer token is the whole credential. The server pins the point under the
-repository's writer lock, which every commit holds from its first byte to its
-final newline, and streams the files afterwards, so writes go on during the
-download and the archive still holds one committed state. It carries no host
-key: `repository.json` keeps the DEK wrapped under this server's
-`SUBSTRATE_CREDENTIAL_KEY`, so a same-key restore boots with nothing else, and
-the `recoverykey` record in the changelog holds the same DEK wrapped to the
-owner's recovery key, which is what opens the archive anywhere else. The blob
-bytes ride under `blobs/`, so an export is self-contained. Blob collection
-leaves the bytes of every blob the export listed in the store until the
-stream ends, and the orphan sweep deletes them on a later pass. One export streams
-per repository at a time and a second request answers `409 conflict`; a
-response the server could not finish is aborted rather than closed as a tar
-that looks complete.
+bearer token is the whole credential. The tar holds one archive of its own,
+under an id minted at the export and so newer than the one the server
+writes: `repositories/<id>/<archive>/` with `blobs/`, `sealed/`, `spool/`
+and the pieces under `changelog/<dialect>/`, and the manifest last, under
+`repositories/<id>/manifests/<archive>/`, whose `head` is the point.
+Extracted into a store, it is the newest archive there, so a boot with no
+rows for the repository restores from it; one beside a database that holds
+the repository stops that repository's passes until the operator resolves
+it ([the archive's contract](#the-archives-contract)). An export cut short
+has no manifest, and nothing restores it. The
+server pins the point with one repeatable-read snapshot of the database and
+streams the history afterwards, so writes go on during the download and the
+tar still holds one committed state. A blob's bytes are held against
+collection from before the snapshot until the stream ends, so every blob the
+point holds is there to stream, and the orphan sweep deletes what it held
+back on a later pass. The tar carries no host key:
+the manifest keeps the DEK wrapped under this server's
+`SUBSTRATE_CREDENTIAL_KEY`, so a same-key restore boots with nothing else,
+and the `recoverykey` record in the history holds the same DEK wrapped to
+the owner's recovery key, which is what opens it anywhere else. One export
+streams per repository at a time and a second request answers `409
+conflict`; a response the server could not finish is aborted rather than
+closed as a tar that looks complete.
 
 ```
-tar -x -C "$SUBSTRATE_DATA_ROOT" -f ada.example.com-1234.tar   # on a stopped server with the same key, then boot
+tar -x -C "$SUBSTRATE_DATA_ROOT"/archive -f ada.example.com-1234.tar   # on a stopped server with the same key, then boot
 ```
 
-On the compose deployment the root is the `substrate-data` volume mounted at
-`/var/lib/substrate`, so copy it out of the container, or point the volume at a
-host directory the backup already covers:
+On the compose deployment the data root is the `substrate-data` volume
+mounted at `/var/lib/substrate`, and the archive is under it unless the
+environment moves it, so copy it out of the container, or point
+`SUBSTRATE_ARCHIVE` at a host directory the backup already covers:
 
 ```
-docker compose cp substrate:/var/lib/substrate ./substrate-backup
+docker compose cp substrate:/var/lib/substrate/archive ./substrate-backup
 ```
 
 **Keep `SUBSTRATE_CREDENTIAL_KEY` somewhere the copy is not.** Every
-`repository.json` carries the repository's data-encryption key wrapped under
-it, and every file in `sealed/` is ciphertext under that DEK. The directory
-without the key is every record and every attachment in the clear and no
-secret; the key beside the directory is every secret too. On compose the key
-is the `substrate-keys` volume (`/keys/credential.key`) unless the environment
-sets one. The user's own recovery key wraps the same DEK in the repository's
-`recoverykey` record, and `substratectl repository rewrap` opens a copy with it
-([restore without the credential key](#restore-without-the-credential-key)),
-so losing the host key leaves the sealed files inert only for a user who also
-lost the recovery key.
+manifest carries the repository's data-encryption key wrapped under it, and
+every sealed value is ciphertext under that DEK. The archive without the key
+is every record and every attachment in the clear and no secret; the key
+beside the archive is every secret too. On compose the key is the
+`substrate-keys` volume (`/keys/credential.key`) unless the environment sets
+one. The user's own recovery key wraps the same DEK in the repository's
+`recoverykey` record, and `substratectl repository rewrap` opens a copy with
+it ([restore without the credential key](#restore-without-the-credential-key)),
+so losing the host key leaves the sealed values inert only for a user who
+also lost the recovery key.
 
-**A database dump is optional, and it is not a restore.** The tables hold
-nothing the directory lacks except the runtime state named below. A dump
-plus the matching directory is the fastest way back to a known state, but a
-fresh database and the directory are enough: the boot imports the directory.
-A dump reads the whole database, so skip it when the upgrade's downtime
-matters more than the restore's; the import of a long history takes longer
-than restoring a dump.
+**A database dump is optional beside the archive.** The tables hold nothing
+the archive lacks but the runtime state named below and the writes since the
+last pass. A dump with the archive is the fastest way back to a known state,
+and a boot over a dump older than the archive takes the archive's lines past
+the dump's head; a fresh database and the archive are enough too. A dump
+reads the whole database, so skip it when the upgrade's downtime matters more
+than the restore's; restoring a long history from the archive takes longer
+than restoring a dump. With `SUBSTRATE_ARCHIVE=off` there is no archive, and
+the backup is Postgres's own, a dump or a continuous copy of its WAL, taken with
+the data root's `repositories/`, where the blob bytes are and nowhere else.
 
-**Restore.** Stop the server. Copy the repository directories into a fresh
-server's data root (an export extracts straight into it), set the same
-`SUBSTRATE_CREDENTIAL_KEY`, and boot: the boot imports a directory with no row
-in `repositories`, which is the restore path and the only one
-([what happens at boot](#what-happens-at-boot)). Then verify each repository
-with the key in the environment, so every sealed file is opened; a directory
-that came from a snapshot prints the recorded point (`recovery point: seq N,
-checksum …`) and the head it came back at is that seq:
+**Restore.** Stop the server. Put each repository's archive,
+`repositories/<id>/` whole, into the archive the server reads (an export
+extracts straight into a directory archive), set the same
+`SUBSTRATE_CREDENTIAL_KEY`, and boot over a database that does not hold
+those repositories: the boot restores every repository the archive holds and
+the database does not, and copies its blobs and spool into the data root
+([what happens at boot](#what-happens-at-boot)). A repository whose name
+another repository in the database holds is refused. Then verify each
+repository with the key in the environment, so every sealed value is opened:
 
 ```
-rsync -a ./substrate-backup/repositories/ "$SUBSTRATE_DATA_ROOT"/repositories/
-SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
+rsync -a ./substrate-backup/archive/ "$SUBSTRATE_DATA_ROOT"/archive/
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # restores at boot
+DATABASE_URL=… substratectl repository list
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com     # once per repository
 ```
 
@@ -1630,13 +1925,12 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratec
 repository's history generation
 ([the changelog](changelog.md#watching)), and the restore has to change that
 generation whenever the history clients saved cursors against is not the one
-that comes back. The import above does it by itself: creating the row from the
-manifest mints a new generation. A database dump does not: the row comes back
-with the generation the dump held, whether the matching directory is restored
-beside it or the directory is written from the tables. So after any restore
-that starts from a dump, boot once so the boot check lands (a directory ahead
-of the dump is imported into the table, one behind it is written from the
-table), stop the server, and rotate each repository:
+that comes back. A restore from the archive does it by itself: creating the
+row from the manifest mints a new generation. A database dump does not: the
+row comes back with the generation the dump held, whether or not the
+archive's later lines are imported into it. So after any restore that starts
+from a dump, boot once so the boot check lands (an archive ahead of the dump
+is imported into the table), stop the server, and rotate each repository:
 
 ```
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
@@ -1647,105 +1941,75 @@ writes the restored history never had. A restart and `repository rebuild`
 change nothing here.
 
 **An import that dies is resumed, not served.** The next boot check finishes
-it and logs `resuming an interrupted import`, and so do `repository rebuild`
-and `user reset`, which open the engine the same way. Until one of them runs,
-a read-only open refuses with `the import of the repository directory has not
-completed`, and `repository verify` reports the unfinished import as a finding
-while the files and the rows still verify.
+it and logs `substrate: finishing an interrupted import or conversion`, and
+so do `repository rebuild` and `user reset`, which open the engine the same
+way. Until one of them runs, an open of the repository refuses with `the
+import of the repository's history has not completed`, and `repository
+verify` reports the unfinished import as a finding.
 
-A boot import of a long history takes minutes. The boot check logs
-`boot check started` with the number of directories it will import, each
-import logs `importing the repository directory` before its rows, and the
-server logs `still booting` every 10 s until its listener is up. A SIGTERM
-or SIGINT during the boot ends it with `action=interrupted`, the repository
-it stopped on and the signal, so the next boot's `resuming an interrupted
-import` has its cause in the log above it.
+A restore of a long history takes minutes. The boot check logs `substrate:
+boot check started`, each import logs `substrate: importing a repository's
+history` before its lines, and the server logs `still booting` every 10 s
+until its listener is up. A SIGTERM or SIGINT during the boot ends it with
+`action=interrupted`, the repository it stopped on and the signal, so the
+next boot's resumed import has its cause in the log above it.
 
-The boot check does not hash a finished segment before it serves. A
-finished segment never changes, and hashing every one of a history of many
-gigabytes held the boot for minutes. The boot check reads each finished
-segment's first and last lines, which carry checksums of their own, name
-the seqs the segment starts and ends at, and catch a segment cut short or
-torn, and takes the rest on the word of its `.sha256` sidecar. It reads the
-active segment whole, as before, and digests the last segment listed whole
-even when it is finished, since no segment after it says where it ends. After a segment, and at most once every
-30 s, it logs `substrate: progress` at info, marked `progress=true`, with
-the `walk` `boot check: checking the changelog segments`, the segments and
-bytes checked so far and the directory's totals; the repository's first open
-after the boot logs the `walk` `open: checking the changelog segments` the
-same way. Once a repository is open,
-the server hashes its finished segments in the background, one at a time,
-logging `digesting the finished changelog segments behind the open` with the
-segments, the bytes and the rate cap when it starts, the progress `walk`
-`digesting the changelog segments the open did not read` at most every five
-minutes, and `every finished changelog segment matches its sidecar` with
-`took` and the time it spent `paused` when done. The digest yields to real
-work: the process hashes at most `SUBSTRATE_DIGEST_BYTES_PER_SECOND` bytes a
-second over every repository it has open (8 MiB by default), and every
-digest pauses within a megabyte while any function body or agent loop runs
-in the process, so a function beside it runs as it would alone. The pause
-lasts at most 30 s before each megabyte, so a server whose functions and
-agents run back to back still finishes the digest. A digest a stop interrupts logs `the changelog segment digest stopped
-before it finished`, and the next open digests the rest again. Every line a
-read returns is still held to its own `sum` meanwhile. A segment that
-does not match its sidecar is logged at error (`a finished changelog segment
-does not match its sidecar; refusing writes`) and every later write to the
-repository answers `500 internal` naming the segment, until the directory is
-restored from a backup ([decision
-0146](decisions/0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md)).
-
-A boot that refuses a directory names what it refused: a bad `sum`, a
-segment that does not start or end where its neighbours say, or a DEK this
-host's `SUBSTRATE_CREDENTIAL_KEY` does not open. Move that directory out of
-the root, or restore it from an older copy, and boot again.
+A boot that refuses a restore names what it refused: a bad `sum`, a piece
+that is not the run its name says, or a DEK this host's
+`SUBSTRATE_CREDENTIAL_KEY` does not open. Move `repositories/<id>/` out of
+the archive, or restore it from an older copy, and boot again.
 
 ### Restore without the credential key
 
-A directory copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
+An archive copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
 it was written under is opened with the user's recovery key instead: the
 `AGE-SECRET-KEY-1…` line kept at registration. An export is such a copy once
-extracted anywhere (`tar -x -C /srv/restore -f ada.example.com-1234.tar`). Run
-`repository rewrap` on the copy, in its restore location, with the new host's
-key in the environment. It reads the last `recoverykey` record out of the
-changelog files, opens its `sealedKey` with the recovery key, checks that the
-data-encryption key it recovered opens every file under `sealed/`, wraps that
-key under `SUBSTRATE_CREDENTIAL_KEY` and rewrites `repository.json`. Then move
-the directory under the data root and boot, which imports it as above.
+extracted anywhere (`tar -x -C /srv/restore -f ada.example.com-1234.tar`).
+Run `repository rewrap` on the repository's `repositories/<id>` directory of
+the copy, in its restore location, with the new host's key in the
+environment. It reads the last `recoverykey` record out of the pieces, opens
+its `sealedKey` with the recovery key, checks that the data-encryption key it
+recovered opens every sealed value under `sealed/`, wraps that key under
+`SUBSTRATE_CREDENTIAL_KEY` and writes it into the next manifest (a 0.x
+directory's `repository.json` in place). Then move the
+directory into the archive the server reads and boot, which restores it as
+above. It reads a 0.x directory the same way, which the boot then imports
+from the data root.
 
 ```
 SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck --identity-file ./recovery.key
-mv /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck "$SUBSTRATE_DATA_ROOT"/repositories/
-SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
+mv /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck "$SUBSTRATE_DATA_ROOT"/archive/repositories/
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # restores at boot
 ```
 
 **The destination database must hold no row for the repository.** The boot
-imports a directory that has no `repositories` row and creates the row from
-the manifest; a directory that has a row is reconciled from the row, and the
-boot writes the row's wrap back over `repository.json`. So the rewrap is for
-a fresh database, or one this repository was never imported into; rewrapping
-in place under a live root changes nothing the next boot keeps.
+restores an archive whose repository the database does not hold and creates
+the row from the manifest; for a repository the database holds, the row is
+the truth, and the next archive pass writes the row's wrap into its next
+manifest. So the rewrap is for a fresh database, or one this
+repository was never restored into; rewrapping in place in a live archive
+changes nothing the next pass keeps.
 
 The command takes no database and no server, and prints neither the recovery
 key nor the data-encryption key. Without `--identity-file` it reads the
 recovery key from stdin: `--identity-stdin` for a script, a prompt that does
 not echo otherwise; the key is never an argument. The file may be the one
 `age-keygen -o` writes, comment lines included. It refuses a directory with
-no `repository.json`, one whose changelog holds no `recoverykey` record (the
+no manifest, one whose history holds no `recoverykey` record (the
 repository never enrolled one, so only the key it was written under opens it),
-one with no files under `sealed/` (a registered repository seals at least its
-login credential, so the copy is incomplete), and one whose `sealed/` files
+one with nothing under `sealed/` (a registered repository seals at least its
+login credential, so the copy is incomplete), and one whose sealed values
 the recovered key does not open. Every refusal comes before anything is
-written, so a refused rewrap leaves the directory as it was. The manifest is
-written under the changelog writer lock, which a server holds once it has
-opened the repository; a server that has not opened it yet holds nothing, so
-stop the server rather than rely on the refusal. The rewrap revokes nothing: a
-copy taken before it still opens under the old host key.
+written, so a refused rewrap leaves the directory as it was. Nothing locks
+the copy, so rewrap it outside any archive a running server writes. The
+rewrap revokes nothing: a copy taken before it still opens under the old host
+key.
 
-**What comes back, and what does not.** Trigger state is in the directory:
+**What comes back, and what does not.** Trigger state is in the history:
 every cursor advance, schedule fire, parked failure and paged-drain page is a
 `delivery` changelog entry
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
-folded back into the trigger tables on import with the rest of the changelog,
+folded back into the trigger tables on restore with the rest of the changelog,
 and so is every webhook request the door answered `202` to whose fire had not
 settled: the server's first trigger dispatcher pass over the restored
 repository runs each one under its original fire id, with the body read back
@@ -1761,21 +2025,22 @@ delivered twice and nothing an older source skipped is delivered late; a schedul
 and fires the newest one it missed, or, where its `missed` is `all`, each
 one it missed, oldest first, at most ten per pass; a parked
 failure keeps the id `…/parked` listed, so a saved retry still names it, and
-a parked drain resumes from its last committed page, unless the directory was
-written by a release before record ids sorted in byte order: its history
+a parked drain resumes from its last committed page, unless the archive or
+the directory was written by a release before record ids sorted in byte
+order: its history
 carries no mark of the order its drains' continuations are in, so every drain
 holding one starts over from its first page at the repository's first open
 (repository migration 7). A paged drain that stopped
 between pages without parking (a crash, or a shutdown mid-drain) starts over
 from its first page: a middle page's entry names the cursor by its SHA-256 and
 leaves the bytes in the database, and only a park carries them into the
-directory
+history
 ([decision 0141](decisions/0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md)).
 On an import of a newer
-directory over an older database dump the entries fold over the dump's rows,
-so the triggers land where the directory says, not where the dump did.
+archive over an older database dump the entries fold over the dump's rows,
+so the triggers land where the archive says, not where the dump did.
 
-Runtime state is not in the directory: embedding vectors (queued again,
+Runtime state is not in the archive: embedding vectors (queued again,
 below), OAuth flows in flight, a record trigger's scan position past rows
 that matched nothing, and the `Idempotency-Key` rows, so a retry carrying a
 key from before the restore runs its operation again. A consent flow in flight is started again: it is a nonce
@@ -1789,7 +2054,7 @@ changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
 generation, which is what `repository rotate-generation` above is for. A
 restart and a rebuild keep it too, and neither costs a client its cursor. The
 alternatives beside a property (`propertyMeta.alternatives`) are not in the
-directory either, and need not be: the import derives them again from the
+archive either, and need not be: the import derives them again from the
 records it folded, values, actors and stamps alike
 ([reading provenance](projection.md#reading-provenance-propertymeta)).
 
@@ -1800,7 +2065,7 @@ or a value that is gone is deleted, a vector
 bought by the current provider and model for unchanged text is kept,
 and every property without a current vector is queued (the boot logs `import
 queued the repository's embeddable properties` with the count). Into an empty
-database that is every property; a newer directory restored over an older
+database that is every property; a newer archive restored over an older
 database dump queues only what changed, so it does not re-buy the repository.
 The drain loop then buys the vectors a batch at a time once the repository's
 `llm/provider` row resolves; with no such row the queue rows wait for one. A
@@ -1810,55 +2075,66 @@ calls, so a ranking may differ from before the copy. `reembed` is not part of
 a restore; it is for a row re-pointed at another model.
 
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
-directory, on the backup host and in the dump alike. The substrate does not
-encrypt the storage under it; do that yourself.
+archive, on the backup host and in the dump alike. The substrate does not
+encrypt the storage under it; do that yourself, or use a bucket that does.
 
 ### A rotated or deleted secret stays in older backups
 
-Rotating or deleting a secret does not remove it from a backup, snapshot or
-export taken while it was current, so a credential that leaked must be
+Rotating or deleting a secret does not remove it from a backup or an export
+taken while it was current, so a credential that leaked must be
 revoked at the provider that issued it as well as rotated here. A new value
 written to a secret-typed property, a cleared one, a password or TOTP change,
 a [purge](#what-happens-at-boot) and the OAuth teardown of a deleted
-connected account each delete the old row from the `sealed` table and its
-file from `sealed/`, and change no other copy. The ciphertext can stay in
+connected account each delete the old row from the `sealed` table, the
+archive's next pass deletes its copy, and no other copy changes. The ciphertext can stay in
 Postgres's dead tuples and WAL, on the primary and on any replica, until
 Postgres reclaims them (`VACUUM` or page pruning for a tuple, recycling for
-a WAL segment), which the substrate does not control. It stays in any WAL
-archive, and in every database dump and copy of the directory taken while it
-was current (an `rsync` mirror keeps it until its next run). Each of those
+a WAL segment), which the substrate does not control. It stays in any copy
+of Postgres's WAL, and in every database dump and copy of the archive taken
+while it was current (an `rsync` mirror keeps it until its next run). Each of those
 still opens under the repository's DEK, which a rotation does not change.
-Restoring one of the directory copies brings the old value back as the
+Restoring one of the archive's copies brings the old value back as the
 property's current value: an `llm/provider` row restored from a week-old copy
 holds the leaked `apiKey` again, and every agent that names the row uses it.
 Only the OAuth teardown reaches the provider: it asks the provider to revoke
 the account's tokens, best effort, where the provider's bundle declares a
 revocation endpoint.
 
+A deleted repository is the same. Deleting it deletes the archive the
+server writes, manifest first and before the rows, and with
+`SUBSTRATE_ARCHIVE=off` the copy under `<data root>/archive` if one is
+there. Every other copy keeps it: a bucket the server no longer writes, a
+copy of the archive, a database dump. A server booted with such a copy as its
+archive restores the repository, because a repository the archive holds
+and the database does not is a restore.
+
 ## Operator recovery
 
 These are the [operator hat](substratectl.md#two-hats): no token, `--dsn` (or
-`DATABASE_URL`) and `SUBSTRATE_DATA_ROOT`, and a refusal before touching
-anything without them.
+`DATABASE_URL`), and a refusal before touching anything without it. The
+commands that open the engine also read `SUBSTRATE_DATA_ROOT`, and the
+`SUBSTRATE_ARCHIVE` settings the server runs with, so they read the archive
+the server writes; none of them runs an archive pass.
 
-**Four of them run beside a live server; five need it stopped; one takes no
+**Four of them run beside a live server; four need it stopped; one takes no
 database.** `repository list` and `repository inspect` read the tables
 directly; `repository verify` and `repository reembed` open the engine
-read-only, so they apply no migration, run no boot check and append nothing: `verify` reports an unfinished final transaction or a table
-ahead of its file as a finding instead of repairing it, and `reembed` writes
+read-only, so they apply no migration, run no boot check and append nothing:
+`verify` reports what it finds instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
-`repository reindex`, `repository rotate-generation`, `repository snapshot`
-and `user reset` open the repository as its changelog writer, and a running
-server holds that lock: the command refuses, naming the lock, until the
-server is stopped. `repository
-rewrap` acts on a copied directory before any boot has imported it, so it
+`repository reindex`, `repository rotate-generation` and `user reset` open
+the repository as its writer, and a running server holds its
+[writer lease](#one-writer-per-repository-and-a-second-is-refused): the
+command refuses, naming the lease, until the server is stopped. Opening as
+the writer runs the boot check, so they also finish an interrupted import
+and restore what the archive holds and the database does not.
+`repository rewrap` acts on a copy before any boot has restored it, so it
 needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository list
-DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository inspect ada.example.com
+DATABASE_URL=… substratectl repository list
+DATABASE_URL=… substratectl repository inspect ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com
-SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
@@ -1877,7 +2153,7 @@ holds `DATABASE_URL` and `SUBSTRATE_DATA_ROOT` in its environment, so
 neither is repeated on the command line. It holds `SUBSTRATE_CREDENTIAL_KEY`
 only when the environment compose reads sets it: a key the entrypoint minted
 into `/keys/credential.key` reaches the server process alone, and a bare
-`repository verify` then passes without opening a sealed file. A command
+`repository verify` then passes without opening a sealed value. A command
 that should open them reads the file when the variable is empty:
 
 ```
@@ -1890,82 +2166,66 @@ Publishing the Postgres port to reach the same commands from the host is a
 worse trade: it exposes the database to everything that can reach the host, and
 the exec path needs nothing open at all.
 
-- **`repository list`** reads the one control-plane table: one row per repository.
-- **`repository inspect <repository>`** reports the authority (the repository's
-  id, and the name of its directory), when it was created, the changelog head in the table and the head in the
-  segment files with the segment count, live and tombstoned record counts,
-  and the declaration versions per package. Two heads that differ are the gap
-  the next boot closes. It is the first thing to run when something looks
-  wrong.
-- **`repository verify <repository>`** walks the segment files: every line's
-  `sum`, every finished segment's sidecar, the seq order, and both heads
-  against each other. It then holds the side stores to the fold: every blob
-  whose manifest says `stored` is read out of the configured blob store and
-  hashed against its digest, every secret reference a live record holds
-  (by the repository's own declarations, as a replay loads them, so the
-  records of a package the loader parked are not walked) must have its
-  sealed file, every sealed row and file must have its ref held by the
-  record that owns it, live or tombstoned (one that is not is an orphan,
-  counted and named by ref, and the next writable open or GC sweep erases
-  an orphan row and its file), and with
-  `SUBSTRATE_CREDENTIAL_KEY` in the environment every sealed file is opened
-  under the repository's key; without the key the files are compared with
-  the rows and the report says nothing was opened. A directory that is a
-  snapshot, or was restored from one, carries `snapshot.json`: the recorded
-  point is printed and the entry it names must be in the files with the
-  recorded checksum. It reports the head `(seq, checksum)` or every finding
-  by seq, digest, ref or file name, never repairs the repository it judges
-  (and applies no migration: see
+- **`repository list`** reads the one control-plane table: one row per
+  repository, with its name, its id, when it was created and its archive's
+  mark (`ARCHIVED`: the seq the archive holds every line up to and how long
+  ago the pass that wrote it ran, `never` before the first pass or with the
+  archive off). `-o json` carries the mark as `archivedSeq`, `archivedAt` and
+  `archiveStore`.
+- **`repository inspect <repository>`** reports the authority, the
+  repository's id, when it was created, the id of the key its DEK is wrapped
+  under, the changelog's head in the table, the archive's mark as last
+  published, from the database's record and not read from the store (how far
+  it is behind the head, how many blobs it lacks because the server lost
+  their bytes, how long ago it was written and to which store), live and
+  tombstoned record counts, and the declaration versions per package. It is
+  the first thing to run when something looks wrong.
+- **`repository verify <repository>`** walks the `changelog` table from seq 1
+  to the head in one read-only snapshot: the sequence must be gapless, every
+  row must name a transaction that fits the rows around it, and every row
+  must carry its stamped checksum. With an archive it then holds the archive
+  to the table: its manifest's head may not be past the table's, and every
+  line of the chain of pieces to it must carry the checksum the table stamped
+  for its seq. An archive behind the table is not a finding, because it is
+  copied after the commits. What it could not hold to the table it prints
+  as `NOT VERIFIED` (`archiveUnverified` in `-o json`), and that is a
+  finding for a store that cannot be read, a manifest gone from a store a
+  pass published to, and history in an earlier changelog dialect than the
+  table's; an archive no pass has published to yet is said and is no
+  finding. It then
+  holds the side stores to the fold: every blob whose manifest says `stored`
+  is read out of the blob store and hashed against its digest, every secret
+  reference a live record holds (by the repository's own declarations, as a
+  replay loads them, so the records of a package the loader parked are not
+  walked) must have its sealed row, every sealed row must have its ref held
+  by the record that owns it, live or tombstoned (one that is not is an
+  orphan, counted and named by ref, and the next writable open or GC sweep
+  erases it), and with `SUBSTRATE_CREDENTIAL_KEY` in the environment every
+  sealed row is opened under the repository's key; without the key the
+  report says nothing was opened. It reports the head `(seq, checksum)` or
+  every finding by seq, piece, digest or ref, never repairs the repository it
+  judges (and applies no migration: see
   [upgrading the binary](#upgrading-the-binary)), and exits nonzero on any
-  finding. It reads the
-  segment files twice: once for the sidecar digests and every line's `sum`,
-  several segments at a time, and once to hold each table row's stamped
-  checksum to the `sum` its line carries. `--recanonicalize` also recomputes
-  every row's checksum from its stored columns, which reads and
-  canonicalizes every payload the table holds and takes hours on a long
-  history; only it finds a row edited in place with its checksum left
-  alone. On a long history it prints a progress line to stderr at most
-  every thirty seconds naming the segment, the seq and the bytes read so
-  far. It is safe beside
-  a running server; a finding about the heads taken mid-write can be a
-  transaction in flight, and one about a blob can be an upload the sweep
-  just collected, so run it twice before believing one. Run it on every
-  restored copy and before and after a Postgres major upgrade. It proves the
-  files are undamaged, agree with the table and hold what the fold needs; it
-  does not prove who wrote them
-  ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
-- **`repository snapshot <repository> <destination root>`** writes a verified
-  copy of the repository directory, carrying the recorded point described
-  under [backups](#backups). It needs `SUBSTRATE_CREDENTIAL_KEY`, runs the
-  whole `verify` first and refuses on any finding, then copies the manifest,
-  every segment and sidecar, every committed sealed file and the bytes of
-  every `stored` blob, each hashed against its digest on the way, and verifies
-  the copy's changelog and sealed files before writing `snapshot.json`: every
-  copied finished segment is hashed against its copied sidecar and held to
-  the digest the source's verification took, so its lines are not walked a
-  second time. It prints the same progress lines as `verify` while it
-  verifies the source, and the progress `walk` `snapshot: checking the
-  copied changelog segments` while it reads the copy back. With `--base <earlier snapshot
-  root>` it links what the base holds instead of reading and copying it
-  ([backups](#backups)), and prints how many segments and blobs it linked.
-  The
-  copy holds what the fold needs and nothing else: a pending upload, a
-  tombstoned blob's bytes and a staged sealed file are not copied. It refuses
-  a destination that already holds the repository, so a snapshot is never a
-  merge over an older copy, and it refuses beside a running server, because it
-  opens the repository as its changelog writer (a server that opens the
-  repository first while it runs meets the same lock). The copy is built under
-  a dot-prefixed directory beside `repositories/` and renamed into place last,
-  so a failed snapshot leaves nothing at the destination and the same
-  destination takes the retry. Run it with the binary the server runs, as with
-  `rebuild`: it opens the repository the way the server does, so a newer
-  `substratectl` stamps the source with its own dialects and the older server
-  then refuses the repository.
-- **`repository rebuild <repository>`** replays the segment files into a fresh
-  fold, in one transaction, under that repository's own lock, after running
-  the same check the boot runs. It reproduces the fold bit for bit and appends
-  nothing, so it is safe to run on a healthy repository, and it is the proof
-  that the directory alone reproduces the records. The search index (`fts`)
+  finding. `--recanonicalize` also recomputes every row's checksum from its
+  stored columns, which reads and canonicalizes every payload the table holds
+  and takes hours on a long history; only it finds a row edited in place with
+  its checksum left alone. On a long
+  history it prints a progress line to stderr at most every thirty seconds.
+  `-o json` prints the report: `repository`, `entries`, `head`, `headHash`,
+  `archive`, `archiveHead`, `archivePieces`, `sealedRows`, `sealedOpened`,
+  `sealedOrphans`, `secretRefs`, `blobs`, `blobBytes`, `recanonicalized`,
+  `findings`, `truncated`, `ok` and `took`. It is safe beside a running
+  server; a finding about a blob can be an upload the sweep just collected,
+  so run it twice before believing one. Run it on every restored copy and
+  before and after a Postgres major upgrade. It proves the history is
+  undamaged, the archive agrees with the table and the side stores hold what
+  the fold needs; it does not prove who wrote them
+  ([the checksum](changelog.md#the-checksum-and-the-archive)).
+- **`repository rebuild <repository>`** replays the `changelog` table into a
+  fresh fold, in one transaction, under that repository's own lock. It
+  reproduces the fold bit for bit and appends nothing, so it is safe to run on
+  a healthy repository, and it is the proof that the history alone reproduces
+  the records. The search index (`fts`)
   is reproduced too, with one limit: the replay indexes every row under the
   kind declarations in force at the end, and a kind edit that changes what
   its records index re-indexes the kind's rows in the same apply, so the two
@@ -1976,7 +2236,7 @@ the exec path needs nothing open at all.
   a [quarantined](vocabulary.md#quarantine) package index under its stored
   declaration in the replay as they did live, except where that declaration
   no longer parses. It does not
-  touch blobs or sealed files, which were never in the changelog. It replays the delivery ledger with the rest of the
+  touch blobs or sealed values, which were never in the changelog. It replays the delivery ledger with the rest of the
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a parked drain's resume row come back, and the next pass
   re-reads the rows after the cursor, which deliver nothing. A drain that
@@ -1984,8 +2244,10 @@ the exec path needs nothing open at all.
   because its last page entry names that cursor's SHA-256. OAuth flows in
   flight are left alone. On a long history it prints a progress line to
   stderr every thirty seconds, as `verify` does. Stop the server
-  first: it opens the repository as its changelog writer and refuses while
-  the server holds the lock.
+  first: it opens the repository as its writer and refuses while the server
+  holds the lease. Run it with the binary the server runs: it opens the
+  repository the way the server does, so a newer `substratectl` stamps it
+  with its own dialects and the older server then refuses the repository.
 - **`repository reindex <repository> --observed`** queues every record of
   every kind that binds the `observed` trait for the background pass that
   derives the [observed index](observations.md#the-observed-index) again:
@@ -2036,8 +2298,8 @@ release.
 - **No evidence that history was not altered.** The per-entry checksum
   catches corruption. Nothing is signed and there is no hash chain, so
   nothing stored is evidence against the host operator, who holds the
-  database, the data root and the credential key alike
-  ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
+  database, the archive and the credential key alike
+  ([the checksum](changelog.md#the-checksum-and-the-archive)).
 - **One server process per database.** A second is refused at open
   ([one writer per repository](#one-writer-per-repository-and-a-second-is-refused)),
   so there is no standby, and an upgrade stops the old process before the
@@ -2058,6 +2320,9 @@ And today:
 - **No erasure, compaction or retention.** The changelog keeps every entry,
   a delete leaves the values it removed in history, and the
   [horizon](changelog.md#frames-and-the-horizon) stays 0.
+- **No bound on the archive's delay.** The server reports how far each
+  archive is behind and goes on serving however far that is
+  ([the archive](#the-archive)).
 
 ## Publisher refresh
 

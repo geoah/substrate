@@ -40,7 +40,6 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -343,36 +342,12 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 		repoID, ref, sealed); err != nil {
 		return false, err
 	}
-	// The row is re-read inside the transaction, so the file gets what the
-	// table holds at the commit and not the bytes one writer remembers.
-	rec, err := readSealedRecordOn(ctx, tx, repoID, ref)
-	if err != nil {
-		return false, err
-	}
-	// The step lives in the sealed row and nowhere in the changelog, so the
-	// file is the only thing that carries it into the directory, and the row
-	// commits only once the file is written (commitSealed). It goes through
-	// the dataset, under the writer mutex every other sealed write takes.
-	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
+	// The step lives in the sealed row and nowhere in the changelog; the
+	// archive copies the row as it copies every sealed value.
+	if err := ds.commitSealed(tx, wc); err != nil {
 		return false, err
 	}
 	return true, nil
-}
-
-// readSealedRecordOn reads one sealed row through q as its file record, for a
-// mirror that must carry the row as the transaction leaves it rather than as
-// one writer remembers it.
-func readSealedRecordOn(ctx context.Context, q dbx, repoID, ref string) (changelogfile.SealedRecord, error) {
-	var owner eref
-	var payload []byte
-	var expires sql.NullTime
-	var updated time.Time
-	if err := q.QueryRowContext(ctx,
-		`SELECT record_kind, record_id, payload, expires_at, updated_at FROM sealed WHERE repository = $1 AND ref = $2`,
-		repoID, ref).Scan(&owner.Kind, &owner.ID, &payload, &expires, &updated); err != nil {
-		return changelogfile.SealedRecord{}, err
-	}
-	return sealedRecordOf(ref, owner.Kind, owner.ID, payload, expires, updated), nil
 }
 
 func mustJSON(v any) []byte {
@@ -686,8 +661,9 @@ func (t *txn) factorsStand(proved authMaterial) error {
 
 // credentialStandsOn is factorsStand for an act outside the repository's
 // changelog, a repository's erase: the credential row is read FOR UPDATE in
-// the erase's own transaction, which waits for a factor change writing that
-// row and keeps the next one waiting until the erase commits.
+// the transaction that records that the deletion began, which waits for a
+// factor change writing that row and keeps the next one waiting until the
+// deletion is decided.
 func credentialStandsOn(ctx context.Context, tx *sql.Tx, repository string, proved authMaterial) error {
 	var passwordRef, totpRef sql.NullString
 	err := tx.QueryRowContext(ctx, `
@@ -985,7 +961,6 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 			ref, kindCredential, credentialID, payload).Scan(&updated); err != nil {
 			return fmt.Errorf("substrate/engine: seal credential material: %w", err)
 		}
-		t.mirrorSealedWrite(sealedRecordOf(ref, kindCredential, credentialID, payload, sql.NullTime{}, updated))
 	}
 	if _, err := t.put(substrate.PutInput{
 		Kind: kindCredential, ID: credentialID, Properties: props,
@@ -999,7 +974,6 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
 			return err
 		}
-		t.mirrorSealedDelete(ref)
 	}
 	return nil
 }

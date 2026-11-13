@@ -224,9 +224,9 @@ var featureTable = []feature{
 		"POST /api/v1/repository/domain",
 		"POST /api/v1/repository/domain/verify",
 	}},
-	// The recovery export streams a tar in the snapshot format (decision
-	// 0069).
-	{name: "export", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	// The recovery export streams the repository's archive as one tar
+	// (decision 0278); revision 2 is that layout.
+	{name: "export", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/export",
 	}},
 	// Search is the list route's `q=`: beta while the hit shape (the per-arm

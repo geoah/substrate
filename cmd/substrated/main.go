@@ -240,16 +240,29 @@ func run() error {
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(cfg.Data.Root),
-		engine.WithChangelogSegmentBytes(cfg.Data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 		engine.WithConversionCeiling(cfg.ConversionCeiling),
-		engine.WithDigestBytesPerSecond(cfg.DigestBytesPerSecond),
+		engine.WithArchiveBytesPerSecond(cfg.ArchiveBytesPerSecond),
 		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 		engine.WithTriggerLaneWorkers(cfg.TriggerLaneWorkers),
 		engine.WithChatTurnsPerPerson(cfg.ChatTurnsPerPerson),
 		engine.WithHealthFailingAfter(cfg.HealthFailingAfter),
+	}
+	// The archive (decision 0262): a store the server copies each repository
+	// to after its writes commit. Opening it makes no request, so a store
+	// that cannot be reached delays the archive and never the boot.
+	archiveStore, err := cfg.Archive.Store(cfg.Data.Root)
+	if err != nil {
+		return err
+	}
+	if archiveStore == nil {
+		slog.Warn("the archive is off (SUBSTRATE_ARCHIVE=off): a repository is in Postgres alone, so back Postgres up")
+		opts = append(opts, engine.WithArchive(nil))
+	} else {
+		slog.Info("archiving each repository", "store", archiveStore.String(), "interval", cfg.Archive.Interval)
+		opts = append(opts, engine.WithArchive(archiveStore), engine.WithArchiveInterval(cfg.Archive.Interval))
 	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds

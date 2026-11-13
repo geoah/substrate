@@ -312,7 +312,6 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 			return err
 		}
-		t.mirrorSealedDelete(old)
 	}
 	return nil
 }

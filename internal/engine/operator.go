@@ -24,19 +24,18 @@ type Operator interface {
 	// VerifyRepositoryWith is VerifyRepository with its options
 	// (verify.go).
 	VerifyRepositoryWith(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, error)
-	// SnapshotRepository copies a repository's directory under destRoot
-	// (snapshot.go).
-	SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error)
-	// SnapshotRepositoryWith is SnapshotRepository with its options, an
-	// earlier snapshot to take the unchanged segments and blobs from
-	// (snapshot.go).
-	SnapshotRepositoryWith(ctx context.Context, repository, destRoot string, opts SnapshotOptions) (SnapshotReport, error)
 	// RotateHistoryGeneration mints a new history generation
 	// (historygeneration.go).
 	RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error)
 	// ReindexObserved queues the background re-derivation of a repository's
 	// observed index (observedreindex.go).
 	ReindexObserved(ctx context.Context, repository string) (ReindexReport, error)
+	// ArchiveReport, ResolveArchive, RemoveArchive and ImportArchive are the
+	// operator's hand in the archive (archiveops.go).
+	ArchiveReport(ctx context.Context, repository string) (ArchiveReport, error)
+	ResolveArchive(ctx context.Context, repository string, keepDatabase bool) (ArchiveResolution, error)
+	RemoveArchive(ctx context.Context, repository, archiveID string) (int, error)
+	ImportArchive(ctx context.Context, repository, archiveID string) (Repository, error)
 }
 
 var _ Operator = (*service)(nil)

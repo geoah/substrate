@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -96,7 +97,17 @@ func writeKeyedByName(t *testing.T) keyedByName {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The history the release kept beside the blobs, from the archive a
+	// pass writes now; the archive itself goes, since that release wrote
+	// none.
+	if err := ds.ArchivePass(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	to := legacyDirFromArchive(t, filepath.Join(k.root, "archive"), k.root, info.ID, k.name)
+	if err := os.RemoveAll(filepath.Join(k.root, "archive")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,17 +134,6 @@ func writeKeyedByName(t *testing.T) keyedByName {
 		SELECT version FROM repository_migrations WHERE repository = $1 AND name = 'key_the_repository_record_by_its_id')`, k.name); err != nil {
 		t.Fatal(err)
 	}
-	from, err := changelogfile.RepoDir(k.root, info.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	to, err := changelogfile.RepoDir(k.root, k.name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(from, to); err != nil {
-		t.Fatal(err)
-	}
 	raw, err := os.ReadFile(filepath.Join(to, changelogfile.ManifestName))
 	if err != nil {
 		t.Fatal(err)
@@ -154,8 +154,8 @@ func writeKeyedByName(t *testing.T) keyedByName {
 
 // holdKeyed holds the repository to the end of its keying: a minted id on the
 // row, no row of any table keyed by the name, the directory under the id with
-// a format-2 manifest, the spooled request opening under the id, and the
-// repository serving its record, with its own record moved to the id.
+// its history moved to the table, the spooled request opening under the id,
+// and the repository serving its record, with its own record moved to the id.
 func holdKeyed(t *testing.T, k keyedByName) {
 	t.Helper()
 	ctx := context.Background()
@@ -192,9 +192,10 @@ func holdKeyed(t *testing.T, k keyedByName) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil || m.Format != changelogfile.ManifestFormat || m.ID != repo.ID || m.Authority != k.name {
-		t.Fatalf("manifest %+v, %v", m, err)
+	// The boot that keyed the directory then moved its history to the
+	// table, as it does for any directory from before the archive.
+	if changelogfile.HasHistory(dir) {
+		t.Fatal("the keyed directory still holds its history beside the table")
 	}
 	d, err := s.Dataset(ctx, k.name)
 	if err != nil {
@@ -737,4 +738,87 @@ func fillEveryRepositoryTable(t *testing.T, db *sql.DB, repository string) {
 			t.Fatalf("the keying fixture leaves %s empty and cannot write a row of it (%v): add one to fillEveryRepositoryTable", table, err)
 		}
 	}
+}
+
+// legacyDirFromArchive writes, under root, the directory a release before
+// the archive kept beside the blobs, keyed key (an id, or the name a release
+// before ids named it by), from the archive of repository id: segment files,
+// sealed files, blobs, and the manifest in format 2.
+func legacyDirFromArchive(t *testing.T, archiveRoot, root, id, key string) string {
+	t.Helper()
+	ctx := context.Background()
+	store, err := archive.NewDir(archiveRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := openNewestArchive(ctx, store, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := changelogfile.EnsureRepoDir(root, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := changelogfile.OpenWriter(changelogfile.ChangelogDir(dir), changelogfile.WriterOptions{SegmentBytes: 4096})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, err := src.Cursor(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		entries, err := cur.Next(100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) == 0 {
+			break
+		}
+		if err := w.Append(entries); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := src.Sealed(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range sealed {
+		if err := changelogfile.WriteSealed(dir, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prefix := changelogfile.ArchivePrefix(src.repository, src.archive)
+	listed, err := store.List(ctx, prefix+changelogfile.BlobsSubdir+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range listed {
+		digest, _, ok := changelogfile.ParseBlobObjectName(o.Key[len(prefix):])
+		if !ok {
+			continue
+		}
+		body, err := archive.ReadAll(ctx, store, o.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(changelogfile.BlobsDir(dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(changelogfile.BlobsDir(dir), digest), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := src.manifest
+	m.Format, m.Head, m.HeadSum, m.Sealed, m.MissingBlobs = changelogfile.ManifestFormat, 0, "", nil, nil
+	if key != id {
+		m.Format, m.ID = changelogfile.ManifestFormatBeforeIDs, ""
+	}
+	if err := changelogfile.WriteManifest(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

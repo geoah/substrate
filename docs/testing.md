@@ -123,13 +123,13 @@ It also holds the release acceptance drill, `TestReleaseAcceptanceDrill`
 (`acceptance_db_test.go`): one repository holding every state a restore has
 to bring back (changed kinds, a cleared label, an attachment, sealed values,
 conflicting mapping offers, a merge and a split, a purge, settled, pending and
-parked deliveries, a parked webhook, a paged drain parked mid-cursor), stopped,
-snapshotted with `repository snapshot`, rewrapped under another credential
-key with the recovery key and imported into an empty schema, then compared
-record by record and resumed. Its later stages kill the import at batch
-boundaries, take a second repository through the oldest directory format the
-reader accepts, and resume a saved change cursor against the replaced
-history. It runs with the rest of `test:db` and takes about ten seconds.
+parked deliveries, a parked webhook, a paged drain parked mid-cursor), stopped
+so its last pass leaves the archive at its head, the archive copied,
+rewrapped under another credential key with the recovery key and restored
+into an empty schema, then compared record by record and resumed. Its later
+stages kill the import at batch boundaries, restore a second repository
+under both keys, refuse a manifest above the binary's changelog dialect, and
+resume a saved change cursor against the replaced history. It runs with the rest of `test:db` and takes about ten seconds.
 
 ```bash
 go test -count=1 -run TestReleaseAcceptanceDrill -v ./internal/testenv/
@@ -263,9 +263,9 @@ and the shared dev container `mise run dev` starts carries the flags on its
 command line (a container created without them keeps the image's defaults
 until `dev:wipe:all` recreates it).
 
-**The data roots on tmpfs.** Every changelog write fsyncs
-([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)),
-and sixteen repositories fsyncing one ext4 journal serialize on it.
+**The data roots on tmpfs.** Every blob upload, spooled webhook request and
+archive object is fsynced, and sixteen repositories fsyncing one ext4
+journal serialize on it.
 `testdb.Main` puts `TMPDIR`, and with it every `t.TempDir()`, under
 `/dev/shm` when that is a tmpfs with at least 512 MB free, and says so once
 on stderr. A container's 64 MB `/dev/shm` falls back to the default;

@@ -13,22 +13,21 @@ import (
 )
 
 // exportRoute is the owner's recovery export, a non-record endpoint at the
-// version root (decision 0069).
+// version root (decisions 0069, 0278).
 const exportRoute = "/export"
 
-// getExport is GET /api/v1/export: the repository's directory as of one
-// committed point, streamed as a tar (`application/x-tar`) laid out as a data
-// root, with `snapshot.json` recording the point as its last entry. The
-// bearer token is the whole credential: a token already reads every record
-// and blob the archive carries, and its sealed files are ciphertext under a
-// key the archive does not hold.
+// getExport is GET /api/v1/export: the repository as of one committed point,
+// streamed as a tar (`application/x-tar`) in the archive's layout, with the
+// manifest naming the point as its last entry. The bearer token is the whole
+// credential: a token already reads every record and blob the archive
+// carries, and its sealed files are ciphertext under a key the archive does
+// not hold.
 //
-// The point is pinned before the status is written, so a refusal (a read-only
-// process, a directory latched behind the tables) is an ordinary error body.
-// Once the point is pinned the 200 is flushed at once, and a failure while
-// streaming cannot take it back: the response is aborted instead, which a
-// client reads as an unexpected end of the body, and the archive's missing
-// `snapshot.json` says the same to whoever extracts what arrived. A client
+// The point is pinned before the status is written, so a refusal is an
+// ordinary error body. Once the point is pinned the 200 is flushed at once,
+// and a failure while streaming cannot take it back: the response is aborted
+// instead, which a client reads as an unexpected end of the body, and the
+// missing manifest says the same to whoever extracts what arrived. A client
 // that takes longer than streamWriteDeadline over one write, and every export
 // still running when the server starts to shut down, ends the same way.
 func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {

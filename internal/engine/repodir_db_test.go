@@ -1,28 +1,23 @@
 package engine_test
 
-// The repository directory under the data root, end to end: every commit
-// lands in the segment file, the boot check heals a file a crash left behind
-// and writes a directory a row never had, a copied directory imports into a
-// fresh database as the same repository, and a directory that disagrees with
-// the table refuses the boot (decisions 0050 and 0051, docs/plans/filesystem-changelog.md).
+// THE BOOT CHECK (repodir.go): a repository restored from its archive into a
+// database that does not hold it, an archive ahead of its table, an import
+// cut short and finished by the next boot, a directory a release before the
+// archive wrote, and what refuses a boot and what does not.
 
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -107,85 +102,6 @@ func tableChangelog(t *testing.T, dsn string) map[int64][]byte {
 	return out
 }
 
-// activeSegment is the path of the active (highest) segment of a repository
-// directory.
-func activeSegment(t *testing.T, dir string) string {
-	t.Helper()
-	segs, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("list segments: %v", err)
-	}
-	if len(segs) == 0 {
-		t.Fatal("the repository has no changelog segment")
-	}
-	last := segs[len(segs)-1]
-	if last.Finished {
-		t.Fatalf("the highest segment %s is finished; the test needs an active one", last.Name)
-	}
-	return filepath.Join(changelogfile.ChangelogDir(dir), last.Name)
-}
-
-// rewriteChangelogEntries applies edit to every entry of the repository's
-// changelog and writes back the ones it changed, in BOTH places the changelog
-// lives: the segment file (the line re-encoded, so it stays self-consistent)
-// and the table row (op, payload and a re-stamped hash), so the boot check and
-// the rebuild see one history and the replay meets the edit. It returns how
-// many entries changed. Every edited entry must sit in the active segment,
-// which is rewritten in place.
-func rewriteChangelogEntries(t *testing.T, svc substrate.Service, dsn string, ds substrate.Dataset, edit func(*changelogfile.Entry) bool) int {
-	t.Helper()
-	dir := repoDirOf(t, svc, ds)
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("open the changelog files: %v", err)
-	}
-	entries, err := log.Read(0, 0)
-	if err != nil {
-		t.Fatalf("read the changelog files: %v", err)
-	}
-	segs, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("list segments: %v", err)
-	}
-	active := segs[len(segs)-1]
-	db, err := engine.OpenScopedDB(dsn, repositoryIDOf(t, ds), engine.RoleMaint)
-	if err != nil {
-		t.Fatalf("open the maintenance pool: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	var file bytes.Buffer
-	changed := 0
-	for i := range entries {
-		e := &entries[i]
-		if edit(e) {
-			if e.Seq < active.First {
-				t.Fatalf("seq %d is in a finished segment; the test can only rewrite the active one", e.Seq)
-			}
-			changed++
-			_, sum, err := changelogfile.Encode(*e)
-			if err != nil {
-				t.Fatalf("encode seq %d: %v", e.Seq, err)
-			}
-			if _, err := db.Exec(`UPDATE changelog SET op = $2, payload = $3::jsonb, hash = $4 WHERE seq = $1`,
-				e.Seq, e.Op, []byte(e.Payload), sum[:]); err != nil {
-				t.Fatalf("rewrite seq %d in the table: %v", e.Seq, err)
-			}
-		}
-		if e.Seq >= active.First {
-			line, _, err := changelogfile.Encode(*e)
-			if err != nil {
-				t.Fatalf("encode seq %d: %v", e.Seq, err)
-			}
-			file.Write(line)
-			file.WriteByte('\n')
-		}
-	}
-	if err := os.WriteFile(filepath.Join(changelogfile.ChangelogDir(dir), active.Name), file.Bytes(), 0o600); err != nil {
-		t.Fatalf("rewrite the active segment: %v", err)
-	}
-	return changed
-}
-
 // copyDir copies a directory tree, the way a backup cron would.
 func copyDir(t *testing.T, src, dst string) {
 	t.Helper()
@@ -210,23 +126,6 @@ func copyDir(t *testing.T, src, dst string) {
 	if err != nil {
 		t.Fatalf("copy %s to %s: %v", src, dst, err)
 	}
-}
-
-// copyRepositoryDir copies one repository's directory into a fresh data root
-// and returns that root.
-func copyRepositoryDir(t *testing.T, srcRoot, id string) string {
-	t.Helper()
-	dstRoot := t.TempDir()
-	src, err := changelogfile.RepoDir(srcRoot, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dst, err := changelogfile.RepoDir(dstRoot, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	copyDir(t, src, dst)
-	return dstRoot
 }
 
 // openSecret reads one secret-typed value's material the way the engine does:
@@ -311,412 +210,6 @@ func getBlob(t *testing.T, ds substrate.Dataset, digest string) []byte {
 	return data
 }
 
-// Every commit reaches the segment file: the file's head is the table's, and
-// every line's checksum is the row's stamped hash.
-func TestChangelogFileFollowsEveryCommit(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	for _, name := range []string{"one", "two", "three"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-	}
-	head := maxSeq(t, ds)
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDirOf(t, svc, ds)))
-	if err != nil {
-		t.Fatalf("open the changelog files: %v", err)
-	}
-	if log.Head() != head {
-		t.Fatalf("file head = %d, table head = %d", log.Head(), head)
-	}
-	entries, err := log.Read(0, 0)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	stamped := tableChangelog(t, dsn)
-	if int64(len(entries)) != head || len(stamped) != int(head) {
-		t.Fatalf("file holds %d entries, table %d rows, head %d", len(entries), len(stamped), head)
-	}
-	for _, e := range entries {
-		_, sum, err := changelogfile.Encode(e)
-		if err != nil {
-			t.Fatalf("seq %d: %v", e.Seq, err)
-		}
-		if !bytes.Equal(sum[:], stamped[e.Seq]) {
-			t.Fatalf("seq %d: the line's checksum is not the row's", e.Seq)
-		}
-		// Every line this binary writes names its transaction (line format
-		// 2); a line without `txn` is the format v0.46.0 and v0.47.0 wrote.
-		if e.Txn < e.Seq {
-			t.Fatalf("seq %d carries txn %d: the line does not name its transaction", e.Seq, e.Txn)
-		}
-	}
-}
-
-// A crash between commit and append leaves the file behind the table; the
-// next boot appends the missing entries, byte for byte what the writer would
-// have written.
-func TestBootCatchesUpTheFileFromTheTable(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	for _, name := range []string{"one", "two", "three", "four"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-	}
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Drop the last three lines, at a newline boundary: a file that stopped
-	// three transactions short of the table.
-	cut := whole
-	for range 3 {
-		cut = cut[:bytes.LastIndexByte(cut[:len(cut)-1], '\n')+1]
-	}
-	if err := os.WriteFile(path, cut, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if l, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir)); err != nil || l.Head() != head-3 {
-		t.Fatalf("after the cut: head = %d, err = %v, want %d", l.Head(), err, head-3)
-	}
-
-	mustReopen(t, dsn, root)
-	l, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("open after the boot: %v", err)
-	}
-	if l.Head() != head {
-		t.Fatalf("the boot left the file at head %d, the table is at %d", l.Head(), head)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, whole) {
-		t.Fatal("the caught-up segment is not byte for byte the one the writer wrote")
-	}
-}
-
-// A row with no directory is a store that predates the data root: the boot
-// writes the directory out from the tables, and it verifies.
-func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	ctx := context.Background()
-	registerUser(t, svc, "ada.example.com")
-	ds, err := svc.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	importVocabulary(t, ds, "tasks")
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "kept"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	id := repositoryIDOf(t, ds)
-	_ = svc.Close()
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	svc2 := mustReopen(t, dsn, root)
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatalf("the boot wrote no manifest: %v", err)
-	}
-	if m.ID != id || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
-		m.ChangelogDialect != engine.MaxChangelogDialect() || m.CreatedAt.IsZero() {
-		t.Fatalf("manifest = %+v", m)
-	}
-	segs, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
-	if err != nil || len(segs) == 0 {
-		t.Fatalf("segments = %v, %v", segs, err)
-	}
-	sealed, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Registration seals the password hash and the TOTP material.
-	if len(sealed) != 2 {
-		t.Fatalf("sealed files = %d, want the credential's two", len(sealed))
-	}
-	report := mustVerify(t, svc2, "ada.example.com")
-	if !report.OK || report.Head != head || report.FileHead != head || report.SealedRows != 2 || report.SealedFiles != 2 {
-		t.Fatalf("the written directory does not verify: %+v", report)
-	}
-}
-
-// A repository directory copied into a fresh data root imports into a fresh
-// database as the same repository: the row from the manifest, the fold from
-// the files, the blob bytes and the secret intact.
-func TestBootImportsARepositoryDirectory(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "carried"}})
-	ref := putProvider(t, ds, dsn, "openai", "sk-carried-across")
-	digest := putBlob(t, ds, []byte("bytes that travel with the directory"))
-	before := foldOf(t, ds)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	svc2 := mustReopen(t, dsn2, root2)
-	ctx := context.Background()
-	repos, err := svc2.Repositories(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(repos) != 1 || repos[0].ID != id || repos[0].Authority != testdb.Repository(t) {
-		t.Fatalf("repositories after the import = %+v", repos)
-	}
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open the imported repository: %v", err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the imported fold is not the original\n%s", firstDifference(before, after))
-	}
-	if got := getBlob(t, ds2, digest); string(got) != "bytes that travel with the directory" {
-		t.Fatalf("blob bytes = %q", got)
-	}
-	if got := secretRefOf(t, dsn2, typeProvider, "openai", "apiKey"); got != ref {
-		t.Fatalf("apiKey ref = %q, want %q", got, ref)
-	}
-	if got := openSecret(t, dsn2, ref); got != "sk-carried-across" {
-		t.Fatalf("secret = %q", got)
-	}
-	if got, want := openSecret(t, dsn2, ref), openSecret(t, dsn, ref); got != want {
-		t.Fatalf("the imported secret %q is not the original %q", got, want)
-	}
-}
-
-// A change cursor is a seq under a history generation (decision 0056). The
-// generation is the row's and the row survives a rebuild and a restart, so a
-// cursor saved against a live repository stays good across both; an import
-// of a directory into a database with no row for it mints a new one, so a
-// cursor saved against the history that database held before is refused
-// instead of resuming against numbering it never saw. The fixture is the
-// ticket's case: an OLDER copy of the directory, taken before the writes the
-// cursor points into, restored over an emptied database.
-func TestHistoryGenerationHoldsAcrossRestartAndRebuildAndRotatesOnImport(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "in the copy"}})
-	before, err := ds.Head(ctx)
-	if err != nil {
-		t.Fatalf("head: %v", err)
-	}
-	if before.Generation == "" || before.Seq != maxSeq(t, ds) {
-		t.Fatalf("head = %+v, want the changelog's max seq under a generation", before)
-	}
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	// The writer syncs every committed line before the commit returns, so a
-	// copy taken between writes is a complete older directory.
-	olderRoot := copyRepositoryDir(t, root, id)
-	copyHead := before.Seq
-
-	for i := range 4 {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after the copy " + strconv.Itoa(i)}})
-	}
-	// The cursor a client saved from the longer history: past the copy's
-	// head, so the restore leaves it above the new head.
-	saved := copyHead + 2
-
-	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("rebuild: %v", err)
-	}
-	if after, err := ds.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
-		t.Fatalf("head after the rebuild = %+v (%v), want generation %q at seq %d", after, err, before.Generation, copyHead+4)
-	}
-
-	_ = svc.Close()
-	svc2 := mustReopen(t, dsn, root)
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("reopen the repository: %v", err)
-	}
-	if after, err := ds2.Head(ctx); err != nil || after.Generation != before.Generation || after.Seq != copyHead+4 {
-		t.Fatalf("head after the restart = %+v (%v), want generation %q at seq %d", after, err, before.Generation, copyHead+4)
-	}
-	_ = svc2.Close()
-
-	// The older copy over an emptied database: the row is recreated from the
-	// manifest, and with it the generation.
-	svc3 := mustReopen(t, engine.MigratedDSN(t), olderRoot)
-	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open the imported repository: %v", err)
-	}
-	restored, err := ds3.Head(ctx)
-	if err != nil {
-		t.Fatalf("head after the import: %v", err)
-	}
-	if restored.Generation == before.Generation {
-		t.Fatal("the import kept the generation: a cursor saved against the longer history would resume against numbering the copy never saw")
-	}
-	if restored.Seq != copyHead || saved <= restored.Seq {
-		t.Fatalf("restored head = %d, want the copy's %d with the saved cursor %d above it", restored.Seq, copyHead, saved)
-	}
-	// A client that re-lists at the restored head and tails from there sees
-	// every replacement write, the seqs the old cursor would have skipped
-	// included.
-	for i := range 3 {
-		mustPut(t, ds3, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "replacement " + strconv.Itoa(i)}})
-	}
-	got := changesSince(t, ds3, restored.Seq)
-	if len(got) != 3 || got[0].Seq != restored.Seq+1 || got[2].Seq != restored.Seq+3 {
-		t.Fatalf("tailing from the restored head %d replayed %d rows (%v), want seqs %d to %d", restored.Seq, len(got), seqsOf(got), restored.Seq+1, restored.Seq+3)
-	}
-	if grown, _ := ds3.Head(ctx); grown.Generation != restored.Generation {
-		t.Fatalf("the generation moved from %q to %q under ordinary writes", restored.Generation, grown.Generation)
-	}
-}
-
-// A file the table does not agree with refuses the boot and names the seq:
-// once as a line whose checksum no longer verifies, once as a self-consistent
-// line that is not what the table stamped.
-func TestBootRefusesADivergentChangelog(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "original"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := bytes.Split(bytes.TrimSuffix(whole, []byte("\n")), []byte("\n"))
-	last := lines[len(lines)-1]
-	headEntry, _, err := changelogfile.Decode(last)
-	if err != nil || headEntry.Seq != head {
-		t.Fatalf("the last line is seq %d (%v), want %d", headEntry.Seq, err, head)
-	}
-	seqText := "seq " + strconv.FormatInt(head, 10)
-	writeLast := func(line []byte) {
-		out := append(bytes.Join(lines[:len(lines)-1], []byte("\n")), '\n')
-		out = append(out, line...)
-		out = append(out, '\n')
-		if err := os.WriteFile(path, out, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// One byte inside the payload, nothing re-summed: the line no longer
-	// verifies.
-	damaged := bytes.Replace(last, []byte(`"original"`), []byte(`"originaL"`), 1)
-	if bytes.Equal(damaged, last) {
-		t.Fatal("the head line does not carry the payload the test edits")
-	}
-	writeLast(damaged)
-	_, err = reopen(t, dsn, root)
-	if err == nil {
-		t.Fatal("a changelog file with a line that does not verify booted")
-	}
-	if !errors.Is(err, changelogfile.ErrBadSum) || !strings.Contains(err.Error(), seqText) {
-		t.Fatalf("the refusal must be the checksum's and name %s: %v", seqText, err)
-	}
-
-	// The same edit with its sum recomputed: the file is self-consistent and
-	// the table disagrees.
-	edited := headEntry
-	edited.Actor = "somebody-else"
-	line, _, err := changelogfile.Encode(edited)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeLast(line)
-	_, err = reopen(t, dsn, root)
-	if err == nil {
-		t.Fatal("a changelog file that disagrees with the table booted")
-	}
-	if !errors.Is(err, engine.ErrChangelogDiverged) || !strings.Contains(err.Error(), seqText) {
-		t.Fatalf("the refusal must be the divergence's and name %s: %v", seqText, err)
-	}
-
-	// The original line back: the same database boots.
-	writeLast(last)
-	mustReopen(t, dsn, root)
-}
-
-// The story decision 0051 tells: register, write, upload, store a secret,
-// copy the directory, boot a fresh database from it, and the repository is
-// back, verifies, and rebuilds to the same fold.
-func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	ctx := context.Background()
-	_, token, secret := registerUser(t, svc, "ada.example.com")
-	ds, err := svc.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	importVocabulary(t, ds, "tasks", "people")
-	cleared := writeSomeHistory(t, ds)
-	installPeopleSourcesWithDir(t, ds)
-	writeMappedHistory(t, ds)
-	ref := putProvider(t, ds, dsn, "openai", "sk-round-trip")
-	digest := putBlob(t, ds, []byte("round trip bytes"))
-	before := foldOf(t, ds)
-	// property_offers is not in the directory: the import derives it again,
-	// and the snapshot only proves that if the original holds some.
-	if offersIn(t, before) == 0 {
-		t.Fatal("the fold holds no property_offers; the round trip would prove nothing about them")
-	}
-	head := maxSeq(t, ds)
-	secretBefore := openSecret(t, dsn, ref)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatalf("open the restored repository: %v", err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
-	}
-	wantLabelsAndVersion(t, ds2, cleared)
-	if got := getBlob(t, ds2, digest); string(got) != "round trip bytes" {
-		t.Fatalf("blob bytes = %q", got)
-	}
-	if got := openSecret(t, dsn2, ref); got != secretBefore || got != "sk-round-trip" {
-		t.Fatalf("secret = %q, want %q", got, secretBefore)
-	}
-	// The token registration minted is a record, so it came back too.
-	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
-		t.Fatalf("the registered token does not open the restored repository: %v (%+v)", err, info)
-	}
-	report := mustVerify(t, svc2, "ada.example.com")
-	if !report.OK || report.Head != head || report.FileHead != head {
-		t.Fatalf("the restored repository does not verify: %+v", report)
-	}
-	rebuilt, err := svc2.(rebuilder).RebuildRepository(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatalf("rebuild the restored repository: %v", err)
-	}
-	if rebuilt.Head != head {
-		t.Fatalf("the rebuild stopped at %d, the head is %d", rebuilt.Head, head)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the rebuilt fold is not the original\n%s", firstDifference(before, after))
-	}
-	wantLabelsAndVersion(t, ds2, cleared)
-}
-
 // sealedRowCount counts the sealed rows under one ref.
 func sealedRowCount(t *testing.T, dsn, ref string) int {
 	t.Helper()
@@ -727,24 +220,570 @@ func sealedRowCount(t *testing.T, dsn, ref string) int {
 	return n
 }
 
-// sealedFileExists reports whether sealed/ holds the file for one ref.
-func sealedFileExists(t *testing.T, dir, ref string) bool {
-	t.Helper()
-	_, err := os.Stat(filepath.Join(changelogfile.SealedDir(dir), changelogfile.SealedFileName(ref)))
-	switch {
-	case err == nil:
-		return true
-	case errors.Is(err, fs.ErrNotExist):
-		return false
+// longAuthority is a valid authority of exactly n bytes, in 63-byte labels.
+func longAuthority(n int) string {
+	var b strings.Builder
+	for b.Len() < n {
+		if b.Len() > 0 {
+			b.WriteByte('.')
+		}
+		b.WriteString(strings.Repeat("a", min(63, n-b.Len())))
 	}
-	t.Fatalf("stat the sealed file of %s: %v", ref, err)
-	return false
+	return b.String()
 }
 
-// A purge erases the record's sealed rows and their files (#236): the GC
-// sweep's purge of a tombstone, and `?purge=true` in the delete itself. The
-// tombstone keeps them, so a restore would read the secret again, and verify
-// counts a ref a tombstone holds as held.
+// copyRepositoryDir copies one repository's archive into the archive of a
+// fresh data root and returns that root: the backup a restore reads. The
+// archive is the one the source's service left when it closed, which ran one
+// last pass (archive.go stopArchiver).
+func copyRepositoryDir(t *testing.T, srcRoot, id string) string {
+	t.Helper()
+	dstRoot := t.TempDir()
+	rel := filepath.Join("archive", changelogfile.RepositoriesDir, id)
+	copyDir(t, filepath.Join(srcRoot, rel), filepath.Join(dstRoot, rel))
+	return dstRoot
+}
+
+// archivedRepoDir is repository id's directory in the archive under root,
+// where copyRepositoryDir copies it, as an error-returning RepoDir.
+func archivedRepoDir(root, id string) (string, error) {
+	return filepath.Join(root, "archive", changelogfile.RepositoriesDir, id), nil
+}
+
+// reopenBesideNewerDirectory boots the database at dsn, an older dump, beside
+// the 0.x directory of the newer history whose archive is under newerRoot:
+// the one import past a table that holds history (rule 6), the directory's
+// lines past the table's head taken in. The data root is a new one, holding
+// that directory alone.
+func reopenBesideNewerDirectory(t *testing.T, dsn, newerRoot, id string) substrate.Service {
+	t.Helper()
+	root := t.TempDir()
+	legacyDirectory(t, filepath.Join(newerRoot, "archive"), root, id)
+	return mustReopen(t, dsn, root)
+}
+
+// legacyDirectory writes the directory a release before the archive kept
+// beside the blobs (a 0.x directory) from a repository's archive: the
+// manifest in format 2, the history as segment files, the sealed files, and
+// the blobs where the server keeps them. It is how a test meets what an
+// upgrade from a 0.x release finds.
+func legacyDirectory(t *testing.T, archiveRoot, root, id string) string {
+	t.Helper()
+	ctx := context.Background()
+	store, err := archive.NewDir(archiveRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := changelogfile.ReadArchiveManifestDir(filepath.Join(archiveRoot, changelogfile.RepositoriesDir, id))
+	if err != nil {
+		t.Fatalf("read the archive's manifest: %v", err)
+	}
+	prefix := changelogfile.ArchivePrefix(id, m.Archive)
+	chain, err := m.Chain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := changelogfile.EnsureRepoDir(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := changelogfile.OpenWriter(changelogfile.ChangelogDir(dir), changelogfile.WriterOptions{SegmentBytes: 4096})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range chain {
+		body, err := archive.ReadAll(ctx, store, prefix+p.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lines []changelogfile.Line
+		if err := changelogfile.ReadPiece(bytes.NewReader(body), p.First, p.Last, func(e changelogfile.Entry, line []byte, _ [32]byte) error {
+			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: append([]byte(nil), line...)})
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.AppendLines(lines); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed, err := store.List(ctx, prefix+changelogfile.BlobsSubdir+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range listed {
+		digest, _, ok := changelogfile.ParseBlobObjectName(strings.TrimPrefix(o.Key, prefix))
+		if !ok {
+			continue
+		}
+		body, err := archive.ReadAll(ctx, store, o.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, changelogfile.BlobsSubdir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, changelogfile.BlobsSubdir, digest), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// The sealed values the manifest selects, one file each, as a 0.x
+	// directory held them.
+	for ref, name := range m.Sealed {
+		sum, _, ok := changelogfile.ParseSealedObjectName(ref, name)
+		if !ok {
+			t.Fatalf("the manifest selects %q for %s", name, ref)
+		}
+		body, err := archive.ReadAll(ctx, store, prefix+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec, err := changelogfile.DecodeSealedVersion(ref, sum, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := changelogfile.WriteSealed(dir, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.Format, m.Head, m.HeadSum, m.Sealed, m.MissingBlobs = changelogfile.ManifestFormat, 0, "", nil, nil
+	m.Archive, m.Pass, m.Pieces, m.Spool, m.PendingBlobs, m.Epoch = "", "", nil, nil, nil, 0
+	if err := changelogfile.WriteManifest(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A repository the archive holds and the database does not is restored at
+// the boot: the same records, the same history line for line, its secrets
+// and blobs, under a fresh history generation, and it verifies.
+func TestBootRestoresARepositoryFromItsArchive(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	ref := putProvider(t, ds, dsn, "openai", "sk-restored")
+	digest := putBlob(t, ds, []byte("restored bytes"))
+	before := foldOf(t, ds)
+	rows := tableChangelog(t, dsn)
+	generation := ds.Repository()
+	id := repositoryIDOf(t, ds)
+	head, err := ds.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	dsn2 := engine.MigratedDSN(t)
+	svc2 := mustReopen(t, dsn2, copyRepositoryDir(t, root, id))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the restored repository: %v", err)
+	}
+	if got := ds2.Repository(); got.ID != id || got.Authority != generation.Authority {
+		t.Fatalf("restored as %+v, want %s %s", got, id, generation.Authority)
+	}
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
+	}
+	after := tableChangelog(t, dsn2)
+	if len(after) != len(rows) {
+		t.Fatalf("%d rows restored, the history has %d", len(after), len(rows))
+	}
+	for seq, hash := range rows {
+		if !bytes.Equal(after[seq], hash) {
+			t.Fatalf("seq %d is not the original's", seq)
+		}
+	}
+	if got := openSecret(t, dsn2, ref); got != "sk-restored" {
+		t.Fatalf("the restored secret = %q", got)
+	}
+	if got := getBlob(t, ds2, digest); string(got) != "restored bytes" {
+		t.Fatalf("the restored blob = %q", got)
+	}
+	head2, err := ds2.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head2.Seq != head.Seq || head2.Generation == head.Generation {
+		t.Fatalf("head after the restore = %+v, want seq %d under a new generation than %q", head2, head.Seq, head.Generation)
+	}
+	// The restore started a new archive, which its first pass publishes.
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.ArchiveHead != 0 || report.ArchiveUnverified == "" {
+		t.Fatalf("the restored repository before its first pass: %+v", report)
+	}
+	if err := engine.ArchivePass(ctx, ds2); err != nil {
+		t.Fatalf("the restored repository's first pass: %v", err)
+	}
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.ArchiveHead != head.Seq {
+		t.Fatalf("the restored repository does not verify: %+v", report)
+	}
+}
+
+// A database restored from a backup older than the archive (a dump from
+// last night beside this morning's archive) is not taken over by the
+// archive at the boot (rule 4): it serves its own history, and its pass
+// stops, writing nothing. The operator's choice to take the archive replaces
+// the repository whole at the next boot, and it serves what the archive
+// held.
+func TestBootKeepsADatabaseBehindItsArchiveUntilTheOperatorTakesIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	backup := testdb.Copy(t, dsn)
+
+	// The repository goes on, and its archive with it.
+	svc = mustReopen(t, dsn, root)
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "written after the backup"}})
+	before := foldOf(t, ds)
+	rows := tableChangelog(t, dsn)
+	_ = svc.Close()
+
+	// The backup is restored beside the newer archive.
+	svc2 := mustReopen(t, backup, root)
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := foldOf(t, ds2); string(after) == string(before) {
+		t.Fatal("the boot took the archive's history over the database's")
+	}
+	if err := engine.ArchivePass(ctx, ds2); !errors.Is(err, engine.ErrArchiveDiverged) {
+		t.Fatalf("a pass beside an archive the database did not leave: %v, want ErrArchiveDiverged", err)
+	}
+	if _, err := svc2.(engine.Operator).ResolveArchive(ctx, testdb.Repository(t), false); err != nil {
+		t.Fatalf("take the archive: %v", err)
+	}
+	_ = svc2.Close()
+	svc3 := mustReopen(t, backup, root)
+	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := foldOf(t, ds3); string(after) != string(before) {
+		t.Fatalf("the fold after the take is not the archive's\n%s", firstDifference(before, after))
+	}
+	if after := tableChangelog(t, backup); len(after) != len(rows) {
+		t.Fatalf("%d rows after the take, the archive held %d", len(after), len(rows))
+	}
+	if err := engine.ArchivePass(ctx, ds3); err != nil {
+		t.Fatalf("the first pass after the take: %v", err)
+	}
+}
+
+// An archive that does not continue the table's history (another line at
+// the table's head) is left alone at the boot, which goes on, and the pass
+// refuses to write over it.
+func TestBootLeavesAnArchiveThatDisagreesWithTheTable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	other := copyRepositoryDir(t, root, id)
+	// Two histories from one point: the table goes one way, the copy of
+	// its archive another.
+	svc = mustReopen(t, dsn, root)
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "this way"}})
+	_ = svc.Close()
+	dsnOther := engine.MigratedDSN(t)
+	svcOther := mustReopen(t, dsnOther, other)
+	dsOther, err := svcOther.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"that way", "and further"} {
+		mustPut(t, dsOther, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
+	}
+	_ = svcOther.Close()
+	rel := filepath.Join("archive", changelogfile.RepositoriesDir, id)
+	if err := os.RemoveAll(filepath.Join(root, rel)); err != nil {
+		t.Fatal(err)
+	}
+	copyDir(t, filepath.Join(other, rel), filepath.Join(root, rel))
+
+	rows := tableChangelog(t, dsn)
+	svc = mustReopen(t, dsn, root)
+	if after := tableChangelog(t, dsn); len(after) != len(rows) {
+		t.Fatalf("the boot imported %d rows from an archive that is another history", len(after)-len(rows))
+	}
+	ds, err = svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.ArchivePass(ctx, ds); !errors.Is(err, engine.ErrArchiveDiverged) {
+		t.Fatalf("a pass over another history: %v, want ErrArchiveDiverged", err)
+	}
+}
+
+// A restore that dies part way lands its rows in batches and folds after the
+// last one. Each case kills it at one durable step (the restore first, then
+// the row path a resumed boot takes), holds that no dataset opens over what
+// the crash left, reboots, and compares the result to the original: the same
+// fold, the same changelog rows, nothing appended, the marker gone.
+func TestAnInterruptedRestoreResumesAtTheNextBoot(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	ref := putProvider(t, ds, dsn, "openai", "sk-survives-the-crash")
+	before := foldOf(t, ds)
+	head := maxSeq(t, ds)
+	rows := tableChangelog(t, dsn)
+	id := repositoryIDOf(t, ds)
+	username := testdb.Repository(t)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	const batch = 7
+	batches := int((head + batch - 1) / batch)
+	if batches < 3 {
+		t.Fatalf("head %d spans %d batches of %d; the schedule below needs at least 3", head, batches, batch)
+	}
+	type crash struct {
+		stage string
+		nth   int
+	}
+	cases := []struct {
+		name    string
+		crashes []crash
+	}{
+		{"after the first batch", []crash{{engine.ImportAfterBatch, 1}}},
+		{"after the last batch", []crash{{engine.ImportAfterBatch, batches}}},
+		{"between the fold passes", []crash{{engine.ImportAfterFirstFold, 1}}},
+		{"at every step in turn", []crash{
+			{engine.ImportAfterBatch, 1},
+			{engine.ImportAfterBatch, batches - 1},
+			{engine.ImportAfterFirstFold, 1},
+		}},
+	}
+	errKilled := errors.New("the process died here")
+	ctx := context.Background()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root2 := copyRepositoryDir(t, root, id)
+			dsn2 := engine.MigratedDSN(t)
+			for i, c := range tc.crashes {
+				seen := 0
+				_, err := engine.OpenForTest(t, ctx, dsn2,
+					engine.WithKindsFS(engine.SeedKinds),
+					engine.WithDataRoot(root2),
+					engine.WithTestImportFault(batch, func(stage string) error {
+						if stage != c.stage {
+							return nil
+						}
+						seen++
+						if seen == c.nth {
+							return errKilled
+						}
+						return nil
+					}))
+				if !errors.Is(err, errKilled) {
+					t.Fatalf("boot %d did not die %s (occurrence %d): %v", i+1, c.stage, c.nth, err)
+				}
+				incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !incomplete {
+					t.Fatalf("boot %d died %s and left no import-progress marker", i+1, c.stage)
+				}
+				ro, err := engine.OpenForTest(t, ctx, dsn2,
+					engine.WithKindsFS(engine.SeedKinds),
+					engine.WithDataRoot(root2),
+					engine.WithDirectoryReadOnly())
+				if err != nil {
+					t.Fatalf("open read-only after boot %d: %v", i+1, err)
+				}
+				if _, err := ro.Dataset(ctx, username); !errors.Is(err, engine.ErrImportIncomplete) {
+					t.Fatalf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
+				}
+				report := mustVerify(t, ro, username)
+				if report.OK || !findingContaining(report, "import of the repository's history has not completed") {
+					t.Fatalf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
+				}
+				_ = ro.Close()
+			}
+
+			svc2 := mustReopen(t, dsn2, root2)
+			ds2, err := svc2.Dataset(ctx, username)
+			if err != nil {
+				t.Fatalf("open the repository after the import resumed: %v", err)
+			}
+			if after := foldOf(t, ds2); string(after) != string(before) {
+				t.Fatalf("the resumed import's fold is not the original\n%s", firstDifference(before, after))
+			}
+			if got := maxSeq(t, ds2); got != head {
+				t.Fatalf("head after the resumed import = %d, want %d: the boot appended", got, head)
+			}
+			after := tableChangelog(t, dsn2)
+			if len(after) != len(rows) {
+				t.Fatalf("%d changelog rows after the resumed import, want %d", len(after), len(rows))
+			}
+			for seq, hash := range rows {
+				if !bytes.Equal(after[seq], hash) {
+					t.Fatalf("seq %d: checksum after the resumed import is not the original's", seq)
+				}
+			}
+			if got := openSecret(t, dsn2, ref); got != "sk-survives-the-crash" {
+				t.Fatalf("secret after the resumed import = %q", got)
+			}
+			if report := mustVerify(t, svc2, username); !report.OK || report.Head != head {
+				t.Fatalf("the resumed repository does not verify: %+v", report)
+			}
+		})
+	}
+}
+
+// A restore whose data key the host's credential key does not open is
+// refused before any row exists, naming the repository and what to do.
+func TestARestoreTheKeyCannotOpenRefusesTheBoot(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	_ = putProvider(t, ds, dsn, "openai", "sk-locked")
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	root2 := copyRepositoryDir(t, root, id)
+	dsn2 := engine.MigratedDSN(t)
+	other := make([]byte, 32)
+	other[0] = 1
+	_, err := engine.OpenForTest(t, context.Background(), dsn2,
+		engine.WithKindsFS(engine.SeedKinds), engine.WithDataRoot(root2),
+		engine.WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
+	if err == nil || !strings.Contains(err.Error(), "does not open") || !strings.Contains(err.Error(), id) {
+		t.Fatalf("a restore under another key: %v, want a refusal naming the repository and the key", err)
+	}
+	if n := len(tableChangelog(t, dsn2)); n != 0 {
+		t.Fatalf("the refused restore left %d rows", n)
+	}
+}
+
+// A directory a release before the archive wrote, with no row, is imported
+// whole at the boot, gives up its history, and keeps its blobs where the
+// server reads them.
+func TestBootImportsADirectoryFromBeforeTheArchive(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	ref := putProvider(t, ds, dsn, "openai", "sk-legacy")
+	digest := putBlob(t, ds, []byte("legacy bytes"))
+	before := foldOf(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+
+	root2 := t.TempDir()
+	dir := legacyDirectory(t, filepath.Join(root, "archive"), root2, id)
+	dsn2 := engine.MigratedDSN(t)
+	svc2 := mustReopen(t, dsn2, root2)
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the imported repository: %v", err)
+	}
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the imported fold is not the original\n%s", firstDifference(before, after))
+	}
+	if got := openSecret(t, dsn2, ref); got != "sk-legacy" {
+		t.Fatalf("the imported secret = %q", got)
+	}
+	if got := getBlob(t, ds2, digest); string(got) != "legacy bytes" {
+		t.Fatalf("the imported blob = %q", got)
+	}
+	for _, gone := range []string{changelogfile.ManifestName, changelogfile.ChangelogSubdir, changelogfile.SealedSubdir} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the directory still holds %s after its history moved to the table: %v", gone, err)
+		}
+	}
+}
+
+// A directory from before the archive beside a database that holds the
+// repository (an upgrade in place) is held to the table where both hold
+// lines, gives the table what it holds past the table's head, and then gives
+// its history up; one that disagrees with the table refuses the boot and is
+// left as it was.
+func TestBootAdoptsADirectoryFromBeforeTheArchive(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeSomeHistory(t, ds)
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	dir := legacyDirectory(t, filepath.Join(root, "archive"), root, id)
+	svc = mustReopen(t, dsn, root)
+	if changelogfile.HasHistory(dir) {
+		t.Fatal("the boot left the directory's history beside the table")
+	}
+	if _, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.Close()
+
+	// The same directory, with a line the table does not hold at its head.
+	dir = legacyDirectory(t, filepath.Join(root, "archive"), root, id)
+	raw := rawDB(t, dsn)
+	if _, err := raw.Exec(`UPDATE changelog SET hash = sha256(hash) WHERE seq = (SELECT max(seq) FROM changelog)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopen(t, dsn, root); !errors.Is(err, engine.ErrChangelogDiverged) {
+		t.Fatalf("a directory that disagrees with the table: %v, want ErrChangelogDiverged", err)
+	}
+	if !changelogfile.HasHistory(dir) {
+		t.Fatal("the refused boot removed the directory it disagreed with")
+	}
+}
+
+// A directory from before the archive with no manifest and no row is left
+// where it is and named in the log: nothing says whose it is.
+func TestBootSkipsADirectoryWithNoManifest(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	id, err := vocabulary.NewRepositoryID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := changelogfile.EnsureRepoDir(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(changelogfile.ChangelogDir(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc2 := mustReopen(t, dsn, root)
+	if repos, err := svc2.Repositories(context.Background()); err != nil || len(repos) != 0 {
+		t.Fatalf("a directory with no manifest became %+v (%v)", repos, err)
+	}
+	if !changelogfile.HasHistory(dir) {
+		t.Fatal("the skipped directory was removed")
+	}
+}
+
+// The purge erases a record's sealed rows in its own transaction, and the
+// sweep erases those a tombstone outlived; a live record's stay and open.
 func TestPurgeErasesTheRecordsSealedMaterial(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
@@ -756,28 +795,20 @@ func TestPurgeErasesTheRecordsSealedMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := repoDirOf(t, svc, ds)
 	swept := putProvider(t, ds, dsn, "swept", "sk-swept")
 	purged := putProvider(t, ds, dsn, "purged", "sk-purged")
 	kept := putProvider(t, ds, dsn, "kept", "sk-kept")
-
 	if _, err := ds.Delete(ctx, owner, typeProvider, "swept", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if sealedRowCount(t, dsn, swept) != 1 || !sealedFileExists(t, dir, swept) {
+	if sealedRowCount(t, dsn, swept) != 1 {
 		t.Fatal("the tombstone erased its sealed material; a restore could not read the secret")
 	}
-	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
-		t.Fatalf("a ref a tombstone holds is not held: %+v", report)
-	}
-
-	// The purge in the delete erases in the delete's own transaction, before
-	// any sweep could.
 	if _, err := ds.Delete(ctx, owner, typeProvider, "purged", substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("delete with purge: %v", err)
 	}
-	if sealedRowCount(t, dsn, purged) != 0 || sealedFileExists(t, dir, purged) {
-		t.Fatal("the purge left the record's sealed row or file behind")
+	if sealedRowCount(t, dsn, purged) != 0 {
+		t.Fatal("the purge left the record's sealed row behind")
 	}
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
@@ -786,567 +817,12 @@ func TestPurgeErasesTheRecordsSealedMaterial(t *testing.T) {
 		if n := sealedRowCount(t, dsn, ref); n != 0 {
 			t.Errorf("%s: %d sealed row(s) outlived the purge", name, n)
 		}
-		if sealedFileExists(t, dir, ref) {
-			t.Errorf("%s: sealed/ still holds the file the purge erased the row of", name)
-		}
-	}
-	if sealedRowCount(t, dsn, kept) != 1 || !sealedFileExists(t, dir, kept) {
-		t.Fatal("the purge erased a live record's sealed material")
 	}
 	if got := openSecret(t, dsn, kept); got != "sk-kept" {
 		t.Fatalf("the live secret = %q", got)
 	}
 	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
 		t.Fatalf("the repository does not verify after the purge: %+v", report)
-	}
-}
-
-// Sealed rows a purge left before #236, and rows whose owner no longer holds
-// them, are orphans: verify names each, a tombstone's hold still counts, and
-// the GC sweep erases the orphans' rows and files and nothing else.
-func TestVerifyNamesUnheldSealedRowsAndGCErasesThem(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	ds, err := svc.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := repoDirOf(t, svc, ds)
-	gone := putProvider(t, ds, dsn, "gone", "sk-gone")
-	dropped := putProvider(t, ds, dsn, "dropped", "sk-dropped")
-	kept := putProvider(t, ds, dsn, "kept", "sk-kept")
-	held := putProvider(t, ds, dsn, "held", "sk-held")
-	// A finalizer keeps this one a tombstone through the sweep, so its ref
-	// is held by a tombstone when the orphans go.
-	const hold = "example.com/hold"
-	mustPatch(t, ds, owner, typeProvider, "held", substrate.PatchInput{AddFinalizers: []string{hold}})
-	if _, err := ds.Delete(ctx, owner, typeProvider, "held", substrate.DeleteInput{}); err != nil {
-		t.Fatalf("delete the held provider: %v", err)
-	}
-
-	// What a purge before #236 left: the record's row gone, its sealed row
-	// and file in place. And a row its owner stopped holding.
-	raw := rawDB(t, dsn)
-	if _, err := raw.Exec(`DELETE FROM records WHERE kind = $1 AND id = $2`, typeProvider, "gone"); err != nil {
-		t.Fatalf("drop the record row: %v", err)
-	}
-	if _, err := raw.Exec(`UPDATE records SET props = props - 'apiKey' WHERE kind = $1 AND id = $2`, typeProvider, "dropped"); err != nil {
-		t.Fatalf("drop the owner's hold: %v", err)
-	}
-
-	report := mustVerify(t, svc, testdb.Repository(t))
-	if report.OK || report.SealedOrphans != 2 {
-		t.Fatalf("verify did not count the two orphans: %+v", report)
-	}
-	for _, want := range []string{
-		"sealed " + gone + " (" + typeProvider + " gone): an orphan",
-		"sealed " + dropped + " (" + typeProvider + " dropped): an orphan",
-	} {
-		if !findingContaining(report, want) {
-			t.Errorf("no finding contains %q:\n%s", want, strings.Join(report.Findings, "\n"))
-		}
-	}
-	if len(report.Findings) != 2 {
-		t.Fatalf("%d findings, want the two orphans alone:\n%s", len(report.Findings), strings.Join(report.Findings, "\n"))
-	}
-
-	if _, err := ds.RunGC(ctx); err != nil {
-		t.Fatalf("gc: %v", err)
-	}
-	for _, ref := range []string{gone, dropped} {
-		if n := sealedRowCount(t, dsn, ref); n != 0 {
-			t.Errorf("%s: %d sealed row(s) survived the sweep", ref, n)
-		}
-		if sealedFileExists(t, dir, ref) {
-			t.Errorf("%s: sealed/ still holds the orphan's file", ref)
-		}
-	}
-	for name, ref := range map[string]string{"kept": kept, "held": held} {
-		if sealedRowCount(t, dsn, ref) != 1 || !sealedFileExists(t, dir, ref) {
-			t.Errorf("%s: the sweep erased material a record holds", name)
-		}
-	}
-	if got := openSecret(t, dsn, held); got != "sk-held" {
-		t.Fatalf("the tombstone's secret = %q", got)
-	}
-	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
-		t.Fatalf("the repository does not verify after the sweep: %+v", report)
-	}
-}
-
-// Rotating a secret deletes the old sealed row; the mirror follows, so
-// exactly the live ref has a file.
-func TestSealedMirrorFollowsRotation(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	ds, err := svc.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := putProvider(t, ds, dsn, "openai", "sk-first")
-	dir := repoDirOf(t, svc, ds)
-	if files, err := changelogfile.ReadSealed(dir); err != nil || len(files) != 1 || files[0].Ref != first {
-		t.Fatalf("after the first write: files = %+v, %v", files, err)
-	}
-	mustPatch(t, ds, owner, typeProvider, "openai", substrate.PatchInput{
-		Properties: map[string]any{"apiKey": "sk-second"},
-	})
-	second := secretRefOf(t, dsn, typeProvider, "openai", "apiKey")
-	if second == first {
-		t.Fatal("the rotation kept the ref; the test proves nothing")
-	}
-	files, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 1 || files[0].Ref != second {
-		t.Fatalf("after the rotation: files = %+v, want exactly %s", files, second)
-	}
-	var payload []byte
-	if err := rawDB(t, dsn).QueryRow(`SELECT payload FROM sealed WHERE ref = $1`, second).Scan(&payload); err != nil {
-		t.Fatalf("read the live row: %v", err)
-	}
-	if !bytes.Equal(files[0].Payload, payload) || files[0].RecordKind != typeProvider || files[0].RecordID != "openai" {
-		t.Fatalf("the file is not the row: %+v", files[0])
-	}
-}
-
-// A row whose stamp is not the checksum of what it holds is damage wherever
-// it is met, an empty directory included: the boot refuses and names the seq
-// rather than writing the row out as history and making the table agree with
-// it.
-func TestBootRefusesAGarbledRowWithNoFileAtAll(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	for _, name := range []string{"one", "two", "three"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-	}
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	db := rawDB(t, dsn)
-	if _, err := db.Exec(`UPDATE changelog SET hash = sha256(convert_to(seq::text || random()::text, 'UTF8'))`); err != nil {
-		t.Fatalf("garble every stamp: %v", err)
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := reopen(t, dsn, root)
-	if !errors.Is(err, engine.ErrChangelogDiverged) {
-		t.Fatalf("boot over garbled stamps with no file: err = %v, want ErrChangelogDiverged", err)
-	}
-	if !strings.Contains(err.Error(), "seq 1") {
-		t.Fatalf("the refusal must name the seq: %v", err)
-	}
-}
-
-// Above a non-empty file a row whose stamp is not its content's checksum is
-// not a migration, it is damage: the boot refuses and names the seq rather
-// than re-stamping it into history.
-func TestBootRefusesAGarbledRowAboveTheFileHead(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	for _, name := range []string{"one", "two"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-	}
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	// The file one transaction short, the way a crash leaves it.
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cut := whole[:bytes.LastIndexByte(whole[:len(whole)-1], '\n')+1]
-	if err := os.WriteFile(path, cut, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rawDB(t, dsn).Exec(`UPDATE changelog SET hash = sha256(convert_to('garbled', 'UTF8')) WHERE seq = $1`, head); err != nil {
-		t.Fatalf("garble the head's stamp: %v", err)
-	}
-	_, err = reopen(t, dsn, root)
-	if err == nil {
-		t.Fatal("a garbled stamp above the file head was written out as history")
-	}
-	if !errors.Is(err, engine.ErrChangelogDiverged) || !strings.Contains(err.Error(), "seq "+strconv.FormatInt(head, 10)) {
-		t.Fatalf("the refusal must be the divergence's and name seq %d: %v", head, err)
-	}
-	// And the file was not extended by the refused boot.
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, cut) {
-		t.Fatal("the refused boot changed the segment")
-	}
-}
-
-// A read-only open (the operator's verify beside a running server) repairs
-// nothing: an incomplete tail stays on disk, a table ahead of its file stays ahead,
-// and VerifyRepository names both. A dataset opened this way refuses to write.
-func TestReadOnlyOpenLeavesDamageAndVerifyNamesIt(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	for _, name := range []string{"one", "two", "three"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-	}
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	// The table one ahead of the file, and half of that last line torn on
-	// the end of the segment.
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cut := whole[:bytes.LastIndexByte(whole[:len(whole)-1], '\n')+1]
-	last := whole[len(cut):]
-	damaged := append(append([]byte{}, cut...), last[:len(last)/2]...)
-	if err := os.WriteFile(path, damaged, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-	ro, err := engine.OpenForTest(t, ctx, dsn,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithDirectoryReadOnly())
-	if err != nil {
-		t.Fatalf("read-only open: %v", err)
-	}
-	t.Cleanup(func() { _ = ro.Close() })
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, damaged) {
-		t.Fatal("a read-only open changed the segment")
-	}
-	report := mustVerify(t, ro, testdb.Repository(t))
-	if report.OK {
-		t.Fatalf("a torn, behind file verified: %+v", report)
-	}
-	if report.TruncatedBytes != int64(len(last)/2) {
-		t.Fatalf("truncatedBytes = %d, want %d", report.TruncatedBytes, len(last)/2)
-	}
-	if !findingContaining(report, "incomplete transaction") {
-		t.Fatalf("no finding names the incomplete tail: %v", report.Findings)
-	}
-	if want := "the table's head is " + strconv.FormatInt(head, 10) + " and the file's is " + strconv.FormatInt(head-1, 10); !findingContaining(report, want) {
-		t.Fatalf("no finding says %q: %v", want, report.Findings)
-	}
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, damaged) {
-		t.Fatal("verify changed the segment")
-	}
-
-	// The dataset opens beside the damage and refuses to write.
-	ro2, err := ro.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open the dataset read-only: %v", err)
-	}
-	if _, err := ro2.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "refused"}}); !errors.Is(err, engine.ErrDirectoryReadOnly) {
-		t.Fatalf("a write on a read-only service: err = %v, want ErrDirectoryReadOnly", err)
-	}
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, damaged) {
-		t.Fatal("opening the dataset read-only changed the segment")
-	}
-	if maxSeq(t, ro2) != head {
-		t.Fatal("a read-only service appended to the table")
-	}
-	_ = ro.Close()
-
-	// The server's own boot cuts the tail and catches the file up.
-	svc3 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc3, testdb.Repository(t)); !report.OK || report.FileHead != head {
-		t.Fatalf("after the writing boot: %+v", report)
-	}
-}
-
-// A second process on the same data root (an operator's rebuild while the
-// server runs) boots, because a healthy repository needs no writer at boot,
-// and then refuses at the repository it would write: the server's dataset
-// holds the changelog writer lock. Once the server closes, the same rebuild
-// goes through.
-func TestASecondProcessRefusesRebuildWhileTheServerHoldsTheLock(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "held"}})
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	if _, err := os.Stat(filepath.Join(changelogfile.ChangelogDir(dir), changelogfile.LockFileName)); err != nil {
-		t.Fatalf("the open dataset holds no lock file: %v", err)
-	}
-	ctx := context.Background()
-
-	second, err := reopenBeside(t, dsn, root)
-	if err != nil {
-		t.Fatalf("a second process could not boot beside the server: %v", err)
-	}
-	_, err = second.(rebuilder).RebuildRepository(ctx, testdb.Repository(t))
-	if err == nil {
-		t.Fatal("a second process rebuilt a repository the server holds the writer lock on")
-	}
-	if !errors.Is(err, engine.ErrChangelogLocked) || !errors.Is(err, changelogfile.ErrLocked) {
-		t.Fatalf("the refusal must be the lock's: %v", err)
-	}
-	// The server was not disturbed.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "still writing"}})
-	head := maxSeq(t, ds)
-	_ = svc.Close()
-
-	report, err := second.(rebuilder).RebuildRepository(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("with the server stopped the rebuild must run: %v", err)
-	}
-	if report.Head != head {
-		t.Fatalf("rebuilt to %d, the head is %d", report.Head, head)
-	}
-}
-
-// A directory whose manifest wraps its DEK under another host's credential
-// key is refused at import, naming the repository and the variable: a row
-// created from it would be a repository no login could open.
-func TestImportRefusesADirectoryTheKeyCannotOpen(t *testing.T) {
-	t.Parallel()
-	svc, ds, _ := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "sealed elsewhere"}})
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	other := make([]byte, 32)
-	if _, err := rand.Read(other); err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root2),
-		engine.WithCredentialKey(base64.StdEncoding.EncodeToString(other)))
-	if err == nil {
-		t.Fatal("a directory the credential key cannot open imported")
-	}
-	if !strings.Contains(err.Error(), id) || !strings.Contains(err.Error(), "SUBSTRATE_CREDENTIAL_KEY") {
-		t.Fatalf("the refusal must name the repository and the key: %v", err)
-	}
-	var rows int
-	if err := rawDB(t, dsn2).QueryRow(`SELECT count(*) FROM repositories`).Scan(&rows); err != nil {
-		t.Fatal(err)
-	}
-	if rows != 0 {
-		t.Fatalf("the refused import left %d row(s)", rows)
-	}
-	// Under the key the directory was written with, the same import runs.
-	svc2 := mustReopen(t, dsn2, root2)
-	repos, err := svc2.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != id {
-		t.Fatalf("repositories under the right key = %+v, %v", repos, err)
-	}
-}
-
-// errCrash is what a commit-fault hook returns where the process would die.
-var errCrash = errors.New("test: the process died here")
-
-// armedFault is a WithTestCommitFault hook a test arms for one stage, once:
-// the first write that reaches the stage dies there, every other write runs.
-type armedFault struct {
-	mu    sync.Mutex
-	stage string
-}
-
-func (f *armedFault) arm(stage string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.stage = stage
-}
-
-func (f *armedFault) hook(stage string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if stage != f.stage {
-		return nil
-	}
-	f.stage = ""
-	return errCrash
-}
-
-// sealedRefs lists the refs with a file under sealed/.
-func sealedRefs(t *testing.T, dir string) []string {
-	t.Helper()
-	files, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := make([]string, 0, len(files))
-	for _, f := range files {
-		refs = append(refs, f.Ref)
-	}
-	return refs
-}
-
-// A crash between the prepared changelog lines and the Postgres commit
-// leaves the transaction on disk without its final newline, and nothing reads
-// it: the table never had it, a read-only open counts it as the incomplete
-// tail, and the next boot cuts it whole and removes the sealed file the same
-// transaction wrote first. The write the client got no answer for is in
-// neither store, and the next write continues from the head before it.
-func TestACrashBetweenPrepareAndCommitFoldsNoUncommittedLine(t *testing.T) {
-	t.Parallel()
-	fault := &armedFault{}
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
-	ctx := context.Background()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	sealedBefore := len(sealedRefs(t, dir))
-
-	// A provider row with a secret: a staged sealed file and a changelog
-	// line in one transaction, so both halves of the directory are in flight.
-	fault.arm(engine.CommitAfterPrepare)
-	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: typeProvider, ID: "openai",
-		Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-uncommitted"},
-	})
-	if !errors.Is(err, errCrash) {
-		t.Fatalf("the write did not die at the seam: %v", err)
-	}
-	if maxSeq(t, ds) != head {
-		t.Fatal("the table took a write the process died before committing")
-	}
-	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ro.Head() != head || ro.TruncatedBytes == 0 {
-		t.Fatalf("the prepared transaction is not on disk as an incomplete tail: head %d, truncated %d", ro.Head(), ro.TruncatedBytes)
-	}
-	if n := len(sealedRefs(t, dir)); n != sealedBefore {
-		t.Fatalf("a staged sealed file is listed as a record: %d files, want %d", n, sealedBefore)
-	}
-	if pending, err := changelogfile.PendingSealed(dir); err != nil || len(pending) != 1 {
-		t.Fatalf("the sealed file was not staged before the prepare: pending = %v, %v", pending, err)
-	}
-	_ = svc.Close()
-
-	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Repository(t))
-	if !report.OK || report.Head != head || report.FileHead != head || report.TruncatedBytes != 0 {
-		t.Fatalf("after the boot: %+v", report)
-	}
-	if n := len(sealedRefs(t, dir)); n != sealedBefore {
-		t.Fatalf("the boot made a sealed file of a transaction that never committed: %d files, want %d", n, sealedBefore)
-	}
-	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
-		t.Fatalf("the boot left the staged file of a transaction that never committed: %v", pending)
-	}
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ds2.Get(ctx, typeProvider, "openai"); !errors.Is(err, substrate.ErrNotFound) {
-		t.Fatalf("the uncommitted write is readable after the boot: err = %v", err)
-	}
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != head+1 || report.FileHead != head+1 {
-		t.Fatalf("the next write did not continue from the head before the crash: %+v", report)
-	}
-}
-
-// A crash between the Postgres commit and the file's final newline leaves the
-// table ahead of the file by that transaction and the file with an incomplete
-// tail. The next boot cuts the tail and appends the transaction again from
-// the table: the catch-up path is what heals this window, and the write,
-// which the client got no answer for, is in both stores afterwards.
-func TestACrashBetweenCommitAndTheNewlineIsCaughtUpAtTheNextOpen(t *testing.T) {
-	t.Parallel()
-	fault := &armedFault{}
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
-	ctx := context.Background()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-
-	fault.arm(engine.CommitAfterCommit)
-	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: fid("committed"), Properties: map[string]any{"name": "committed"}})
-	if !errors.Is(err, errCrash) {
-		t.Fatalf("the write did not die at the seam: %v", err)
-	}
-	if maxSeq(t, ds) != head+1 {
-		t.Fatal("the write did not commit")
-	}
-	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ro.Head() != head || ro.TruncatedBytes == 0 {
-		t.Fatalf("the committed transaction is not an incomplete tail in the file: head %d, truncated %d", ro.Head(), ro.TruncatedBytes)
-	}
-	_ = svc.Close()
-
-	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Repository(t))
-	if !report.OK || report.Head != head+1 || report.FileHead != head+1 || report.TruncatedBytes != 0 {
-		t.Fatalf("the boot did not append the committed transaction again: %+v", report)
-	}
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ds2.Get(ctx, taskKind, fid("committed")); err != nil {
-		t.Fatalf("the committed write is not readable after the boot: %v", err)
-	}
-}
-
-// An authority-named directory under the root with no row and no manifest is
-// nobody's: the boot logs it and leaves it, importing nothing and deleting
-// nothing.
-func TestBootSkipsADirectoryWithNoManifest(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	stray, err := changelogfile.EnsureRepoDir(root, "stray.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	w, err := changelogfile.OpenWriter(changelogfile.ChangelogDir(stray), changelogfile.WriterOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Append([]changelogfile.Entry{{
-		Seq: 1, Txn: 1, TS: time.Now().UTC(), Actor: "api", Op: "put", RecordID: "r1", Kind: "x.example.com/p/k",
-		Payload: json.RawMessage(`{}`),
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	svc2 := mustReopen(t, dsn, root)
-	repos, err := svc2.Repositories(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(repos) != 0 {
-		t.Fatalf("a manifest-less directory imported: %+v", repos)
-	}
-	if _, err := os.Stat(filepath.Join(changelogfile.ChangelogDir(stray), changelogfile.SegmentName(1))); err != nil {
-		t.Fatalf("the boot removed or moved the stray directory's segment: %v", err)
 	}
 }
 
@@ -1379,60 +855,12 @@ func TestBootRefusesAStrayDirectoryThatIsNotAnAuthority(t *testing.T) {
 	mustReopen(t, dsn, root)
 }
 
-// longAuthority is a valid authority of exactly n bytes, in 63-byte labels.
-func longAuthority(n int) string {
-	var b strings.Builder
-	for b.Len() < n {
-		if b.Len() > 0 {
-			b.WriteByte('.')
-		}
-		b.WriteString(strings.Repeat("a", min(63, n-b.Len())))
-	}
-	return b.String()
-}
-
-// The import door holds an authority to the length registration does: the
-// authority is the id of the repository's own `core/authority` record, and a
-// record id is at most vocabulary.MaxIDLen bytes, where DNS admits 253.
-func TestImportRefusesAnAuthorityLongerThanARecordID(t *testing.T) {
-	t.Parallel()
-	svc, dsn := newService(t)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	authority := longAuthority(200)
-	id, err := vocabulary.NewRepositoryID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err := changelogfile.EnsureRepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := changelogfile.WriteManifest(dir, changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, ID: id, Authority: authority, CreatedAt: time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("the manifest must admit a DNS-length authority: %v", err)
-	}
-	_, err = reopen(t, dsn, root)
-	if err == nil {
-		t.Fatal("a 200-byte authority imported")
-	}
-	if !strings.Contains(err.Error(), "longer than 128 bytes") || !strings.Contains(err.Error(), authority) {
-		t.Fatalf("the refusal must name the authority and the limit: %v", err)
-	}
-	if repos, err := svc.Repositories(context.Background()); err == nil && len(repos) != 0 {
-		t.Fatalf("the refused import created %+v", repos)
-	}
-}
-
 // A registration mints the repository's id beside its name, and the id keys
 // its storage at every layer (decision 0261): the control-plane row's primary
 // key, RepositoryInfo.ID, the scope a dataset runs under, the self-description
-// record's id, the directory under the data root and the manifest in it, the
-// fs blob path, and the binding of the DEK wrap. The name is the authority
-// column, RepositoryInfo.Authority and the manifest's authority, and never the
-// id.
+// record's id, the directory under the data root, the archive's, the fs blob
+// path, and the binding of the DEK wrap. The name is the authority column,
+// RepositoryInfo.Authority and the manifest's authority, and never the id.
 func TestRegistrationMintsTheIdBesideTheAuthority(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
@@ -1483,14 +911,14 @@ func TestRegistrationMintsTheIdBesideTheAuthority(t *testing.T) {
 
 	root := engine.DataRootOf(svc)
 	dir := filepath.Join(root, changelogfile.RepositoriesDir, minted)
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil {
-		t.Fatalf("no manifest at %s: %v", dir, err)
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatalf("archive: %v", err)
 	}
-	if m.Format != changelogfile.ManifestFormat || m.ID != minted || m.Authority != authority || !bytes.Equal(m.DEK, wrapped) {
-		t.Fatalf("manifest = %+v", m)
+	m, _, err := changelogfile.ReadArchiveManifestDir(filepath.Join(root, "archive", changelogfile.RepositoriesDir, minted))
+	if err != nil || m.Authority != authority || !bytes.Equal(m.DEK, wrapped) {
+		t.Fatalf("archive manifest = %+v (%v)", m, err)
 	}
-	if _, err := os.Stat(filepath.Join(root, changelogfile.RepositoriesDir, authority)); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(root, changelogfile.RepositoriesDir, authority)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("a directory is named by the authority: %v", err)
 	}
 	digest := putBlob(t, ds, []byte("bytes under the id"))
@@ -1506,594 +934,30 @@ func TestRegistrationMintsTheIdBesideTheAuthority(t *testing.T) {
 	}
 }
 
-// An import that dies part way lands its rows in batches and folds after the last one, so a boot
-// that died after that batch used to leave equal heads and an empty fold that
-// the next boot served as a healthy repository; one that died between the two
-// fold passes left records with no refs and unweighted fts. Each case here
-// kills the import at one durable step (the no-row restore path first, then
-// the row path a resumed boot takes), holds that no dataset opens over what
-// the crash left, reboots, and compares the result to an uninterrupted import:
-// the same fold (records, refs, fts), the same changelog rows, nothing
-// appended, the marker gone.
-func TestAnInterruptedImportResumesAtTheNextBoot(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	writeSomeHistory(t, ds)
-	ref := putProvider(t, ds, dsn, "openai", "sk-survives-the-crash")
-	before := foldOf(t, ds)
-	head := maxSeq(t, ds)
-	rows := tableChangelog(t, dsn)
-	id := repositoryIDOf(t, ds)
-	// The subtests import a copy of THIS repository, whose name derives from
-	// the parent's t.
-	username := testdb.Repository(t)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
+// errCrash is what a commit-fault hook returns where the process would die.
+var errCrash = errors.New("test: the process died here")
 
-	// A batch far below the history, so the import spans several and "after
-	// the last batch" is not "after the first".
-	const batch = 7
-	batches := int((head + batch - 1) / batch)
-	if batches < 3 {
-		t.Fatalf("head %d spans %d batches of %d; the schedule below needs at least 3", head, batches, batch)
-	}
-
-	// A crash is the stage that kills one boot, and which occurrence of it;
-	// a schedule kills one boot per crash, in order, and the boot after the
-	// last one runs undisturbed.
-	type crash struct {
-		stage string
-		nth   int
-	}
-	cases := []struct {
-		name    string
-		crashes []crash
-	}{
-		{"after the first batch", []crash{{engine.ImportAfterBatch, 1}}},
-		{"after the last batch", []crash{{engine.ImportAfterBatch, batches}}},
-		{"between the fold passes", []crash{{engine.ImportAfterFirstFold, 1}}},
-		// The resumed boot has batches-1 batches left, so its last batch is
-		// the (batches-1)th: the same window as above, on the row path.
-		{"at every step in turn", []crash{
-			{engine.ImportAfterBatch, 1},
-			{engine.ImportAfterBatch, batches - 1},
-			{engine.ImportAfterFirstFold, 1},
-		}},
-	}
-	errKilled := errors.New("the process died here")
-	ctx := context.Background()
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			root2 := copyRepositoryDir(t, root, id)
-			dsn2 := engine.MigratedDSN(t)
-			for i, c := range tc.crashes {
-				seen := 0
-				_, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsFS(engine.SeedKinds),
-					engine.WithDataRoot(root2),
-					engine.WithCredentialKey(engine.TestCredentialKey),
-					engine.WithTestImportFault(batch, func(stage string) error {
-						if stage != c.stage {
-							return nil
-						}
-						seen++
-						if seen == c.nth {
-							return errKilled
-						}
-						return nil
-					}))
-				if !errors.Is(err, errKilled) {
-					t.Fatalf("boot %d did not die %s (occurrence %d): %v", i+1, c.stage, c.nth, err)
-				}
-				incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !incomplete {
-					t.Fatalf("boot %d died %s and left no import-progress marker", i+1, c.stage)
-				}
-				if n := len(tableChangelog(t, dsn2)); n > int(head) {
-					t.Fatalf("boot %d left %d changelog rows, the history has %d", i+1, n, head)
-				}
-				// What the crash left is not served, not even read-only: a
-				// second process beside the (dead) server meets the marker at
-				// the open and is told to boot the server.
-				ro, err := engine.OpenForTest(t, ctx, dsn2,
-					engine.WithKindsFS(engine.SeedKinds),
-					engine.WithDataRoot(root2),
-					engine.WithCredentialKey(engine.TestCredentialKey),
-					engine.WithDirectoryReadOnly())
-				if err != nil {
-					t.Fatalf("open read-only after boot %d: %v", i+1, err)
-				}
-				if _, err := ro.Dataset(ctx, username); !errors.Is(err, engine.ErrImportIncomplete) {
-					t.Fatalf("a read-only open after boot %d = %v, want ErrImportIncomplete", i+1, err)
-				}
-				// The files and the rows agree, so verify would say OK; the
-				// report names the unfinished import instead.
-				report := mustVerify(t, ro, username)
-				if report.OK || !findingContaining(report, "import of the repository directory has not completed") {
-					t.Fatalf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
-				}
-				_ = ro.Close()
-			}
-
-			svc2 := mustReopen(t, dsn2, root2)
-			ds2, err := svc2.Dataset(ctx, username)
-			if err != nil {
-				t.Fatalf("open the repository after the import resumed: %v", err)
-			}
-			if after := foldOf(t, ds2); string(after) != string(before) {
-				t.Fatalf("the resumed import's fold is not the original\n%s", firstDifference(before, after))
-			}
-			if got := maxSeq(t, ds2); got != head {
-				t.Fatalf("head after the resumed import = %d, want %d: the boot appended", got, head)
-			}
-			after := tableChangelog(t, dsn2)
-			if len(after) != len(rows) {
-				t.Fatalf("%d changelog rows after the resumed import, want %d", len(after), len(rows))
-			}
-			for seq, hash := range rows {
-				if !bytes.Equal(after[seq], hash) {
-					t.Fatalf("seq %d: checksum after the resumed import is not the original's", seq)
-				}
-			}
-			incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if incomplete {
-				t.Fatal("the import-progress marker outlived the import")
-			}
-			if got := openSecret(t, dsn2, ref); got != "sk-survives-the-crash" {
-				t.Fatalf("secret after the resumed import = %q", got)
-			}
-			if report := mustVerify(t, svc2, username); !report.OK || report.Head != head {
-				t.Fatalf("the resumed repository does not verify: %+v", report)
-			}
-		})
-	}
+// armedFault is a WithTestCommitFault hook a test arms for one stage, once:
+// the first write that reaches the stage dies there, every other write runs.
+type armedFault struct {
+	mu    sync.Mutex
+	stage string
 }
 
-// A binary from before the marker serves a marked repository and dies between
-// a commit and its append, so the next boot of this binary finds the table
-// ahead of the file AND the marker set. The catch-up appends the row, and the
-// resumed fold must include it: a refold over the changelog as it was opened
-// before the catch-up would fold one entry short and still clear the marker.
-func TestAResumedImportFoldsWhatTheCatchUpAppended(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	writeSomeHistory(t, ds)
-	putProvider(t, ds, dsn, "openai", "sk-appended-last")
-	before := foldOf(t, ds)
-	head := maxSeq(t, ds)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	// The import dies after its last batch: every row in the table, the
-	// marker set, the fold empty.
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	errKilled := errors.New("the process died here")
-	ctx := context.Background()
-	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root2),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithTestImportFault(int(head), func(stage string) error {
-			if stage == engine.ImportAfterBatch {
-				return errKilled
-			}
-			return nil
-		}))
-	if !errors.Is(err, errKilled) {
-		t.Fatalf("the import did not die after its last batch: %v", err)
-	}
-	// The file loses its last line, which is what a commit with no append
-	// leaves: the table one ahead of the file.
-	dir, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cut := whole[:bytes.LastIndexByte(whole[:len(whole)-1], '\n')+1]
-	if err := os.WriteFile(path, cut, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open after the catch-up and the resumed import: %v", err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the resumed fold lacks what the catch-up appended\n%s", firstDifference(before, after))
-	}
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != head || report.FileHead != head {
-		t.Fatalf("the repository does not verify after the catch-up: %+v", report)
-	}
+func (f *armedFault) arm(stage string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stage = stage
 }
 
-// lastTransaction is the seq range of the last transaction in a repository's
-// changelog files, read from the `txn` every line carries.
-func lastTransaction(t *testing.T, dir string) (first, last int64) {
-	t.Helper()
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("open the changelog files: %v", err)
+func (f *armedFault) hook(stage string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if stage != f.stage {
+		return nil
 	}
-	entries, err := log.Read(0, 0)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("the changelog is empty")
-	}
-	last = entries[len(entries)-1].Seq
-	first = last
-	for i := len(entries) - 1; i >= 0 && entries[i].Txn == last; i-- {
-		first = entries[i].Seq
-	}
-	return first, last
-}
-
-// A crash between the writer's write and its fsync can leave a prefix of a
-// transaction in the active segment. Open cuts the whole transaction back,
-// not only the torn line, so the file never opens with half a commit as
-// history; the table is then ahead by that transaction and the boot appends
-// it again, byte for byte.
-func TestBootReappendsATransactionCutInTheFile(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	_ = svc.Close()
-
-	first, last := lastTransaction(t, dir)
-	if last != head || last-first < 1 {
-		t.Fatalf("the last transaction is seq %d..%d at head %d; the test needs a multi-entry one at the head", first, last, head)
-	}
-	path := activeSegment(t, dir)
-	whole, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Tear the last line: every earlier line of the transaction is complete.
-	if err := os.WriteFile(path, whole[:len(whole)-1], 0o600); err != nil {
-		t.Fatal(err)
-	}
-	l, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if l.Head() != first-1 || l.TruncatedEntries != last-first {
-		t.Fatalf("after the tear: head = %d, %d complete lines cut; want %d and %d (the whole transaction)",
-			l.Head(), l.TruncatedEntries, first-1, last-first)
-	}
-
-	svc2 := mustReopen(t, dsn, root)
-	l, err = changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("open after the boot: %v", err)
-	}
-	if l.Head() != head || l.TruncatedBytes != 0 {
-		t.Fatalf("the boot left the file at head %d (%d truncated bytes), the table is at %d", l.Head(), l.TruncatedBytes, head)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, whole) {
-		t.Fatal("the re-appended segment is not byte for byte the one the writer wrote")
-	}
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK {
-		t.Fatalf("verify after the boot: %+v", report)
-	}
-}
-
-// The boot's table-to-file catch-up pages the table; a page boundary inside a
-// transaction must not become an append boundary, because the segment rotates
-// after an append and a transaction never crosses a segment. Small pages and
-// a segment size every append exceeds make every page an append and every
-// append a segment, so a split would be visible to Verify's framing walk.
-func TestCatchUpAppendsWholeTransactions(t *testing.T) {
-	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithCatchUpBatch(3), engine.WithChangelogSegmentBytes(1))
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "one"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	first, last := lastTransaction(t, dir)
-	_ = svc.Close()
-	if first != last {
-		t.Fatalf("the last transaction is seq %d..%d; the test wants a one-entry transaction at the head", first, last)
-	}
-	// The whole file gone: the table is ahead by everything, and the seed and
-	// the vocabulary import are transactions of many more than three entries.
-	if err := os.RemoveAll(changelogfile.ChangelogDir(dir)); err != nil {
-		t.Fatal(err)
-	}
-
-	svc2, err := engine.OpenForTest(t, context.Background(), dsn,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithCatchUpBatch(3),
-		engine.WithChangelogSegmentBytes(1))
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	t.Cleanup(func() { _ = svc2.Close() })
-	rep, err := changelogfile.Verify(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatalf("the caught-up files do not verify: %v (%+v)", err, rep)
-	}
-	if rep.Head != head || rep.Entries != head {
-		t.Fatalf("caught up to head %d with %d entries, the table is at %d", rep.Head, rep.Entries, head)
-	}
-	if rep.Segments >= int(head) {
-		t.Fatalf("%d segments for %d entries: the catch-up appended line by line", rep.Segments, head)
-	}
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK {
-		t.Fatalf("verify after the boot: %+v", report)
-	}
-}
-
-// A commit whose answer is lost after Postgres committed (the connection
-// dropped at the reply, the commit budget spent) is treated as a failure: the
-// prepared lines are cut and the staged files discarded, so the table is one
-// transaction ahead of the directory. The next write holds the changelog
-// lock the doubted commit held, so the table says the commit landed, and it
-// appends that transaction from the table before its own lines, sealed file
-// included, as the boot check would. No restart: before #516 the next write
-// latched the dataset and every write after it answered 500.
-func TestACommitInDoubtIsCaughtUpByTheNextWrite(t *testing.T) {
-	t.Parallel()
-	fault := &armedFault{}
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
-	ctx := context.Background()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
-	head := maxSeq(t, ds)
-	root := engine.DataRootOf(svc)
-	dir := repoDirOf(t, svc, ds)
-	sealedBefore := len(sealedRefs(t, dir))
-
-	// A provider row with a secret: a changelog line and a sealed file in
-	// one transaction, so the catch-up has both halves to repair.
-	fault.arm(engine.CommitInDoubt)
-	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: typeProvider, ID: "openai",
-		Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-doubted"},
-	})
-	if !errors.Is(err, errCrash) {
-		t.Fatalf("the commit did not report the seam's failure: %v", err)
-	}
-	doubted := maxSeq(t, ds)
-	if doubted <= head {
-		t.Fatal("the write did not commit")
-	}
-	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ro.Head() != head || ro.TruncatedBytes != 0 {
-		t.Fatalf("the file after the doubted commit: head %d (want %d), %d bytes of tail", ro.Head(), head, ro.TruncatedBytes)
-	}
-	if n := len(sealedRefs(t, dir)); n != sealedBefore {
-		t.Fatalf("sealed/ holds %d files after the doubted commit, want %d", n, sealedBefore)
-	}
-
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, ID: fid("next"), Properties: map[string]any{"name": "next"}})
-	if got := maxSeq(t, ds); got <= doubted {
-		t.Fatalf("the next write did not reach the table: head %d, was %d", got, doubted)
-	}
-	report := mustVerify(t, svc, testdb.Repository(t))
-	if !report.OK || report.FileHead != report.Head || report.Head != maxSeq(t, ds) {
-		t.Fatalf("the directory after the next write: %+v", report)
-	}
-	if n := len(sealedRefs(t, dir)); n != sealedBefore+1 {
-		t.Fatalf("sealed/ holds %d files after the catch-up, want %d: the doubted write's file is missing", n, sealedBefore+1)
-	}
-	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
-		t.Fatalf("the catch-up left staged files: %v", pending)
-	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
-	finalHead := maxSeq(t, ds)
-	_ = svc.Close()
-
-	// The boot finds nothing to repair.
-	svc2 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != finalHead || report.FileHead != finalHead {
-		t.Fatalf("after the boot: %+v", report)
-	}
-}
-
-// The catch-up is the repair, and the latch stands only when the repair
-// fails: a doubted commit followed by a changelog writer that cannot append,
-// or by a sealed store that cannot take the doubted write's file once its
-// line is appended, refuses the next write as ErrChangelogFileBehind. That is
-// an ErrRestartRequired (a 503 naming the restart) and never a retry's
-// ErrUnavailable, and the boot catches the directory up. A retry after the
-// sealed failure would meet no gap and skip the mirror, so that latches too.
-func TestACommitInDoubtLatchesWhenTheCatchUpFails(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		fail func(substrate.Dataset)
-	}{
-		{"changelog writer", engine.BreakChangelogWriter},
-		{"sealed store", engine.BreakSealedStore},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fault := &armedFault{}
-			svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
-			ctx := context.Background()
-			mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
-			root := engine.DataRootOf(svc)
-			dir := repoDirOf(t, svc, ds)
-			sealedBefore := len(sealedRefs(t, dir))
-
-			fault.arm(engine.CommitInDoubt)
-			if _, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: typeProvider, ID: "openai",
-				Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-doubted"},
-			}); !errors.Is(err, errCrash) {
-				t.Fatalf("the commit did not report the seam's failure: %v", err)
-			}
-			doubted := maxSeq(t, ds)
-			tc.fail(ds)
-			for _, name := range []string{"next", "later"} {
-				_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
-				if !errors.Is(err, engine.ErrChangelogFileBehind) || !errors.Is(err, substrate.ErrRestartRequired) || errors.Is(err, substrate.ErrUnavailable) {
-					t.Fatalf("the %s write after a doubted commit and a failed catch-up: err = %v, want ErrChangelogFileBehind, an ErrRestartRequired and not ErrUnavailable", name, err)
-				}
-			}
-			if maxSeq(t, ds) != doubted {
-				t.Fatal("a latched write reached the table")
-			}
-			_ = svc.Close()
-
-			svc2 := mustReopen(t, dsn, root)
-			report := mustVerify(t, svc2, testdb.Repository(t))
-			if !report.OK || report.Head != doubted || report.FileHead != doubted {
-				t.Fatalf("the boot did not catch the file up: %+v", report)
-			}
-			if n := len(sealedRefs(t, dir)); n != sealedBefore+1 {
-				t.Fatalf("sealed/ holds %d files after the boot, want %d", n, sealedBefore+1)
-			}
-		})
-	}
-}
-
-// A vocabulary apply whose commit answer is lost did not publish its
-// registry, so a write the catch-up let through would be held to the
-// declarations the commit may have replaced. Nothing short of the open loads
-// them again, so the doubted apply latches at once.
-func TestAVocabularyCommitInDoubtLatchesAtOnce(t *testing.T) {
-	t.Parallel()
-	fault := &armedFault{}
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
-	ctx := context.Background()
-	root := engine.DataRootOf(svc)
-
-	fault.arm(engine.CommitInDoubt)
-	_, err := ds.ApplyVocabularyDocuments(ctx, owner, requiredNarrowingDocs(false))
-	if !errors.Is(err, engine.ErrChangelogFileBehind) || !errors.Is(err, errCrash) {
-		t.Fatalf("a vocabulary apply in doubt: err = %v, want ErrChangelogFileBehind naming the commit's error", err)
-	}
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "next"}}); !errors.Is(err, engine.ErrChangelogFileBehind) {
-		t.Fatalf("the write after a doubted apply: err = %v, want ErrChangelogFileBehind", err)
-	}
-	_ = svc.Close()
-
-	svc2 := mustReopen(t, dsn, root)
-	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != report.FileHead {
-		t.Fatalf("the boot did not catch the file up: %+v", report)
-	}
-	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: narrowingPackage + "/note", ID: fid("after"), Properties: map[string]any{"name": "after"}})
-}
-
-// A boot import of a long history takes minutes and its batches and fold
-// passes log nothing until it is done, so the boot check says how many
-// directories it will import and each import says it has begun, before the
-// work: whoever is waiting on the listener learns why it is late (issue 568).
-func TestABootImportSaysWhatItImportsBeforeTheWork(t *testing.T) {
-	t.Parallel()
-	svc, ds, _ := newDatasetWithDSN(t)
-	writeSomeHistory(t, ds)
-	head := maxSeq(t, ds)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	var logs lockedLog
-	svc2, err := engine.OpenForTest(t, context.Background(), dsn2,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root2),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = svc2.Close()
-	out := logs.String()
-	started := `msg="substrate: boot check started" repositories=0 directoriesToImport=1`
-	importing := `msg="substrate: importing the repository directory" repository=` + id +
-		` rows=` + strconv.FormatInt(head, 10)
-	checked := `msg="substrate: repository directory checked" repository=` + id + ` action=imported`
-	at := func(line string) int {
-		i := strings.Index(out, line)
-		if i < 0 {
-			t.Fatalf("the boot log lacks %s\n%s", line, out)
-		}
-		return i
-	}
-	if s, i, c := at(started), at(importing), at(checked); s >= i || i >= c {
-		t.Fatalf("want the boot check line, then the import line, then the outcome\n%s", out)
-	}
-}
-
-// A boot import cut short by its context (the server's first SIGTERM or
-// SIGINT) logs the repository it stopped on, the `interrupted` action and the
-// cause, so the next boot's "resuming an interrupted import" has a reason
-// above it; and that next boot finishes the import (issue 568).
-func TestACanceledBootImportLogsWhereItStoppedAndResumes(t *testing.T) {
-	t.Parallel()
-	svc, ds, _ := newDatasetWithDSN(t)
-	writeSomeHistory(t, ds)
-	before := foldOf(t, ds)
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	root2 := copyRepositoryDir(t, root, id)
-	dsn2 := engine.MigratedDSN(t)
-	var logs lockedLog
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(nil)
-	_, err := engine.OpenForTest(t, ctx, dsn2,
-		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(root2),
-		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
-		engine.WithTestImportFault(7, func(stage string) error {
-			if stage == engine.ImportAfterBatch {
-				cancel(errors.New("signal terminated"))
-			}
-			return nil
-		}))
-	if err == nil {
-		t.Fatal("a boot whose context was canceled mid-import opened")
-	}
-	want := `msg="substrate: boot check interrupted; the next boot resumes it" repository=` + id +
-		` action=interrupted cause="signal terminated"`
-	if out := logs.String(); !strings.Contains(out, want) {
-		t.Fatalf("the boot log lacks %s\n%s", want, out)
-	}
-
-	svc2 := mustReopen(t, dsn2, root2)
-	ds2, err := svc2.Dataset(context.Background(), testdb.Repository(t))
-	if err != nil {
-		t.Fatalf("open after the canceled import: %v", err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the resumed fold is not the original\n%s", firstDifference(before, after))
-	}
+	f.stage = ""
+	return errCrash
 }
 
 // lockedLog is a log sink the test reads while the service's own goroutines
@@ -2113,4 +977,113 @@ func (b *lockedLog) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// A 0.x directory is held to the table line for line at the first boot
+// (rule 6), every seq both hold, before either is converted: a line that
+// differs at seq 1, or a seq one side skips, refuses the boot and leaves the
+// directory as it was. Past the shorter one's head the longer one's lines
+// stand: the table's, which a crash of the release that wrote the directory
+// left ahead (it appended to the file after the commit), and the
+// directory's, which a database restored from a backup older than the data
+// root leaves behind it.
+func TestA0xDirectoryIsHeldToTheTableLineForLine(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// source is a stopped repository with its archive, and the directory a
+	// 0.x release would have kept of it, under the same data root.
+	source := func(t *testing.T) (dsn, root, id, dir string, fold []byte) {
+		svc, ds, dsn := newDatasetWithDSN(t)
+		writeSomeHistory(t, ds)
+		fold, id, root = foldOf(t, ds), repositoryIDOf(t, ds), engine.DataRootOf(svc)
+		_ = svc.Close()
+		dir = legacyDirectory(t, filepath.Join(root, "archive"), root, id)
+		return dsn, root, id, dir, fold
+	}
+	refused := func(t *testing.T, dsn, root, dir, want string) {
+		t.Helper()
+		before, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reopen(t, dsn, root); !errors.Is(err, engine.ErrChangelogDiverged) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("the boot over the directory: %v, want ErrChangelogDiverged naming %q", err, want)
+		}
+		if after, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName)); err != nil || !bytes.Equal(after, before) || !changelogfile.HasHistory(dir) {
+			t.Fatalf("the refused boot touched the directory (%v)", err)
+		}
+	}
+
+	t.Run("a line that differs at seq 1", func(t *testing.T) {
+		t.Parallel()
+		dsn, root, _, dir, _ := source(t)
+		db := rawDB(t, dsn)
+		if _, err := db.ExecContext(ctx, `UPDATE changelog SET hash = sha256(hash) WHERE seq = 1`); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, dsn, root, dir, "seq 1")
+	})
+
+	t.Run("a seq the table skips", func(t *testing.T) {
+		t.Parallel()
+		dsn, root, _, dir, _ := source(t)
+		if _, err := rawDB(t, dsn).ExecContext(ctx, `DELETE FROM changelog WHERE seq = 2`); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, dsn, root, dir, "seq 2")
+	})
+
+	t.Run("the table ahead", func(t *testing.T) {
+		t.Parallel()
+		svc, ds, dsn := newDatasetWithDSN(t)
+		writeSomeHistory(t, ds)
+		root, id := engine.DataRootOf(svc), repositoryIDOf(t, ds)
+		_ = svc.Close()
+		// The directory as the release left it, then lines the table took
+		// after it was last appended to.
+		root2 := t.TempDir()
+		dir := legacyDirectory(t, filepath.Join(root, "archive"), root2, id)
+		svc = mustReopen(t, dsn, root)
+		ds, err := svc.Dataset(ctx, testdb.Repository(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "the table's alone"}})
+		want := foldOf(t, ds)
+		_ = svc.Close()
+		svc = mustReopen(t, dsn, root2)
+		if ds, err = svc.Dataset(ctx, testdb.Repository(t)); err != nil {
+			t.Fatal(err)
+		}
+		if got := foldOf(t, ds); string(got) != string(want) {
+			t.Fatalf("the table's lines past the directory's head did not stand\n%s", firstDifference(want, got))
+		}
+		if changelogfile.HasHistory(dir) {
+			t.Fatal("the directory's history was not given up")
+		}
+	})
+
+	t.Run("the directory ahead", func(t *testing.T) {
+		t.Parallel()
+		svc, ds, dsn := newDatasetWithDSN(t)
+		writeSomeHistory(t, ds)
+		root, id := engine.DataRootOf(svc), repositoryIDOf(t, ds)
+		_ = svc.Close()
+		backup := testdb.Copy(t, dsn)
+		svc = mustReopen(t, dsn, root)
+		if ds, err := svc.Dataset(ctx, testdb.Repository(t)); err != nil {
+			t.Fatal(err)
+		} else {
+			mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "the directory's alone"}})
+		}
+		_ = svc.Close()
+		svc = reopenBesideNewerDirectory(t, backup, root, id)
+		ds2, err := svc.Dataset(ctx, testdb.Repository(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if head, err := ds2.Head(ctx); err != nil || head.Seq != int64(len(tableChangelog(t, dsn))) {
+			t.Fatalf("the backup's head after the directory's lines came in: %+v (%v), want %d", head, err, len(tableChangelog(t, dsn)))
+		}
+	})
 }

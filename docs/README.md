@@ -62,9 +62,9 @@ API call that completes a task.
 - [Users, tokens, and actors](auth.md)
 - [Authorizing apps](apps.md): how an app gets a token limited to the kinds the owner approves, with no registration
 - [The changelog and watch](changelog.md)
-- [The stored format](stored-format.md): the repository directory an export
-  carries, line by line and effect by effect, and how an older one is
-  converted
+- [The stored format](stored-format.md): the archive the server writes and
+  an export carries, line by line and effect by effect, and how an older one
+  is converted
 - [Stability](stability.md): what `stable`, `beta` and `experimental`
   promise, where a package and a feature state their label, and what an
   upgrade may change

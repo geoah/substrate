@@ -17,6 +17,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +80,11 @@ func TestARepositoryRefusesAPlainOrHostKeyedPayload(t *testing.T) {
 	if !hasDEK || keyID != hostKeyID(TestCredentialKeyBytes) {
 		t.Fatalf("a fresh repository is not born with a DEK under the host key: dek=%v keyID=%q", hasDEK, keyID)
 	}
-	m, err := changelogfile.ReadManifest(ds.dir)
+	// The archive's manifest carries the same wrap, once a pass has written it.
+	if err := ds.ArchivePass(ctx); err != nil {
+		t.Fatalf("archive pass: %v", err)
+	}
+	m, _, err := changelogfile.ReadArchiveManifestDir(filepath.Join(ds.svc.dataRoot, "archive", changelogfile.RepositoriesDir, repoID))
 	if err != nil || m.DEKKeyID != keyID {
 		t.Fatalf("the manifest does not carry the key id: %+v, %v", m, err)
 	}

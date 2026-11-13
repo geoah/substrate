@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testenv"
 )
@@ -113,9 +114,15 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 		t.Fatalf("%s/records.json holds no records", dir)
 	}
 
-	// The import writes into the data root, so it gets a copy.
+	// The import writes into the data root, so it gets a copy. A release from
+	// before the archive kept its repository directory and one after it keeps
+	// its archive (decision 0277); the boot restores from either.
 	root := t.TempDir()
-	copyKept(t, filepath.Join(dir, "repositories"), filepath.Join(root, "repositories"))
+	if _, err := os.Stat(filepath.Join(dir, "archive")); err == nil {
+		copyKept(t, filepath.Join(dir, "archive"), filepath.Join(root, "archive"))
+	} else {
+		copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
+	}
 	e := testenv.Start(t, append([]testenv.Option{
 		testenv.WithoutRegistration(), testenv.WithRepository(fixture.Repository),
 		testenv.WithDataRoot(root), testenv.WithCredentialKey(fixture.CredentialKey),
@@ -123,7 +130,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	e.Token = fixture.Token
 
 	upgraded := keptUpgrade(t, e, want.Head)
-	keptAnnotations(t, e, root, fixture.Repository, want.Head, upgraded)
+	keptAnnotations(t, e, fixture.Repository, want.Head, upgraded)
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
 	dropped := keptConvert(&want, conversions, keptDialect(t, dir, fixture.Repository))
@@ -192,15 +199,20 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	}
 	// A directory from before repository ids takes one at the boot, before
 	// its import (decision 0261): it is under the id, and nothing is under
-	// the name.
-	if _, err := os.Stat(filepath.Join(root, "repositories", ds.Repository().ID, "repository.json")); err != nil {
+	// the name. Its history moved to the table (decision 0262): what stays
+	// is what Postgres does not hold, its blobs and its spool.
+	dirByID := filepath.Join(root, "repositories", ds.Repository().ID)
+	if _, err := os.Stat(dirByID); err != nil {
 		t.Errorf("the imported directory is not under its id %s: %v", ds.Repository().ID, err)
+	}
+	if changelogfile.HasHistory(dirByID) {
+		t.Errorf("the imported directory still holds its history beside the table")
 	}
 	if _, err := os.Stat(filepath.Join(root, "repositories", fixture.Repository)); !os.IsNotExist(err) {
 		t.Errorf("a directory is still named %s: %v", fixture.Repository, err)
 	}
 	byID := strings.NewReplacer("/webhooks/"+fixture.Repository+"/", "/webhooks/"+ds.Repository().ID+"/")
-	diffs = append(diffs, keptTriggerDiffs(t, e, wantTriggers, keptCursors(t, filepath.Join(dir, "repositories", fixture.Repository)), byID)...)
+	diffs = append(diffs, keptTriggerDiffs(t, e, wantTriggers, keptCursors(t, dir, fixture.Repository), byID)...)
 	sort.Strings(diffs)
 	if len(diffs) > 0 {
 		t.Fatalf("the directory %s kept imports under the current code into %d difference(s) no entry after its head explains:\n  %s",
@@ -455,22 +467,27 @@ func keptUpgrade(t *testing.T, e *testenv.Env, head int64) map[string]*keptTouch
 }
 
 // keptAnnotations adds to each record the annotation effects of the entries
-// after the release's head, read from the imported directory's lines: an
-// effect the change feed leaves out, and one the boot writes (repository
-// migration 7's mark).
-func keptAnnotations(t *testing.T, e *testenv.Env, root, repository string, head int64, upgraded map[string]*keptTouch) {
+// after the release's head, read from the history the import left in the
+// changelog table (decision 0262): an effect the change feed leaves out, and
+// one the boot writes (repository migration 7's mark).
+func keptAnnotations(t *testing.T, e *testenv.Env, repository string, head int64, upgraded map[string]*keptTouch) {
 	t.Helper()
-	ds, err := e.Service.Dataset(context.Background(), repository)
+	db, err := engine.OpenScopedDB(e.DSN, repository, engine.RoleApp)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open the repository's pool: %v", err)
 	}
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(filepath.Join(root, "repositories", ds.Repository().ID)))
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(context.Background(),
+		`SELECT seq, payload::text FROM changelog WHERE seq > $1 ORDER BY seq`, head)
 	if err != nil {
-		t.Fatalf("open the imported changelog: %v", err)
+		t.Fatalf("read the changelog after %d: %v", head, err)
 	}
-	err = log.Walk(func(entry changelogfile.Entry) error {
-		if entry.Seq <= head {
-			return nil
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var seq int64
+		var payload []byte
+		if err := rows.Scan(&seq, &payload); err != nil {
+			t.Fatal(err)
 		}
 		var p struct {
 			Fold []struct {
@@ -481,8 +498,8 @@ func keptAnnotations(t *testing.T, e *testenv.Env, root, repository string, head
 				Value json.RawMessage `json:"value"`
 			} `json:"fold"`
 		}
-		if err := json.Unmarshal(entry.Payload, &p); err != nil {
-			return err
+		if err := json.Unmarshal(payload, &p); err != nil {
+			t.Fatalf("seq %d: %v", seq, err)
 		}
 		for _, f := range p.Fold {
 			if f.Kind != "annotation" {
@@ -491,7 +508,7 @@ func keptAnnotations(t *testing.T, e *testenv.Env, root, repository string, head
 			a := keptAnnotation{key: f.Key}
 			if len(f.Value) > 0 {
 				if err := json.Unmarshal(f.Value, &a.value); err != nil {
-					return err
+					t.Fatalf("seq %d: %v", seq, err)
 				}
 			}
 			path := f.Ref + "/" + f.ID
@@ -500,10 +517,9 @@ func keptAnnotations(t *testing.T, e *testenv.Env, root, repository string, head
 			}
 			upgraded[path].annotations = append(upgraded[path].annotations, a)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk the imported changelog: %v", err)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read the changelog after %d: %v", head, err)
 	}
 }
 
@@ -552,14 +568,10 @@ func keptRead(t *testing.T, e *testenv.Env) map[string]keptRecord {
 // cursor may stand past it, at a scan position the server keeps beside the
 // ledger and an import does not carry (fold.go, "THE WRITES OUTSIDE THE FOLD
 // PATH").
-func keptCursors(t *testing.T, repoDir string) map[string]int64 {
+func keptCursors(t *testing.T, dir, repository string) map[string]int64 {
 	t.Helper()
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDir))
-	if err != nil {
-		t.Fatalf("open the kept changelog: %v", err)
-	}
 	out := map[string]int64{}
-	err = log.Walk(func(e changelogfile.Entry) error {
+	err := keptWalk(dir, repository, func(e changelogfile.Entry) error {
 		var p struct {
 			Fold []struct {
 				Kind string      `json:"kind"`
@@ -586,6 +598,51 @@ func keptCursors(t *testing.T, repoDir string) map[string]int64 {
 		t.Fatalf("walk the kept changelog: %v", err)
 	}
 	return out
+}
+
+// keptWalk reads the kept history in seq order from whichever layout the
+// release kept: the pieces its archive's manifest chains, or the segments of
+// a directory from before the archive.
+func keptWalk(dir, repository string, fn func(changelogfile.Entry) error) error {
+	repos := filepath.Join(dir, "archive", changelogfile.RepositoriesDir)
+	ids, err := os.ReadDir(repos)
+	if os.IsNotExist(err) {
+		log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(filepath.Join(dir, changelogfile.RepositoriesDir, repository)))
+		if err != nil {
+			return err
+		}
+		return log.Walk(fn)
+	}
+	if err != nil {
+		return err
+	}
+	if len(ids) != 1 {
+		return fmt.Errorf("the kept archive holds %d repositories, want 1", len(ids))
+	}
+	repoDir := filepath.Join(repos, ids[0].Name())
+	m, _, err := changelogfile.ReadArchiveManifestDir(repoDir)
+	if err != nil {
+		return err
+	}
+	if m.Authority != repository {
+		return fmt.Errorf("the kept archive is %s's, want %s's", m.Authority, repository)
+	}
+	chain, err := m.Chain()
+	if err != nil {
+		return err
+	}
+	for _, p := range chain {
+		f, err := os.Open(filepath.Join(repoDir, m.Archive, filepath.FromSlash(p.Key)))
+		if err != nil {
+			return err
+		}
+		err = changelogfile.ReadPiece(f, p.First, p.Last, func(e changelogfile.Entry, _ []byte, _ [32]byte) error { return fn(e) })
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // keptTriggerDiffs holds each trigger's state to the release's: what the

@@ -93,10 +93,33 @@ func WithTestImportFault(batch int, fn func(stage string) error) Option {
 	return func(o *options) { o.importFault, o.importBatch = fn, batch }
 }
 
+// WithTestEraseFault runs fn at each durable step of a repository's
+// deletion (repositories.go eraseRepositoryOn); an error stops the deletion
+// there, as a process killed there would.
+func WithTestEraseFault(fn func(stage string) error) Option {
+	return func(o *options) { o.eraseFault = fn }
+}
+
+// The deletion's stages WithTestEraseFault reports.
+const (
+	EraseAfterBegan         = eraseAfterBegan
+	EraseAfterMark          = eraseAfterMark
+	EraseAfterArchiveObject = eraseAfterArchiveObject
+	EraseAfterArchive       = eraseAfterArchive
+	EraseAfterDirectory     = eraseAfterDirectory
+)
+
 // The import stages WithTestImportFault reports.
 const (
+	ImportAfterRow       = importAfterRow
+	ImportAfterSealed    = importAfterSealed
+	ImportBeforeCleanup  = importBeforeCleanup
+	CleanupSetAside      = changelogfile.RemoveHistorySetAside
+	CleanupPartly        = changelogfile.RemoveHistoryPartly
 	ImportAfterBatch     = importAfterBatch
 	ImportAfterFirstFold = importAfterFirstFold
+	TakeAfterStaged      = takeAfterStaged
+	TakeAfterStaging     = takeAfterStaging
 )
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is
@@ -150,10 +173,9 @@ func WithTestAfterProof(fn func(door string)) Option {
 
 // WithTestCommitInDoubt answers a write's commit with an error after Postgres
 // committed it, for each write fail reports true: the shape of a connection
-// lost at the commit's answer (dataset.go commitAndMirror), the
-// CommitInDoubt stage of the in-package commit seam. The write's error path
-// runs as it would for a real loss, and the next write catches the directory
-// up.
+// lost at the commit's answer (dataset.go commit), the CommitInDoubt stage of
+// the in-package commit seam. The write's error path runs as it would for a
+// real loss.
 func WithTestCommitInDoubt(fail func() bool) Option {
 	return func(o *options) {
 		o.commitFault = func(stage string) error {
@@ -174,3 +196,35 @@ var errTestCommitInDoubt = errors.New("substrate/engine: the test lost the commi
 func WithTestChangeReadHook(fn func(repository string)) Option {
 	return func(o *options) { o.changeReadHook = fn }
 }
+
+// WithTestArchiveFault runs fn at each durable step of an archive pass, so a
+// test stops the pass there by returning an error, as a process killed there
+// stops it, and WithArchivePieceBytes cuts pieces small, so a short history
+// spans several. Tests only.
+func WithTestArchiveFault(fn func(stage string) error) Option {
+	return func(o *options) { o.archiveFault = fn }
+}
+
+// WithArchivePieceBytes sets the size archive pieces are cut at.
+func WithArchivePieceBytes(n int64) Option { return func(o *options) { o.archivePieceBytes = n } }
+
+// The archive pass's stages WithTestArchiveFault reports.
+const (
+	ArchiveAfterListing   = archiveAfterListing
+	ArchiveAfterObjectRow = archiveAfterObjectRow
+	ArchiveAfterObjectPut = archiveAfterObjectPut
+	ArchiveAfterBlobs     = archiveAfterBlobs
+	ArchiveAfterSealed    = archiveAfterSealed
+	ArchiveAfterPiece     = archiveAfterPiece
+	ArchiveAfterPending   = archiveAfterPending
+	ArchiveAfterManifest  = archiveAfterManifest
+	ArchiveAfterPublished = archiveAfterPublished
+	ArchiveAfterMark      = archiveAfterMark
+	ArchiveAfterDeleteRow = archiveAfterDeleteRow
+	ArchiveAfterDeleteHit = archiveAfterDeleteHit
+	ArchiveAfterDelete    = archiveAfterDelete
+)
+
+// WithArchiveStepBytes sets how many blob bytes a pass copies before it
+// publishes (DefaultArchiveStepBytes).
+func WithArchiveStepBytes(n int64) Option { return func(o *options) { o.archiveStepBytes = n } }

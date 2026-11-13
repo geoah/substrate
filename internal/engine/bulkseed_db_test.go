@@ -10,7 +10,6 @@ package engine_test
 import (
 	"context"
 	"errors"
-	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -129,37 +128,28 @@ func seedEntriesAreOneTransaction(t *testing.T, svc substrate.Service, repo, whe
 	}
 }
 
-// filesAgree fails the test unless the repository's segment files and its
-// table agree: the verification walk finds nothing (every line's checksum,
-// every stamped checksum against its line, both heads), no unfinished tail
-// is left, and an empty database that imports a copy of the directory folds
-// it to the tables this one holds.
+// filesAgree fails the test unless the repository's archive and its table
+// agree: the verification walk finds nothing, and an empty database that
+// restores a copy of the archive a pass just wrote folds it to the tables
+// this one holds.
 func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 	t.Helper()
-	report := mustVerify(t, svc, repo)
-	if !report.OK || report.FileHead != report.Head || report.TruncatedEntries != 0 {
-		t.Fatalf("%s: verify: ok %v, file head %d, table head %d, %d unfinished entries, findings %q",
-			when, report.OK, report.FileHead, report.Head, report.TruncatedEntries, report.Findings)
-	}
-	id := repositoryIDByName(t, svc, repo)
-	src, err := changelogfile.RepoDir(engine.DataRootOf(svc), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
-	imported := reopenWith(t, engine.MigratedDSN(t), root, engine.WithUnitSeed(false))
-	defer func() { _ = imported.Close() }()
 	ds, err := svc.Dataset(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := engine.ArchivePass(context.Background(), ds); err != nil {
+		t.Fatalf("%s: archive: %v", when, err)
+	}
+	report := mustVerify(t, svc, repo)
+	if !report.OK || report.ArchiveHead != report.Head {
+		t.Fatalf("%s: verify: ok %v, archive head %d, table head %d, findings %q",
+			when, report.OK, report.ArchiveHead, report.Head, report.Findings)
+	}
+	id := repositoryIDByName(t, svc, repo)
+	root := copyRepositoryDir(t, engine.DataRootOf(svc), id)
+	imported := reopenWith(t, engine.MigratedDSN(t), root, engine.WithUnitSeed(false))
+	defer func() { _ = imported.Close() }()
 	ids, err := imported.Dataset(context.Background(), repo)
 	if err != nil {
 		t.Fatalf("%s: open the imported repository: %v", when, err)
@@ -367,7 +357,7 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 		reseeds bool
 	}{
 		{stage: engine.BulkAfterManagers, bulk: true, reseeds: true},
-		{stage: engine.CommitAfterPrepare, reseeds: true},
+		{stage: engine.CommitBeforeCommit, reseeds: true},
 		{stage: engine.CommitAfterCommit, reseeds: false},
 	} {
 		t.Run(c.stage, func(t *testing.T) {
@@ -408,23 +398,15 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 			} else {
 				paths.want(t, "the faulted open", "")
 			}
-			switch report := mustVerify(t, svc, repo); c.stage {
-			case engine.BulkAfterManagers:
-				// A refused write ends nothing: the files stand as the
+			if report := mustVerify(t, svc, repo); !report.OK {
+				t.Fatalf("after the fault at %s: %+v", c.stage, report)
+			}
+			if c.stage == engine.BulkAfterManagers {
+				// A refused write ends nothing: the archive stands as the
 				// table does, and neither holds a unit.
 				filesAgree(t, svc, repo, "after the fault in the flush")
 				if tab := unitsOf(t, ds); len(tab.Units) != 0 {
 					t.Fatalf("the rolled back seed left %d units", len(tab.Units))
-				}
-			case engine.CommitAfterPrepare:
-				if report.TruncatedEntries == 0 || report.FileHead != report.Head {
-					t.Fatalf("after the death past the prepare: %d unfinished entries, file head %d, table head %d; want the seed's lines unfinished and the heads equal",
-						report.TruncatedEntries, report.FileHead, report.Head)
-				}
-			case engine.CommitAfterCommit:
-				if report.TruncatedEntries == 0 || report.FileHead >= report.Head {
-					t.Fatalf("after the death past the commit: %d unfinished entries, file head %d, table head %d; want the table ahead",
-						report.TruncatedEntries, report.FileHead, report.Head)
 				}
 			}
 			_ = svc.Close()

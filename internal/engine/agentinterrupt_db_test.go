@@ -604,9 +604,8 @@ func TestTheFirstPassAfterARestartRerunsAFunctionBodysInterruptedAgent(t *testin
 	// The process dies with the scribe's thread open and the claim
 	// committed: from here it commits nothing, so the body cannot park the
 	// delivery on its way out, as a killed process would not.
-	dying.writerMu.Lock()
-	dying.setFileErr(errors.New("test: the process died"))
-	dying.writerMu.Unlock()
+	var died error = errors.New("test: the process died")
+	dying.unsettled.Store(&died)
 	ds = restart()
 	release()
 	select {

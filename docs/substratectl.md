@@ -16,7 +16,7 @@ substratectl apply -f task.yaml           # put: merge, never prune
 substratectl validate -f task.yaml        # the server's checks, offline
 substratectl patch ada.example.com/tasks/task t9 --state status=done
 substratectl watch                        # resumable change stream
-substratectl export                       # the recovery export, a tar of the repository directory
+substratectl export                       # the recovery export, the repository's archive as one tar
 ```
 
 ## Two hats
@@ -30,19 +30,28 @@ and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
-verify`, `repository snapshot`, `repository rebuild`, `repository
-rotate-generation`, `repository reembed` and `repository reindex`. Every one
-of them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when
-that is unset) and refuses without it before touching anything. The ones
-that open the repository directory (`verify`, `rebuild`, `reembed`,
-`reindex`, `snapshot`, `rotate-generation` and `user reset`) also need
-`SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
-`repository inspect` reports a missing root instead of refusing. Each takes
-the repository by its name or by its id, and `repository list` prints both:
-the directory under the data root is named by the id. The one
-exception is `repository rewrap`, which opens a copied repository directory
-with the user's recovery key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs
-no database at all.
+verify`, `repository rebuild`, `repository rotate-generation`, `repository
+reembed`, `repository reindex`, and `archive report`, `archive resolve`,
+`archive remove` and `archive import`, which settle an archive that is not
+as the database left it
+([the archive's contract](operations.md#the-archives-contract)). Every one of
+them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when that
+is unset) and refuses without it before touching anything. The ones that
+open the engine (`verify`, `rebuild`, `reembed`, `reindex`,
+`rotate-generation`, `user reset` and the `archive` ones) also need
+`SUBSTRATE_DATA_ROOT`, and read the `SUBSTRATE_ARCHIVE`
+settings the server runs with, so `verify` holds the same archive to the
+table; `repository list` and `repository inspect` read the database alone.
+Each takes the repository by its name or by its id, and `repository list`
+prints both: the directory under the data root and the archive's prefix are
+named by the id. `repository list` also shows each repository's archive mark
+(`ARCHIVED`: the seq the archive holds every line up to and its age, `never`
+before the first pass), and `repository inspect` how far that is behind the
+head. The one exception is `repository rewrap`, which opens a copy of a
+repository (an extracted export's `repositories/<id>`, whose newest
+archive it rewraps in a manifest of the next epoch, or a directory a
+release before the archive wrote) with the user's recovery key for a new
+`SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version
@@ -460,16 +469,22 @@ of your own. `-o json` prints the same rows, `keptBy` on each.
 
 `substratectl export` downloads the repository's recovery export
 ([backups](operations.md#backups)): `GET /api/v1/export` streamed to
-`<authority>-<head>.tar`, a tar of the repository directory as of one
-committed point, laid out as a data root with `snapshot.json` recording the
-head seq and checksum as its last entry. The token is the whole credential.
-The archive is read back on the way to disk, so one the connection cut short
-is refused and removed rather than kept as a backup; a complete one prints
-its point, its segment, sealed-file and blob counts, and how to restore it.
-`-o` names the file, `-o -` streams the archive to stdout with the report on
-stderr, and an existing file is never overwritten. Restoring is extracting it
-under a stopped server's `SUBSTRATE_DATA_ROOT` and booting, or, on a host
-with another credential key, `repository rewrap` with the recovery key first
+`<authority>-<head>.tar`, the repository's archive as one tar, as of one
+committed point. It holds one archive of its own,
+`repositories/<id>/<archive>/` with `blobs/`, `sealed/`, `spool/` and the
+history in pieces under `changelog/<dialect>/`, and, as its last entry, its
+manifest under `repositories/<id>/manifests/<archive>/`, whose `head` and
+`headSum` are the point
+([the stored format](stored-format.md#the-archive)). The token is the whole
+credential. The tar is read back on the way to disk, so one the connection
+cut short, which has no manifest, is refused and removed rather than kept as
+a backup; a complete one prints its point, its piece, sealed-value and blob
+counts, and how to restore it. `-o` names the file, `-o -` streams the tar
+to stdout with the report on stderr, and an existing file is never
+overwritten. Restoring is extracting it into the archive a stopped server
+reads (`SUBSTRATE_ARCHIVE`, by default `<SUBSTRATE_DATA_ROOT>/archive`) and
+booting, or, on a host with another credential key, `repository rewrap` with
+the recovery key first
 ([restore without the credential key](operations.md#restore-without-the-credential-key)).
 
 ## Verifying the repository's name

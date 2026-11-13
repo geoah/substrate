@@ -145,11 +145,7 @@ const changelogDialectStamp = `
 // run through the same place). The claim is written by the transaction that
 // writes the entries, so it commits with them or not at all, and the dataset
 // only remembers it AFTER that commit: a flag set on a rolled-back stamp would
-// let the next append land with nothing claiming it. The transaction is
-// marked as the claimant, so commitAndMirror rewrites the directory's
-// manifest with the claim BEFORE it appends the entries (repodir.go
-// writeManifestBeforeCommit): the manifest is what an import reads for the
-// dialect, so it must say what the segments require before they require it.
+// let the next append land with nothing claiming it.
 func (t *txn) stampChangelogDialect() error {
 	if t.ds.changelogStamped.Load() {
 		return nil
@@ -157,7 +153,6 @@ func (t *txn) stampChangelogDialect() error {
 	if _, err := t.exec(changelogDialectStamp, t.ds.svc.maxDialect); err != nil {
 		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", t.ds.svc.maxDialect, err)
 	}
-	t.claimsChangelogDialect = true
 	t.afterCommit = append(t.afterCommit, func() { t.ds.changelogStamped.Store(true) })
 	return nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -272,13 +274,14 @@ func TestConcurrentRegistrationsForOneAuthorityKeepTheWinner(t *testing.T) {
 		t.Fatalf("the winner's self-description: %+v, %v", self, err)
 	}
 	report := mustVerify(t, svc, authority)
-	if !report.OK || report.Head == 0 || report.FileHead != report.Head {
+	if !report.OK || report.Head == 0 {
 		t.Fatalf("the winner's changelog does not verify: %+v", report)
 	}
-	dir := filepath.Join(engine.DataRootOf(svc), changelogfile.RepositoriesDir, id)
-	m, err := changelogfile.ReadManifest(dir)
-	if err != nil || m.ID != id || m.Authority != authority {
-		t.Fatalf("the winner's manifest: %+v, %v", m, err)
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatalf("archive the winner: %v", err)
+	}
+	if m, _, err := changelogfile.ReadArchiveManifestDir(filepath.Join(engine.DataRootOf(svc), "archive", changelogfile.RepositoriesDir, id)); err != nil || m.Authority != authority {
+		t.Fatalf("the winner's archive manifest: %+v, %v", m, err)
 	}
 }
 
@@ -402,6 +405,101 @@ func TestDeleteRepositoryErasesItAndFreesTheName(t *testing.T) {
 	}
 	if _, err := ds.Get(ctx, "substrate.reamde.dev/llm/memory", kept.ID); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the new repository holds the old one's record: %v", err)
+	}
+}
+
+// A deleted repository's archive goes with it: an archive with no row is a
+// repository the next boot restores, so one left behind would bring back
+// what its owner deleted.
+func TestADeletedRepositoryIsNotRestoredFromItsArchive(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	repository := testdb.Repository(t)
+	user, _, _ := registerUser(t, svc, repository)
+	ds, err := svc.Dataset(ctx, repository)
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/llm/memory", Properties: map[string]any{"text": "to be deleted"}})
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatalf("archive pass: %v", err)
+	}
+	root := engine.DataRootOf(svc)
+	archived := filepath.Join(root, "archive", changelogfile.RepositoriesDir, ds.Repository().ID)
+	if _, _, err := changelogfile.ReadArchiveManifestDir(archived); err != nil {
+		t.Fatalf("the repository has no archive to delete: %v", err)
+	}
+
+	waitStep(t)
+	if err := svc.DeleteRepository(ctx, substrate.LoginInput{
+		Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	// The deletion mark stays, and nothing else: it is what keeps a
+	// manifest a store applies late from restoring the repository.
+	if err := filepath.WalkDir(archived, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() == changelogfile.DeletedMark {
+			return err
+		}
+		return fmt.Errorf("the deleted repository's archive still holds %s", path)
+	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	svc2, err := reopen(t, dsn, root)
+	if err != nil {
+		t.Fatalf("boot after the delete: %v", err)
+	}
+	if _, err := svc2.Dataset(ctx, repository); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the deleted repository after a boot = %v, want ErrNotFound", err)
+	}
+}
+
+// A server with the archive off still deletes a deleted repository's copy in
+// the default archive under its data root, which the first boot with the
+// archive on would restore.
+func TestADeletedRepositoryIsNotRestoredFromTheDefaultArchiveWithTheArchiveOff(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	repository := testdb.Repository(t)
+	user, _, _ := registerUser(t, svc, repository)
+	ds, err := svc.Dataset(ctx, repository)
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatalf("archive pass: %v", err)
+	}
+	root := engine.DataRootOf(svc)
+	archived := filepath.Join(root, "archive", changelogfile.RepositoriesDir, ds.Repository().ID)
+	if err := svc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	off := reopenWith(t, dsn, root, engine.WithoutArchive())
+	waitStep(t)
+	if err := off.DeleteRepository(ctx, substrate.LoginInput{
+		Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+	}); err != nil {
+		t.Fatalf("delete with the archive off: %v", err)
+	}
+	if _, _, err := changelogfile.ReadArchiveManifestDir(archived); !errors.Is(err, changelogfile.ErrArchiveDeleted) {
+		t.Fatalf("the default archive is not marked as the deleted repository's: %v", err)
+	}
+	if err := off.Close(); err != nil {
+		t.Fatal(err)
+	}
+	on, err := reopen(t, dsn, root)
+	if err != nil {
+		t.Fatalf("boot with the archive on: %v", err)
+	}
+	if _, err := on.Dataset(ctx, repository); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the deleted repository after a boot with the archive on = %v, want ErrNotFound", err)
 	}
 }
 

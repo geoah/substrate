@@ -196,18 +196,19 @@ newest version it can read and refuses a newer one by that number
 
 ### Stored data
 
-A repository's directory, which the recovery export hands out, has a written
-format: the manifest, the changelog's lines and their checksum, every effect a
-line carries, and the layout of the files
+A repository's archive, which the server writes behind its commits and the
+recovery export hands out, has a written format: the manifest and its mark,
+the changelog's lines and their checksum, every effect a line carries, and
+the layout of its pieces and files
 ([the stored format](stored-format.md)). Its key sets are closed, so a server
 refuses a key it does not know rather than drop it. A new op, effect or key
 raises the
 [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in). The
-directory and every table are keyed by the repository's id, never by its
-name, so a change of name moves no stored data
+archive, the directory under the data root and every table are keyed by the
+repository's id, never by its name, so a change of name moves no stored data
 ([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)). A
-1.x server opens what any earlier 1.x release wrote, converting it once where
-a shape changed, and 2.0 opens what the last 1.x release wrote. Each release
+1.x server reads an archive any earlier 1.x release wrote, converting it once
+where a shape changed, and 2.0 reads what the last 1.x release wrote. Each release
 keeps a directory its own server wrote, and every later release is tested
 importing it ([kept directories](stored-format.md#kept-directories)).
 
@@ -240,8 +241,8 @@ catalog` in its CODE column.
 
 ## Upgrading
 
-A 1.x server opens any database and data root written by the same or an
-earlier 1.x release, in one step: there is no release in between to stop at.
+A 1.x server opens any database, data root and archive written by the same
+or an earlier 1.x release, in one step: there is no release in between to stop at.
 It refuses one written by a later release, by name
 ([upgrading the binary](operations.md#upgrading-the-binary)).
 
@@ -255,8 +256,8 @@ shapes of the same thing.
 
 Going back to an older server is not supported once a newer one has stamped a
 repository or migrated the database. The older server refuses both. The way
-back is a copy taken before the upgrade: the database and the data root,
-restored together ([backups](operations.md#backups)).
+back is a copy taken before the upgrade: the database, the data root and the
+archive, restored together ([backups](operations.md#backups)).
 
 Each release says whether it closes the way back. Four changes close it: a
 database migration, a repository migration, a dialect number, and a seeded

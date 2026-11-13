@@ -48,9 +48,13 @@ unless you ask it not to.
   reaching the filesystem, the network or another process past what
   [the sandbox](docs/functions.md#the-sandbox) says it may.
 - **Remote code execution and SQL injection**, anywhere.
-- **A damaged entry that verifies.** A changelog line or row that
-  `repository verify` accepts although its bytes do not produce its checksum,
-  or a segment file the boot check opens although its sidecar does not match.
+- **A damaged entry that verifies.** A changelog row that `repository verify
+  --recanonicalize` accepts although its stored columns do not produce the
+  checksum stamped on it; a line of the archive that `repository verify` or a
+  restore accepts although its bytes do not produce its `sum`, or although its
+  `sum` is not the checksum the table stamped for its seq; or an archive whose
+  manifest's `headSum` is not the table's line at its head that an archive
+  pass writes over rather than refuses.
 
 ## Not a finding
 
@@ -66,10 +70,10 @@ unless you ask it not to.
   and `SUBSTRATE_INSECURE_DISABLE_TOTP` in particular makes a password the
   whole credential on purpose.
 - **What the host operator can do.** The operator holds the database, the
-  data root and the credential key. The changelog is not signed and its
-  checksums catch corruption, not an operator who rewrites a line and its
-  checksum together
-  ([the checksum](docs/changelog.md#the-checksum-and-the-segment-files)).
+  data root, the archive and the credential key. The changelog is not signed
+  and its checksums catch corruption, not an operator who rewrites a line and
+  its checksum together
+  ([the checksum](docs/changelog.md#the-checksum-and-the-archive)).
   Operator commands run on the box, over the DSN, by design.
 - **A token doing what a token may.** A token without scopes has full access
   to its own repository (an app's token reaches only the scopes its owner

@@ -299,33 +299,43 @@ func TestImportRefusesADirectoryWhoseSealedFilesDoNotOpen(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := changelogfile.RepoDir(root2, id)
+	dir2, err := archivedRepoDir(root2, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m, err := changelogfile.ReadManifest(dir2); err != nil || len(m.DEK) == 0 {
+	m, _, err := changelogfile.ReadArchiveManifestDir(dir2)
+	if err != nil || len(m.DEK) == 0 {
 		t.Fatalf("the copied manifest carries no DEK: %+v, %v", m, err)
 	}
-	// The secret's file, rewritten under the host key: a payload the DEK the
-	// manifest carries cannot open.
-	files, err := changelogfile.ReadSealed(dir2)
+	// The secret's version the manifest selects, replaced by one sealed under
+	// the host key: a payload the DEK the manifest carries cannot open.
+	sum, _, ok := changelogfile.ParseSealedObjectName(ref, m.Sealed[ref])
+	if !ok {
+		t.Fatalf("the copy's manifest selects no version of %s", ref)
+	}
+	body, err := os.ReadFile(filepath.Join(dir2, m.Archive, filepath.FromSlash(m.Sealed[ref])))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rec changelogfile.SealedRecord
-	for _, f := range files {
-		if f.Ref == ref {
-			rec = f
-		}
-	}
-	if rec.Ref == "" {
-		t.Fatalf("no sealed file for %s in the copy", ref)
+	rec, err := changelogfile.DecodeSealedVersion(ref, sum, body)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if rec.Payload, err = engine.SealWithKey(engine.TestCredentialKeyBytes, []byte("sk-marked"),
 		engine.SealedAAD(ref, rec.RecordKind, rec.RecordID)); err != nil {
 		t.Fatal(err)
 	}
-	if err := changelogfile.WriteSealed(dir2, rec); err != nil {
+	data, sum, err := changelogfile.EncodeSealedVersion(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := changelogfile.SealedObjectName(ref, sum, m.Pass)
+	if err := os.WriteFile(filepath.Join(dir2, m.Archive, filepath.FromSlash(name)), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.Sealed[ref] = name
+	m.Epoch++
+	if _, err := changelogfile.WriteArchiveManifestDir(dir2, m); err != nil {
 		t.Fatal(err)
 	}
 
@@ -334,7 +344,7 @@ func TestImportRefusesADirectoryWhoseSealedFilesDoNotOpen(t *testing.T) {
 	if err == nil {
 		t.Fatal("a directory whose file does not open under the DEK imported")
 	}
-	for _, want := range []string{id, "does not open", changelogfile.SealedFileName(ref)} {
+	for _, want := range []string{id, "does not open", ref} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the refusal does not name %q: %v", want, err)
 		}
@@ -363,16 +373,17 @@ func TestImportRefusesAManifestWithNoDEK(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := changelogfile.RepoDir(root2, id)
+	dir2, err := archivedRepoDir(root2, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := changelogfile.ReadManifest(dir2)
+	m, _, err := changelogfile.ReadArchiveManifestDir(dir2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.DEK, m.DEKKeyID = nil, ""
-	if err := changelogfile.WriteManifest(dir2, m); err != nil {
+	m.Epoch++
+	if _, err := changelogfile.WriteArchiveManifestDir(dir2, m); err != nil {
 		t.Fatal(err)
 	}
 
@@ -381,7 +392,7 @@ func TestImportRefusesAManifestWithNoDEK(t *testing.T) {
 	if err == nil {
 		t.Fatal("a directory whose manifest carries no DEK imported")
 	}
-	for _, want := range []string{id, "carries no wrapped DEK", changelogfile.ManifestName} {
+	for _, want := range []string{id, "carries no wrapped DEK", "manifest"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the refusal does not name %q: %v", want, err)
 		}
@@ -499,7 +510,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	_ = svc.Close()
 
 	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := changelogfile.RepoDir(root2, id)
+	dir2, err := archivedRepoDir(root2, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,7 +523,8 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	}
 
 	// A wrong identity is refused before the manifest changes.
-	manifestBefore, err := os.ReadFile(filepath.Join(dir2, changelogfile.ManifestName))
+	manifestFile := archivedManifestFile(t, dir2)
+	manifestBefore, err := os.ReadFile(manifestFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,18 +537,18 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "ada.example.com") {
 		t.Fatalf("the refusal must name the repository: %v", err)
 	}
-	if after, _ := os.ReadFile(filepath.Join(dir2, changelogfile.ManifestName)); string(after) != string(manifestBefore) {
+	if after, _ := os.ReadFile(archivedManifestFile(t, dir2)); archivedManifestFile(t, dir2) != manifestFile || string(after) != string(manifestBefore) {
 		t.Fatal("a refused rewrap changed the manifest")
 	}
 
 	// A copy that lost sealed/ is refused by name: the recovered DEK has
 	// nothing to prove itself against, and the login credential is gone.
 	root3 := copyRepositoryDir(t, root, id)
-	dir3, err := changelogfile.RepoDir(root3, id)
+	dir3, err := archivedRepoDir(root3, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.RemoveAll(changelogfile.SealedDir(dir3)); err != nil {
+	if err := os.RemoveAll(filepath.Join(archiveObjectsDir(t, dir3), changelogfile.SealedSubdir)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.RewrapRepositoryDir(dir3, identity, other); err == nil || !strings.Contains(err.Error(), "sealed/") {
@@ -551,7 +563,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 	// The manifest now opens under the new key and no longer under the old.
-	m, err := changelogfile.ReadManifest(dir2)
+	m, _, err := changelogfile.ReadArchiveManifestDir(dir2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +596,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 		t.Fatalf("blob bytes = %q", got)
 	}
 	report2 := mustVerify(t, svc2, "ada.example.com")
-	if !report2.OK || report2.Head != head || report2.FileHead != head {
+	if !report2.OK || report2.Head != head {
 		t.Fatalf("the restored repository does not verify: %+v", report2)
 	}
 	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
@@ -612,7 +624,7 @@ func TestRewrapRefusesWithoutARecoveryKeyOrAManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := changelogfile.RepoDir(root2, id)
+	dir2, err := archivedRepoDir(root2, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,14 +633,14 @@ func TestRewrapRefusesWithoutARecoveryKeyOrAManifest(t *testing.T) {
 		t.Fatalf("a repository with no recoverykey record rewrapped: %v", err)
 	}
 
-	if err := os.Remove(filepath.Join(dir2, changelogfile.ManifestName)); err != nil {
+	if err := os.RemoveAll(filepath.Join(dir2, changelogfile.ManifestsSubdir)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = engine.RewrapRepositoryDir(dir2, someone.String(), other)
-	if err == nil || !strings.Contains(err.Error(), changelogfile.ManifestName) {
+	if err == nil || !strings.Contains(err.Error(), "no manifest") {
 		t.Fatalf("a directory with no manifest was not refused by name: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir2, changelogfile.ManifestName)); !errors.Is(err, os.ErrNotExist) {
+	if _, _, err := changelogfile.ReadArchiveManifestDir(dir2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the rewrap synthesized a manifest")
 	}
 
@@ -675,24 +687,5 @@ func TestRotateHistoryGenerationHoldsTheHeadAndSurvivesARestart(t *testing.T) {
 	}
 	if restarted, err := ds2.Head(ctx); err != nil || restarted.Generation != report.Generation {
 		t.Fatalf("head after a restart = %+v (%v), want the rotated generation %q", restarted, err, report.Generation)
-	}
-}
-
-// A running server holds the directory lock and has the old generation
-// cached, so a second process refuses to rotate under it, naming the lock.
-func TestRotateHistoryGenerationRefusesWhileTheServerHoldsTheLock(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, _, dsn := newDatasetWithDSN(t)
-	second, err := reopenBeside(t, dsn, engine.DataRootOf(svc))
-	if err != nil {
-		t.Fatalf("a second process could not boot beside the server: %v", err)
-	}
-	_, err = second.(engine.Operator).RotateHistoryGeneration(ctx, testdb.Repository(t))
-	if err == nil {
-		t.Fatal("a rotation landed beside a running server")
-	}
-	if !errors.Is(err, engine.ErrChangelogLocked) || !errors.Is(err, changelogfile.ErrLocked) {
-		t.Fatalf("the refusal must be the lock's: %v", err)
 	}
 }

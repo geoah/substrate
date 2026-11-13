@@ -1,22 +1,22 @@
 package testenv_test
 
 // The release acceptance drill (#462, tracker #360): one repository holding
-// every state the release protects, stopped and snapshotted, restored into an
-// empty database on a host with another credential key through the recovery
-// key, and compared. The drill as a whole skips under -short and without a
-// database, like every database test; once it runs, no stage skips: a stage
-// that cannot run fails with its reason, and a state the restore does not
-// reproduce is a failing assertion, never a weakened one.
+// every state the release protects, stopped and its archive copied, restored
+// into an empty database on a host with another credential key through the
+// recovery key, and compared. The drill as a whole skips under -short and
+// without a database, like every database test; once it runs, no stage
+// skips: a stage that cannot run fails with its reason, and a state the
+// restore does not reproduce is a failing assertion, never a weakened one.
 //
 // The doors are the real ones. Everything a client would do arrives over HTTP
 // with a token (records, vocabulary, the provider install, blobs, merges,
 // webhooks, function calls, search, the change feed); what the operator does
 // runs through the engine the way substratectl and the substrated loops do
-// (the trigger dispatcher pass, the embed drain, the GC sweep, `repository
-// snapshot`, `repository rewrap`, `repository verify`). docs/operations.md is
-// the procedure followed: "Backups" for the snapshot, "Restore without the
-// credential key" for the rewrap and the boot that imports, "Restore" for the
-// verify afterwards.
+// (the trigger dispatcher pass, the embed drain, the GC sweep, the archive's
+// copy, `repository rewrap`, `repository verify`). docs/operations.md is the
+// procedure followed: "Backups" for the copy of the archive and the verify
+// afterwards, "Restore without the credential key" for the rewrap and the boot
+// that restores.
 
 import (
 	"bufio"
@@ -1133,9 +1133,9 @@ func (d *drill) holdWebhook(t *testing.T, e *testenv.Env) {
 
 // --- stage 2 --------------------------------------------------------------------
 
-// stopAndSnapshot stops the server the way a substrated exit does and takes
-// `repository snapshot` for both repositories with an operator's process, as
-// docs/operations.md "Backups" describes: the copy records its head.
+// stopAndSnapshot stops the server the way a substrated exit does and copies
+// its archive, as docs/operations.md "Backups" describes: the copy's
+// manifest records its head.
 func (d *drill) stopAndSnapshot(t *testing.T) {
 	ctx := context.Background()
 	d.envA.Stop()
@@ -1161,39 +1161,33 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 	if d.drillID == "" || d.secondID == "" {
 		t.Fatalf("the source holds %+v, want %s and %s", repos, drillAuthority, secondAuthority)
 	}
+	// The copy is the archive the stopped server left: a server's close runs
+	// one last pass, so the archive is at the head the source stopped at.
 	d.snapRoot = d.tb(t).TempDir()
-	report, err := operator.(engine.Operator).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
+	copyTree(t, filepath.Join(d.rootA, "archive"), filepath.Join(d.snapRoot, "archive"))
+	head := func(id string) int64 {
+		m, _, err := changelogfile.ReadArchiveManifestDir(archiveDirOf(d.snapRoot, id))
+		if err != nil {
+			t.Fatalf("the archive of %s holds no manifest: %v", id, err)
+		}
+		return m.Head
+	}
+	d.snapHead, d.secondHead = head(d.drillID), head(d.secondID)
+	if d.snapHead != d.source.head {
+		t.Errorf("the archive's head is %d, the source stopped at %d", d.snapHead, d.source.head)
+	}
+	drill, _, err := changelogfile.ReadArchiveManifestDir(archiveDirOf(d.snapRoot, d.drillID))
 	if err != nil {
-		t.Fatalf("snapshot %s: %v", drillAuthority, err)
+		t.Fatal(err)
 	}
-	d.snapHead = report.Head
-	if report.Head != d.source.head || report.Repository != d.drillID || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
-		t.Errorf("snapshot report = %+v, want head %d for %s under fs with the attachment and %d sealed files", report, d.source.head, drillAuthority, sealedValues)
+	if blobs, err := filepath.Glob(filepath.Join(archiveDirOf(d.snapRoot, d.drillID), drill.Archive, changelogfile.BlobsSubdir, d.blobDigest+".*")); err != nil || len(blobs) == 0 {
+		t.Errorf("the archive holds no bytes for %s: %v", d.blobDigest, err)
 	}
-	snap, err := changelogfile.ReadSnapshot(report.Directory)
-	if err != nil {
-		t.Fatalf("the copy carries no readable snapshot.json: %v", err)
+	sealed, err := os.ReadDir(filepath.Join(archiveDirOf(d.snapRoot, d.drillID), drill.Archive, changelogfile.SealedSubdir))
+	if err != nil || len(sealed) != sealedValues {
+		t.Errorf("the archive holds %d sealed values (%v), want %d", len(sealed), err, sealedValues)
 	}
-	if snap.Head != d.source.head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || snap.BlobStore != "fs" {
-		t.Errorf("recorded point = seq %d %x laid out for %q, want seq %d %s under fs in the directory", snap.Head, snap.HeadHash, snap.BlobStore, d.source.head, report.HeadHash)
-	}
-	if !slices.Contains(snap.Blobs, d.blobDigest) {
-		t.Errorf("snapshot.json lists %v, which lacks the attachment %s", snap.Blobs, d.blobDigest)
-	}
-	if _, err := os.Stat(filepath.Join(changelogfile.BlobsDir(report.Directory), d.blobDigest)); err != nil {
-		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
-	}
-
-	secondReport, err := operator.(engine.Operator).SnapshotRepository(ctx, secondAuthority, d.snapRoot)
-	if err != nil {
-		t.Fatalf("snapshot %s: %v", secondAuthority, err)
-	}
-	d.secondHead = secondReport.Head
-	if secondReport.Repository != d.secondID {
-		t.Errorf("the second repository's snapshot report = %+v", secondReport)
-	}
-	t.Logf("snapshot: %s at seq %d (%d segments, %d sealed files, %d blobs); %s at seq %d",
-		drillAuthority, report.Head, report.Segments, report.SealedFiles, report.Blobs, secondAuthority, secondReport.Head)
+	t.Logf("archive: %s at seq %d; %s at seq %d", drillAuthority, d.snapHead, secondAuthority, d.secondHead)
 }
 
 // --- stage 3 --------------------------------------------------------------------
@@ -1222,10 +1216,7 @@ func (d *drill) restore(t *testing.T) {
 		t.Errorf("the refused import left %d repositories row(s)", n)
 	}
 
-	dir, err := changelogfile.RepoDir(restoreRoot, d.drillID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := archiveDirOf(restoreRoot, d.drillID)
 	wrong, err := age.GenerateX25519Identity()
 	if err != nil {
 		t.Fatal(err)
@@ -1263,15 +1254,15 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if !verified.OK || verified.Head != d.snapHead || verified.FileHead != d.snapHead || len(verified.Findings) != 0 {
+	// The restore started a new archive (the archive's contract, rule 8),
+	// which no pass has published to yet: said, and no finding.
+	if !verified.OK || verified.Head != d.snapHead || verified.ArchiveHead != 0 || len(verified.Findings) != 0 ||
+		!strings.Contains(verified.ArchiveUnverified, "no pass has published") {
 		t.Errorf("the restored repository does not verify: %+v", verified)
 	}
-	if verified.Snapshot == nil || verified.Snapshot.Head != d.snapHead || verified.Snapshot.HeadHash != verified.HeadHash {
-		t.Errorf("verify did not report the recorded point: %+v (head %s)", verified.Snapshot, verified.HeadHash)
-	}
-	if verified.SealedFiles != sealedValues || verified.SealedOpened != sealedValues || verified.SecretRefs != sealedValues {
-		t.Errorf("verify: %d sealed files, %d opened under the new key, %d secret refs; want %d of each",
-			verified.SealedFiles, verified.SealedOpened, verified.SecretRefs, sealedValues)
+	if verified.SealedRows != sealedValues || verified.SealedOpened != sealedValues || verified.SecretRefs != sealedValues {
+		t.Errorf("verify: %d sealed rows, %d opened under the new key, %d secret refs; want %d of each",
+			verified.SealedRows, verified.SealedOpened, verified.SecretRefs, sealedValues)
 	}
 	if verified.Blobs < 1 {
 		t.Errorf("verify hashed %d blobs, want the attachment", verified.Blobs)
@@ -1606,7 +1597,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 			t.Fatalf("verify after boot %d: %v", i+1, err)
 		}
 		if report.OK || !slices.ContainsFunc(report.Findings, func(f string) bool {
-			return strings.Contains(f, "import of the repository directory has not completed")
+			return strings.Contains(f, "import of the repository's history has not completed")
 		}) {
 			t.Errorf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
 		}
@@ -1662,10 +1653,7 @@ func (d *drill) secondRestore(t *testing.T) {
 
 	// The same-key restore: the boot imports the directory as it stands.
 	root := copyRoot(t, d.snapRoot, d.secondID)
-	dir, err := changelogfile.RepoDir(root, d.secondID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := archiveDirOf(root, d.secondID)
 	dsn := testdb.NewSchema(t)
 	e := testenv.Start(t,
 		testenv.WithUser(secondAuthority, secondPassword), testenv.WithoutRegistration(),
@@ -1677,10 +1665,10 @@ func (d *drill) secondRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the repository the boot imported from format 1: %v", err)
 	}
-	if imported, err := changelogfile.ReadManifest(dir); err != nil || imported.Format != changelogfile.ManifestFormat ||
+	if imported, _, err := changelogfile.ReadArchiveManifestDir(dir); err != nil || imported.Format != changelogfile.ManifestFormatArchive ||
 		imported.ChangelogDialect != engine.MaxChangelogDialect() {
 		t.Errorf("manifest after the import = %+v (%v), want format %d at changelog dialect %d",
-			imported, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
+			imported, err, changelogfile.ManifestFormatArchive, engine.MaxChangelogDialect())
 	}
 	fold, err := ds.(folded).FoldSnapshot(ctx)
 	if err != nil {
@@ -1719,10 +1707,7 @@ func (d *drill) secondRestore(t *testing.T) {
 	// key; the boot then imports it. A second copy, because the imported one
 	// above now holds a row wrapped under the first key.
 	rewrapRoot := copyRoot(t, d.snapRoot, d.secondID)
-	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, d.secondID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rewrapDir := archiveDirOf(rewrapRoot, d.secondID)
 	report, err := engine.RewrapRepositoryDir(rewrapDir, d.secondIdentity.String(), d.keyB)
 	if err != nil {
 		t.Fatalf("rewrap the directory: %v", err)
@@ -1730,10 +1715,10 @@ func (d *drill) secondRestore(t *testing.T) {
 	if report.Repository != secondAuthority {
 		t.Errorf("rewrap report = %+v", report)
 	}
-	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat ||
+	if rewrapped, _, err := changelogfile.ReadArchiveManifestDir(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormatArchive ||
 		rewrapped.ChangelogDialect != engine.MaxChangelogDialect() {
 		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect %d",
-			rewrapped, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
+			rewrapped, err, changelogfile.ManifestFormatArchive, engine.MaxChangelogDialect())
 	}
 	rewrapped, err := engine.Open(ctx, testdb.NewSchema(t), engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(rewrapRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
@@ -1756,16 +1741,16 @@ func (d *drill) secondRestore(t *testing.T) {
 	// A directory a NEWER binary wrote refuses the boot by name, before any
 	// row lands.
 	newerRoot := copyRoot(t, d.pristine, d.drillID)
-	newerDir, err := changelogfile.RepoDir(newerRoot, d.drillID)
+	newerDir := archiveDirOf(newerRoot, d.drillID)
+	nm, _, err := changelogfile.ReadArchiveManifestDir(newerDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nm, err := changelogfile.ReadManifest(newerDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nm.ChangelogDialect = engine.MaxChangelogDialect() + 1
-	if err := changelogfile.WriteManifest(newerDir, nm); err != nil {
+	// The newest manifest names a dialect past this binary's; its pieces
+	// are never read, because the manifest is refused by what it names.
+	nm.ChangelogDialect, nm.Epoch = engine.MaxChangelogDialect()+1, nm.Epoch+1
+	nm.Head, nm.HeadSum, nm.Pieces = 0, "", nil
+	if _, err := changelogfile.WriteArchiveManifestDir(newerDir, nm); err != nil {
 		t.Fatal(err)
 	}
 	newerDSN := testdb.NewSchema(t)
@@ -2325,22 +2310,26 @@ func drainEmbeds(t *testing.T, ds substrate.Dataset) {
 // of a data root into a fresh root laid out the same way.
 func copyRoot(t testing.TB, srcRoot, id string) string {
 	t.Helper()
-	src, err := changelogfile.RepoDir(srcRoot, id)
-	if err != nil {
-		t.Fatal(err)
-	}
 	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
+	copyTree(t, archiveDirOf(srcRoot, id), archiveDirOf(root, id))
+	return root
+}
+
+// archiveDirOf is repository id's directory in the archive a server under
+// root writes (<root>/archive), the default.
+func archiveDirOf(root, id string) string {
+	return filepath.Join(root, "archive", changelogfile.RepositoriesDir, id)
+}
+
+// copyTree copies a directory tree.
+func copyTree(t testing.TB, src, dst string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	return root
 }
 
 // patchedSeedTree copies the shipped seed (its authority document and its

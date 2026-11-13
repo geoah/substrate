@@ -5,12 +5,14 @@ package api
 // event whose code is `auth` (decision 0272).
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -183,8 +186,24 @@ func revokeDuring(t *testing.T, env *dbEnv) *revokingWriter {
 	}}
 }
 
+// archiveHoldsManifest reports whether the entries of an export that arrived
+// include its manifest, the last entry, which a cut archive lacks.
+func archiveHoldsManifest(body []byte) bool {
+	tr := tar.NewReader(bytes.NewReader(body))
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			return false
+		}
+		if k, ok := changelogfile.ParseArchiveKey(h.Name); ok && k.Manifests && k.Name != changelogfile.DeletedMark && h.Typeflag == tar.TypeReg {
+			_, err := io.Copy(io.Discard, tr)
+			return err == nil
+		}
+	}
+}
+
 // An export is the whole repository, and its token dying mid-archive stops
-// it (decision 0272): the archive is cut before its last entry, the point.
+// it (decision 0272): the archive is cut before its last entry, the manifest.
 func TestAnExportStopsWhenItsTokenIsRevoked(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t)
@@ -197,7 +216,7 @@ func TestAnExportStopsWhenItsTokenIsRevoked(t *testing.T) {
 	if !w.revoked {
 		t.Fatal("the export wrote no body before it was cut")
 	}
-	if bytes.Contains(w.Body.Bytes(), []byte("snapshot.json")) {
+	if archiveHoldsManifest(w.Body.Bytes()) {
 		t.Fatal("the cut archive carries its last entry")
 	}
 }
@@ -371,7 +390,7 @@ func TestAnExportWhoseTokenDiesWhileItsPointIsPinnedIsRefused(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+next)
 	again := httptest.NewRecorder()
 	env.h.ServeHTTP(again, req)
-	if again.Code != http.StatusOK || !bytes.Contains(again.Body.Bytes(), []byte("snapshot.json")) {
+	if again.Code != http.StatusOK || !archiveHoldsManifest(again.Body.Bytes()) {
 		t.Fatalf("the export after the refused one: %d (%d bytes), want the whole archive: the pin was not let go", again.Code, again.Body.Len())
 	}
 }

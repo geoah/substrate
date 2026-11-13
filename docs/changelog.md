@@ -170,7 +170,7 @@ Two guarantees consumers may lean on:
   nothing. Gapless resume is a guarantee, not a convention, and it survives a
   restart because the counter is the repository's own `max(seq)`, never process
   state. A seq is a position in one **history generation** ([watching](#watching)),
-  and a resume is held to it, so a cursor saved before an older directory was
+  and a resume is held to it, so a cursor saved before an older copy was
   restored is refused rather than resumed against numbering it never saw.
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
@@ -239,24 +239,28 @@ proposal already holds it, where a `put` overwrites.
 #the-chain, and an accepted record's body may not change. -->
 <a id="the-chain"></a>
 
-## The checksum and the segment files
+## The checksum and the archive
 
 Every entry carries a SHA-256 **checksum** of its own canonical line, stamped
 by the writing transaction into the `changelog.hash` column and returned on the
 wire as `hash`. The checksum covers the entry's own bytes and nothing else: it
 does not chain to the previous entry, and nothing signs it.
-`substratectl repository verify` recomputes every line's checksum from the
-segment files, holds every table row's stamped checksum to its line's, and
-names each seq that disagrees; with `--recanonicalize` it also recomputes each
-row's checksum from its stored columns
-([running a substrate](operations.md#operator-recovery)).
+`substratectl repository verify` holds the table's rows to their seqs and
+transactions, holds every line of the archive to the checksum the table
+stamped for its seq, and names each seq that disagrees; with
+`--recanonicalize` it also recomputes each row's checksum from its stored
+columns ([running a substrate](operations.md#operator-recovery)).
 
-The Postgres `changelog` table is the live index: the change feed, the triggers
-and the causal walk read it. The truth on disk is the repository's directory
-under `SUBSTRATE_DATA_ROOT`
-([the repository directory](operations.md#the-repository-directory)), where
-`changelog/` holds the same entries as newline-delimited JSON segment files,
-one object per line, keys sorted, the checksum in `sum`:
+The Postgres `changelog` table is the history: the change feed, the triggers
+and the causal walk read it, and every fold, a rebuild and an import alike,
+is folded from it. A write is confirmed when its transaction commits there,
+and nothing else is written before its answer
+([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)).
+Its copy is the repository's **archive**
+([the archive](operations.md#the-archive)), which a background pass writes
+behind the commits: the same entries as pieces of newline-delimited JSON,
+one object per line, keys sorted, the checksum in `sum`
+([pieces](stored-format.md#pieces)):
 
 ```json
 {"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
@@ -268,55 +272,32 @@ absent, and the `hash` column and the wire field hold the same 32 bytes.
 last entry of the transaction that appended the line: a transaction of one
 entry has `txn` equal to `seq`, and a merge, which writes the loser's
 tombstone and the winner's entry in one commit, gives both lines the second
-one's seq. The `changelog.txn` column holds the same value. A segment is named
-by the seq of its first line (`000000000000001.ndjson`); the highest-numbered
-one is the active segment and grows. When it passes
-`SUBSTRATE_CHANGELOG_SEGMENT_BYTES` (256 MiB by default) the writer finishes
-it with a `.sha256` sidecar holding the digest of the whole file and opens the
-next. A finished segment never changes. One transaction is one append, and
-the segment rotates only after an append, so a transaction never crosses a
-segment, however large it is.
+one's seq. The `changelog.txn` column holds the same value. A piece holds
+whole transactions, so a transaction never crosses two, and a reader holds
+every line to its `sum`, its seq to its place and the piece to the seqs its
+name says: a piece that is not that run is a named refusal, never a tail to
+cut.
 
-The transaction's lines are written and fsynced before Postgres commits,
-without the newline that ends the last line; that newline lands after the
-commit and is the commit marker. A sealed value is staged as a pending file
-the same way and renamed into place after. A directory that cannot be written
-before the commit rolls the write back with `503 unavailable`
-(`ErrDirectoryWrite`); a crash between the commit and the newline leaves an
-unfinished transaction the next boot completes from Postgres
-([what happens at boot](operations.md#what-happens-at-boot)). Once a write is
-ready to commit, a client that disconnects no longer stops it: the commit and
-the file steps run to the end, and the server gives the Postgres side of them
-a 30-second budget of its own. A commit that reports an error after Postgres
-applied it has its lines cut, and the next write appends that transaction
-from the table before its own. Only when that repair fails does the
-repository refuse every write until a restart, with `503 unavailable` and a
-message that names the restart. A reader accepts
-exactly one kind of damage, an unfinished transaction at the end of the active
-segment: a torn last line and, before it, the complete lines that carry the
-same `txn`. It cuts them together, back to the last line that ends its
-transaction, so half a commit never opens as history; the server then appends
-the transaction again from the table, and a restore from a copy of the
-directory loses that transaction whole, never in part. A bad `sum`, a seq
-that does not follow the previous one, a line whose `txn` does not fit the
-transaction around it, or a finished segment whose sidecar does not match is
-a named refusal, not a repair. An open reads a finished segment's first and
-last lines and the server hashes the rest after the open, so a sidecar that
-does not match refuses the repository's writes rather than its boot
-([decision 0146](decisions/0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md)).
+Once a write is ready to commit, a client that disconnects no longer stops
+it: the server gives the commit a 30-second budget of its own. A commit
+whose answer is lost may have applied, and the error says so
+([what a client may conclude](api.md#what-a-client-may-conclude-after-a-failure)).
+For a record write that is the whole of it. A vocabulary change whose
+commit answer is lost leaves the server unsure which declarations it holds,
+so the repository refuses every write with `503 unavailable` and a message
+that names the restart, until the server restarts and loads what Postgres
+committed.
 
-Every line carries `txn`; one without it is the same named refusal
+Every line carries `txn`; one without it is a named refusal
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 
-What the checksum proves: an entry is undamaged, in the file and in the table,
-and the two agree. What it does not prove: authenticity. Whoever can write the
-database or the directory can rewrite a line and its `sum` together, and no
-checksum sees that
-([decision 0050](decisions/0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md)).
-The `hash` a consumer reads on the wire is a **receipt** for the entry it
-came with, not a proof: the wire payload is redacted, so the consumer cannot
-recompute it, and checking a receipt means running `repository verify` on the
-repository.
+What the checksum proves: an entry is undamaged, in the table and in the
+archive, and the two agree. What it does not prove: authenticity. Whoever
+can write the database or the archive can rewrite a line and its `sum`
+together, and no checksum sees that. The `hash` a consumer reads on the wire
+is a **receipt** for the entry it came with, not a proof: the wire payload is
+redacted, so the consumer cannot recompute it, and checking a receipt means
+running `repository verify` on the repository.
 
 ## The dialect a changelog is written in
 
@@ -354,11 +335,10 @@ fold would refuse or misread, and a change to a shape the history already
 holds ships a [conversion step](stored-format.md#conversions) to it, which
 the boot check runs once over each repository below it.
 No dialect is on the wire at all ([discovery](api.md#discovery)), and neither
-are the entries written in one. The dialect is in the repository directory, as
-`changelogDialect` in `repository.json`, which the transaction that records the
-claim rewrites before it appends, so a copy of the directory never holds
-segments its manifest understates
-([the repository directory](operations.md#the-repository-directory)).
+are the entries written in one. The archive carries it, as `changelogDialect`
+in its manifest and as the directory its pieces sit under, so an archive never
+holds lines in a dialect its manifest understates
+([the stored format](stored-format.md#the-manifest)).
 
 `repository rebuild` reads the stamp again, under the changelog lock and
 before it touches anything: it replays every entry, and a process that opened
@@ -391,13 +371,13 @@ bookmark is the seq it opened at and the generation that seq belongs to, so
 remembering the pair is all a resume needs.
 
 The **history generation** is an opaque string the server mints for a
-repository when it registers, and mints again when its directory is imported
+repository when it registers, and mints again when its history is restored
 into a database that holds no row for it, which is what a
 [restore](operations.md#backups) into a fresh database is. A database dump
 keeps the row and its generation, so a restore that starts from a dump runs
 `substratectl repository rotate-generation` once per repository. A restart and
-`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the directory
-imported over an emptied database restarts the numbering below whatever
+`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the archive
+restored into an emptied database restarts the numbering below whatever
 cursors clients saved, and a bare seq cannot tell the two histories apart. So
 `from` or `before` above 0 carries the `generation` it was read under, and the server
 refuses a cursor under another generation, above the head, or with no
@@ -524,8 +504,8 @@ horizon, and the horizon is where policy lives.
   terminal ([substratectl](substratectl.md)). Providers reconcile from it.
 - **The console's History page** is the same feed, paged backward through
   history and filtered ([web console](console.md#history)).
-- **`rebuild`** replays it from the segment files, which is what makes the
-  fold disposable and the repository directory the thing you back up
+- **`rebuild`** replays it from the table, which is what makes the fold
+  disposable; the archive is its copy, and the thing a restore reads
   ([running a substrate](operations.md#backups)).
 
 The to-do list, its GitHub feed, and anything you build next are all consumers

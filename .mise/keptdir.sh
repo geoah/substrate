@@ -11,8 +11,11 @@
 # every sort of change the format holds, and keeps what it wrote:
 #
 #   internal/testenv/testdata/kept/<tag>/
-#     repositories/kept.example.com/   the repository directory, as the
-#                                      stopped server left it
+#     archive/repositories/<id>/       the repository's archive, as the
+#                                      stopped server's last pass left it
+#                                      (decision 0277); a tag from before
+#                                      the archive keeps
+#     repositories/kept.example.com/   its repository directory instead
 #     records.json                     every record the release served,
 #                                      live and tombstoned, read over HTTP
 #                                      before the stop
@@ -132,11 +135,20 @@ echo "keptdir: driving $tag at $server"
 docker stop -t 60 "$name-server" >/dev/null
 
 rm -rf "$out"
-mkdir -p "$out/repositories"
-cp -R "$work/data/repositories/$authority" "$out/repositories/$authority"
-# The writer's lock is the process's, not the repository's, and git keeps no
-# empty directory: the test holds the import to the tree as it is checked out.
-rm -f "$out/repositories/$authority/changelog/.lock"
+if [ -d "$work/data/archive/repositories" ]; then
+  # The history is in Postgres and the archive is what a restore reads; the
+  # repository directory holds only blobs and the spool, which the archive
+  # carries too.
+  mkdir -p "$out/archive"
+  cp -R "$work/data/archive/repositories" "$out/archive/repositories"
+else
+  mkdir -p "$out/repositories"
+  cp -R "$work/data/repositories/$authority" "$out/repositories/$authority"
+  # The writer's lock is the process's, not the repository's.
+  rm -f "$out/repositories/$authority/changelog/.lock"
+fi
+# git keeps no empty directory: the test holds the import to the tree as it
+# is checked out.
 find "$out" -type d -empty -delete
 cp "$work/kept/records.json" "$work/kept/triggers.json" "$out/"
 jq -n --arg tag "$tag" --arg repository "$authority" \

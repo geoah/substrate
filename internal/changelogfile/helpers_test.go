@@ -147,3 +147,25 @@ func seqZero() Entry {
 	e.Seq = 0
 	return e
 }
+
+// Report is what Verify read of a directory.
+type Report struct {
+	Segments         int
+	Entries          int64
+	Head             int64
+	TruncatedBytes   int64
+	TruncatedEntries int64
+}
+
+// Verify opens dir read-only and reports it: a test's look at what a
+// directory holds, every finished segment held to its sidecar.
+func Verify(dir string) (Report, error) {
+	l, err := OpenReadOnly(dir)
+	if err != nil {
+		return Report{}, err
+	}
+	return Report{
+		Segments: len(l.segments), Entries: l.head, Head: l.head,
+		TruncatedBytes: l.TruncatedBytes, TruncatedEntries: l.TruncatedEntries,
+	}, nil
+}

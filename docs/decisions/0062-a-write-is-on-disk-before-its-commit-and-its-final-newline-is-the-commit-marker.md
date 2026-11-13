@@ -1,8 +1,9 @@
 ---
-status: accepted
-date: 2026-09-08
+status: superseded
+date: 2026-11-13
 decision-makers: George Antoniadis
 amended-by: 0165
+superseded-by: 0262
 ---
 
 # 0062. A write is on disk before its commit, and its final newline is the commit marker

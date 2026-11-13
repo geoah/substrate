@@ -1966,13 +1966,3 @@ func TestHumanAge(t *testing.T) {
 		}
 	}
 }
-
-// The snapshot lands under the repository's id, the directory a data root
-// keys it by (decision 0261), and its help says so.
-func TestSnapshotHelpNamesTheIDDirectory(t *testing.T) {
-	h := newHarness(t)
-	out, _ := h.mustRun("repository", "snapshot", "--help")
-	if !strings.Contains(out, "repositories/<id>/") || strings.Contains(out, "repositories/<authority>/") {
-		t.Fatalf("the snapshot help does not name the id's directory:\n%s", out)
-	}
-}

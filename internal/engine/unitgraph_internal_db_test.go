@@ -683,7 +683,7 @@ func TestAFailedSeedListsWhatItLeftAbsent(t *testing.T) {
 	ctx := context.Background()
 	ds.svc.seedUnits = true
 	ds.svc.testCommitFault = func(stage string) error {
-		if stage == commitAfterPrepare {
+		if stage == commitBeforeCommit {
 			return errors.New("the disk is full")
 		}
 		return nil

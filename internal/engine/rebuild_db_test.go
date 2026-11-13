@@ -2,7 +2,9 @@ package engine_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -636,9 +638,8 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 }
 
 // stripResyncEffects removes the resync effect from every merge and split entry
-// — the shape of an entry written before merge could describe its rewrite. The
-// edit lands in the table and the segment file alike, since the rebuild
-// replays the file and holds it to the table first.
+// — the shape of an entry written before merge could describe its rewrite.
+// The edit lands in the table, which the rebuild replays.
 func stripResyncEffects(t *testing.T, svc substrate.Service, dsn string, ds substrate.Dataset) {
 	t.Helper()
 	n := rewriteChangelogEntries(t, svc, dsn, ds, func(e *changelogfile.Entry) bool {
@@ -695,13 +696,16 @@ func refTarget(e *substrate.Record, property string) string {
 // wire rows never carry.
 func storedChangesSince(t *testing.T, svc substrate.Service, ds substrate.Dataset, after int64) []substrate.Change {
 	t.Helper()
-	segments, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(repoDirOf(t, svc, ds)))
-	if err != nil {
-		t.Fatalf("open the changelog files: %v", err)
+	if err := engine.ArchivePass(context.Background(), ds); err != nil {
+		t.Fatalf("archive: %v", err)
 	}
-	entries, err := segments.Read(after, 0)
+	src, err := engine.OpenArchiveForTest(context.Background(), filepath.Join(engine.DataRootOf(svc), "archive"), repositoryIDOf(t, ds))
 	if err != nil {
-		t.Fatalf("read the changelog files: %v", err)
+		t.Fatalf("open the archive: %v", err)
+	}
+	entries, err := src(after)
+	if err != nil {
+		t.Fatalf("read the archive: %v", err)
 	}
 	out := make([]substrate.Change, 0, len(entries))
 	for _, en := range entries {
@@ -875,4 +879,55 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
 		t.Fatalf("the checksums do not verify over the retired spelling: %+v", report.Findings)
 	}
+}
+
+// rewriteChangelogEntries applies edit to every entry of the repository's
+// changelog table and writes back the ones it changed, re-stamping each one's
+// checksum, so the replay meets the edit as history. It returns how many
+// entries changed.
+func rewriteChangelogEntries(t *testing.T, _ substrate.Service, dsn string, ds substrate.Dataset, edit func(*changelogfile.Entry) bool) int {
+	t.Helper()
+	db, err := engine.OpenScopedDB(dsn, repositoryIDOf(t, ds), engine.RoleMaint)
+	if err != nil {
+		t.Fatalf("open the maintenance pool: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn FROM changelog ORDER BY seq`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []changelogfile.Entry
+	for rows.Next() {
+		var e changelogfile.Entry
+		var payload string
+		var causedBy sql.NullInt64
+		if err := rows.Scan(&e.Seq, &e.TS, &e.Actor, &e.Principal, &e.Op, &e.RecordID, &e.Kind, &payload, &causedBy, &e.Txn); err != nil {
+			t.Fatal(err)
+		}
+		e.TS = e.TS.UTC()
+		e.Payload = json.RawMessage(payload)
+		e.CausedBy, e.CausedByOK = causedBy.Int64, causedBy.Valid
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	changed := 0
+	for i := range entries {
+		e := &entries[i]
+		if !edit(e) {
+			continue
+		}
+		changed++
+		_, sum, err := changelogfile.Encode(*e)
+		if err != nil {
+			t.Fatalf("encode seq %d: %v", e.Seq, err)
+		}
+		if _, err := db.Exec(`UPDATE changelog SET op = $2, payload = $3::jsonb, hash = $4 WHERE seq = $1`,
+			e.Seq, e.Op, []byte(e.Payload), sum[:]); err != nil {
+			t.Fatalf("rewrite seq %d in the table: %v", e.Seq, err)
+		}
+	}
+	return changed
 }

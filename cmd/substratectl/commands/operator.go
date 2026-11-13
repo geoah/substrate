@@ -16,7 +16,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/blobbytes"
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -124,25 +123,36 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		return nil, err
 	}
 	// The blob store the server runs with, off the same data root:
-	// `repository verify` reads every stored blob's bytes and `repository
-	// snapshot` copies them.
+	// `repository verify` reads every stored blob's bytes.
 	store, err := blobbytes.NewFS(data.Root)
+	if err != nil {
+		return nil, err
+	}
+	// The archive the server writes, from the same variables: `repository
+	// verify` holds it to the table, and a command that opens as the
+	// repositories' writer restores from it as the server's boot does. An
+	// operator process runs no archive pass.
+	archived, err := config.LoadArchive()
+	if err != nil {
+		return nil, err
+	}
+	archiveStore, err := archived.Store(data.Root)
 	if err != nil {
 		return nil, err
 	}
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr, plus the progress
-	// lines a long walk (verify, rebuild, snapshot) prints every thirty
+	// lines a long walk (verify, rebuild) prints every thirty
 	// seconds, which are what tells the person waiting that it is moving.
 	log := slog.New(operatorHandler{slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelInfo})})
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
 		engine.WithDataRoot(data.Root),
-		engine.WithChangelogSegmentBytes(data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(credKey),
 		engine.WithBlobStore(store),
 		engine.WithLogger(log),
 	}
+	opts = append(opts, engine.WithArchive(archiveStore))
 	if readOnly {
 		opts = append(opts, engine.WithDirectoryReadOnly())
 	}
@@ -173,17 +183,15 @@ func (h operatorHandler) WithGroup(name string) slog.Handler {
 	return operatorHandler{h.Handler.WithGroup(name)}
 }
 
-// lockHint says what a writer-lock refusal means to the person at the
+// lockHint says what a writer-lease refusal means to the person at the
 // terminal: the server is running, and this command needs it stopped, while
-// the read-only commands do not. Two refusals say it — the data root's flock
-// (changelogfile.ErrLocked) and the database's writer lease
-// (engine.ErrRepositoryHasAnotherWriter), which is the one a command run
-// against a data root of its own meets.
+// the read-only commands do not. The database's writer lease
+// (engine.ErrRepositoryHasAnotherWriter) is the one exclusion left.
 func lockHint(err error) error {
-	if err == nil || !(errors.Is(err, changelogfile.ErrLocked) || errors.Is(err, engine.ErrRepositoryHasAnotherWriter)) {
+	if err == nil || !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository rewrap` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table
@@ -213,20 +221,36 @@ type repositoryRow struct {
 	DEKKeyID  string
 	HasDEK    bool
 	PlainWrap bool
+	// ArchivedSeq, ArchivedAt and ArchiveStore are the mark the server's
+	// last archive pass left on the row (decision 0262): the seq its archive
+	// holds every line up to, when, and in which store. ArchivedAt is zero
+	// before the first pass. ArchiveMissing is how many blobs the records at
+	// that seq hold whose bytes the archive lacks, because the server had
+	// lost them.
+	ArchivedSeq    int64
+	ArchivedAt     time.Time
+	ArchiveStore   string
+	ArchiveMissing int
 }
 
 // repositoryRowColumns is the column list scanRepositoryRow reads, in order.
 // The wrap's first byte is its framing; 112 is 'p', the plain marker.
 const repositoryRowColumns = `id, authority, created_at, dek_key_id,
-	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112`
+	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112,
+	archived_seq, archived_at, archive_store, archive_missing`
 
 func scanRepositoryRow(scan func(dest ...any) error) (repositoryRow, error) {
 	var r repositoryRow
-	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap); err != nil {
+	var keyID, store sql.NullString
+	var archivedAt sql.NullTime
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap,
+		&r.ArchivedSeq, &archivedAt, &store, &r.ArchiveMissing); err != nil {
 		return repositoryRow{}, err
 	}
-	r.DEKKeyID = keyID.String
+	r.DEKKeyID, r.ArchiveStore = keyID.String, store.String
+	if archivedAt.Valid {
+		r.ArchivedAt = archivedAt.Time.UTC()
+	}
 	r.CreatedAt = r.CreatedAt.UTC()
 	return r, nil
 }

@@ -18,14 +18,18 @@ and the name they log in with,
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
 [0074](docs/decisions/0074-the-repository-name-is-the-login-name.md)).
 Its storage is keyed by an **id** minted at registration (`rnd-…`): the
-directory on disk, the `repository` column of every table and the webhook
-address the server gives out, so no table or path holds the name
+directory on disk and in the archive, the `repository` column of every table
+and the webhook address the server gives out, so no table or path holds the
+name
 ([0261](docs/decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 There is no username.
 Everything the user has lives in it: an append-only,
-strictly sequential **changelog**, checksummed segment files in the
-repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
-is the truth and the **records** table is its fold. Tokens and the login credential are themselves records, and a token
+strictly sequential **changelog**, checksummed lines in Postgres's
+`changelog` table, is the truth and the **records** table is its fold.
+Postgres alone confirms a write, and a background pass copies each
+repository to its **archive** after the commits, a directory or an
+S3-compatible bucket that is the backup and what a restore reads
+([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)). Tokens and the login credential are themselves records, and a token
 has full access to its repository unless it is an app's: a token an app got
 through the authorization flow carries the **scopes** the owner approved and
 reaches only those kinds, unless the owner approved it `full` access, which
@@ -116,7 +120,7 @@ mise run dev:status     # container, this tree's database, server, console, URLs
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:stop       # stop THIS TREE'S server; the shared container keeps running
 mise run dev:logs
-mise run dev:wipe       # DROP this tree's database and DELETE .dev/ (data root, credential key, pid, log): the next start is a fresh substrate
+mise run dev:wipe       # DROP this tree's database and DELETE .dev/ (data root and the archive in it, credential key, pid, log): the next start is a fresh substrate
 mise run dev:wipe:all   # dev:wipe, then remove the container — EVERY tree's dev database
 ```
 
@@ -162,10 +166,11 @@ is enforced, and NEVER by setting the TOTP variable outside this tree.
 
 **The dev substrate has a data root.** Every `dev*` task exports
 `SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each
-repository's directory (manifest, changelog segments, sealed files, blobs)
-lands under it, and `dev:wipe` removes it with this tree's database. The two
-must go together: a data root outliving a wiped database is imported at the
-next boot, and a database outliving its root is written back out. The dev tasks
+repository's directory (blobs, webhook spool) and the archive
+(`.dev/data/archive`) land under it, and `dev:wipe` removes it with this
+tree's database. The two must go together: an archive outliving a wiped
+database is restored at the next boot, and a database outliving its root has
+lost every blob's bytes. The dev tasks
 also mint `SUBSTRATE_CREDENTIAL_KEY` once into `.dev/credential.key` and
 every start reuses it; it wraps each repository's DEK, an operator command
 that writes sealed material (`user reset`) reads the same file, and
@@ -228,12 +233,12 @@ bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl validate -f record.yaml     # the server's declaration checks, offline; --partial accepts what needs the repository
 bin/substratectl watch                       # resumable change stream
 bin/substratectl sync status                 # every connected account's sync state, joined with its triggers (the core `sync` trait)
-bin/substratectl export                      # the recovery export: a tar of the repository directory as of one committed point
+bin/substratectl export                      # the recovery export: the repository's archive as one tar, as of one committed point
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
-bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the segment files: every line's checksum, every sidecar, both heads
-bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the segment files into a fresh fold
+bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the changelog table, hold the archive's every line to it, check sealed rows and blobs
+bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the changelog table into a fresh fold
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
@@ -469,22 +474,28 @@ first label.
   not precedent: `web/console/src/lib/utils.ts` (the path shadcn's
   generated components import), `web/console/src/lib/api/types.ts` (the wire
   mirror below) and `internal/vocabulary/types.go`.
-- **The changelog is the truth.** It lives in the repository's directory
-  under `SUBSTRATE_DATA_ROOT` as checksummed segment files, and the
-  `changelog` table indexes them; `internal/engine/fold.go` is the one path
-  from changelog to `records`, so a live write, a boot import and
-  `RebuildRepository` cannot drift. Anything that writes `records` directly,
-  or a changelog entry that reaches one store and not the other outside
-  `inTx`, is wrong. The exceptions are derived storage, a function of the
-  fold and the declarations in force: each is written outside the fold
-  without moving `version`, `updated_at` or the changelog, and
-  `repository rebuild` derives it again. They are `fts`, the search index over
-  each row (`rederiveFTS`, run by the background pass in `reprojection.go`
-  behind a vocabulary apply or the boot upgrade and by the open-time reindex
-  in `searchindex.go`, and `reprojectFTS` for the declaration rows inside the
-  boot upgrade's transaction); `orphaned_at` and
+- **The changelog is the truth.** It is the `changelog` table, each line
+  carrying its checksum, and Postgres alone confirms a write;
+  `internal/engine/fold.go` is the one path from it to `records`, so a live
+  write, an import and `RebuildRepository` fold from the same table and
+  cannot drift. Anything that writes `records` directly, or a changelog row
+  written outside `inTx`, is wrong. The exceptions are derived storage, a
+  function of the fold and the declarations in force: each is written
+  outside the fold without moving `version`, `updated_at` or the changelog,
+  and `repository rebuild` derives it again. They are `fts`, the search
+  index over each row (`rederiveFTS`, run by the background pass in
+  `reprojection.go` behind a vocabulary apply or the boot upgrade and by the
+  open-time reindex in `searchindex.go`, and `reprojectFTS` for the
+  declaration rows inside the boot upgrade's transaction); `orphaned_at` and
   `ambiguous_at` on `records` (`orphans.go`, `ambiguous.go`); and the
-  `property_offers` table (`mapping.go`).
+  `property_offers` table (`mapping.go`). The **archive** is a copy, never a
+  second truth: `internal/engine/archive.go` writes it after the commits,
+  the blobs and sealed values before the pieces that name them and the
+  manifest last, and nothing on the write path waits for it or reads it
+  ([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md),
+  [0277](docs/decisions/0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md)).
+  History comes into the table from an archive or a 0.x directory only
+  through the boot check's one import path (`history.go`).
 - **A changed declaration ships a changed version.** Every document under
   `kinds/` and `samples/` projects with a `version`, an incremental integer (a
   kind's own `data.version` where it pins one, else its package's, else 1). The boot
@@ -502,14 +513,15 @@ first label.
   add-and-deprecate. `deprecated: true` is the marker, on a property, a
   reference or one enum value. CI runs `mise run kinds:check` and refuses the
   merge otherwise.
-- **A changed stored shape ships a conversion step.** The repository
-  directory is the export's contract
+- **A changed stored shape ships a conversion step.** The archive is the
+  export's contract
   ([docs/stored-format.md](docs/stored-format.md)): the manifest, a line's
   keys, every effect and its fields, each a closed set. A shape the history
   already holds changes only through a step,
   `internal/engine/conversion_NNNN_<name>.go`, that raises
-  `maxChangelogDialect` and rewrites each line in place at the boot check:
-  the one writer that rewrites a line. It lands with a test of what the lines
+  `maxChangelogDialect` and rewrites each row of the `changelog` table in
+  place, in one transaction at the boot check: the one writer that rewrites
+  a line, and the archive follows on its next pass. It lands with a test of what the lines
   become, and the server reads one shape. Each release keeps the directory
   its own server wrote (`mise run release:keep <tag>`), `TestKeptDirectories`
   imports every one, and `frozen:check` refuses an edit to a kept directory

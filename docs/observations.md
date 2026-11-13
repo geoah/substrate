@@ -877,8 +877,8 @@ A kind that starts or stops binding `observed` has every row derived again by th
 the commit that changed it, the one that re-derives the search index
 ([operations](operations.md#upgrading-the-binary)). A metric record whose
 `rollups` change has the rows of its streams derived again by the same
-pass. `repository rebuild` and the boot import of a repository directory
-clear the tables and queue every observed kind for the pass instead of
+pass. `repository rebuild` and the boot's import of a history from an
+archive or a 0.x directory clear the tables and queue every observed kind for the pass instead of
 deriving inside the replay, so the replay holds the repository's write lock
 for the records alone; `repository reindex --observed` queues the same work
 on a running index ([operations](operations.md#operator-recovery)). While
