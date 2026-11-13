@@ -40,6 +40,14 @@ func WithTestHealthClock(now func() time.Time) Option {
 	return func(o *options) { o.healthNow = now }
 }
 
+// WithTestRetryClock is the clock the walk of temporary failures reads a
+// retry's due time on (temporaryretry.go), and nothing else: the parked row's
+// time and every record timestamp stay on the wall clock. A test advances it
+// past a gap instead of sleeping through one.
+func WithTestRetryClock(now func() time.Time) Option {
+	return func(o *options) { o.retryNow = now }
+}
+
 // TOTPPeriod is the verifier's step, for a test that moves its clock one.
 const TOTPPeriod = totpPeriod
 

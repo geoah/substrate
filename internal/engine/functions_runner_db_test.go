@@ -145,11 +145,13 @@ func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
 	}
 }
 
-func TestTriggerTimeoutRetriesThenParks(t *testing.T) {
+func TestTriggerTimeoutParksForItsAutomaticRetry(t *testing.T) {
 	t.Parallel()
 	// A stuck body blows the manifest timeout; the runner kills and restarts
-	// the child, and the delivery rides the full attempts before parking —
-	// a wall timeout is not deterministic (load could clear it).
+	// the child. A timeout is temporary (decision 0266): the delivery parks
+	// on its first attempt, waiting for the retry the walk of temporary
+	// failures runs over minutes, rather than holding the lane through two
+	// more timeouts.
 	ds := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("stuck", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stuck", map[string]any{"timeout": "PT0.25S"}, []any{taskType}, `
@@ -163,7 +165,8 @@ def main(input, host):
 	process(t, ds)
 
 	failure := onlyParked(t, ds, trigID("stuck"))
-	if failure.Attempts != 3 || !strings.Contains(failure.LastError, "exceeded") {
+	if failure.Attempts != 1 || !strings.Contains(failure.LastError, "exceeded") ||
+		!strings.HasPrefix(failure.LastError, "temporary, retried automatically at ") {
 		t.Fatalf("parked: %+v", failure)
 	}
 	// The killed host restarted and re-registered: a healthy neighbor of the
