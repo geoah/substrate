@@ -49,7 +49,7 @@ const slotLayout = "20060102T150405Z"
 // the head and history generation the walk began at, the same guarantees the
 // list cursor carries (engine/query.go keyset).
 type windowCursor struct {
-	// V is the token's format, cursorVersion when this server minted it; a
+	// V is the token's version, cursorVersion when this server minted it; a
 	// token of another one is the list-again refusal.
 	V    int       `json:"v,omitempty"`
 	At   time.Time `json:"a"`
@@ -497,9 +497,10 @@ func windowSignature(f substrate.Filter, desc bool) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// cursorVersion is the format of the window cursor this server mints, moved
-// when what a cursor says changes, as the list cursor's is.
-const cursorVersion = 1
+// cursorVersion is the version of the window cursor this server mints: the
+// order its kind and id compare in, substrate.IdentityOrder, as the list
+// cursor's is. A cursor of another version is refused as list again.
+const cursorVersion = substrate.IdentityOrder
 
 func encodeWindowCursor(c windowCursor) string {
 	raw, _ := json.Marshal(c)

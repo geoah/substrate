@@ -853,10 +853,12 @@ refused with one answer, `410 compacted`, carrying the `head` and
 lead there. The history was replaced since the walk began (a restore). The
 same `filter` and `orderBy` now order the rows differently, because a
 declaration or a [unit](units.md) they read changed: installing a package
-that declares a property the order reads, for one. Or an earlier release
-minted the token: the token carries the version of its own format, and a
-server refuses a version it did not mint rather than reading it as its own.
-A server upgrade can therefore end every walk in progress once, with a `410`.
+that declares a property the order reads, for one. Or the token was cut in
+another order of kinds and ids: it carries, as its version, the order a
+record's kind and id compare in, and a server refuses a token cut in an order
+it does not compare in rather than resume it in its own. An upgrade that
+changes that order, as the one that put kinds and ids in byte order did, ends
+every walk in progress once, with a `410`.
 The [window read](#the-window-read)'s token follows the same rules.
 
 ### Addressing a page by its number

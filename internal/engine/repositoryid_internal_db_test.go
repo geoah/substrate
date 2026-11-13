@@ -109,8 +109,10 @@ func writeKeyedByName(t *testing.T) keyedByName {
 	if _, err := db.ExecContext(ctx, `UPDATE repositories SET id = $1, dek = $2 WHERE id = $3`, k.name, wrapped, info.ID); err != nil {
 		t.Fatal(err)
 	}
-	// A release before ids never ran the migration that moves the record.
-	if _, err := db.ExecContext(ctx, `DELETE FROM repository_migrations WHERE repository = $1 AND name = 'key_the_repository_record_by_its_id'`, k.name); err != nil {
+	// A release before ids never ran the migration that moves the record,
+	// nor any migration after it: the ledger keeps what came before it.
+	if _, err := db.ExecContext(ctx, `DELETE FROM repository_migrations WHERE repository = $1 AND version >= (
+		SELECT version FROM repository_migrations WHERE repository = $1 AND name = 'key_the_repository_record_by_its_id')`, k.name); err != nil {
 		t.Fatal(err)
 	}
 	from, err := changelogfile.RepoDir(k.root, info.ID)

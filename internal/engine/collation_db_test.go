@@ -197,6 +197,43 @@ func TestTheByteOrderMigrationLeavesWhatItDoesNotOwn(t *testing.T) {
 	}
 }
 
+// Changing a column's type drops the planner's statistics for it. The byte
+// order migration analyzes every column it changed, so a populated, analyzed
+// database keeps its statistics across the upgrade.
+func TestTheByteOrderMigrationKeepsThePlannersStatistics(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	if err := engine.MigrateThrough(ctx, dsn, 20); err != nil {
+		t.Fatalf("stage the schema at 0020: %v", err)
+	}
+	db := rawDB(t, dsn)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO embed_queue (repository, record_kind, record_id, property)
+		SELECT 'rnd-' || (n % 3), 'ada.example.com/notes/note', 'n' || n, 'text'
+		FROM generate_series(1, 2000) AS n`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `ANALYZE embed_queue`); err != nil {
+		t.Fatal(err)
+	}
+	stats := func() string {
+		return snapshotRows(t, db, `SELECT attname, n_distinct::text FROM pg_stats
+			WHERE schemaname = current_schema() AND tablename = 'embed_queue'
+			  AND attname IN ('repository', 'record_kind', 'record_id') ORDER BY attname`)
+	}
+	before := stats()
+	if strings.Count(before, "\n") != 3 {
+		t.Fatalf("the staged table holds statistics for %q, want its three identity columns", before)
+	}
+	if err := engine.MigrateThrough(ctx, dsn, 21); err != nil {
+		t.Fatal(err)
+	}
+	if after := stats(); after != before {
+		t.Errorf("the planner's statistics after the migration:\n %s want them as before:\n %s", after, before)
+	}
+}
+
 // policySnapshot is every row security policy of the schema, as pg_policies
 // spells it.
 func policySnapshot(t *testing.T, db *sql.DB) string {

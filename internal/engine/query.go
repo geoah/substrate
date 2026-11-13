@@ -2409,8 +2409,8 @@ func afterKey(b *builder, t orderTerm, v *string) string {
 // own new snapshot, or an insert during paging is lost. Zero (an empty
 // changelog first page) is omitted.
 type keyset struct {
-	// V is the token's format, keysetVersion when this server minted it. A
-	// token of another format cannot be read, and is the list-again refusal.
+	// V is the token's version, keysetVersion when this server minted it. A
+	// token of another version cannot be read, and is the list-again refusal.
 	V int `json:"v,omitempty"`
 	// R is the request the walk was cut from (requestSignature), apart from
 	// the resolved order O: a mismatch on R is the client's, one on O alone
@@ -2423,10 +2423,11 @@ type keyset struct {
 	G string `json:"g,omitempty"`
 }
 
-// keysetVersion is the format of the list continuation token this server
-// mints. It moves when what a token says changes, so a token an earlier
-// server minted is refused as list again and never read as this one.
-const keysetVersion = 1
+// keysetVersion is the version of the list continuation token this server
+// mints: the order its keys compare in, substrate.IdentityOrder. A token of
+// another version is refused as list again and never read as this one,
+// wherever it was kept (a client, a function's saved continuation).
+const keysetVersion = substrate.IdentityOrder
 
 func encodeKeyset(request, order string, keys []*string, head int64, generation string) string {
 	raw, _ := json.Marshal(keyset{V: keysetVersion, R: request, O: order, K: keys, H: head, G: generation})

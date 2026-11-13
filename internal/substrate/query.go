@@ -220,6 +220,16 @@ type Query struct {
 	Count bool `json:"count,omitempty"`
 }
 
+// IdentityOrder says which order the identity columns compare in: a
+// record's kind and id, and a repository id. 1 was the database's own
+// collation, its locale; 2 is byte order, since migration 0021. Every
+// continuation token the server mints whose position compares one of them
+// carries this as its version (the records list's, the window read's), and
+// a token carrying another is refused as list again (ErrStaleHistory): its
+// position was cut in another order, and resumed in this one it would pass
+// over rows that now sort before it.
+const IdentityOrder = 2
+
 // Page is a page of records plus continuation cursor ("" = exhausted).
 // Head is the changelog's highest committed seq at the snapshot this page was
 // read from, and Generation the history generation it belongs to: a client
