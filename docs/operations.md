@@ -892,7 +892,10 @@ it trusts:
   `changelogDialect` and `vocabularyDialect` the manifest recorded, loads
   `sealed/` into the table, inserts the missing entries with their checksums
   and folds them through `fold.go` (this is the restore path, and the only
-  one). A manifest whose `changelogDialect` or `vocabularyDialect` is above
+  one). A directory in an older changelog dialect is converted between its
+  entries going in and their fold, and a repository the database already
+  holds in one is converted here too, before anything opens it
+  ([conversions](stored-format.md#conversions)). A manifest whose `changelogDialect` or `vocabularyDialect` is above
   the binary's maximum **refuses the boot** with the same named error the open
   gives ("the changelog speaks a newer dialect than this binary can replay",
   "the store speaks a newer schema dialect than this binary"); so does a
@@ -1268,10 +1271,15 @@ what a binary must understand to replay the entries. A binary whose maximum is
 below a stored stamp refuses to open that repository, by name, and the API
 surfaces the refusal as `503 unavailable` with a `Retry-After`, never as an
 invalid token, so a store the binary cannot serve is diagnosable rather than
-mysterious. Nothing is rewritten and there is no promotion step: a fresh
+mysterious. There is no promotion step: a fresh
 repository is stamped at the binary's maximum at its first open, and the
 changelog's claim is written by the first transaction a binary appends, so a
 new binary that opened a repository and wrote nothing leaves that stamp alone.
+History is rewritten in one case only: a binary that carries a
+[conversion step](stored-format.md#conversions) above a repository's changelog
+dialect converts that repository at its boot check, once, before it serves
+it, and logs `substrate: converting the changelog` with the dialects and the
+steps.
 
 **Rolling the image back is only safe while both stamps and the schema still
 fit.** An older binary refuses a repository stamped above its maxima and a

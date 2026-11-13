@@ -412,3 +412,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0255](0255-a-providers-writes-ride-toggles-of-their-own-and-a-seeded-secretary-takes-the-providers-tools-by-pattern.md) | A provider's writes ride toggles of their own, and a seeded secretary takes the providers' tools by pattern | accepted |
 | [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
 | [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
+| [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |

@@ -34,7 +34,9 @@ package engine
 // shape an old decoder reads differently) bumps maxChangelogDialect in the
 // same commit, and changelogdialect_internal_test.go is what makes the first
 // two say so: it reads the declared ops and effect kinds and fails on any the
-// rung does not list.
+// rung does not list. A change that alters a shape history already holds
+// also lands a conversion step to the new rung (conversion.go), so this
+// binary reads one dialect: its own.
 
 import (
 	"context"
@@ -71,13 +73,19 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := admitChangelogDialect(ds.info.ID, stored, maxChangelogDialect); err != nil {
+	if err := admitChangelogDialect(ds.info.ID, stored, ds.svc.maxDialect); err != nil {
+		return err
+	}
+	// A history below this binary's dialect is converted by the boot check
+	// and nowhere else (conversion.go): appending to it unconverted would
+	// stamp lines this binary never wrote.
+	if err := ds.refusePendingConversion(ctx, stored); err != nil {
 		return err
 	}
 	// A store already at this binary's maximum needs no stamp from it, which
 	// is the common case: remember that, so the first append does not run the
 	// upsert for a claim already on the row.
-	if stored == maxChangelogDialect {
+	if stored == ds.svc.maxDialect {
 		ds.changelogStamped.Store(true)
 	}
 	return nil
@@ -95,7 +103,7 @@ func (t *txn) refuseNewerChangelogDialect() error {
 	if err != nil {
 		return err
 	}
-	return admitChangelogDialect(t.ds.info.ID, stored, maxChangelogDialect)
+	return admitChangelogDialect(t.ds.info.ID, stored, t.ds.svc.maxDialect)
 }
 
 // admitChangelogDialect is the one comparison every gate makes: a repository
@@ -108,10 +116,6 @@ func admitChangelogDialect(repository string, stored, max int) error {
 			ErrChangelogDialectNewer, repository, stored, max)
 	}
 	return nil
-}
-
-func newerChangelogDialect(repository string, stored int) error {
-	return admitChangelogDialect(repository, stored, maxChangelogDialect)
 }
 
 // readChangelogDialect reads the repository's stamp through a pool or a
@@ -150,8 +154,8 @@ func (t *txn) stampChangelogDialect() error {
 	if t.ds.changelogStamped.Load() {
 		return nil
 	}
-	if _, err := t.exec(changelogDialectStamp, maxChangelogDialect); err != nil {
-		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", maxChangelogDialect, err)
+	if _, err := t.exec(changelogDialectStamp, t.ds.svc.maxDialect); err != nil {
+		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", t.ds.svc.maxDialect, err)
 	}
 	t.claimsChangelogDialect = true
 	t.afterCommit = append(t.afterCommit, func() { t.ds.changelogStamped.Store(true) })

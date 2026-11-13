@@ -57,8 +57,10 @@ the fold effects it applied, under the payload key `fold`, which is what makes
 the changelog replayable rather than merely informative: `substratectl
 repository rebuild` replays the changelog through the same fold code
 ([running a substrate](operations.md#operator-recovery)). The effects never
-reach the wire: no response carries `fold`, so a change to how
-the fold spells an effect is a storage change and not an API change. A
+reach the wire: no response carries `fold`. They are the
+[stored format](stored-format.md#the-effects) instead, which every export
+carries and every later release reads, so a change to how an effect is spelled
+raises the changelog dialect and ships a conversion. A
 secret-typed value never reaches the changelog at all: the effect carries an
 opaque ref into the sealed store, the material lives there encrypted, and a
 read of the record renders the property `<redacted>`.
@@ -320,8 +322,9 @@ repository.
 
 Each repository carries a **changelog dialect**: a monotonic integer naming the
 ops and fold effects a binary must understand to replay its entries. The
-effects are storage ([the change event](#the-change-event) is what a reader
-gets), so the dialect names what a binary replays, never what a client parses. The claim
+effects are the [stored format](stored-format.md), never the wire
+([the change event](#the-change-event) is what a reader gets), so the dialect
+names what a binary replays, never what a client parses. The claim
 rides the append: the first transaction a binary appends with writes the stamp
 alongside its entries, so the stamp covers every entry and no store is barred
 over entries nobody wrote. Opening only reads it, and a binary whose maximum is
@@ -347,7 +350,9 @@ every `record` delta carrying the kind version that wrote the row
 and every `manager` effect carrying the stamp a property rename moved with it
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
 The next number is spent when a writer learns a spelling an older binary's
-fold would refuse or misread.
+fold would refuse or misread, and a change to a shape the history already
+holds ships a [conversion step](stored-format.md#conversions) to it, which
+the boot check runs once over each repository below it.
 No dialect is on the wire at all ([discovery](api.md#discovery)), and neither
 are the entries written in one. The dialect is in the repository directory, as
 `changelogDialect` in `repository.json`, which the transaction that records the
