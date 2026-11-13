@@ -368,6 +368,46 @@ func (tp *Template) Clone(t *testing.T) string {
 	return dsn
 }
 
+// Copy returns the DSN of a new database copied whole from the database dsn
+// names, dropped when the test ends: a backup of it, taken now, that a test
+// restores by booting on the copy. Nothing may be connected to the source:
+// close every service on it first. It waits, as a template's build does,
+// for the source's connections to go.
+func Copy(t *testing.T, dsn string) string {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := strings.TrimPrefix(u.Path, "/")
+	ctx := context.Background()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var n int
+		if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = $1`, source).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d connection(s) to %s are still open; close every service on it before copying it", n, source)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	name := cloneName()
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE `+name+` TEMPLATE `+source); err != nil {
+		t.Fatalf("copy database %s to %s: %v", source, name, err)
+	}
+	register(name)
+	t.Cleanup(func() { dropOne(name) })
+	copied, err := withDatabase(dsn, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return copied
+}
+
 // build creates the template database, installs the extensions, runs the
 // caller's preparation and waits for its connections to go away. Leftovers
 // of earlier runs are swept first, and a template this build leaves half

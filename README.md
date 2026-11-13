@@ -61,8 +61,9 @@ registration, and `substratectl` is the CLI for the rest.
 - [Operations](docs/operations.md): before anyone else can reach it, set
   `SUBSTRATE_INVITE_CODE`, set `SUBSTRATE_INSECURE_DISABLE_TOTP=false` (the
   compose file defaults it to `true`; a binary run directly asks for the
-  second factor when it is unset), back up
-  `SUBSTRATE_CREDENTIAL_KEY` and `SUBSTRATE_DATA_ROOT`, and put TLS in front.
+  second factor when it is unset), back up `SUBSTRATE_CREDENTIAL_KEY` and
+  the archive (`SUBSTRATE_ARCHIVE`, by default under `SUBSTRATE_DATA_ROOT`),
+  and put TLS in front.
 
 ### Upgrading
 

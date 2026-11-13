@@ -32,6 +32,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/metrics"
@@ -53,8 +54,17 @@ type options struct {
 	oauthHTTP             *http.Client
 	credKey               string
 	dataRoot              string
-	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
-	segmentBytes int64
+	// archive is where each repository's archive is written (WithArchive),
+	// nil for none; archiveInterval and archivePieceBytes tune its passes.
+	archive           archive.Store
+	archiveSet        bool
+	archiveCall       time.Duration
+	archiveIdle       time.Duration
+	archiveInterval   time.Duration
+	archivePieceBytes int64
+	archiveStepBytes  int64
+	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
+	archiveFault func(stage string) error
 	// repositoryConns caps the pool every repository shares
 	// (WithRepositoryConnections).
 	repositoryConns int
@@ -158,6 +168,7 @@ type options struct {
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
 	importBatch int
+	eraseFault  func(stage string) error
 	// conversion replaces the conversion chain (conversion.go), so a test
 	// converts through a step no release carries. Tests only.
 	conversion []conversionStep
@@ -193,9 +204,6 @@ type options struct {
 	// tailHeadHook runs once the change tail has read the head it opens at
 	// (changetail.go tailHead). Tests only.
 	tailHeadHook func()
-	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
-	// with the partial directory after each copy step (snapshot.go).
-	snapshotFault func(stage, dir string) error
 	// searchReindexBatch and searchReindexHook are the open-time reindex's
 	// test seams (export_test.go WithTestSearchReindex): a page size below
 	// searchReindexBatch, so a few rows span several pages, and a hook run
@@ -220,26 +228,18 @@ type options struct {
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
 	progressEvery time.Duration
-	// digestHook is the directory check's test seam (export_test.go
-	// WithTestDigestHook): run with each finished segment an open of a
-	// repository's changelog directory reads and digests, and not with one
-	// an earlier check vouched for. Tests only.
-	digestHook func(repository, segment string)
-	// digestPaceHook is the background digest's test seam (export_test.go
-	// WithTestDigestPaceHook): run after each read the digest paces, with
-	// the repository and the bytes read so far. Tests only.
-	digestPaceHook func(repository string, bytes int64)
-	// digestBytesPerSecond caps the background digest's rate
-	// (WithDigestBytesPerSecond); zero is no cap.
-	digestBytesPerSecond int64
-	// digestYieldMax bounds the background digest's wait for invocations
-	// before each read (export_test.go WithTestDigestYieldMax); zero is
-	// digestYieldMax. Tests only.
-	digestYieldMax time.Duration
-	// operator is OpenOperator's: a substratectl process, which digests no
-	// changelog segment in the background (segmentdigest.go). Its commands
-	// end in seconds or read every line themselves, and the snapshot holds
-	// what it copies to the checks it runs.
+	// archivePaceHook is the archive passes' pacing seam (export_test.go
+	// WithTestArchivePaceHook): run after each copy a pass paces, with the
+	// repository and the bytes so far. Tests only.
+	archivePaceHook func(repository string, bytes int64)
+	// archiveBytesPerSecond caps the archive passes' rate
+	// (WithArchiveBytesPerSecond); zero is no cap.
+	archiveBytesPerSecond int64
+	// archiveYieldMax bounds a pass's wait for invocations (export_test.go
+	// WithTestArchiveYieldMax); zero is archiveYieldMax. Tests only.
+	archiveYieldMax time.Duration
+	// operator is OpenOperator's: a substratectl process, which writes no
+	// archive (archive.go).
 	operator bool
 	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
 	// hook run with a function's identity as its body is about to be invoked
@@ -316,19 +316,15 @@ func WithCredentialKey(key string) Option { return func(o *options) { o.credKey 
 // for somebody's data.
 func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = root } }
 
-// WithChangelogSegmentBytes sets the size past which a repository's active
-// changelog segment is finished and the next one opened
-// (SUBSTRATE_CHANGELOG_SEGMENT_BYTES). changelogfile.DefaultSegmentBytes
-// when not given or not positive.
-func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
-
-// WithDigestBytesPerSecond caps the rate at which the process hashes the
-// finished changelog segments behind its opens, over every repository it
-// has open (SUBSTRATE_DIGEST_BYTES_PER_SECOND, segmentdigest.go). Zero is
-// no cap; not given is DefaultDigestBytesPerSecond. The digests also pause
-// while any function body or agent loop runs, whatever the cap, for at most
-// 30 seconds before each read.
-func WithDigestBytesPerSecond(n int64) Option { return func(o *options) { o.digestBytesPerSecond = n } }
+// WithArchiveBytesPerSecond caps the rate at which the process's archive
+// passes copy, over every repository it writes
+// (SUBSTRATE_ARCHIVE_BYTES_PER_SECOND, archivepace.go). Zero is no cap; not
+// given is DefaultArchiveBytesPerSecond. The passes also pause while any
+// function body or agent loop runs, whatever the cap, for at most 30 seconds
+// at a time.
+func WithArchiveBytesPerSecond(n int64) Option {
+	return func(o *options) { o.archiveBytesPerSecond = n }
+}
 
 // WithRepositoryConnections caps the Postgres connections every repository
 // of the process shares (SUBSTRATE_REPOSITORY_CONNECTIONS). One repository
@@ -389,6 +385,24 @@ func WithHealthFailingAfter(d time.Duration) Option {
 func WithSearchBudget(d time.Duration) Option {
 	return func(o *options) { o.searchBudget = d }
 }
+
+// WithArchive writes each repository's archive to store, behind its commits
+// (archive.go). Without it the archive is <data root>/archive; nil writes
+// none.
+func WithArchive(store archive.Store) Option {
+	return func(o *options) { o.archive, o.archiveSet = store, true }
+}
+
+// WithArchiveTimeouts bounds every call to the archive's store (archive.
+// Bounded): call for a list, a delete or a get's response, idle for a body
+// that stops moving. The defaults are archive.DefaultCallTimeout and
+// archive.DefaultIdleTimeout.
+func WithArchiveTimeouts(call, idle time.Duration) Option {
+	return func(o *options) { o.archiveCall, o.archiveIdle = call, idle }
+}
+
+// WithArchiveInterval sets how often a repository's archive pass runs.
+func WithArchiveInterval(d time.Duration) Option { return func(o *options) { o.archiveInterval = d } }
 
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
@@ -574,8 +588,6 @@ type service struct {
 	// instanceID names this server to a domain's `_substrate` record
 	// (instance.go, decision 0208).
 	instanceID string
-	// segmentBytes is the size every changelog writer rotates at.
-	segmentBytes int64
 	// conversionCeiling is the most live records one declaration change may
 	// rewrite (convert.go admitConversion); zero or less is no ceiling.
 	conversionCeiling int64
@@ -607,6 +619,21 @@ type service struct {
 	retryNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
+	// archive is the store each repository's archive goes to, nil for none
+	// (archive.go): written by a server's passes, read by its boot check and
+	// by an operator's verify. archiving is whether this process runs the
+	// passes: the server's, not an operator's or a read-only process's.
+	archive           archive.Store
+	archiving         bool
+	archiveInterval   time.Duration
+	archivePieceBytes int64
+	// archiveStepBytes bounds the blob bytes one pass copies, and
+	// archiveProcess is this process's id in the record's rows: an object
+	// no manifest selects is reused only by the process that put it.
+	archiveStepBytes int64
+	archiveProcess   string
+	// testArchiveFault is the options' archive pass seam (archive.go).
+	testArchiveFault func(stage string) error
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
@@ -719,18 +746,16 @@ type service struct {
 	// fail AFTER the seed transaction commits and BEFORE the control-plane row —
 	// the exact crash window the erase-and-sweep guarantees cover.
 	testFailAfterSeed func() error
-	// testCatchUpPrepared, when set (tests only), runs in a table-to-file
-	// catch-up between the writer's Prepare and its Commit (appendFromTable):
-	// the moment the active segment ends in a transaction without its final
-	// newline, which a changelogfile.Open reads as an incomplete tail.
-	testCatchUpPrepared func(repository string)
 	// testOpenWaits, when set (tests only), runs when claimOpen finds the
 	// repository's slot held and is about to wait for it.
 	testOpenWaits func(repository string)
 	// testImportFault and testImportBatch are the options' import seams
-	// (repodir.go importEntries, refoldFromFiles). Tests only.
+	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
+	// testEraseFault is the options' deletion seam (repositories.go
+	// eraseRepositoryOn). Tests only.
+	testEraseFault func(stage string) error
 	// keyingLeases are the writer leases the boot's keying took under
 	// repositories' names, held until the boot check has published each of
 	// those repositories under its id (repositoryid.go).
@@ -740,8 +765,8 @@ type service struct {
 	// binary's own, or a test's.
 	conversion []conversionStep
 	maxDialect int
-	// testCommitFault is the options' commit seam (dataset.go
-	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
+	// testCommitFault is the options' commit seam (dataset.go commit).
+	// Tests only.
 	testCommitFault func(stage string) error
 	// testCommitTx and testTokenProof are the options' COMMIT and token
 	// proof seams (dataset.go). Tests only.
@@ -762,8 +787,6 @@ type service struct {
 	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
 	testBulkFault func(stage string) error
 	testSeedPath  func(repository, refusal string)
-	// testSnapshotFault is the options' snapshot seam (snapshot.go).
-	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
 	testInvokeHook func(function string)
 	// searchReindexBatch and testSearchReindexHook are the options' reindex
@@ -783,35 +806,19 @@ type service struct {
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
-	// testDigestHook is the options' directory check seam (progress.go
-	// checkProgress). Tests only.
-	testDigestHook func(repository, segment string)
-
-	// checkedMu guards checked: the changelog Log the boot check (or a
-	// creation, or a boot import) opened for each repository, kept for that
-	// repository's first open. Its finished segments are digested already,
-	// and a finished segment never changes, so the first open reads none of
-	// them again (repodir.go openDirectory, issue 761).
-	checkedMu sync.Mutex
-	checked   map[string]*changelogfile.Log
-	// digestUnread is whether a repository's open digests, in the
-	// background, the finished segments it took on their sidecars' word
-	// (segmentdigest.go): the server's, not an operator's or a read-only
-	// process's.
-	digestUnread bool
-	// digestBucket is the token bucket every repository's background digest
-	// draws from (segmentdigest.go digestPacer), at the configured bytes
-	// per second for the whole process; zero is no cap.
-	digestBucket digestBucket
+	// archiveBucket is the token bucket every repository's archive passes
+	// draw from (archivepace.go), at the configured bytes per second for the
+	// whole process; zero is no cap.
+	archiveBucket archiveBucket
 	// invocations counts the function bodies and agent loops in flight in
-	// this process, nested ones included (segmentdigest.go
-	// invocationStarted): what the background digest yields to.
+	// this process, nested ones included (archivepace.go invocationStarted):
+	// what an archive pass yields to.
 	invocations atomic.Int64
-	// digestYieldMax is the longest the background digest waits for
-	// invocations to return before one read (segmentdigest.go yield).
-	digestYieldMax time.Duration
-	// testDigestPaceHook is the options' digest pace hook. Tests only.
-	testDigestPaceHook func(repository string, bytes int64)
+	// archiveYieldMax is the longest a pass waits for invocations to return
+	// before it copies on (archivepace.go yield).
+	archiveYieldMax time.Duration
+	// testArchivePaceHook is the options' archive pace hook. Tests only.
+	testArchivePaceHook func(repository string, bytes int64)
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -836,7 +843,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
+	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, archiveBytesPerSecond: DefaultArchiveBytesPerSecond}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -877,11 +884,32 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if err != nil {
 		return nil, err
 	}
-	if o.segmentBytes <= 0 {
-		o.segmentBytes = changelogfile.DefaultSegmentBytes
-	}
 	if o.catchUpBatch <= 0 {
 		o.catchUpBatch = rebuildBatch
+	}
+	if o.archiveInterval <= 0 {
+		o.archiveInterval = DefaultArchiveInterval
+	}
+	// The archive is on by default, under the data root, as the server's
+	// SUBSTRATE_ARCHIVE is; WithArchive(nil) turns it off.
+	if !o.archiveSet && o.dataRoot != "" {
+		store, err := archive.NewDir(filepath.Join(o.dataRoot, "archive"))
+		if err != nil {
+			return nil, err
+		}
+		o.archive = store
+	}
+	// No call to the store waits on it forever: a store that accepts a
+	// connection and never answers fails a call, and the boot, a pass or a
+	// deletion goes on from there.
+	if o.archive != nil {
+		o.archive = archive.Bounded(o.archive, cmp.Or(o.archiveCall, archive.DefaultCallTimeout), cmp.Or(o.archiveIdle, archive.DefaultIdleTimeout))
+	}
+	if o.archivePieceBytes <= 0 {
+		o.archivePieceBytes = DefaultArchivePieceBytes
+	}
+	if o.archiveStepBytes <= 0 {
+		o.archiveStepBytes = DefaultArchiveStepBytes
 	}
 	if o.valuesBudget <= 0 {
 		o.valuesBudget = valuesBudget
@@ -965,6 +993,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		}
 		o.blobs = fsBlobs
 	}
+	process, err := changelogfile.NewPassID()
+	if err != nil {
+		_ = admin.Close()
+		return nil, err
+	}
 	s := &service{
 		dsn:          dsn,
 		admin:        admin,
@@ -973,7 +1006,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		credKeyID:    hostKeyID(credKey),
 		dataRoot:     o.dataRoot,
 		instanceID:   instanceID,
-		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
 		valuesBudget: o.valuesBudget,
 		blobs:        o.blobs,
@@ -1019,6 +1051,14 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		testImportFault:       o.importFault,
 		testImportBatch:       o.importBatch,
+		testEraseFault:        o.eraseFault,
+		archive:               o.archive,
+		archiving:             o.archive != nil && !o.dirReadOnly && !o.operator,
+		archiveInterval:       o.archiveInterval,
+		archivePieceBytes:     o.archivePieceBytes,
+		archiveStepBytes:      o.archiveStepBytes,
+		archiveProcess:        process,
+		testArchiveFault:      o.archiveFault,
 		conversion:            conversionSteps,
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
@@ -1032,16 +1072,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testTailHeadHook:      o.tailHeadHook,
 		testBulkFault:         o.bulkFault,
 		testSeedPath:          o.seedPath,
-		testSnapshotFault:     o.snapshotFault,
 		progressEvery:         o.progressEvery,
 		testInvokeHook:        o.invokeHook,
-		testDigestHook:        o.digestHook,
-		checked:               map[string]*changelogfile.Log{},
-		digestUnread:          !o.operator && !o.dirReadOnly,
 
-		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
-		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
-		testDigestPaceHook: o.digestPaceHook,
+		archiveBucket:       archiveBucket{rate: o.archiveBytesPerSecond},
+		archiveYieldMax:     cmp.Or(o.archiveYieldMax, archiveYieldMax),
+		testArchivePaceHook: o.archivePaceHook,
 
 		searchReindexBatch:       o.searchReindexBatch,
 		testSearchReindexHook:    o.searchReindexHook,
@@ -1392,6 +1428,13 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 	if !vocabulary.ValidRepositoryID(repo.ID) {
 		return nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
 	}
+	// A repository whose deletion began is the deletion's (rule 7): a
+	// server finishes it at its next start.
+	if began, err := s.deletionBegan(ctx, repo.ID); err != nil {
+		return nil, err
+	} else if began {
+		return nil, ErrRepositoryBeingDeleted
+	}
 	cached, release, err := s.claimOpen(ctx, repo.ID)
 	if cached != nil || err != nil {
 		return cached, err
@@ -1509,6 +1552,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		dek:        dek,
 		scope:      sc,
 		dir:        dir,
+		archive:    newArchiveState(s.archiving),
 		generation: repo.HistoryGeneration,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
@@ -1528,10 +1572,10 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
-	// The directory before every step that writes: the writer opens at the
-	// file's head, which must be the table's, or the ladder's first append
-	// would land on a file that is not at the seq it claims (repodir.go).
-	if err := ds.openDirectory(ctx); err != nil {
+	// The history before every step that writes: a fold an import has not
+	// finished is not served, and the ladder's appends must not land on it
+	// (repodir.go).
+	if err := ds.openHistory(ctx); err != nil {
 		ds.close()
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
@@ -1550,18 +1594,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	if err := ds.gateVocabularyDialect(ctx); err != nil {
 		ds.close()
 		return nil, err
-	}
-	// The manifest, after both gates, the re-key and the vocabulary stamp, and
-	// before the first append: it says what the row and the stamps say, and
-	// the transaction that claims the changelog dialect rewrites it from what
-	// is remembered here (repodir.go writeManifestBeforeCommit).
-	if !s.readOnly {
-		m, err := s.ensureManifest(ctx, dir, repo, db)
-		if err != nil {
-			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
-		}
-		ds.manifest = m
 	}
 	// The repository migrations first (repomigrate.go): code this binary runs
 	// once per repository over the stored rows, before anything reads them
@@ -1617,14 +1649,18 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// open (issue 719).
 	ds.startSearchReindex()
 	ds.startIndexReprojection()
-	ds.startSegmentDigest()
+	ds.startArchiver()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
 	unregisterDB := metrics.RegisterDBStats("repository:"+repo.Authority, db)
 	unregisterSpool := metrics.RegisterWebhookSpool(repo.Authority, ds.spoolStats)
 	unregisterInventory := metrics.RegisterInventory(repo.Authority, ds.inventory)
-	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory() }
+	unregisterArchive := func() {}
+	if ds.archive != nil {
+		unregisterArchive = metrics.RegisterArchive(repo.Authority, ds.archive.stats)
+	}
+	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory(); unregisterArchive() }
 	return ds, nil
 }
 
@@ -1878,12 +1914,6 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		return fail("control-plane row", err)
 	}
 	inserted = true
-	// The directory, from the tables the seed just committed. A failure here
-	// is a failed registration like any other: the row is erased with the
-	// rows and the directory, so nothing half-made survives the call.
-	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
-		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", authority, err))
-	}
 	// The repository exists, so the lease is this process's to keep.
 	leased = false
 	return repo, nil

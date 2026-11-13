@@ -1,17 +1,16 @@
 package commands
 
-// The owner's recovery export: GET /api/v1/export streamed to a file. The
-// archive is a tar laid out as a data root (`repositories/<authority>/...`)
-// with snapshot.json, the file that records the point it holds, as its last
-// entry. The bytes are written as they arrive and read back through a tar
+// The owner's recovery export: GET /api/v1/export streamed to a file. It is
+// the repository's archive as one file (decisions 0278 and 0279), a tar laid
+// out as an archive store holding one archive of its own
+// (`repositories/<id>/<archive>/...`), with its manifest, the point it holds,
+// as its last entry (`repositories/<id>/manifests/<archive>/...`). The bytes are written as they arrive and read back through a tar
 // reader on the way, so the command can refuse an archive the server cut
 // short and print the point the complete one holds. Nothing here opens a
 // sealed file: the archive's are ciphertext under a key it does not carry.
 
 import (
 	"archive/tar"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,29 +30,30 @@ func (a *app) exportCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Download the repository's recovery export, a tar of its directory",
-		Long: `Download the repository as a tar of its directory, as of one committed point.
+		Short: "Download the repository's recovery export, its archive as one file",
+		Long: `Download the repository's archive as one tar, as of one committed point.
 
-The archive is laid out as a data root: repositories/<authority>/ holding
-repository.json, changelog/ (every finished segment with its .sha256 sidecar
-and the active segment cut at the point), sealed/, blobs/ (the bytes of every
-stored attachment) and, last, snapshot.json, which records the head seq and
-checksum the archive holds. The server pins the point under its writer lock
-and streams the files afterwards, so writing goes on during the download.
+The tar is laid out as an archive store holding one archive of its own,
+under an id minted at the export: repositories/<id>/<archive>/ holding
+blobs/ (the bytes of every stored attachment), sealed/, spool/ (webhook
+requests answered and not yet recorded) and changelog/<dialect>/ (the history
+in pieces, every line carrying its checksum), and, last,
+repositories/<id>/manifests/<archive>/<epoch>-<hash>.json, the manifest,
+whose head is the seq the archive holds every line up to. The server pins the
+point in one read of the database and streams the history afterwards, so
+writing goes on during the download.
 
 The archive carries no host key. Its sealed files are ciphertext under the
-repository's data key, which repository.json holds wrapped under the server's
-SUBSTRATE_CREDENTIAL_KEY and the recoverykey record holds wrapped to your
-recovery key. To restore on a host with the same credential key, extract the
-archive under its SUBSTRATE_DATA_ROOT with the server stopped and boot; on a
-host with another key, extract it anywhere, run 'repository rewrap' with your
-recovery key, then move it under the data root and boot. 'repository verify'
-prints the recorded point after either.
+repository's data key, which the manifest holds wrapped under the server's
+SUBSTRATE_CREDENTIAL_KEY. To restore on a host with the same credential key,
+extract the tar into the archive the server reads (SUBSTRATE_ARCHIVE, by
+default <SUBSTRATE_DATA_ROOT>/archive) with the server stopped, and boot: a
+repository the archive holds and the database does not is restored from it.
 
 The file is named by the server (<authority>-<head>.tar) unless -o names one;
 an existing file is never overwritten. -o - writes the archive to stdout and
 the report to stderr. An archive the connection cut short is refused and
-removed: the export is complete only when snapshot.json is its last entry.`,
+removed: the export is complete only when its manifest is its last entry.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -80,12 +80,12 @@ removed: the export is complete only when snapshot.json is its last entry.`,
 			if name == "-" {
 				out = a.errOut
 			}
-			fmt.Fprintf(out, "export of %s: %d bytes written to %s\n", report.authority, report.bytes, name)
-			fmt.Fprintf(out, "  point:     seq %d, checksum %s\n", report.snapshot.Head, hex.EncodeToString(report.snapshot.HeadHash[:]))
-			fmt.Fprintf(out, "  changelog: %d segment(s)\n", report.segments)
+			fmt.Fprintf(out, "export of %s: %d bytes written to %s\n", report.manifest.Authority, report.bytes, name)
+			fmt.Fprintf(out, "  point:     seq %d, checksum %s\n", report.manifest.Head, strings.TrimPrefix(report.manifest.HeadSum, "sha256:"))
+			fmt.Fprintf(out, "  changelog: %d piece(s)\n", report.pieces)
 			fmt.Fprintf(out, "  sealed:    %d file(s)\n", report.sealedFiles)
 			fmt.Fprintf(out, "  blobs:     %d (%d bytes)\n", report.blobs, report.blobBytes)
-			fmt.Fprintln(out, "  restore:   extract under a stopped server's SUBSTRATE_DATA_ROOT and boot; `repository verify` prints the point")
+			fmt.Fprintln(out, "  restore:   extract into a stopped server's archive (SUBSTRATE_ARCHIVE, by default <SUBSTRATE_DATA_ROOT>/archive) and boot")
 			return nil
 		},
 	}
@@ -112,10 +112,12 @@ func attachmentName(header string) string {
 
 // exportReport is what the archive said about itself on the way through.
 type exportReport struct {
-	authority   string
-	snapshot    changelogfile.Snapshot
+	// id is the repository's id, the directory the archive lays out under;
+	// its name is the manifest's authority.
+	id          string
+	manifest    changelogfile.Manifest
 	bytes       int64
-	segments    int
+	pieces      int
 	sealedFiles int
 	blobs       int
 	blobBytes   int64
@@ -153,19 +155,17 @@ func (a *app) saveExport(body io.Reader, name string) (exportReport, error) {
 }
 
 // readExport walks the archive: every entry must sit under repositories/,
-// nothing may climb out of it, and snapshot.json must be the last entry, or
+// nothing may climb out of it, and the manifest must be the last entry, or
 // the stream was cut before the server finished. The whole stream is read,
 // tar trailer included, so a tee behind r receives every byte.
 func readExport(r io.Reader) (exportReport, error) {
 	counted := &countingReader{r: r}
 	tr := tar.NewReader(counted)
 	var report exportReport
-	// snapshot is set when the entry just read was the layout's own
-	// snapshot.json, `repositories/<authority>/snapshot.json`, and cleared by
-	// any entry after it, so the archive is complete only when that file is
-	// last; a snapshot.json anywhere else is a blob or a stray and vouches
-	// for nothing.
-	snapshot := false
+	// manifest is set when the entry just read was the archive's manifest,
+	// and cleared by any entry after it, so the archive is complete only when
+	// that file is last.
+	manifest := false
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -187,39 +187,48 @@ func readExport(r io.Reader) (exportReport, error) {
 		if len(parts) < 2 {
 			continue
 		}
-		if report.authority == "" {
-			report.authority = parts[1]
-		} else if parts[1] != report.authority {
-			return report, fmt.Errorf("the archive holds two repositories, %s and %s", report.authority, parts[1])
+		if report.id == "" {
+			report.id = parts[1]
+		} else if parts[1] != report.id {
+			return report, fmt.Errorf("the archive holds two repositories, %s and %s", report.id, parts[1])
 		}
-		snapshot = false
+		manifest = false
 		if h.Typeflag == tar.TypeDir {
 			continue
 		}
-		dir, file := path.Dir(name), path.Base(name)
+		k, ok := changelogfile.ParseArchiveKey(name)
 		switch {
-		case len(parts) == 3 && file == changelogfile.SnapshotName:
-			// The file lists every stored blob's digest, so it grows with
-			// the repository; the header says how long it is, and the bound
-			// is against an archive that lies about that, not a large one.
-			if h.Size > maxSnapshotBytes {
-				return report, fmt.Errorf("the archive's %s is %d bytes, more than the %d this client reads", changelogfile.SnapshotName, h.Size, maxSnapshotBytes)
+		case !ok:
+		case k.Manifests:
+			if _, _, ok := changelogfile.ParseArchiveManifestName(k.Name); !ok {
+				break
 			}
-			raw, err := io.ReadAll(tr)
+			if h.Size > maxManifestBytes {
+				return report, fmt.Errorf("the archive's manifest is %d bytes, more than the %d this client reads", h.Size, maxManifestBytes)
+			}
+			raw, err := io.ReadAll(io.LimitReader(tr, maxManifestBytes))
 			if err != nil {
 				return report, err
 			}
-			if err := json.Unmarshal(raw, &report.snapshot); err != nil {
-				return report, fmt.Errorf("the archive's %s does not read: %w", changelogfile.SnapshotName, err)
+			if !changelogfile.ManifestNamesBytes(k.Name, raw) {
+				return report, fmt.Errorf("the archive's manifest %s is not the bytes its name says", k.Name)
 			}
-			snapshot = true
-		case path.Base(dir) == changelogfile.ChangelogSubdir && strings.HasSuffix(file, ".ndjson"):
-			report.segments++
-		case path.Base(dir) == changelogfile.SealedSubdir:
-			report.sealedFiles++
-		case path.Base(dir) == changelogfile.BlobsSubdir:
-			report.blobs++
-			report.blobBytes += h.Size
+			if report.manifest, err = changelogfile.DecodeArchiveManifest(raw, parts[1]); err != nil {
+				return report, fmt.Errorf("the archive's manifest does not read: %w", err)
+			}
+			if report.manifest.Archive != k.Archive {
+				return report, fmt.Errorf("the archive's manifest %s names archive %s", k.Name, report.manifest.Archive)
+			}
+			manifest = true
+		default:
+			if _, _, _, _, ok := changelogfile.ParsePieceObjectName(k.Name); ok {
+				report.pieces++
+			} else if _, _, ok := changelogfile.ParseBlobObjectName(k.Name); ok {
+				report.blobs++
+				report.blobBytes += h.Size
+			} else if path.Dir(k.Name) == changelogfile.SealedSubdir {
+				report.sealedFiles++
+			}
 		}
 		if _, err := io.Copy(io.Discard, tr); err != nil { //nolint:gosec // G110: the entry drains to io.Discard and nothing is held in memory
 			return report, fmt.Errorf("the export ended inside %s: %w", h.Name, err)
@@ -230,16 +239,18 @@ func readExport(r io.Reader) (exportReport, error) {
 		return report, err
 	}
 	report.bytes = counted.n
-	if !snapshot {
-		return report, fmt.Errorf("the export ended before %s, so it is incomplete: run it again", changelogfile.SnapshotName)
+	if !manifest {
+		return report, errors.New("the export ended before its manifest, so it is incomplete: run it again")
 	}
 	return report, nil
 }
 
-// maxSnapshotBytes bounds the snapshot.json the client reads whole: 512 MiB
-// is millions of digests, past any repository, and short of what an archive
-// that lies about the entry's size could make the client allocate.
-const maxSnapshotBytes = 512 << 20
+// maxManifestBytes bounds the manifest the client reads whole. A manifest
+// grows with the repository's sealed values, about 120 bytes each, and the
+// blobs it names missing: 64 MiB is half a million sealed values, where a
+// repository holds a few per connected account. The bound is against an
+// archive that lies about the entry's size.
+const maxManifestBytes = 64 << 20
 
 // countingReader counts the bytes read through it.
 type countingReader struct {

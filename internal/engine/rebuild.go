@@ -75,8 +75,8 @@ import (
 //
 //   - sealed, A SIDE STORE: its payloads were never in the changelog and
 //     cannot be regenerated from it; the changelog only re-links the references.
-//     This is why the repository directory holds them beside the segments
-//     (repodir.go), as it holds the blob bytes.
+//     This is why the archive holds them beside the pieces (archive.go), as it
+//     holds the blob bytes.
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
 //     they are kept rather than re-bought from the provider. Those of a
@@ -134,13 +134,10 @@ var foldTables = append([]string{
 const rebuildBatch = 500
 
 // RebuildRepository clears one repository's fold and replays its whole
-// changelog into it FROM THE SEGMENT FILES under the data root, so the
-// directory alone is proven to reproduce the fold. The repository's own
-// advisory lock is held for the duration, so no write can interleave, and the
-// whole rebuild is ONE transaction: a rebuild either replaces the fold or
-// leaves it exactly as it was. Before the replay the files are held to the
-// table (repodir.go): the heads must be equal and the common tail must agree,
-// or the rebuild refuses rather than fold a history the table does not index.
+// changelog table into it, so the history alone is proven to reproduce the
+// fold. The repository's own advisory lock is held for the duration, so no
+// write can interleave, and the whole rebuild is ONE transaction: a rebuild
+// either replaces the fold or leaves it exactly as it was.
 func (s *service) RebuildRepository(ctx context.Context, repository string) (RebuildReport, error) {
 	started := time.Now()
 	if s.readOnly {
@@ -155,9 +152,6 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 		return RebuildReport{}, err
 	}
 	report := RebuildReport{Repository: repo.ID}
-	if err := ds.directoryErr(); err != nil {
-		return report, err
-	}
 	// The replay re-derives every row's `fts` itself, so the open's reindex
 	// stops first: its pages would skip every row the replay's delete holds and
 	// then wait on each one alone. A rebuild that fails leaves the version
@@ -185,19 +179,7 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	// The changelog lock first, then the writer mutex: the order inTx takes
-	// them. With both held no committed transaction is still on its way to
-	// the file, so the file is at the table's head or something is wrong.
-	if err := t.lockKey(changelogLockKey); err != nil {
-		return report, err
-	}
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	log, err := ds.replayLog(ctx, t.tx)
-	if err != nil {
-		return report, err
-	}
-	if err := t.rebuild(log, &report); err != nil {
+	if err := t.rebuild(&report); err != nil {
 		return report, err
 	}
 	if err := dropOrphanVectors(ctx, t.tx); err != nil {
@@ -232,33 +214,10 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	return report, nil
 }
 
-// replayLog opens the repository's changelog files for a replay, read-only
-// because the dataset's writer has the active segment open, and holds them
-// to the table: equal heads and an agreeing tail, or a named refusal.
-func (ds *dataset) replayLog(ctx context.Context, q dbx) (*changelogfile.Log, error) {
-	tableHead, err := tableChangelogHead(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-	}
-	switch {
-	case log.Head() > tableHead:
-		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, log.Head(), tableHead)
-	case log.Head() < tableHead:
-		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileBehind, log.Head(), tableHead)
-	}
-	if err := compareTails(ctx, q, log, tableHead); err != nil {
-		return nil, err
-	}
-	return log, nil
-}
-
-// rebuild clears the fold tables and replays every entry of log through the
-// fold, in seq order and in pages.
-func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
+// rebuild clears the fold tables and replays every entry of the changelog
+// table through the fold, in seq order and in pages, inside the
+// transaction that clears them.
+func (t *txn) rebuild(report *RebuildReport) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
@@ -291,11 +250,13 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// held another history), so the cache forgets the repository.
 	t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
 	defer t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
-	// One cursor across every page, so each segment is read once (issue 745).
-	cur := log.Cursor(0)
-	defer func() { _ = cur.Close() }()
+	head, err := tableChangelogHead(t.ctx, t.tx)
+	if err != nil {
+		return err
+	}
+	cur := &tableCursor{ctx: t.ctx, q: t.tx}
 	prog := t.ds.svc.progress("replaying the changelog into the fold",
-		"repository", t.ds.scope.Repository, "head", log.Head())
+		"repository", t.ds.scope.Repository, "head", head)
 	for {
 		entries, err := cur.Next(rebuildBatch)
 		if err != nil {
@@ -319,7 +280,7 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			report.Entries++
 			report.Head = ch.Seq
 		}
-		prog.tick(cur.Position())
+		prog.tick(changelogfile.Position{Seq: report.Head})
 	}
 	if err := t.dropKeptCursors(); err != nil {
 		return err

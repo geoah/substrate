@@ -149,9 +149,9 @@ func keptMaterial(t *testing.T, e *testenv.Env, fixture keptFixture, dir string)
 	switch {
 	case err != nil:
 		out = append(out, fmt.Sprintf("verify the imported repository: %v", err))
-	case !report.OK || report.SealedFiles != len(sealed) || report.SealedOpened != len(sealed) || report.SecretRefs != len(sealed):
+	case !report.OK || report.SealedRows != len(sealed) || report.SealedOpened != len(sealed) || report.SecretRefs != len(sealed):
 		out = append(out, fmt.Sprintf("the release's %d sealed file(s): verify holds %d, opened %d, %d secret ref(s), findings %v",
-			len(sealed), report.SealedFiles, report.SealedOpened, report.SecretRefs, report.Findings))
+			len(sealed), report.SealedRows, report.SealedOpened, report.SecretRefs, report.Findings))
 	}
 	return out
 }

@@ -1,31 +1,31 @@
 package engine
 
-// The owner's recovery export (decision 0069): one repository's directory as
-// of one committed point, streamed as a tar laid out as a data root
-// (`repositories/<authority>/...`) in the snapshot format `repository
-// snapshot` writes (snapshot.go, decision 0065). The point is pinned under
-// the dataset's writer mutex, which every commit holds from its prepare to
-// its final newline, so under it the writer's head, the active segment's
-// length, the sealed files and the `records` table describe one committed
-// state. The mutex is then released and the files are streamed as of that
-// state: a finished segment never changes, the active segment is cut at the
-// length it had, the sealed records were read under the mutex, and a blob's
-// bytes are content-addressed and held against collection until the stream
-// ends (holdExportBlobs). Writes go on while a client downloads.
+// The owner's export is the repository's archive as one file (decision 0278):
+// a tar holding one archive of its own (decision 0279), an id minted at the
+// export under `repositories/<id>/`, with the blobs, the sealed values, the
+// webhook spool, the history in pieces and the manifest last, as of one
+// committed point. Put in a store, it is the newest archive there, so a
+// boot with no rows for the repository restores from it. The point is a read snapshot of
+// the table; the lines up to its head never change, so they are read after
+// it, while writes go on. A blob's bytes are held against collection from
+// before the snapshot until the stream ends (holdExportBlobs), so every blob
+// the point holds is still there to stream. An archive ends with its
+// manifest, so a stream cut short has none, and nothing imports it.
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"path/filepath"
+	"strconv"
 	"sync"
+	"time"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -33,19 +33,20 @@ import (
 
 var (
 	// ErrExportNoWriter is the refusal of a dataset that is not the
-	// directory's writer: a read-only process cannot pin a point, because
-	// the writer it does not hold may be mid-transaction. Unavailable, not a
-	// fault: the same repository exports from the process that writes it.
-	ErrExportNoWriter = fmt.Errorf("%w: the export needs the repository's changelog writer, which a read-only process does not hold", substrate.ErrUnavailable)
+	// repository's writer: the blobs a point holds are held against the
+	// collection of the process that runs it, which a read-only process is
+	// not. Unavailable, not a fault: the same repository exports from the
+	// process that writes it.
+	ErrExportNoWriter = fmt.Errorf("%w: the export runs in the process that writes the repository, which a read-only process is not", substrate.ErrUnavailable)
 	// ErrExportInProgress is the refusal of a second export while one
-	// streams: an export holds a blob open and a tar half written for as long
-	// as the slowest client takes, so one per repository bounds what a
+	// streams: an export holds blobs and a tar half written for as long as
+	// the slowest client takes, so one per repository bounds what a
 	// repository's exports can hold at once.
 	ErrExportInProgress = fmt.Errorf("%w: an export of this repository is already streaming; wait for it to finish", substrate.ErrConflict)
 )
 
-// export is one pinned export: what Export read under the writer mutex, and
-// what WriteTo streams from it.
+// export is one pinned export: what Export read at the point, and what
+// WriteTo streams from it.
 type export struct {
 	ds  *dataset
 	ctx context.Context
@@ -53,41 +54,16 @@ type export struct {
 	// WriteTo or Close gets there first: a second release would clear the
 	// slot of an export started since.
 	released sync.Once
-	// point is the pinned point; snapshot is the snapshot.json that records
-	// it, written last.
 	point    substrate.ExportPoint
-	snapshot changelogfile.Snapshot
-	// manifest is repository.json as the directory held it.
-	manifest []byte
-	// finished are the segments with a sidecar, in seq order; active is the
-	// one the writer holds open, cut at activeBytes, "" when none is open.
-	finished    []string
-	active      string
-	activeBytes int64
-	sealed      []changelogfile.SealedRecord
-	blobs       []storedBlob
-	// spool is the webhook requests answered and not yet drained at the
-	// point (decision 0167), read under the mutex: a drain deletes a file
-	// after its commit, so one listed here is either not in the changelog
-	// the archive holds or is found there by the restored drain.
-	spool []spoolCopy
+	manifest changelogfile.Manifest
+	sealed   map[string]changelogfile.SealedRecord
+	blobs    []storedBlob
+	spool    []spoolCopy
 }
 
-// Export pins the repository's committed point (substrate.Exporter). It takes
-// writerMu, which every commit holds around its prepare, its Postgres commit
-// and its final newline, so the head, the active segment's committed length,
-// the sealed files and the stored blob manifests it reads are one state. A
-// directory latched behind the tables is refused: an export of it would miss
-// committed writes.
-//
-// The pool connection the pin reads through is taken BEFORE the mutex. Every
-// write holds a connection from inTx to commitAndMirror, where it takes the
-// mutex, and the writers behind it wait on the changelog advisory lock inside
-// their own transactions, connections held; with the pool full, an export
-// that took the mutex first and then asked for a connection would wait for
-// one that no writer can release until the mutex is free.
+// Export pins the repository's committed point (substrate.Exporter).
 func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
-	if ds.svc.readOnly || ds.writer == nil {
+	if ds.svc.readOnly {
 		return nil, ErrExportNoWriter
 	}
 	if !ds.exporting.CompareAndSwap(false, true) {
@@ -95,6 +71,7 @@ func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
 	}
 	e, err := ds.pinExport(ctx)
 	if err != nil {
+		ds.holdExportBlobs(nil, false)
 		ds.exporting.Store(false)
 		return nil, err
 	}
@@ -102,92 +79,73 @@ func (ds *dataset) Export(ctx context.Context) (substrate.Export, error) {
 }
 
 func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
-	conn, err := ds.db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = conn.Close() }()
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	if ds.fileErr != nil {
-		return nil, fmt.Errorf("%w: %w", substrate.ErrUnavailable, ds.fileErr)
-	}
+	// Every blob is held from BEFORE the snapshot: a collection whose
+	// tombstone the snapshot does not see deletes its bytes only after it, and
+	// meets the hold. The hold narrows to the point's blobs once they are read.
+	ds.holdExportBlobs(nil, true)
 	e := &export{ds: ds, ctx: ctx}
-	head := ds.writer.Head()
-	var headHash [32]byte
-	if head > 0 {
-		var raw []byte
-		if err := conn.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, head).Scan(&raw); err != nil {
-			return nil, fmt.Errorf("substrate/engine: read the checksum of seq %d: %w", head, err)
-		}
-		if len(raw) != 32 {
-			return nil, fmt.Errorf("substrate/engine: seq %d carries a %d-byte checksum, want 32", head, len(raw))
-		}
-		headHash = [32]byte(raw)
-	}
-	segments, err := changelogfile.Segments(changelogfile.ChangelogDir(ds.dir))
-	if err != nil {
-		return nil, err
-	}
-	activeName, activeBytes, hasActive := ds.writer.Active()
-	for _, seg := range segments {
-		if seg.Finished {
-			e.finished = append(e.finished, seg.Name)
-			continue
-		}
-		// The one unfinished segment is the writer's, or the directory is
-		// not the writer's view of it and no point can be pinned.
-		if !hasActive || seg.Name != activeName {
-			return nil, fmt.Errorf("substrate/engine: %s has no sidecar and is not the segment the writer holds open", seg.Name)
-		}
-		e.active, e.activeBytes = activeName, activeBytes
-	}
-	if hasActive && e.active == "" {
-		return nil, fmt.Errorf("substrate/engine: the writer holds %s open and the directory does not list it", activeName)
-	}
-	if e.manifest, err = os.ReadFile(filepath.Join(ds.dir, changelogfile.ManifestName)); err != nil {
-		return nil, err
-	}
-	var m changelogfile.Manifest
-	if err := json.Unmarshal(e.manifest, &m); err != nil {
-		return nil, fmt.Errorf("substrate/engine: decode %s: %w", changelogfile.ManifestName, err)
-	}
-	if m.ID != ds.scope.Repository {
-		return nil, fmt.Errorf("substrate/engine: %s names id %q, the repository is %q", changelogfile.ManifestName, m.ID, ds.scope.Repository)
-	}
-	if e.sealed, err = changelogfile.ReadSealed(ds.dir); err != nil {
-		return nil, err
-	}
-	if e.blobs, err = storedBlobs(ctx, conn); err != nil {
-		return nil, err
-	}
+	// The spool is read before the snapshot, for the reason the archive
+	// pass reads it first (archive.go).
+	var err error
 	if e.spool, err = spoolFilesForCopy(ds.dir); err != nil {
 		return nil, err
 	}
-	digests := make([]string, 0, len(e.blobs))
-	held := make(map[string]bool, len(e.blobs))
-	for _, b := range e.blobs {
-		digests = append(digests, b.digest)
-		held[b.digest] = true
+	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
 	}
-	// The hold is set under writerMu, which a collection's tombstone commits
-	// under, so a blob listed here was live at the pin and its bytes are
-	// deleted only after this point: deleteOrphanBytes sees the hold.
-	ds.holdExportBlobs(held)
-	taken := nowUTC()
-	// The bytes ride in the archive under blobs/, so the copy is laid out the
-	// way a repository directory is.
-	e.snapshot = changelogfile.Snapshot{
-		Format: changelogfile.SnapshotFormat, TakenAt: taken,
-		Head: head, HeadHash: headHash, SealedFiles: len(e.sealed),
-		BlobStore: blobbytes.BackendFS, Blobs: digests,
+	defer func() { _ = tx.Rollback() }()
+	head, err := tableChangelogHead(ctx, tx)
+	if err != nil {
+		return nil, err
 	}
-	e.point = substrate.ExportPoint{
-		ID: ds.scope.Repository, Authority: ds.info.Authority, Head: head, TakenAt: taken,
-		Segments: len(segments), SealedFiles: len(e.sealed), Blobs: len(e.blobs),
+	repo, err := ds.svc.repositoryByID(ctx, ds.info.ID)
+	if err != nil {
+		return nil, err
+	}
+	if e.manifest, err = ds.svc.manifestOf(ctx, repo, tx); err != nil {
+		return nil, err
+	}
+	e.manifest.Head, e.manifest.Epoch = head, 1
+	// An archive of its own, past the one the database writes, so it is the
+	// newest wherever it is put; and a pass of its own.
+	var after []string
+	if rec, ok, err := readArchiveRecord(ctx, tx); err != nil {
+		return nil, err
+	} else if ok {
+		after = append(after, rec.archive)
+	}
+	if e.manifest.Archive, err = changelogfile.NewArchiveID(nowUTC(), after...); err != nil {
+		return nil, err
+	}
+	if e.manifest.Pass, err = changelogfile.NewPassID(); err != nil {
+		return nil, err
 	}
 	if head > 0 {
-		e.point.HeadHash = hex.EncodeToString(headHash[:])
+		if e.manifest.HeadSum, err = tableLineSum(ctx, tx, head); err != nil {
+			return nil, err
+		}
+	}
+	if e.sealed, err = readSealedTable(ctx, tx); err != nil {
+		return nil, err
+	}
+	if e.blobs, err = storedBlobs(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	held := make(map[string]bool, len(e.blobs))
+	for _, b := range e.blobs {
+		held[b.digest] = true
+	}
+	ds.holdExportBlobs(held, false)
+	e.point = substrate.ExportPoint{
+		ID: ds.scope.Repository, Authority: ds.info.Authority, Head: head, TakenAt: nowUTC(),
+		SealedFiles: len(e.sealed), Blobs: len(e.blobs),
+	}
+	if head > 0 {
+		e.point.HeadHash = e.manifest.HeadSum[len("sha256:"):]
 	}
 	return e, nil
 }
@@ -199,239 +157,192 @@ func (e *export) Point() substrate.ExportPoint { return e.point }
 // (substrate.Export).
 func (e *export) Close() {
 	e.released.Do(func() {
-		e.ds.holdExportBlobs(nil)
+		e.ds.holdExportBlobs(nil, false)
 		e.ds.exporting.Store(false)
 	})
 }
 
 // WriteTo streams the tar (substrate.Export) and releases the repository's
-// export slot when it returns, however it returns. The order is the order a
-// restore needs and the order the operator's snapshot copies: the manifest,
-// the changelog, the sealed files, the blob bytes, the webhook spool, and
-// snapshot.json last, so an archive that ends early lacks the file that
-// vouches for it.
+// export slot when it returns, however it returns. The order is an archive
+// pass's: what the history names first, the history, the manifest last.
 func (e *export) WriteTo(w io.Writer) (int64, error) {
 	defer e.Close()
 	cw := &countingWriter{w: w}
 	tw := tar.NewWriter(cw)
-	err := e.write(tw)
-	if err == nil {
-		err = tw.Close()
+	if err := e.write(tw); err != nil {
+		return cw.n, err
 	}
-	return cw.n, err
+	if err := tw.Close(); err != nil {
+		return cw.n, err
+	}
+	return cw.n, nil
 }
 
 func (e *export) write(tw *tar.Writer) error {
-	root := path.Join(changelogfile.RepositoriesDir, e.point.ID)
-	changelog := path.Join(root, changelogfile.ChangelogSubdir)
-	blobs := path.Join(root, changelogfile.BlobsSubdir)
-	sealed := path.Join(root, changelogfile.SealedSubdir)
-	// The directories first, with the modes the server creates them with:
-	// the changelog is every record in the clear, and `tar -x` keeps what
-	// the header says.
-	for _, dir := range []string{changelogfile.RepositoriesDir, root, changelog, blobs, sealed} {
-		if err := tw.WriteHeader(&tar.Header{
-			Typeflag: tar.TypeDir, Name: dir + "/", Mode: 0o700, ModTime: e.point.TakenAt, Format: tar.FormatPAX,
-		}); err != nil {
+	id, m := e.point.ID, &e.manifest
+	prefix := changelogfile.ArchivePrefix(id, m.Archive)
+	t := &tarStore{tw: tw, at: e.point.TakenAt}
+	for _, dir := range []string{
+		changelogfile.RepositoriesDir + "/", changelogfile.RepositoryPrefix(id), prefix,
+		prefix + changelogfile.BlobsSubdir + "/", prefix + changelogfile.SealedSubdir + "/", prefix + changelogfile.SpoolSubdir + "/",
+		prefix + changelogfile.ChangelogSubdir + "/", prefix + changelogfile.ChangelogSubdir + "/" + strconv.Itoa(m.ChangelogDialect) + "/",
+		changelogfile.ManifestsPrefix(id), changelogfile.ArchiveManifestsPrefix(id, m.Archive),
+	} {
+		if err := t.dir(dir); err != nil {
 			return err
 		}
 	}
-	if err := e.writeBytes(tw, path.Join(root, changelogfile.ManifestName), e.manifest); err != nil {
+	local, err := e.ds.blobBytes()
+	if err != nil {
 		return err
 	}
-	srcChangelog := changelogfile.ChangelogDir(e.ds.dir)
-	for _, name := range e.finished {
-		if err := e.writeSegment(tw, path.Join(changelog, name), srcChangelog, name); err != nil {
-			return err
-		}
-		if err := e.writeFile(tw, path.Join(changelog, changelogfile.SidecarName(name)), filepath.Join(srcChangelog, changelogfile.SidecarName(name)), -1); err != nil {
+	for _, b := range e.blobs {
+		if err := e.writeBlob(t, prefix+changelogfile.BlobObjectName(b.digest, m.Pass), local, b); err != nil {
 			return err
 		}
 	}
-	if e.active != "" {
-		if err := e.writeFile(tw, path.Join(changelog, e.active), filepath.Join(srcChangelog, e.active), e.activeBytes); err != nil {
-			return err
-		}
-	}
-	for _, rec := range e.sealed {
-		// The same bytes WriteSealed puts in the directory.
-		data, err := json.Marshal(rec)
+	m.Sealed = make(map[string]string, len(e.sealed))
+	for _, ref := range sortedKeys(e.sealed) {
+		data, sum, err := changelogfile.EncodeSealedVersion(e.sealed[ref])
 		if err != nil {
 			return err
 		}
-		if err := e.writeBytes(tw, path.Join(sealed, changelogfile.SealedFileName(rec.Ref)), append(data, '\n')); err != nil {
+		name := changelogfile.SealedObjectName(ref, sum, m.Pass)
+		m.Sealed[ref] = name
+		if err := t.Put(e.ctx, prefix+name, bytes.NewReader(data), int64(len(data))); err != nil {
 			return err
 		}
 	}
-	if len(e.spool) > 0 {
-		spool := path.Join(root, changelogfile.SpoolSubdir)
-		if err := tw.WriteHeader(&tar.Header{
-			Typeflag: tar.TypeDir, Name: spool + "/", Mode: 0o700, ModTime: e.point.TakenAt, Format: tar.FormatPAX,
-		}); err != nil {
+	for _, f := range e.spool {
+		name := changelogfile.SpoolObjectName(f.name, m.Pass)
+		m.Spool = append(m.Spool, name)
+		if err := t.Put(e.ctx, prefix+name, bytes.NewReader(f.data), int64(len(f.data))); err != nil {
 			return err
 		}
-		for _, f := range e.spool {
-			if err := e.writeBytes(tw, path.Join(spool, f.name), f.data); err != nil {
-				return err
+	}
+	if head := m.Head; head > 0 {
+		written, _, err := writePieces(e.ctx, e.ds.db, 0, head, e.ds.svc.archivePieceBytes, nil, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
+			sum := sha256.Sum256(data)
+			name := changelogfile.PieceObjectName(m.ChangelogDialect, first, last, m.Pass, sum)
+			if err := t.Put(e.ctx, prefix+name, bytes.NewReader(data), int64(len(data))); err != nil {
+				return changelogfile.ArchivePiece{}, err
 			}
-		}
-	}
-	if len(e.blobs) > 0 {
-		store, err := e.ds.blobBytes()
+			return changelogfile.ArchivePiece{Name: name, Sum: changelogfile.SumText(sum), Size: int64(len(data))}, nil
+		})
 		if err != nil {
 			return err
 		}
-		for _, b := range e.blobs {
-			if err := e.writeBlob(tw, path.Join(blobs, b.digest), store, b); err != nil {
-				return err
-			}
-		}
+		m.Pieces = written
 	}
-	snapshot, err := changelogfile.EncodeSnapshot(e.snapshot)
+	e.point.Pieces = len(m.Pieces)
+	data, err := changelogfile.EncodeArchiveManifest(*m)
 	if err != nil {
 		return err
 	}
-	return e.writeBytes(tw, path.Join(root, changelogfile.SnapshotName), snapshot)
+	return t.Put(e.ctx, changelogfile.ArchiveManifestsPrefix(id, m.Archive)+changelogfile.ArchiveManifestName(m.Epoch, data), bytes.NewReader(data), int64(len(data)))
 }
 
-// writeBytes adds one regular file of known content.
-func (e *export) writeBytes(tw *tar.Writer, name string, data []byte) error {
-	if err := e.header(tw, name, int64(len(data))); err != nil {
-		return err
-	}
-	_, err := tw.Write(data)
-	return err
-}
-
-// header adds one regular file's header.
-func (e *export) header(tw *tar.Writer, name string, size int64) error {
-	return tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg, Name: name, Mode: 0o600, Size: size,
-		ModTime: e.point.TakenAt, Format: tar.FormatPAX,
-	})
-}
-
-// writeFile adds one regular file from disk: the whole file when size is
-// negative, else exactly size bytes of it, which is the active segment cut at
-// the point. A file shorter than the point claims is damage, not a shorter
-// copy.
-func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
-	f, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if size < 0 {
-		size = info.Size()
-	} else if info.Size() < size {
-		return fmt.Errorf("substrate/engine: %s is %d bytes, the point needs %d", filepath.Base(src), info.Size(), size)
-	}
-	if err := e.header(tw, name, size); err != nil {
-		return err
-	}
-	_, err = io.CopyN(tw, f, size)
-	return err
-}
-
-// segmentTail is how much of a finished segment writeSegment holds back
-// until the segment's digest checks.
-const segmentTail = 1 << 20
-
-// writeSegment streams one finished segment into the archive and hashes it
-// on the way, holding its last segmentTail bytes back until the digest is
-// the sidecar's. The open took the segment on its sidecar's word
-// (segmentdigest.go), and an extracted export can be a later snapshot's base
-// (decision 0146), which links its segments without reading them, so the
-// export is where these bytes are checked: one that does not match fails the
-// export with the entry still short, which ends the stream, as a blob that
-// is not its digest's does.
-func (e *export) writeSegment(tw *tar.Writer, name, dir, segment string) error {
-	want, err := changelogfile.ReadSidecar(dir, segment)
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(filepath.Join(dir, segment))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	size := info.Size()
-	if err := e.header(tw, name, size); err != nil {
-		return err
-	}
-	h := sha256.New()
-	head := size - min(size, segmentTail)
-	if _, err := io.CopyN(io.MultiWriter(tw, h), f, head); err != nil {
-		return err
-	}
-	tail := make([]byte, size-head)
-	if _, err := io.ReadFull(f, tail); err != nil {
-		return err
-	}
-	h.Write(tail)
-	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return fmt.Errorf("%w: %s", changelogfile.ErrSegmentDigest, segment)
-	}
-	_, err = tw.Write(tail)
-	return err
-}
-
-// writeBlob streams one stored blob out of the store into the archive through
-// blobbytes.OpenVerified: the header takes the size the manifest declares, so
-// nothing is held in memory but the copy buffer, and the reader holds the
-// blob's last chunk back until the digest checks. A store that answers other
-// bytes fails the export here with the entry still short, which ends the
-// stream, so a restore never holds a blob that is not its digest's; the
-// archive is already committed to the entry by then, so the failure is the
-// export's and not a shorter archive.
-//
-// A `stored` manifest that declares no size (verify passes one: it hashes
-// the bytes and compares the size only when the manifest claims one) is read
-// whole instead, as the operator's snapshot reads every blob, so the header
-// is sized from the bytes; the upload cap bounds what that holds.
-func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b storedBlob) error {
+// writeBlob streams one blob's bytes, held to its digest and to the size its
+// manifest declares, so a damaged blob ends the stream rather than reaching
+// the archive. A `stored` manifest that declares no size is read whole first,
+// because a tar header needs the size before the bytes.
+func (e *export) writeBlob(t *tarStore, key string, store blobbytes.Store, b storedBlob) error {
 	if b.size < 0 {
 		data, err := blobbytes.ReadAll(e.ctx, store, b.digest, -1)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
 		}
-		return e.writeBytes(tw, name, data)
+		return t.Put(e.ctx, key, bytes.NewReader(data), int64(len(data)))
 	}
 	rc, err := blobbytes.OpenVerified(e.ctx, store, b.digest, b.size)
 	if err != nil {
-		return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
+		return fmt.Errorf("substrate/engine: open blob %s: %w", b.digest, err)
 	}
 	defer func() { _ = rc.Close() }()
-	if err := e.header(tw, name, b.size); err != nil {
+	return t.stream(key, rc, b.size)
+}
+
+// tarStore is an archive store that is a tar being written: a put is an
+// entry. Nothing is ever read back or deleted from it.
+type tarStore struct {
+	tw *tar.Writer
+	at time.Time
+}
+
+func (t *tarStore) String() string { return "export" }
+
+func (t *tarStore) dir(name string) error {
+	return t.tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: name, Mode: 0o700, ModTime: t.at, Format: tar.FormatPAX})
+}
+
+func (t *tarStore) Put(_ context.Context, key string, body io.ReadSeeker, size int64) error {
+	if size < 0 {
+		end, err := body.Seek(0, io.SeekEnd)
+		if err != nil {
+			return err
+		}
+		if _, err := body.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		size = end
+	}
+	return t.stream(key, body, size)
+}
+
+func (t *tarStore) stream(key string, body io.Reader, size int64) error {
+	if err := archive.CheckKey(key); err != nil {
 		return err
 	}
-	if n, err := io.Copy(tw, rc); err != nil {
-		return fmt.Errorf("substrate/engine: blob %s: %d of %d bytes copied: %w", b.digest, n, b.size, err)
+	if err := t.tw.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg, Name: path.Clean(key), Mode: 0o600, Size: size, ModTime: t.at, Format: tar.FormatPAX,
+	}); err != nil {
+		return err
+	}
+	n, err := io.Copy(t.tw, body)
+	if err != nil {
+		return err
+	}
+	if n != size {
+		return fmt.Errorf("substrate/engine: %s: %d bytes where %d were declared", key, n, size)
 	}
 	return nil
 }
 
+func (t *tarStore) Get(context.Context, string) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("substrate/engine: an export is written, never read")
+}
+
+func (t *tarStore) List(context.Context, string) ([]archive.Object, error) {
+	return nil, fmt.Errorf("substrate/engine: an export is written, never listed")
+}
+
+func (t *tarStore) Delete(context.Context, string) error {
+	return fmt.Errorf("substrate/engine: an export is written, never deleted from")
+}
+
 // holdExportBlobs replaces the set of digests the streaming export holds
-// against byte deletion; nil releases them.
-func (ds *dataset) holdExportBlobs(held map[string]bool) {
+// against byte deletion, or holds every digest while all is set; nil and
+// false release them.
+func (ds *dataset) holdExportBlobs(held map[string]bool, all bool) {
 	ds.exportHeldMu.Lock()
-	ds.exportHeld = held
+	ds.exportHeld, ds.exportHoldAll = held, all
 	ds.exportHeldMu.Unlock()
 }
 
-// exportHolds reports whether the streaming export listed digest.
-func (ds *dataset) exportHolds(digest string) bool {
+// holdArchiveBlobs is holdExportBlobs for the archive pass: the digests it
+// is copying, or every digest while all is set.
+func (ds *dataset) holdArchiveBlobs(held map[string]bool, all bool) {
+	ds.exportHeldMu.Lock()
+	ds.archiveHeld, ds.archiveHoldAll = held, all
+	ds.exportHeldMu.Unlock()
+}
+
+// blobHeld reports whether the streaming export or the archive pass holds
+// digest.
+func (ds *dataset) blobHeld(digest string) bool {
 	ds.exportHeldMu.Lock()
 	defer ds.exportHeldMu.Unlock()
-	return ds.exportHeld[digest]
+	return ds.exportHoldAll || ds.exportHeld[digest] || ds.archiveHoldAll || ds.archiveHeld[digest]
 }
 
 // countingWriter counts the bytes that reached w.

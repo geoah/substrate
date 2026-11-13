@@ -2,7 +2,6 @@ package api
 
 import (
 	"archive/tar"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,9 +13,8 @@ import (
 )
 
 // The archive comes back as a tar under the authority's file name, with the
-// point in the name: the repository's directory, named by its id, laid out as
-// a data root, its manifest in it and snapshot.json, recording that point, as
-// the last entry.
+// point in the name: the repository's archive, named by its id, its manifest,
+// recording that point, as the last entry.
 func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withSamples("people"))
@@ -35,7 +33,7 @@ func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 	dir := changelogfile.RepositoriesDir + "/" + env.ds.Repository().ID + "/"
 	tr := tar.NewReader(rec.Body)
 	var names []string
-	var snapshot []byte
+	var manifest []byte
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -48,23 +46,17 @@ func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 			t.Fatalf("entry %s lies outside the repository's directory %s", h.Name, dir)
 		}
 		names = append(names, h.Name)
-		if h.Name == dir+changelogfile.SnapshotName {
-			if snapshot, err = io.ReadAll(tr); err != nil {
+		if k, ok := changelogfile.ParseArchiveKey(h.Name); ok && k.Manifests && k.Name != changelogfile.DeletedMark {
+			if manifest, err = io.ReadAll(tr); err != nil {
 				t.Fatalf("read %s: %v", h.Name, err)
 			}
 		}
 	}
-	manifest := false
-	for _, name := range names {
-		manifest = manifest || name == dir+"repository.json"
+	if len(names) == 0 || !strings.HasPrefix(names[len(names)-1], dir+changelogfile.ManifestsSubdir+"/") {
+		t.Fatalf("entries = %v, want the manifest last", names)
 	}
-	if !manifest || len(names) == 0 || names[len(names)-1] != dir+changelogfile.SnapshotName {
-		t.Fatalf("entries = %v, want the manifest and %s last", names, changelogfile.SnapshotName)
-	}
-	var point struct {
-		Head int64 `json:"head"`
-	}
-	if err := json.Unmarshal(snapshot, &point); err != nil || point.Head != head {
-		t.Fatalf("%s = %s (%v), want head %d", changelogfile.SnapshotName, snapshot, err, head)
+	m, err := changelogfile.DecodeArchiveManifest(manifest, env.ds.Repository().ID)
+	if err != nil || m.Head != head {
+		t.Fatalf("the manifest = %s (%v), want head %d", manifest, err, head)
 	}
 }

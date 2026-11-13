@@ -27,10 +27,6 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// BackendFS names the one backend. It is what a snapshot and an export record
-// in `snapshot.json` as the layout their blob bytes are written for.
-const BackendFS = "fs"
-
 // ErrNotStored is what a read or an open reports when the store holds no bytes
 // under that digest. The engine maps it to a not-found.
 var ErrNotStored = errors.New("blobbytes: no bytes are stored under this digest")

@@ -191,7 +191,7 @@ func TestFromZeroNeedsNoGeneration(t *testing.T) {
 }
 
 // The ticket's case: a client saves a cursor into a history, and an OLDER
-// copy of the repository's directory (the owner's recovery export, taken
+// copy of the repository's archive (the owner's recovery export, taken
 // before the writes the cursor points into) is imported over an emptied
 // database. The resume is refused with the new head and generation; the
 // client re-lists there and from then on misses nothing, including the writes
@@ -216,10 +216,10 @@ func TestRestoredHistoryResetsTheCursorAndLosesNothing(t *testing.T) {
 		t.Fatalf("head = %d, want the copy's %d and four writes", before.Seq, copyHead)
 	}
 
-	// The copy over an emptied database: a second server boots on it and
-	// imports the directory, as a restore does.
+	// The copy over an emptied database: a second server boots with it as
+	// its archive and restores the repository from it, as a restore does.
 	root := t.TempDir()
-	watchExtract(t, root, archive)
+	watchExtract(t, filepath.Join(root, "archive"), archive)
 	svc, err := engine.Open(ctx, dbTemplate.Clone(t),
 		engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(root),
@@ -229,7 +229,7 @@ func TestRestoredHistoryResetsTheCursorAndLosesNothing(t *testing.T) {
 		engine.WithUnitSeed(false),
 		engine.WithRecordSeed(false))
 	if err != nil {
-		t.Fatalf("boot on the restored directory: %v", err)
+		t.Fatalf("boot on the restored archive: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	restored, err := svc.Dataset(ctx, env.repository)

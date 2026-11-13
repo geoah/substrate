@@ -791,10 +791,11 @@ func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store,
 		if err != nil || live {
 			return err
 		}
-		// A streaming export listed these bytes while their manifest was
-		// live, and its archive restores that manifest: they stay until the
-		// stream ends, and the orphan sweep deletes them after (#1022).
-		if ds.exportHolds(digest) {
+		// A streaming export or an archive pass listed these bytes while
+		// their manifest was live, and what it writes restores that
+		// manifest: they stay until it ends, and the orphan sweep deletes
+		// them after (#1022).
+		if ds.blobHeld(digest) {
 			return nil
 		}
 		// Nothing to commit but the lock, so the delete runs inside the

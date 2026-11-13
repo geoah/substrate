@@ -250,7 +250,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	_ = svc2.Close()
 
 	// The first database is the older dump: its vectors are the old texts'.
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
@@ -343,7 +343,7 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	_ = svc2.Close()
 
 	// The first database is the older dump: its one vector is the old model's.
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
@@ -421,7 +421,7 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	}
 	_ = svc2.Close()
 
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)

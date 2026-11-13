@@ -39,9 +39,6 @@ func (s *service) RotateHistoryGeneration(ctx context.Context, repository string
 		return RotateReport{}, err
 	}
 	report := RotateReport{Repository: repo.ID, Previous: repo.HistoryGeneration}
-	if err := ds.directoryErr(); err != nil {
-		return report, err
-	}
 	generation, err := newHistoryGeneration()
 	if err != nil {
 		return report, err

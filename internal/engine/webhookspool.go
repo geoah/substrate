@@ -242,7 +242,7 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	if err := ds.svc.lease.err(); err != nil {
 		return "", "", err
 	}
-	if err := ds.doorDirectoryErr(); err != nil {
+	if err := ds.unsettledErr(); err != nil {
 		return "", "", err
 	}
 	wid, err := newID()

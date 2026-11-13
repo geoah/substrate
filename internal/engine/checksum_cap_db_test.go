@@ -4,7 +4,7 @@ package engine
 // because it drives appendChange directly: a 64 MiB payload through the fold
 // would meet the tsvector limit first, and the point is the checksum step's
 // own refusal, which rolls the transaction back so no row can ever sit in the
-// table waiting for an append the writer will refuse.
+// table that the archive's pieces would refuse.
 
 import (
 	"context"
@@ -28,10 +28,6 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fileBefore, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	kind := testdb.Repository(t) + "/p/thing"
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
@@ -45,8 +41,7 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 		t.Fatalf("err = %v, want ErrLineTooLong as a validation error", err)
 	}
 
-	// Rolled back: neither the table nor the file moved, and the dataset is
-	// not latched.
+	// Rolled back: the table did not move, and the dataset is not latched.
 	after, err := tableChangelogHead(ctx, ds.db)
 	if err != nil {
 		t.Fatal(err)
@@ -54,14 +49,7 @@ func TestSettleChecksumsRefusesALineOverTheCapBeforeCommit(t *testing.T) {
 	if after != before {
 		t.Fatalf("table head moved from %d to %d on a refused write", before, after)
 	}
-	fileAfter, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fileAfter.Head() != fileBefore.Head() {
-		t.Fatalf("file head moved from %d to %d on a refused write", fileBefore.Head(), fileAfter.Head())
-	}
-	if err := ds.directoryErr(); err != nil {
+	if err := ds.unsettledErr(); err != nil {
 		t.Fatalf("the refusal latched the dataset: %v", err)
 	}
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {

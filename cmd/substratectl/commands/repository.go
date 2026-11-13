@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"filippo.io/age"
 	"github.com/spf13/cobra"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -41,113 +39,8 @@ func (a *app) repositoryCommand() *cobra.Command {
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
 		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
-		a.repositoryVerifyCommand(), a.repositorySnapshotCommand(),
+		a.repositoryVerifyCommand(),
 		a.repositoryRewrapCommand(), a.repositoryRotateGenerationCommand(), a.repositoryReindexCommand())
-	return cmd
-}
-
-func (a *app) repositorySnapshotCommand() *cobra.Command {
-	var output, base string
-	cmd := &cobra.Command{
-		Use:   "snapshot <repository> <destination root>",
-		Short: "Write a verified copy of a repository's directory that records the point it holds",
-		Long: `Copy one repository's directory into a destination root, verified before and
-after, with snapshot.json recording the committed point the copy holds.
-
-The copy lands at <destination root>/repositories/<id>/, the layout a data
-root has, so a restore copies it straight under SUBSTRATE_DATA_ROOT; the id
-is the repository's key, which 'repository list' prints beside its name. It
-holds the manifest, every changelog segment and sidecar, every committed
-sealed file and the bytes of every stored blob, each hashed against its
-digest on the way. snapshot.json is written last and names the head seq, its
-checksum and when the copy was taken; 'repository verify' on the restored
-repository prints it and holds the files to it.
-
-Before anything is copied the repository is verified whole: the changelog in
-both places, every stored blob's bytes, every live secret reference and, under
-SUBSTRATE_CREDENTIAL_KEY, every sealed file opened. A finding refuses the
-snapshot and is printed. The key is required for that reason. A destination
-that already holds a directory for the repository is refused: a snapshot is
-a fresh copy, never a merge over an older one. The copy is built beside the
-destination and renamed into place once snapshot.json is on disk, so a failed
-snapshot leaves nothing there and the same destination takes the retry. The
-copy is read back before that: every segment's checksums, every sealed file
-opened under the key, every blob hashed.
-
-STOP THE SERVER FIRST. The snapshot opens the repository as its changelog
-writer so that no write can land while it copies, and a running server holds
-that lock; the command refuses rather than copy beside it, and a server that
-opens the repository first while the snapshot runs meets the same lock. Run it
-with the binary the server runs, as with 'rebuild': the open stamps the
-repository with this binary's dialects, which an older server then refuses.
-
-With --base, pass the destination root of an earlier snapshot of the same
-repository, on the same filesystem as the new one. Every finished changelog
-segment the base holds under the same name, size and sidecar digest, and
-every blob the base's snapshot.json lists, becomes a hard link to the base's
-file instead of a copy, and is not read again: the base's own checks read
-those bytes when it was taken. Only what was written since is verified and
-copied, so a snapshot of a long history takes as long as its newest writes
-do. The new snapshot is still a whole directory: deleting the base later
-leaves it intact. A file the filesystem refuses to link is copied and read
-back as without --base. The changelog table is compared with the files only
-from the end of what the base holds: the rows below it were compared when
-the base was taken, and 'repository verify' compares them all. 'repository verify' on a scratch server restored
-from a snapshot still reads every byte.
-
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-10-06 --base /srv/substrate-backup/2026-09-08`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if output != "" && output != "text" && output != "json" {
-				return fmt.Errorf("unknown output format %q: use text or json", output)
-			}
-			// The key before the DSN: the refusal names what is missing
-			// before anything is opened.
-			if os.Getenv(credentialKeyEnv) == "" {
-				return fmt.Errorf("refusing to snapshot: set %s to the key the server runs with; the snapshot proves every sealed file opens under it before it copies", credentialKeyEnv)
-			}
-			dest, err := filepath.Abs(args[1])
-			if err != nil {
-				return err
-			}
-			if base != "" {
-				if base, err = filepath.Abs(base); err != nil {
-					return err
-				}
-			}
-			svc, err := a.openEngineWrite(cmd.Context())
-			if err != nil {
-				return err
-			}
-			defer func() { _ = svc.Close() }()
-			report, err := svc.SnapshotRepositoryWith(cmd.Context(), args[0], dest, engine.SnapshotOptions{Base: base})
-			if err != nil {
-				return lockHint(err)
-			}
-			if output == "json" {
-				return printJSON(a.out, report)
-			}
-			fmt.Fprintf(a.out, "repository %s snapshot written\n", report.Repository)
-			fmt.Fprintf(a.out, "  directory: %s\n", report.Directory)
-			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
-			if report.Base != "" {
-				fmt.Fprintf(a.out, "  base:      %s\n", report.Base)
-				fmt.Fprintf(a.out, "  table:     compared with the files from seq %d; below it, when the base was taken\n", report.KnownHead)
-			}
-			fmt.Fprintf(a.out, "  changelog: %d segment(s), %d linked from the base\n", report.Segments, report.LinkedSegments)
-			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)
-			fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest, and %d linked from the base\n",
-				report.Blobs-report.LinkedBlobs, report.BlobBytes, report.LinkedBlobs)
-			if report.WebhookSpool > 0 {
-				fmt.Fprintf(a.out, "  spool:     %d webhook request(s) answered and not yet in the changelog\n", report.WebhookSpool)
-			}
-			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
-	cmd.Flags().StringVar(&base, "base", "", "destination root of an earlier snapshot of the repository: link what it holds instead of copying it")
 	return cmd
 }
 
@@ -163,33 +56,34 @@ func (a *app) repositoryRewrapCommand() *cobra.Command {
 		Long: `Rewrite a repository directory's manifest so this host's SUBSTRATE_CREDENTIAL_KEY
 opens it, using the user's recovery key.
 
-A repository directory copied to a host without the credential key it was
-written under refuses to import: repository.json carries the repository's
+A repository's archive copied to a host without the credential key it was
+written under refuses to restore: repository.json carries the repository's
 data-encryption key wrapped under that key. The same key sits in the changelog,
 wrapped to the user's age recipient in the recoverykey record, and this command
 opens that wrap with the recovery key (the AGE-SECRET-KEY-1... line the user
 kept), proves it opens every file under sealed/, wraps it under
 SUBSTRATE_CREDENTIAL_KEY and rewrites repository.json. Booting the server with
-the directory under its data root then imports it as usual.
+the directory in its archive then restores it as usual.
 
-It is offline: no database, no server, no HTTP. It takes the directory itself,
-which must be named by the repository's authority, as a copy of
-<root>/repositories/<authority> is. The recovery key is read from --identity-file
-or from stdin, never from an argument, and neither it nor the data-encryption
-key is printed or logged. A directory with no manifest, or whose changelog
-holds no recoverykey record, is refused: nothing is synthesized, and a refused
-rewrap leaves the directory as it was. The manifest is written under the
-changelog writer lock, so a server that has opened the repository is refused;
-stop the server either way, because one that has not opened it yet is not.
+It is offline: no database, no server, no HTTP. It takes the directory itself:
+an archive's repositories/<id>/ (an export extracted is one), or a repository
+directory from before the archive. The recovery key is read from
+--identity-file or from stdin, never from an argument, and neither it nor the
+data-encryption key is printed or logged. A directory with no manifest, or
+whose changelog holds no recoverykey record, is refused: nothing is
+synthesized, and a refused rewrap leaves the directory as it was. Nothing
+here notices a server reading the directory, so stop it first.
 
 The destination database must hold no row for the repository: the boot
-imports a directory that has no row, and a directory that has one is
-reconciled FROM the row, which writes the row's wrap back over the manifest.
-Rewrap the copy in a restore location, move it under the data root of a
-server whose database has never held this repository, then boot.
+restores an archive that has no row, and the archive of a repository that has
+one is written from the row, which writes the row's wrap back over the
+manifest. Rewrap the copy in a restore location, move it into the archive
+(SUBSTRATE_ARCHIVE, by default <data root>/archive) of a server whose database
+has never held this repository, then boot. A directory from before the archive
+goes under <data root>/repositories/ instead.
 
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/ada.example.com
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./ada.example.com --identity-file ./recovery.key`,
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/archive/repositories/<id>
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./<id> --identity-file ./recovery.key`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Every refusal that needs no secret comes first: a bad flag must
@@ -223,7 +117,7 @@ server whose database has never held this repository, then boot.
 			fmt.Fprintf(a.out, "repository %s rewrapped\n", report.Repository)
 			fmt.Fprintf(a.out, "  recovery key: recoverykey record at seq %d opened\n", report.RecoveryKeySeq)
 			fmt.Fprintf(a.out, "  sealed:      %d file(s) open under the recovered key\n", report.SealedFiles)
-			fmt.Fprintf(a.out, "  manifest:    %s rewritten under %s\n", changelogfile.ManifestName, credentialKeyEnv)
+			fmt.Fprintf(a.out, "  manifest:    rewritten under %s\n", credentialKeyEnv)
 			fmt.Fprintln(a.out, "boot the server with the directory under SUBSTRATE_DATA_ROOT to import it, then `repository verify`")
 			return nil
 		},
@@ -345,7 +239,11 @@ The authority is the repository's name, what its user signs in with and
 every other command here takes. The id is its key: the directory under
 SUBSTRATE_DATA_ROOT is named by it, and so is the webhook address the server
 gives out. created_at is the admission record, since the invite code is the
-only door and there is nothing else to record.`,
+only door and there is nothing else to record. ARCHIVED is the mark the
+server's last archive pass left: the seq its archive holds every line up to,
+and how long ago it was written ("never" before the first pass, or with the
+archive off). How far that is behind the server's own head is the
+substrate_archive_* metrics.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			db, err := a.controlPlane()
@@ -360,12 +258,19 @@ only door and there is nothing else to record.`,
 			if output == "json" {
 				out := make([]map[string]any, 0, len(rows))
 				for _, r := range rows {
-					out = append(out, map[string]any{
-						"authority": r.Authority,
-						"id":        r.ID,
-						"createdAt": r.CreatedAt.Format(time.RFC3339),
-						"dekKeyId":  r.DEKKeyID,
-					})
+					entry := map[string]any{
+						"authority":      r.Authority,
+						"id":             r.ID,
+						"createdAt":      r.CreatedAt.Format(time.RFC3339),
+						"dekKeyId":       r.DEKKeyID,
+						"archivedSeq":    r.ArchivedSeq,
+						"archiveMissing": r.ArchiveMissing,
+						"archiveStore":   r.ArchiveStore,
+					}
+					if !r.ArchivedAt.IsZero() {
+						entry["archivedAt"] = r.ArchivedAt.Format(time.RFC3339)
+					}
+					out = append(out, entry)
 				}
 				return printJSON(a.out, out)
 			}
@@ -377,10 +282,17 @@ only door and there is nothing else to record.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE")
+			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE\tARCHIVED")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
+				archived := "never"
+				if !r.ArchivedAt.IsZero() {
+					archived = fmt.Sprintf("seq %d, %s ago", r.ArchivedSeq, humanAge(a.now(), r.ArchivedAt))
+					if r.ArchiveMissing > 0 {
+						archived += fmt.Sprintf(", %d blob(s) missing", r.ArchiveMissing)
+					}
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt), archived)
 			}
 			return tw.Flush()
 		},
@@ -392,15 +304,14 @@ only door and there is nothing else to record.`,
 func (a *app) repositoryInspectCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect <repository>",
-		Short: "Show one repository: authority, both changelog heads, records, vocabulary versions",
+		Short: "Show one repository: authority, changelog head, archive mark, records, vocabulary versions",
 		Long: `Describe a repository from the outside.
 
 The changelog's head is its length — seq is per-repository, gapless and assigned at
-commit — and the records count is the fold's size. The changelog lives twice:
-the table is the live index and the segment files under SUBSTRATE_DATA_ROOT
-(<root>/repositories/<id>/changelog) are the copy a backup takes, so both heads
-are printed and a healthy repository shows the same number twice. The
-vocabulary section is what this repository's OWN changelog says its kinds are,
+commit — and the records count is the fold's size. The changelog is the table;
+its copy is the archive, written behind the commits, and the archive line is
+the mark the server's last pass left: the seq the archive holds every line up
+to. The vocabulary section is what this repository's OWN changelog says its kinds are,
 which is the only authority on the question: the embedded tree is a seed, not
 a source of truth.
 
@@ -432,8 +343,18 @@ This command only reads.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "  changelog head:  %d (%d entries, table)\n", head, entries)
-			printChangelogFiles(a.out, repo.ID)
+			fmt.Fprintf(a.out, "  changelog head:  %d (%d entries)\n", head, entries)
+			if repo.ArchivedAt.IsZero() {
+				fmt.Fprintln(a.out, "  archive:   nothing archived yet")
+			} else {
+				// The database's record of the last pass, not a read of the
+				// store: `repository verify` reads the store.
+				fmt.Fprintf(a.out, "  archive:   as last published: seq %d, %d behind the head, %d blob(s) missing, written %s ago to %s (the database's record; 'repository verify' reads the store)\n",
+					repo.ArchivedSeq, max(head-repo.ArchivedSeq, 0), repo.ArchiveMissing, humanAge(a.now(), repo.ArchivedAt), repo.ArchiveStore)
+			}
+			if err := describeArchiveRecord(cmd.Context(), a.out, scoped); err != nil {
+				return err
+			}
 			records, deleted, err := recordCounts(cmd.Context(), scoped)
 			if err != nil {
 				return err
@@ -459,59 +380,27 @@ This command only reads.`,
 	}
 }
 
-// printChangelogFiles reports the repository directory's half of the
-// changelog: the data root, the file head and the segment count. The walk is
-// read-only (changelogfile.Verify), so an inspect never repairs an incomplete tail.
-// A missing SUBSTRATE_DATA_ROOT is reported, not fatal: the table half of the
-// report stands on its own.
-func printChangelogFiles(out io.Writer, repoID string) {
-	data, err := config.LoadData()
-	if err != nil {
-		fmt.Fprintf(out, "  data root: not set (%v)\n", err)
-		return
-	}
-	fmt.Fprintf(out, "  data root: %s\n", data.Root)
-	dir, err := changelogfile.RepoDir(data.Root, repoID)
-	if err != nil {
-		fmt.Fprintf(out, "  changelog files: %v\n", err)
-		return
-	}
-	rep, err := changelogfile.Verify(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		fmt.Fprintf(out, "  changelog files: head %d in %d segment(s); DAMAGED: %v\n", rep.Head, rep.Segments, err)
-		return
-	}
-	fmt.Fprintf(out, "  changelog files: head %d (%d entries, %d segment(s))\n", rep.Head, rep.Entries, rep.Segments)
-	if rep.TruncatedBytes > 0 {
-		fmt.Fprintf(out, "  changelog files: the active segment ends in an incomplete transaction: %d bytes past the last complete one, %d complete line(s) among them (the next open cuts them)\n",
-			rep.TruncatedBytes, rep.TruncatedEntries)
-	}
-}
-
 func (a *app) repositoryRebuildCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rebuild <repository>",
 		Short: "Replay a repository's changelog into a fresh fold",
 		Long: `Clear a repository's fold and replay its whole changelog into it.
 
-The changelog is the truth and the records table is a fold of it, so this is the
-containment test made runnable. The replay reads the segment files under
-SUBSTRATE_DATA_ROOT, not the table, so a rebuild that reproduces the fold proves
-the repository directory alone can bring the repository back. Before it
-replays, the files are held to the table (equal heads, agreeing checksums on
-the common tail) and a disagreement refuses the rebuild. It holds the
+The changelog table is the truth and the records table is a fold of it, so
+this is the containment test made runnable: a rebuild that reproduces the fold
+proves the history alone can bring the repository back. It holds the
 repository's write lock for the duration and runs as ONE transaction: a rebuild
 either replaces the fold or leaves it exactly as it was. Run 'repository
 verify' first to see whether the changelog it would replay is intact.
 
-STOP THE SERVER FIRST. The rebuild opens the repository as its changelog
-writer, and a running server holds that lock; the command refuses rather than
-write beside it. 'repository inspect' and 'repository verify' run beside a
-live server; this does not.
+STOP THE SERVER FIRST. The rebuild opens the repository as its writer, and a
+running server holds its writer lease; the command refuses rather than write
+beside it. 'repository inspect' and 'repository verify' run beside a live
+server; this does not.
 
 Blobs and sealed material are SIDE STORES: their bytes were never in the changelog
-and are re-linked, not regenerated. The repository directory holds all three,
-which is why it is the backup unit.`,
+and are kept as they are, not regenerated. The archive holds all three, which
+is why it is the backup.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := a.openEngineExclusive(cmd.Context())
@@ -537,34 +426,32 @@ func (a *app) repositoryVerifyCommand() *cobra.Command {
 	var recanonicalize bool
 	cmd := &cobra.Command{
 		Use:   "verify <repository>",
-		Short: "Walk a repository's changelog files and table and check every checksum",
-		Long: `Walk a repository's changelog in both places and hold them to each other.
+		Short: "Walk a repository's changelog table and archive and check every checksum",
+		Long: `Walk a repository's changelog table and its archive and hold them to each other.
 
-The segment files under SUBSTRATE_DATA_ROOT are walked whole, each segment read
-once and several at a time: every line's checksum, every finished segment's
-sidecar digest, the seq sequence. The table is walked from seq 1 to the head in
-one read-only snapshot: the sequence must be gapless, and every entry's
-stamped checksum must equal the one the file's line carries. With
---recanonicalize every entry's checksum is also recomputed from the stored
-row and must equal the stamped one; that reads and canonicalizes every
-payload the table holds, which on a long history takes hours, and it is the
-only check that finds a row edited in place with its checksum left alone.
-Both heads must agree, and every sealed row must have its file and every
-sealed file its row.
+The table is walked from seq 1 to the head in one read-only snapshot: the
+sequence must be gapless, every transaction whole and every entry stamped with
+a checksum. With --recanonicalize every entry's checksum is also recomputed
+from the stored row and must equal the stamped one; that reads and
+canonicalizes every payload the table holds, which on a long history takes
+hours, and it is the only check that finds a row edited in place with its
+checksum left alone.
+
+The archive (SUBSTRATE_ARCHIVE) is read through its manifest: the head it names
+must be one the table holds, and every line of the pieces up to it must carry
+the table's stamped checksum. An archive behind the table is not a finding,
+because it is copied after the commits ('repository list' shows how far
+behind); one ahead of the table, or one the store cannot be read for, is.
 
 The side stores are held to the fold: every blob whose manifest says stored is
 read out of the configured blob store and hashed against its digest, and every
-secret reference a live record holds must have its sealed file. With
-SUBSTRATE_CREDENTIAL_KEY set, every sealed file is opened under the
-repository's key; without it the files are compared with the rows and nothing
-is opened. A directory that is a snapshot, or was restored from one, carries
-snapshot.json: its recorded point is printed and the entry it names must be in
-the files with the recorded checksum.
+secret reference a live record holds must have its sealed row. With
+SUBSTRATE_CREDENTIAL_KEY set, every sealed row is opened under the
+repository's key; without it nothing is opened.
 
 It never repairs or touches the repository it judges, and it runs beside a live
-server: the engine opens read-only against the data root, so an incomplete
-final transaction or a table ahead of its file is reported as a finding, never
-cut or caught up. The read-only open applies no migration either: a database
+server: the engine opens read-only, so an incomplete final transaction is
+reported as a finding, never cut. The read-only open applies no migration either: a database
 missing one this binary carries, or holding one it does not carry, is refused
 by name, so run the substratectl of the release the server runs. Against a
 server that is mid-write a finding about the heads, or about a blob the sweep
@@ -596,21 +483,32 @@ Exits nonzero when anything does not verify.`,
 				if report.Recanonicalized {
 					fmt.Fprintln(a.out, "  table:    every checksum recomputed from its stored row")
 				}
-				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
-				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files, %d held by no record\n", report.SealedRows, report.SealedFiles, report.SealedOrphans)
-				if report.SealedOpened > 0 || os.Getenv(credentialKeyEnv) != "" {
-					fmt.Fprintf(a.out, "  sealed:   %d file(s) opened under %s\n", report.SealedOpened, credentialKeyEnv)
-				} else {
-					fmt.Fprintf(a.out, "  sealed:   not opened (set %s to prove every file opens)\n", credentialKeyEnv)
+				switch {
+				case report.Archive == "":
+					fmt.Fprintln(a.out, "  archive:  none (SUBSTRATE_ARCHIVE=off)")
+				case report.ArchiveUnverified != "":
+					fmt.Fprintf(a.out, "  archive:  NOT VERIFIED in %s: %s\n", report.Archive, report.ArchiveUnverified)
+				default:
+					fmt.Fprintf(a.out, "  archive:  head %d in %d piece(s), every line held to the table, in %s\n", report.ArchiveHead, report.ArchivePieces, report.Archive)
 				}
-				fmt.Fprintf(a.out, "  secrets:  %d live reference(s) held to the sealed files\n", report.SecretRefs)
+				if report.ArchiveID != "" {
+					unaccounted := strconv.Itoa(report.ArchiveUnaccounted)
+					if report.ArchiveUnaccounted < 0 {
+						unaccounted = "an unknown number of"
+					}
+					fmt.Fprintf(a.out, "  archive:  archive %s, %s object(s) the database has no record of (nothing reads them); read now, and no proof the store hides no other manifest\n",
+						report.ArchiveID, unaccounted)
+				}
+				fmt.Fprintf(a.out, "  sealed:   %d rows, %d held by no record\n", report.SealedRows, report.SealedOrphans)
+				if report.SealedOpened > 0 || os.Getenv(credentialKeyEnv) != "" {
+					fmt.Fprintf(a.out, "  sealed:   %d row(s) opened under %s\n", report.SealedOpened, credentialKeyEnv)
+				} else {
+					fmt.Fprintf(a.out, "  sealed:   not opened (set %s to prove every row opens)\n", credentialKeyEnv)
+				}
+				fmt.Fprintf(a.out, "  secrets:  %d live reference(s) held to the sealed rows\n", report.SecretRefs)
 				fmt.Fprintf(a.out, "  blobs:    %d stored, %d bytes hashed\n", report.Blobs, report.BlobBytes)
 				if report.HeadHash != "" {
 					fmt.Fprintf(a.out, "  head checksum: %s\n", report.HeadHash)
-				}
-				if report.Snapshot != nil {
-					fmt.Fprintf(a.out, "  recovery point: seq %d, checksum %s, taken %s\n",
-						report.Snapshot.Head, report.Snapshot.HeadHash, report.Snapshot.TakenAt.Format(time.RFC3339))
 				}
 				for _, f := range report.Findings {
 					fmt.Fprintf(a.out, "  FINDING:  %s\n", f)
@@ -734,4 +632,31 @@ func groupByPackage(kinds []declaredKind) []packageGroup {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].pkg < out[j].pkg })
 	return out
+}
+
+// describeArchiveRecord prints what the database records of the
+// repository's archive (decision 0279): the archive it writes, a publication
+// about to be made, and why the passes stopped, if they did.
+func describeArchiveRecord(ctx context.Context, w io.Writer, scoped *sql.DB) error {
+	var archive string
+	var pending []byte
+	var stopped, take sql.NullString
+	err := scoped.QueryRowContext(ctx, `SELECT archive, pending, stopped, take FROM archive_records`).Scan(&archive, &pending, &stopped, &take)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "  archive id: %s\n", archive)
+	if pending != nil {
+		fmt.Fprintln(w, "  archive:   one manifest about to be published; the next pass puts it again")
+	}
+	if stopped.Valid {
+		fmt.Fprintf(w, "  archive:   STOPPED, writing nothing until resolved ('archive report', 'archive resolve'): %s\n", stopped.String)
+	}
+	if take.Valid {
+		fmt.Fprintf(w, "  archive:   the next boot replaces the repository by %s, as its operator chose\n", take.String)
+	}
+	return nil
 }

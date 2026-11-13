@@ -1166,7 +1166,6 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 				return false, err
 			}
-			t.mirrorSealedDelete(old)
 		}
 	}
 

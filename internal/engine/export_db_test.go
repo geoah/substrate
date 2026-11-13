@@ -1,9 +1,10 @@
 package engine_test
 
-// The owner's recovery export over the API: the archive a running service
-// streams is a data root a fresh server imports, it records the point it
+// The owner's recovery export over the API: the repository's archive as one
+// file (decision 0278). A running service streams it, a fresh server restores
+// it from an archive it is extracted into, its manifest records the point it
 // holds, the point is pinned while writes go on, and the blob bytes come out
-// of the repository directory with it.
+// with it.
 
 import (
 	"archive/tar"
@@ -16,10 +17,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,11 +76,12 @@ func tarNames(t *testing.T, archive []byte) []string {
 	}
 }
 
-// extractExport unpacks the archive under root the way `tar -x -C root`
-// would, holding every entry to repositories/ and to the mode the header
-// carries.
+// extractExport unpacks the archive into the archive a server under root
+// reads (<root>/archive), the way `tar -x -C <root>/archive` would, holding
+// every entry to repositories/ and to the mode the header carries.
 func extractExport(t *testing.T, root string, archive []byte) {
 	t.Helper()
+	root = filepath.Join(root, "archive")
 	tr := tar.NewReader(bytes.NewReader(archive))
 	for {
 		h, err := tr.Next()
@@ -103,6 +105,9 @@ func extractExport(t *testing.T, root string, archive []byte) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(target, data, os.FileMode(h.Mode)); err != nil {
 				t.Fatal(err)
 			}
@@ -113,9 +118,9 @@ func extractExport(t *testing.T, root string, archive []byte) {
 }
 
 // exportToRoot pins and streams an export through the seam and extracts it
-// under a fresh data root, returning the root, the pinned point and the
-// snapshot the archive recorded.
-func exportToRoot(t *testing.T, ds substrate.Dataset) (string, substrate.ExportPoint, changelogfile.Snapshot) {
+// into the archive of a fresh data root, returning the root, the pinned point
+// and the manifest the archive carries.
+func exportToRoot(t *testing.T, ds substrate.Dataset) (string, substrate.ExportPoint, changelogfile.Manifest) {
 	t.Helper()
 	ex, err := ds.Export(context.Background())
 	if err != nil {
@@ -127,29 +132,28 @@ func exportToRoot(t *testing.T, ds substrate.Dataset) (string, substrate.ExportP
 	}
 	root := t.TempDir()
 	extractExport(t, root, buf.Bytes())
-	dir, err := changelogfile.RepoDir(root, ds.Repository().ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snap, err := changelogfile.ReadSnapshot(dir)
-	if err != nil {
-		t.Fatalf("the archive carries no readable %s: %v", changelogfile.SnapshotName, err)
-	}
-	return root, ex.Point(), snap
+	return root, ex.Point(), exportManifest(t, root, ds.Repository().ID)
 }
 
-// A repository exported from a running service over its API, with several
-// finished segments, an active one, a sealed secret and a blob, is a data root
-// a fresh server imports: the fold, the blob, the secret and the token come
-// back, verify passes with the key and reports the recorded point, and the
-// restored repository writes on past it without a finding. The archive holds
-// the manifest with its host-wrapped DEK (the same-key restore needs nothing
-// else) and nothing the fold does not need.
+// exportManifest reads the manifest of an export extracted under root.
+func exportManifest(t *testing.T, root, id string) changelogfile.Manifest {
+	t.Helper()
+	m, _, err := changelogfile.ReadArchiveManifestDir(filepath.Join(root, "archive", changelogfile.RepositoriesDir, id))
+	if err != nil {
+		t.Fatalf("the export carries no manifest: %v", err)
+	}
+	return m
+}
+
+// A repository exported from a running service over its API, its history in
+// several pieces, with a sealed secret and a blob, is an archive a fresh
+// server restores: the fold, the blob, the secret and the token come back,
+// verify passes with the key, and the restored repository writes on past the
+// point. The manifest is the last entry, so an export cut short is none.
 func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	t.Parallel()
-	// Small segments, so the archive carries finished segments with their
-	// sidecars and an active one cut at the point.
-	svc, dsn := newService(t, engine.WithChangelogSegmentBytes(8<<10))
+	// Small pieces, so the export carries several.
+	svc, dsn := newService(t, engine.WithArchivePieceBytes(8<<10))
 	ctx := context.Background()
 	_, token, secret := registerUser(t, svc, "ada.example.com")
 	ds, err := svc.Dataset(ctx, "ada.example.com")
@@ -178,61 +182,48 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 		t.Fatalf("status %d, Content-Type %q, body %s", resp.status, resp.header.Get("Content-Type"), archive[:min(len(archive), 200)])
 	}
 	_, params, err := mime.ParseMediaType(resp.header.Get("Content-Disposition"))
-	// The download is named after the repository's name, the archive's
-	// directory after its id.
 	if err != nil || params["filename"] != "ada.example.com-"+strconv.FormatInt(head, 10)+".tar" {
 		t.Fatalf("Content-Disposition = %q, want ada.example.com-%d.tar", resp.header.Get("Content-Disposition"), head)
 	}
 
 	names := tarNames(t, archive)
-	root := changelogfile.RepositoriesDir + "/" + id + "/"
-	var segments, sidecars int
-	seen := map[string]bool{}
+	last := names[len(names)-1]
+	lastKey, ok := changelogfile.ParseArchiveKey(last)
+	if _, _, isManifest := changelogfile.ParseArchiveManifestName(lastKey.Name); !ok || !lastKey.Manifests || !isManifest || lastKey.Repository != id {
+		t.Fatalf("the last entry is %s, want the manifest", last)
+	}
+	root := changelogfile.ArchivePrefix(id, lastKey.Archive)
+	pieces, blob := 0, false
 	for _, name := range names {
-		seen[name] = true
-		switch {
-		case strings.HasSuffix(name, ".ndjson"):
-			segments++
-		case strings.HasSuffix(name, ".sha256"):
-			sidecars++
-		case strings.Contains(name, changelogfile.LockFileName) || strings.HasSuffix(name, ".pending"):
-			t.Fatalf("the archive carries %s, which is not a file of the repository", name)
+		k, ok := changelogfile.ParseArchiveKey(name)
+		if !ok || k.Manifests {
+			continue
+		}
+		if k.Archive != lastKey.Archive {
+			t.Fatalf("the export holds %s, of another archive than its manifest's", name)
+		}
+		if _, _, _, _, ok := changelogfile.ParsePieceObjectName(k.Name); ok {
+			pieces++
+		}
+		if d, _, ok := changelogfile.ParseBlobObjectName(k.Name); ok && d == digest {
+			blob = true
 		}
 	}
-	if segments < 2 || sidecars != segments-1 {
-		t.Fatalf("%d segments and %d sidecars: want several finished segments and one active one\n%s", segments, sidecars, strings.Join(names, "\n"))
+	if pieces < 2 {
+		t.Fatalf("%d pieces: want several\n%s", pieces, strings.Join(names, "\n"))
 	}
-	for _, want := range []string{root + changelogfile.ManifestName, root + "blobs/" + digest, root + "sealed/" + changelogfile.SealedFileName(ref)} {
-		if !seen[want] {
-			t.Fatalf("the archive lacks %s:\n%s", want, strings.Join(names, "\n"))
-		}
+	if !blob {
+		t.Fatalf("the archive lacks the blob %s:\n%s", digest, strings.Join(names, "\n"))
 	}
-	if last := names[len(names)-1]; last != root+changelogfile.SnapshotName {
-		t.Fatalf("the last entry is %s, want %s", last, changelogfile.SnapshotName)
+	version := root + "sealed/" + strings.TrimSuffix(changelogfile.SealedFileName(ref), ".json") + "."
+	if !slices.ContainsFunc(names, func(name string) bool { return strings.HasPrefix(name, version) }) {
+		t.Fatalf("the archive holds no version of the sealed value %s:\n%s", ref, strings.Join(names, "\n"))
 	}
 
 	root2 := t.TempDir()
 	extractExport(t, root2, archive)
-	dir2, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snap, err := changelogfile.ReadSnapshot(dir2)
-	if err != nil {
-		t.Fatalf("the archive carries no readable %s: %v", changelogfile.SnapshotName, err)
-	}
-	if snap.Head != head || snap.BlobStore != "fs" || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
-		t.Fatalf("snapshot = %+v, want head %d with the one blob %s under fs", snap, head, digest)
-	}
-	m, err := changelogfile.ReadManifest(dir2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(m.DEK) == 0 {
-		t.Fatalf("the exported manifest lost its wrapped DEK: %+v", m)
-	}
-	if info, err := os.Stat(dir2); err != nil || info.Mode().Perm() != 0o700 {
-		t.Fatalf("the extracted directory is %v, want 0700", info.Mode())
+	if m := exportManifest(t, root2, id); m.Head != head || len(m.DEK) == 0 {
+		t.Fatalf("the exported manifest: %+v, want head %d and the wrapped DEK", m, head)
 	}
 
 	// The restore: an empty database, the same host key.
@@ -254,19 +245,20 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
 		t.Fatalf("the token does not open the restored repository: %v (%+v)", err, info)
 	}
+	// The restore started a new archive; its first pass publishes it.
+	if err := engine.ArchivePass(ctx, ds2); err != nil {
+		t.Fatalf("the restored repository's first pass: %v", err)
+	}
 	verified := mustVerify(t, svc2, "ada.example.com")
-	if !verified.OK || verified.Head != head || verified.FileHead != head {
+	if !verified.OK || verified.Head != head || verified.ArchiveHead != head {
 		t.Fatalf("the restored repository does not verify: %+v", verified)
 	}
-	if verified.Snapshot == nil || verified.Snapshot.Head != head || verified.Snapshot.HeadHash != verified.HeadHash {
-		t.Fatalf("verify did not report the recorded point: %+v (head checksum %s)", verified.Snapshot, verified.HeadHash)
-	}
-	if verified.SealedOpened != verified.SealedFiles || verified.SealedOpened == 0 || verified.Blobs != 1 {
-		t.Fatalf("verify opened %d of %d sealed files and hashed %d blobs", verified.SealedOpened, verified.SealedFiles, verified.Blobs)
+	if verified.SealedOpened != verified.SealedRows || verified.SealedOpened == 0 || verified.Blobs != 1 {
+		t.Fatalf("verify opened %d of %d sealed rows and hashed %d blobs", verified.SealedOpened, verified.SealedRows, verified.Blobs)
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after the restore"}})
-	if grown := mustVerify(t, svc2, "ada.example.com"); !grown.OK || grown.Head != head+1 || grown.Snapshot == nil || grown.Snapshot.Head != head {
-		t.Fatalf("a write past the recorded point must not be a finding: %+v", grown)
+	if grown := mustVerify(t, svc2, "ada.example.com"); !grown.OK || grown.Head != head+1 {
+		t.Fatalf("a write past the restored point must not be a finding: %+v", grown)
 	}
 
 	// A read-only process is not the writer and cannot pin a point; the
@@ -301,13 +293,11 @@ func (g *gatedWriter) Write(p []byte) (int, error) {
 // The export pins its point and streams afterwards: writes committed between
 // Export and WriteTo, and writes committed while WriteTo is blocked on its
 // first byte (so the stream is provably in progress), are not in the archive,
-// and the archive's changelog ends at exactly the pinned head, with the
-// active segment cut there even though the live one has rolled since. A
-// fresh server imports it and verifies at that head, and the record written
-// after the pin is not in the restored fold.
+// whose history ends at exactly the pinned head. A fresh server restores it
+// at that head, and the record written after the pin is not in its fold.
 func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	t.Parallel()
-	svc, _ := newService(t, engine.WithChangelogSegmentBytes(4<<10))
+	svc, _ := newService(t)
 	ctx := context.Background()
 	registerUser(t, svc, "ada.example.com")
 	ds, err := svc.Dataset(ctx, "ada.example.com")
@@ -320,11 +310,6 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	}
 	head := maxSeq(t, ds)
 	id := repositoryIDOf(t, ds)
-	dir := repoDirOf(t, svc, ds)
-	segmentsAtPin, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ex, err := ds.Export(ctx)
 	if err != nil {
@@ -338,7 +323,6 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	if _, err := ds.Export(ctx); !errors.Is(err, engine.ErrExportInProgress) || !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("a second export must be refused as a conflict, got %v", err)
 	}
-	// Between the pin and the stream.
 	between := mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "between pin and stream"}})
 
 	gw := &gatedWriter{blocked: make(chan struct{}), gate: make(chan struct{})}
@@ -352,17 +336,8 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("WriteTo never wrote its first byte")
 	}
-	// During the stream: enough writes to roll the 4 KiB active segment, so
-	// the live directory no longer looks like the pinned one.
 	for i := range 12 {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "during the stream " + strconv.Itoa(i)}})
-	}
-	segmentsNow, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(segmentsNow) <= len(segmentsAtPin) {
-		t.Fatalf("the writes during the stream did not roll a segment (%d before, %d now); the test proves less than it should", len(segmentsAtPin), len(segmentsNow))
 	}
 	close(gw.gate)
 	select {
@@ -384,25 +359,12 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 
 	root2 := t.TempDir()
 	extractExport(t, root2, gw.buf.Bytes())
-	dir2, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
+	if m := exportManifest(t, root2, id); m.Head != head {
+		t.Fatalf("the archive's head = %d, want the pinned head %d", m.Head, head)
 	}
-	snap, err := changelogfile.ReadSnapshot(dir2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := changelogfile.Verify(changelogfile.ChangelogDir(dir2))
-	if err != nil || snap.Head != head || files.Head != head || files.TruncatedBytes != 0 {
-		t.Fatalf("the archive ends at %d with %d uncommitted bytes (%v) and records %d, want the pinned head %d", files.Head, files.TruncatedBytes, err, snap.Head, head)
-	}
-	if files.Segments != len(segmentsAtPin) {
-		t.Fatalf("the archive holds %d segments, the directory held %d at the pin", files.Segments, len(segmentsAtPin))
-	}
-
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	verified := mustVerify(t, svc2, "ada.example.com")
-	if !verified.OK || verified.Head != head || verified.Snapshot == nil || verified.Snapshot.Head != head {
+	if !verified.OK || verified.Head != head {
 		t.Fatalf("the restored repository does not verify at the pinned point: %+v", verified)
 	}
 	ds2, err := svc2.Dataset(ctx, "ada.example.com")
@@ -411,213 +373,6 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 	}
 	if _, err := ds2.Get(ctx, taskKind, between.ID); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the record written after the pin is in the archive: %v", err)
-	}
-}
-
-// The pin takes its pool connection before the writer mutex. Every write
-// holds a connection from its start to the commit that runs under the mutex,
-// and the writes behind it wait on the changelog advisory lock inside their
-// own transactions, connections held. Here one write is held at its commit
-// under the mutex, seven more hold the pool's other connections behind the
-// advisory lock and a ninth waits on the pool itself; an export started then
-// queues on the pool, completes once the held write is released, and every
-// write lands. An export that took the mutex first and asked the pool under
-// it would hand the held write's connection to the ninth writer and wait for
-// one no writer could release.
-func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
-	t.Parallel()
-	// The gate: once armed, the first write to reach its commit blocks there
-	// under writerMu until released; every other call passes.
-	var armed, gated atomic.Bool
-	atCommit := make(chan struct{})
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	// The gated write holds writerMu, and the service Close this test's
-	// cleanup runs waits for every write to finish. So a t.Fatal anywhere
-	// below — every one of them is before the close(release) further down —
-	// would hand a blocked write to Close and hang the WHOLE PACKAGE to its
-	// timeout, turning one test's failure into a 30-minute suite panic that
-	// names the wrong thing. Goexit runs this defer before that cleanup.
-	releaseGate := func() { releaseOnce.Do(func() { close(release) }) }
-	defer releaseGate()
-	_, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(func(stage string) error {
-		if stage == engine.CommitAfterPrepare && armed.Load() && gated.CompareAndSwap(false, true) {
-			close(atCommit)
-			<-release
-		}
-		return nil
-	}))
-	head := maxSeq(t, ds)
-	poolMax := engine.PoolStats(ds).MaxOpenConnections
-	const writers = 9
-	if poolMax >= writers {
-		t.Fatalf("the pool allows %d connections; the test needs fewer than %d writers to fill it", poolMax, writers)
-	}
-
-	// Every writer and the export run under ctx, so a lock that is never
-	// released fails the test naming what waited on it instead of running the
-	// package to its timeout. The test's own waits end at deadline, before
-	// ctx, so a failure reports the state before the writers' cancellation
-	// unwinds it, and the deferred cancel ends ctx on the way out. A write's
-	// commit phase is past its context (dataset.go beginWrite): the deferred
-	// gate release frees the held write, and a write waiting on writerMu goes
-	// on once the holder does.
-	const budget = 60 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
-	defer cancel()
-	deadline := time.Now().Add(budget - 5*time.Second)
-
-	// The barrier holds the changelog lock from a session outside the pool
-	// until every writer is past inTx's door, which reads the directory's
-	// latch under writerMu. Without it, a writer that reached the door after
-	// the first write took writerMu at its commit waited there with no
-	// connection, the pool never gained a waiter, and the test failed on its
-	// own setup (#529).
-	raw := rawDB(t, dsn)
-	key := engine.ChangelogLockKey(ds)
-	barrier, err := raw.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = barrier.Rollback() }()
-	if _, err := barrier.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+engine.AdvisoryKeySQL+`)`, key); err != nil {
-		t.Fatalf("take the changelog lock: %v", err)
-	}
-	// parked counts the sessions waiting on the changelog lock. Its context
-	// is its own, so the count still reads in a message written at the
-	// deadline.
-	parked := func() int {
-		qctx, qcancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer qcancel()
-		var n int
-		if err := raw.QueryRowContext(qctx, `
-			SELECT count(*) FROM pg_locks
-			WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
-			  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
-			  AND classid::bigint = ((`+engine.AdvisoryKeySQL+` >> 32) & 4294967295)
-			  AND objid::bigint = (`+engine.AdvisoryKeySQL+` & 4294967295)`, key).Scan(&n); err != nil {
-			t.Fatalf("count the sessions parked on the changelog lock: %v", err)
-		}
-		return n
-	}
-
-	type written struct {
-		writer int
-		err    error
-	}
-	results := make(chan written, writers)
-	waitsBefore := engine.PoolStats(ds).WaitCount
-	for i := range writers {
-		go func() {
-			_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "writer " + strconv.Itoa(i)}})
-			results <- written{writer: i, err: err}
-		}()
-	}
-	// Until the gate opens no writer can return: one that did failed, or its
-	// commit was not the one the gate held.
-	noneReturned := func(phase string) {
-		select {
-		case r := <-results:
-			t.Fatalf("writer %d returned %s: %v (pool %+v)", r.writer, phase, r.err, engine.PoolStats(ds))
-		default:
-		}
-	}
-	waitFor := func(what string, until time.Time, cond func() bool) {
-		for !cond() {
-			if time.Now().After(until) {
-				t.Fatalf("%s did not happen in time: pool %+v, %d sessions parked on the changelog lock", what, engine.PoolStats(ds), parked())
-			}
-			noneReturned("while waiting for " + what)
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	waitFor("eight writers to park on the changelog lock and the ninth to wait on the pool", deadline, func() bool {
-		s := engine.PoolStats(ds)
-		return s.InUse == poolMax && s.WaitCount > waitsBefore && parked() == poolMax
-	})
-
-	armed.Store(true)
-	if err := barrier.Rollback(); err != nil {
-		t.Fatalf("release the changelog lock: %v", err)
-	}
-	select {
-	case <-atCommit:
-	case r := <-results:
-		t.Fatalf("writer %d returned before any write reached its commit: %v", r.writer, r.err)
-	case <-time.After(time.Until(deadline)):
-		t.Fatalf("no write reached its commit: pool %+v, %d sessions parked on the changelog lock", engine.PoolStats(ds), parked())
-	}
-	// The held write has writerMu and one connection, seven writers hold the
-	// others behind its changelog lock, and the ninth, with none left, waits
-	// on the pool.
-	if s, n := engine.PoolStats(ds), parked(); s.InUse != poolMax || n != poolMax-1 {
-		t.Fatalf("with one write held at its commit: pool %+v and %d sessions parked on the changelog lock, want %d in use and %d parked", s, n, poolMax, poolMax-1)
-	}
-
-	type pinned struct {
-		ex  substrate.Export
-		err error
-	}
-	result := make(chan pinned, 1)
-	waitsBeforeExport := engine.PoolStats(ds).WaitCount
-	go func() {
-		ex, err := ds.Export(ctx)
-		result <- pinned{ex, err}
-	}()
-	// The export queues on the pool behind the ninth writer, which moves the
-	// pool's wait count. One that took writerMu first waits on the mutex
-	// instead, and the count stands still. The wait ends well inside the
-	// commit budget: past it the held write's transaction is rolled back,
-	// its connection goes to the ninth writer, and the state this test
-	// builds is gone.
-	waitFor("the export to queue on the full pool", time.Now().Add(engine.CommitBudget/2), func() bool {
-		select {
-		case r := <-result:
-			t.Fatalf("the export returned before it queued on the pool: %v", r.err)
-		default:
-		}
-		return engine.PoolStats(ds).WaitCount > waitsBeforeExport
-	})
-	// Only now is the held write released, so the export never had a
-	// connection to itself.
-	releaseGate()
-	var ex substrate.Export
-	select {
-	case r := <-result:
-		if r.err != nil {
-			t.Fatalf("export: %v", r.err)
-		}
-		ex = r.ex
-	case <-time.After(time.Until(deadline)):
-		t.Fatalf("the export did not pin its point with the pool full: %+v", engine.PoolStats(ds))
-	}
-	if p := ex.Point(); p.Head < head+1 {
-		t.Fatalf("pinned head = %d, want at least the released write past %d", p.Head, head)
-	}
-	if _, err := ex.WriteTo(io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	finished := make([]bool, writers)
-	timeout := time.After(time.Until(deadline))
-	for range writers {
-		select {
-		case r := <-results:
-			if r.err != nil {
-				t.Fatalf("writer %d failed: %v", r.writer, r.err)
-			}
-			finished[r.writer] = true
-		case <-timeout:
-			var blocked []int
-			for i, done := range finished {
-				if !done {
-					blocked = append(blocked, i)
-				}
-			}
-			t.Fatalf("writers %v never finished: pool %+v, %d sessions parked on the changelog lock", blocked, engine.PoolStats(ds), parked())
-		}
-	}
-	if got := maxSeq(t, ds); got != head+writers {
-		t.Fatalf("head = %d after %d writes from %d", got, writers, head)
 	}
 }
 
@@ -671,16 +426,14 @@ func TestExportHoldsListedBlobsAgainstCollection(t *testing.T) {
 	}
 	root := t.TempDir()
 	extractExport(t, root, buf.Bytes())
-	dir, err := changelogfile.RepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
+	if m := exportManifest(t, root, id); m.Head != head {
+		t.Fatalf("the archive's head = %d, want %d", m.Head, head)
 	}
-	snap, err := changelogfile.ReadSnapshot(dir)
-	if err != nil {
-		t.Fatalf("the archive carries no readable %s: %v", changelogfile.SnapshotName, err)
-	}
-	if snap.Head != head || len(snap.Blobs) != 1 || snap.Blobs[0] != digest {
-		t.Fatalf("snapshot = %+v, want head %d with the blob %s", snap, head, digest)
+	repoDir := filepath.Join(root, "archive", changelogfile.RepositoriesDir, id)
+	m := exportManifest(t, root, id)
+	blobs, err := filepath.Glob(filepath.Join(repoDir, m.Archive, changelogfile.BlobsSubdir, digest+".*"))
+	if err != nil || len(blobs) != 1 {
+		t.Fatalf("the archive lacks the listed blob's bytes: %v (%v)", blobs, err)
 	}
 
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root)

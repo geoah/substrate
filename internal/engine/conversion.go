@@ -13,35 +13,61 @@ package engine
 //
 // WHAT A STEP IS HANDED: one history line, which it rewrites in place. The
 // runner re-encodes the line and recomputes its checksum; the step may not
-// move the line's seq or txn. Nothing else, so a step reads the same however
-// the history is stored: in the segment files and the table today, in
-// Postgres with the files an archive after the history moves (the plan's
-// step 7), where only this runner changes.
+// move the line's seq or txn. A step that needs nothing else declares Line
+// alone. One that reads differently in each repository (a kind is the
+// repository's own only under its own authority) declares ForRepository
+// instead, which the runner calls once per repository it converts, with
+// the repository, and which returns that repository's Line and, where the
+// step renames what rows outside history name too (a sealed row binds its
+// record's kind; a vector is kept by its record's kind and id), a Carry
+// that rewrites those rows in the same transaction as the lines. A step that
+// must know the repository's own vocabulary to read a line (which positions
+// of a value are references: a stored reference is `{"ref": ...}` with no
+// marker, byte for byte a person's own JSON) asks the repository for its
+// Declarations: every version of every declaration its history holds, in
+// the dialect the step sees its lines in.
 //
-// WHAT RUNS IT: the boot check (repodir.go reconcileDir), on a repository
-// whose table and files agree, and on an import between inserting the
-// directory's rows and folding them. In order:
+// A LINE IS CONVERTED ONCE BY EACH STEP, in that step's walk over the table:
+// a step's Line sees every line exactly once, in seq order, as the steps
+// below it left it, and nothing else calls it. Its Declarations are read
+// from the table those walks wrote, never by running a step's Line again. No
+// copy of the history is ever held to the table across a conversion
+// (decision 0279): whether an archive is this database's is decided by what
+// the database recorded of it, and a directory a release before the archive
+// wrote is compared, line for line, before its history is converted. So a
+// step's Line may lean on what the repository hands it, Declarations
+// included, and a Carry may count on what its Line saw.
 //
-//  1. Every line is converted into `changelog.converting-<dialect>` beside the
-//     live directory (changelogfile.ConvertingDir).
-//  2. One transaction rewrites every table row whose line changed, raises the
-//     stamp to the last step's dialect and sets the import-progress marker,
-//     because the fold was folded from the old lines.
-//  3. The converted directory replaces the live one
-//     (changelogfile.SwapConverted).
-//  4. The fold is rebuilt from the converted files, which clears the marker,
-//     and the manifest is written with the new dialect.
+// WHERE IT RUNS: on the changelog table, which is the history (decision
+// 0262). The boot check runs it on a repository the table holds below this
+// binary's dialect, and on an import after the source's sealed rows and lines
+// went in and before they fold. ONE TRANSACTION, under the
+// changelog lock, walks the table once for each step, in step order,
+// rewriting every row whose line the step changed, then runs every step's
+// Carry in order, raises the stamp to the last step's dialect and sets the
+// import-progress marker, because the fold was folded from the old lines;
+// the fold is then rebuilt from the table, which clears the marker. A crash
+// before the commit leaves the history and every carried row as they were,
+// and the next boot converts them again; one after leaves the marker, and
+// the next boot rebuilds the fold before any open. Nothing unseals or folds
+// between the lines and the carry. The archive follows on its own: its pieces are kept under
+// their dialect, and the next pass writes the converted history beside the
+// old and moves its manifest to it (archive.go).
 //
-// A CRASH ANYWHERE IS FINISHED BY THE NEXT BOOT (finishConversion): a
-// conversion directory over a table still below its dialect is discarded and
-// the conversion runs again; one over a converted table is swapped in; the
-// marker then has the fold rebuilt before any open. A copy of the directory
-// restored into another database meets a table that took nothing, so it
-// keeps its unconverted lines, moved back where the swap had moved them away:
-// the history is never left in neither place. A step is IDEMPOTENT, a
-// line already in its dialect coming back unchanged, because the manifest is
-// rewritten after the swap and a copy taken in between names the old dialect
-// over converted lines.
+// A step is IDEMPOTENT, a line already in its dialect coming back unchanged,
+// because an archive restored from before a conversion names its dialect in
+// its manifest and its lines are converted again as they are imported.
+//
+// WHO CLAIMS THE DIALECT. The stamp says which dialect a history's lines are
+// in, and an unclaimed one (no row) holds dialect 1, the history from before
+// the stamp. A history below the chain's dialect is claimed by its
+// conversion, at the boot check, whether or not a step changed a line: the
+// runner's transaction raises the stamp, so a history converts once and an
+// open finds nothing pending. An empty history, which the runner skips, is
+// claimed by its first append (changelogdialect.go stampChangelogDialect), as
+// a new repository's is. An open claims nothing. So with any number of steps
+// a repository stands at the chain's dialect from its first boot under the
+// binary or from its creation, and the archive's next manifest says so.
 //
 // A CONVERSION IS NOT A REPOSITORY MIGRATION (repomigrate.go, decision 0099).
 // A migration changes what records HOLD, within the current shapes, by
@@ -56,16 +82,19 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// conversionStep is one step of the chain.
+// conversionStep is one step of the chain. It declares Line or
+// ForRepository, never both.
 type conversionStep struct {
 	// Dialect is the changelog dialect the step converts a history TO. The
 	// first step is 2, and each next one the one after.
@@ -73,9 +102,81 @@ type conversionStep struct {
 	// Name says what the step changes, in snake case, and is the suffix of
 	// the step's file, `conversion_NNNN_<name>.go`.
 	Name string
-	// Line rewrites one history line in place. It is called for every line,
-	// in seq order, and must leave a line already in its dialect unchanged.
+	// Line rewrites one history line in place. It is called once for every
+	// line, in seq order, in the step's own walk over the table, and must
+	// leave a line already in its dialect unchanged.
 	Line func(e *changelogfile.Entry) error
+	// ForRepository is called once for each repository the step converts,
+	// before its first line, and returns what the step does in that
+	// repository. An error refuses the conversion, and so the boot.
+	ForRepository func(r conversionRepository) (conversionPass, error)
+}
+
+// conversionRepository is the repository a step converts.
+type conversionRepository struct {
+	// ID is the repository's id (decision 0261); Authority its name, the
+	// authority its own kinds are declared under.
+	ID        string
+	Authority string
+	// Reseal opens a sealed payload bound to the record it was sealed for
+	// and seals it again bound to another (decision 0023), under the
+	// repository's data key, for a Carry that moves a sealed row to the
+	// kind or id its lines now name. The data key never leaves the runner.
+	Reseal func(payload []byte, ref, fromKind, fromID, toKind, toID string) ([]byte, error)
+	// Declarations is every version of the repository's own vocabulary its
+	// history holds: each write, tombstone and purge of a record of a
+	// declaration kind (core/kind, core/trait, core/package and the rest of
+	// vocabularyRecordKinds), in seq order, each the record as it stood after
+	// that line. The lines are the history being converted, the table, read
+	// through its kind index, so a step never reads every line twice for
+	// them, and an import's are there before its fold is. They are in the
+	// dialect this step sees its lines in: the steps below this one have
+	// walked the table and rewritten them there before this step is built,
+	// and no step's Line is run again to make them. A step converts a line from the
+	// versions at or below the line's transaction (Seq <= Txn), the
+	// declarations in force when it was written, and never from a later
+	// one, so the line converts the same in every copy that holds the
+	// history up to it (decision 0279). The runner builds them at the step's
+	// first call, once per step and conversion; a step that never calls it
+	// costs nothing.
+	Declarations func() ([]declarationVersion, error)
+}
+
+// declarationVersion is one version of one declaration record, as a
+// conversion step's Declarations hands it.
+type declarationVersion struct {
+	// Seq is the line that wrote this version.
+	Seq int64
+	// Ref is the declaration's record kind (kindKind, kindTrait, ...), ID
+	// its record id: the declared kind's, trait's or package's reference.
+	Ref, ID string
+	// Deleted is a tombstone or a purge: the declaration is gone from here
+	// on, and the rest is empty.
+	Deleted bool
+	// Properties is the record's properties after the line, whole.
+	Properties map[string]any
+	// Document is Properties as the vocabulary reads a stored declaration
+	// (rowDocument), and Unread why it could not, for a version an older
+	// release wrote in a shape this binary no longer reads: a step reads
+	// what it needs from Properties then, rather than refuse the history.
+	Document vocabulary.Document
+	Unread   error
+}
+
+// conversionPass is what one step does in one repository.
+type conversionPass struct {
+	// Line is the step's Line for this repository: every line once, in seq
+	// order, in the step's own walk, and a line already in the step's
+	// dialect left unchanged.
+	Line func(e *changelogfile.Entry) error
+	// Carry, when set, runs after every step has walked every line of the
+	// history, in the same transaction, in step order:
+	// it rewrites the rows outside history that name what the lines renamed
+	// (the sealed table, the vectors in `embeddings`), through tx, which is
+	// scoped to the repository. It is not handed lines, and it must leave a
+	// row already in the step's dialect unchanged, because an import loads
+	// rows from an archive of any dialect.
+	Carry func(ctx context.Context, tx *sql.Tx) error
 }
 
 // conversionSteps is every step this binary carries, in order. A new one
@@ -84,13 +185,12 @@ type conversionStep struct {
 // import; the step's own test says what the lines become).
 var conversionSteps = []conversionStep{}
 
-// The conversion's durable steps, as the import's test seam names them
-// (testImportFault): a crash after each leaves a state the next boot
-// finishes.
+// The conversion's steps, as the import's test seam names them
+// (testImportFault): every line and carried row rewritten and nothing
+// committed; and the table took them, the fold not rebuilt yet.
 const (
-	conversionAfterStaging = "after the converted changelog was written beside the live one"
+	conversionBeforeCommit = "after the lines and the carried rows were rewritten, before the commit"
 	conversionAfterCommit  = "after the table took the converted lines"
-	conversionAfterSwap    = "after the converted changelog replaced the live one"
 )
 
 // ErrConversionPending is the refusal a repository whose history is in an
@@ -111,8 +211,8 @@ func checkConversionSteps(steps []conversionStep) error {
 			errs = append(errs, fmt.Errorf("step %d has an empty or repeated name %q", i, s.Name))
 		}
 		names[s.Name] = true
-		if s.Line == nil {
-			errs = append(errs, fmt.Errorf("step %d (%s) has no Line", i, s.Name))
+		if (s.Line == nil) == (s.ForRepository == nil) {
+			errs = append(errs, fmt.Errorf("step %d (%s) declares Line or ForRepository, and exactly one of them", i, s.Name))
 		}
 	}
 	return errors.Join(errs...)
@@ -150,194 +250,121 @@ func conversionNames(steps []conversionStep) string {
 // refusePendingConversion is the open's half: the boot check converts every
 // repository it reconciles, so a pending step here is a process that does
 // not run the check (a read-only one) or a history it never reached.
-func (ds *dataset) refusePendingConversion(ctx context.Context, stored int) error {
-	pending := pendingConversions(ds.svc.conversion, stored)
-	if len(pending) == 0 {
-		return nil
-	}
-	head, err := tableChangelogHead(ctx, ds.db)
-	if err != nil || head == 0 {
-		return err
-	}
-	return fmt.Errorf("%w: repository %s stores dialect %d and this binary converts it through %s at its boot check; restart a server that writes",
-		ErrConversionPending, ds.info.ID, stored, conversionNames(pending))
+
+// convertTable converts the repository's history in the table into this
+// binary's dialect, as the header says, and reports whether it converted. The
+// caller rebuilds the fold (the marker it set says so).
+func (ds *dataset) convertTable(ctx context.Context) (bool, error) {
+	return ds.convertTableTo(ctx, 0)
 }
 
-// finishConversion finishes what a conversion cut short left in the
-// repository directory, before the boot check compares the files with the
-// table (changelogfile.SettleConversion): a conversion directory over a table
-// that took its lines is swapped in, and one over a table that did not (a
-// crash before the commit, or a copy of the directory restored into another
-// database) is discarded, with the live changelog moved back where the swap
-// had moved it away, so the conversion runs again.
-func (ds *dataset) finishConversion(ctx context.Context) error {
-	dialects, err := changelogfile.Converting(ds.dir)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(changelogfile.PreviousDir(ds.dir)); len(dialects) == 0 && errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+// convertTableTo is convertTable stopped at dialect to, 0 for no stop: an
+// import that meets a source in a later dialect than the table's converts the
+// table to the source's and no further, so the source's lines go in beside
+// lines of their own dialect and are converted with them after.
+func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 	stored, err := readChangelogDialect(ctx, ds.db)
 	if err != nil {
-		return err
-	}
-	ds.svc.log.Warn("substrate: settling an interrupted conversion of the changelog",
-		"repository", ds.scope.Repository, "stored", stored, "converting", dialects)
-	if err := changelogfile.SettleConversion(ds.dir, func(d int) bool { return stored >= d }); err != nil {
-		return fmt.Errorf("substrate/engine: settle the interrupted conversion: %w", err)
-	}
-	return nil
-}
-
-// convertHistory converts a repository whose table and files agree into
-// this binary's dialect: steps 1 to 3 of the header. It reports whether it
-// converted, and returns the Log of the converted files; the caller rebuilds
-// the fold from it (the marker it set says so). verified is a Log the caller
-// already checked, which the fresh open reuses.
-func (ds *dataset) convertHistory(ctx context.Context, verified *changelogfile.Log) (*changelogfile.Log, bool, error) {
-	// A history stamped above this binary has no step pending here; the open
-	// refuses it (gateChangelogDialect), one repository and not the boot.
-	stored, err := readChangelogDialect(ctx, ds.db)
-	if err != nil {
-		return nil, false, err
+		return false, err
 	}
 	steps := pendingConversions(ds.svc.conversion, stored)
+	if to > 0 {
+		steps = slices.DeleteFunc(steps, func(step conversionStep) bool { return step.Dialect > to })
+	}
 	if len(steps) == 0 {
-		return verified, false, nil
+		return false, nil
 	}
-	dir := changelogfile.ChangelogDir(ds.dir)
-	log, err := changelogfile.OpenWith(dir, changelogfile.OpenOptions{Verified: verified, TrustSidecars: true})
-	if err != nil {
-		return nil, false, directoryOpenErr(err)
-	}
-	if log.Head() == 0 {
-		return log, false, nil
-	}
-	target := chainDialect(steps)
-	ds.svc.log.Info("substrate: converting the changelog",
-		"repository", ds.scope.Repository, "from", max(stored, 1), "to", target, "steps", conversionNames(steps), "head", log.Head())
-	if err := changelogfile.DiscardConverting(ds.dir, target); err != nil {
-		return nil, false, err
-	}
-	if err := ds.writeConverted(log, steps, target); err != nil {
-		return nil, false, err
-	}
-	if err := ds.importFault(conversionAfterStaging); err != nil {
-		return nil, false, err
-	}
-	converted, err := changelogfile.OpenWith(changelogfile.ConvertingDir(ds.dir, target), changelogfile.OpenOptions{})
-	if err != nil {
-		return nil, false, fmt.Errorf("substrate/engine: read back the converted changelog: %w", err)
-	}
-	if converted.Head() != log.Head() {
-		return nil, false, fmt.Errorf("substrate/engine: the converted changelog ends at seq %d, the history at %d", converted.Head(), log.Head())
-	}
-	if err := ds.commitConverted(ctx, converted, target); err != nil {
-		return nil, false, err
-	}
-	if err := ds.importFault(conversionAfterCommit); err != nil {
-		return nil, false, err
-	}
-	if err := changelogfile.SwapConverted(ds.dir, target); err != nil {
-		return nil, false, fmt.Errorf("substrate/engine: swap the converted changelog in: %w", err)
-	}
-	if err := ds.importFault(conversionAfterSwap); err != nil {
-		return nil, false, err
-	}
-	out, err := changelogfile.OpenWith(dir, changelogfile.OpenOptions{})
-	if err != nil {
-		return nil, false, directoryOpenErr(err)
-	}
-	return out, true, nil
-}
-
-// writeConverted writes every line of log, through each step, into the
-// conversion directory for target, a transaction at a time.
-func (ds *dataset) writeConverted(log *changelogfile.Log, steps []conversionStep, target int) error {
-	w, err := changelogfile.OpenWriter(changelogfile.ConvertingDir(ds.dir, target), ds.svc.writerOptions())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = w.Close() }()
-	cur := log.Cursor(0)
-	defer func() { _ = cur.Close() }()
-	var txn []changelogfile.Line
-	for {
-		entries, err := cur.Next(rebuildBatch)
-		if err != nil {
-			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-		}
-		if len(entries) == 0 {
-			break
-		}
-		for _, e := range entries {
-			seq, end := e.Seq, e.Txn
-			for _, s := range steps {
-				if err := s.Line(&e); err != nil {
-					return fmt.Errorf("substrate/engine: conversion %d (%s) at seq %d: %w", s.Dialect, s.Name, seq, err)
-				}
-			}
-			if e.Seq != seq || e.Txn != end {
-				return fmt.Errorf("substrate/engine: a conversion step moved seq %d (txn %d) to seq %d (txn %d): a step rewrites what a line says, never where it stands",
-					seq, end, e.Seq, e.Txn)
-			}
-			line, _, err := changelogfile.Encode(e)
-			if err != nil {
-				return fmt.Errorf("substrate/engine: seq %d does not encode after its conversion: %w", seq, err)
-			}
-			txn = append(txn, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
-			if e.EndsTransaction() {
-				if err := w.AppendLines(txn); err != nil {
-					return err
-				}
-				txn = nil
-			}
-		}
-	}
-	if len(txn) > 0 {
-		return fmt.Errorf("%w: the history ends inside the transaction ending at seq %d", ErrChangelogDiverged, txn[0].Txn)
-	}
-	return w.Close()
-}
-
-// commitConverted rewrites, in one transaction under the changelog lock,
-// every table row whose line the conversion changed, stamps target and marks
-// the fold for rebuilding.
-func (ds *dataset) commitConverted(ctx context.Context, converted *changelogfile.Log, target int) error {
+	target := steps[len(steps)-1].Dialect
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{ctx: ctx, ds: ds, tx: tx, now: nowUTC(), internal: true}
 	if err := t.lockKey(changelogLockKey); err != nil {
-		return err
+		return false, err
 	}
-	cur := converted.Cursor(0)
-	defer func() { _ = cur.Close() }()
-	for {
-		entries, err := cur.Next(rebuildBatch)
+	head, err := tableChangelogHead(ctx, tx)
+	if err != nil {
+		return false, err
+	}
+	if head == 0 {
+		return false, nil
+	}
+	ds.svc.log.Info("substrate: converting the changelog",
+		"repository", ds.scope.Repository, "from", stored, "to", target, "steps", conversionNames(steps), "head", head)
+	prog := ds.svc.progress("converting the changelog", "repository", ds.scope.Repository, "head", head*int64(len(steps)))
+	// One walk per step, in step order, over the whole table, in this one
+	// transaction: a step's Line sees every line once, in seq order, as the
+	// steps below it left it, and the step after reads the table they wrote
+	// (its Declarations included), so no line is converted outside a walk.
+	changed := map[int64]bool{}
+	passes := make([]conversionPass, 0, len(steps))
+	for i, step := range steps {
+		pass, err := ds.conversionPass(ctx, tx, step)
 		if err != nil {
-			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+			return false, err
 		}
-		if len(entries) == 0 {
-			break
+		passes = append(passes, pass)
+		if err := ds.walkConversionStep(ctx, t, step, pass, head, int64(i)*head, prog, changed); err != nil {
+			return false, err
 		}
-		stamped, err := tableHashes(t, entries[0].Seq-1, entries[len(entries)-1].Seq)
+	}
+	for i, pass := range passes {
+		if pass.Carry == nil {
+			continue
+		}
+		if err := pass.Carry(ctx, tx); err != nil {
+			return false, fmt.Errorf("substrate/engine: conversion step %d (%s): carry the rows outside history: %w", steps[i].Dialect, steps[i].Name, err)
+		}
+	}
+	if err := ds.importFault(conversionBeforeCommit); err != nil {
+		return false, err
+	}
+	if _, err := t.exec(changelogDialectStamp, target); err != nil {
+		return false, fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", target, err)
+	}
+	if err := markImportIncomplete(ctx, tx, head); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	ds.svc.log.Info("substrate: converted the changelog; the fold is rebuilt from it next",
+		"repository", ds.scope.Repository, "dialect", target, "changed", len(changed))
+	if err := ds.importFault(conversionAfterCommit); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+// walkConversionStep runs one step's Line over every line of the table, in
+// seq order, and writes back each line it changed with its new checksum. A
+// step may not move a line's seq or txn.
+func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversionStep, pass conversionPass, head, done int64, prog *progress, changed map[int64]bool) error {
+	for after := int64(0); after < head; {
+		page, err := scanChecksumPage(ctx, t.tx, after, rebuildBatch)
 		if err != nil {
 			return err
 		}
-		for _, e := range entries {
+		if len(page) == 0 {
+			break
+		}
+		for _, row := range page {
+			e := row.entry.fileEntry()
+			seq, txnSeq := e.Seq, e.Txn
+			after = seq
+			if err := pass.Line(&e); err != nil {
+				return fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)
+			}
+			if e.Seq != seq || e.Txn != txnSeq {
+				return fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)
+			}
 			_, sum, err := changelogfile.Encode(e)
 			if err != nil {
-				return err
+				return fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
 			}
-			old, ok := stamped[e.Seq]
-			if !ok {
-				return fmt.Errorf("%w: seq %d is in the converted changelog and not in the table", ErrChangelogDiverged, e.Seq)
-			}
-			if bytes.Equal(old, sum[:]) {
+			if bytes.Equal(row.hash, sum[:]) {
 				continue
 			}
 			var causedBy sql.NullInt64
@@ -351,32 +378,177 @@ func (ds *dataset) commitConverted(ctx context.Context, converted *changelogfile
 				e.Seq, e.TS, e.Actor, e.Principal, e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
 				return fmt.Errorf("substrate/engine: convert seq %d: %w", e.Seq, err)
 			}
+			changed[seq] = true
 		}
+		prog.tick(changelogfile.Position{Seq: done + after})
 	}
-	if _, err := t.exec(changelogDialectStamp, target); err != nil {
-		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", target, err)
-	}
-	if err := markImportIncomplete(ctx, tx, converted.Head()); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return nil
 }
 
-// tableHashes is the checksum the table stamped for each seq in (after, last].
-func tableHashes(t *txn, after, last int64) (map[int64][]byte, error) {
-	rows, err := t.query(`SELECT seq, hash FROM changelog WHERE seq > $1 AND seq <= $2`, after, last)
+// conversionPass is what step does in this repository, built in the
+// conversion's transaction just before the step's walk: its Declarations
+// read the declaration lines from the table as the steps below it left them,
+// in the dialect this step sees its lines in, once, on the first call.
+func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversionStep) (conversionPass, error) {
+	if step.ForRepository == nil {
+		return conversionPass{Line: step.Line}, nil
+	}
+	var versions []declarationVersion
+	var versionsErr error
+	built := false
+	repo := conversionRepository{
+		ID: ds.info.ID, Authority: ds.info.Authority, Reseal: ds.reseal,
+		Declarations: func() ([]declarationVersion, error) {
+			if !built {
+				built = true
+				rows, err := queryChecksumRows(ctx, tx, `WHERE kind = ANY($1) ORDER BY seq`, vocabularyKindRefs)
+				if err != nil {
+					versionsErr = err
+				} else {
+					lines := make([]changelogfile.Entry, len(rows))
+					for i, r := range rows {
+						lines[i] = r.entry.fileEntry()
+					}
+					versions, versionsErr = declarationVersions(lines)
+				}
+			}
+			return versions, versionsErr
+		},
+	}
+	pass, err := step.ForRepository(repo)
+	if err != nil {
+		return conversionPass{}, fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
+	}
+	if pass.Line == nil {
+		return conversionPass{}, fmt.Errorf("substrate/engine: conversion step %d (%s) returned no Line for repository %s", step.Dialect, step.Name, ds.info.ID)
+	}
+	return pass, nil
+}
+
+// declarationVersions folds the declaration lines, as the table holds them
+// for the step asking, into every version of every declaration record they
+// write: a record delta onto the record as it stood (a creation starting it
+// over), a tombstone or a purge ending it.
+func declarationVersions(lines []changelogfile.Entry) ([]declarationVersion, error) {
+	props := map[string]map[string]any{}
+	var out []declarationVersion
+	for _, e := range lines {
+		var payload map[string]any
+		if err := json.Unmarshal(e.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("substrate/engine: seq %d carries an unreadable payload: %w", e.Seq, err)
+		}
+		effects, _ := payload[foldPayloadKey].([]any)
+		for _, raw := range effects {
+			eff, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref, _ := eff["ref"].(string)
+			id, _ := eff["id"].(string)
+			if _, declaration := vocabularyRecordKinds[ref]; !declaration || id == "" {
+				continue
+			}
+			key := ref + "/" + id
+			switch foldKind(fmt.Sprint(eff["kind"])) {
+			case foldTombstone, foldPurge:
+				delete(props, key)
+				out = append(out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
+			case foldRecord:
+				delta, _ := eff["delta"].(map[string]any)
+				cur := props[key]
+				if created, _ := delta["created"].(bool); created || cur == nil {
+					cur = map[string]any{}
+				}
+				next := make(map[string]any, len(cur))
+				for k, v := range cur {
+					next[k] = v
+				}
+				if set, ok := delta["set"].(map[string]any); ok {
+					for k, v := range set {
+						next[k] = v
+					}
+				}
+				if del, ok := delta["del"].([]any); ok {
+					for _, k := range del {
+						if name, ok := k.(string); ok {
+							delete(next, name)
+						}
+					}
+				}
+				props[key] = next
+				v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
+				v.Document, _, v.Unread = rowDocument(id, ref, next)
+				out = append(out, v)
+			}
+		}
+	}
+	return out, nil
+}
+
+// sameLineAsTable reports whether e, a line of a copy of the history in
+// changelog dialect dialect, is the line the table holds at its seq: its
+// stamped checksum. Lines are held to each other in one dialect only: a copy
+// in another dialect than the table's is refused, never converted to
+// compare (the header).
+func (ds *dataset) sameLineAsTable(ctx context.Context, q dbx, e changelogfile.Entry, dialect int) (bool, error) {
+	tableDialect, err := readChangelogDialect(ctx, q)
+	if err != nil {
+		return false, err
+	}
+	if max(dialect, 1) != max(tableDialect, 1) {
+		return false, fmt.Errorf("substrate/engine: seq %d is in changelog dialect %d and the table's lines in %d; lines are compared in one dialect only", e.Seq, max(dialect, 1), max(tableDialect, 1))
+	}
+	_, sum, err := changelogfile.Encode(e)
+	if err != nil {
+		return false, err
+	}
+	var hash []byte
+	err = q.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, e.Seq).Scan(&hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(sum[:], hash), nil
+}
+
+// reseal is conversionRepository.Reseal: the payload opened under the
+// repository's data key bound to its old record, sealed again bound to the
+// new one.
+func (ds *dataset) reseal(payload []byte, ref, fromKind, fromID, toKind, toID string) ([]byte, error) {
+	dek := ds.dek
+	if dek == nil {
+		repo, err := ds.svc.repositoryByID(context.Background(), ds.info.ID)
+		if err != nil {
+			return nil, err
+		}
+		if dek, err = ds.svc.unwrapDEK(repo.DEK, repo.ID, repo.DEKKeyID); err != nil {
+			return nil, err
+		}
+	}
+	raw, err := openRepoPayload(payload, dek, sealedAAD(ref, fromKind, fromID))
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: open sealed %s bound to %s %s: %w", ref, fromKind, fromID, err)
+	}
+	aead, err := aeadOf(dek)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	out := map[int64][]byte{}
-	for rows.Next() {
-		var seq int64
-		var hash []byte
-		if err := rows.Scan(&seq, &hash); err != nil {
-			return nil, err
-		}
-		out[seq] = hash
+	return sealWith(aead, raw, sealedAAD(ref, toKind, toID))
+}
+
+// refusePendingConversion refuses an open of a repository whose history is in
+// a dialect this binary converts: only the boot check converts.
+func (ds *dataset) refusePendingConversion(ctx context.Context, stored int) error {
+	pending := pendingConversions(ds.svc.conversion, stored)
+	if len(pending) == 0 {
+		return nil
 	}
-	return out, rows.Err()
+	head, err := tableChangelogHead(ctx, ds.db)
+	if err != nil || head == 0 {
+		return err
+	}
+	return fmt.Errorf("%w: repository %s stores dialect %d and this binary converts it through %s at its boot check; restart a server that writes",
+		ErrConversionPending, ds.info.ID, stored, conversionNames(pending))
 }

@@ -10,8 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -353,23 +350,8 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 		}
 	}
 
-	// Copy the directory into a fresh database.
-	id := d.Repository().ID
-	src := d.dir
-	if err := d.svc.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	root2 := t.TempDir()
-	dst, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
+	// Copy the archive into a fresh database.
+	root2 := archiveCopyOf(t, d)
 	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
 		WithKindsFS(SeedKinds))
 	if err != nil {
@@ -922,23 +904,8 @@ func TestARestoredTriggerAppliesAnEditedSourceFromTheEdit(t *testing.T) {
 		t.Fatal("the widened mirror delivered the gadget it had scanned past")
 	}
 
-	// Restore into an empty database and drain.
-	id := d.Repository().ID
-	src := d.dir
-	if err := d.svc.Close(); err != nil {
-		t.Fatal(err)
-	}
-	root2 := t.TempDir()
-	dst, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
+	// Restore the archive into an empty database and drain.
+	root2 := archiveCopyOf(t, d)
 	svc2, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root2), WithCredentialKey(TestCredentialKey),
 		WithKindsFS(SeedKinds))
 	if err != nil {

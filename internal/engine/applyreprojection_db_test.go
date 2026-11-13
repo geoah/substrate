@@ -181,8 +181,8 @@ func TestTheReprojectionKeepsTheRequestOfAnApplyThatDidNotPublish(t *testing.T) 
 	}})
 
 	fault.arm(engine.CommitUnpublished)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, notes(true)); !errors.Is(err, engine.ErrChangelogFileBehind) {
-		t.Fatalf("an apply that did not publish: err = %v, want ErrChangelogFileBehind", err)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, notes(true)); !errors.Is(err, engine.ErrRegistryUnsettled) {
+		t.Fatalf("an apply that did not publish: err = %v, want ErrRegistryUnsettled", err)
 	}
 	select {
 	case <-engine.IndexReprojectionDone(ds):

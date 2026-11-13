@@ -243,6 +243,12 @@ func TestAPasswordChangeInDoubtSaysThePasswordMayHaveChanged(t *testing.T) {
 	e := testenv.Start(t, testenv.WithRepository(detailsAuthority), testenv.WithClock(clock.Now),
 		testenv.WithEngineOptions(engine.WithTestCommitInDoubt(lose)))
 	clock.Advance(engine.TOTPPeriod)
+	// The repository is open before the seam is armed: every commit passes
+	// the seam (decision 0262), the open's own repository migrations among
+	// them, and the two counted are the request's.
+	if _, err := e.Service.Dataset(context.Background(), e.Repository); err != nil {
+		t.Fatalf("open the repository: %v", err)
+	}
 	body, _ := json.Marshal(map[string]any{
 		"repository": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode(),
 		"newPassword": "a-new-and-longer-password", "signOutEverywhere": true,

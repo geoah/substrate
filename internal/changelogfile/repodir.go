@@ -75,20 +75,134 @@ func BlobsDir(repoDir string) string { return filepath.Join(repoDir, BlobsSubdir
 // SealedDir is the sealed records directory of a repository directory.
 func SealedDir(repoDir string) string { return filepath.Join(repoDir, SealedSubdir) }
 
-// EnsureRepoDir creates the repository directory and its three
-// subdirectories, mode 0700, and returns the repository directory. Existing
-// directories are left alone.
+// EnsureRepoDir creates the repository directory, mode 0700, and returns it.
+// It holds what the server keeps of a repository outside Postgres: its blob
+// bytes and its webhook spool (decision 0262). An existing directory is left
+// alone.
 func EnsureRepoDir(root, id string) (string, error) {
 	dir, err := RepoDir(root, id)
 	if err != nil {
 		return "", err
 	}
-	for _, d := range []string{dir, ChangelogDir(dir), BlobsDir(dir), SealedDir(dir)} {
-		if err := os.MkdirAll(d, dirMode); err != nil {
-			return "", err
-		}
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return "", err
 	}
 	return dir, nil
+}
+
+// HasHistory reports whether a repository directory holds the history a
+// release before the archive kept beside the blobs (a 0.x directory): a
+// manifest, segment files or sealed files. A directory whose history the
+// table adopted and whose removal did not finish (HistoryAdopted) holds none.
+func HasHistory(repoDir string) bool {
+	if HistoryAdopted(repoDir) {
+		return false
+	}
+	for _, p := range []string{filepath.Join(repoDir, ManifestName), ChangelogDir(repoDir), SealedDir(repoDir)} {
+		if _, err := os.Lstat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// AdoptedManifestName is a 0.x directory's manifest once the table holds
+// every line of its history: RemoveHistory sets the manifest aside under this
+// name before it removes anything, so a removal cut short leaves a directory
+// the next boot knows to finish removing, never one it reads as history.
+const AdoptedManifestName = ManifestName + ".adopted"
+
+// The steps of RemoveHistory a caller's stop function is told of, for a test
+// that stops it there.
+const (
+	RemoveHistorySetAside = "after the manifest was set aside"
+	RemoveHistoryPartly   = "after the first of the history's files was removed"
+)
+
+// HistoryAdopted reports whether RemoveHistory began on the directory and did
+// not finish.
+func HistoryAdopted(repoDir string) bool {
+	_, err := os.Lstat(filepath.Join(repoDir, AdoptedManifestName))
+	return err == nil
+}
+
+// SetAsideHistory sets a directory's history aside, once the table holds
+// every line of it: its manifest renamed, made durable, so from then on the
+// directory is no history (HistoryAdopted) and no boot reads it again. stop,
+// when not nil, is called after the rename (RemoveHistorySetAside).
+func SetAsideHistory(repoDir string, stop func(stage string) error) error {
+	manifest, adopted := filepath.Join(repoDir, ManifestName), filepath.Join(repoDir, AdoptedManifestName)
+	if err := os.Rename(manifest, adopted); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := syncDir(repoDir); err != nil {
+		return err
+	}
+	if stop == nil {
+		return nil
+	}
+	return stop(RemoveHistorySetAside)
+}
+
+// RemoveHistory removes what HasHistory finds, once the table holds every
+// line of it. The manifest is set aside first, in one rename made durable:
+// from then on the directory is no history, and a removal cut short anywhere
+// after is finished by the next boot (HistoryAdopted) rather than read as a
+// history missing its first segments. The set-aside manifest goes last. The
+// blobs and the spool stay. stop, when not nil, is called after each named
+// step (RemoveHistorySetAside, RemoveHistoryPartly) and ends the removal
+// when it returns an error.
+func RemoveHistory(repoDir string, stop func(stage string) error) error {
+	if stop == nil {
+		stop = func(string) error { return nil }
+	}
+	if !HistoryAdopted(repoDir) {
+		if err := SetAsideHistory(repoDir, stop); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(repoDir)
+	if err != nil {
+		return err
+	}
+	first := true
+	for _, e := range entries {
+		name := e.Name()
+		if name != ChangelogSubdir && name != SealedSubdir && !strings.HasPrefix(name, ChangelogSubdir+".") {
+			continue
+		}
+		path := filepath.Join(repoDir, name)
+		if first && e.IsDir() {
+			// One file at a time for the first directory, so a stop after
+			// its first file leaves the history part removed, as a crash
+			// inside the removal would.
+			files, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			for _, f := range files {
+				if err := os.RemoveAll(filepath.Join(path, f.Name())); err != nil {
+					return err
+				}
+				if first {
+					first = false
+					if err := stop(RemoveHistoryPartly); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+	}
+	if err := syncDir(repoDir); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(repoDir, AdoptedManifestName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return syncDir(repoDir)
 }
 
 // ListRepositoryDirs returns the keys of the repository directories under

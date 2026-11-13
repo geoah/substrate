@@ -170,7 +170,7 @@
   {
     "name": "export",
     "stability": "beta",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "GET /api/v1/export"
     ]

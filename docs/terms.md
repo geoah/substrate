@@ -41,10 +41,12 @@ package, the entry's `keptBy` (decision 0258), **tenant** and
 
 | Term | What it is |
 | ---- | ---------- |
-| **changelog** | The repository's one append-only, strictly sequential list of every change. It is the truth. |
+| **changelog** | The repository's one append-only, strictly sequential list of every change, the `changelog` table in Postgres. It is the truth. |
 | **fold** | The records the changelog is replayed into. The only write path to them, so a live write and a rebuild cannot drift. |
-| **data root** | `SUBSTRATE_DATA_ROOT`: the directory holding one subdirectory per repository, `repositories/<id>/`, with the manifest, the changelog segments, the sealed files and the blob bytes. The unit a backup copies. |
-| **segment** | One file of a repository's changelog on disk, `changelog/<first seq>.ndjson`: newline-delimited JSON, one entry per line, each line carrying its own SHA-256 checksum in `sum`. A finished segment has a `.sha256` sidecar and never changes. |
+| **archive** | The copy of each repository the server writes after its writes commit, into a directory or an S3-compatible bucket: its changelog in pieces, its blobs, its sealed values, its webhook spool and a manifest. The backup, what a restore reads and what the recovery export hands out. Not Postgres's WAL archive. |
+| **piece** | One object of an archive's changelog, `changelog/<dialect>/<first seq>-<last seq>.ndjson`: whole transactions of consecutive entries as newline-delimited JSON, each line carrying its own SHA-256 checksum in `sum`. Written once and never changed. |
+| **mark** | The `head` of an archive's manifest: every entry up to it is in the pieces, and every blob and sealed value the records at it hold is in the archive. The server repeats it on the repository's row, which `repository list` shows. |
+| **data root** | `SUBSTRATE_DATA_ROOT`: the directory holding what Postgres does not, one subdirectory per repository, `repositories/<id>/`, with its blob bytes and its webhook spool, and, by default, the archive under `archive/`. |
 | **checksum** | The SHA-256 of one entry's canonical line, stored as the entry's `hash` and returned on the wire under that name. It detects damage; it does not chain to the previous entry and nothing signs it. |
 | **projection** | Recomputing a record's mapped properties from every live source record that maps onto it. |
 | **recordmapping** | A declaration of how one kind's properties reach the record its subject reference points at. |
@@ -123,9 +125,9 @@ package, the entry's `keptBy` (decision 0258), **tenant** and
 | **sensitive** | The umbrella over `secret` and `digest`: redacted on every read surface, excluded from search, filtering, ordering, titles and change payloads. |
 | **secret** | Confidential material as a property. The record and the changelog store only an opaque ref; the material lives encrypted in the sealed store, resolved only by the host reads that spend it. Rotation deletes the old material. |
 | **digest** | A one-way SHA-256 the server minted to compare, never to reveal (a token's `hash`). Redacted like a secret but stored as the value itself: auth matches it in SQL. |
-| **sealed store** | The `sealed` table and its mirror, one file per row under the repository directory's `sealed/`, holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. The files are what a backup copies; a boot import reads them back. |
+| **sealed store** | The `sealed` table, holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. The archive keeps a copy of each row under `sealed/`, still ciphertext, which a restore reads back. |
 | **DEK** | The repository's own data-encryption key. Wrapped twice: under the host credential key in the control plane (live operation) and to the user's age recipient in the `recoverykey` record (recovery). |
-| **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key: `repository rewrap` opens a copied repository directory with it for a new host key. Enrolled at registration; a repository holds one and rotation is not v1. |
+| **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key: `repository rewrap` opens a copy of a repository's archive with it for a new host key. Enrolled at registration; a repository holds one and rotation is not v1. |
 
 ## The wire
 

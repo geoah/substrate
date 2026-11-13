@@ -215,7 +215,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0047](0047-a-kind-lives-in-a-package.md) | A kind lives in a package, and a package lives in an authority | accepted |
 | [0048](0048-providers-are-published-samples-are-copied.md) | Providers are published packages; samples are copied and owned | accepted |
 | [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |
-| [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
+| [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | superseded |
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
 | [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | superseded |
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | superseded |
@@ -227,14 +227,14 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0059](0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md) | A repository marked DEK-only refuses plain and host-key-sealed payloads | accepted |
 | [0060](0060-a-record-carries-the-kind-version-that-last-wrote-it.md) | A record carries the kind version that last wrote it | accepted |
 | [0061](0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md) | A change event names the affected records with their versions, and clients fetch them | accepted |
-| [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | accepted |
+| [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | superseded |
 | [0063](0063-a-property-rename-is-ordinary-record-writes.md) | A property rename is ordinary record writes, never a fold-time conversion | accepted |
 | [0064](0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md) | Trigger bookkeeping is a delivery ledger folded from the changelog | accepted |
-| [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | accepted |
+| [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | superseded |
 | [0066](0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md) | A backfill and an enum remap are ordinary record writes, composed with the rename | accepted |
 | [0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md) | A lossy conversion runs only with a confirmation bound to its preview | accepted |
 | [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | superseded |
-| [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |
+| [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | superseded |
 | [0070](0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | A sample copy is upgraded through its origin stamp, and `requiresAtLeast` pins a floor under a requirement | accepted |
 | [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
 | [0072](0072-reserve-a-purged-record-id-against-reuse.md) | Reserve a purged record id so a later write cannot take it | rejected |
@@ -415,6 +415,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0258](0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md) | One catalog route adds a package, and `keptBy` says who keeps it | accepted |
 | [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |
 | [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
+| [0262](0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md) | Postgres alone confirms a write, and an archive is copied after the commit | accepted |
 | [0263](0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md) | The API's tests of engine behavior run on the real engine, and its stand-in is deleted | accepted |
 | [0265](0265-a-package-names-the-function-interface-its-code-is-written-against.md) | A package names the function interface its code is written against | accepted |
 | [0266](0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md) | A temporary failure is retried over minutes, and the body says which it is | accepted |
@@ -423,3 +424,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0269](0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md) | A publisher may not rename a kind, and code from outside publishers is experimental | accepted |
 | [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
+| [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
+| [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
+| [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |

@@ -67,14 +67,16 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, d := range []string{dir, ChangelogDir(dir), BlobsDir(dir), SealedDir(dir)} {
-			info, err := os.Stat(d)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !info.IsDir() || info.Mode().Perm() != dirMode {
-				t.Fatalf("%s: mode %v", d, info.Mode().Perm())
-			}
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.IsDir() || info.Mode().Perm() != dirMode {
+			t.Fatalf("%s: mode %v", dir, info.Mode().Perm())
+		}
+		// The directory holds no history (decision 0262).
+		if HasHistory(dir) {
+			t.Fatalf("a fresh repository directory holds history")
 		}
 		// A second call is a no-op.
 		if _, err := EnsureRepoDir(root, id); err != nil {
@@ -127,4 +129,44 @@ func longAuthority(n int) string {
 		n -= l + 1
 	}
 	return strings.Join(labels, ".")
+}
+
+// A 0.x directory's history is its manifest, its segments and its sealed
+// files; RemoveHistory takes them and leaves the blobs and the spool.
+func TestRemoveHistoryKeepsTheBlobsAndTheSpool(t *testing.T) {
+	root := t.TempDir()
+	dir, err := EnsureRepoDir(root, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{ChangelogDir(dir), SealedDir(dir), BlobsDir(dir), SpoolDir(dir), filepath.Join(dir, "changelog.converting-2")} {
+		if err := os.MkdirAll(d, dirMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{filepath.Join(dir, ManifestName), filepath.Join(BlobsDir(dir), "blob-sha256-00"), filepath.Join(SpoolDir(dir), "1-f.webhook")} {
+		if err := os.WriteFile(f, []byte("x"), fileMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !HasHistory(dir) {
+		t.Fatal("a directory with a manifest holds no history")
+	}
+	if err := RemoveHistory(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if HasHistory(dir) {
+		t.Fatal("the history outlived RemoveHistory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, " ") != BlobsSubdir+" "+SpoolSubdir {
+		t.Fatalf("left %v, want the blobs and the spool", left)
+	}
 }

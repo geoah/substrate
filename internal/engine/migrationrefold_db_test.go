@@ -366,8 +366,13 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	}
 	upgrade(t, dsn)
 
+	// A keyed stage restores nothing (the archive is its table's); one
+	// behind ids has no archive and a directory named by the name, as a
+	// release before ids left it.
 	root := copyRepositoryDir(t, src.root, src.id)
 	if !keyed {
+		root = t.TempDir()
+		legacyDirectory(t, filepath.Join(src.root, "archive"), root, src.id)
 		keyRefoldDirByName(t, root, src)
 	}
 	svc := reopenWith(t, dsn, root)

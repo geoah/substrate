@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -202,29 +203,33 @@ func TestVerifyNamesDamageBySeq(t *testing.T) {
 	}
 }
 
-// A row whose stamped checksum is not the sum its line carries is named by
-// the default pass, which compares the two and nothing else of the row.
+// A row whose stamped checksum is not the sum its archived line carries is
+// named by the default pass, which compares the two and nothing else of the
+// row.
 func TestVerifyHoldsEveryStampedChecksumToItsLine(t *testing.T) {
 	t.Parallel()
-	svc, ds, dsn := newDatasetWithDSN(t, engine.WithChangelogSegmentBytes(1))
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithArchivePieceBytes(1))
 	for _, name := range []string{"one", "two", "three"} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind:       "samples.substrate.reamde.dev/tasks/task",
 			Properties: map[string]any{"name": name},
 		})
 	}
+	if err := engine.ArchivePass(context.Background(), ds); err != nil {
+		t.Fatal(err)
+	}
 	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
 		t.Fatalf("a fresh repository does not verify: %+v", report)
 	}
 	db := rawDB(t, dsn)
 	// A hash of the right length that is not the row's, early in the
-	// history, so the cursor crosses segments to reach it and past it.
+	// history, so the walk crosses pieces to reach it and past it.
 	const victim = 3
 	if _, err := db.Exec(`UPDATE changelog SET hash = sha256(hash) WHERE seq = $1`, victim); err != nil {
 		t.Fatalf("re-stamp a row: %v", err)
 	}
 	report := mustVerify(t, svc, testdb.Repository(t))
-	want := "seq " + strconv.Itoa(victim) + ": the file's checksum is not the table's"
+	want := "seq " + strconv.Itoa(victim) + ": the archive's line is not the table's"
 	if report.OK || !findingContaining(report, want) {
 		t.Fatalf("no finding contains %q: %+v", want, report.Findings)
 	}
@@ -251,7 +256,15 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	if err := db.QueryRow(`SELECT dek FROM repositories LIMIT 1`).Scan(&original); err != nil {
 		t.Fatalf("read the stored DEK wrap: %v", err)
 	}
+	// The same host throughout: one data root, so one archive, which the
+	// close's last pass publishes to.
+	root, id := engine.DataRootOf(svc), repositoryIDOf(t, ds)
 	_ = svc.Close()
+	repoDir := filepath.Join(root, "archive", changelogfile.RepositoriesDir, id)
+	_, published, err := changelogfile.ReadArchiveManifestDir(repoDir)
+	if err != nil {
+		t.Fatalf("the close published no manifest: %v", err)
+	}
 
 	// Bound-sealed framing ('a'), then bytes this credential key cannot open:
 	// what every repository looks like to a host holding the wrong key.
@@ -259,15 +272,19 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 		`UPDATE repositories SET dek = decode('61' || repeat('ff', 60), 'hex')`); err != nil {
 		t.Fatalf("spoil the stored wrap: %v", err)
 	}
-	_, err := engine.OpenForTest(t, ctx, dsn,
+	_, err = engine.OpenForTest(t, ctx, dsn,
 		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(t.TempDir()),
+		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a host whose key opens nothing in this database booted anyway")
 	}
 	if !strings.Contains(err.Error(), "does not open the DEK") {
 		t.Fatalf("the boot refusal does not name the cause: %v", err)
+	}
+	// The refused boot wrote nothing to the archive and deleted nothing.
+	if _, after, err := changelogfile.ReadArchiveManifestDir(repoDir); err != nil || after != published {
+		t.Fatalf("the refused boot changed the archive: newest manifest %q (%v), was %q", after, err, published)
 	}
 
 	// And it is a refusal about the KEY, not a bricked store: the original
@@ -277,7 +294,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	}
 	svc2, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithKindsFS(engine.SeedKinds),
-		engine.WithDataRoot(t.TempDir()),
+		engine.WithDataRoot(root),
 		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen with the original wrap restored: %v", err)

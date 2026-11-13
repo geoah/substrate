@@ -162,13 +162,11 @@ func TestAFailedImportReleasesTheLease(t *testing.T) {
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {
-			// Mid-import, after a batch of rows committed, from a session of
-			// its own: the importer must be holding the key it took before it
-			// published the row. The stage before the row (the name held, the
-			// writer lease not yet taken) is not that point.
-			if stage != engine.ImportAfterBatch {
+			if stage != engine.ImportAfterRow {
 				return nil
 			}
+			// Mid-import, from a session of its own: the importer must be
+			// holding the key it took before it published the row.
 			heldDuring = !leaseKeyIsFree(t, dsn2, id)
 			return diskFull
 		}))

@@ -1,7 +1,8 @@
 ---
-status: accepted
-date: 2026-09-05
+status: superseded
+date: 2026-11-13
 decision-makers: George Antoniadis
+superseded-by: 0262
 ---
 
 # 0050. The changelog is checksummed segment files per repository, and Postgres indexes it

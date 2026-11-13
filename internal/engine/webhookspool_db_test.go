@@ -300,32 +300,6 @@ func TestASpooledWebhookRestoresFromASnapshotAndAnExport(t *testing.T) {
 		awaitSpoolEmpty(t, ds2, spoolDirOf(t, root, ds2.Repository().ID))
 	}
 
-	t.Run("snapshot", func(t *testing.T) {
-		ctx := context.Background()
-		svc, ds, dsn, root, _ := newHeldHookDataset(t, true)
-		fid, err := engine.ReceiveWebhookSpooled(ctx, svc, testdb.Repository(t), "hook-held", "", shape.req)
-		if err != nil {
-			t.Fatalf("receive: %v", err)
-		}
-		id := ds.Repository().ID
-		if err := svc.Close(); err != nil {
-			t.Fatal(err)
-		}
-		operator := mustReopen(t, dsn, root)
-		dest := t.TempDir()
-		report, err := operator.(snapshotter).SnapshotRepository(ctx, id, dest)
-		if err != nil {
-			t.Fatalf("snapshot: %v", err)
-		}
-		if report.WebhookSpool != 1 {
-			t.Fatalf("the snapshot carries %d spooled requests, want 1", report.WebhookSpool)
-		}
-		if err := operator.Close(); err != nil {
-			t.Fatal(err)
-		}
-		restore(t, dest, fid)
-	})
-
 	t.Run("export", func(t *testing.T) {
 		ctx := context.Background()
 		svc, ds, _, _, _ := newHeldHookDataset(t, true)
@@ -333,8 +307,8 @@ func TestASpooledWebhookRestoresFromASnapshotAndAnExport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("receive: %v", err)
 		}
-		root, _, _ := exportToRoot(t, ds)
-		if n := len(spooledFiles(t, spoolDirOf(t, root, ds.Repository().ID))); n != 1 {
+		root, _, m := exportToRoot(t, ds)
+		if n := len(m.Spool); n != 1 {
 			t.Fatalf("the export carries %d spooled requests, want 1", n)
 		}
 		if err := svc.Close(); err != nil {

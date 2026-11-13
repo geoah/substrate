@@ -872,15 +872,18 @@ var errRegistryUnsettled = errors.New("substrate/engine: the repository refuses 
 
 // lockSettledRegistry takes the shared registry-dependency lock a pass step
 // works under, then refuses the step while the directory latch is set
-// (errRegistryUnsettled). The latch is read under writerMu, which a commit
-// that publishes a registry holds from before its COMMIT until it has
-// published or latched, so a step that read a request that commit wrote
-// finds the registry published or the latch set, never between the two.
+// (errRegistryUnsettled). The latch is read under ds.mu, which a commit that
+// publishes a registry holds from before its COMMIT until it has published or
+// latched, so a step that read a request that commit wrote finds the
+// registry published or the latch set, never between the two.
 func (t *txn) lockSettledRegistry() error {
 	if err := t.lockRegistryDepShared(); err != nil {
 		return err
 	}
-	if err := t.ds.directoryErr(); err != nil {
+	t.ds.mu.RLock()
+	err := t.ds.unsettledErr()
+	t.ds.mu.RUnlock()
+	if err != nil {
 		return fmt.Errorf("%w: %w", errRegistryUnsettled, err)
 	}
 	return nil

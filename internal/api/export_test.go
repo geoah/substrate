@@ -41,7 +41,7 @@ func (d *exportingDataset) Export(context.Context) (substrate.Export, error) {
 	}
 	return &cannedExport{ds: d, point: substrate.ExportPoint{
 		Authority: d.Repository().Authority, Head: 42, HeadHash: strings.Repeat("ab", 32),
-		TakenAt: time.Unix(1_700_000_000, 0).UTC(), Segments: 1, SealedFiles: 2,
+		TakenAt: time.Unix(1_700_000_000, 0).UTC(), Pieces: 1, SealedFiles: 2,
 	}}, nil
 }
 

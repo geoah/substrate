@@ -1,70 +1,48 @@
 package engine
 
-// THE REPOSITORY DIRECTORY.
+// THE BOOT CHECK (decision 0262).
 //
-// Every repository has one directory under the data root,
-// <root>/repositories/<authority>, holding its manifest, its changelog
-// segments, its blob bytes and one file per sealed row (internal/changelogfile,
-// decision 0051). The repository's id is its authority, so the directory, the
-// row's primary key and the manifest's `authority` are one name. The Postgres
-// tables stay the live index and the commit point; the directory is what a
-// backup copies and what a boot reads back.
+// The changelog table is a repository's history and Postgres confirms every
+// write. What the data root holds of a repository, under
+// <root>/repositories/<id>, is what Postgres cannot: its blob bytes and the
+// webhook requests answered and not yet recorded (the spool). Its copy is the
+// ARCHIVE, written behind the commits (archive.go).
 //
-// The two are kept equal in three places, and nowhere else:
+// The boot check runs before anything is served, in three passes:
 //
-//   - inTx (dataset.go) appends the committed entries and mirrors the sealed
-//     rows AFTER tx.Commit(), under the dataset's writer mutex. A crash between
-//     the commit and the append leaves the directory one transaction behind.
-//   - reconcileRepositories runs at boot over every row and every directory
-//     and applies the five cases below, so the gap a crash leaves is closed
-//     before anything is served.
-//   - openNew and RebuildRepository re-run the head comparison (never the
-//     import) so a dataset never appends onto a file that is not at the
-//     table's head.
+//  1. A directory a release before the archive wrote (a 0.x directory: a
+//     manifest, segment files and sealed files beside the blobs) gives the
+//     table what the table lacks, and then gives its history up. A directory
+//     with no row is imported whole, its manifest becoming the row; one with
+//     a row is held to the table where both hold lines, any line it holds
+//     past the table's head is imported, and a disagreement refuses the boot,
+//     naming the seq. Its manifest, segments and sealed files are then
+//     removed: the table holds every line they did. The blobs and the spool
+//     stay where they are.
+//  2. The archive, where the server writes one: a repository it holds and
+//     the database does not is restored from it, and one whose archive is
+//     ahead of its table (a database restored from an older copy) takes the
+//     lines past the table's head. It runs before the rows' conversions, so
+//     those lines meet the table in the dialect both were written in and are
+//     converted with the rest; lines of two dialects never share the table
+//     (history.go meetDialect). A store that cannot be listed, and the
+//     archive of a repository the table holds that cannot be read or does
+//     not continue the table's history, are logged and skipped: the table is
+//     that repository's history, and the copy never stops the server. A
+//     restore that fails, and an import that has begun, refuse the boot as
+//     the import of a directory always did, and the next boot resumes it.
+//  3. Every row: an import or a conversion a previous boot began is finished,
+//     and a history below this binary's changelog dialect is converted; the
+//     fold is rebuilt from the table wherever the import-progress marker
+//     says it is not the table's.
 //
-// The five boot cases:
+// A copy of a history in an earlier dialect is held to the table by the
+// checksum each line had in that dialect, which the conversion recorded
+// (conversion.go sameLineAsTable).
 //
-//  1. Row and directory, heads equal, the common tail's checksums agree: ok.
-//  2. Table ahead of the file: append the missing rows to the file.
-//  3. File ahead of the table, or a directory with no row: import. The row is
-//     created from the manifest when missing, sealed/ is loaded into the
-//     table, the missing entries are inserted with their checksums, and the
-//     fold is rebuilt from the files (the same replay `repository rebuild`
-//     runs), and every embeddable property is queued for the drain, because
-//     the vectors are not in the directory. An `import_progress` row marks
-//     the repository from before the first batch of entries commits until
-//     the transaction that commits the last fold pass, so a boot that finds
-//     the row with equal heads resumes the fold, and no dataset opens while
-//     it is set (ErrImportIncomplete).
-//  4. A seq in both with different checksums, a line whose sum does not
-//     verify, or a finished segment whose sidecar does not match: the boot
-//     refuses, naming the repository and the seq or file. Nothing is repaired.
-//     Refusing the WHOLE boot rather than quarantining one repository is a v1
-//     simplification: a divergent repository must not be served, and one
-//     refusal an operator reads is simpler than a per-repository half-open
-//     state that every code path would have to know about.
-//  5. Row with no directory: write the directory out from the tables. A
-//     repository's creation lands here, and so does a directory an operator
-//     moved away from a database that kept its rows.
-//
-// Sealed files follow the changelog's direction in every case: an import
-// reads them into the table; everything else writes the table out, so a
-// mirror a crash skipped (a TOTP step consume appends no entry, so heads
-// alone would not notice) is rewritten at the next boot.
-//
-// ONE WRITER PER DIRECTORY, ACROSS PROCESSES. The changelog writer holds an
-// exclusive advisory lock on the directory (changelogfile.LockFileName) for
-// its lifetime, so a second process that opens a repository for writing (an
-// operator's `rebuild` or `user reset` beside a running server) is refused
-// with ErrChangelogLocked instead of appending seqs the server is about to
-// append too. The flock conflicts inside one process as well, so the server
-// keeps one writer per repository itself: the boot check's own writers are
-// opened and closed inside reconcileDir before anything is served, and a
-// creation holds open's slot (claimOpen) while its reconcile writes, so no
-// open of the new repository runs beside that writer. A process that
-// must run beside the server opens with WithDirectoryReadOnly: no migration,
-// no boot check, no writer, every inTx write refused, and a verify that
-// reports rather than repairs.
+// Every import is one path (history.go importHistory) and every fold is
+// rebuilt from the table, so an import cut short anywhere is finished by the
+// next boot before the repository is served (ErrImportIncomplete).
 
 import (
 	"bytes"
@@ -73,105 +51,43 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// ErrDirectoryWrite is the refusal a write meets when a sealed file could not
-// be staged or the manifest could not be written BEFORE its transaction
-// committed (dataset.go commitAndMirror, repodir.go writeManifestBeforeCommit):
-// the transaction rolled back, nothing is durable anywhere, and the caller
-// may retry, which is why it is an ErrUnavailable (a 503 with Retry-After on
-// the wire) and the latched ErrChangelogFileBehind is not. A changelog writer
-// that fails is not retryable, because it refuses every later prepare until
-// the process restarts, so that failure latches instead (prepareLines).
-var ErrDirectoryWrite = fmt.Errorf("%w: the repository directory could not be written, so the write was rolled back", substrate.ErrUnavailable)
-
-// ErrChangelogFileBehind is the refusal every write meets once the dataset
-// needs a restart: a step that runs AFTER its transaction committed failed
-// (a rename into place, the newline that ends the transaction in the file, a
-// sealed delete), the answer of a commit with no changelog lines or with a
-// registry to publish was lost after it may have committed, the catch-up of
-// a gap failed with the writer broken or the file diverged, or the changelog
-// writer failed. In every case the tables may hold a write the directory
-// does not, the caller got the error, and the dataset stops taking writes
-// until the process restarts and the boot check catches the directory up. It
-// is an ErrRestartRequired, so the wire answers 503 and names the restart.
-// Nothing repairs inline after a commit, because a repair racing the next
-// append is how two writers interleave lines; the one inline catch-up runs
-// before the next prepare, under the locks that prepare holds
-// (catchUpBeforePrepare), and it appends the rows an in-doubt commit of this
-// process or a commit of ANOTHER process left in the table.
-var ErrChangelogFileBehind = fmt.Errorf("%w: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up", substrate.ErrRestartRequired)
-
-// ErrChangelogDiverged is the boot check's refusal (case 4): the file and the
-// table hold different entries under one seq, or the file does not verify.
-var ErrChangelogDiverged = errors.New("substrate/engine: the changelog file and the changelog table disagree")
-
-// ErrChangelogFileAhead is the refusal a dataset open or a rebuild gives when
-// the file holds entries the table does not: an import runs at boot and
-// nowhere else, so the answer is a restart.
-var ErrChangelogFileAhead = errors.New("substrate/engine: the changelog file is ahead of the table; restart the server so the boot check imports it")
+// ErrChangelogDiverged is the boot check's refusal: two histories of one
+// repository hold different lines under one seq, or one does not verify.
+var ErrChangelogDiverged = errors.New("substrate/engine: two histories of the repository disagree")
 
 // ErrImportIncomplete is the refusal a dataset open meets while the
-// repository's import-progress marker is set: an import began and the fold
-// has not been rebuilt from the imported entries, so what `records` holds is
-// not the changelog's. The boot check resumes the import; nothing else does.
-var ErrImportIncomplete = errors.New("substrate/engine: the import of the repository directory has not completed; restart the server so the boot check resumes it")
-
-// ErrChangelogLocked is the refusal an open meets when another writer holds a
-// repository's changelog writer lock: in an operator command (`rebuild`,
-// `user reset`), the running server; in the server, such a command or a
-// second server on the same data root. The text names no remedy, because the
-// remedy depends on which side met it, and stopping the server is advice only
-// the command can take: substratectl adds it (lockHint). It wraps
-// changelogfile.ErrLocked.
-var ErrChangelogLocked = errors.New("substrate/engine: another writer holds the repository's changelog writer lock")
+// repository's import-progress marker is set: an import or a conversion began
+// and the fold has not been rebuilt from the table, so what `records` holds is
+// not the history's. The boot check finishes it; nothing else does.
+var ErrImportIncomplete = errors.New("substrate/engine: the import of the repository's history has not completed; restart the server so the boot check finishes it")
 
 // ErrDirectoryReadOnly is the refusal every write meets on a service opened
-// with WithDirectoryReadOnly: this process is not the directory's writer.
+// with WithDirectoryReadOnly: this process is not the repositories' writer.
 var ErrDirectoryReadOnly = errors.New("substrate/engine: the service is open read-only (WithDirectoryReadOnly) and refuses to write")
 
-// writerErr classifies an error from opening a repository's changelog for
-// writing: another writer's lock is named as such; damage keeps its own name.
-func writerErr(err error) error {
-	if errors.Is(err, changelogfile.ErrLocked) {
-		return fmt.Errorf("%w: %w", ErrChangelogLocked, err)
-	}
-	return err
-}
-
-// directoryOpenErr is writerErr for changelogfile.Open, whose tail cut
-// runs under the lock: locked is locked, anything else is divergence.
-func directoryOpenErr(err error) error {
-	if errors.Is(err, changelogfile.ErrLocked) {
-		return writerErr(err)
-	}
-	return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-}
-
-// tailCompareEntries is how many entries of the common tail the head
-// comparison checks entry by entry. A divergence anywhere below the tail is
-// what `repository verify` walks for; the tail is what a crash can touch.
-const tailCompareEntries = 64
-
-// The reconcile actions, as the boot log prints them.
+// The boot check's actions, as its log prints them.
 const (
-	reconcileOK       = "ok"
-	reconcileCaughtUp = "caught up"
-	reconcileImported = "imported"
-	reconcileWroteDir = "wrote directory"
-	// reconcileResumed is an import a previous boot began and did not
-	// complete, finished from the rows already in the table.
-	reconcileResumed = "resumed import"
-	// reconcileConverted is a history in an older changelog dialect, converted
-	// in place and folded again (conversion.go).
+	reconcileOK        = "ok"
+	reconcileImported  = "imported"
+	reconcileResumed   = "resumed import"
 	reconcileConverted = "converted"
-	// reconcileSkipped is a directory with no row and no manifest: nothing
-	// says whose it is, so it is neither imported nor deleted.
+	// reconcileAdopted is a 0.x directory whose lines the table holds,
+	// removed but for its blobs and its spool.
+	reconcileAdopted = "history moved to the table"
+	// reconcileRestored is a repository restored from the archive.
+	reconcileRestored = "restored from the archive"
+	// reconcileSkipped is a 0.x directory with no row and no manifest:
+	// nothing says whose it is, so it is neither imported nor deleted.
 	reconcileSkipped = "skipped: no manifest"
 )
 
@@ -179,101 +95,100 @@ const (
 type reconcileOutcome struct {
 	Repository string
 	Action     string
-	// Entries is how many entries moved: appended to the file, or imported
-	// into the table.
+	// Entries is how many lines came into the table.
 	Entries int64
-	// TruncatedBytes and TruncatedEntries are the incomplete tail Open cut
-	// from the active segment: its bytes, and the complete lines among them.
-	TruncatedBytes   int64
-	TruncatedEntries int64
-	// checked is the Log the reconcile last opened over the directory, kept
-	// for the repository's first open (keepChecked).
-	checked *changelogfile.Log
 }
 
-// repositoryDir is the repository's directory under the data root, created
-// with its three subdirectories when missing.
+// repositoryDir is the repository's directory under the data root.
 func (s *service) repositoryDir(id string) (string, error) {
 	return changelogfile.EnsureRepoDir(s.dataRoot, id)
 }
 
-// writerOptions is the one WriterOptions every writer in this process uses.
-func (s *service) writerOptions() changelogfile.WriterOptions {
-	return changelogfile.WriterOptions{SegmentBytes: s.segmentBytes}
-}
-
-// keepChecked keeps the Log a reconcile of repository id checked, for the
-// repository's first open to take. Digesting a long history's finished
-// segments takes minutes, the first open is what every request for the
-// repository waits on, and a finished segment never changes, so the open
-// takes the digests this Log checked rather than reading every segment again
-// (issue 761). What was appended since the Log was opened is checked at the
-// open as usual.
-func (s *service) keepChecked(id string, l *changelogfile.Log) {
-	if l == nil {
-		return
-	}
-	s.checkedMu.Lock()
-	defer s.checkedMu.Unlock()
-	s.checked[id] = l
-}
-
-// takeChecked hands out, once, the Log kept for repository id; nil when none
-// was kept or it was taken already.
-func (s *service) takeChecked(id string) *changelogfile.Log {
-	s.checkedMu.Lock()
-	defer s.checkedMu.Unlock()
-	l := s.checked[id]
-	delete(s.checked, id)
-	return l
-}
-
-// reconcileRepositories is the boot check: every `repositories` row against
-// its directory, then every directory with no row. It refuses the boot on the
-// first repository that cannot be reconciled.
+// reconcileRepositories is the boot check (the header).
 func (s *service) reconcileRepositories(ctx context.Context) error {
 	repos, err := s.listRepositories(ctx)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: boot check: list repositories: %w", err)
+	}
+	if repos, err = s.finishDeletionsAndTakes(ctx, repos); err != nil {
+		return err
 	}
 	dirs, err := changelogfile.ListRepositoryDirs(s.dataRoot)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: boot check: a directory under %s/ is not named by a repository id or authority; move it out of the data root: %w",
 			changelogfile.RepositoriesDir, err)
 	}
-	hasRow := make(map[string]bool, len(repos))
+	byID := make(map[string]Repository, len(repos))
 	for _, repo := range repos {
-		hasRow[repo.ID] = true
+		byID[repo.ID] = repo
 	}
-	unrowed := 0
+	var history, adopted []string
 	for _, id := range dirs {
-		if !hasRow[id] {
-			unrowed++
-		}
-	}
-	// Said before the work, because a directory with no row is an import and
-	// an import of a long history takes minutes: whoever is waiting on the
-	// listener learns why it is late from this line.
-	s.log.Info("substrate: boot check started",
-		"repositories", len(repos), "directoriesToImport", unrowed)
-	for _, repo := range repos {
-		out, err := s.reconcileRow(ctx, repo, true)
+		dir, err := changelogfile.RepoDir(s.dataRoot, id)
 		if err != nil {
-			s.logInterrupted(ctx, repo.ID)
-			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
+			return err
 		}
-		s.logReconcile(out)
+		switch {
+		case changelogfile.HistoryAdopted(dir):
+			adopted = append(adopted, id)
+		case changelogfile.HasHistory(dir):
+			history = append(history, id)
+		}
 	}
-	for _, id := range dirs {
-		if hasRow[id] {
+	// A directory whose history a boot adopted and whose removal it did not
+	// finish: the table holds every line, so the removal is finished, and
+	// nothing of it is read. With no row the table holds nothing of it after
+	// all (a database restored from before the upgrade), and it is left.
+	for _, id := range adopted {
+		dir, err := changelogfile.RepoDir(s.dataRoot, id)
+		if err != nil {
+			return err
+		}
+		if _, ok := byID[id]; !ok {
+			s.log.Error("substrate: a directory's history was adopted by a database that no longer holds the repository; it is left where it is",
+				"repository", id, "directory", dir)
 			continue
 		}
-		out, err := s.importRepositoryDir(ctx, id)
+		if err := changelogfile.RemoveHistory(dir, s.importStage); err != nil {
+			return fmt.Errorf("substrate/engine: boot check: finish removing the adopted history of %s: %w", id, err)
+		}
+		s.log.Info("substrate: finished removing a directory's adopted history", "repository", id)
+	}
+	// Said before the work, because an import of a long history takes
+	// minutes: whoever is waiting on the listener learns why it is late.
+	s.log.Info("substrate: boot check started", "repositories", len(repos), "directoriesWithHistory", len(history))
+	for _, id := range history {
+		var out reconcileOutcome
+		if repo, ok := byID[id]; ok {
+			out, err = s.adoptDirectory(ctx, repo)
+		} else {
+			var repo Repository
+			repo, out, err = s.importDirectory(ctx, id)
+			if err == nil && out.Action != reconcileSkipped {
+				byID[id], repos = repo, append(repos, repo)
+			}
+		}
 		if err != nil {
 			s.logInterrupted(ctx, id)
 			return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
 		}
 		s.logReconcile(out)
+	}
+	if err := s.reconcileArchive(ctx, byID); err != nil {
+		return err
+	}
+	for _, repo := range repos {
+		out, err := s.reconcileRow(ctx, repo)
+		if err != nil {
+			s.logInterrupted(ctx, repo.ID)
+			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
+		}
+		if out.Action != reconcileOK {
+			s.logReconcile(out)
+		}
+	}
+	if err := s.removeUnnamedStages(ctx); err != nil {
+		return fmt.Errorf("substrate/engine: boot check: remove the staged copies no take names: %w", err)
 	}
 	return nil
 }
@@ -300,28 +215,100 @@ func (s *service) logReconcile(out reconcileOutcome) {
 	if out.Entries > 0 {
 		attrs = append(attrs, "entries", out.Entries)
 	}
-	if out.TruncatedBytes > 0 {
-		attrs = append(attrs, "truncatedBytes", out.TruncatedBytes, "truncatedEntries", out.TruncatedEntries)
-	}
 	if out.Action == reconcileSkipped {
 		s.log.Warn("substrate: repository directory has no row and no manifest; left alone", attrs...)
 		return
 	}
-	s.log.Info("substrate: repository directory checked", attrs...)
+	s.log.Info("substrate: repository checked", attrs...)
 }
 
-// reconcileRow reconciles one repository that HAS a control-plane row with its
-// directory: cases 1, 2, 4 and 5, and case 3's file-ahead half when
-// allowImport is set. It opens its own scoped pool and its own writer; no
-// dataset may be open or opening on the repository while it runs. At boot
-// nothing opens one until the check is done; at creation the creation holds
-// open's slot for the repository (claimOpen) across this call.
-func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport bool) (reconcileOutcome, error) {
-	out := reconcileOutcome{Repository: repo.ID}
-	// The lease first: this reconcile WRITES (a catch-up, an import, the
-	// manifest), so a process that is not the repository's one writer is
-	// refused here — at the boot check, before it has touched a byte — rather
-	// than at its first append (writerlease.go, decision 0083).
+// reconcileRow finishes what the import-progress marker says is unfinished
+// for one repository with a row, and converts a history below this binary's
+// dialect. A marker whose head the table has not reached is an import whose
+// source is the archive (a 0.x directory was read before this): it is read
+// again. No dataset may be open or opening on the repository while it runs.
+func (s *service) reconcileRow(ctx context.Context, repo Repository) (reconcileOutcome, error) {
+	out := reconcileOutcome{Repository: repo.ID, Action: reconcileOK}
+	// The lease first: this reconcile WRITES (an import, a conversion, a
+	// fold), so a process that is not the repository's one writer is refused
+	// here (writerlease.go, decision 0083).
+	if err := s.lease.acquire(ctx, repo.ID); err != nil {
+		return out, err
+	}
+	db, err := s.scopedDB(repo.scope())
+	if err != nil {
+		return out, err
+	}
+	ds := s.bareDataset(repo, db)
+	defer ds.close()
+	marked, incomplete, err := importIncomplete(ctx, db)
+	if err != nil {
+		return out, err
+	}
+	stored, err := readChangelogDialect(ctx, db)
+	if err != nil {
+		return out, err
+	}
+	converting := len(pendingConversions(s.conversion, stored)) > 0
+	if !incomplete && !converting {
+		return out, nil
+	}
+	var src historySource
+	if incomplete {
+		head, err := tableChangelogHead(ctx, db)
+		if err != nil {
+			return out, err
+		}
+		if head < marked {
+			a, err := s.archiveSourceOf(ctx, db, repo.ID)
+			if err != nil {
+				return out, fmt.Errorf("%w: the import was reading the archive, which cannot be read now: %w", importIncompleteErr(repo.ID, marked), err)
+			}
+			src = a
+		}
+	}
+	ds.svc.log.Warn("substrate: finishing an interrupted import or conversion",
+		"repository", repo.ID, "markedHead", marked, "converting", converting)
+	n, err := ds.importHistory(ctx, src)
+	out.Entries = n
+	switch {
+	case err != nil:
+	case incomplete:
+		out.Action = reconcileResumed
+	default:
+		out.Action = reconcileConverted
+	}
+	return out, err
+}
+
+// bareDataset is a dataset with no registry and no open ladder: the shape an
+// import folds through. It never serves a request and is closed by its
+// caller.
+func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
+	dir, _ := changelogfile.RepoDir(s.dataRoot, repo.ID)
+	return &dataset{
+		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
+		reg: vocabulary.NewRegistry(), watch: newBroadcaster(), info: repo.info(),
+	}
+}
+
+// openLocalHistory opens a 0.x directory's segments, cutting an unfinished
+// tail as the release that wrote them would have.
+func openLocalHistory(dir string) (dirSource, error) {
+	m, err := changelogfile.ReadManifest(dir)
+	if err != nil {
+		return dirSource{}, err
+	}
+	log, err := changelogfile.Open(changelogfile.ChangelogDir(dir))
+	if err != nil {
+		return dirSource{}, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+	}
+	return dirSource{dir: dir, log: log, dialect: m.ChangelogDialect}, nil
+}
+
+// adoptDirectory is pass 1 for a 0.x directory with a row (the header).
+func (s *service) adoptDirectory(ctx context.Context, repo Repository) (reconcileOutcome, error) {
+	out := reconcileOutcome{Repository: repo.ID, Action: reconcileAdopted}
 	if err := s.lease.acquire(ctx, repo.ID); err != nil {
 		return out, err
 	}
@@ -329,165 +316,439 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 	if err != nil {
 		return out, err
 	}
-	// A directory that is not there yet is case 5; one with no manifest is a
-	// creation or a case-5 write that crashed part way, which the same path
-	// finishes.
-	_, manifestErr := changelogfile.ReadManifest(dir)
-	fresh := errors.Is(manifestErr, os.ErrNotExist)
-	if manifestErr != nil && !fresh {
-		return out, manifestErr
-	}
-	if _, err := s.repositoryDir(repo.ID); err != nil {
+	src, err := openLocalHistory(dir)
+	if err != nil {
 		return out, err
 	}
 	db, err := s.scopedDB(repo.scope())
 	if err != nil {
 		return out, err
 	}
-	ds := s.bareDataset(repo, db, dir)
+	ds := s.bareDataset(repo, db)
 	defer ds.close()
-	if err := ds.reconcileDir(ctx, &out, allowImport); err != nil {
+	if err := ds.compareHistories(ctx, src); err != nil {
 		return out, err
 	}
-	if fresh && out.Action == reconcileCaughtUp {
-		out.Action = reconcileWroteDir
-	}
-	if _, err := s.ensureManifest(ctx, dir, repo, ds.db); err != nil {
+	if out.Entries, err = ds.takeHistory(ctx, src); err != nil {
 		return out, err
 	}
-	s.keepChecked(repo.ID, out.checked)
+	return out, s.giveUpDirectory(ctx, ds, dir)
+}
+
+// giveUpDirectory is the end of a 0.x directory's import (rule 6), once the
+// table holds every line it does, in its dialect: the directory is set aside
+// first, so no boot reads its history again, then the table is converted and
+// folded, then the set-aside files go. The new archive the next pass starts
+// is published after.
+func (s *service) giveUpDirectory(ctx context.Context, ds *dataset, dir string) error {
+	if err := changelogfile.SetAsideHistory(dir, s.importStage); err != nil {
+		return err
+	}
+	if err := ds.finishImport(ctx); err != nil {
+		return err
+	}
+	if err := s.importStage(importBeforeCleanup); err != nil {
+		return err
+	}
+	return changelogfile.RemoveHistory(dir, s.importStage)
+}
+
+// importDirectory is pass 1 for a 0.x directory with no row: its manifest
+// becomes the row, its history the table's, and its own history files go. A
+// directory with NO MANIFEST is skipped, logged and left where it is: nothing
+// says whose repository it is, so it can be neither imported nor safely
+// deleted. A manifest that is present and unreadable, or whose data key the
+// credential key does not open, refuses the boot.
+func (s *service) importDirectory(ctx context.Context, id string) (Repository, reconcileOutcome, error) {
+	out := reconcileOutcome{Repository: id, Action: reconcileImported}
+	dir, err := changelogfile.RepoDir(s.dataRoot, id)
+	if err != nil {
+		return Repository{}, out, err
+	}
+	m, err := changelogfile.ReadManifest(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		out.Action = reconcileSkipped
+		return Repository{}, out, nil
+	}
+	if err != nil {
+		return Repository{}, out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
+	}
+	// An archive's directory (an export extracted) is restored from the
+	// archive, never imported from here: its layout is not a 0.x one.
+	if m.Format == changelogfile.ManifestFormatArchive {
+		return Repository{}, out, fmt.Errorf("%s is a repository's archive (an export extracted, decision 0278), which the boot restores from the archive and not from the data root: move it to %s in the archive (by default under %s/archive) and boot again",
+			dir, changelogfile.RepositoryPrefix(id), s.dataRoot)
+	}
+	// The boot gave every directory from before ids its id first
+	// (repositoryid.go), so the manifest names it.
+	if m.Format != changelogfile.ManifestFormat {
+		return Repository{}, out, fmt.Errorf("the manifest of %s is format %d, which the boot converts before it imports; restart the server", dir, m.Format)
+	}
+	sealed, err := changelogfile.ReadSealed(dir)
+	if err != nil {
+		return Repository{}, out, err
+	}
+	src, err := openLocalHistory(dir)
+	if err != nil {
+		return Repository{}, out, err
+	}
+	archiveID, err := changelogfile.NewArchiveID(nowUTC())
+	if err != nil {
+		return Repository{}, out, err
+	}
+	repo, release, err := s.restoreRow(ctx, m, src.Head(), sealed, dir, archiveRecord{archive: archiveID})
+	if err != nil {
+		return repo, out, err
+	}
+	defer release()
+	db, err := s.scopedDB(repo.scope())
+	if err != nil {
+		return repo, out, err
+	}
+	ds := s.bareDataset(repo, db)
+	defer ds.close()
+	if out.Entries, err = ds.takeHistory(ctx, src); err != nil {
+		return repo, out, err
+	}
+	return repo, out, s.giveUpDirectory(ctx, ds, dir)
+}
+
+// restoreRow checks a manifest a restore reads (a 0.x directory's, or an
+// archive's) and makes it the repository's row, under the writer lease. The
+// row, its dialect stamps and the import marker naming head commit in one
+// transaction: a repository is never published without the mark that says
+// its history is not all in, so a boot cut short after it refuses to serve
+// it until an import finishes. The release it returns gives the lease back
+// unless the import that follows completed: a repository whose history is in
+// is this process's to write.
+func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head int64, sealed []changelogfile.SealedRecord, where string, rec archiveRecord) (Repository, func(), error) {
+	noop := func() {}
+	if err := validRepositoryName(m.Authority); err != nil {
+		return Repository{}, noop, fmt.Errorf("the manifest names an authority that cannot be a repository's name: %w", err)
+	}
+	// The name's lease first, held until the boot has published the
+	// repository, as the keying holds it (holdName): a directory given its
+	// id by a boot that died before importing it is resumed here, and a
+	// second server with a copy still keyed by the name, or another archive
+	// of the name, must meet the lease rather than find no row and take the
+	// name under a second id.
+	if err := s.holdName(ctx, m.Authority); err != nil {
+		return Repository{}, noop, err
+	}
+	if err := s.importStage(importBeforeRow); err != nil {
+		return Repository{}, noop, err
+	}
+	// One name, one repository: a history whose name another repository in
+	// this database holds is a copy of another repository, not this one.
+	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {
+		return Repository{}, noop, fmt.Errorf("%s is repository %s, and this database holds another repository of that name (id %s); move it out of the way or delete that repository",
+			where, m.Authority, other.ID)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return Repository{}, noop, err
+	}
+	// THE WRITER LEASE BEFORE THE ROW, for the reason a creation takes it
+	// before its seed (engine.go createSeededRepository): the insert below
+	// publishes the repository while its changelog table is still empty, and
+	// another server that saw the row would serve a repository with no
+	// history.
+	leased, err := s.lease.acquireNew(ctx, m.ID)
+	release := func() {
+		if leased {
+			s.lease.release(m.ID)
+		}
+	}
+	if err != nil {
+		release()
+		return Repository{}, noop, err
+	}
+	fail := func(err error) (Repository, func(), error) {
+		release()
+		return Repository{}, noop, err
+	}
+	// Both reader requirements before the row: a refusal from the fold, with
+	// the rows already committed, is the outage the manifest exists to
+	// prevent.
+	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
+		return fail(err)
+	}
+	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {
+		return fail(err)
+	}
+	if len(m.DEK) == 0 {
+		return fail(fmt.Errorf("the manifest of repository %s carries no wrapped DEK, so nothing could open its sealed store; restore it from a copy whose manifest holds one",
+			m.Authority))
+	}
+	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
+	if err != nil {
+		return fail(fmt.Errorf("the DEK in the manifest of repository %s does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key it was written under, or move it out of the way",
+			m.Authority, err))
+	}
+	if err := sealedFilesOpenUnder(sealed, dek); err != nil {
+		return fail(fmt.Errorf("the sealed store of repository %s does not open under the DEK its manifest carries: %w. Restore it from a copy whose files open",
+			m.Authority, err))
+	}
+	repo := Repository{ID: m.ID, Authority: m.Authority, CreatedAt: m.CreatedAt, DEK: m.DEK, DEKKeyID: m.DEKKeyID}
+	if repo.CreatedAt.IsZero() {
+		repo.CreatedAt = nowUTC()
+	}
+	// A fresh generation, never one carried in the manifest: the history may
+	// be an older copy of one this database's clients hold cursors into, and
+	// a bare seq cannot tell the two apart (decision 0056).
+	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
+		return fail(err)
+	}
+	if err := s.insertRestoredRow(ctx, repo, m, head, rec); err != nil {
+		return fail(err)
+	}
+	// The row is in, marked, and the import that follows is idempotent: a
+	// crash from here leaves a marked repository the next boot finishes, so
+	// the lease is kept whatever the import does.
+	leased = false
+	if err := s.importStage(importAfterRow); err != nil {
+		return repo, noop, err
+	}
+	return repo, noop, nil
+}
+
+// insertRestoredRow is restoreRow's one transaction: the control-plane row,
+// the dialects the manifest recorded, so the store carries the WRITER's
+// requirements rather than this binary's maximum (a dialect left at 0, a
+// changelog nobody had claimed, stamps nothing, as the writer had not), and
+// the import marker at head, and the record (rule 8): the new archive the
+// repository's passes write, and the manifest a restore reads from, so an
+// import a boot finishes reads that one snapshot. The scoped rows take their
+// repository from the transaction's own setting, as a scoped connection's do.
+func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord) error {
+	tx, err := s.maint.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		repo.ID, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
+		nullString(repo.DEKKeyID)); err != nil {
+		return fmt.Errorf("create the row from the manifest: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT set_config('substrate.repository', $1, true)`, repo.ID); err != nil {
+		return err
+	}
+	if m.ChangelogDialect > 0 {
+		if _, err := tx.ExecContext(ctx, changelogDialectStamp, m.ChangelogDialect); err != nil {
+			return fmt.Errorf("stamp changelog dialect %d from the manifest: %w", m.ChangelogDialect, err)
+		}
+	}
+	if m.VocabularyDialect > 0 {
+		if _, err := tx.ExecContext(ctx, vocabularyDialectStamp, m.VocabularyDialect); err != nil {
+			return fmt.Errorf("stamp vocabulary dialect %d from the manifest: %w", m.VocabularyDialect, err)
+		}
+	}
+	if err := markImportIncomplete(ctx, tx, head); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO archive_records (archive, source) VALUES ($1, nullif($2, ''))`, rec.archive, rec.source); err != nil {
+		return fmt.Errorf("record the repository's new archive: %w", err)
+	}
+	return tx.Commit()
+}
+
+// reconcileArchive is pass 2 (the header): every repository the archive
+// holds and the database does not is restored from it (rule 8). A
+// repository the database holds is never taken from the archive here: the
+// operator decides that (`substratectl archive resolve`).
+func (s *service) reconcileArchive(ctx context.Context, byID map[string]Repository) error {
+	if err := s.restoreTakes(ctx, byID); err != nil {
+		return err
+	}
+	if s.archive == nil {
+		return nil
+	}
+	all, err := archivedRepositories(ctx, s.archive)
+	if err != nil {
+		s.log.Error("substrate: the archive cannot be listed; the boot goes on without restoring anything from it",
+			"store", s.archive.String(), "error", err)
+		return nil
+	}
+	for _, id := range sortedKeys(all) {
+		if _, rowed := byID[id]; rowed {
+			continue
+		}
+		out, skipped, err := s.restoreArchived(ctx, id, all[id], byID)
+		if err != nil {
+			s.logInterrupted(ctx, id)
+			return fmt.Errorf("substrate/engine: boot check: the archive of repository %s in %s: %w. To boot without it, move %s out of the archive",
+				id, s.archive.String(), err, changelogfile.RepositoryPrefix(id))
+		}
+		switch {
+		case errors.Is(skipped, errArchiveCovered):
+			s.log.Info("substrate: a repository's archive ends in its deletion; it is not restored", "repository", id, "store", s.archive.String())
+		case errors.Is(skipped, errArchiveAmbiguous):
+			s.log.Error("substrate: a repository's archive holds two manifests of its highest epoch, and the boot does not choose between them; nothing of it is restored",
+				"repository", id, "store", s.archive.String(), "error", skipped)
+		case skipped != nil:
+			s.log.Error("substrate: a repository's archive cannot be read; the boot goes on without it, and the next boot reads it again",
+				"repository", id, "store", s.archive.String(), "error", skipped)
+		case out.Action != reconcileOK:
+			s.logReconcile(out)
+		}
+	}
+	return nil
+}
+
+// restoreArchived restores one repository the database does not hold from
+// the manifest rule 8 picks, into a new archive. skipped is an archive that
+// is not restored now (ended by a deletion, two manifests of one epoch, a
+// store that does not answer); err refuses the boot.
+func (s *service) restoreArchived(ctx context.Context, id string, listed archiveListing, byID map[string]Repository) (out reconcileOutcome, skipped, err error) {
+	out = reconcileOutcome{Repository: id, Action: reconcileOK}
+	archiveID, name, err := restorable(listed)
+	if errors.Is(err, archive.ErrNotFound) {
+		return out, nil, nil
+	}
+	if err != nil {
+		return out, err, nil
+	}
+	src, err := openArchiveSource(ctx, s.archive, id, archiveID, name, s.admitManifest)
+	if errors.Is(err, errArchiveUnreadable) || errors.Is(err, errArchiveCovered) || errors.Is(err, errArchiveAmbiguous) {
+		return out, err, nil
+	}
+	if err != nil {
+		return out, nil, err
+	}
+	sealed, err := src.Sealed(ctx)
+	if errors.Is(err, errArchiveUnreadable) {
+		return out, err, nil
+	}
+	if err != nil {
+		return out, nil, err
+	}
+	next, err := changelogfile.NewArchiveID(nowUTC(), listed.ids()...)
+	if err != nil {
+		return out, nil, err
+	}
+	out, err = s.restoreSource(ctx, src, sealed, next, byID)
+	return out, nil, err
+}
+
+// restoreFrom restores repository id, which the database does not hold,
+// from manifest name of archive archiveID in store, into archive next.
+func (s *service) restoreFrom(ctx context.Context, store archive.Store, id, archiveID, name, next string, byID map[string]Repository) (reconcileOutcome, error) {
+	src, err := openArchiveManifest(ctx, store, id, archiveID, name, false, s.admitManifest)
+	if err != nil {
+		return reconcileOutcome{Repository: id}, err
+	}
+	sealed, err := src.Sealed(ctx)
+	if err != nil {
+		return reconcileOutcome{Repository: id}, err
+	}
+	return s.restoreSource(ctx, src, sealed, next, byID)
+}
+
+// restoreSource is a restore's row and import from src (rule 8).
+func (s *service) restoreSource(ctx context.Context, src *archiveSource, sealed []changelogfile.SealedRecord, next string, byID map[string]Repository) (reconcileOutcome, error) {
+	out := reconcileOutcome{Repository: src.repository, Action: reconcileOK}
+	repo, release, err := s.restoreRow(ctx, src.manifest, src.Head(), sealed, src.String(),
+		archiveRecord{archive: next, source: src.archive + "/" + src.name})
+	if err != nil {
+		return out, err
+	}
+	defer release()
+	byID[src.repository] = repo
+	db, err := s.scopedDB(repo.scope())
+	if err != nil {
+		return out, err
+	}
+	ds := s.bareDataset(repo, db)
+	defer ds.close()
+	if out.Entries, err = ds.importHistory(ctx, src); err != nil {
+		return out, err
+	}
+	out.Action = reconcileRestored
 	return out, nil
 }
 
-// bareDataset is a dataset with no registry, no writer and no open ladder: the
-// shape the reconcile and the import fold through. It never serves a request
-// and is closed by its caller.
-func (s *service) bareDataset(repo Repository, db *sql.DB, dir string) *dataset {
-	return &dataset{
-		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
-		reg: vocabulary.NewRegistry(), watch: newBroadcaster(), info: repo.info(),
+// archiveSourceOf opens the manifest a restore of repository id began from,
+// as its record names it, for an import a boot finishes.
+func (s *service) archiveSourceOf(ctx context.Context, db dbx, id string) (*archiveSource, error) {
+	rec, ok, err := readArchiveRecord(ctx, db)
+	if err != nil {
+		return nil, err
 	}
+	archiveID, name, found := strings.Cut(rec.source, "/")
+	if !ok || !found {
+		return nil, fmt.Errorf("substrate/engine: the record of repository %s names no manifest a restore began from", id)
+	}
+	// A take's restore reads the copy staged for its recorded choice, never
+	// the store again unless that copy is gone.
+	if choice, ok, err := readTakeChoice(ctx, s.maint, id); err != nil {
+		return nil, err
+	} else if ok && choice.archive == archiveID && choice.manifest == name {
+		if !s.stagedFor(id, choice) {
+			if _, err := s.stageTake(ctx, id, &choice); err != nil {
+				return nil, err
+			}
+		}
+		store, err := s.stagedStore(id, choice)
+		if err != nil {
+			return nil, err
+		}
+		return openArchiveManifest(ctx, store, id, archiveID, name, false, s.admitManifest)
+	}
+	if s.archive == nil {
+		return nil, errNoArchive
+	}
+	return openArchiveSource(ctx, s.archive, id, archiveID, name, s.admitManifest)
 }
 
-// reconcileDir is the head comparison and its consequences over the dataset's
-// directory: it opens the changelog (cutting an incomplete tail), compares heads and
-// the common tail, appends what the table has and the file lacks, imports what
-// the file has and the table lacks when allowed, and then mirrors the sealed
-// store in the same direction. It runs on a bare dataset, which has no writer:
-// the writer an append needs is opened over the log and closed with the
-// append, so the lock it holds is released before any dataset opens its own.
-func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allowImport bool) error {
-	// A conversion cut short left its directory beside the live one, and
-	// possibly a table that already took the converted lines: finished first,
-	// so the files compared below are the ones the table holds.
-	if err := ds.finishConversion(ctx); err != nil {
+// admitManifest refuses a manifest naming a dialect above this binary's.
+func (s *service) admitManifest(m changelogfile.Manifest) error {
+	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
 		return err
 	}
-	tableHead, err := tableChangelogHead(ctx, ds.db)
-	if err != nil {
-		return err
-	}
-	// Every finished segment on its sidecar's word, its first and last lines
-	// read, the last segment listed excepted: a finished segment never
-	// changes, and digesting every one of a long history held up the boot
-	// for minutes (issue 825). The first open after this takes the Log, and
-	// the server digests the segments behind it (segmentdigest.go).
-	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
-		TrustSidecars: true,
-		Progress:      ds.svc.checkProgress(checkAtBoot, ds.info.ID),
-	})
-	if err != nil {
-		return directoryOpenErr(err)
-	}
-	out.checked = log
-	out.TruncatedBytes, out.TruncatedEntries = log.TruncatedBytes, log.TruncatedEntries
-	fileHead := log.Head()
-	if err := compareTails(ctx, ds.db, log, min(tableHead, fileHead)); err != nil {
-		return err
-	}
-	out.Action = reconcileOK
-	switch {
-	case tableHead > fileHead:
-		w, err := log.Writer(ds.svc.writerOptions())
-		if err != nil {
-			return writerErr(err)
-		}
-		n, err := ds.appendFromTable(ctx, ds.db, w, fileHead)
-		if cerr := w.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			return err
-		}
-		out.Action, out.Entries = reconcileCaughtUp, n
-	case fileHead > tableHead:
-		if !allowImport {
-			return fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, fileHead, tableHead)
-		}
-		n, folded, err := ds.importEntries(ctx, log, tableHead)
-		if err != nil {
-			return err
-		}
-		out.checked, out.Action, out.Entries = folded, reconcileImported, n
-		return discardPendingSealed(ds.dir)
-	}
-	// Equal heads say the rows are all there and nothing about the fold: an
-	// import that died after its last batch left the marker, and the fold is
-	// rebuilt before anything reads it. A catch-up above a marked repository
-	// is what a crash between a commit and its append leaves; the Log opened
-	// above predates that append, so it is opened again and the refold sees
-	// every row.
-	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
-	if err != nil {
-		return err
-	}
-	if !incomplete {
-		// The sealed files first: a conversion sets the import's marker, and
-		// a boot that resumes it loads sealed/ back into the table, which must
-		// find what the table holds.
-		if err := mirrorSealedFromTable(ctx, ds.db, fileSealedStore{}, ds.dir); err != nil {
-			return err
-		}
-		converted, ok, err := ds.convertHistory(ctx, log)
-		if err != nil || !ok {
-			return err
-		}
-		out.checked, out.Action = converted, reconcileConverted
-		return ds.refoldFromFiles(ctx, converted)
-	}
-	if !allowImport {
-		return importIncompleteErr(ds.info.ID, markedHead)
-	}
-	if out.Action == reconcileCaughtUp {
-		// The segments the first Log checked are still the ones it checked;
-		// only what the catch-up wrote is read again.
-		if log, err = changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
-			Verified:      log,
-			TrustSidecars: true,
-			Progress:      ds.svc.checkProgress(checkAtBoot, ds.info.ID),
-		}); err != nil {
-			return directoryOpenErr(err)
-		}
-		out.checked = log
-	}
-	folded, err := ds.completeImport(ctx, log, markedHead)
-	if err != nil {
-		return err
-	}
-	out.checked, out.Action = folded, reconcileResumed
-	return discardPendingSealed(ds.dir)
+	return admitVocabularyDialect(m.Authority, m.VocabularyDialect)
 }
 
-// discardPendingSealed drops the pending files of a directory an import just
-// took as the truth: each is a write the server that wrote the copy never
-// committed, nobody's record (ReadSealed skipped it), and dropped here so a
-// verify right after the import reports none rather than at the next open.
-func discardPendingSealed(dir string) error {
-	_, err := changelogfile.DiscardPendingSealed(dir)
-	return err
+// archivedRepositories is every repository the store holds manifests or
+// deletion marks of, with what it holds of each, from one listing.
+func archivedRepositories(ctx context.Context, store archive.Store) (map[string]archiveListing, error) {
+	listed, err := store.List(ctx, changelogfile.RepositoriesDir+"/")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]archiveListing{}
+	for _, o := range listed {
+		k, ok := changelogfile.ParseArchiveKey(o.Key)
+		if !ok || !k.Manifests || !vocabulary.ValidRepositoryID(k.Repository) {
+			continue
+		}
+		l := out[k.Repository]
+		if l == nil {
+			l = archiveListing{}
+			out[k.Repository] = l
+		}
+		a := l[k.Archive]
+		if a == nil {
+			a = &listedArchive{byEpoch: map[int64][]string{}}
+			l[k.Archive] = a
+		}
+		if k.Name == changelogfile.DeletedMark {
+			a.deleted = true
+		} else if epoch, _, ok := changelogfile.ParseArchiveManifestName(k.Name); ok {
+			a.byEpoch[epoch] = append(a.byEpoch[epoch], k.Name)
+			a.top = max(a.top, epoch)
+		}
+	}
+	for _, l := range out {
+		for _, a := range l {
+			for _, names := range a.byEpoch {
+				slices.Sort(names)
+			}
+		}
+	}
+	return out, nil
 }
 
-// tableChangelogHead is the table's head, 0 for an empty changelog.
 func tableChangelogHead(ctx context.Context, q dbx) (int64, error) {
 	var head int64
 	if err := q.QueryRowContext(ctx, `SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&head); err != nil {
@@ -496,229 +757,58 @@ func tableChangelogHead(ctx context.Context, q dbx) (int64, error) {
 	return head, nil
 }
 
-// compareTails checks the last tailCompareEntries entries at or below head in
-// the file against the checksums the table stamped for the same seqs. Any
-// seq the two disagree on, or that one side lacks, is case 4.
-func compareTails(ctx context.Context, q dbx, log *changelogfile.Log, head int64) error {
-	if head <= 0 {
-		return nil
-	}
-	n := min(head, int64(tailCompareEntries))
-	after := head - n
-	entries, err := log.Read(after, int(n))
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-	}
-	rows, err := q.QueryContext(ctx,
-		`SELECT seq, hash FROM changelog WHERE seq > $1 AND seq <= $2 ORDER BY seq`, after, head)
+// compareHistories holds a 0.x directory to the table, line for line, before
+// either is converted (rule 6): the one place lines are compared, and the
+// last time a directory's word is taken. Both must be in one changelog
+// dialect, every seq both reach must be held by both with one checksum, and
+// neither may skip a seq. Past the shorter one's head the longer one's lines
+// stand: the table's stay (the release that wrote the directory appended to
+// it after the commit, so a crash left the table ahead), and the
+// directory's are imported (a database restored from a backup older than the
+// data root left the directory ahead).
+func (ds *dataset) compareHistories(ctx context.Context, src dirSource) error {
+	tableDialect, err := readChangelogDialect(ctx, ds.db)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rows.Close() }()
-	stamped := make(map[int64][]byte, n)
-	for rows.Next() {
-		var seq int64
-		var hash []byte
-		if err := rows.Scan(&seq, &hash); err != nil {
+	if max(tableDialect, 1) != src.Dialect() {
+		return fmt.Errorf("%w: the directory's lines are in changelog dialect %d and the table's in %d, and lines are compared in one dialect only",
+			ErrChangelogDiverged, src.Dialect(), max(tableDialect, 1))
+	}
+	tableHead, err := tableChangelogHead(ctx, ds.db)
+	if err != nil {
+		return err
+	}
+	both := min(tableHead, src.Head())
+	for after := int64(0); after < both; {
+		limit := int(min(int64(rebuildBatch), both-after))
+		entries, err := src.log.Read(after, limit)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
+		}
+		stamps, err := scanStampPage(ctx, ds.db, after, limit)
+		if err != nil {
 			return err
 		}
-		stamped[seq] = hash
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if int64(len(entries)) != n {
-		return fmt.Errorf("%w: the file holds %d of the %d entries below seq %d", ErrChangelogDiverged, len(entries), n, head)
-	}
-	for _, e := range entries {
-		_, sum, err := changelogfile.Encode(e)
-		if err != nil {
-			return fmt.Errorf("%w: seq %d: %w", ErrChangelogDiverged, e.Seq, err)
+		for i := range limit {
+			seq := after + int64(i) + 1
+			if i >= len(entries) || entries[i].Seq != seq {
+				return fmt.Errorf("%w: the directory does not hold seq %d, which the table does", ErrChangelogDiverged, seq)
+			}
+			if i >= len(stamps) || stamps[i].entry.Seq != seq {
+				return fmt.Errorf("%w: the table does not hold seq %d, which the directory does", ErrChangelogDiverged, seq)
+			}
+			_, sum, err := changelogfile.Encode(entries[i])
+			if err != nil {
+				return fmt.Errorf("%w: seq %d: %w", ErrChangelogDiverged, seq, err)
+			}
+			if !bytes.Equal(sum[:], stamps[i].hash) {
+				return fmt.Errorf("%w: seq %d: the table's line is not the directory's", ErrChangelogDiverged, seq)
+			}
 		}
-		hash, ok := stamped[e.Seq]
-		if !ok {
-			return fmt.Errorf("%w: seq %d is in the file and not in the table", ErrChangelogDiverged, e.Seq)
-		}
-		if !bytes.Equal(hash, sum[:]) {
-			return fmt.Errorf("%w: seq %d: the table's checksum is not the file's", ErrChangelogDiverged, e.Seq)
-		}
+		after += int64(limit)
 	}
 	return nil
-}
-
-// appendFromTable appends every table row above the writer's head (after) to
-// the file, in pages of the service's catchUpBatch rows, and returns how many
-// it wrote.
-//
-// Every append is whole transactions: the writer refuses anything else, and
-// rotating only after an append is what keeps a transaction inside one
-// segment. A page is trimmed back to its last row that ends a transaction, so
-// a batch stays at most batch rows and the trimmed rows lead the next page;
-// only a page with no boundary at all, one transaction longer than the batch,
-// is extended forward to that transaction's `txn`. The rows the table holds
-// are always whole transactions (a transaction commits or it does not), so
-// the page always reaches its `txn`; a `txn` the table cannot reach is
-// divergence.
-//
-// A row whose stamped `hash` is not the checksum of what it holds is
-// divergence (case 4): every row was stamped by this format, so a mismatch is
-// a row whose content or stamp changed after it committed, and it is refused
-// rather than written out as history.
-func (ds *dataset) appendFromTable(ctx context.Context, q dbx, w *changelogfile.Writer, after int64) (int64, error) {
-	batch := ds.svc.catchUpBatch
-	head, err := tableChangelogHead(ctx, q)
-	if err != nil {
-		return 0, err
-	}
-	var n int64
-	for {
-		page, err := scanChecksumPage(ctx, q, after, batch)
-		if err != nil {
-			return n, err
-		}
-		if len(page) == 0 {
-			return n, nil
-		}
-		end := len(page)
-		for end > 0 && !page[end-1].entry.fileEntry().EndsTransaction() {
-			end--
-		}
-		if end > 0 {
-			page = page[:end]
-		} else {
-			// The CHECK holds `txn` at or above its seq and nothing else, so a
-			// `txn` past the head is refused before it sizes a query.
-			last := page[len(page)-1].entry
-			if last.Txn > head {
-				return n, fmt.Errorf("%w: seq %d ends its transaction at %d, past the table's head %d",
-					ErrChangelogDiverged, last.Seq, last.Txn, head)
-			}
-			rest, err := scanChecksumPage(ctx, q, last.Seq, int(last.Txn-last.Seq))
-			if err != nil {
-				return n, err
-			}
-			if int64(len(rest)) != last.Txn-last.Seq {
-				return n, fmt.Errorf("%w: seq %d ends its transaction at %d and the table holds %d of the %d rows between them",
-					ErrChangelogDiverged, last.Seq, last.Txn, len(rest), last.Txn-last.Seq)
-			}
-			page = append(page, rest...)
-		}
-		// The line encoded for the checksum check is the line the file gets,
-		// as prepareLines hands the writer the bytes settleChecksums
-		// stamped: one canonicalization per row, not two.
-		lines := make([]changelogfile.Line, 0, len(page))
-		for _, row := range page {
-			e := row.entry.fileEntry()
-			line, sum, err := changelogfile.Encode(e)
-			if err != nil {
-				return n, fmt.Errorf("substrate/engine: seq %d does not encode as a changelog line: %w", e.Seq, err)
-			}
-			if !bytes.Equal(row.hash, sum[:]) {
-				return n, fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)
-			}
-			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
-			after = e.Seq
-		}
-		// Prepare and Commit are AppendLines, split so a test can act while
-		// the file ends in the prepared transaction.
-		if err := w.Prepare(lines); err != nil {
-			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", lines[0].Seq, after, err)
-		}
-		if ds.svc.testCatchUpPrepared != nil {
-			ds.svc.testCatchUpPrepared(ds.info.ID)
-		}
-		if err := w.Commit(); err != nil {
-			return n, fmt.Errorf("substrate/engine: append seq %d..%d to the changelog file: %w", lines[0].Seq, after, err)
-		}
-		n += int64(len(lines))
-	}
-}
-
-// The import's durable steps, as the test seam names them (testImportFault).
-const (
-	importAfterBatch     = "after a batch of rows committed"
-	importAfterFirstFold = "after the first fold pass committed"
-)
-
-// importEntries loads sealed/ into the table, inserts every file entry above
-// the table's head, in batches of one transaction each under the changelog
-// lock, then rebuilds the fold from the files. The import-progress marker is
-// written before the first batch and deleted by the transaction that commits
-// the last fold pass (refoldFromFiles), so every crash window in between
-// leaves a state the next boot finishes: the file still ahead resumes the
-// rows from the new table head, and equal heads under the marker resume the
-// fold (completeImport). No row is ever inserted twice, because `seq` is the
-// key and the resume starts above what the table holds. It returns the Log it
-// folded, which a conversion replaced when the directory was older.
-func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, tableHead int64) (int64, *changelogfile.Log, error) {
-	batch := rebuildBatch
-	if ds.svc.testImportBatch > 0 {
-		batch = ds.svc.testImportBatch
-	}
-	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
-		return 0, nil, err
-	}
-	if err := markImportIncomplete(ctx, ds.db, log.Head()); err != nil {
-		return 0, nil, err
-	}
-	// Said before the work: the rows and the two fold passes below log
-	// nothing until the import is done, and a long history takes minutes.
-	ds.svc.log.Info("substrate: importing the repository directory",
-		"repository", ds.scope.Repository, "rows", log.Head()-tableHead, "fileHead", log.Head())
-	// One cursor across every batch, so each segment is read once (issue 745).
-	cur := log.Cursor(tableHead)
-	defer func() { _ = cur.Close() }()
-	prog := ds.svc.progress("importing the changelog rows",
-		"repository", ds.scope.Repository, "fileHead", log.Head())
-	var n int64
-	for {
-		entries, err := cur.Next(batch)
-		if err != nil {
-			return n, nil, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-		}
-		if len(entries) == 0 {
-			break
-		}
-		if err := ds.insertEntries(ctx, entries); err != nil {
-			return n, nil, err
-		}
-		n += int64(len(entries))
-		prog.tick(cur.Position())
-		if err := ds.importFault(importAfterBatch); err != nil {
-			return n, nil, err
-		}
-	}
-	// A directory an older release wrote is converted before anything folds
-	// it: the fold reads this binary's dialect alone (conversion.go).
-	log, _, err := ds.convertHistory(ctx, log)
-	if err != nil {
-		return n, nil, err
-	}
-	if err := ds.refoldFromFiles(ctx, log); err != nil {
-		return n, nil, err
-	}
-	return n, log, nil
-}
-
-// completeImport finishes an import whose rows are all in the table and whose
-// marker is still set: a boot that died between the last batch and the last
-// fold pass. sealed/ is loaded again because the direction is still the
-// import's (the files are what is being restored), and the upsert is
-// idempotent. markedHead is the file head the marker recorded; the log's own
-// head is what the refold folds, and the two differ after a catch-up. A
-// conversion sets the same marker, so this is also the end of one a crash cut
-// short. It returns the Log it folded.
-func (ds *dataset) completeImport(ctx context.Context, log *changelogfile.Log, markedHead int64) (*changelogfile.Log, error) {
-	ds.svc.log.Warn("substrate: resuming an interrupted import or conversion of the repository directory",
-		"repository", ds.scope.Repository, "markedHead", markedHead, "fileHead", log.Head())
-	if err := loadSealedFiles(ctx, ds.db, ds.dir); err != nil {
-		return nil, err
-	}
-	log, _, err := ds.convertHistory(ctx, log)
-	if err != nil {
-		return nil, err
-	}
-	return log, ds.refoldFromFiles(ctx, log)
 }
 
 // importFault runs the test seam at one of the import's durable steps; a nil
@@ -730,9 +820,29 @@ func (ds *dataset) importFault(stage string) error {
 	return ds.svc.testImportFault(stage)
 }
 
+// The import's durable steps, as the test seam names them (testImportFault),
+// beside the conversion's (conversion.go) and the removal of a 0.x
+// directory's history (changelogfile.RemoveHistory*).
+const (
+	importBeforeRow      = "with the name held, before the restored repository's row"
+	importAfterRow       = "after the restored repository's row committed"
+	importAfterSealed    = "after the source's files and sealed values were taken in"
+	importAfterBatch     = "after a batch of rows committed"
+	importAfterFirstFold = "after the first fold pass committed"
+	importBeforeCleanup  = "after the import finished, before the directory gave its history up"
+)
+
+// importStage runs the import's test seam at a step no dataset is open for.
+func (s *service) importStage(stage string) error {
+	if s.testImportFault == nil {
+		return nil
+	}
+	return s.testImportFault(stage)
+}
+
 // importIncomplete reports whether the repository's import-progress marker is
-// set (an import began and the transaction that completes it has not
-// committed) and the file head the marker recorded.
+// set (an import or a conversion began and the fold that completes it has
+// not committed) and the head the marker recorded.
 func importIncomplete(ctx context.Context, q dbx) (int64, bool, error) {
 	var head int64
 	err := q.QueryRowContext(ctx, `SELECT file_head FROM import_progress`).Scan(&head)
@@ -746,25 +856,24 @@ func importIncomplete(ctx context.Context, q dbx) (int64, bool, error) {
 }
 
 // importIncompleteErr is the refusal a marked repository meets, naming the
-// repository and the file head its import was bringing the table to.
+// repository and the head its import was bringing the table to.
 func importIncompleteErr(repository string, markedHead int64) error {
-	return fmt.Errorf("%w: repository %s, marked at file head %d", ErrImportIncomplete, repository, markedHead)
+	return fmt.Errorf("%w: repository %s, marked at head %d", ErrImportIncomplete, repository, markedHead)
 }
 
 // markImportIncomplete sets the marker, or moves its head when a resumed
 // import finds one already there.
-func markImportIncomplete(ctx context.Context, q dbx, fileHead int64) error {
+func markImportIncomplete(ctx context.Context, q dbx, head int64) error {
 	if _, err := q.ExecContext(ctx, `
 		INSERT INTO import_progress (file_head) VALUES ($1)
-		ON CONFLICT (repository) DO UPDATE SET file_head = EXCLUDED.file_head`, fileHead); err != nil {
+		ON CONFLICT (repository) DO UPDATE SET file_head = EXCLUDED.file_head`, head); err != nil {
 		return fmt.Errorf("substrate/engine: mark the import in progress: %w", err)
 	}
 	return nil
 }
 
-// insertEntries writes one batch of file entries as changelog rows, each with
-// the checksum its line carries, in one transaction holding the changelog
-// lock.
+// insertEntries writes one batch of entries as changelog rows, each with the
+// checksum its line carries, in one transaction holding the changelog lock.
 func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.Entry) error {
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -794,36 +903,28 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 	return tx.Commit()
 }
 
-// refoldFromFiles rebuilds the fold from the files in TWO passes. The fold
-// consults the registry for one thing, the weighted search bands
-// (fold.go foldFTS), and the reference sites (refs.go syncRefs), and the
-// registry is built from declaration RECORDS that do not exist until the
-// first pass has folded them. So the first pass folds under an empty registry
-// to bring the declaration rows into being, the registry is loaded from
-// them without writing anything, and the second pass folds every row the way
-// the live write did. Nothing appends here: an import runs before any dataset
-// is open and must leave the heads equal.
+// refold rebuilds the fold from the table in TWO passes. The fold consults the
+// registry for the weighted search bands (fold.go foldFTS) and the reference
+// sites (refs.go syncRefs), and the registry is built from declaration
+// RECORDS that do not exist until the first pass has folded them. So the
+// first pass folds under an empty registry to bring the declaration rows into
+// being, the registry is loaded from them without writing anything, and the
+// second pass folds every row the way the live write did. Nothing appends
+// here: an import runs before any dataset is open.
 //
 // The second pass's transaction is also the one that deletes the
 // import-progress marker, so the import is complete exactly when the fold is
-// the live write's. The first pass commits on its own: a crash after it
+// the live write's, and the operator's take the import carries out (rule 4),
+// which no boot acts on after it. The first pass commits on its own: a crash after it
 // leaves records with no `refs` and unweighted `fts`, which is why the marker
 // stays set until the second pass, and the resume runs both passes again
-// (each clears the fold tables first). The registry load between them reads
-// the first pass's committed rows through the pool, which is why the two
-// passes need not share a transaction.
+// (each clears the fold tables first).
 //
 // The same transaction converges the vectors with the fold and queues what is
 // missing (reconcileEmbeddings): the fold never reaches the live write's
-// enqueueEmbed, and the vectors are not in the directory, so the queue is what
-// stands in for them. Into an empty database that queues every embeddable
-// property; over an older database dump restored beside a newer directory it
-// deletes the vectors of values the directory has since changed or cleared
-// (a cleared property is not enqueued, so its vector would otherwise be
-// scored for good) and queues only what changed. Under the marker's
-// transaction a resumed import queues too, and a crash before the commit
-// leaves nothing half-done.
-func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) error {
+// enqueueEmbed, and the vectors are in no archive, so the queue is what stands
+// in for them.
+func (ds *dataset) refold(ctx context.Context) error {
 	queued := 0
 	replay := func(last bool) error {
 		tx, err := ds.db.BeginTx(ctx, nil)
@@ -836,7 +937,7 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 			now: nowUTC(), internal: true,
 		}
 		var report RebuildReport
-		if err := t.rebuild(log, &report); err != nil {
+		if err := t.rebuild(&report); err != nil {
 			return err
 		}
 		if _, err := t.queueObservedRederivation(); err != nil {
@@ -850,6 +951,9 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 			queued = n
 			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
 				return fmt.Errorf("clear the import-progress marker: %w", err)
+			}
+			if _, err := t.exec(`DELETE FROM archive_takes WHERE repository_id = $1`, ds.info.ID); err != nil {
+				return fmt.Errorf("end the take the import carried out: %w", err)
 			}
 		}
 		// No token-cache fence (tokencache.go): a replay commits only where
@@ -900,179 +1004,8 @@ func (ds *dataset) loadDeclarationsForReplay(ctx context.Context, q dbx) error {
 	return nil
 }
 
-// importRepositoryDir is case 3 for a directory with no row: the manifest
-// becomes the row, then the ordinary row reconcile imports the rest. The
-// row is inserted first and the import is idempotent, so a crash anywhere in
-// between leaves a row whose file is ahead of its table, which the next boot
-// finishes.
-//
-// A directory with NO MANIFEST is skipped, logged and left where it is: without
-// one nothing says whose repository it is, so it can be neither imported nor
-// safely deleted, and an operator reads the log. A manifest that is present
-// and unreadable, or whose DEK the credential key does not open, refuses the
-// boot: the first would import under a guessed identity, the second would
-// import a repository whose sealed store no login could then open, and both
-// are better refused here than discovered by the user.
-func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcileOutcome, error) {
-	out := reconcileOutcome{Repository: id}
-	dir, err := changelogfile.RepoDir(s.dataRoot, id)
-	if err != nil {
-		return out, err
-	}
-	m, err := changelogfile.ReadManifest(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		out.Action = reconcileSkipped
-		return out, nil
-	}
-	if err != nil {
-		return out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
-	}
-	if err := validRepositoryName(m.Authority); err != nil {
-		return out, fmt.Errorf("the manifest names an authority that cannot be a repository's name: %w", err)
-	}
-	// The boot gave every directory from before ids its id first
-	// (repositoryid.go), so the manifest names it.
-	if m.Format != changelogfile.ManifestFormat {
-		return out, fmt.Errorf("the manifest of %s is format %d, which the boot converts before it imports; restart the server", dir, m.Format)
-	}
-	// The name's lease first, held until the boot has published the
-	// repository, as the keying holds it (holdName): a directory given its id
-	// by a boot that died before importing it is resumed here, and a second
-	// server with a copy still keyed by the name must meet the lease rather
-	// than find no row and mint a second id.
-	if err := s.holdName(ctx, m.Authority); err != nil {
-		return out, err
-	}
-	if err := s.keyingFault(importBeforeRow); err != nil {
-		return out, err
-	}
-	// One name, one repository: a directory whose name another repository
-	// in this database holds is a copy of another repository, not this one.
-	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {
-		return out, fmt.Errorf("the directory %s is repository %s, and this database holds another repository of that name (id %s); move the directory out of the data root or delete that repository",
-			dir, m.Authority, other.ID)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return out, err
-	}
-	// THE WRITER LEASE BEFORE THE ROW, for the reason a creation takes it
-	// before its seed (engine.go createSeededRepository). The insert below
-	// publishes the repository while its changelog TABLE IS STILL EMPTY, so
-	// another server that saw the row could take the lease, find a repository
-	// with no entries and write a directory out of nothing — while this
-	// import aborted at the lease with the restored history still on disk and
-	// unimported. Taken here, before the row and before every check that
-	// refuses one, so nothing can claim a directory being imported.
-	leased, err := s.lease.acquireNew(ctx, m.ID)
-	// An import that fails releases only the lease IT took. Registered before
-	// the error is read, because acquireNew can report both — a lease taken
-	// on a connection that replaced a dead one.
-	defer func() {
-		if leased {
-			s.lease.release(m.ID)
-		}
-	}()
-	if err != nil {
-		return out, err
-	}
-	// Both reader requirements are checked here, before the row and before
-	// insertEntries writes anything: a refusal from the fold, with the rows
-	// already committed, is the outage the manifest exists to prevent.
-	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
-		return out, err
-	}
-	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {
-		return out, err
-	}
-	// A repository is born with its DEK, so a manifest without one describes
-	// no repository this binary can open, and the refusal comes before the
-	// row exists.
-	if len(m.DEK) == 0 {
-		return out, fmt.Errorf("the manifest of repository %s carries no wrapped DEK, so nothing could open its sealed store; restore the directory from a copy whose %s holds one",
-			m.Authority, changelogfile.ManifestName)
-	}
-	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
-	if err != nil {
-		return out, fmt.Errorf("the DEK in the manifest of repository %s does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key the directory was written under, or move the directory out of the data root",
-			m.Authority, err)
-	}
-	// Every sealed file must open under that DEK, proven before the row
-	// exists: a repository's payloads are bound-framed under it and nothing
-	// else (0059), so a file that does not open is a directory to restore
-	// rather than a repository to serve.
-	files, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		return out, err
-	}
-	if err := sealedFilesOpenUnder(files, dek); err != nil {
-		return out, fmt.Errorf("the sealed store of repository %s does not open under the DEK its manifest carries: %w. Restore the directory from a copy whose files open",
-			m.Authority, err)
-	}
-	// The directory is listed because no row has its authority as id, and the
-	// authority column always equals the id; this is the check that the
-	// manifest agrees with the directory name it was read under.
-	repo := Repository{
-		ID: m.ID, Authority: m.Authority, CreatedAt: m.CreatedAt,
-		DEK: m.DEK, DEKKeyID: m.DEKKeyID,
-	}
-	if repo.CreatedAt.IsZero() {
-		repo.CreatedAt = nowUTC()
-	}
-	// A fresh generation, never one carried in the manifest: the directory
-	// may be an older copy of a history this database's clients hold cursors
-	// into, and a bare seq cannot tell the two apart. Every cursor saved
-	// against the history that was here before is refused once and re-lists
-	// (decision 0056).
-	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
-		return out, err
-	}
-	if _, err := s.maint.ExecContext(ctx, `
-		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		repo.ID, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
-		nullString(repo.DEKKeyID)); err != nil {
-		return out, fmt.Errorf("create the row from the manifest: %w", err)
-	}
-	if err := s.stampDialectsFromManifest(ctx, repo, m); err != nil {
-		return out, err
-	}
-	out, err = s.reconcileRow(ctx, repo, true)
-	if err != nil {
-		return out, err
-	}
-	// The repository exists and its history is in, so the lease is this
-	// process's to keep.
-	leased = false
-	return out, nil
-}
-
-// stampDialectsFromManifest stamps the imported repository with the dialects
-// its manifest recorded, so the store carries the WRITER's requirements rather
-// than this binary's maximum. A dialect the manifest left at 0 (a changelog
-// nobody had claimed) stamps nothing, as the writer had not.
-func (s *service) stampDialectsFromManifest(ctx context.Context, repo Repository, m changelogfile.Manifest) error {
-	if m.ChangelogDialect == 0 && m.VocabularyDialect == 0 {
-		return nil
-	}
-	db, err := s.scopedDB(repo.scope())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = db.Close() }()
-	if m.ChangelogDialect > 0 {
-		if _, err := db.ExecContext(ctx, changelogDialectStamp, m.ChangelogDialect); err != nil {
-			return fmt.Errorf("stamp changelog dialect %d from the manifest: %w", m.ChangelogDialect, err)
-		}
-	}
-	if m.VocabularyDialect > 0 {
-		if _, err := db.ExecContext(ctx, vocabularyDialectStamp, m.VocabularyDialect); err != nil {
-			return fmt.Errorf("stamp vocabulary dialect %d from the manifest: %w", m.VocabularyDialect, err)
-		}
-	}
-	return nil
-}
-
 // manifestOf renders the row as its manifest, with both dialects read from the
-// repository's own stamps: the manifest is the directory's record of what a
+// repository's own stamps: the manifest is the archive's record of what a
 // binary must understand to read it, so it says what the stamps say.
 func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (changelogfile.Manifest, error) {
 	changelog, err := readChangelogDialect(ctx, q)
@@ -1084,60 +1017,11 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 		return changelogfile.Manifest{}, err
 	}
 	return changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, ID: repo.ID,
+		Format: changelogfile.ManifestFormatArchive, ID: repo.ID,
 		Authority: repo.Authority, CreatedAt: repo.CreatedAt,
 		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
 		DEKKeyID: repo.DEKKeyID,
 	}, nil
-}
-
-// ensureManifest writes the repository's manifest when it is missing or when
-// what the row says has moved (a dialect stamped, a DEK re-wrapped), and
-// returns the manifest the directory now holds. The row
-// is the truth for a repository that has one.
-func (s *service) ensureManifest(ctx context.Context, dir string, repo Repository, q dbx) (changelogfile.Manifest, error) {
-	want, err := s.manifestOf(ctx, repo, q)
-	if err != nil {
-		return changelogfile.Manifest{}, err
-	}
-	have, err := changelogfile.ReadManifest(dir)
-	if err == nil && manifestsEqual(have, want) {
-		return want, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return changelogfile.Manifest{}, err
-	}
-	if err := changelogfile.WriteManifest(dir, want); err != nil {
-		return changelogfile.Manifest{}, err
-	}
-	return want, nil
-}
-
-func manifestsEqual(a, b changelogfile.Manifest) bool {
-	return a.Format == b.Format && a.ID == b.ID && a.Authority == b.Authority &&
-		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect &&
-		a.VocabularyDialect == b.VocabularyDialect && bytes.Equal(a.DEK, b.DEK) &&
-		a.DEKKeyID == b.DEKKeyID
-}
-
-// --- the sealed mirror ------------------------------------------------------
-
-// sealedMirrorOp is one sealed-table change waiting for its commit: a write
-// of the row as it now stands, or the deletion of a ref.
-type sealedMirrorOp struct {
-	rec    changelogfile.SealedRecord
-	delete bool
-}
-
-// mirrorSealedWrite records that this transaction wrote a sealed row, for the
-// file write that follows the commit.
-func (t *txn) mirrorSealedWrite(rec changelogfile.SealedRecord) {
-	t.sealedMirror = append(t.sealedMirror, sealedMirrorOp{rec: rec})
-}
-
-// mirrorSealedDelete records that this transaction deleted a sealed row.
-func (t *txn) mirrorSealedDelete(ref string) {
-	t.sealedMirror = append(t.sealedMirror, sealedMirrorOp{rec: changelogfile.SealedRecord{Ref: ref}, delete: true})
 }
 
 // sealedRecordOf renders one row's columns as its file record.
@@ -1152,69 +1036,6 @@ func sealedRecordOf(ref, recordKind, recordID string, payload []byte, expiresAt 
 	return rec
 }
 
-// sealedStore is the sealed directory as the mirror writes it: one file per
-// ref, replaced atomically or removed. changelogfile's is the one
-// implementation the server has; a test swaps in one that fails, so a write's
-// refusal on a sealed-file failure is checked without a failing filesystem
-// (export_test.go BreakSealedStore).
-type sealedStore interface {
-	// Write replaces the record's file in one step: the boot's direction,
-	// where the table already committed what is written.
-	Write(repoDir string, rec changelogfile.SealedRecord) error
-	// Stage writes the record's pending file and Commit renames it into
-	// place: a live write's two steps around its Postgres commit.
-	Stage(repoDir string, rec changelogfile.SealedRecord) error
-	Commit(repoDir, ref string) error
-	Delete(repoDir, ref string) error
-}
-
-// fileSealedStore is the sealed directory itself.
-type fileSealedStore struct{}
-
-func (fileSealedStore) Write(repoDir string, rec changelogfile.SealedRecord) error {
-	return changelogfile.WriteSealed(repoDir, rec)
-}
-
-func (fileSealedStore) Stage(repoDir string, rec changelogfile.SealedRecord) error {
-	return changelogfile.StageSealed(repoDir, rec)
-}
-
-func (fileSealedStore) Commit(repoDir, ref string) error {
-	return changelogfile.CommitSealed(repoDir, ref)
-}
-
-func (fileSealedStore) Delete(repoDir, ref string) error {
-	return changelogfile.DeleteSealed(repoDir, ref)
-}
-
-// sealedFiles is the dataset's sealed store: the files, unless a test seam
-// replaced them.
-func (ds *dataset) sealedFiles() sealedStore {
-	if ds.sealed != nil {
-		return ds.sealed
-	}
-	return fileSealedStore{}
-}
-
-// applySealedMirror runs the collected sealed operations against the
-// directory.
-func applySealedMirror(store sealedStore, dir string, ops []sealedMirrorOp) error {
-	for _, op := range ops {
-		var err error
-		if op.delete {
-			err = store.Delete(dir, op.rec.Ref)
-		} else {
-			err = store.Write(dir, op.rec)
-		}
-		if err != nil {
-			return fmt.Errorf("substrate/engine: mirror sealed %s: %w", op.rec.Ref, err)
-		}
-	}
-	return nil
-}
-
-// readSealedTable reads every sealed row of the repository as file records,
-// keyed by ref.
 func readSealedTable(ctx context.Context, q dbx) (map[string]changelogfile.SealedRecord, error) {
 	rows, err := q.QueryContext(ctx,
 		`SELECT ref, record_kind, record_id, payload, expires_at, updated_at FROM sealed ORDER BY ref`)
@@ -1236,107 +1057,13 @@ func readSealedTable(ctx context.Context, q dbx) (map[string]changelogfile.Seale
 	return out, rows.Err()
 }
 
-func sealedRecordsEqual(a, b changelogfile.SealedRecord) bool {
-	if a.Ref != b.Ref || a.RecordKind != b.RecordKind || a.RecordID != b.RecordID || !bytes.Equal(a.Payload, b.Payload) ||
-		!a.UpdatedAt.Equal(b.UpdatedAt) {
-		return false
-	}
-	switch {
-	case a.ExpiresAt == nil && b.ExpiresAt == nil:
-		return true
-	case a.ExpiresAt == nil || b.ExpiresAt == nil:
-		return false
-	}
-	return a.ExpiresAt.Equal(*b.ExpiresAt)
-}
-
-// mirrorSealedFromTable makes sealed/ hold exactly the table's rows through
-// store: a file that differs is rewritten, one with no row is removed, one
-// that matches is left alone.
-func mirrorSealedFromTable(ctx context.Context, q dbx, store sealedStore, dir string) error {
-	want, err := readSealedTable(ctx, q)
-	if err != nil {
-		return err
-	}
-	have, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		return err
-	}
-	seen := make(map[string]bool, len(have))
-	var ops []sealedMirrorOp
-	for _, rec := range have {
-		seen[rec.Ref] = true
-		w, ok := want[rec.Ref]
-		switch {
-		case !ok:
-			ops = append(ops, sealedMirrorOp{rec: rec, delete: true})
-		case !sealedRecordsEqual(rec, w):
-			ops = append(ops, sealedMirrorOp{rec: w})
-		}
-	}
-	for _, ref := range sortedKeys(want) {
-		if !seen[ref] {
-			ops = append(ops, sealedMirrorOp{rec: want[ref]})
-		}
-	}
-	if err := applySealedMirror(store, dir, ops); err != nil {
-		return err
-	}
-	// A pending file is a write staged before a commit the directory never
-	// saw finish: its transaction rolled back or the process died before it
-	// committed, and the record's file above is now the row either way, so
-	// a payload the table carries is already in place and one it does not
-	// is dropped here. Nothing loads a pending file (ReadSealed skips it).
-	_, err = changelogfile.DiscardPendingSealed(dir)
-	return err
-}
-
-// loadSealedFiles upserts every file under sealed/ into the table: the import
-// direction. A row the files do not name is left, because an import adds to
-// a table it found; the boot check that runs on the next open then writes the
-// table back out and the two agree.
-func loadSealedFiles(ctx context.Context, q dbx, dir string) error {
-	recs, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		return err
-	}
-	for _, rec := range recs {
-		var expires any
-		if rec.ExpiresAt != nil {
-			expires = rec.ExpiresAt.UTC()
-		}
-		if _, err := q.ExecContext(ctx, `
-			INSERT INTO sealed (ref, record_kind, record_id, payload, expires_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			ON CONFLICT (repository, ref) DO UPDATE
-			    SET record_kind = EXCLUDED.record_kind, record_id = EXCLUDED.record_id, payload = EXCLUDED.payload,
-			        expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at`,
-			rec.Ref, rec.RecordKind, rec.RecordID, rec.Payload, expires, rec.UpdatedAt.UTC()); err != nil {
-			return fmt.Errorf("substrate/engine: import sealed %s: %w", rec.Ref, err)
-		}
-	}
-	return nil
-}
-
 // --- the dataset's side ------------------------------------------------------
 
-// openDirectory runs the head comparison for a dataset that is about to
-// serve: the import-progress marker must be clear (ErrImportIncomplete), the
-// directory must be at the table's head (a creation's directory
-// write racing a first open is the one way it can be behind, and it is caught
-// up here), never ahead, and the common tail must agree. It opens the
-// dataset's writer over the same scan, which is where a second process meets
-// the running server's lock (ErrChangelogLocked).
-//
-// A read-only service opens the directory read-only and stops at the
-// comparison: it repairs no tail, appends nothing, mirrors nothing and
-// opens no writer. Either head may be ahead of the other, because the server
-// that owns the directory may be between a commit and its append, and only the
-// common tail is held to agree.
-func (ds *dataset) openDirectory(ctx context.Context) error {
-	// Before either shape: a fold an import has not finished is not served,
-	// read-only or not, and the open ladder behind this (the vocabulary
-	// upgrade appends) must not run over it.
+// openHistory is what an open asks of the repository's history before it
+// serves: the import-progress marker must be clear (ErrImportIncomplete), so
+// a fold an import has not finished is never served. A read-only process
+// asks the same, and nothing more.
+func (ds *dataset) openHistory(ctx context.Context) error {
 	markedHead, incomplete, err := importIncomplete(ctx, ds.db)
 	if err != nil {
 		return err
@@ -1344,65 +1071,18 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	if incomplete {
 		return importIncompleteErr(ds.info.ID, markedHead)
 	}
-	tableHead, err := tableChangelogHead(ctx, ds.db)
-	if err != nil {
-		return err
-	}
-	// The boot check's Log, when this is the first open since it: its
-	// finished segments are not read again, the active one is. Any other
-	// finished segment is taken on its sidecar's word, as the boot check
-	// takes them, and the server digests them after the open (openNew).
-	opts := changelogfile.OpenOptions{
-		ReadOnly:      ds.svc.readOnly,
-		Verified:      ds.svc.takeChecked(ds.info.ID),
-		TrustSidecars: true,
-		Progress:      ds.svc.checkProgress(checkAtOpen, ds.info.ID),
-	}
 	if ds.svc.readOnly {
-		log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), opts)
-		if err != nil {
-			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-		}
-		return compareTails(ctx, ds.db, log, min(tableHead, log.Head()))
+		return nil
 	}
-	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), opts)
-	if err != nil {
-		return directoryOpenErr(err)
-	}
-	if log.Head() > tableHead {
-		return fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, log.Head(), tableHead)
-	}
-	if err := compareTails(ctx, ds.db, log, log.Head()); err != nil {
-		return err
-	}
-	w, err := log.Writer(ds.svc.writerOptions())
-	if err != nil {
-		return writerErr(err)
-	}
-	ds.writer = w
-	ds.unread = log
-	if tableHead > log.Head() {
-		n, err := ds.appendFromTable(ctx, ds.db, w, log.Head())
-		if err != nil {
-			return err
-		}
-		ds.svc.log.Warn("substrate: the changelog file was behind the table at open and was caught up",
-			"repository", ds.scope.Repository, "entries", n)
-	}
-	if err := ds.eraseUnheldSealedAtOpen(ctx); err != nil {
-		return err
-	}
-	return mirrorSealedFromTable(ctx, ds.db, fileSealedStore{}, ds.dir)
+	return ds.eraseUnheldSealedAtOpen(ctx)
 }
 
 // eraseUnheldSealedAtOpen deletes every sealed row its owner does not hold
-// (credentials.go sealedUnheld), so the mirror after it removes their files
-// and the open leaves sealed/ with no orphan for `repository verify` or
-// `repository snapshot` to refuse (#829). Waiting for the GC sweep is not
-// enough: a snapshot runs on a stopped server, which never sweeps. It runs
-// here, with the fold complete and before the dataset serves, so no write
-// sits between inserting a sealed row and storing its ref on the owner, the
-// window sweepUnheldSealed closes with the changelog lock.
+// (credentials.go sealedUnheld), so neither the archive nor `repository
+// verify` meets one (#829). It runs here, with the fold complete and before
+// the dataset serves, so no write sits between inserting a sealed row and
+// storing its ref on the owner, the window sweepUnheldSealed closes with the
+// changelog lock.
 func (ds *dataset) eraseUnheldSealedAtOpen(ctx context.Context) error {
 	res, err := ds.db.ExecContext(ctx, `DELETE FROM sealed s WHERE `+sealedUnheld)
 	if err != nil {
@@ -1427,70 +1107,13 @@ func (ds *dataset) ownConnection() (*sql.DB, error) {
 	return db, nil
 }
 
-// catchUpOnOwnConnection is catchUpBeforePrepare's read of the table, on a
-// connection of its own (ownConnection).
-func (ds *dataset) catchUpOnOwnConnection(ctx context.Context, head int64) (int64, error) {
-	// The slot is taken while this commit holds a shared connection; its
-	// holder is another catch-up, which needs nothing more than the slot
-	// and the connection it dials, so the wait always ends
-	// (scope.go CatchUpConnections).
-	release, err := ds.svc.catchUpConns.take(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer release()
-	db, err := ds.ownConnection()
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = db.Close() }()
-	n, err := ds.appendFromTable(ctx, db, ds.writer, head)
-	if err != nil {
-		return n, err
-	}
-	return n, mirrorSealedFromTable(ctx, db, ds.sealedFiles(), ds.dir)
-}
-
-// directoryErr is the standing refusal after a post-commit step failed. It
-// reads it under writerMu, so it waits out a commit in flight: a commit that
-// publishes a registry holds writerMu until it has published or latched,
-// which is what lockSettledRegistry stands on.
-func (ds *dataset) directoryErr() error {
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	return ds.fileErr
-}
-
-// doorDirectoryErr is directoryErr without writerMu, for a write's door
-// (inTxOn), which holds nothing yet and must not wait out another write's
-// commit (#835). A latch that lands after this read still refuses the
-// write at its commit, which reads fileErr under writerMu.
-func (ds *dataset) doorDirectoryErr() error {
-	if err := ds.latchedErr.Load(); err != nil {
-		return *err
-	}
-	return nil
-}
-
-// setFileErr latches err as the repository's standing refusal, for the
-// readers under writerMu (fileErr) and for doorDirectoryErr alike. Called
-// with writerMu held.
-func (ds *dataset) setFileErr(err error) {
-	ds.fileErr = err
-	ds.latchedErr.Store(&err)
-}
-
-// --- the steps of a commit (dataset.go commitAndMirror) ------------------------
-
-// The stages of commitAndMirror at which a test seam fails a step or stops
-// the process (export_test.go WithTestCommitFault), in the order they run.
+// The stages of a commit at which a test seam fails it or stops the process
+// (export_test.go WithTestCommitFault).
 const (
-	commitBeforeManifest = "before-manifest"
-	commitAfterManifest  = "after-manifest"
-	commitAfterPrepare   = "after the sealed files are staged and the changelog lines are prepared"
-	commitUnpublished    = "the commit reported failure after committing, before the registry published"
-	commitInDoubt        = "the commit reported failure after committing"
-	commitAfterCommit    = "after the transaction committed"
+	commitBeforeCommit = "before the transaction commits"
+	commitUnpublished  = "the commit reported failure after committing, before the registry published"
+	commitInDoubt      = "the commit reported failure after committing"
+	commitAfterCommit  = "after the transaction committed"
 )
 
 // commitFault runs the test seam at one of the commit's steps; a nil hook is
@@ -1512,269 +1135,20 @@ func (s *service) bulkFault(stage string) error {
 
 // commitSealed commits a transaction that touched the sealed table and no
 // changelog row, outside inTx (a refreshed token, a teardown's deletes, a
-// TOTP step consume), in commitAndMirror's order: the files are durable
-// before the row commits, or the caller gets the error and no row. A
-// read-only process is refused as inTx refuses it: it has no writer, and a
-// row it committed would be one the directory never receives, a TOTP step
-// spent in a database its backup does not know. tx and wc come from
-// beginWrite, so a request that ends during the commit does not leave the
-// row in doubt and the dataset latched.
-func (ds *dataset) commitSealed(tx *sql.Tx, wc *writeCtx, ops []sealedMirrorOp) error {
+// TOTP step consume). A read-only process is refused as inTx refuses it.
+// tx and wc come from beginWrite, so a request that ends during the commit
+// does not leave the row in doubt.
+func (ds *dataset) commitSealed(tx *sql.Tx, wc *writeCtx) error {
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
 	}
 	if err := ds.svc.lease.err(); err != nil {
 		return err
 	}
-	return ds.commitAndMirror(tx, &txn{ds: ds, tx: tx, wc: wc, sealedMirror: ops})
-}
-
-// stageSealedBeforeCommit writes a transaction's sealed writes to their
-// pending files: on disk and fsynced, and not the records until
-// commitStagedSealed renames them into place after the Postgres commit. The
-// record's own file is untouched, so an import that never sees the commit
-// loads the payload the table held. Every ref is recorded BEFORE its stage
-// runs, so a stage that renamed and then failed its fsync is still
-// discarded. A failure part way discards what was staged and returns the
-// error; the transaction has not committed, so nothing is lost. Called with
-// writerMu held.
-func (ds *dataset) stageSealedBeforeCommit(writes []sealedMirrorOp) ([]string, error) {
-	staged := make([]string, 0, len(writes))
-	for _, op := range writes {
-		staged = append(staged, op.rec.Ref)
-		if err := ds.sealedFiles().Stage(ds.dir, op.rec); err != nil {
-			ds.discardStaged(staged)
-			return nil, fmt.Errorf("%w: repository %s: stage sealed %s: %w", ErrDirectoryWrite, ds.info.ID, op.rec.Ref, err)
+	if fault := ds.testSealedFault.Load(); fault != nil {
+		if err := (*fault)(); err != nil {
+			return err
 		}
 	}
-	return staged, nil
-}
-
-// discardStaged removes the pending files of a transaction that did not
-// commit. A pending file this cannot remove is one the next boot removes
-// (mirrorSealedFromTable), and it is read by nothing until then, so nothing is
-// latched: no store holds the write. Called with writerMu held.
-func (ds *dataset) discardStaged(staged []string) {
-	for _, ref := range staged {
-		if err := changelogfile.DiscardSealed(ds.dir, ref); err != nil {
-			ds.svc.log.Error("substrate: could not discard a staged sealed file whose transaction did not commit; the next boot removes it",
-				"repository", ds.scope.Repository, "ref", ref, "error", err)
-		}
-	}
-}
-
-// writeManifestBeforeCommit rewrites the manifest with the changelog dialect
-// the transaction is about to claim, BEFORE that transaction commits or
-// appends: its lines are the first in the file the dialect covers, so the
-// manifest must say so before they are there. Called by commitAndMirror with
-// writerMu held, on the one transaction that stamps (txn.claimsChangelogDialect),
-// and a step of its own so a commit path that orders its durable steps
-// differently keeps it ahead of the first append. A failure refuses the
-// transaction: nothing has committed, nothing is appended, and the next write
-// claims again. A rollback after a successful write leaves a manifest that
-// OVERSTATES until the next claim or boot, which a binary that cannot replay
-// the claim meets as a refusal to import and never as a fold over entries it
-// cannot read.
-func (ds *dataset) writeManifestBeforeCommit(dialect int) error {
-	if ds.manifest.ChangelogDialect == dialect {
-		return nil
-	}
-	// A manifest that cannot be written rolls the transaction back with
-	// nothing durable anywhere, the sealed store's shape of refusal, so it
-	// is the retryable ErrDirectoryWrite and not a plain failure.
-	if err := ds.svc.commitFault(commitBeforeManifest); err != nil {
-		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.ID, changelogfile.ManifestName, dialect, err)
-	}
-	m := ds.manifest
-	m.ChangelogDialect = dialect
-	if err := changelogfile.WriteManifest(ds.dir, m); err != nil {
-		return fmt.Errorf("%w: repository %s: write %s with changelog dialect %d before the first entry in it: %w", ErrDirectoryWrite, ds.info.ID, changelogfile.ManifestName, dialect, err)
-	}
-	ds.manifest = m
-	return ds.svc.commitFault(commitAfterManifest)
-}
-
-// commitStagedSealed renames a committed transaction's pending files into
-// place, in the order they were staged. A failure is latched: the table holds
-// the row and the record's file is still the old one, which the boot check
-// rewrites from the table. Called with writerMu held.
-func (ds *dataset) commitStagedSealed(staged []string) error {
-	for _, ref := range staged {
-		if err := ds.sealedFiles().Commit(ds.dir, ref); err != nil {
-			ds.latchDirectoryErr(fmt.Errorf("commit the staged sealed file %s: %w", ref, err))
-			return ds.fileErr
-		}
-	}
-	return nil
-}
-
-// prepareLines writes a transaction's changelog lines through the writer's
-// Prepare: on disk and fsynced, and not history until commitLines writes the
-// final newline. It reports whether it prepared anything, so the steps after
-// the commit know whether there is a transaction to end. Called with writerMu
-// held.
-//
-// Two refusals here are the latch's and not a retry's. A seq gap is a file
-// that does not end where this transaction starts after catchUpBeforePrepare
-// closed every gap the table explains, so the two stores disagree. A writer
-// that failed (an I/O error, on this prepare or an earlier one) refuses every
-// prepare until the process reopens the directory, so a retry cannot
-// succeed. Both name the restart; the boot check is the repair for the first
-// and the reopen for the second.
-func (ds *dataset) prepareLines(pending []pendingEntry) (bool, error) {
-	if len(pending) == 0 {
-		return false, nil
-	}
-	lines := make([]changelogfile.Line, 0, len(pending))
-	for _, e := range pending {
-		lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: e.Line})
-	}
-	if err := ds.writer.Prepare(lines); err != nil {
-		if errors.Is(err, changelogfile.ErrSeqGap) || ds.writer.Err() != nil {
-			ds.latchDirectoryErr(fmt.Errorf("prepare seq %d..%d: %w", lines[0].Seq, lines[len(lines)-1].Seq, err))
-			return false, ds.fileErr
-		}
-		return false, fmt.Errorf("%w: repository %s: prepare seq %d..%d: %w", ErrDirectoryWrite, ds.info.ID, lines[0].Seq, lines[len(lines)-1].Seq, err)
-	}
-	return true, nil
-}
-
-// catchUpBeforePrepare appends to the changelog file the committed rows the
-// table holds between the file's head and this transaction's first seq, when
-// there are any. Rows land in the table and not in this directory two ways.
-// A commit of THIS process that reported failure after Postgres had
-// committed it (an in-doubt commit: a connection lost at the answer, or the
-// commit budget spent, beginWrite) had its lines cut as if it rolled back.
-// Or ANOTHER PROCESS writes the repository from a directory of its own: a
-// second server on the same database, each under a data root, which the
-// writer lock under one data root cannot see (docs/operations.md keeps it to
-// one). Either way the rows are committed history this directory lacks,
-// exactly what the boot check appends at open (openDirectory), and the same
-// repair runs here under the same guarantees: writerMu, so no append of this
-// process interleaves, and the changelog advisory lock this transaction
-// holds, so no process appends until it ends and every row below its first
-// seq is committed. The in-doubt commit held that lock too, so by the time
-// this transaction took it, that commit had landed or rolled back, and the
-// table says which. Without the repair the prepare met the gap and latched
-// the dataset until a restart (#516, #539).
-//
-// commitInDoubt, set by the failed commit, only says which of the two the
-// log line names. A catch-up that cannot bring the file to the seq before
-// this transaction's first is divergence and latches. One that brought the
-// file there and then failed to mirror sealed/ latches too: the next write
-// meets no gap, so nothing would bring the mirror back, and the file would
-// name sealed files the directory lacks. One that fails otherwise rolls the
-// transaction back as retryable while the writer is whole
-// (ErrDirectoryWrite), leaving the gap and the flag for the next write to
-// try again, and latches when it is not. Called with writerMu held.
-func (ds *dataset) catchUpBeforePrepare(t *txn) error {
-	if len(t.pending) == 0 {
-		return nil
-	}
-	first := t.pending[0].Seq
-	head := ds.writer.Head()
-	if head == first-1 {
-		// No gap: a commit that reported failure did roll back.
-		ds.commitInDoubt = false
-		return nil
-	}
-	if head > first-1 {
-		return nil
-	}
-	// The catch-up reads what OTHER transactions committed, so it cannot
-	// read through this one (it would see its own uncommitted rows and
-	// sealed writes). Nor may it take a second connection from the shared
-	// pool while this transaction holds one, the changelog lock and
-	// writerMu: on a saturated pool that wait never ends. It dials a
-	// connection of its own instead, outside the pool's cap, on a path
-	// that runs only after an in-doubt commit or another process's write.
-	n, err := ds.catchUpOnOwnConnection(t.commitCtx(), head)
-	if err == nil && ds.writer.Head() != first-1 {
-		err = fmt.Errorf("%w: the file is at seq %d after the catch-up and this transaction starts at seq %d",
-			ErrChangelogDiverged, ds.writer.Head(), first)
-	}
-	if err != nil {
-		appended := ds.writer.Head() == first-1
-		if ds.writer.Err() != nil || errors.Is(err, ErrChangelogDiverged) || appended {
-			ds.latchDirectoryErr(fmt.Errorf("catch the file up from seq %d to %d before this write: %w", head+1, first-1, err))
-			return ds.fileErr
-		}
-		return fmt.Errorf("%w: repository %s: catch the file up from seq %d to %d before this write: %w",
-			ErrDirectoryWrite, ds.info.ID, head+1, first-1, err)
-	}
-	if ds.commitInDoubt {
-		ds.commitInDoubt = false
-		ds.svc.log.Warn("substrate: a commit that reported failure had committed, and its entries were appended from the changelog table before this write",
-			"repository", ds.scope.Repository, "entries", n, "from", head+1, "to", first-1)
-		return nil
-	}
-	ds.svc.log.Error("substrate: the changelog table held entries this server's directory did not, and they were appended before this write. "+
-		"Another process is writing this repository from a directory of its own: run one server per database",
-		"repository", ds.scope.Repository, "entries", n, "from", head+1, "to", first-1)
-	return nil
-}
-
-// abortLines cuts the prepared lines back off the segment after the
-// transaction did not commit. A failure to cut leaves a tail the next open
-// cuts, and the writer refuses every later prepare with the same error, so
-// nothing is latched: no write reached one store and not the other. Called
-// with writerMu held.
-func (ds *dataset) abortLines(prepared bool) {
-	if !prepared {
-		return
-	}
-	if err := ds.writer.Abort(); err != nil {
-		ds.svc.log.Error("substrate: could not cut a prepared transaction that did not commit; the next open cuts it",
-			"repository", ds.scope.Repository, "error", err)
-	}
-}
-
-// commitLines writes the newline that ends the prepared transaction in the
-// file, after Postgres committed it. A failure is latched: the tables hold
-// the write and the file does not, and the boot check appends it from the
-// table. Called with writerMu held.
-func (ds *dataset) commitLines(prepared bool) error {
-	if !prepared {
-		return nil
-	}
-	if err := ds.writer.Commit(); err != nil {
-		ds.latchDirectoryErr(fmt.Errorf("end the prepared transaction in the file: %w", err))
-		return ds.fileErr
-	}
-	return nil
-}
-
-// deleteSealedAfterCommit removes the sealed files a committed transaction
-// deleted the rows of. A failure is latched: a file with no row is one the
-// boot check removes. Called with writerMu held.
-func (ds *dataset) deleteSealedAfterCommit(deletes []sealedMirrorOp) error {
-	if err := applySealedMirror(ds.sealedFiles(), ds.dir, deletes); err != nil {
-		ds.latchDirectoryErr(err)
-		return ds.fileErr
-	}
-	return nil
-}
-
-// splitSealedOps separates a transaction's sealed writes from its deletes,
-// each in the order recorded, for commitAndMirror's ordering.
-func splitSealedOps(ops []sealedMirrorOp) (writes, deletes []sealedMirrorOp) {
-	for _, op := range ops {
-		if op.delete {
-			deletes = append(deletes, op)
-		} else {
-			writes = append(writes, op)
-		}
-	}
-	return writes, deletes
-}
-
-// latchDirectoryErr records the first post-commit failure. Called with
-// writerMu held.
-func (ds *dataset) latchDirectoryErr(cause error) {
-	if ds.fileErr != nil {
-		return
-	}
-	ds.setFileErr(fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.ID, cause))
-	ds.svc.log.Error("substrate: the repository directory fell behind the tables; refusing writes until restart",
-		"repository", ds.scope.Repository, "error", cause)
+	return ds.commit(tx, &txn{ds: ds, tx: tx, wc: wc})
 }

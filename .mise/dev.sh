@@ -183,15 +183,19 @@ db_ensure() {
 	fi
 	docker exec "$CONTAINER" createdb -U postgres "$DB_NAME"
 	echo "dev: database ${DB_NAME} created (one per tree, named after this directory)"
-	# A new database beside an old data root is an IMPORT of every directory
-	# in it at the next boot, and a long history takes minutes. Said here,
-	# where the cause is, so a slow first start is not read as a hang.
+	# A new database beside an old data root is a RESTORE of every repository
+	# its archive holds, and of every directory from before the archive, at
+	# the next boot, and a long history takes minutes. Said here, where the
+	# cause is, so a slow first start is not read as a hang.
 	local dirs=0
-	if [ -d "${DATA_ROOT}/repositories" ]; then
-		dirs="$(find "${DATA_ROOT}/repositories" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
-	fi
+	local where
+	for where in "${DATA_ROOT}/archive/repositories" "${DATA_ROOT}/repositories"; do
+		if [ -d "$where" ]; then
+			dirs=$((dirs + $(find "$where" -mindepth 2 -maxdepth 2 -name repository.json | wc -l)))
+		fi
+	done
 	if [ "$dirs" -gt 0 ]; then
-		echo "dev: the first boot on it imports ${dirs} repository directories from ${DATA_ROOT}; that can take minutes (mise run dev:logs shows the progress)"
+		echo "dev: the first boot on it restores ${dirs} repositories from ${DATA_ROOT}; that can take minutes (mise run dev:logs shows the progress)"
 	fi
 }
 

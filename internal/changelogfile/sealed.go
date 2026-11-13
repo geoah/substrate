@@ -2,6 +2,7 @@ package changelogfile
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,58 +84,6 @@ func WriteSealed(repoDir string, rec SealedRecord) error {
 	return writeFileAtomic(dir, SealedFileName(rec.Ref), append(data, '\n'))
 }
 
-// StageSealed writes the record to its pending file, atomically and fsynced,
-// leaving the record's own file as it was: the write is on disk and is not
-// yet the record. CommitSealed makes it the record; DiscardSealed drops it.
-// A write whose transaction commits elsewhere between the two (the engine's
-// Postgres transaction) therefore has its payload durable before the commit
-// while an import that never sees the commit loads the old payload.
-func StageSealed(repoDir string, rec SealedRecord) error {
-	if err := checkSealedRef(rec.Ref); err != nil {
-		return err
-	}
-	dir := SealedDir(repoDir)
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return err
-	}
-	data, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(dir, SealedFileName(rec.Ref)+pendingSuffix, append(data, '\n'))
-}
-
-// CommitSealed renames the pending file under ref over the record's file and
-// fsyncs the directory. A ref with no pending file is an error: the caller
-// staged nothing, or a boot already discarded it.
-func CommitSealed(repoDir, ref string) error {
-	if err := checkSealedRef(ref); err != nil {
-		return err
-	}
-	dir := SealedDir(repoDir)
-	name := SealedFileName(ref)
-	if err := os.Rename(filepath.Join(dir, name+pendingSuffix), filepath.Join(dir, name)); err != nil {
-		return err
-	}
-	return syncDir(dir)
-}
-
-// DiscardSealed removes the pending file under ref, fsyncing the directory.
-// A ref with no pending file is already discarded, so the call succeeds.
-func DiscardSealed(repoDir, ref string) error {
-	if err := checkSealedRef(ref); err != nil {
-		return err
-	}
-	dir := SealedDir(repoDir)
-	if err := os.Remove(filepath.Join(dir, SealedFileName(ref)+pendingSuffix)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	return syncDir(dir)
-}
-
 // PendingSealed lists the pending files under sealed/ by file name, sorted. A
 // missing directory lists as empty.
 func PendingSealed(repoDir string) ([]string, error) {
@@ -173,24 +122,6 @@ func DiscardPendingSealed(repoDir string) (int, error) {
 	return len(names), syncDir(dir)
 }
 
-// DeleteSealed removes the file under ref. A ref with no file is already
-// deleted, so the call succeeds.
-func DeleteSealed(repoDir, ref string) error {
-	if err := checkSealedRef(ref); err != nil {
-		return err
-	}
-	dir := SealedDir(repoDir)
-	if err := os.Remove(filepath.Join(dir, SealedFileName(ref))); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	// The unlink is a directory change and is flushed like the rename: a
-	// crash must not resurrect a deleted secret.
-	return syncDir(dir)
-}
-
 // ReadSealed reads every sealed file of the repository, sorted by ref. A
 // missing directory reads as empty. A `.json` file that does not decode, holds
 // a ref outside the grammar, or is not named by its own ref is refused.
@@ -225,6 +156,10 @@ func readSealedFile(dir, name string) (SealedRecord, error) {
 	if err != nil {
 		return SealedRecord{}, err
 	}
+	return decodeSealed(name, raw)
+}
+
+func decodeSealed(name string, raw []byte) (SealedRecord, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var rec SealedRecord
@@ -238,4 +173,59 @@ func readSealedFile(dir, name string) (SealedRecord, error) {
 		return SealedRecord{}, fmt.Errorf("%w: sealed/%s holds ref %q", ErrSealedName, name, rec.Ref)
 	}
 	return rec, nil
+}
+
+// EncodeSealed renders a sealed record as its file holds it, for a store that
+// is not a directory: the archive's (decision 0262).
+func EncodeSealed(rec SealedRecord) (name string, data []byte, err error) {
+	if err := checkSealedRef(rec.Ref); err != nil {
+		return "", nil, err
+	}
+	data, err = json.Marshal(rec)
+	if err != nil {
+		return "", nil, err
+	}
+	return SealedFileName(rec.Ref), append(data, '\n'), nil
+}
+
+// DecodeSealed reads a sealed record from its file's bytes, refusing one that
+// is not the record its name says.
+func DecodeSealed(name string, data []byte) (SealedRecord, error) {
+	return decodeSealed(name, data)
+}
+
+// EncodeSealedVersion renders rec as the archive holds it: its bytes and
+// their checksum, which SealedObjectName puts in the object's name.
+func EncodeSealedVersion(rec SealedRecord) (data []byte, sum [32]byte, err error) {
+	if _, data, err = EncodeSealed(rec); err != nil {
+		return nil, sum, err
+	}
+	return data, sha256.Sum256(data), nil
+}
+
+// DecodeSealedVersion reads the version of ref a manifest selects, refusing
+// bytes that are not the ones sum names or a record that is not ref's.
+func DecodeSealedVersion(ref string, sum [32]byte, data []byte) (SealedRecord, error) {
+	if sha256.Sum256(data) != sum {
+		return SealedRecord{}, fmt.Errorf("%w: the version of %s is not the bytes its name says", ErrSealedName, ref)
+	}
+	return decodeSealed(SealedFileName(ref), data)
+}
+
+// DeleteSealed removes the file under ref. A ref with no file is already
+// deleted, so the call succeeds.
+func DeleteSealed(repoDir, ref string) error {
+	if err := checkSealedRef(ref); err != nil {
+		return err
+	}
+	dir := SealedDir(repoDir)
+	if err := os.Remove(filepath.Join(dir, SealedFileName(ref))); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	// The unlink is a directory change and is flushed like the rename: a
+	// crash must not resurrect a deleted secret.
+	return syncDir(dir)
 }

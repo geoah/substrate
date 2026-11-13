@@ -26,8 +26,8 @@ changelog through that same fold code
 ([running a substrate](operations.md#operator-recovery)).
 
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
-plus sealed, as one unit**: the repository's directory under
-`SUBSTRATE_DATA_ROOT`, which holds all three
+plus sealed, as one unit**: the repository's archive, which the server writes
+behind the commits and which holds all three
 ([backups](operations.md#backups)).
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
@@ -36,9 +36,9 @@ remembered seq misses nothing. Nothing prunes or compacts today.
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
 Every entry carries a SHA-256 checksum of its own canonical line, in the
-segment file and in the table alike, and `repository verify` reports each
-seq whose bytes no longer produce it.
-[The checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)
+table and in the archive alike, and `repository verify` reports each seq
+whose bytes no longer produce it.
+[The checksum and the archive](changelog.md#the-checksum-and-the-archive)
 says exactly what that does and does not prove.
 
 ## Records and identity
@@ -711,7 +711,8 @@ accepts that same object and uses only its `digest`, so a document read with
 the other keys are the manifest's own, and writing them changes nothing. A
 digest whose manifest is gone reads as the bare `{digest}` and is refused on
 write as before (`blob … is unknown`). The manifest is always a record in
-Postgres; the BYTES sit in the repository's directory under the data root
+Postgres; the BYTES sit in the repository's directory under the data root,
+and the archive holds a copy of them
 ([the blob store](operations.md#the-blob-store)).
 
 A blob's `name` and `mediaType` are both **optional and descriptive**. The

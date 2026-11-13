@@ -23,8 +23,8 @@ func Main(m *testing.M) int {
 // directory of its own under /dev/shm when that is a tmpfs with at least
 // 512 MB free, and leaves it alone otherwise (macOS, a container whose
 // /dev/shm is Docker's 64 MB default, TMPDIR already set). A suite calls it
-// from TestMain before m.Run and runs the returned cleanup after. The engine
-// fsyncs every changelog and sealed write, and sixteen parallel tests
+// from TestMain before m.Run and runs the returned cleanup after. The archive
+// and the blob store fsync what they write, and sixteen parallel tests
 // fsyncing one ext4 journal serialize on it; a tmpfs fsync is free, and the
 // tests assert what the files hold, never that a power cut would keep them.
 // `TMPDIR=/tmp` is the opt-out.

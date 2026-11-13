@@ -563,7 +563,7 @@ The contract, per key:
   which is a transition and not a record write.
 
 The key store is a Postgres table, `idempotency_keys`, and not part of the
-changelog: a repository restored from its directory alone
+changelog: a repository restored from its archive alone
 ([Backups](operations.md#backups)) forgets every key, and the first retry
 after such a restore runs once more. Keys survive a restart and a
 `repository rebuild`, which replay nothing the keys answer for.
@@ -1067,7 +1067,7 @@ them:
 | `connect` | `beta` | Connecting an account to its provider: `POST /api/v1/oauth/start` and the callback the provider redirects to. |
 | `sync` | `beta` | `GET /api/v1/sync/status`. |
 | `domain` | `beta` | [Verify domain](auth.md#verify-domain): `POST /api/v1/repository/domain` and its `/verify`. |
-| `export` | `beta` | `GET /api/v1/export`, the repository's recovery export in the snapshot format ([backups](operations.md#backups)). |
+| `export` | `beta` | `GET /api/v1/export`, the repository's recovery export: its archive as one tar, the manifest last ([backups](operations.md#backups), [the stored format](stored-format.md#the-archive)). Revision 2 is the archive's layout. |
 | `search` | `beta` | The ranked read, `q=` on the records route ([search](#search)). It has no route of its own. |
 | `metrics` | `beta` | `GET /metrics`. |
 | `site` | `beta` | The deployment's site under `/site/`, and its tab icon. |
@@ -1245,7 +1245,7 @@ threshold rather than trust a rank, as long as it reads `note` on a `capped`
 page first, and `pending`: the number of properties
 the drain has yet to buy vectors for, counted whenever the semantic arm was
 asked for. Non-zero means the ranking covers a partial index (a repository
-[restored from its directory](operations.md#backups), a `reembed` in
+[restored from its archive](operations.md#backups), a `reembed` in
 progress), and it falls to 0 as the drain buys. In a repository that has named
 no embeddings provider, hybrid degrades to lexical and `semantic` reports an
 error rather than pretending. While properties are queued and no vector from
@@ -2437,15 +2437,16 @@ request the client can make repairs it, while `conflict` tells a client to
 re-read and retry. [`repository verify`](operations.md#operator-recovery)
 lists every damaged blob.
 
-The export (`GET /api/v1/export`) streams blob bytes into its tar after its
-`200` is sent. It hashes each blob as it copies and holds back the blob's last
-chunk until the digest checks, and does the same for each finished changelog
-segment against its `.sha256` sidecar. On a mismatch the server cuts the connection:
-the handler aborts with `http.ErrAbortHandler`, which closes an HTTP/1.1
-connection before the chunked body's terminator and resets an HTTP/2 stream.
-It logs `export aborted mid-stream` naming the digest. The client sees a
-failed transfer and an archive with no `snapshot.json`, never a complete
-`200`.
+The export (`GET /api/v1/export`) streams the repository's archive as a tar
+after its `200` is sent
+([backups](operations.md#backups)). It hashes each blob as it copies and
+holds back the blob's last chunk until the digest checks, and holds every
+history line to the checksum the table stamped for it. On a mismatch the
+server cuts the connection: the handler aborts with `http.ErrAbortHandler`,
+which closes an HTTP/1.1 connection before the chunked body's terminator and
+resets an HTTP/2 stream. It logs `export aborted mid-stream` with the error.
+The client sees a failed transfer and a tar with no manifest, which the
+archive writes last, never a complete `200`.
 
 ## Applets
 
@@ -2578,9 +2579,10 @@ cannot serve is diagnosable instead of looking like a bad credential; and a
 `semantic` search over a repository whose vectors have not been bought yet
 answers `unavailable` with the number of properties still queued, so an empty
 index is never mistaken for an empty match. A repository that refuses writes
-until the server restarts (its directory fell behind its tables and the
-server could not repair it while running) also answers `unavailable`, with a
-30-second `Retry-After` and a message that names the restart.
+until the server restarts (a vocabulary change's commit answered failure and
+may have committed, so the server cannot tell which declarations it holds)
+also answers `unavailable`, with a 30-second `Retry-After` and a message that
+names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
 set is closed and has seven members: `observed_rederiving` on `unavailable`,

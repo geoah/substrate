@@ -1,17 +1,14 @@
 package engine
 
-// The verification walk: the repository directory's changelog files, line by
-// line and sidecar by sidecar (changelogfile.VerifyDir), the changelog table
-// row by row, its stamped checksums held to the files' seq by seq (and, with
-// VerifyOptions.Recanonicalize, recomputed from the stored columns), both
-// heads, the sealed files against the sealed rows, every sealed row and file
-// against the record that should hold its ref, the recorded recovery point
-// against the files, every stored blob's bytes against its digest, every live
-// secret reference against the sealed files and, under the credential key,
-// every sealed file opened. It MUTATES NOTHING: the files
-// are opened read-only and the table is read inside one repeatable-read
-// transaction, so a concurrent write cannot make it stitch two states into
-// one report.
+// The verification walk: the changelog table row by row (its seqs, its
+// transaction frames, and with VerifyOptions.Recanonicalize every row's
+// checksum recomputed from its stored columns); the archive, where the
+// process has one, its manifest and every line of its pieces held to the
+// table's stamped checksums; the sealed rows against the records that should
+// hold their refs and, under the credential key, opened; and every stored
+// blob's bytes against its digest. It MUTATES NOTHING: the table is read
+// inside one repeatable-read transaction, so a concurrent write cannot make
+// it stitch two states into one report.
 
 import (
 	"bytes"
@@ -23,10 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
@@ -46,110 +44,92 @@ type VerifyReport struct {
 	Head    int64 `json:"head"`
 	// HeadHash is the head entry's checksum, hex.
 	HeadHash string `json:"headHash,omitempty"`
-	// FileHead, Segments, TruncatedBytes and TruncatedEntries are the
-	// changelog files': the last seq of the last complete transaction, the
-	// number of segment files, and the incomplete tail left on the active
-	// segment (its bytes and the complete lines among them), which the next
-	// Open cuts.
-	FileHead         int64 `json:"fileHead"`
-	Segments         int   `json:"segments"`
-	TruncatedBytes   int64 `json:"truncatedBytes,omitempty"`
-	TruncatedEntries int64 `json:"truncatedEntries,omitempty"`
-	// SealedRows and SealedFiles count the sealed table and its mirror.
-	SealedRows  int `json:"sealedRows"`
-	SealedFiles int `json:"sealedFiles"`
-	// SealedOpened is how many sealed files opened under the repository's
+	// Archive names the store the archive was read from, empty when the
+	// process has none; ArchiveHead is its manifest's head, and
+	// ArchivePieces the pieces of the chain to it, every line held to the
+	// table.
+	Archive       string `json:"archive,omitempty"`
+	ArchiveHead   int64  `json:"archiveHead"`
+	ArchivePieces int    `json:"archivePieces"`
+	// ArchiveBlobs is how many blobs were read back out of the archive and
+	// held to the digests that name them.
+	ArchiveBlobs int `json:"archiveBlobs"`
+	// ArchiveUnverified is why the archive's lines were not all held to the
+	// table, empty when they were: no copy published to the store yet, a
+	// store that could not be read, a manifest gone, history in an earlier
+	// dialect than the table's. Every reason but the first is a finding too.
+	ArchiveUnverified string `json:"archiveUnverified,omitempty"`
+	// ArchiveID is the archive the record names, and ArchiveUnaccounted how
+	// many objects the store holds under it, manifests included, that the
+	// record does not: a put applied late, or a manifest a database
+	// restored from a backup forgot it put. Nothing reads them. It is -1
+	// from the moment the archive is looked at until a whole count is made,
+	// so a verify that stopped short of the count (a store that would not
+	// list or read, a manifest gone) says unknown, which is a finding too,
+	// and never zero.
+	ArchiveID          string `json:"archiveId,omitempty"`
+	ArchiveUnaccounted int    `json:"archiveUnaccounted"`
+	// SealedRows counts the sealed table.
+	SealedRows int `json:"sealedRows"`
+	// SealedOpened is how many sealed rows opened under the repository's
 	// DEK: every one, or the walk found the rest; 0 with no credential key,
 	// when nothing is opened.
 	SealedOpened int `json:"sealedOpened"`
-	// SealedOrphans is how many sealed refs, rows and files alike, no live or
-	// tombstoned record holds (credentials.go sealedUnheld). Each is a
-	// finding, and the next writable open or GC sweep erases them.
+	// SealedOrphans is how many sealed rows no live or tombstoned record
+	// holds (credentials.go sealedUnheld). Each is a finding, and the next
+	// writable open or GC sweep erases them.
 	SealedOrphans int `json:"sealedOrphans"`
 	// SecretRefs is how many secret references live records hold, each held
-	// to a sealed file.
+	// to a sealed row.
 	SecretRefs int `json:"secretRefs"`
 	// Blobs and BlobBytes are the `stored` blob manifests, each one's bytes
 	// read from the store and hashed against its digest.
 	Blobs     int   `json:"blobs"`
 	BlobBytes int64 `json:"blobBytes"`
-	// Snapshot is the recovery point `snapshot.json` records when the
-	// directory is a snapshot or was restored from one; nil otherwise.
-	Snapshot *RecoveryPoint `json:"snapshot,omitempty"`
 	// Recanonicalized is whether every table row's checksum was recomputed
 	// from its stored columns (VerifyOptions.Recanonicalize).
-	Recanonicalized bool `json:"recanonicalized,omitempty"`
-	// KnownHead is a snapshot's: the seq ending the run of finished segments
-	// its base holds as this directory does. Those segments were read at
-	// their first and last lines, and the table was compared with the files
-	// at KnownHead and above it; Entries counts the rows above it.
-	KnownHead int64         `json:"knownHead,omitempty"`
-	Findings  []string      `json:"findings,omitempty"`
-	Truncated bool          `json:"truncated,omitempty"`
-	OK        bool          `json:"ok"`
-	Took      time.Duration `json:"took"`
+	Recanonicalized bool          `json:"recanonicalized,omitempty"`
+	Findings        []string      `json:"findings,omitempty"`
+	Truncated       bool          `json:"truncated,omitempty"`
+	OK              bool          `json:"ok"`
+	Took            time.Duration `json:"took"`
 }
 
 // VerifyOptions tunes VerifyRepositoryWith.
 type VerifyOptions struct {
 	// Recanonicalize recomputes every table row's checksum from its stored
 	// columns, the payload canonicalized, and holds it to the row's stamped
-	// hash. Without it the table pass reads no payload: it holds each row's
-	// stamped hash to the sum its line carries, which the file pass verified
-	// against the line's bytes. A row whose columns were edited in place with
-	// its hash left alone is therefore found only with it. It reads and
-	// canonicalizes every payload the table holds, which on a history of
-	// millions of entries is hours (issue 761).
+	// hash. Without it the table pass reads no payload, and the rows are held
+	// to their stamps only where the archive holds the line: the archive's
+	// lines carry their own sums, verified against their bytes. A row whose
+	// columns were edited in place with its hash left alone is therefore
+	// found only with it. It reads and canonicalizes every payload the table
+	// holds, which on a history of millions of entries is hours (issue 761).
 	Recanonicalize bool
-
-	// known and knownBlobs are a snapshot's base (snapshot.go): the finished
-	// segments it holds as this directory does, read at their first and
-	// last lines alone, and the blobs it holds bytes for, not read at all.
-	// The table is then compared with the files only above the run of known
-	// segments, at the seq that ends it and past it. A verify of its own
-	// sets neither.
-	known      map[string]changelogfile.KnownSegment
-	knownBlobs map[string]bool
 }
 
 // verifyTableBatch is the table pass's page when it reads no payload: a row
 // is a seq, a txn and 32 bytes, so a page is a round trip that moves little.
 const verifyTableBatch = 10000
 
-// RecoveryPoint is the committed point a snapshot recorded: the head seq, its
-// checksum in hex, and when the snapshot was taken.
-type RecoveryPoint struct {
-	Head     int64     `json:"head"`
-	HeadHash string    `json:"headHash"`
-	TakenAt  time.Time `json:"takenAt"`
-}
-
-// VerifyRepository walks one repository's changelog files and table. Findings
-// land in the report, not in the error: the error is for "could not verify"
-// (no such user, no connection), never for "verified and found damage".
+// VerifyRepository walks one repository's history. Findings land in the
+// report, not in the error: the error is for "could not verify" (no such
+// repository, no connection), never for "verified and found damage".
 func (s *service) VerifyRepository(ctx context.Context, repository string) (VerifyReport, error) {
 	return s.VerifyRepositoryWith(ctx, repository, VerifyOptions{})
 }
 
 // VerifyRepositoryWith is VerifyRepository with its options.
 func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, error) {
-	report, _, err := s.verifyRepository(ctx, repository, opts)
-	return report, err
-}
-
-// verifyRepository is the verification, returning beside the report the
-// changelog files' Log it verified: nil when the files did not verify. A
-// snapshot holds its copy to that Log (snapshot.go).
-func (s *service) verifyRepository(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, *changelogfile.Log, error) {
 	started := time.Now()
 	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
-		return VerifyReport{}, nil, err
+		return VerifyReport{}, err
 	}
 	// The open's refusal (engine.go open): a repository still keyed by its
 	// name is read under its id only once a server that writes converted it.
 	if !vocabulary.ValidRepositoryID(repo.ID) {
-		return VerifyReport{}, nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
+		return VerifyReport{}, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
 	}
 	report := VerifyReport{Repository: repo.ID, Recanonicalized: opts.Recanonicalize}
 	found := func(f string) {
@@ -159,97 +139,35 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 		}
 		report.Findings = append(report.Findings, f)
 	}
-	dir, err := changelogfile.RepoDir(s.dataRoot, repo.ID)
-	if err != nil {
-		return report, nil, err
-	}
 	// A bare scoped pool: the RLS-bound shape every request rides, with none
 	// of the open ladder's writes.
 	db, err := s.scopedDB(repo.scope())
 	if err != nil {
-		return VerifyReport{}, nil, err
+		return VerifyReport{}, err
 	}
 	defer func() { _ = db.Close() }()
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
-		return VerifyReport{}, nil, err
+		return VerifyReport{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	// The import-progress marker (repodir.go) first: a repository whose
-	// import began and did not complete has files and rows that agree, and a
-	// fold that is not theirs, so a report with no finding would be a lie an
-	// operator acts on.
+	// import began and did not complete has a fold that is not its
+	// history's, so a report with no finding would be a lie an operator acts
+	// on.
 	markedHead, incomplete, err := importIncomplete(ctx, tx)
 	if err != nil {
-		return report, nil, err
+		return report, err
 	}
 	if incomplete {
-		found(fmt.Sprintf("import: the import of the repository directory has not completed (marked at file head %d): the fold is not the changelog's until the server's next boot resumes it", markedHead))
+		found(fmt.Sprintf("import: the import of the repository's history has not completed (marked at head %d): the fold is not the history's until the server's next boot finishes it", markedHead))
 	}
 
-	// The files first, whole, each segment read once: its digest against
-	// its sidecar and every line's sum, the seq sequence and the transaction
-	// frame, in parallel across segments. The Log it opens is what the table
-	// pass below reads again rather than opening the directory a second time.
-	// A directory that does not verify is one finding, and the table is
-	// still walked so the report says what the table holds.
-	prog := s.progress("verifying the changelog files", "repository", repo.ID)
-	log, fileReport, fileErr := changelogfile.VerifyDir(changelogfile.ChangelogDir(dir), changelogfile.VerifyOptions{Progress: prog.tick, Known: opts.known})
-	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
-	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
-	if fileErr != nil {
-		found(fmt.Sprintf("file: %v", fileErr))
-		log = nil
-	}
-	// A finding, not a refusal: beside a live server the tail can be a
-	// transaction the writer is still writing, and verify repairs nothing.
-	if report.TruncatedBytes > 0 {
-		found(fmt.Sprintf("file: the active segment ends in an incomplete transaction: %d bytes past the last complete one, %d complete line(s) among them",
-			report.TruncatedBytes, report.TruncatedEntries))
-	}
-
-	// The table, row by row, its stamped checksum held to the sum the file's
-	// line carries where the file has the seq, and recomputed from the
-	// stored columns under Recanonicalize; and the transaction frame, so a
-	// `txn` the boot's writer would refuse is named here first. The file is
-	// read through one cursor across every page, which reads each line's sum
-	// without decoding it: the file pass above checked every line against
-	// its sum already.
-	//
-	// Under a snapshot's base the rows at or below the run of known segments
-	// are not read: the base was compared with the table when it was taken,
-	// and the row at the seq that ends the run is held to that line's sum,
-	// so the rows above it continue the history the base holds.
+	// The table, row by row: the seq sequence, the transaction frame, and
+	// under Recanonicalize each row's checksum recomputed from its columns.
 	expected := int64(1)
-	var knownSum [32]byte
-	if log != nil {
-		report.KnownHead, knownSum = log.KnownHead()
-	}
-	if report.KnownHead > 0 {
-		var hash []byte
-		err := tx.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, report.KnownHead).Scan(&hash)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			found(fmt.Sprintf("seq %d: in the file and not in the table", report.KnownHead))
-		case err != nil:
-			return report, nil, err
-		case !bytes.Equal(hash, knownSum[:]):
-			found(fmt.Sprintf("seq %d: the file's checksum is not the table's", report.KnownHead))
-		}
-		expected = report.KnownHead + 1
-		report.Head = report.KnownHead
-		report.HeadHash = hex.EncodeToString(knownSum[:])
-	}
-	var sums *changelogfile.SumCursor
-	if log != nil {
-		c := log.Sums(expected - 1)
-		defer func() { _ = c.Close() }()
-		sums = c
-	}
-	fileSeq := expected - 1
-	var fileSum [32]byte
-	prog = s.progress("verifying the changelog table against the files", "repository", repo.ID)
+	prog := s.progress("verifying the changelog table", "repository", repo.ID)
 	var openTxn int64
 	for {
 		var page []checksumRow
@@ -259,7 +177,7 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 			page, err = scanStampPage(ctx, tx, expected-1, verifyTableBatch)
 		}
 		if err != nil {
-			return report, nil, err
+			return report, err
 		}
 		if len(page) == 0 {
 			break
@@ -307,130 +225,307 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 					found(fmt.Sprintf("seq %d: checksum mismatch, the stored row is not what was stamped", row.entry.Seq))
 				}
 			}
-			if log == nil || row.entry.Seq > log.Head() {
-				continue
-			}
-			// The cursor reads forward past any seq the table skips.
-			for sums != nil && fileSeq < row.entry.Seq {
-				if fileSeq, fileSum, err = sums.Next(); err != nil {
-					found(fmt.Sprintf("file: reading seq %d: %v", row.entry.Seq, err))
-					log, sums = nil, nil
-				}
-			}
-			switch {
-			case sums == nil:
-			case fileSeq != row.entry.Seq:
-				found(fmt.Sprintf("seq %d: in the table and not in the file", row.entry.Seq))
-			case !bytes.Equal(fileSum[:], row.hash):
-				found(fmt.Sprintf("seq %d: the file's checksum is not the table's", row.entry.Seq))
-			}
 		}
-		pos := changelogfile.Position{Seq: report.Head}
-		if sums != nil {
-			pos = sums.Position()
-		}
-		prog.tick(pos)
+		prog.tick(changelogfile.Position{Seq: report.Head})
 	}
 	if openTxn != 0 {
 		found(fmt.Sprintf("the table ends inside the transaction ending at seq %d", openTxn))
 	}
-	if log != nil && report.FileHead != report.Head {
-		found(fmt.Sprintf("the table's head is %d and the file's is %d", report.Head, report.FileHead))
+
+	if s.archive != nil {
+		if err := s.verifyArchive(ctx, tx, repo, &report, found); err != nil {
+			return report, err
+		}
 	}
 
-	// The sealed mirror against the sealed table, by ref.
 	rows, err := readSealedTable(ctx, tx)
 	if err != nil {
-		return report, nil, err
+		return report, err
 	}
-	files, err := changelogfile.ReadSealed(dir)
-	if err != nil {
-		found(fmt.Sprintf("sealed: %v", err))
+	report.SealedRows = len(rows)
+	if err := verifyUnheldSealed(ctx, tx, rows, &report, found); err != nil {
+		return report, err
 	}
-	report.SealedRows, report.SealedFiles = len(rows), len(files)
-	seen := map[string]bool{}
-	for _, rec := range files {
-		seen[rec.Ref] = true
-		row, ok := rows[rec.Ref]
-		switch {
-		case !ok:
-			found(fmt.Sprintf("sealed %s: a file with no row", rec.Ref))
-		case !sealedRecordsEqual(rec, row):
-			found(fmt.Sprintf("sealed %s: the file is not the row", rec.Ref))
-		}
-	}
-	for _, ref := range sortedKeys(rows) {
-		if !seen[ref] {
-			found(fmt.Sprintf("sealed %s: a row with no file", ref))
-		}
-	}
-	// A pending file is a staged write that had not committed when the
-	// directory was read: beside a live server, one in flight; in a copy,
-	// one the import ignores and the boot removes.
-	pending, err := changelogfile.PendingSealed(dir)
-	if err != nil {
-		found(fmt.Sprintf("sealed: %v", err))
-	}
-	for _, name := range pending {
-		found(fmt.Sprintf("sealed/%s: a staged write that has not committed", name))
-	}
-	if err := verifyUnheldSealed(ctx, tx, rows, files, &report, found); err != nil {
-		return report, nil, err
-	}
-
-	// The recorded recovery point, when the directory is a snapshot or was
-	// restored from one: the entry it names must be in the files, as recorded.
-	verifySnapshotPoint(dir, log, &report, found)
-
 	// The side stores against the fold: a `stored` manifest whose bytes are
 	// missing or not its digest's, and a live secret reference with no
-	// sealed file, are what a copy that missed a file looks like after an
-	// import, which upserts whatever files it finds.
-	if err := s.verifyBlobs(ctx, tx, db, repo, opts, &report, found); err != nil {
-		return report, nil, err
+	// sealed row.
+	if err := s.verifyBlobs(ctx, tx, repo, &report, found); err != nil {
+		return report, err
 	}
-	if err := s.verifySecretRefs(ctx, tx, db, repo, dir, seen, &report, found); err != nil {
-		return report, nil, err
+	if err := s.verifySecretRefs(ctx, tx, db, repo, rows, &report, found); err != nil {
+		return report, err
 	}
-	// Under the credential key, every sealed file opened: the table and the
-	// file agreeing byte for byte says nothing about whether the bytes are
-	// ciphertext the DEK opens, and an import loads what it finds.
-	s.verifySealedOpen(repo, files, &report, found)
+	// Under the credential key, every sealed row opened: the bytes being
+	// there says nothing about whether they are ciphertext the DEK opens.
+	s.verifySealedOpen(repo, rows, &report, found)
 
 	report.OK = len(report.Findings) == 0
 	report.Took = time.Since(started)
-	return report, log, nil
+	return report, nil
 }
 
-// verifySnapshotPoint holds the files to the recovery point `snapshot.json`
-// recorded, when there is one: the entry at the recorded head must be in the
-// files and carry the recorded checksum. A head past the point is not a
-// finding, because a restored repository keeps writing.
-func verifySnapshotPoint(dir string, log *changelogfile.Log, report *VerifyReport, found func(string)) {
-	snap, err := changelogfile.ReadSnapshot(dir)
+// verifyArchive holds the repository's archive to the table and to the
+// record (rule 8): the archive the record names is the one a pass would go
+// on in, its published manifest is there, every object it selects is there
+// with its bytes, and every line of its pieces carries the table's stamped
+// checksum. An archive behind the table is not a finding, because it is
+// copied after the commits. What was not proven is said (ArchiveUnverified),
+// and is a finding wherever a copy was published: a store that cannot be
+// read, a manifest gone, an object that went while it was read and is gone
+// when read again, or lines in an earlier dialect than the table's, which
+// nothing here holds to the table's. It proves what the store holds when it
+// runs, and cannot prove that the store hides no other manifest.
+func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, report *VerifyReport, found func(string)) error {
+	report.Archive = s.archive.String()
+	unverified := func(reason string, finding bool) {
+		report.ArchiveUnverified = reason
+		if finding {
+			found("archive: not verified: " + reason)
+		}
+	}
+	rec, ok, err := readArchiveRecord(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !ok || (rec.published == "" && rec.pending == nil) {
+		unverified("no pass has published a copy of the repository to this store yet", false)
+		return nil
+	}
+	report.ArchiveID, report.ArchiveUnaccounted = rec.archive, -1
+	if rec.stopped != "" {
+		found("archive: its passes stopped, and write nothing until an operator resolves it (`substratectl archive report`): " + rec.stopped)
+	}
+	listed, err := listArchives(ctx, s.archive, repo.ID)
+	if err != nil {
+		unverified(fmt.Sprintf("the store could not be read: %v", err), true)
+		return nil
+	}
+	if mark := listed.newestMark(); mark >= rec.archive {
+		found(fmt.Sprintf("archive: the repository's deletion mark %s covers archive %s, and no boot would restore it", mark, rec.archive))
+	}
+	if newest := listed.newest(); newest > rec.archive {
+		found(fmt.Sprintf("archive: the store holds archive %s, newer than archive %s the database writes, and a boot with no rows would restore that one", newest, rec.archive))
+	}
+	if tops := listed[rec.archive].tops(); len(tops) > 1 {
+		found(fmt.Sprintf("archive: archive %s holds %d manifests of its highest epoch, and no boot chooses between them", rec.archive, len(tops)))
+	} else if len(tops) == 1 && tops[0] != rec.published {
+		found(fmt.Sprintf("archive: archive %s's newest manifest is %s, which the database did not publish", rec.archive, tops[0]))
+	}
+	if rec.published == "" {
+		unverified("the first manifest of archive "+rec.archive+" is still to be published", true)
+		return nil
+	}
+	src, err := openArchiveManifest(ctx, s.archive, repo.ID, rec.archive, rec.published, false, nil)
 	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return
+	case errors.Is(err, archive.ErrNotFound) && len(listed) == 0 && s.storeHoldsNothingOf(ctx, repo.ID):
+		unverified(fmt.Sprintf("the store holds nothing of the repository, where a pass published manifest %s of archive %s: it was emptied or replaced, or the server now writes to another store; the next pass starts a new archive in it", rec.published, rec.archive), true)
+		return nil
+	case errors.Is(err, archive.ErrNotFound):
+		unverified(fmt.Sprintf("the store holds no manifest %s of archive %s, which a pass published: the copy is gone, and a boot would restore nothing from it", rec.published, rec.archive), true)
+		return nil
 	case err != nil:
-		found(fmt.Sprintf("snapshot: %v", err))
-		return
+		unverified(fmt.Sprintf("the published manifest does not read: %v", err), true)
+		return nil
 	}
-	report.Snapshot = &RecoveryPoint{Head: snap.Head, HeadHash: hex.EncodeToString(snap.HeadHash[:]), TakenAt: snap.TakenAt}
-	if log == nil || snap.Head == 0 {
-		return
+	report.ArchiveHead, report.ArchivePieces = src.Head(), len(src.chain)
+	if src.Head() > report.Head {
+		found(fmt.Sprintf("archive: its head is seq %d, past the table's %d: it holds history the table does not", src.Head(), report.Head))
+		report.ArchiveUnverified = "it holds history the table does not"
+		return nil
 	}
-	if snap.Head > log.Head() {
-		found(fmt.Sprintf("snapshot: records head %d and the files end at %d: the copy is short of the point it claims", snap.Head, log.Head()))
-		return
+	// Every object the manifest selects, read again once when it went
+	// while it was read.
+	read := func(key string) ([]byte, error) {
+		data, err := archive.ReadAll(ctx, s.archive, key)
+		if errors.Is(err, archive.ErrNotFound) {
+			data, err = archive.ReadAll(ctx, s.archive, key)
+		}
+		return data, err
 	}
-	entries, err := log.Read(snap.Head-1, 1)
-	if err != nil || len(entries) != 1 || entries[0].Seq != snap.Head {
-		found(fmt.Sprintf("snapshot: reading the recorded head %d: %v", snap.Head, err))
-		return
+	for _, ref := range sortedKeys(src.manifest.Sealed) {
+		name := src.manifest.Sealed[ref]
+		sum, _, ok := changelogfile.ParseSealedObjectName(ref, name)
+		err := fmt.Errorf("%w: %q", changelogfile.ErrManifestFormat, name)
+		if ok {
+			var data []byte
+			if data, err = read(src.objectKey(name)); err == nil {
+				_, err = changelogfile.DecodeSealedVersion(ref, sum, data)
+			}
+		}
+		if err != nil {
+			found(fmt.Sprintf("archive: the sealed value %s the manifest selects: %v", ref, err))
+		}
 	}
-	if _, sum, err := changelogfile.Encode(entries[0]); err != nil || sum != snap.HeadHash {
-		found(fmt.Sprintf("snapshot: the entry at seq %d is not the one recorded: the files are another history than the snapshot's", snap.Head))
+	for _, name := range src.manifest.Spool {
+		if _, err := read(src.objectKey(name)); err != nil {
+			found(fmt.Sprintf("archive: the spooled request %s the manifest selects: %v", name, err))
+		}
 	}
+	if missing := src.manifest.MissingBlobs; len(missing) > 0 {
+		found(fmt.Sprintf("archive: %d blob(s) the records hold are not in it, their bytes lost on this server: %s",
+			len(missing), strings.Join(missing[:min(len(missing), 5)], ", ")))
+	}
+	if pending := src.manifest.PendingBlobs; len(pending) > 0 {
+		found(fmt.Sprintf("archive: %d blob(s) the records hold are not copied yet; the next passes copy them", len(pending)))
+	}
+	if err := s.verifyArchivedBlobs(ctx, tx, src, report, found); err != nil {
+		return err
+	}
+	if err := s.countUnaccounted(ctx, tx, src, report); err != nil {
+		unverified(fmt.Sprintf("the objects the database has no record of could not be counted: %v", err), true)
+		return nil
+	}
+	// Lines of an archive in an earlier dialect than the table's are not the
+	// table's lines, and nothing here converts them to compare: the next
+	// pass writes every piece again in the table's.
+	if dialect, err := readChangelogDialect(ctx, tx); err != nil {
+		return err
+	} else if max(dialect, 1) != src.Dialect() {
+		unverified(fmt.Sprintf("its history is in changelog dialect %d and the table's in %d, so no line of it was held to the table; the next archive pass writes it again in dialect %d",
+			src.Dialect(), max(dialect, 1), max(dialect, 1)), true)
+		return nil
+	}
+	prog := s.progress("verifying the archive against the table", "repository", repo.ID)
+	var stamps []checksumRow
+	for _, p := range src.chain {
+		body, err := read(p.Key)
+		if err != nil {
+			found(fmt.Sprintf("archive: %s: %v", p.Key, err))
+			report.ArchiveUnverified = "a piece of its history could not be read"
+			return nil
+		}
+		if changelogfile.SumText(sha256.Sum256(body)) != src.sums[p.Key] {
+			found(fmt.Sprintf("archive: %s is not the piece its manifest selects", p.Key))
+			report.ArchiveUnverified = "a piece of its history is not the one its manifest selects"
+			return nil
+		}
+		err = changelogfile.ReadPiece(bytes.NewReader(body), p.First, p.Last, func(e changelogfile.Entry, _ []byte, sum [32]byte) error {
+			for len(stamps) == 0 || stamps[0].entry.Seq < e.Seq {
+				if len(stamps) > 0 {
+					stamps = stamps[1:]
+					continue
+				}
+				page, err := scanStampPage(ctx, tx, e.Seq-1, verifyTableBatch)
+				if err != nil {
+					return err
+				}
+				if len(page) == 0 {
+					return fmt.Errorf("seq %d is in the archive and not in the table", e.Seq)
+				}
+				stamps = page
+			}
+			if stamps[0].entry.Seq != e.Seq {
+				return fmt.Errorf("seq %d is in the archive and not in the table", e.Seq)
+			}
+			if !bytes.Equal(stamps[0].hash, sum[:]) {
+				return fmt.Errorf("seq %d: the archive's line is not the table's", e.Seq)
+			}
+			return nil
+		})
+		if err != nil {
+			found(fmt.Sprintf("archive: %s: %v", p.Key, err))
+			report.ArchiveUnverified = "a line of its history is not the table's"
+			return nil
+		}
+		prog.tick(changelogfile.Position{Seq: p.Last})
+	}
+	return nil
+}
+
+// storeHoldsNothingOf reports whether the store lists no object of the
+// repository at all, under any archive.
+func (s *service) storeHoldsNothingOf(ctx context.Context, id string) bool {
+	everything, err := s.archive.List(ctx, changelogfile.RepositoryPrefix(id))
+	return err == nil && len(everything) == 0
+}
+
+// verifyArchivedBlobs reads every blob the archive holds back out of it and
+// hashes it against the digest that names it, and, when the archive is at the
+// table's head, holds it to every stored blob the records there hold: each
+// under some object of its digest, or named missing or pending by the
+// manifest. An archive behind the table is held only to what it holds,
+// because the records at its head are not the table's now. An object that
+// went while it was read is a drop a pass made, and is read past.
+func (s *service) verifyArchivedBlobs(ctx context.Context, tx dbx, src *archiveSource, report *VerifyReport, found func(string)) error {
+	prefix := changelogfile.ArchivePrefix(src.repository, src.archive)
+	listed, err := s.archive.List(ctx, prefix+changelogfile.BlobsSubdir+"/")
+	if err != nil {
+		found(fmt.Sprintf("archive: not verified: the blobs cannot be listed: %v", err))
+		report.ArchiveUnverified = "its blobs could not be listed"
+		return nil
+	}
+	held := make(map[string]bool, len(listed))
+	for _, o := range listed {
+		digest, _, ok := changelogfile.ParseBlobObjectName(strings.TrimPrefix(o.Key, prefix))
+		if !ok {
+			continue
+		}
+		rc, err := s.archive.Get(ctx, o.Key)
+		if errors.Is(err, archive.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			found(fmt.Sprintf("archive: blob %s: %v", o.Key, err))
+			continue
+		}
+		h := sha256.New()
+		_, err = io.Copy(h, rc)
+		_ = rc.Close()
+		switch {
+		case err != nil:
+			found(fmt.Sprintf("archive: blob %s does not read: %v", o.Key, err))
+		case substrate.BlobDigestPrefix+hex.EncodeToString(h.Sum(nil)) != digest:
+			found(fmt.Sprintf("archive: blob %s holds other bytes than its digest names", o.Key))
+		default:
+			if !held[digest] {
+				report.ArchiveBlobs++
+			}
+			held[digest] = true
+		}
+	}
+	if src.Head() != report.Head {
+		return nil
+	}
+	stored, err := storedBlobs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	named := make(map[string]bool, len(src.manifest.MissingBlobs)+len(src.manifest.PendingBlobs))
+	for _, digest := range append(slices.Clone(src.manifest.MissingBlobs), src.manifest.PendingBlobs...) {
+		named[digest] = true
+	}
+	for _, b := range stored {
+		if !held[b.digest] && !named[b.digest] {
+			found(fmt.Sprintf("archive: blob %s the records hold is not in it, and its manifest does not name it missing or pending", b.digest))
+		}
+	}
+	return nil
+}
+
+// countUnaccounted counts what the store holds under the archive the record
+// names that the record does not: no row, and not the published manifest.
+// The count is set only once every listing answered whole; a listing that
+// fails is an error, never a count of zero.
+func (s *service) countUnaccounted(ctx context.Context, tx dbx, src *archiveSource, report *VerifyReport) error {
+	rows, err := readArchiveObjects(ctx, tx, src.archive)
+	if err != nil {
+		return err
+	}
+	n := 0
+	for _, prefix := range []string{changelogfile.ArchivePrefix(src.repository, src.archive), changelogfile.ArchiveManifestsPrefix(src.repository, src.archive)} {
+		listed, err := s.archive.List(ctx, prefix)
+		if err != nil {
+			return fmt.Errorf("%w: %w", errArchiveUnreadable, err)
+		}
+		for _, o := range listed {
+			name := strings.TrimPrefix(o.Key, prefix)
+			if _, ok := rows[name]; !ok && name != src.name && name != changelogfile.DeletedMark {
+				n++
+			}
+		}
+	}
+	report.ArchiveUnaccounted = n
+	return nil
 }
 
 // storedBlob is one `stored` blob manifest: the digest that is its id and
@@ -466,7 +561,7 @@ func storedBlobs(ctx context.Context, q dbx) ([]storedBlob, error) {
 // verifyBlobs reads every `stored` blob's bytes out of the store and hashes
 // them against the digest that names them. A store that cannot be reached at
 // all is one finding and ends the walk, not one finding per blob.
-func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, opts VerifyOptions, report *VerifyReport, found func(string)) error {
+func (s *service) verifyBlobs(ctx context.Context, tx dbx, repo Repository, report *VerifyReport, found func(string)) error {
 	blobs, err := storedBlobs(ctx, tx)
 	if err != nil {
 		return err
@@ -480,9 +575,6 @@ func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repo
 	}
 	for _, b := range blobs {
 		report.Blobs++
-		if opts.knownBlobs[b.digest] {
-			continue
-		}
 		n, digest, err := hashBlob(ctx, store, b.digest)
 		switch {
 		case errors.Is(err, blobbytes.ErrNotStored):
@@ -521,14 +613,14 @@ func hashBlob(ctx context.Context, store blobbytes.Store, digest string) (int64,
 }
 
 // verifySecretRefs walks every secret-typed property of every live record
-// and holds each reference it finds to the sealed files. The kinds come from
+// and holds each reference it finds to the sealed rows. The kinds come from
 // the repository's own declaration rows, as a replay loads them, so a
 // property the repository declares secret is checked whatever package it is
 // in. A value that is not an engine-minted ref (`secret:`, `auth:`) is a
 // plaintext, which references nothing. References only in historical payloads
 // are not walked: rotation deletes their rows and files on purpose.
-func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, dir string, fileRefs map[string]bool, report *VerifyReport, found func(string)) error {
-	bare := s.bareDataset(repo, db, dir)
+func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, sealed map[string]changelogfile.SealedRecord, report *VerifyReport, found func(string)) error {
+	bare := s.bareDataset(repo, db)
 	// Through the verify's own transaction: a read on the pool while it
 	// holds a connection needs a second one, and the declarations belong to
 	// the same snapshot the rows are checked in.
@@ -561,8 +653,8 @@ func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo
 					continue
 				}
 				report.SecretRefs++
-				if !fileRefs[value] {
-					found(fmt.Sprintf("secret %s: %s %s names it in %s and sealed/ has no file for it", value, ty.Identity, id, name))
+				if _, ok := sealed[value]; !ok {
+					found(fmt.Sprintf("secret %s: %s %s names it in %s and the sealed table has no row for it", value, ty.Identity, id, name))
 				}
 			}
 			if err := rows.Err(); err != nil {
@@ -575,20 +667,11 @@ func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo
 	return nil
 }
 
-// verifyUnheldSealed names every sealed ref, in the table or under sealed/,
-// that no live or tombstoned record holds (credentials.go sealedUnheld): the
-// material nothing reads, which a purge before #236 left and the writable
-// open and the GC sweep erase. A ref with a row is judged by the row's owner
-// and a file with no row by the owner its file names, so a file that is not
-// its row is not judged twice.
-func verifyUnheldSealed(ctx context.Context, tx dbx, rows map[string]changelogfile.SealedRecord, files []changelogfile.SealedRecord, report *VerifyReport, found func(string)) error {
-	byRef := make(map[string]changelogfile.SealedRecord, len(rows)+len(files))
-	for _, f := range files {
-		byRef[f.Ref] = f
-	}
-	for ref, r := range rows {
-		byRef[ref] = r
-	}
+// verifyUnheldSealed names every sealed row that no live or tombstoned
+// record holds (credentials.go sealedUnheld): the material nothing reads,
+// which a purge before #236 left and the writable open and the GC sweep
+// erase.
+func verifyUnheldSealed(ctx context.Context, tx dbx, byRef map[string]changelogfile.SealedRecord, report *VerifyReport, found func(string)) error {
 	if len(byRef) == 0 {
 		return nil
 	}
@@ -625,13 +708,13 @@ func verifyUnheldSealed(ctx context.Context, tx dbx, rows map[string]changelogfi
 	return unheld.Err()
 }
 
-// verifySealedOpen opens every sealed file under the repository's DEK, the
+// verifySealedOpen opens every sealed row under the repository's DEK, the
 // way a read of the record would, and names each that does not open. It runs
 // only under a credential key, since the DEK is wrapped under it; a
 // repository with no DEK yet (never opened by a keyed server) has nothing to
 // open under.
-func (s *service) verifySealedOpen(repo Repository, files []changelogfile.SealedRecord, report *VerifyReport, found func(string)) {
-	if len(s.credKey) == 0 || len(repo.DEK) == 0 || len(files) == 0 {
+func (s *service) verifySealedOpen(repo Repository, rows map[string]changelogfile.SealedRecord, report *VerifyReport, found func(string)) {
+	if len(s.credKey) == 0 || len(repo.DEK) == 0 || len(rows) == 0 {
 		return
 	}
 	dek, err := s.unwrapDEK(repo.DEK, repo.ID, repo.DEKKeyID)
@@ -639,10 +722,10 @@ func (s *service) verifySealedOpen(repo Repository, files []changelogfile.Sealed
 		found(fmt.Sprintf("sealed: the repository's DEK does not open, so no sealed file can: %v", err))
 		return
 	}
-	for _, f := range files {
+	for _, ref := range sortedKeys(rows) {
+		f := rows[ref]
 		if _, err := openRepoPayload(f.Payload, dek, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {
-			found(fmt.Sprintf("sealed/%s (%s %s): does not open under the DEK: %v",
-				changelogfile.SealedFileName(f.Ref), f.RecordKind, f.RecordID, err))
+			found(fmt.Sprintf("sealed %s (%s %s): does not open under the DEK: %v", f.Ref, f.RecordKind, f.RecordID, err))
 			continue
 		}
 		report.SealedOpened++
@@ -659,9 +742,13 @@ type checksumRow struct {
 // any pool: every column the checksum covers, with the payload as stored
 // text.
 func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]checksumRow, error) {
+	return queryChecksumRows(ctx, db, `WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
+}
+
+// queryChecksumRows reads the changelog rows tail selects, each as its line.
+func queryChecksumRows(ctx context.Context, db dbx, tail string, args ...any) ([]checksumRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn, hash FROM changelog
-		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn, hash FROM changelog `+tail, args...)
 	if err != nil {
 		return nil, err
 	}

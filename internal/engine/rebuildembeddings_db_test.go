@@ -152,7 +152,7 @@ func TestAnImportDropsTheVectorsOfARecordPurgedUnderAKindNoLongerDeclared(t *tes
 	}
 	_ = svc2.Close()
 
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	if _, err := svc3.Dataset(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
 	}
