@@ -28,19 +28,24 @@ func (s *service) SignOutEverywhere(ctx context.Context, in substrate.LoginInput
 	if err != nil {
 		return 0, err
 	}
+	s.afterProof("signout")
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return 0, err
 	}
+	// The tokens end under the factors this request proved, or the ones its
+	// own password change wrote: a change of the factors by anyone else in
+	// between refuses the sign-out (factorsStand).
+	proved := material
 	if newPassword != "" {
-		if err := ds.rewritePassword(ctx, in.Repository, material, newPassword); err != nil {
+		if proved, err = ds.rewritePassword(ctx, in.Repository, material, newPassword); err != nil {
 			if errors.Is(err, substrate.ErrWriteInDoubt) {
 				return 0, fmt.Errorf("%w: %w", substrate.ErrSignOutIncomplete, err)
 			}
 			return 0, err
 		}
 	}
-	n, err := ds.endTokens(ctx, substrate.PersonOf(ctx, repo.ID))
+	n, err := ds.endTokens(ctx, substrate.PersonOf(ctx, repo.ID), &proved)
 	if err != nil && newPassword != "" {
 		return 0, fmt.Errorf("%w: %w", substrate.ErrSignOutIncomplete, err)
 	}
@@ -53,9 +58,17 @@ func (s *service) SignOutEverywhere(ctx context.Context, in substrate.LoginInput
 // this is where it selects by person. Each delete folds a token record, so
 // the token cache empties before the sign-out answers, and the commit wakes
 // every stream, which reads its token again and ends (internal/api).
-func (ds *dataset) endTokens(ctx context.Context, person string) (int, error) {
+//
+// With proved, the tokens end only while the credential is still those
+// factors (factorsStand), checked in the same transaction.
+func (ds *dataset) endTokens(ctx context.Context, person string, proved *authMaterial) (int, error) {
 	var ended int
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if proved != nil {
+			if err := t.factorsStand(*proved); err != nil {
+				return err
+			}
+		}
 		rows, err := t.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, kindToken)
 		if err != nil {
 			return err

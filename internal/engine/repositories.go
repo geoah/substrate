@@ -348,7 +348,7 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 			return fmt.Errorf("substrate/engine: erase repository %s: look up its row: %w", id, err)
 		}
 	}
-	return s.eraseRepositoryOn(ctx, cp, id)
+	return s.eraseRepositoryOn(ctx, cp, id, nil)
 }
 
 // eraseRepository erases a repository whole: every repository-scoped row, then
@@ -375,12 +375,16 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 //     would leave a directory with no row, which the next boot IMPORTS as a
 //     repository whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
-	return s.eraseRepositoryOn(ctx, s.maint, id)
+	return s.eraseRepositoryOn(ctx, s.maint, id, nil)
 }
 
 // eraseRepositoryOn is eraseRepository on a given control-plane handle: the
-// registration's locked connection, so the cleanup needs no second one.
-func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string) error {
+// registration's locked connection, so the cleanup needs no second one. A
+// person's delete passes fence, which runs first in the erase's transaction,
+// before the directory goes: it holds the factors the request proved for as
+// long as the erase runs (auth.go credentialStandsOn), and its refusal leaves
+// the repository whole.
+func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string, fence func(*sql.Tx) error) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
@@ -396,6 +400,16 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	// the same name must not inherit.
 	s.takeChecked(id)
 
+	tx, err := cp.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if fence != nil {
+		if err := fence(tx); err != nil {
+			return err
+		}
+	}
 	dir, err := changelogfile.RepoDir(s.dataRoot, id)
 	if err != nil {
 		return err
@@ -403,12 +417,6 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
 	}
-
-	tx, err := cp.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
-	}
-	defer func() { _ = tx.Rollback() }()
 	for _, table := range repositoryScopedTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository = $1`, id); err != nil {
 			return fmt.Errorf("substrate/engine: erase repository %s (%s): %w", id, table, err)

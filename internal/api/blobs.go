@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -245,8 +246,8 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 		writeUnavailable(w, time.Second, "blob store is busy, retry")
 		return
 	}
-	// The wait for a slot may be long: an app's token revoked or lapsed
-	// meanwhile reads nothing. A full-access token has no lease.
+	// The wait for a slot may be long: a token revoked or lapsed meanwhile
+	// reads nothing.
 	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
 		writeSubstrateError(w, r, err)
 		return
@@ -275,8 +276,30 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	// net/http clears it once the response is finished.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(blobTransferDeadline))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	// The bytes go out a chunk at a time, and the token is read again
+	// between chunks: a large blob a client is still reading stops when its
+	// token is revoked or its person signs out everywhere. Its status line is
+	// gone by then, so the response is cut, which a client reads as a body
+	// that ended early.
+	for len(data) > 0 {
+		n := min(len(data), blobChunk)
+		if _, err := w.Write(data[:n]); err != nil {
+			return
+		}
+		data = data[n:]
+		if len(data) == 0 {
+			break
+		}
+		if err := leaseFrom(ctx).alive(ctx, leaseTransferEvery); err != nil {
+			slog.Info("blob read aborted mid-body: its token was revoked or ran out", append(requestLogAttrs(r), "digest", digest)...)
+			panic(http.ErrAbortHandler)
+		}
+	}
 }
+
+// blobChunk is how much of a blob's bytes go out between two reads of the
+// token's lease.
+const blobChunk = 256 << 10
 
 // setBlobCacheHeaders sets what a 200 and a 304 of a blob both carry.
 func setBlobCacheHeaders(w http.ResponseWriter, digest string) {

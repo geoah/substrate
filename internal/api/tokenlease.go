@@ -74,6 +74,11 @@ func (l *tokenLease) alive(ctx context.Context, every time.Duration) error {
 	return nil
 }
 
+// leaseTransferEvery is how stale a long transfer's last token read may be
+// (an export, a blob's bytes): it reads the lease between its writes, and a
+// read per write of a large body buys nothing a one-second window does not.
+const leaseTransferEvery = time.Second
+
 // leaseAgentEvery is how stale an agent stream's last token read may be.
 // Its events are the app's own chat, one model token each, so a database read
 // per event buys nothing a two-second window does not; a watch reads the

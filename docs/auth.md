@@ -238,7 +238,11 @@ Five things follow from a token being a record:
   watch on the records route or the change feed, a chat's stream and a
   thread's events read their token again whenever the repository's changelog
   moves, which a revoke does, and end with an `auth` error (a terminal frame
-  on a watch, an `error` event with `"code": "auth"` on an agent stream).
+  on a watch, an `error` event with `"code": "auth"` on an agent stream, and
+  a plain `401` for an agent stream whose first event had not gone out). A
+  long transfer reads its token between its writes, at most a second apart:
+  an export or a blob's bytes still going out are cut, which a client reads
+  as a body that ended early.
 - **Only the owner revokes a token.** The engine refuses a token delete from
   installed code with `403 forbidden`, whatever its grant names: a
   function's `delete` effect, an agent's `write` built-in, and a policy
@@ -295,11 +299,18 @@ a leaked token, so a token is no evidence for it. A password change does the
 same in the same request with `"signOutEverywhere": true`, because the code
 it carries is spent once; its answer carries `signedOut` too. Every open
 stream of every ended token ends with an `auth` error as soon as the sign-out
-commits. Nothing a token set going before it mints afterwards: a token is
-minted standing on the token that asked for it (`POST /tokens`) or approved
-it (an app's code, exchanged after the approval), checked in the mint's own
-transaction, so a mint whose request was authenticated before the sign-out,
-or a code approved before it, is refused. The console offers it under Settings, Signed in, and as an option of
+commits, and an export or a blob's bytes going out stop between two writes.
+Nothing a token set going before it mints afterwards: a token is minted
+standing on the token that asked for it (`POST /tokens`) or approved it (an
+app's code, exchanged after the approval), checked in the mint's own
+transaction to still authenticate (not revoked, not expired), so a mint
+whose request was authenticated before the sign-out, or a code approved
+before it, is refused. Nothing a request that proved the factors began
+outlives a change of them either: a sign-in, a password change, a new second
+factor, a sign out everywhere and a repository's delete act only while the
+credential is still the one they proved, read under the lock every change
+of it takes, so one that proved the old password before a sign out
+everywhere mints, ends or erases nothing after it. The console offers it under Settings, Signed in, and as an option of
 the password change, and `substratectl logout --everywhere` runs it
 ([0272](decisions/0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md)).
 

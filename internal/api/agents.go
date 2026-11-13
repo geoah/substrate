@@ -166,11 +166,26 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 				signals = nil
 				continue
 			}
-			if started && leaseEnded(ctx, enc, flusher, frame, 0) {
+			// Before the first event nothing is written yet, so a token that
+			// no longer stands is an ordinary refusal, never a pending
+			// request.
+			if !started {
+				if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+					return false, err
+				}
+				continue
+			}
+			if leaseEnded(ctx, enc, flusher, frame, 0) {
 				return true, nil
 			}
 		case ev := <-events:
 			if !started {
+				// The token is read before the first event goes out, as
+				// before every later one: the first event of a token that
+				// died while its turn was starting is never delivered.
+				if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+					return false, err
+				}
 				started, draining = true, h.draining
 				setStreamHeaders(w)
 				w.WriteHeader(http.StatusOK)
@@ -206,6 +221,9 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 			return true, nil
 		case <-ticker.C:
 			if !started {
+				if err := leaseFrom(ctx).alive(ctx, leaseAgentEvery); err != nil {
+					return false, err
+				}
 				continue
 			}
 			if leaseEnded(ctx, enc, flusher, frame, leaseAgentEvery) {

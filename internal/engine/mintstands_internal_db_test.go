@@ -39,7 +39,7 @@ func TestAMintStandsOnTheTokenThatAskedForIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if _, err := ds.endTokens(ctx, substrate.PersonOf(ctx, ds.scope.Repository)); err != nil {
+	if _, err := ds.endTokens(ctx, substrate.PersonOf(ctx, ds.scope.Repository), nil); err != nil {
 		t.Fatalf("sign out everywhere: %v", err)
 	}
 	if _, err := mint(substrate.WithPrincipal(ctx, other.ID), "after the sign-out"); !errors.Is(err, substrate.ErrAuth) {

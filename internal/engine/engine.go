@@ -167,6 +167,10 @@ type options struct {
 	// Postgres commit, so a test can fail a step or stop the process there.
 	// Tests only.
 	commitFault func(stage string) error
+	// afterProof is the factor doors' test seam (auth.go afterProof): a hook
+	// run with the door's name once a request has proved the factors and
+	// before it acts. Tests only.
+	afterProof func(door string)
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
@@ -714,6 +718,8 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testAfterProof is the options' factor-door seam (auth.go). Tests only.
+	testAfterProof func(door string)
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
@@ -978,6 +984,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		conversion:         conversionSteps,
 		maxDialect:         maxChangelogDialect,
 		testCommitFault:    o.commitFault,
+		testAfterProof:     o.afterProof,
 		testMeasureHook:    o.measureHook,
 		testChangeReadHook: o.changeReadHook,
 		testTailHeadHook:   o.tailHeadHook,
