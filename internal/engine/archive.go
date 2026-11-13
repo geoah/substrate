@@ -401,7 +401,17 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	manifestPrint := fmt.Sprintf("%s|%s|%s|%x|%d|%d|%s", m.ID, m.Authority, m.DEKKeyID, m.DEK, m.ChangelogDialect, m.VocabularyDialect, m.CreatedAt.Format(time.RFC3339Nano))
+	// The people are read outside the snapshot: their rows are no part of
+	// the history, and a change of them moves no line, so it is the print
+	// that says this pass has something to publish.
+	if m.Identities, err = ds.svc.manifestIdentities(ctx, ds.info.ID, ""); err != nil {
+		return err
+	}
+	people, err := identitiesPrint(m.Identities)
+	if err != nil {
+		return err
+	}
+	manifestPrint := fmt.Sprintf("%s|%s|%s|%x|%d|%d|%s|%s", m.ID, m.Authority, m.DEKKeyID, m.DEK, m.ChangelogDialect, m.VocabularyDialect, m.CreatedAt.Format(time.RFC3339Nano), people)
 	if !a.known {
 		if err := ds.loadArchiveRecord(ctx); err != nil {
 			return err

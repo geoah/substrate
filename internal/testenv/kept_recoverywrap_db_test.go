@@ -73,9 +73,12 @@ func TestTheKeptDirectoryLosesItsRecoveryWrap(t *testing.T) {
 // directory is from before repository ids, so the boot gives it its id and
 // the listing has to reach that step as well as the import (decision 0264).
 // Unlisted, it is refused naming the variable; listed, every record the
-// release served arrives (the recovery record aside, which is purged), the
-// three secrets it held read unset, the sealed store is empty, the owner's
-// password signs in nowhere, and the token the owner held still reads.
+// release served arrives (the recovery and sign-in records aside, which are
+// purged), the secrets it held read unset, and the sealed store is empty. Its
+// sign-in record was sealed under the lost key too, so it has nobody to sign
+// in as until the operator's reset gives it its person (decision 0274); then
+// the token the owner held reads again, and the old password signs in
+// nowhere.
 // Every sealed value it held stays until the open clears it, and the open
 // then deletes a spooled request sealed under the key it lost.
 func TestTheKeptDirectoryImportsUnderAnotherKeyWithoutItsSecrets(t *testing.T) {
@@ -108,9 +111,12 @@ func TestTheKeptDirectoryImportsUnderAnotherKeyWithoutItsSecrets(t *testing.T) {
 		testenv.WithDSN(dsn), testenv.WithDataRoot(root), testenv.WithCredentialKey(other),
 		testenv.WithEngineOptions(engine.WithImportWithoutSecrets(fixture.Repository)))
 	e.Token = fixture.Token
+	if _, err := e.Service.(engine.Operator).ResetUser(ctx, fixture.Repository, "a password after the move", ""); err != nil {
+		t.Fatalf("give the repository its person: %v", err)
+	}
 	got := keptRead(t, e)
 	for _, rec := range want.Records {
-		if rec.Path == "substrate.reamde.dev/core/recoverykey/self" {
+		if rec.Path == "substrate.reamde.dev/core/recoverykey/self" || rec.Path == "substrate.reamde.dev/core/credential/self" {
 			continue
 		}
 		if _, ok := got[rec.Path]; !ok {
@@ -118,7 +124,6 @@ func TestTheKeptDirectoryImportsUnderAnotherKeyWithoutItsSecrets(t *testing.T) {
 		}
 	}
 	for path, props := range map[string][]string{
-		"substrate.reamde.dev/core/credential/self":                          {"passwordRef"},
 		fixture.Repository + "/creds/oauthclient/00000000000000000000000015": {"clientSecret", "accessToken"},
 	} {
 		now, ok := got[path]

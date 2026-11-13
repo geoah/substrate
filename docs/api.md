@@ -1072,7 +1072,7 @@ them:
 | `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
 | `functions` | `stable` | The function call ([functions](functions.md)). |
 | `bundles` | `stable` | Bundle status and `bind`, and the catalog with its one `add` ([bundles](bundles.md)). |
-| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
 | `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
 | `retention` | `experimental` | `GET /api/v1/retention`: how long each kind's history is kept, as declared, overridden and in effect ([retention](#retention)). |
@@ -2668,7 +2668,7 @@ also answers `unavailable`, with a 30-second `Retry-After` and a message that
 names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has eight members: `observed_rederiving` on `unavailable`,
+set is closed and has nine members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
@@ -2696,6 +2696,11 @@ refusal of a request repeated under an `Idempotency-Key` is about the first
 attempt under that key, not this one, which did not run: the first has not
 answered yet and may still land, or it landed and its outcome was too large
 to keep, so its write stands and the message names what it wrote.
+`repository_required` on `conflict`, since revision 4 of the `errors`
+feature, answers a sign-in of a person who may open several repositories and
+named none: the refusal carries them in `repositories`, each with its `id`
+and `name`, and the same request naming one signs in
+([logging in](auth.md#logging-in)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2705,8 +2710,8 @@ removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
 The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `observed_rederiving`, `quota`, `set_aside`,
-`stale_revision`.
+`in_doubt`, `key_refused`, `observed_rederiving`, `quota`,
+`repository_required`, `set_aside`, `stale_revision`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

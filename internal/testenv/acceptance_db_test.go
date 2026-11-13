@@ -97,10 +97,10 @@ const (
 	seedAuthorityDir = "substrate.reamde.dev"
 
 	// sealedValues is how many sealed files the source repository holds: the
-	// login credential's two (password hash, TOTP seed), the embeddings
-	// provider's apiKey, the OAuth-shaped kind's three, the google provider
-	// input's clientSecret. Each is one secret reference on a live record.
-	sealedValues = 7
+	// embeddings provider's apiKey, the OAuth-shaped kind's three, the google
+	// provider input's clientSecret. Each is one secret reference on a live
+	// record; a person's sign-in is no part of the repository (decision 0274).
+	sealedValues = 5
 )
 
 // The drill's kinds: the rehomed samples, the installed provider and the
@@ -127,7 +127,7 @@ var (
 		taskKind, projectKind, personKind, widgetKind, gadgetKind, flagKind, echoKind,
 		subjectKind, contactKind, memberKind, fileKind, oauthKind, googleConfig, googlePkg + "/account",
 		llmPkg + "/provider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
-		corePkg + "/blob", corePkg + "/token", corePkg + "/credential",
+		corePkg + "/blob", corePkg + "/token",
 		corePkg + "/repository", corePkg + "/triggerrun", corePkg + "/kind", corePkg + "/function",
 		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
 	}
@@ -1212,7 +1212,8 @@ func (d *drill) restore(t *testing.T) {
 
 	// The boot that imports: the same empty schema, migrated from nothing, no
 	// registration. The restored substrate speaks with the source's token,
-	// which is a record the import brought back.
+	// which is a record the import brought back, once the operator's reset
+	// below gives the repository its person back.
 	d.envB = testenv.Start(tb,
 		testenv.WithUser(drillAuthority, drillPassword), testenv.WithoutRegistration(),
 		testenv.WithDSN(dsnB), testenv.WithDataRoot(restoreRoot), testenv.WithCredentialKey(d.keyA),
@@ -1243,6 +1244,15 @@ func (d *drill) restore(t *testing.T) {
 	}
 	if verified.Blobs < 1 {
 		t.Errorf("verify hashed %d blobs, want the attachment", verified.Blobs)
+	}
+	// A person's sign-in is no part of the repository's history, and the
+	// archive carries it beside the history (decision 0274): the restore into
+	// an empty database gives the repository its person back, so the
+	// source's token reads who it acts for. The source's factors sign in at
+	// the interrupted import below; a sign-in here would mint a token the
+	// comparison with the source does not expect.
+	if status, raw := e.Do(http.MethodGet, "/identity", nil); status != http.StatusOK {
+		t.Errorf("the source's token on the restore: %d %s, want its person", status, raw)
 	}
 	t.Logf("restore: restored %s at seq %d into an empty schema under its key; verify opened %d sealed values and hashed %d blobs",
 		drillAuthority, verified.Head, verified.SealedOpened, verified.Blobs)
@@ -1384,11 +1394,11 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("attachment digest %s is not the bytes' %s", d.blobDigest, want)
 	}
 
-	// Authenticate with the original password and TOTP. The wrong password
+	// Authenticate with the password the reset gave back. The wrong password
 	// goes first, so its refusal is the password check's and not the login
-	// limiter's; the clock then moves one TOTP step, past the limiter's
-	// allowance too (it reads the same clock), so the registration's code is
-	// not replayed and the right password is admitted. The source's token
+	// limiter's; the clock moves one TOTP step before each attempt, past the
+	// limiter's allowance too (it reads the same clock), so no code is
+	// replayed and the right password is admitted. The source's token
 	// authenticated every read above.
 	d.clock.Advance(engine.TOTPPeriod)
 	status, raw := e.Login(drillAuthority, "not-the-password", e.TOTPCode())
@@ -1612,7 +1622,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 		t.Errorf("the resumed repository does not verify: %+v %v", report, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: drillAuthority, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
+	if _, err := svc.Login(ctx, substrate.LoginInput{Identity: drillAuthority, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
 		t.Errorf("login after the resumed import: %v", err)
 	}
 	t.Logf("interrupted import: %d batches of %d, killed at %d, %d and %d rows; the fourth boot finished it",
@@ -1705,8 +1715,19 @@ func (d *drill) secondRestore(t *testing.T) {
 		t.Errorf("l-1 did not arrive with its label: %+v (%v)", rec, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := other.Login(ctx, substrate.LoginInput{Repository: secondAuthority, Password: secondPassword, TOTPCode: d.second.For(t).TOTPCode(), Label: "without secrets"}); !errors.Is(err, substrate.ErrAuth) {
+	if _, err := other.Login(ctx, substrate.LoginInput{Identity: secondAuthority, Password: secondPassword, TOTPCode: d.second.For(t).TOTPCode(), Label: "without secrets"}); !errors.Is(err, substrate.ErrAuth) {
 		t.Errorf("login on the restore without secrets = %v, want refused", err)
+	}
+	// The person's factors were sealed under the first host's key as well,
+	// so they stayed behind with the secrets; the operator's reset gives the
+	// repository its person back under the id its tokens name.
+	seed := signInAgain(t, other, secondAuthority, secondPassword)
+	code, err := engine.TOTPCode(seed, engine.TOTPStep(d.clock.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Login(ctx, substrate.LoginInput{Identity: secondAuthority, Password: secondPassword, TOTPCode: code, Label: "after the reset"}); err != nil {
+		t.Errorf("login after the reset on the restore without secrets: %v", err)
 	}
 
 	// A directory a NEWER binary wrote refuses the boot by name, before any
@@ -2206,6 +2227,18 @@ func refID(v any) string {
 
 // scoped is the repository's own pool on one schema, opened once per DSN
 // and authority for the drill's lifetime.
+// signInAgain gives a repository restored without its person its person back
+// through the operator's reset, with the drill's password and a new seed, and
+// answers the seed.
+func signInAgain(t *testing.T, svc substrate.Service, name, password string) string {
+	t.Helper()
+	enrollment, err := svc.(engine.Operator).ResetUser(context.Background(), name, password, "")
+	if err != nil {
+		t.Fatalf("give the restored repository %s its person: %v", name, err)
+	}
+	return enrollment.Secret
+}
+
 func (d *drill) scoped(t *testing.T, dsn, authority string) *sql.DB {
 	t.Helper()
 	key := "scoped|" + authority + "|" + dsn

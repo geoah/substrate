@@ -234,6 +234,14 @@ func (w *asideWorld) eraseRows(t *testing.T, name string) {
 	if _, err := w.db.Exec(`DELETE FROM repositories WHERE id = $1`, w.ids[name]); err != nil {
 		t.Fatal(err)
 	}
+	// Its people's places in it, and a person it was the last of, go too,
+	// as an erase takes them (decision 0274).
+	if _, err := w.db.Exec(`DELETE FROM identity_repositories WHERE repository_id = $1`, w.ids[name]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.db.Exec(`DELETE FROM identities i WHERE NOT EXISTS (SELECT 1 FROM identity_repositories l WHERE l.identity = i.id)`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // restoreCutShort leaves the repository named mid-restore: its rows gone, a
@@ -395,13 +403,14 @@ var asideCases = []asideCase{{
 		u := e.WithToken(w.users["cat.example.com"].Token)
 		status, raw, header := u.DoRaw(http.MethodGet, "/api/v1/records", nil, nil)
 		refusedSetAside(t, "a token of its own", status, raw, header)
-		// The password is sealed under the key that does not open, so the
-		// sign-in cannot tell a right one from a wrong one.
+		// The person's sign-in is the server's, under a key of its own
+		// (decision 0274), so it proves; the repository it opens is set aside.
 		w.clock.step()
 		u.TOTPSecret = w.users["cat.example.com"].TOTPSecret
-		if status, raw := u.Login("cat.example.com", asidePassword, u.TOTPCode()); status != http.StatusUnauthorized {
-			t.Errorf("its sign-in = %d %s, want 401", status, raw)
-		}
+		status, raw, header = u.DoRaw(http.MethodPost, "/login", mustMarshal(t, substrate.LoginRequest{
+			Identity: "cat.example.com", Password: asidePassword, TOTPCode: u.TOTPCode(),
+		}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
+		refusedSetAside(t, "its sign-in", status, raw, header)
 	},
 	repair: func(t *testing.T, w *asideWorld, _ string) []engine.Option {
 		if _, err := w.db.Exec(`UPDATE repositories SET dek = set_byte(dek, length(dek) - 1, (get_byte(dek, length(dek) - 1) + 255) % 256) WHERE id = $1`,
@@ -427,7 +436,7 @@ var asideCases = []asideCase{{
 		w.clock.step()
 		u.TOTPSecret = w.users["cat.example.com"].TOTPSecret
 		status, raw, header = u.DoRaw(http.MethodPost, "/login", mustMarshal(t, substrate.LoginRequest{
-			Repository: "cat.example.com", Password: asidePassword, TOTPCode: u.TOTPCode(),
+			Identity: "cat.example.com", Password: asidePassword, TOTPCode: u.TOTPCode(),
 		}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
 		refusedSetAside(t, "its sign-in", status, raw, header)
 		status, raw, header = u.DoRaw(http.MethodPost, "/webhooks/"+w.ids["cat.example.com"]+"/mirror-items", []byte(`{}`),
@@ -463,7 +472,7 @@ var asideCases = []asideCase{{
 			t.Errorf("a webhook addressed by its name = %d %s, want the door's 404", status, raw)
 		}
 		_, err := e.Service.Register(context.Background(), substrate.RegisterInput{
-			Repository: "cat.example.com", Password: asidePassword, SkipTOTP: true,
+			Identity: "someone.example.com", Repository: "cat.example.com", Password: asidePassword, SkipTOTP: true,
 		})
 		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "already owned") {
 			t.Errorf("a registration of the set-aside repository's name = %v, want refused as taken", err)
@@ -500,7 +509,7 @@ var asideCases = []asideCase{{
 			map[string]string{"Content-Type": "application/json", "Authorization": ""})
 		refusedSetAside(t, "a webhook addressed by its id", status, raw, header)
 		_, err := e.Service.Register(context.Background(), substrate.RegisterInput{
-			Repository: "cat.example.com", Password: asidePassword, SkipTOTP: true,
+			Identity: "someone.example.com", Repository: "cat.example.com", Password: asidePassword, SkipTOTP: true,
 		})
 		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "already owned") {
 			t.Errorf("a registration of the set-aside directory's name = %v, want refused as taken", err)
@@ -580,6 +589,11 @@ func TestADirectoryFromBeforeIDsTheKeyingRefusesIsSetAside(t *testing.T) {
 
 	e = w.start(t, engine.WithImportWithoutSecrets(fixture.Repository))
 	e.Token = fixture.Token
+	// Its sign-in record was sealed under the key it left behind, so it has
+	// no person until the operator's reset gives it one (decision 0274).
+	if _, err := e.Service.(engine.Operator).ResetUser(context.Background(), fixture.Repository, asidePassword, ""); err != nil {
+		t.Fatalf("give the listed directory its person: %v", err)
+	}
 	if status, raw := e.Do(http.MethodGet, "/api/v1/records", nil); status != http.StatusOK {
 		t.Fatalf("the listed directory, imported: %d %s", status, raw)
 	}
@@ -652,14 +666,16 @@ func TestWhatStopsTheStartStillStopsIt(t *testing.T) {
 }
 
 // A set-aside repository whose owner registered no second factor passes the
-// sign-in door on the password alone, and nothing behind that door may write
-// it: neither its deletion nor a second factor's enrollment.
-func TestASetAsideRepositoryWithNoSecondFactorIsNeitherDeletedNorEnrolled(t *testing.T) {
+// sign-in door on the password alone, and its deletion behind that door is
+// refused. A second factor's enrollment is the person's, held by the server
+// beside the repositories (decision 0274): it writes no repository, so it
+// goes on.
+func TestASetAsideRepositoryWithNoSecondFactorIsNotDeleted(t *testing.T) {
 	ctx := context.Background()
 	w := newAsideWorld(t)
 	e := w.start(t)
 	const dan = "dan.example.com"
-	reg, err := e.Service.Register(ctx, substrate.RegisterInput{Repository: dan, Password: asidePassword, SkipTOTP: true})
+	reg, err := e.Service.Register(ctx, substrate.RegisterInput{Identity: dan, Repository: dan, Password: asidePassword, SkipTOTP: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,12 +692,16 @@ func TestASetAsideRepositoryWithNoSecondFactorIsNeitherDeletedNorEnrolled(t *tes
 	archived := filepath.Join(w.root, "archive", changelogfile.RepositoriesDir, id)
 
 	e = w.start(t)
-	for _, door := range []string{"/repository/delete", "/totp/enroll"} {
-		w.clock.step()
-		status, raw, header := e.WithToken("").DoRaw(http.MethodPost, door,
-			mustMarshal(t, map[string]any{"repository": dan, "password": asidePassword}),
-			map[string]string{"Content-Type": "application/json", "Authorization": ""})
-		refusedSetAside(t, door, status, raw, header)
+	w.clock.step()
+	status, raw, header := e.WithToken("").DoRaw(http.MethodPost, "/repository/delete",
+		mustMarshal(t, map[string]any{"identity": dan, "repository": dan, "password": asidePassword}),
+		map[string]string{"Content-Type": "application/json", "Authorization": ""})
+	refusedSetAside(t, "/repository/delete", status, raw, header)
+	w.clock.step()
+	if status, raw, _ := e.WithToken("").DoRaw(http.MethodPost, "/totp/enroll",
+		mustMarshal(t, map[string]any{"identity": dan, "password": asidePassword}),
+		map[string]string{"Content-Type": "application/json", "Authorization": ""}); status != http.StatusOK {
+		t.Errorf("the person's second factor's enrollment = %d %s, want it issued: it writes no repository", status, raw)
 	}
 	var rows int
 	if err := w.db.QueryRow(`SELECT count(*) FROM repositories WHERE id = $1`, id).Scan(&rows); err != nil || rows != 1 {
@@ -710,7 +730,7 @@ func TestARefusedDirectoryLeavesTheRepositoryHoldingItsNameServing(t *testing.T)
 		}
 		w.eraseRows(t, cat)
 		e := w.start(t)
-		reg, err := e.Service.Register(ctx, substrate.RegisterInput{Repository: cat, Password: asidePassword, SkipTOTP: true})
+		reg, err := e.Service.Register(ctx, substrate.RegisterInput{Identity: cat, Repository: cat, Password: asidePassword, SkipTOTP: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -748,7 +768,7 @@ func TestARefusedDirectoryLeavesTheRepositoryHoldingItsNameServing(t *testing.T)
 		readKept(t, filepath.Join(keptRoot, "v0.123.1", "fixture.json"), &fixture)
 		w := newAsideWorld(t)
 		e := w.start(t)
-		reg, err := e.Service.Register(context.Background(), substrate.RegisterInput{Repository: fixture.Repository, Password: asidePassword, SkipTOTP: true})
+		reg, err := e.Service.Register(context.Background(), substrate.RegisterInput{Identity: fixture.Repository, Repository: fixture.Repository, Password: asidePassword, SkipTOTP: true})
 		if err != nil {
 			t.Fatal(err)
 		}

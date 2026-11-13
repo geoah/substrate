@@ -105,10 +105,23 @@ not a recovery point.
 | `missingBlobs` | The digests of the blobs the records at `head` hold whose bytes the server had lost when the pass ran. Absent when none is. |
 | `pendingBlobs` | The digests of the blobs the records at `head` hold that the pass had not copied yet: a pass copies a bounded amount, 1 GiB, and publishes. Absent when none is. |
 | `epoch` | The manifest's place among its archive's manifests, the number its name carries; 1 or more. |
+| `identities` | The sign-in of each person who may open the repository, sorted by `id`: `id`, `name`, the person's data key wrapped under the host's credential key (`dek`, base64, with `dekKeyId`), the password's hash (`hash`) and the second factor (`totp`, absent for a person without one) sealed under that key and bound to the id, and `createdAt` and `updatedAt`, which moves when the factors change. An export carries the person who took it alone. Absent when there is none ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). |
 
 The archive is complete at its `head` only when both `missingBlobs` and
 `pendingBlobs` are absent. A blob is selected by its digest: any object under
 `blobs/<digest>.` holds its bytes, held to the digest as it is read.
+
+`identities` joined format 3 without a new format number, because no release
+had carried format 3 before it did; a build of `main` from before it refuses
+a manifest that has the key, which matters only when going back from one
+build of `main` to an earlier one. A manifest without it, which is every
+archive written before it, still holds the sign-in record of a release before
+identities among its history, and the boot makes the person from it, with the
+same password and second factor, as it does for a repository upgraded in place
+([backups](operations.md#backups)). A restore inserts each person the
+database does not hold. A person it holds keeps the row it has, and among
+the copies of one person that one start's restores bring, the one with the
+latest `updatedAt` wins.
 
 A repository's deletion writes an empty object, `deleted`, under
 `manifests/<mark>/`, where `<mark>` is an id taken as an archive's is, past
@@ -138,8 +151,9 @@ list is not read.
 
 ### Sealed values, blobs and the spool
 
-- A **sealed value** holds one value of a `secret` property, or the login
-  credential's, as `{"ref", "recordKind", "recordId", "payload",
+- A **sealed value** holds one value of a `secret` property (or, in an
+  archive written before people signed in as identities, the login
+  credential's), as `{"ref", "recordKind", "recordId", "payload",
   "expiresAt"?, "updatedAt"}` and a newline. `payload` is ciphertext under the
   repository's data key, base64. Its object is
   `sealed/<file>.<sum>.<pass>.json`, where `<file>` is the ref with every `:`

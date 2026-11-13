@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// `substratectl user reset` WRITES sealed material (a password hash and a TOTP seed).
+// `substratectl user reset` SEALS a person's new factors (a password hash and a TOTP seed).
 // Without a credential key the engine would store that material as a
 // plain-marked payload it later accepts — persistent silent plaintext of the
 // account's factors. The command must REFUSE (non-zero exit) unless the key is

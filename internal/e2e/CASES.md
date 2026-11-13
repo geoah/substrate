@@ -49,11 +49,10 @@ sets every one it can:
   asserting.
 - `restart`: `SUBSTRATE_E2E_STOP` and `SUBSTRATE_E2E_START`, shell commands
   that stop and start the server under test. DUR-01 restarts the server, and
-  OPR-03 stops it because `user reset` needs the writer lock the running
-  server holds; both skip without the pair. Each checks that `/healthz` stops
-  answering after the stop, so a hook that does nothing fails the case rather
-  than passing it, and a case that fails while the server is down starts it
-  again for the cases after it.
+  skips without the pair. It checks that `/healthz` stops answering after the
+  stop, so a hook that does nothing fails the case rather than passing it,
+  and a case that fails while the server is down starts it again for the
+  cases after it.
 - `uv`: `uv` on PATH, a `python3` on PATH at 3.11 or newer, and a reachable
   package index, which BUN-04 and BUN-07 need because a provider's body
   declares its dependencies (and `requires-python = ">=3.11"`) in a PEP 723

@@ -117,6 +117,57 @@ type Manifest struct {
 	// Epoch is the manifest's place among its archive's manifests, the
 	// number its name carries (ArchiveManifestName).
 	Epoch int64
+	// Identities is the sign-in of each person the repository's people index
+	// names (decision 0274), sorted by id: absent in a manifest written
+	// before the archive carried them, and in an export, all but the person
+	// who took it.
+	Identities []ManifestIdentity
+}
+
+// ManifestIdentity is one person's sign-in as the server's `identities` row
+// holds it. Every secret in it is ciphertext under the host's credential
+// key: the person's data key is wrapped under it, and the password's hash
+// and the second factor are sealed under that data key, each bound to the
+// identity's id, so a copy names who signs in and opens nothing without
+// the key.
+type ManifestIdentity struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	DEK  []byte `json:"dek"`
+	// DEKKeyID names the host key DEK is wrapped under; empty under none.
+	DEKKeyID string `json:"dekKeyId,omitempty"`
+	// Hash is the sealed password hash. Not a password-named field, for the
+	// reason identityRow's is not.
+	Hash []byte `json:"hash"`
+	// TOTP is the sealed second factor, absent for a person without one.
+	TOTP      []byte    `json:"totp,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	// UpdatedAt moves with the factors and only then: of two copies of one
+	// person, the later one holds the factors they changed to.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// checkIdentities refuses a list of identities a restore could not insert:
+// an id or a name that is not one, a missing data key or hash, or an id or
+// a name twice.
+func checkIdentities(ids []ManifestIdentity) error {
+	seenID, seenName := map[string]bool{}, map[string]bool{}
+	for _, p := range ids {
+		switch {
+		case !vocabulary.ValidIdentityID(p.ID):
+			return fmt.Errorf("%w: identity id %q", ErrManifestFormat, p.ID)
+		case !vocabulary.ValidRepositoryAuthority(p.Name):
+			return fmt.Errorf("%w: identity %s names %q", ErrManifestFormat, p.ID, p.Name)
+		case len(p.DEK) == 0 || len(p.Hash) == 0:
+			return fmt.Errorf("%w: identity %s carries no data key or no password", ErrManifestFormat, p.ID)
+		case p.CreatedAt.IsZero() || p.UpdatedAt.IsZero():
+			return fmt.Errorf("%w: identity %s carries no times", ErrManifestFormat, p.ID)
+		case seenID[p.ID] || seenName[p.Name]:
+			return fmt.Errorf("%w: identity %s or its name %q is named twice", ErrManifestFormat, p.ID, p.Name)
+		}
+		seenID[p.ID], seenName[p.Name] = true, true
+	}
+	return nil
 }
 
 // ArchivePiece is one piece a manifest selects: its name under the archive,
@@ -164,16 +215,17 @@ type manifestWire struct {
 	DEK               []byte  `json:"dek"`
 	DEKKeyID          string  `json:"dekKeyId"`
 	// The rest is written in format 3 and nowhere else.
-	Archive      *string           `json:"archive,omitempty"`
-	Pass         *string           `json:"pass,omitempty"`
-	Head         *int64            `json:"head,omitempty"`
-	HeadSum      *string           `json:"headSum,omitempty"`
-	Pieces       []ArchivePiece    `json:"pieces,omitempty"`
-	Sealed       map[string]string `json:"sealed,omitempty"`
-	Spool        []string          `json:"spool,omitempty"`
-	MissingBlobs []string          `json:"missingBlobs,omitempty"`
-	PendingBlobs []string          `json:"pendingBlobs,omitempty"`
-	Epoch        *int64            `json:"epoch,omitempty"`
+	Archive      *string            `json:"archive,omitempty"`
+	Pass         *string            `json:"pass,omitempty"`
+	Head         *int64             `json:"head,omitempty"`
+	HeadSum      *string            `json:"headSum,omitempty"`
+	Pieces       []ArchivePiece     `json:"pieces,omitempty"`
+	Sealed       map[string]string  `json:"sealed,omitempty"`
+	Spool        []string           `json:"spool,omitempty"`
+	MissingBlobs []string           `json:"missingBlobs,omitempty"`
+	PendingBlobs []string           `json:"pendingBlobs,omitempty"`
+	Epoch        *int64             `json:"epoch,omitempty"`
+	Identities   []ManifestIdentity `json:"identities,omitempty"`
 }
 
 // MarshalJSON renders the manifest in its file form.
@@ -197,6 +249,7 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 		archive, pass := m.Archive, m.Pass
 		w.Archive, w.Pass = &archive, &pass
 		w.Pieces, w.Sealed, w.Spool, w.MissingBlobs, w.PendingBlobs = m.Pieces, m.Sealed, m.Spool, m.MissingBlobs, m.PendingBlobs
+		w.Identities = m.Identities
 		epoch := m.Epoch
 		w.Epoch = &epoch
 	}
@@ -231,7 +284,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 	var headSum string
 	switch {
 	case w.Format != ManifestFormatArchive && (w.Archive != nil || w.Pass != nil || w.Head != nil || w.HeadSum != nil || w.Pieces != nil ||
-		w.Sealed != nil || w.Spool != nil || w.MissingBlobs != nil || w.PendingBlobs != nil || w.Epoch != nil):
+		w.Sealed != nil || w.Spool != nil || w.MissingBlobs != nil || w.PendingBlobs != nil || w.Epoch != nil || w.Identities != nil):
 		return fmt.Errorf("%w: a format-%d manifest carries nothing of an archive's", ErrManifestFormat, w.Format)
 	case w.Format == ManifestFormatArchive:
 		if w.Archive == nil || !ValidArchiveID(*w.Archive) || w.Pass == nil || !ValidPassID(*w.Pass) {
@@ -268,6 +321,9 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("%w: blob %q", ErrManifestFormat, digest)
 			}
 		}
+		if err := checkIdentities(w.Identities); err != nil {
+			return err
+		}
 	}
 	id := ""
 	if w.ID != nil {
@@ -283,6 +339,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		VocabularyDialect: w.VocabularyDialect, DEK: w.DEK,
 		DEKKeyID: w.DEKKeyID, Head: head, HeadSum: headSum,
 		Pieces: w.Pieces, Sealed: w.Sealed, Spool: w.Spool, MissingBlobs: w.MissingBlobs, PendingBlobs: w.PendingBlobs,
+		Identities: w.Identities,
 	}
 	if w.Epoch != nil {
 		m.Epoch = *w.Epoch
@@ -331,6 +388,9 @@ func EncodeArchiveManifest(m Manifest) ([]byte, error) {
 		return nil, err
 	}
 	if _, err := m.Chain(); err != nil {
+		return nil, err
+	}
+	if err := checkIdentities(m.Identities); err != nil {
 		return nil, err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")

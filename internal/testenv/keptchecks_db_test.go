@@ -125,20 +125,18 @@ const keptBlobText = "the report the kept directory attaches"
 
 // keptMaterial holds what the records name and the comparison cannot see,
 // since the release served a secret as <redacted> and a blob by its digest:
-// the release's password signs in and another does not, the blob the
-// release attached reads back as its bytes under its digest, and every
-// sealed file the release wrote opens under the data key, with every secret
-// a live record holds held to one. It names each problem.
+// another password than the release's does not sign in (keptSignsIn proved
+// the release's), the blob the release attached reads back as its bytes
+// under its digest, and every sealed file the release wrote for a record
+// opens under the data key, with every secret a live record holds held to
+// one. It names each problem.
 func keptMaterial(t *testing.T, e *testenv.Env, fixture keptFixture, dir string) []string {
 	t.Helper()
 	var out []string
-	if status, raw := e.Login(fixture.Repository, fixture.Password, ""); status != http.StatusCreated {
-		out = append(out, fmt.Sprintf("the release's password does not sign in: %d %s", status, raw))
-	}
-	// The sign-in door paces a name, so the other password goes to the
-	// service behind it.
-	if _, _, err := e.Service.Login(context.Background(), substrate.LoginInput{
-		Repository: fixture.Repository, Password: fixture.Password + " but another",
+	// The sign-in door paces a name, and keptSignsIn signed in through it,
+	// so the other password goes to the service behind it.
+	if _, err := e.Service.Login(context.Background(), substrate.LoginInput{
+		Identity: fixture.Repository, Password: fixture.Password + " but another",
 	}); !errors.Is(err, substrate.ErrAuth) {
 		out = append(out, fmt.Sprintf("another password than the release's: %v, want an auth refusal", err))
 	}
@@ -161,12 +159,29 @@ func keptMaterial(t *testing.T, e *testenv.Env, fixture keptFixture, dir string)
 		out = append(out, fmt.Sprintf("the blob %s the release attached reads back as %d other bytes", digest, len(data)))
 	}
 
-	sealed, err := os.ReadDir(filepath.Join(dir, "repositories", fixture.Repository, "sealed"))
+	files, err := os.ReadDir(filepath.Join(dir, "repositories", fixture.Repository, "sealed"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Every sealed file is held by one live ref: the password's and the two
-	// secrets'.
+	// The password's file was the sign-in record's, which the person's
+	// identity holds now (decision 0274): the record and its sealed row are
+	// purged at the first open. Every other file is held by one live ref.
+	var sealed []string
+	for _, f := range files {
+		raw, err := os.ReadFile(filepath.Join(dir, "repositories", fixture.Repository, "sealed", f.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rec struct {
+			RecordKind string `json:"recordKind"`
+		}
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			t.Fatalf("sealed file %s: %v", f.Name(), err)
+		}
+		if rec.RecordKind != "substrate.reamde.dev/core/credential" {
+			sealed = append(sealed, f.Name())
+		}
+	}
 	report, err := e.Service.(engine.Operator).VerifyRepository(context.Background(), fixture.Repository)
 	switch {
 	case err != nil:

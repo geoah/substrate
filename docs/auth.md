@@ -1,15 +1,49 @@
 # Users, tokens, and actors
 
-A **user** is the person a repository belongs to: a repository name, a
-password, and, unless
-they skipped it at registration, a TOTP second factor
-([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
-A user owns exactly one **repository**,
-whose name is its authority and their login name, and a **token** is how
-anything reaches it. Both the credential and every token are
-ordinary [records](data-model.md) in the repository they belong to, so the
-same reads, the same changelog, and the same console pages that show your tasks show
-your account too.
+A **user** is a person, and three things make one
+([decision record 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)):
+
+- an **identity**, held by the server beside the repositories: the name the
+  person signs in with, a password, and, unless they skipped it at
+  registration, a TOTP second factor
+  ([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
+  It holds no data;
+- a **repository**, whose name is its authority, which holds everything the
+  person has;
+- the person's **actor** in the repository, a `substrate.reamde.dev/core/actor`
+  record of type `person` that names their identity: a person is in a
+  repository while a person actor there names them, and their writes link
+  that actor. The server keeps an index of those actors for the identities
+  it holds (`identity_repositories`), which a sign-in and every token are
+  checked against. Two rules hold the index to the actors:
+  - It is never ahead of them. While the server admits anyone, the index
+    names nobody the repository's live person actors do not name. A person
+    whose actor a restored history disabled or deleted has no access once
+    the boot that reads that history has run, nothing writes that actor
+    again, new work that acts for them is refused, what they left running
+    is settled at the next open for nobody, and only `user reset` gives the
+    repository a person, with an actor of their own. A repository from
+    before identities is the one exception, told apart by what it holds (an
+    actor kind that declares no identity, a sign-in record, or a line of
+    one): it keeps the person its old sign-in named until its first open
+    writes that person onto its actor.
+  - It is behind them only while the database refuses the write. After a
+    person's actor commits, its row of the index is written on a context
+    of its own, not the request's, and tried again until it lands or the
+    process stops; the next boot derives it.
+
+  Wherever actors arrive another way (an import, a restore, a rebuild) the
+  index is derived again from them before the repository is offered to
+  anyone, at every boot and at the end of a rebuild. A sign-in names the
+  person, who picks the repository it opens.
+
+A person has one repository today, which registration creates and names
+after them. A **token** is how anything reaches a repository; every token is
+an ordinary [record](data-model.md) in the repository it opens and names the
+identity it acts for, so the same reads, the same changelog and the same
+console pages that show your tasks show your tokens too. The identity is no
+record of any repository, so no repository's history holds the person's
+factors.
 
 ## The invite code
 
@@ -41,7 +75,7 @@ Registration is two calls, and only the second writes anything:
 
 ```http
 POST /register/enroll
-{"inviteCode": "…", "repository": "ada.example.com"}
+{"inviteCode": "…", "identity": "ada.example.com"}
 
 → 200 {"totpSecret": "JBSWY3DPEHPK3PXP",
        "otpauthUri": "otpauth://totp/Substrate:ada?secret=JBSWY3DPEHPK3PXP&issuer=Substrate&algorithm=SHA1&digits=6&period=30"}
@@ -52,11 +86,11 @@ registration leaves no row to expire and nothing to sweep:
 
 ```http
 POST /register
-{"inviteCode": "…", "repository": "ada.example.com", "password": "…",
+{"inviteCode": "…", "identity": "ada.example.com", "password": "…",
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "repository": "ada.example.com"}
+       "repository": "ada.example.com", "identity": "ada.example.com"}
 ```
 
 A registration may skip the second factor instead: `"skipTotp": true` in
@@ -67,18 +101,21 @@ is explicit: a registration that sends neither an enrollment nor `skipTotp` is
 refused `422`, so a client that lost its enrollment on the way does not create
 an account without one by accident.
 
-`repository` is the whole of the name: it BECOMES the repository's authority,
-any DNS name its user controls (`ada.example.com`, `geoah.me`), which is the
-home of every package its user declares kinds in and the name they log in
-with. A name carrying a dot is taken as it is; a bare label is completed under
-the host the request reached (`ada` reaching `substrate.example` is
-`ada.substrate.example`), and the response says what was created. It is
-lowercase DNS labels with at least one dot, within the DNS length limits,
-never under `substrate.reamde.dev` (where the shipped vocabulary publishes),
-unique across the substrate, and permanent
-([decision record 0074](decisions/0074-the-repository-name-is-the-login-name.md)).
-The repository's own `repository` record carries it, so a client that only
-speaks the record API can read it back.
+`identity` is the name the person signs in with, and the repository
+registration creates takes the same name unless the request names another in
+`repository`. The repository's name BECOMES its authority, any DNS name its
+user controls (`ada.example.com`, `geoah.me`), which is the home of every
+package its user declares kinds in. Both names keep that DNS-style form, so
+another server could one day vouch for a person's. A name carrying a dot is
+taken as it is; a bare label is completed under the host the request reached
+(`ada` reaching `substrate.example` is `ada.substrate.example`), and the
+response says what was created. A name is lowercase DNS labels with at least
+one dot, within the DNS length limits, and unique across the substrate; a
+repository's is never under `substrate.reamde.dev` (where the shipped
+vocabulary publishes) and is permanent. A request that names no `identity`
+is refused `400` with the field to send. The repository's own `repository`
+record carries its name, so a client that only speaks the record API can
+read it back.
 
 That one name is everywhere a person or a client names the repository: a
 delivery envelope's `repository.authority` carries it and a webhook URL takes
@@ -88,10 +125,11 @@ webhook address the server gives out
 ([decision record 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 
 That second call is **one creation act**: the seed (the `core`, `llm` and
-`console` packages and the provider rows), the sealed material, the credential record and
-the first token all commit as one transaction in the new repository's changelog, and the control-plane row that
-_is_ the user is written last, so the user exists exactly when the repository
-is already complete. Anything that fails before that erases what it wrote: a
+`console` packages and the provider rows), the recovery key and the first
+token all commit as one transaction in the new repository's changelog, and
+the control-plane rows that make the repository and the person exist are
+written last, in one transaction of their own, so the person exists exactly
+when the repository is already complete. Anything that fails before that erases what it wrote: a
 failed registration creates nothing, and no order of failures leaves a
 half-created user.
 
@@ -158,15 +196,34 @@ the same two calls.
 
 ## Logging in
 
-A login presents the factors directly and mints a token record:
+A login names the person, presents the factors directly and mints a token
+record in the repository it opens:
 
 ```http
 POST /login
-{"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
+{"identity": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
-       "secret": "substrate_tok_…", "repository": "ada.example.com"}
+       "secret": "substrate_tok_…", "repository": "ada.example.com",
+       "identity": "ada.example.com"}
 ```
+
+A login that names no `repository` opens the person's one repository. A
+person who may open several and names none is answered `409 conflict` with
+the reason `repository_required` and the repositories to pick from, and the
+code they sent is not spent, so the same request naming one, by its name or
+its id, signs in:
+
+```http
+→ 409 {"error": {"code": "conflict", "reason": "repository_required",
+       "message": "…", "repositories": [{"id": "rnd-…", "name": "ada.example.com"},
+                                        {"id": "rnd-…", "name": "notes.example.com"}]}}
+```
+
+A repository the person may not open is `403 forbidden`, whether it exists or
+not. `GET /identity`, with a full token, reads the person it acts for: the
+name, whether their sign-in asks for a code (`secondFactor`) and the
+repositories they may open.
 
 **There is no session concept beside the token.** A session _is_ a token
 record: the console holds one exactly like a script does, logging out revokes
@@ -176,7 +233,7 @@ because a token is data access and the credential is the account; a change
 that sends `"signOutEverywhere": true` also
 [signs out everywhere](#signing-out-everywhere).
 
-Every failure (an unknown repository, a wrong password, a wrong code) answers
+Every failure (an unknown name, a wrong password, a wrong code) answers
 one identical `401 auth`, and the engine does the same password-hashing and
 HMAC work on all three so timing is not an oracle either.
 
@@ -214,6 +271,15 @@ Five things follow from a token being a record:
   lookup that finds the token record, and the repository holding that record
   _is_ the request's repository
   ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
+  It authenticates while the person it names may open that repository: one
+  a restore brought back naming a person this server does not hold is
+  refused until `user reset` gives the repository its person back
+  ([below](#losing-both-factors)). A change the server makes to who may open
+  a repository (a repository deleted, a person no actor names any more)
+  holds every token of that repository to the table from before it commits
+  until it is proved to have ended, so it takes effect at once; a change
+  made to the tables by hand, outside the server, takes effect within the
+  token cache's minute.
   Every session, script and device token is one of these. A token an app got
   through the authorization flow carries the `scopes` the owner approved and
   reaches only those kinds, on the records route (lists, window and
@@ -266,8 +332,8 @@ Authorization: Bearer substrate_tok_…
 A full-access token can mint another with no password (`POST /tokens`),
 mint an assistant's token, and approve an app, so revoking a token that
 leaked does not end the leak: whatever it made meanwhile still works.
-Signing out everywhere does. It ends every token the person holds, in one
-write:
+Signing out everywhere does. It ends every token the person holds, in every
+repository they may open, with each repository's tokens that name no person:
 
 | Token | Ended | Why |
 | --- | --- | --- |
@@ -282,8 +348,8 @@ end at once.
 
 ```http
 POST /signout/everywhere
-{"repository": "ada.example.com", "password": "…", "totpCode": "123456"}
-→ 200 {"repository": "ada.example.com", "signedOut": 4}
+{"identity": "ada.example.com", "password": "…", "totpCode": "123456"}
+→ 200 {"identity": "ada.example.com", "signedOut": 4}
 ```
 
 It takes both current factors in the body and refuses a bearer token, like
@@ -296,18 +362,19 @@ commits, and an export or a blob's bytes going out stop between two writes.
 Nothing a token set going before it mints afterwards: a token is minted
 standing on the token that asked for it (`POST /tokens`) or approved it (an
 app's code, exchanged after the approval), checked in the mint's own
-transaction to still authenticate (not revoked, not expired), so a mint
-whose request was authenticated before the sign-out, or a code approved
-before it, is refused.
+transaction to still authenticate (not revoked, not expired, and its person
+still one who may open the repository), so a mint whose request was
+authenticated before the sign-out, or a code approved before it, is refused.
 
 A sign out everywhere ends every token that exists when it commits. With a
 password change it also ends every sign-in still in flight that proved the
-old password: a sign-in, a password change, a new second factor, a sign out
-everywhere and a repository's delete act only while the credential is still
-the one they proved, read under the lock every change of it takes. A
-sign-in that proves the factors as they stand is a new sign-in, whenever it
-completes: a sign out everywhere that changes no factor does not stop it,
-because whoever can prove the factors can sign in again a moment later. The console offers it under Settings, Signed in, and as an option of
+old password: every door that proves the factors and then acts (a sign-in,
+a credential change, a sign out everywhere, a repository's delete) acts under
+the identity's row, the lock every change of the factors takes, and checks
+there that they are still the ones it proved. A sign-in that proves the
+factors as they stand is a new sign-in, whenever it completes: a sign out
+everywhere that changes no factor does not stop it, because whoever can
+prove the factors can sign in again a moment later. The console offers it under Settings, Signed in, and as an option of
 the password change, and `substratectl logout --everywhere` runs it
 ([0272](decisions/0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md)).
 
@@ -359,37 +426,39 @@ authorization server's metadata and token exchange) are no token's to end.
 
 ## The credential, and the password-factor rule
 
-The user's own auth material is one record,
-`substrate.reamde.dev/core/credential` at id `self`. It carries the repository it admits to and
-secret-typed references into the repository's sealed store — one for the
-password hash (argon2id), and one for the TOTP seed and its replay counter
-while the account has a second factor. `totpRef` is absent from an account
-without one, which is how a client reads whether it has one. **The
-material itself never enters the changelog or a record's data**, so the changelog shows
-"the credential changed at T" and nothing crackable, and a rotation deletes the
-old sealed rows in the same transaction rather than piling old hashes into an
-append-only sequence. A backup taken while the old password or TOTP seed was
-current still holds it
+The person's own auth material is their identity's: the password hash
+(argon2id), and the TOTP seed with its replay counter while they have a
+second factor, each sealed under a data key of the identity's own, which the
+host credential key wraps as it wraps a repository's. **The material never
+enters any repository**: no changelog, record or sealed row of a repository
+holds it, and a change of it writes the identity row alone, so no
+repository's history records one. `GET /identity` says whether the person has
+a second factor. A repository registered before identities kept the sign-in
+as its `core/credential` record; the boot gives that repository its identity
+from it, with the same password and the same seed, and the repository's
+first open purges the record. A backup of such a repository taken before
+still holds the record's sealed rows
 ([what older backups keep](operations.md#a-rotated-or-deleted-secret-stays-in-older-backups)).
 
 Three endpoints change auth material, and all three obey one rule:
 
 ```http
-POST /password        # {"repository","password","totpCode","newPassword"} → 200
-POST /totp/enroll     # {"repository","password","totpCode"} → 200 {totpSecret, otpauthUri}
+POST /password        # {"identity","password","totpCode","newPassword"} → 200
+POST /totp/enroll     # {"identity","password","totpCode"} → 200 {totpSecret, otpauthUri}
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
 ```
 
-Deleting the repository takes the same factors, and nothing else:
+Deleting a repository takes the same factors and the repository's name:
 
 ```http
-POST /repository/delete  # {"repository","password","totpCode"} → 204
+POST /repository/delete  # {"identity","repository","password","totpCode"} → 204
 ```
 
 It erases every record, token and file the repository holds, its archive
-included, and frees the name for the next registration
+included, and frees its name for the next registration
 ([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
-The console offers it under Settings, Danger zone.
+A person whose last repository it was goes with it, and their name is free
+too. The console offers it under Settings, Danger zone.
 
 **The password-factor rule: changing auth material requires the current
 password, and the current TOTP code where the account has a second factor,
@@ -501,11 +570,17 @@ Settings.
 
 ## Losing both factors
 
-There is no self-serve recovery. A user who has lost their factors is reset by
-the operator, on the box, with `substratectl user reset` — which writes fresh sealed
-material and a new credential record and prints a fresh enrollment. The data is
-untouched; the account gets new keys. [Running a substrate](operations.md)
-covers it.
+There is no self-serve recovery. A person who has lost their factors is reset
+by the operator, on the box, with `substratectl user reset <name>`, which
+seals a fresh password hash and seed on their identity and prints a fresh
+enrollment. It writes no repository, so the server keeps running. The data
+is untouched; the person gets new keys. Named by a repository nobody can sign
+in to (one restored without its sign-in), it gives that repository a person:
+the one its person's actor names, under the same id, so the tokens the
+directory carried authenticate again. A repository whose actor names a
+person this server already holds has that person, whom the boot let in:
+the reset is refused, names them, and makes no other.
+[Running a substrate](operations.md#operator-recovery) covers it.
 
 Next: [the changelog and watch](changelog.md), the one changelog every write
 lands in.

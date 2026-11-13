@@ -30,6 +30,7 @@ vi.mock("@/lib/api/discovery", () => ({
   discoveryQueryOptions: { queryKey: ["discovery"], queryFn: () => null },
   hasFeature: (_doc: unknown, name: string, atLeast = 0) =>
     offered.value && name === "auth" && atLeast <= 2,
+  doorNamesAPerson: () => true,
 }))
 vi.mock("@/components/identity/unverified-mark", () => ({
   UnverifiedMark: () => null,
@@ -41,16 +42,12 @@ function client(): QueryClient {
   const c = new QueryClient({
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   })
-  c.setQueryData(
-    ["record", "substrate.reamde.dev", "core", "credential", "self"],
-    {
-      id: "self",
-      kind: "substrate.reamde.dev/core/credential",
-      properties: { repository: "geoah", totpRef: "<redacted>" },
-      labels: {},
-      version: 1,
-    }
-  )
+  c.setQueryData(["identity"], {
+    id: "idn-0000000000000000000000000",
+    name: "geoah",
+    secondFactor: true,
+    repositories: [{ id: "rnd-0000000000000000000000000", name: "geoah" }],
+  })
   return c
 }
 
@@ -83,7 +80,7 @@ describe("signing out everywhere", () => {
 
   it("runs on its own with the factors, then forgets this browser", async () => {
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ repository: "geoah", signedOut: 3 }), {
+      new Response(JSON.stringify({ identity: "geoah", signedOut: 3 }), {
         status: 200,
       })
     )
@@ -111,7 +108,7 @@ describe("signing out everywhere", () => {
     )
     const sent = sentTo(fetchMock, "/signout/everywhere")
     expect(sent?.body).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "123456",
     })
@@ -121,7 +118,7 @@ describe("signing out everywhere", () => {
 
   it("is the password change's option", async () => {
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ repository: "geoah", signedOut: 2 }), {
+      new Response(JSON.stringify({ identity: "geoah", signedOut: 2 }), {
         status: 200,
       })
     )

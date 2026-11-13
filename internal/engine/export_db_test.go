@@ -242,6 +242,8 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 	if got := openSecret(t, dsn2, ref); got != secretBefore {
 		t.Fatalf("secret = %q, want %q", got, secretBefore)
 	}
+	// The export carries the person who took it, so the token they took it
+	// with opens the restored repository.
 	if _, info, err := svc2.Authenticate(ctx, secret); err != nil || info.ID != token.ID {
 		t.Fatalf("the token does not open the restored repository: %v (%+v)", err, info)
 	}

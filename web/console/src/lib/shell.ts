@@ -35,6 +35,9 @@ export interface ShellSession {
   secret: string
   repository: string
   tokenId: string
+  /** The name the person signs in with (decision 0274); an app from before
+   * identities gives none, and its person's is the repository's. */
+  identity?: string
 }
 
 interface ShellWindow {
@@ -93,7 +96,8 @@ export function shellSession(
   return session &&
     typeof session.secret === "string" &&
     typeof session.repository === "string" &&
-    typeof session.tokenId === "string"
+    typeof session.tokenId === "string" &&
+    (session.identity === undefined || typeof session.identity === "string")
     ? session
     : undefined
 }

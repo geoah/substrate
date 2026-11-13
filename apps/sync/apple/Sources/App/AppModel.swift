@@ -187,12 +187,15 @@ final class AppModel: ObservableObject {
         return (try? manifest())?.door(for: probe) ?? .password
     }
 
-    /// The password door, for a server that cannot set up what Sync needs.
-    func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
+    /// The password door, for a server that cannot set up what Sync needs:
+    /// the name the person signs in with, sent as the probed door names it,
+    /// and the repository the person picked where the door asked them to.
+    func signIn(_ probe: ServerProbe.Result, name: String, repository: String? = nil, password: String, totp: String?) async throws {
         let label = "Substrate Sync on \(UIDevice.current.name)"
-        let result = try await Client(server: server).api.login(
-            repository: repository, password: password, totp: totp, label: label)
-        try await adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
+        let result = try await Client(server: probe.origin).api.login(
+            name: name, repository: repository ?? probe.repository, password: password, totp: totp,
+            label: label, door: probe.discovery)
+        try await adopt(Session(server: probe.origin, repository: result.repository, secret: result.secret, tokenID: result.token.id))
     }
 
     /// The authorization flow: the server's own sign-in and approval page in

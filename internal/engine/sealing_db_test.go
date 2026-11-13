@@ -449,7 +449,7 @@ func registerOwner(t *testing.T, svc substrate.Service, repository string) *auth
 	}
 	u := &authUser{repository: repository, password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Repository: repository, Password: u.password,
+		Identity: repository, Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
 	}); err != nil {
 		t.Fatalf("register %q: %v", repository, err)
@@ -562,8 +562,8 @@ func TestARestoreUnderAnotherHostKeyIsRefusedNamingTheKey(t *testing.T) {
 // A listed repository restores under another host's key without its
 // secrets: every record arrives as written but the ones that named a secret,
 // which read without it; the sealed store is empty and so is the spool; the
-// blob and the history come through; the owner signs in again only after a
-// reset.
+// blob and the history come through; the owner, whose sign-in was sealed
+// under the other key too, signs in again only after a reset.
 func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 	t.Parallel()
 	f := newLostSecretsFixture(t)
@@ -598,8 +598,7 @@ func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 	// The records the secrets were on lost exactly them; nothing else moved
 	// but their version and their time.
 	cleared := map[string]string{
-		typeProvider + "/openai":                    "apiKey",
-		"substrate.reamde.dev/core/credential/self": "passwordRef",
+		typeProvider + "/openai": "apiKey",
 	}
 	got := foldRecords(t, ds)
 	for key, before := range f.records {
@@ -617,7 +616,6 @@ func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 		}
 		wantProps := maps.Clone(before["props"].(map[string]any))
 		delete(wantProps, prop)
-		delete(wantProps, "totpRef")
 		if !reflect.DeepEqual(wantProps, after["props"]) {
 			t.Errorf("%s: props %v, want %v", key, after["props"], wantProps)
 		}
@@ -639,8 +637,6 @@ func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 	}
 	for _, want := range []string{
 		typeProvider + "/openai: apiKey",
-		"substrate.reamde.dev/core/credential/self: passwordRef",
-		"substrate.reamde.dev/core/credential/self: totpRef",
 	} {
 		found := false
 		for summary, open := range alerts {
@@ -652,8 +648,8 @@ func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 			t.Errorf("no open alert names %s: %v", want, alerts)
 		}
 	}
-	if len(alerts) != 3 {
-		t.Errorf("%d alerts appeared, want the three values left behind: %v", len(alerts), alerts)
+	if len(alerts) != 1 {
+		t.Errorf("%d alerts appeared, want the one value left behind: %v", len(alerts), alerts)
 	}
 	var sealed int
 	var wrapped []byte
@@ -679,24 +675,24 @@ func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 	// The owner cannot sign in with what they knew: the password hash was a
 	// secret. The operator's reset gives them a way back in, and the
 	// repository then writes secrets under its new key.
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Repository: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
+	if _, err := svc.Login(ctx, substrate.LoginInput{
+		Identity: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
 	}); !errors.Is(err, substrate.ErrAuth) {
 		t.Fatalf("a login with the lost credential = %v, want refused", err)
 	}
 	resetter, ok := svc.(interface {
-		ResetUser(context.Context, string, string) (substrate.TOTPEnrollment, error)
+		ResetUser(context.Context, string, string, string) (substrate.TOTPEnrollment, error)
 	})
 	if !ok {
 		t.Fatal("the engine service must expose ResetUser for substratectl")
 	}
-	enrollment, err := resetter.ResetUser(ctx, "ada.example.com", "a-new-password-for-ada")
+	enrollment, err := resetter.ResetUser(ctx, "ada.example.com", "a-new-password-for-ada", "")
 	if err != nil {
 		t.Fatalf("user reset: %v", err)
 	}
 	reset := &authUser{repository: "ada.example.com", password: "a-new-password-for-ada", seed: enrollment.Secret}
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Repository: "ada.example.com", Password: reset.password, TOTPCode: reset.code(t), Label: "after reset",
+	if _, err := svc.Login(ctx, substrate.LoginInput{
+		Identity: "ada.example.com", Password: reset.password, TOTPCode: reset.code(t), Label: "after reset",
 	}); err != nil {
 		t.Fatalf("login after the reset: %v", err)
 	}
@@ -728,8 +724,8 @@ func TestAListedRepositoryUnderItsOwnKeyKeepsItsSecrets(t *testing.T) {
 	if got := openSecretUnder(t, dsn, f.ref, engine.TestCredentialKeyBytes); got != "sk-left-behind" {
 		t.Fatalf("secret = %q", got)
 	}
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{
-		Repository: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
+	if _, err := svc.Login(ctx, substrate.LoginInput{
+		Identity: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
 	}); err != nil {
 		t.Fatalf("login with the credential that traveled: %v", err)
 	}

@@ -68,14 +68,6 @@ func forgetUsage(id string) {
 	metrics.ForgetRepository(id)
 }
 
-// repositoryExists reports whether a repository is named name. Every path
-// asks it after the factors were judged, existing name or not, so it adds
-// the same round trip to both and the timing still tells nothing.
-func (s *service) repositoryExists(ctx context.Context, name string) bool {
-	_, err := s.repositoryByAuthority(ctx, name)
-	return err == nil
-}
-
 // countInvocation records one function body run under the mode that ran it.
 func (ds *dataset) countInvocation(fn *vocabulary.Function, mode string, elapsed time.Duration, err error) {
 	id := ds.Repository().Authority

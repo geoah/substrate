@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -179,6 +180,10 @@ type TokenInfo struct {
 	// provider each extends was not installed (decision 0216): installing
 	// that provider later installs them under this token's approval.
 	AppAddons []AppAddon `json:"appAddons,omitempty"`
+	// Identity is the id of the person's identity the token acts for
+	// (decision 0274): the one that signed in, or the one behind the token
+	// that minted or approved it. Empty on a token no person stands behind.
+	Identity string `json:"identity,omitempty"`
 }
 
 // Scoped reports whether the token reaches less than its whole repository.
@@ -204,6 +209,10 @@ type MintTokenInput struct {
 	AppSoftwareVersion string
 	// AppAddons is TokenInfo's: the add-ons waiting for their provider.
 	AppAddons []AppAddon
+	// Identity is TokenInfo's. A mint that names none takes the identity of
+	// the token it stands on (PrincipalFrom), so a token a person minted or
+	// approved acts for that person.
+	Identity string
 }
 
 // MintedToken is what a login, a registration and a `POST /tokens` answer
@@ -216,28 +225,66 @@ type MintedToken struct {
 	// learns the authority it got. A `POST /tokens` mint omits it, because
 	// the caller is already in the repository it mints for.
 	Repository string `json:"repository,omitempty"`
+	// Identity is the name of the person who signed in, as the door resolved
+	// it; login and registration echo it, and a `POST /tokens` mint omits it.
+	Identity string `json:"identity,omitempty"`
 }
 
 // SessionCredential is what a credential change answers (a password change, a
-// TOTP re-enrollment, a sign out everywhere): the repository the factors
+// TOTP re-enrollment, a sign out everywhere): the identity the factors
 // proved, and, where the request signed the person out everywhere, how many
 // tokens that ended. No token is minted, so the caller signs in again with
 // the new material.
 type SessionCredential struct {
-	Repository string `json:"repository"`
-	SignedOut  *int   `json:"signedOut,omitempty"`
+	Identity  string `json:"identity"`
+	SignedOut *int   `json:"signedOut,omitempty"`
 }
 
-// LoginRequest is a login as the HTTP door decodes it: the repository, the two
-// factors and the label of the token the login mints. Repository is the name
-// the user registered — its authority, or the bare label the door completes
-// under its own host.
+// LoginRequest is a sign-in as the HTTP door decodes it (decision 0274): the
+// person's identity, the two factors, the repository the person picks and
+// the label of the token the sign-in mints. Identity is the name the person
+// signs in with, or a bare label the door completes under its own host.
+// Repository is a repository's name or id; absent, the person's one
+// repository is picked, and a person in several is told to name one.
 type LoginRequest struct {
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
 }
+
+// IdentityInfo is a person's sign-in as its own token reads it: the
+// identity's id and name, whether it has a second factor, and every
+// repository it may open.
+type IdentityInfo struct {
+	ID           string             `json:"id"`
+	Name         string             `json:"name"`
+	SecondFactor bool               `json:"secondFactor"`
+	Repositories []RepositoryChoice `json:"repositories"`
+}
+
+// RepositoryChoice names one repository a person may open: its id and its
+// name, either of which a sign-in's `repository` takes.
+type RepositoryChoice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// RepositoryRequiredError is a sign-in that proved its factors and named no
+// repository, by a person who may open several: nothing is minted and no
+// code is spent, so the same request sent again with `repository` set signs
+// in. It is a conflict, answered 409 with ReasonRepositoryRequired and the
+// choices.
+type RepositoryRequiredError struct {
+	Repositories []RepositoryChoice
+}
+
+func (e *RepositoryRequiredError) Error() string {
+	return fmt.Sprintf("%v: this person may open %d repositories: name one in `repository`", ErrConflict, len(e.Repositories))
+}
+
+func (e *RepositoryRequiredError) Unwrap() error { return ErrConflict }
 
 // RegisterRequest is the registration commit as the HTTP door decodes it:
 // the invite code, the repository to create, the password, and the enrollment
@@ -245,12 +292,15 @@ type LoginRequest struct {
 // door builds the engine's RegisterInput from it.
 type RegisterRequest struct {
 	InviteCode string `json:"inviteCode"`
+	// Identity is the name the person will sign in with (decision 0274). A
+	// name carrying a dot is used as it is (`ada.example.com`); a bare label
+	// is completed under the host the request reached (`ada` ->
+	// `ada.example.com`).
+	Identity string `json:"identity"`
 	// Repository is the name of the repository to create, which BECOMES its
-	// authority: the home of every kind its user declares. A name carrying a
-	// dot is the authority itself (`ada.example.com`); a bare label is
-	// completed under the host the request reached (`ada` ->
-	// `ada.example.com`). It is also the login name, and it is permanent.
-	Repository string `json:"repository"`
+	// authority: the home of every kind its people declare. It is completed
+	// as Identity is, and absent it is the identity's name.
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
@@ -282,10 +332,13 @@ type TOTPEnrollment struct {
 // from it. The invite code is checked by the HTTP layer, which is where the
 // configuration lives; the engine never sees it.
 type RegisterInput struct {
-	// Repository is the repository's authority (`ada.example.com`), its name
-	// and its user's login name; the id that keys it is minted at creation. The HTTP layer resolves a bare label under
-	// the host the request reached; the engine requires a concrete
-	// authority, validates the grammar and refuses a taken one.
+	// Identity is the name the person will sign in with, and Repository the
+	// authority of the repository registration creates for them
+	// (`ada.example.com`); the ids that key both are minted at creation. The
+	// HTTP layer resolves a bare label under the host the request reached
+	// and an absent repository to the identity's name; the engine requires
+	// both concrete, validates their grammar and refuses a taken one.
+	Identity   string
 	Repository string
 	Password   string
 	TOTPSecret string
@@ -302,17 +355,22 @@ type RegisterInput struct {
 type RegisterResult struct {
 	Token  TokenInfo
 	Secret string
-	// Repository is the repository that was created, echoed so a client that
-	// sent a bare label learns the authority it got.
+	// Repository is the repository that was created and Identity the
+	// identity, echoed so a client that sent a bare label learns the name it
+	// got.
 	Repository string
+	Identity   string
 }
 
 // LoginInput is BOTH factors presented directly: it authenticates /login and
 // it is the password-factor rule's evidence on every endpoint
 // that changes auth material. A bearer token is never a substitute.
 type LoginInput struct {
-	// Repository is the repository the factors admit to: its authority, which
+	// Identity is the person the factors prove: an identity's name, which
 	// the HTTP layer has already resolved from whatever the caller typed.
+	Identity string
+	// Repository is the repository a sign-in picks, or a deletion erases: a
+	// repository's name or id. The credential changes ignore it.
 	Repository string
 	Password   string
 	TOTPCode   string

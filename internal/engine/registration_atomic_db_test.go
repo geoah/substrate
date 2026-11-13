@@ -11,6 +11,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 func openBareService(t *testing.T) (*service, string) {
@@ -61,7 +64,7 @@ func plantOrphan(t *testing.T, dsn, id string) {
 	}
 	if _, err := raw.Exec(
 		`INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at) VALUES ($1, $2, $3, $4, now())`,
-		"auth:password:orphan", "substrate.reamde.dev/core/credential", "self", []byte("secret")); err != nil {
+		secretRefPrefix+"orphan", bindingProviderKind, "orphan-provider", []byte("secret")); err != nil {
 		t.Fatalf("plant orphan sealed: %v", err)
 	}
 }
@@ -93,6 +96,41 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 	}
 	if n := orphanRowCount(t, s); n != 0 {
 		t.Fatalf("after a clean retry there are still %d orphan rows", n)
+	}
+}
+
+// A registration that fails after its row and its person were written takes
+// the person in the erase's own transaction: a crash once the erase has
+// committed leaves no name held by no repository, and the name registers
+// again.
+func TestAFailedRegistrationLeavesNoPersonEvenIfItsCleanupIsCutShort(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := openBareService(t)
+	name := testdb.Repository(t)
+	s.testFailAfterRow = func() error { return errors.New("the directory cannot be written") }
+	type crash struct{}
+	s.testAfterErase = func(string) { panic(crash{}) }
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("the cleanup was never cut short")
+			} else if _, ok := r.(crash); !ok {
+				panic(r)
+			}
+		}()
+		_, _ = s.Register(ctx, substrate.RegisterInput{Identity: name, Password: "a-password-that-registers", SkipTOTP: true})
+	}()
+	if _, err := s.repositoryByAuthority(ctx, name); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the failed registration's repository: %v, want none", err)
+	}
+	if _, err := s.identityByName(ctx, s.maint, name); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the failed registration's person: %v, want none", err)
+	}
+
+	s.testFailAfterRow, s.testAfterErase = nil, nil
+	if _, err := s.Register(ctx, substrate.RegisterInput{Identity: name, Password: "a-password-that-registers", SkipTOTP: true}); err != nil {
+		t.Fatalf("the name does not register again: %v", err)
 	}
 }
 

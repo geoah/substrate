@@ -5,6 +5,7 @@
   "key_refused",
   "observed_rederiving",
   "quota",
+  "repository_required",
   "set_aside",
   "stale_revision"
 ]

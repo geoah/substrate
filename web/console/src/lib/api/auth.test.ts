@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   changePassword,
+  deleteRepository,
   login,
   logout,
   mintToken,
@@ -13,6 +14,7 @@ import {
   totpChange,
   totpEnroll,
 } from "./auth"
+import { fetchDiscoveryDoc, resetAuthPolicy } from "./discovery"
 import { clearSession, getToken, saveSession, setToken } from "./session"
 import { ApiError } from "./types"
 
@@ -58,6 +60,7 @@ describe("the v1 door", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
+    resetAuthPolicy()
   })
 
   afterEach(() => {
@@ -69,7 +72,7 @@ describe("the v1 door", () => {
     return fetchMock.mock.calls.at(-1) as [string, RequestInit]
   }
 
-  it("registerEnroll POSTs the invite code + repository, anonymously, at the root", async () => {
+  it("registerEnroll POSTs the invite code + the person's name, anonymously, at the root", async () => {
     setToken("substrate_tok_stored")
     fetchMock.mockResolvedValue(
       jsonResponse(200, { totpSecret: "SEED", otpauthUri: "otpauth://x" })
@@ -81,7 +84,7 @@ describe("the v1 door", () => {
     expect(init.method).toBe("POST")
     expect(JSON.parse(init.body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
     })
     // Anonymous: a stored bearer never rides the door.
     expect(
@@ -93,7 +96,7 @@ describe("the v1 door", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     const res = await register({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: "pw",
       totpSecret: "SEED",
       totpCode: "123456",
@@ -104,12 +107,12 @@ describe("the v1 door", () => {
     expect(url).toBe("/register")
     expect(JSON.parse(init.body as string)).toMatchObject({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       totpCode: "123456",
     })
   })
 
-  it("login POSTs username/password/totpCode with a default label, anonymously", async () => {
+  it("login POSTs the person's name, password and code with a default label, anonymously", async () => {
     setToken("substrate_tok_stored")
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     const res = await login("geoah.localhost", "pw", "123456")
@@ -117,7 +120,7 @@ describe("the v1 door", () => {
     const [url, init] = lastCall()
     expect(url).toBe("/login")
     expect(JSON.parse(init.body as string)).toEqual({
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       label: "console",
@@ -130,13 +133,13 @@ describe("the v1 door", () => {
   it("changePassword is anonymous — the password factor never rides a bearer", async () => {
     setToken("substrate_tok_stored")
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { repository: "geoah.localhost" })
+      jsonResponse(200, { identity: "geoah.localhost" })
     )
     await changePassword("geoah.localhost", "pw", "123456", "newpw")
     const [url, init] = lastCall()
     expect(url).toBe("/password")
     expect(JSON.parse(init.body as string)).toEqual({
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       newPassword: "newpw",
@@ -154,17 +157,96 @@ describe("the v1 door", () => {
     expect(lastCall()[0]).toBe("/totp/enroll")
 
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { repository: "geoah.localhost" })
+      jsonResponse(200, { identity: "geoah.localhost" })
     )
     await totpChange("geoah.localhost", "pw", "123456", "NEW", "654321")
     const [url, init] = lastCall()
     expect(url).toBe("/totp")
     expect(JSON.parse(init.body as string)).toEqual({
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: "pw",
       totpCode: "123456",
       newTotpSecret: "NEW",
       newTotpCode: "654321",
+    })
+  })
+
+  it("login names the repository a person in several picked, after the door listed them", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, {
+        error: {
+          code: "conflict",
+          reason: "repository_required",
+          message: "name the repository to open",
+          repositories: [
+            { id: "rnd-one", name: "one.example.com" },
+            { id: "rnd-two", name: "two.example.com" },
+          ],
+        },
+      })
+    )
+    const err = (await login("geoah.localhost", "pw", "123456").catch(
+      (e: unknown) => e
+    )) as ApiError
+    expect(err.reason).toBe("repository_required")
+    expect(err.repositories?.map((r) => r.name)).toEqual([
+      "one.example.com",
+      "two.example.com",
+    ])
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, MINT))
+    await login("geoah.localhost", "pw", "123456", "console", "rnd-two")
+    expect(JSON.parse(lastCall()[1].body as string)).toEqual({
+      identity: "geoah.localhost",
+      repository: "rnd-two",
+      password: "pw",
+      totpCode: "123456",
+      label: "console",
+    })
+  })
+
+  it("deleteRepository names the person and the repository", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(204, undefined))
+    await deleteRepository(
+      "geoah.localhost",
+      "notes.example.com",
+      "pw",
+      "123456"
+    )
+    const [url, init] = lastCall()
+    expect(url).toBe("/repository/delete")
+    expect(JSON.parse(init.body as string)).toEqual({
+      identity: "geoah.localhost",
+      repository: "notes.example.com",
+      password: "pw",
+      totpCode: "123456",
+    })
+  })
+
+  it("names the sign-in as the repository to a server whose door predates identities", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        features: [{ name: "auth", stability: "stable", revision: 2 }],
+      })
+    )
+    await fetchDiscoveryDoc()
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    await login("geoah.localhost", "pw", "123456")
+    expect(JSON.parse(lastCall()[1].body as string)).toEqual({
+      repository: "geoah.localhost",
+      password: "pw",
+      totpCode: "123456",
+      label: "console",
+    })
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { repository: "geoah.localhost" })
+    )
+    await changePassword("geoah.localhost", "pw", "123456", "newpw")
+    expect(JSON.parse(lastCall()[1].body as string)).toEqual({
+      repository: "geoah.localhost",
+      password: "pw",
+      totpCode: "123456",
+      newPassword: "newpw",
     })
   })
 

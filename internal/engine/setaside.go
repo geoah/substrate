@@ -60,6 +60,7 @@ const (
 	setAsideAtImport  = "import"         // a 0.x directory with no row (repodir.go importDirectory)
 	setAsideAtRestore = "restore"        // an archive with no row, or the copy staged for a take (repodir.go reconcileArchive)
 	setAsideAtStore   = "archive store"  // the archive's store did not answer once the pass had written some of it: nothing of it is damaged (archivestore.go)
+	setAsideAtPeople  = "people"         // its people: the index derived from its actors, or its identity made from its sign-in record (identityboot.go)
 )
 
 // THE START'S ONE GATE. Every pass of the start that touches a repository

@@ -27,7 +27,7 @@ func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 	label := testdb.RepositoryLabel(t)
 	enroll := func(user string) *httptest.ResponseRecorder {
 		return env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-			"inviteCode": testInviteCode, "repository": user,
+			"inviteCode": testInviteCode, "identity": user,
 		})
 	}
 	first := enroll(label)
@@ -37,7 +37,7 @@ func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, first)
 	// No clock advance at all: the commit half follows immediately.
 	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": label,
+		"inviteCode": testInviteCode, "identity": label,
 		"password":   authPassword,
 		"totpSecret": enrollment.Secret, "totpCode": env.code(t, enrollment.Secret),
 	})

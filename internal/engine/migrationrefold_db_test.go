@@ -121,17 +121,18 @@ const refoldRepositoryIDs = "0020_repository_ids"
 // so a stage at or past it keeps the repository migration's ledger row. A new
 // repository migration adds its entry here; the test fails until it does.
 var refoldLedgerFloors = map[string]string{
-	"qualify_bare_declaration_names":        "0005_repository_migrations",
-	"qualify_bare_selector_kinds":           "0005_repository_migrations",
-	"name_units_by_unit_records":            "0016_unit_graph",
-	"name_applet_runtimes":                  "0019_operator_spend_reservations",
-	"remove_reply_relay_contacts":           "0019_operator_spend_reservations",
-	"key_the_repository_record_by_its_id":   "0020_repository_ids",
-	"start_paged_drains_over":               "0021_identity_columns_byte_order",
-	"purge_the_recovery_key":                "0023_secrets_left_behind",
-	"link_actors":                           "0024_changelog_on_behalf_of",
-	"name_writers_by_actor_type":            "0024_changelog_on_behalf_of",
-	"drop_a_body_its_kind_does_not_declare": "0025_records_drop_body",
+	"qualify_bare_declaration_names":         "0005_repository_migrations",
+	"qualify_bare_selector_kinds":            "0005_repository_migrations",
+	"name_units_by_unit_records":             "0016_unit_graph",
+	"name_applet_runtimes":                   "0019_operator_spend_reservations",
+	"remove_reply_relay_contacts":            "0019_operator_spend_reservations",
+	"key_the_repository_record_by_its_id":    "0020_repository_ids",
+	"start_paged_drains_over":                "0021_identity_columns_byte_order",
+	"purge_the_recovery_key":                 "0023_secrets_left_behind",
+	"link_actors":                            "0024_changelog_on_behalf_of",
+	"name_writers_by_actor_type":             "0024_changelog_on_behalf_of",
+	"drop_a_body_its_kind_does_not_declare":  "0025_records_drop_body",
+	"move_the_sign_in_out_of_the_repository": "0027_identities",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

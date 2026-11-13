@@ -149,14 +149,14 @@ func caseAuth(c *C) {
 
 	// Register. With the factor enforced the suite enrolls a seed and proves
 	// it with a live code, exactly as an authenticator would.
-	reg := map[string]any{"inviteCode": r.invite, "repository": r.repository, "password": r.password}
+	reg := map[string]any{"inviteCode": r.invite, "identity": r.repository, "password": r.password}
 	if disc.Registration.TOTPRequired {
 		var enr struct {
 			TOTPSecret string `json:"totpSecret"`
 		}
 		c.paceAuth()
 		status, raw = c.doAs("", http.MethodPost, "/register/enroll",
-			map[string]string{"inviteCode": r.invite, "repository": r.repository}, &enr)
+			map[string]string{"inviteCode": r.invite, "identity": r.repository}, &enr)
 		c.requiref(status == http.StatusOK, "register/enroll answered %d: %s", status, raw)
 		step := engine.TOTPStep(time.Now())
 		code, err := engine.TOTPCode(enr.TOTPSecret, step)
@@ -213,16 +213,16 @@ func caseAuth(c *C) {
 	status, _ = c.doAs("", http.MethodGet, "/tokens", nil, nil)
 	c.requiref(status == http.StatusUnauthorized, "GET /tokens without a bearer answered %d, want 401", status)
 
-	// A taken repository name refuses; registration is one-shot per repository,
-	// and the refusal names the authority the name resolved to.
+	// A taken name refuses; registration is one-shot per name, and the
+	// refusal names the name the label resolved to.
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, nil)
-	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already owned"),
-		"re-registering %q answered %d, want a 422 naming the taken authority: %s", r.repository, status, raw)
-	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already owned")
+	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already another person's"),
+		"re-registering %q answered %d, want a 422 naming the taken name: %s", r.repository, status, raw)
+	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already another person's")
 
 	// Login mints a second token that works.
-	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-login"}
+	login := map[string]any{"identity": r.repository, "password": r.password, "label": "e2e-login"}
 	if disc.Registration.TOTPRequired {
 		login["totpCode"] = r.nextTOTPCode(c)
 	}
@@ -239,8 +239,17 @@ func caseAuth(c *C) {
 	c.requiref(status == http.StatusOK, "the login token answered %d on GET /tokens, want 200", status)
 	c.stepf("login minted token `%s` and it authenticates", loginOut.Token.ID)
 
+	// A sign-in names a person (decision 0274): a body from before that names
+	// only a repository is told which field replaced it.
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login",
+		map[string]any{"repository": r.repository, "password": r.password}, nil)
+	c.requiref(status == http.StatusBadRequest && strings.Contains(string(raw), "`identity`"),
+		"a sign-in naming only a repository answered %d, want a 400 naming `identity`: %s", status, raw)
+	c.stepf("a sign-in naming only a repository was refused: 400, naming `identity`")
+
 	// A wrong password is one indistinguishable 401.
-	badLogin := map[string]any{"repository": r.repository, "password": "not-the-password"}
+	badLogin := map[string]any{"identity": r.repository, "password": "not-the-password"}
 	c.paceAuth()
 	status, _ = c.doAs("", http.MethodPost, "/login", badLogin, nil)
 	c.requiref(status == http.StatusUnauthorized, "a wrong password answered %d, want 401", status)

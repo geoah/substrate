@@ -286,13 +286,22 @@ func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.
 // authority apart, and a racing registration that gets past it loses on the
 // primary key instead; losing costs the loser nothing but the rows under its
 // own authority, which it erases on the way out.
-func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository) error {
+//
+// A creation for a person (registration) inserts their identity and the row
+// that lets it open the repository in the same transaction, so a registration
+// that loses its name to a racing one creates no person either.
+func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository, person *identityRow) error {
 	generation, err := newHistoryGeneration()
 	if err != nil {
 		return err
 	}
 	r.HistoryGeneration = generation
-	err = cp.QueryRowContext(ctx, `
+	tx, err := cp.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID)).Scan(&r.CreatedAt)
@@ -300,6 +309,17 @@ func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *R
 		if taken := repositoryRowTaken(err, r); taken != nil {
 			return taken
 		}
+		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	if person != nil {
+		if err := insertIdentity(ctx, tx, person); err != nil {
+			return err
+		}
+		if err := linkIdentity(ctx, tx, person.ID, r.ID); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
@@ -336,8 +356,10 @@ func repositoryRowTaken(err error, r *Repository) error {
 // case unreachable, and this is the check that holds if it ever is not, since
 // erasing there would delete a live repository's rows, changelog and directory.
 // The lookup runs on a context of its own, like the erase, because the
-// request behind the failure may be gone.
-func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id string, inserted bool) error {
+// request behind the failure may be gone. person is the identity the
+// creation inserted with its row, if any: it goes in the erase's own
+// transaction, so no crash leaves its name held by no repository.
+func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id string, inserted bool, person string) error {
 	if !inserted {
 		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -349,7 +371,7 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 			return fmt.Errorf("substrate/engine: erase repository %s: look up its row: %w", id, err)
 		}
 	}
-	return s.eraseRepositoryOn(ctx, cp, id, nil)
+	return s.eraseRepositoryOn(ctx, cp, id, eraseFor{person: person})
 }
 
 // ErrRepositoryBeingDeleted is the refusal of a repository whose deletion
@@ -398,16 +420,23 @@ func (s *service) eraseStage(stage string) error {
 //     with no row, which the next boot RESTORES as a repository that was
 //     deleted, or whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
-	return s.eraseRepositoryOn(ctx, s.maint, id, nil)
+	return s.eraseRepositoryOn(ctx, s.maint, id, eraseFor{})
+}
+
+// eraseFor names whom an erase is for. person's place in the repository,
+// and their identity when the repository was its last, go in the
+// transaction that records the deletion began, so no crash leaves a name
+// held by a repository being deleted. proved is the version of the factors a
+// person's delete proved: that transaction holds the identity's row to it
+// before it records anything (factorsStandOn).
+type eraseFor struct {
+	person string
+	proved *time.Time
 }
 
 // eraseRepositoryOn is eraseRepository on a given control-plane handle: the
-// registration's locked connection, so the cleanup needs no second one. A
-// person's delete passes fence, which runs in the transaction that records
-// that the deletion began, before anything is removed: it holds the factors
-// the request proved until the deletion is decided (auth.go
-// credentialStandsOn), and its refusal leaves the repository whole.
-func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string, fence func(*sql.Tx) error) error {
+// registration's locked connection, so the cleanup needs no second one.
+func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string, by eraseFor) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
@@ -430,15 +459,22 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// The changelog lock before the factor fence, as it is first in the lock
-	// order: a change of the factors takes it before the credential's row.
-	if err := lockTokens(ctx, tx, id); err != nil {
-		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
-	}
-	if fence != nil {
-		if err := fence(tx); err != nil {
+	// The locks in the order a sign-in takes them, the person's row before
+	// the repository's changelog lock (holdFactors, then the mint), so the
+	// two cannot wait on each other. The changelog lock is what proves a
+	// COMMIT below whose answer is lost has ended (commitFencingTokens).
+	switch {
+	case by.proved != nil:
+		if err := factorsStandOn(ctx, tx, by.person, *by.proved); err != nil {
 			return err
 		}
+	case by.person != "":
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM identities WHERE id = $1 FOR UPDATE`, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+		}
+	}
+	if err := lockTokens(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE repositories SET deletion_began_at = coalesce(deletion_began_at, now()) WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
@@ -447,6 +483,16 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	// from a copy staged before.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM archive_takes WHERE repository_id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: end its take: %w", id, err)
+	}
+	if by.person != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM identity_repositories WHERE repository_id = $1 AND identity = $2`, id, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s (its person's place): %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM identities i WHERE i.id = $1
+			AND NOT EXISTS (SELECT 1 FROM identity_repositories l WHERE l.identity = i.id)`, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s (its person's identity): %w", id, err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
@@ -498,12 +544,18 @@ func (s *service) eraseLocal(ctx context.Context, cp controlPlane, id string) er
 			return fmt.Errorf("substrate/engine: erase repository %s (%s): %w", id, table, err)
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM identity_repositories WHERE repository_id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s (identity_repositories): %w", id, err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s (repositories): %w", id, err)
 	}
-	// The repository's tokens go with it.
+	// The repository's tokens, and its people's places in it, go with it.
 	if err := s.commitFencingTokens(tx, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
+	}
+	if s.testAfterErase != nil {
+		s.testAfterErase(id)
 	}
 	if residue, err := repositoryResidue(ctx, cp, id); err != nil {
 		return err
@@ -667,6 +719,5 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	return out, rows.Err()
 }
 
-// A user's factors are the credential record and its sealed rows, never a
-// column in this table: the control plane holds nothing about a user but the
-// repository they own and the day they arrived.
+// A person's factors are their identity's (identities.go), never a column in
+// this table: a repository row holds nothing about the people who open it.

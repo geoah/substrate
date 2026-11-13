@@ -259,7 +259,7 @@ func (d *driver) register() error {
 		Repository string `json:"repository"`
 	}
 	if err := d.must(http.MethodPost, "/register", map[string]any{
-		"repository": d.authority, "password": password, "skipTotp": true, "label": "keptdir",
+		"identity": d.authority, "password": password, "skipTotp": true, "label": "keptdir",
 	}, &out); err != nil {
 		return err
 	}

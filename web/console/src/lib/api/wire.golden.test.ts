@@ -167,6 +167,8 @@ import type {
   ReferenceSite,
   Referencing,
   SessionCredential,
+  IdentityInfo,
+  RepositoryChoice,
   SetupItem,
   ShippedRecord,
   Scores,
@@ -213,6 +215,7 @@ const errorPayload: Shape<ErrorPayload> = {
   problemDetails: false,
   head: false,
   generation: false,
+  repositories: false,
 }
 
 const problemDetail: Shape<ProblemDetail> = {
@@ -712,6 +715,7 @@ const tokenInfo: Shape<TokenInfo> = {
   appSoftwareVersion: false,
   appCheckedAt: false,
   appAddons: false,
+  identity: false,
 }
 
 const appAddon: Shape<AppAddon> = {
@@ -956,6 +960,20 @@ const mintedToken: Shape<MintedToken> = {
   token: true,
   secret: true,
   repository: false,
+  identity: false,
+}
+
+/** A person (`GET /identity`) and a repository they may open. */
+const identityInfo: Shape<IdentityInfo> = {
+  id: true,
+  name: true,
+  secondFactor: true,
+  repositories: true,
+}
+
+const repositoryChoice: Shape<RepositoryChoice> = {
+  id: true,
+  name: true,
 }
 
 const totpEnrollment: Shape<TOTPEnrollment> = {
@@ -967,7 +985,8 @@ const totpEnrollment: Shape<TOTPEnrollment> = {
  * is the mint with the repository it created. */
 const registerInput: Shape<RegisterInput> = {
   inviteCode: true,
-  repository: true,
+  identity: true,
+  repository: false,
   password: true,
   totpSecret: true,
   totpCode: true,
@@ -975,16 +994,18 @@ const registerInput: Shape<RegisterInput> = {
   label: false,
 }
 
-/** Login (auth.ts): the repository, the two factors and the token label. */
+/** Login (auth.ts): the person, the repository they pick, the two factors
+ * and the token label. */
 const loginRequest: Shape<LoginRequest> = {
-  repository: true,
+  identity: true,
+  repository: false,
   password: true,
   totpCode: true,
   label: false,
 }
 
 const sessionCredential: Shape<SessionCredential> = {
-  repository: true,
+  identity: true,
   signedOut: false,
 }
 
@@ -1582,6 +1603,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RegisterResult: registerResult,
   LoginRequest: loginRequest,
   SessionCredential: sessionCredential,
+  IdentityInfo: identityInfo,
+  RepositoryChoice: repositoryChoice,
   AgentResult: agentResult,
   AgentMention: agentMention,
   AgentEvent: agentEvent,

@@ -1242,3 +1242,9 @@ func ArchiveCovered(ctx context.Context, store archive.Store, id string) (bool, 
 	_, _, err = restorable(listed)
 	return errors.Is(err, errArchiveCovered), nil
 }
+
+// WithTestPeopleFault fails the start's people pass for each repository fn
+// answers an error for (identityboot.go).
+func WithTestPeopleFault(fn func(repository string) error) Option {
+	return func(o *options) { o.peopleFault = fn }
+}

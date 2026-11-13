@@ -36,7 +36,7 @@ that is the easiest way in. From a terminal, [substratectl](substratectl.md) doe
 thing:
 
 ```bash
-substratectl register --server https://substrate.example --repository ada.example.com
+substratectl register --server https://substrate.example --identity ada.example.com
 ```
 
 It asks the substrate for a TOTP enrollment, prints the `otpauth://` URI and
@@ -44,7 +44,10 @@ the seed for your authenticator, and takes back one code along with the
 password you choose. Only that second call writes anything, so an abandoned
 registration leaves nothing behind. Registration ends logged in: `substratectl` stores
 the minted token as a context in `~/.config/substratectl/config.yaml`. The
-repository name IS its **authority**, the hostname every package you declare
+name is the one you sign in with, and the repository registration creates
+takes it too
+([0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
+The repository's name IS its **authority**, the hostname every package you declare
 kinds in lives under: any name you control (`ada.example.com`), or a bare
 label the substrate completes under its own host. The commands below spell it
 `$AUTHORITY`, so set it once: `export AUTHORITY=ada.example.com`.
@@ -52,7 +55,7 @@ label the substrate completes under its own host. The commands below spell it
 Unattended, bring your own seed and skip the prompts:
 
 ```bash
-substratectl register --repository ada.example.com --invite-code CODE \
+substratectl register --identity ada.example.com --invite-code CODE \
     --totp-secret BASE32SEED --totp-code 123456 --password-stdin < password
 ```
 
@@ -70,14 +73,15 @@ factor, and it mints a token record. `substratectl login` asks for the code
 only when the substrate answers that the account has one:
 
 ```bash
-substratectl login --server https://substrate.example --repository ada.example.com
+substratectl login --server https://substrate.example --identity ada.example.com
 ```
 
 ```http
 POST /login
-{"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
+{"identity": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
-→ 201 {"token": {…}, "secret": "substrate_tok_…", "repository": "ada.example.com"}
+→ 201 {"token": {…}, "secret": "substrate_tok_…", "repository": "ada.example.com",
+       "identity": "ada.example.com"}
 ```
 
 There is no session object beside it: a session **is** a token record, and

@@ -31,6 +31,7 @@ import (
 // nameKeys are the key columns the name may fill: where it is the name.
 var nameKeys = map[string]string{
 	"repositories.authority": "the name itself, unique on the substrate",
+	"identities.name":        "the person's sign-in name, unique on the substrate, which a registration takes from the repository's (decision 0274)",
 }
 
 func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
@@ -42,6 +43,11 @@ func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
 	// hold rows the registration did not.
 	e.MustJSON(http.MethodPut, "/api/v1/substrate.reamde.dev/core/contact/"+vocabulary.DerivedMintedID("keyed", "ada"),
 		map[string]any{"properties": map[string]any{"name": "Ada"}}, nil)
+	// A secret, which fills the sealed store: a person's sign-in is the
+	// server's (decision 0274), so the registration seals nothing there.
+	e.MustJSON(http.MethodPut, "/api/v1/substrate.reamde.dev/llm/provider/keyed", map[string]any{"properties": map[string]any{
+		"label": "keyed", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-keyed-value",
+	}}, nil)
 	// A blob, whose bytes are the one file the data root keeps per record.
 	status, raw, _ := e.DoRaw(http.MethodPut, "/api/v1/blobs?name=keyed.txt", []byte("keyed bytes"), map[string]string{"Content-Type": "text/plain"})
 	if status != http.StatusCreated {

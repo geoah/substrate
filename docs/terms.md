@@ -10,19 +10,20 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 **relationship** and **edge** → reference, **plural** → the kind's name, the
 third segment of its reference (decision 0033), as an address; a plural
 display form is the kind's declared `label` (decision 0117), **incoming** → the
-`referencing` filter arm (decision 0079), **username** → the repository name,
-which is its authority (decision 0074), **measure** (and `measures:`) → a
-unit's linear component, which a declaration names with `unit:` (decision
-0186), **tier** in the catalog's sense (an entry's `tier`) → who keeps the
-package, the entry's `keptBy` (decision 0258), **principal** → `token`, the
-token record a write stood behind (decision 0270), **tenant** and
-**identity** → nothing, there are none.
+`referencing` filter arm (decision 0079), **username** → the identity's name
+(decision 0274), **login credential** → the identity, **measure** (and
+`measures:`) → a unit's linear component, which a declaration names with
+`unit:` (decision 0186), **tier** in the catalog's sense (an entry's `tier`)
+→ who keeps the package, the entry's `keptBy` (decision 0258), **principal**
+→ `token`, the token record a write stood behind (decision 0270), **tenant**
+→ nothing, there are none.
 
 ## The shape of things
 
 | Term | What it is |
 | ---- | ---------- |
-| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store and sealed store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; a bare label is completed under the server's host), which is the repository's name, the name its user logs in with, and the home of every package its user declares kinds in. Its storage is keyed by its **repository id** instead. |
+| **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store and sealed store beside them. One user, one repository, no sharing. It owns one **authority**, any hostname its user controls, chosen at registration (`ada.example.com`; a bare label is completed under the server's host), which is the repository's name and the home of every package its user declares kinds in; registration names the user's identity after it unless told otherwise. Its storage is keyed by its **repository id** instead. |
+| **identity** | A person's sign-in, held by the server beside the repositories and in none of them: the name a login presents (DNS-style, like a repository's), the password and the second factor, sealed under a key of its own, and the repositories it may open. It holds no data. A sign-in names the identity, which picks the repository; a token names the identity it acts for. Its id is `idn-` and 26 characters ([0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). |
 | **repository id** | The key a repository's storage is under, minted at registration and never changed: `rnd-` and 26 characters (`rnd-0vrkvsgbs6bnz2sjy4196kccck`). It names the directory under the data root, fills the `repository` column of every table, and is the address the server gives out for a webhook. It holds no dot, so it is never an authority, and every door that names a repository takes either ([0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)). |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<package>/<name>`; every kind carries both. A kind declares the properties its records may carry. |

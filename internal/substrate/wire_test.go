@@ -155,8 +155,12 @@ var wireTypes = map[string]any{
 	// Login: the request the door decodes. The console's LoginRequest
 	// (auth.ts) mirrors it.
 	"LoginRequest": LoginRequest{},
-	// A credential change's answer: the repository the factors proved.
+	// A credential change's answer: the identity the factors proved.
 	"SessionCredential": SessionCredential{},
+	// The person behind a token (GET /identity), and one repository they may
+	// open, which a sign-in refused for want of one lists too.
+	"IdentityInfo":     IdentityInfo{},
+	"RepositoryChoice": RepositoryChoice{},
 	// The approval page (authorize.ts): the parked request it renders, the
 	// approval it posts and the redirect either answer carries.
 	"AuthorizationRequest":      AuthorizationRequest{},

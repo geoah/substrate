@@ -9,14 +9,18 @@ facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code gates who registers, where
 one is set. Registering
-creates a **repository** and its **user**: one name, one password and a TOTP
-second factor the user may skip and turn on later
-([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
-That name IS the repository's one **authority** (a bare label is
-completed under the server's host; the home of the kinds the user declares
-and the name they log in with,
-[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
-[0074](docs/decisions/0074-the-repository-name-is-the-login-name.md)).
+creates a **repository** and its **user**. The user is an **identity** the
+server holds beside the repositories, in a control-plane table and in no
+repository: the name they sign in with, one password and a TOTP second
+factor the user may skip and turn on later
+([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)),
+and the repositories it may open. A sign-in names the person, who picks the
+repository; a person has one today, named after them unless the
+registration named another
+([0274](docs/decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
+The repository's name IS its one **authority** (a bare label is
+completed under the server's host; the home of the kinds the user declares,
+[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
 Its storage is keyed by an **id** minted at registration (`rnd-…`): the
 directory on disk and in the archive, the `repository` column of every table
 and the webhook address the server gives out, so no table or path holds the
@@ -29,15 +33,16 @@ strictly sequential **changelog**, checksummed lines in Postgres's
 Postgres alone confirms a write, and a background pass copies each
 repository to its **archive** after the commits, a directory or an
 S3-compatible bucket that is the backup and what a restore reads
-([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)). Tokens and the login credential are themselves records, and a token
+([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)). Tokens are themselves
+records, each naming the identity it acts for, and a token
 has full access to its repository unless it is an app's: a token an app got
 through the authorization flow carries the **scopes** the owner approved and
 reaches only those kinds, unless the owner approved it `full` access, which
 is a token without scopes like a sign-in's
 ([0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
 [0204](docs/decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md),
-[apps](docs/apps.md)). There are no tenants, no identities, no user-managed
-keys, no sharing and no roles.
+[apps](docs/apps.md)). There are no tenants, no user-managed keys, no sharing
+and no roles.
 
 There is no written contract document. **The code is the contract**; the tests
 are what it promises. One will be written from the code, small, when someone
@@ -172,8 +177,8 @@ tree's database. The two must go together: an archive outliving a wiped
 database is restored at the next boot, and a database outliving its root has
 lost every blob's bytes. The dev tasks
 also mint `SUBSTRATE_CREDENTIAL_KEY` once into `.dev/credential.key` and
-every start reuses it; it wraps each repository's DEK, an operator command
-that writes sealed material (`user reset`) reads the same file, and
+every start reuses it; it wraps each repository's DEK and each identity's, an
+operator command that writes sealed material (`user reset`) reads the same file, and
 `dev:status` prints both paths. There is no keyless mode: a host without the
 key refuses to boot.
 
@@ -223,8 +228,8 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, repository, password, TOTP enroll (--skip-totp for none)
-bin/substratectl login --repository <yours>  # password, then a TOTP code if the account has one; mints a token record
+bin/substratectl register                    # invite code, your name (--repository names the repository otherwise), password, TOTP enroll (--skip-totp for none)
+bin/substratectl login --identity <yours>    # password, then a TOTP code if the account has one; mints a token record in your repository (--repository picks one of several)
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition
 bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
@@ -239,7 +244,7 @@ bin/substratectl export                      # the recovery export: the reposito
 bin/substratectl --dsn "$DATABASE_URL" repository list
 bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the changelog table, hold the archive's every line to it, check sealed rows and blobs
 bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the changelog table into a fresh fold
-bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
+bin/substratectl --dsn "$DATABASE_URL" user reset <name>   # needs SUBSTRATE_CREDENTIAL_KEY; the server may keep running
 ```
 
 **Registration seeds `core`, `llm`, `console` (record views,
@@ -326,11 +331,12 @@ starts with the package that ships it (`health/heart_rate`,
 prefix.
 
 Config is `~/.config/substratectl/config.yaml` (override with
-`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
-tokenId}` — no URL names the repository, because the token implies it; the
-token id so `logout` can revoke the very token it forgets, and the repository
-(its authority, written by `register` and by `login`) because a webhook URL is
-built from it. `SUBSTRATE_SERVER` /
+`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository,
+identity, token, tokenId}` — no URL names the repository, because the token
+implies it; the token id so `logout` can revoke the very token it forgets, the
+repository (its authority, written by `register` and by `login`) because a
+webhook URL is built from it, and the identity because `logout --everywhere`
+names the person. `SUBSTRATE_SERVER` /
 `SUBSTRATE_TOKEN` are canonical and override the file (`SS_*` is the one
 accepted alias); flags override both. A password is NEVER an argument — every
 prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.
@@ -373,7 +379,8 @@ words, and what each one replaced:
 | **sample**    | a package the repository keeps (`keptBy: repository`): a copy the user ADDS under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
-| **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents; its id (`rnd-…`) keys its storage | username |
+| **repository**| everything one user has; its name IS its authority, and a registration names its person after it unless told otherwise; its id (`rnd-…`) keys its storage | username |
+| **identity**  | a person's sign-in, held by the server beside the repositories: the name a login presents, the password and the second factor, and the repositories it may open; it holds no data | login credential |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 

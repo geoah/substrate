@@ -238,6 +238,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	}
 	t.Logf("%s: %d records compared, %d of them rewritten by the %d entries the boot appended after head %d",
 		fixture.Tag, len(want.Records), len(upgraded), keptAppended(upgraded), want.Head)
+	keptSignsIn(t, e, fixture)
 	return keptImport{e: e, fixture: fixture, got: got, upgraded: upgraded}
 }
 
@@ -321,6 +322,28 @@ func keptBuiltinVersions(t *testing.T, e *testenv.Env) map[string]string {
 		}
 	}
 	return out
+}
+
+// keptSignsIn holds the person of a release's repository to the sign-in they
+// had: a directory from before identities takes one at the boot, named after
+// the repository and holding the password the release kept (decision 0274),
+// and the token it mints reaches that repository and names that person.
+func keptSignsIn(t *testing.T, e *testenv.Env, fixture keptFixture) {
+	t.Helper()
+	status, raw := e.Login(fixture.Repository, fixture.Password, "")
+	if status != http.StatusCreated {
+		t.Fatalf("%s: the release's person does not sign in with its password: %d %s", fixture.Tag, status, raw)
+	}
+	var minted substrate.MintedToken
+	if err := json.Unmarshal(raw, &minted); err != nil {
+		t.Fatal(err)
+	}
+	if minted.Repository != fixture.Repository || minted.Identity != fixture.Repository {
+		t.Fatalf("%s: the sign-in reached %q as %q, want %q as its own name", fixture.Tag, minted.Repository, minted.Identity, fixture.Repository)
+	}
+	if status, raw, _ := e.DoRaw(http.MethodGet, "/api/v1/substrate.reamde.dev/core/credential/self", nil, nil); status == http.StatusOK {
+		t.Fatalf("%s: the credential record is still served after the boot: %d %s", fixture.Tag, status, raw)
+	}
 }
 
 // keptTouch is what the entries after the release's head did to one record,

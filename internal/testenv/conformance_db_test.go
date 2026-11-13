@@ -359,7 +359,7 @@ func conformanceCases() []codeCase {
 		code: "totp_required",
 		run: func(t *testing.T, e *testenv.Env) {
 			attempt, err := json.Marshal(substrate.LoginRequest{
-				Repository: e.Repository, Password: "correct-horse-battery-staple",
+				Identity: e.Repository, Password: "correct-horse-battery-staple",
 			})
 			if err != nil {
 				t.Fatalf("marshal the attempt: %v", err)
@@ -384,7 +384,7 @@ func conformanceCases() []codeCase {
 			// A username of this case's own, so the per-(IP, username) bucket
 			// is untouched by the registration Start already performed.
 			attempt, err := json.Marshal(map[string]any{
-				"repository": "conformance-pacing.example.com", "password": "wrong",
+				"identity": "conformance-pacing.example.com", "password": "wrong",
 			})
 			if err != nil {
 				t.Fatalf("marshal the attempt: %v", err)

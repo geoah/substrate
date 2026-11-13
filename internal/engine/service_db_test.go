@@ -53,9 +53,9 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, enginetest.Vocabulary...)
-	// The control plane is a TABLE now, not a repository: one row per user,
-	// carrying the username and the day they arrived and nothing else — the
-	// auth material is sealed rows behind the credential record.
+	// The control plane is a TABLE now, not a repository: one row per
+	// repository, carrying its name and the day it arrived and nothing
+	// else — the person's factors are their identity's, beside it.
 	repos, err := svc.Repositories(ctx)
 	if err != nil {
 		t.Fatal(err)

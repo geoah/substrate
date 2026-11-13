@@ -118,7 +118,12 @@ data:
   # version 60: `retention` on a kind and a package header, the `retention`
   # kind a repository overrides one with, and seven days for `alert`
   # (decision records 0282 and 0283).
-  version: 60
+  # version 61: `credential` left the tree, and a person's sign-in with it,
+  # for an identity the server holds (decision record 0274). Like `run`
+  # below, it is not retired: a repository registered before keeps the kind
+  # declared, emptied by its migration, and a fresh one never has it. A
+  # person's actor names their identity (`identity`).
+  version: 61
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

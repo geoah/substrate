@@ -309,13 +309,15 @@ func (e *Env) TOTPCode() string {
 	return code
 }
 
-// Login signs the user in with the password and a code, and returns the
-// status and body: a test asserting a refusal needs the refusal. On success
-// the Session's Token is replaced with the new secret.
-func (e *Env) Login(repository, password, code string) (int, []byte) {
+// Login signs the person in by the name they sign in with, the password and
+// a code, and returns the status and body: a test asserting a refusal needs
+// the refusal. On success the Session's Token is replaced with the new
+// secret. Registration names a person after their repository, so a test's
+// repository is its person's name too.
+func (e *Env) Login(identity, password, code string) (int, []byte) {
 	e.t.Helper()
 	status, raw, _ := e.DoRaw(http.MethodPost, "/login", marshal(e.t, substrate.LoginRequest{
-		Repository: repository, Password: password, TOTPCode: code, Label: "testenv-login",
+		Identity: identity, Password: password, TOTPCode: code, Label: "testenv-login",
 	}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
 	if status == http.StatusCreated {
 		var out substrate.MintedToken
@@ -347,7 +349,7 @@ func (e *Env) register(repository, password string) {
 	e.t.Helper()
 	var enrollment substrate.TOTPEnrollment
 	e.mustJSON(http.MethodPost, "/register/enroll", map[string]any{
-		"inviteCode": InviteCode, "repository": repository,
+		"inviteCode": InviteCode, "identity": repository,
 	}, &enrollment)
 
 	code, err := engine.TOTPCode(enrollment.Secret, engine.TOTPStep(e.now()))
@@ -356,7 +358,7 @@ func (e *Env) register(repository, password string) {
 	}
 	var out substrate.Registered
 	e.mustJSON(http.MethodPost, "/register", substrate.RegisterRequest{
-		InviteCode: InviteCode, Repository: repository, Password: password,
+		InviteCode: InviteCode, Identity: repository, Password: password,
 		TOTPSecret: enrollment.Secret, TOTPCode: code, Label: "testenv",
 	}, &out)
 	if out.Secret == "" {

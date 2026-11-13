@@ -669,8 +669,8 @@ func (ds *dataset) settleInterruptedJobs(ctx context.Context) error {
 			env["callable"] = callable
 		}
 		// The settlement is the job's: it acts for whom the line that wrote
-		// the tool row names.
-		jctx, err := ds.actingFor(ctx, typeMessage, f.id)
+		// the tool row names, unless they are no longer there.
+		jctx, err := ds.settling(ds.actingFor(ctx, typeMessage, f.id))
 		if err != nil {
 			return fmt.Errorf("settle interrupted job %s: %w", f.id, err)
 		}

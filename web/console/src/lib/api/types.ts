@@ -55,7 +55,9 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * outcome too large to keep, whose record the message names. `set_aside`
  * rides an `unavailable` (503): the server found the repository damaged when
  * it started and serves it again only after its operator repairs it and
- * restarts the server. */
+ * restarts the server. `repository_required` rides a `conflict` (409) on a
+ * sign-in: the person opens several repositories and named none, and the
+ * refusal lists them in `repositories` (decision 0274). */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -65,6 +67,7 @@ export type ErrorReason =
   | "first_attempt_running"
   | "first_attempt_landed"
   | "set_aside"
+  | "repository_required"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`
@@ -88,6 +91,9 @@ export interface ErrorPayload {
   problemDetails?: ProblemDetail[]
   head?: number
   generation?: string
+  /** The repositories a person may open, on a sign-in refused with
+   * `repository_required`: one of them goes in the request's `repository`. */
+  repositories?: RepositoryChoice[]
 }
 
 /** The body every refused request answers with (`substrate.ErrorEnvelope`):
@@ -106,6 +112,9 @@ export class ApiError extends Error {
   problemDetails: ProblemDetail[]
   retryAfter?: number
   reason?: ErrorReason
+  /** The repositories to pick from, on a sign-in refused with
+   * `repository_required`. */
+  repositories?: RepositoryChoice[]
 
   constructor(
     code: ErrorCode,
@@ -114,7 +123,8 @@ export class ApiError extends Error {
     problems: string[] = [],
     problemDetails: ProblemDetail[] = [],
     retryAfter?: number,
-    reason?: ErrorReason
+    reason?: ErrorReason,
+    repositories?: RepositoryChoice[]
   ) {
     super(message)
     this.name = "ApiError"
@@ -124,6 +134,7 @@ export class ApiError extends Error {
     this.problemDetails = problemDetails
     this.retryAfter = retryAfter
     this.reason = reason
+    this.repositories = repositories
   }
 }
 
@@ -1066,6 +1077,9 @@ export interface TokenInfo {
   /** The grant holds a scope a later decision retired (`declare:`), so the
    * token no longer authenticates and is only revoked. */
   retired?: boolean
+  /** The id of the identity of the person the token acts for (decision
+   * 0274); absent on a token no person stands behind. */
+  identity?: string
 }
 
 /** One add-on an approval left waiting for the provider it extends. */
@@ -1498,10 +1512,10 @@ export interface AuthorizationAnswer {
 }
 
 /** What a credential change answers (`POST /password`, `POST /totp`): the
- * repository the factors proved. No token is minted; the caller signs in
+ * identity the factors proved. No token is minted; the caller signs in
  * again. */
 export interface SessionCredential {
-  repository: string
+  identity: string
   /** How many tokens a sign out everywhere ended, where the request asked
    * for one (decision 0272). */
   signedOut?: number
@@ -1515,6 +1529,26 @@ export interface MintedToken {
   /** The repository the token opens, as the door resolved it: login and
    * registration echo it, a `POST /tokens` mint omits it. */
   repository?: string
+  /** The name of the person the token acts for, as the door resolved it:
+   * login and registration echo it (decision 0274). */
+  identity?: string
+}
+
+/** A person, as `GET /identity` reads the one a token acts for (decision
+ * 0274): the name they sign in with, whether their sign-in asks for a code,
+ * and the repositories they may open. It holds no data of its own. */
+export interface IdentityInfo {
+  id: string
+  name: string
+  secondFactor: boolean
+  repositories: RepositoryChoice[]
+}
+
+/** One repository a person may open: the id that keys its storage and the
+ * name that is its authority. */
+export interface RepositoryChoice {
+  id: string
+  name: string
 }
 
 /** What an OAuth start answers: the provider consent URL to open. */

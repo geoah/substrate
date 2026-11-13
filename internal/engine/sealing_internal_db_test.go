@@ -4,12 +4,12 @@ package engine
 // refuses a plain payload and one sealed under the host key, and a wrong or
 // damaged DEK wrap is reported by key id. Its addressing: a payload binds to
 // the row it was written at, and two secret properties on one record never
-// share a sealed row. And the credential material's compare-and-swap: a
+// share a sealed row. And an identity's factors' compare-and-swap: a
 // rotation is never lost and the TOTP replay step never moves backwards.
 //
 // INTERNAL tests throughout: they plant bytes in the sealed table, damage the
-// control-plane row, and drive verifyFactors / rewriteCredential /
-// consumeTOTPStep directly, so the window between reading material and
+// control-plane row, and drive verifyFactors / rewriteIdentityFactors /
+// spendIdentityCode directly, so the window between reading material and
 // writing it back is reproducible rather than left to goroutine timing.
 
 import (
@@ -97,18 +97,12 @@ func TestARepositoryRefusesAPlainOrHostKeyedPayload(t *testing.T) {
 	if got, err := ds.openSecretValue(ctx, ref); err == nil || !strings.Contains(err.Error(), "'p'") {
 		t.Fatalf("the dataset read a plain payload: %q, %v", got, err)
 	}
-	if got, err := ds.svc.openSealed(ctx, repoID, ref); err == nil || !strings.Contains(err.Error(), "'p'") {
-		t.Fatalf("the maintenance read opened a plain payload: %q, %v", got, err)
-	}
 
 	// A payload sealed under the host key is refused too, naming the key
 	// expected: the host key is never tried on a repository's payload.
 	plantSealed(t, ctx, ds, ref, hostSealed(t, ds, []byte("secret-a"), aad))
 	if got, err := ds.openSecretValue(ctx, ref); err == nil || !strings.Contains(err.Error(), "repository DEK") {
 		t.Fatalf("the dataset opened a host-key payload: %q, %v", got, err)
-	}
-	if got, err := ds.svc.openSealed(ctx, repoID, ref); err == nil || !strings.Contains(err.Error(), "repository DEK") {
-		t.Fatalf("the maintenance read opened a host-key payload: %q, %v", got, err)
 	}
 }
 
@@ -371,10 +365,10 @@ func snapshotSealed(t *testing.T, ctx context.Context, ds *dataset) map[string][
 }
 
 // Concurrent credential changes must not lose a rotation or move the TOTP
-// replay step backwards. The cases below drive verifyFactors /
-// rewriteCredential / consumeTOTPStep directly so the racy window between
-// "read the material" and "write the new material" is reproducible rather
-// than left to goroutine timing.
+// replay step backwards. The cases below drive the identity's factors
+// (identities.go: rewriteIdentityFactors, spendIdentityCode) directly so the
+// racy window between "read the material" and "write the new material" is
+// reproducible rather than left to goroutine timing.
 func openCredentialService(t *testing.T) (*service, Repository) {
 	t.Helper()
 	ctx := context.Background()
@@ -398,7 +392,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 		t.Fatalf("code: %v", err)
 	}
 	if _, err := s.Register(ctx, substrate.RegisterInput{
-		Repository: testdb.Repository(t), Password: "correct-horse-battery-staple",
+		Identity: testdb.Repository(t), Repository: testdb.Repository(t), Password: "correct-horse-battery-staple",
 		TOTPSecret: seed, TOTPCode: code, Label: "cli",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -418,21 +412,11 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, repo := openCredentialService(t)
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, _ := openCredentialService(t)
 
 	// Both writers read the SAME baseline — the racy window.
-	matA, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	matB, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	matA := identityMaterialOf(t, s)
+	matB := identityMaterialOf(t, s)
 
 	const newPassword = "a-fresh-passphrase-1"
 	hash, err := hashPassword(ctx, newPassword)
@@ -440,10 +424,8 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A (password change) commits first, keeping the seed.
-	if err := ds.rewriteCredential(ctx, credentialWrite{
-		repository: testdb.Repository(t), passwordHash: hash,
-		totp:              matA.totp,
-		expectPasswordRef: matA.passwordRef, expectTotpRef: matA.totpRef, casEnabled: true,
+	if _, err := s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: matA.identity, passwordHash: hash, totp: matA.totp, expect: matA.version, cas: true,
 	}); err != nil {
 		t.Fatalf("A (password change) failed: %v", err)
 	}
@@ -455,20 +437,16 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ds.rewriteCredential(ctx, credentialWrite{
-		repository: testdb.Repository(t), passwordHash: matB.passwordHash,
-		totp:              totpMaterial{Secret: newSeed, Step: 1},
-		expectPasswordRef: matB.passwordRef, expectTotpRef: matB.totpRef, casEnabled: true,
+	_, err = s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: matB.identity, passwordHash: matB.passwordHash,
+		totp: totpMaterial{Secret: newSeed, Step: 1}, expect: matB.version, cas: true,
 	})
 	if !errors.Is(err, errCredentialConflict) {
 		t.Fatalf("B's stale write = %v, want errCredentialConflict (A's rotation must not be silently lost)", err)
 	}
 
 	// A's change stands: the new password verifies and the seed is unchanged.
-	final, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	final := identityMaterialOf(t, s)
 	if !verifyPassword(ctx, final.passwordHash, newPassword) {
 		t.Fatal("A's password change did not survive B's stale write")
 	}
@@ -485,23 +463,16 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, repo := openCredentialService(t)
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, _ := openCredentialService(t)
 
 	// The password change reads the material at its (older) step.
-	mat, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mat := identityMaterialOf(t, s)
 	readStep := mat.totp.Step
 
 	// A concurrent login lands a much later code on the same seed, advancing the
 	// stored step under its own row lock.
 	advanced := readStep + 25
-	won, err := s.consumeTOTPStep(ctx, repo, mat.totpRef, advanced)
+	won, err := s.spendIdentityCode(ctx, mat.identity, mat.version, advanced)
 	if err != nil || !won {
 		t.Fatalf("simulate a concurrent login: won=%v err=%v", won, err)
 	}
@@ -512,18 +483,15 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.rewriteCredential(ctx, credentialWrite{
-		repository: testdb.Repository(t), passwordHash: hash,
-		totp:              mat.totp, // carries readStep, which is now stale
-		expectPasswordRef: mat.passwordRef, expectTotpRef: mat.totpRef, casEnabled: true,
+	if _, err := s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: mat.identity, passwordHash: hash,
+		totp:   mat.totp, // carries readStep, which is now stale
+		expect: mat.version, cas: true,
 	}); err != nil {
 		t.Fatalf("password change: %v", err)
 	}
 
-	final, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	final := identityMaterialOf(t, s)
 	if final.totp.Step < advanced {
 		t.Fatalf("the replay step regressed to %d, want >= %d (a spent code must not be re-enabled)",
 			final.totp.Step, advanced)
@@ -538,9 +506,9 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, repo := openCredentialService(t)
+	s, _ := openCredentialService(t)
 
-	seed := currentSeed(t, s, repo)
+	seed := identityMaterialOf(t, s).totp.Secret
 	base := TOTPStep(nowUTC())
 	codeA, err := TOTPCode(seed, base) // password change spends this
 	if err != nil {
@@ -566,13 +534,13 @@ func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		errA = s.ChangePassword(ctx, substrate.LoginInput{
-			Repository: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeA,
+			Identity: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeA,
 		}, newPassword)
 	}()
 	go func() {
 		defer wg.Done()
 		errB = s.ReenrollTOTP(ctx, substrate.LoginInput{
-			Repository: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeB,
+			Identity: testdb.Repository(t), Password: "correct-horse-battery-staple", TOTPCode: codeB,
 		}, newSeed, newSeedCode)
 	}()
 	wg.Wait()
@@ -581,10 +549,7 @@ func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 		t.Fatalf("exactly one change must win; got errA=%v errB=%v", errA, errB)
 	}
 
-	final, err := s.authMaterialOf(ctx, repo.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	final := identityMaterialOf(t, s)
 	passwordIsNew := verifyPassword(ctx, final.passwordHash, newPassword)
 	seedIsNew := final.totp.Secret == newSeed
 	switch {
@@ -599,12 +564,54 @@ func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 	}
 }
 
-// currentSeed reads the repository's current TOTP seed off the sealed material.
-func currentSeed(t *testing.T, s *service, repo Repository) string {
+// identityMaterialOf reads the test's identity's factors as the factor check
+// does: openCredentialService registers it under the repository's name.
+func identityMaterialOf(t *testing.T, s *service) authMaterial {
 	t.Helper()
-	mat, err := s.authMaterialOf(context.Background(), repo.ID)
+	row, err := s.identityByName(context.Background(), s.maint, testdb.Repository(t))
 	if err != nil {
-		t.Fatalf("read material: %v", err)
+		t.Fatalf("read the identity: %v", err)
 	}
-	return mat.totp.Secret
+	mat, err := s.identityMaterial(row)
+	if err != nil {
+		t.Fatalf("open the identity's factors: %v", err)
+	}
+	return mat
+}
+
+// A request holds to the factors it proved: a reset, or any change of the
+// factors, between the proof and the spend refuses it, with or without a
+// code, and the new seed's step is left where the change put it.
+func TestARequestProvedBeforeTheFactorsChangedIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := openCredentialService(t)
+	proved := identityMaterialOf(t, s)
+
+	hash, err := hashPassword(ctx, "an-operator-issued-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, err := NewTOTPSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: proved.identity, passwordHash: hash, totp: totpMaterial{Secret: seed},
+	}); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	for _, step := range []int64{-1, proved.totp.Step + 1} {
+		won, err := s.spendIdentityCode(ctx, proved.identity, proved.version, step)
+		if err != nil || won {
+			t.Fatalf("a request proved before the reset, at step %d: won=%v err=%v, want refused", step, won, err)
+		}
+	}
+	after := identityMaterialOf(t, s)
+	if after.totp.Secret != seed || after.totp.Step != 0 {
+		t.Fatalf("the refused requests moved the new seed: %+v", after.totp)
+	}
+	if won, err := s.spendIdentityCode(ctx, after.identity, after.version, -1); err != nil || !won {
+		t.Fatalf("a request proved after the reset: won=%v err=%v, want it to stand", won, err)
+	}
 }

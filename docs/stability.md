@@ -31,10 +31,11 @@ One example of each:
   rename `properties` or `cursor`, or change what a `filter` that works
   today selects.
 - **`beta`.** The `auth` feature is beta: registering, signing in and
-  minting tokens. Its entry in discovery carries a notice today, "Before
-  1.0, sign-in names a person, who then picks a repository." That is the
-  form an announcement takes: the release before the break says so in the
-  feature's `notice` and in `CHANGELOG.md`.
+  minting tokens. A break of it is announced the way any is: the release
+  before says so in the feature's `notice` and in `CHANGELOG.md`, as its
+  entry said "Before 1.0, sign-in names a person, who then picks a
+  repository." until revision 3 made it so
+  ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
 - **`experimental`.** The `agents` feature and the
   `substrate.reamde.dev/llm` package are experimental: the chat and call
   routes, and the thread and message kinds a chat is stored in. The events a
@@ -101,8 +102,7 @@ a token:
 
 ```json
 {"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]}
-{"name": "auth", "stability": "beta", "revision": 1, "surfaces": ["rest"],
- "notice": "Before 1.0, sign-in names a person, who then picks a repository."}
+{"name": "auth", "stability": "beta", "revision": 3, "surfaces": ["rest"]}
 ```
 
 - **`stability`** is the feature's label.

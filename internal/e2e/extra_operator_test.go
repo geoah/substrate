@@ -1,10 +1,10 @@
 package e2e
 
 // The 900 block: the operator hat and the server's own restart. They run
-// last because DUR-01 and OPR-03 stop the server under test and start it
-// again, through the SUBSTRATE_E2E_STOP and SUBSTRATE_E2E_START hooks, and
-// OPR-03 re-keys the run's own credential: the report prints the password
-// and, on the enforced door, the seed the reset issued.
+// last because DUR-01 stops the server under test and starts it again,
+// through the SUBSTRATE_E2E_STOP and SUBSTRATE_E2E_START hooks, and OPR-03
+// re-keys the run's own sign-in: the report prints the password and, on the
+// enforced door, the seed the reset issued.
 
 import (
 	"encoding/json"
@@ -27,10 +27,11 @@ func init() {
 			"history's head and generation unmoved, and the table head and the segment files' head both "+
 			"at the same seq and checksum; the next write lands at head+1.",
 		xoCaseRestart)
-	registerCase(920, "OPR-03", "`user reset` re-keys the credential and leaves the tokens",
-		"`user reset` is refused beside the running server, which holds the writer lock; with the server "+
-			"stopped it writes a new password and TOTP seed, after which the old password is a 401, the new "+
-			"one logs in, and the tokens minted before the reset still authenticate.",
+	registerCase(920, "OPR-03", "`user reset` re-keys the sign-in and leaves the tokens",
+		"`user reset` runs beside the running server, because a person's sign-in is no repository's "+
+			"history (decision 0274): it writes a new password and TOTP seed, after which the old password "+
+			"is a 401, the new one logs in at once, and the tokens minted before the reset still "+
+			"authenticate.",
 		xoCaseUserReset)
 }
 
@@ -208,29 +209,18 @@ func xoCaseRestart(c *C) {
 
 func xoCaseUserReset(c *C) {
 	r := c.r
-	if _, _, ok := serverHooks(); !ok {
-		c.skipf("%s and %s are not both set, and `user reset` needs the server stopped", envStop, envStart)
-		return
-	}
 	ctl, dsn := ctlEnv()
 	if ctl == "" || dsn == "" || os.Getenv(envCredKey) == "" {
-		c.skipf("%s, %s and %s are not all set, and `user reset` writes sealed material under the credential key", envCtl, envDSN, envCredKey)
+		c.skipf("%s, %s and %s are not all set, and `user reset` seals the new factors under the credential key", envCtl, envDSN, envCredKey)
 		return
 	}
 	_, totp := xaDoor(c)
 	newPassword := "e2e-reset-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	// Beside the running server the reset is refused: it appends to the
-	// changelog, and the server holds the repository's writer lock.
+	// Beside the running server: the reset writes the person's sign-in,
+	// which no repository's history holds, so it takes no writer lock.
 	out, err := ctlRunInput(ctl, dsn, newPassword+"\n", "user", "reset", r.authority, "--password-stdin")
-	c.requiref(err != nil && strings.Contains(out, "need it stopped first"),
-		"user reset beside the running server: err=%v, want the writer refusal: %s", err, xoRedact(out))
-	c.stepf("`user reset %s` beside the running server was refused: the server holds the writer lock", r.authority)
-
-	defer c.ensureServer()
-	c.stopServer()
-	out, err = ctlRunInput(ctl, dsn, newPassword+"\n", "user", "reset", r.authority, "--password-stdin")
-	c.requiref(err == nil, "user reset with the server stopped: %v: %s", err, xoRedact(out))
+	c.requiref(err == nil, "user reset beside the running server: %v: %s", err, xoRedact(out))
 	seed := ""
 	for _, line := range strings.Split(out, "\n") {
 		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "secret:"); ok {
@@ -238,7 +228,7 @@ func xoCaseUserReset(c *C) {
 		}
 	}
 	c.requiref(seed != "", "the reset printed no TOTP seed: %s", xoRedact(out))
-	c.requiref(strings.Contains(out, "the user's tokens are untouched"), "the reset does not say what it did to the tokens: %s", xoRedact(out))
+	c.requiref(strings.Contains(out, "the person's tokens are untouched"), "the reset does not say what it did to the tokens: %s", xoRedact(out))
 	// The credentials move the moment the reset lands, so the report prints
 	// the ones that work even if the start below fails.
 	oldPassword, oldSeed, oldLast := r.password, r.totpSecret, r.lastStep
@@ -247,12 +237,11 @@ func xoCaseUserReset(c *C) {
 	if totp {
 		r.rep.TOTPSecret = seed
 	}
-	c.stepf("with the server stopped, `user reset %s --password-stdin` wrote a new password and issued a new TOTP seed", r.authority)
-	c.startServer()
+	c.stepf("beside the running server, `user reset %s --password-stdin` wrote a new password and issued a new TOTP seed", r.authority)
 
 	// On the enforced door each refused attempt carries a live code from the
 	// seed that is NOT under test, so exactly one factor is wrong at a time.
-	login := map[string]any{"repository": r.repository, "password": oldPassword, "label": "xo-reset"}
+	login := map[string]any{"identity": r.repository, "password": oldPassword, "label": "xo-reset"}
 	var step int64
 	if totp {
 		step = c.totpStepAfter(r.lastStep)

@@ -40,9 +40,10 @@ const (
 	// kindRepository is the repository's own self-description: one record, id
 	// `self`, saying which repository this is.
 	kindRepository = "substrate.reamde.dev/core/repository"
-	// kindToken and kindCredential (auth.go) are the two AUTH kinds: the
-	// generic surface refuses writes to both (forbidSystemKind) and only the
-	// auth paths write them. Revoking a token is the one exception — an
+	// kindToken (auth.go) is the AUTH kind, as kindCredential
+	// (identityboot.go) was until decision 0274: the generic surface refuses
+	// writes to both (forbidSystemKind) and only the auth paths write a
+	// token. Revoking a token is the one exception — an
 	// ordinary record delete, so every revoke path is the same write. It is
 	// the owner's alone: softDeleteIf refuses it below the owner tier.
 	kindToken       = "substrate.reamde.dev/core/token"
@@ -80,6 +81,17 @@ type dataset struct {
 	// scope is the repository the pool above is pinned to. It also keys the
 	// per-repository advisory locks (identity.go lockKey).
 	scope Scope
+	// people are the identities that may open the repository, read off the
+	// control plane at open (identities.go) and derived again from the
+	// person actors (people.go settlePeople). Open-time only.
+	people []string
+	// beforeIdentities is whether the repository was from before identities
+	// when this open began (people.go fromBeforeIdentities). Open-time only.
+	beforeIdentities bool
+	// firstPerson is the identity the first person's actor names, a string,
+	// "" while it names none: what a person's write is told apart by
+	// (personActorFor).
+	firstPerson atomic.Value
 	// dek is the repository's data-encryption key, unwrapped at open: every
 	// sealed-store payload seals under it. The control plane holds it
 	// wrapped under the host credential key, and nothing else holds it.
@@ -750,6 +762,8 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := ds.unsettledErr(); err != nil {
 		return err
 	}
+	// A person's write links their own actor (people.go).
+	actor = ds.personActorFor(ctx, actor)
 	// The write gate before the pool connection (writegate.go): a background
 	// writer waits there holding nothing while a person's write is on its way
 	// to the changelog lock, and one background writer at a time goes on to

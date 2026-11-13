@@ -98,7 +98,8 @@ export function envelopeError(
     err?.problems ?? [],
     err?.problemDetails ?? [],
     retryAfter,
-    err?.reason
+    err?.reason,
+    err?.repositories
   )
 }
 

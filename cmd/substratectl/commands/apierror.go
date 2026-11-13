@@ -32,8 +32,11 @@ type apiError struct {
 	// re-lists from and resumes at (docs/changelog.md, frames and the horizon).
 	Head       *int64
 	Generation string
-	Method     string
-	Path       string
+	// Repositories ride a sign-in refused with `repository_required`: the
+	// repositories the person may open, one of which goes in `--repository`.
+	Repositories []substrate.RepositoryChoice
+	Method       string
+	Path         string
 	// Hint, when set, replaces the status-derived next action.
 	Hint string
 	// Headline, when set, replaces the code-derived headline: `validate`

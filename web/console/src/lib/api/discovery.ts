@@ -55,10 +55,32 @@ interface DiscoveryDoc {
 
 const DISCOVERY_PATH = "/.well-known/substrate/server.json"
 
+// The last document this tab read, whichever reader asked: what the door's
+// shape follows (doorNamesAPerson), without a request of its own.
+let lastDoc: DiscoveryDoc | null = null
+
 export function fetchDiscoveryDoc(): Promise<DiscoveryDoc> {
   return request<DiscoveryDoc>("GET", DISCOVERY_PATH, undefined, {
     anonymous: true,
+  }).then((doc) => {
+    lastDoc = doc
+    return doc
   })
+}
+
+/** The `auth` revision whose door names a person (decision 0274): a sign-in,
+ * a registration and every credential change send `identity`, the name the
+ * person signs in with, and a sign-in may name the repository it opens. */
+export const PERSON_DOOR_REVISION = 3
+
+/** Whether the server's door names a person, by the last document this tab
+ * read. A console bundled in an app meets an older server at its own sign-in
+ * page, which the app keeps for a server below what it requires: that door
+ * takes the sign-in name as `repository` and refuses `identity`, and every
+ * person there signs in with their repository's name. Before any document
+ * answered, the console speaks the door of the server it was built with. */
+export function doorNamesAPerson(): boolean {
+  return lastDoc === null || hasFeature(lastDoc, "auth", PERSON_DOOR_REVISION)
 }
 
 /** The whole document, for a page that shows what the server says about
@@ -143,6 +165,7 @@ export function fetchDoorFeature(name: string): Promise<boolean> {
  * use it to keep one case's answer out of the next. */
 export function resetAuthPolicy(): void {
   pending = null
+  lastDoc = null
 }
 
 /** The policy as a hook. It renders STRICT until the answer lands, so a slow

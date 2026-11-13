@@ -26,7 +26,7 @@
   {
     "name": "errors",
     "stability": "stable",
-    "revision": 3,
+    "revision": 4,
     "routes": []
   },
   {
@@ -91,9 +91,10 @@
   {
     "name": "auth",
     "stability": "beta",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "DELETE /tokens/{id}",
+      "GET /identity",
       "GET /tokens",
       "POST /login",
       "POST /password",

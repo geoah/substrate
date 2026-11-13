@@ -230,7 +230,7 @@ func registerUser(t *testing.T, svc substrate.Service, repository string) (*auth
 	}
 	u := &authUser{repository: repository, password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Repository: repository, Password: u.password,
+		Identity: repository, Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
 	})
 	if err != nil {

@@ -46,6 +46,7 @@ func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.To
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
 	ctx = substrate.WithPrincipal(ctx, tok.ID)
 	ctx = substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
+	ctx = substrate.WithIdentity(ctx, tok.Identity)
 	return context.WithValue(ctx, ctxKeyActor, actor)
 }
 

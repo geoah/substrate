@@ -191,7 +191,7 @@ func xaCaseInviteCode(c *C) {
 
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register/enroll",
-		map[string]any{"inviteCode": wrongInvite, "repository": name}, nil)
+		map[string]any{"inviteCode": wrongInvite, "identity": name}, nil)
 	c.requiref(status == http.StatusUnauthorized, "`/register/enroll` with a wrong invite code answered %d, want 401%s", status, redacted(status, raw))
 	enrollErr := xaErrorOf(c, raw)
 	c.requiref(enrollErr.Error.Code == "auth", "the enroll refusal's code is %q, want `auth`", enrollErr.Error.Code)
@@ -200,7 +200,7 @@ func xaCaseInviteCode(c *C) {
 
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": wrongInvite, "repository": name, "password": c.r.password}, nil)
+		map[string]any{"inviteCode": wrongInvite, "identity": name, "password": c.r.password}, nil)
 	c.requiref(status == http.StatusUnauthorized, "`/register` with a wrong invite code answered %d, want 401%s", status, redacted(status, raw))
 	registerErr := xaErrorOf(c, raw)
 	c.requiref(registerErr.Error.Code == "auth", "the register refusal's code is %q, want `auth`", registerErr.Error.Code)
@@ -268,7 +268,7 @@ func xaCaseIsolation(c *C) {
 		Secret string `json:"secret"`
 	}
 	status, raw := c.doAs("", http.MethodPost, "/register",
-		map[string]any{"inviteCode": r.invite, "repository": second, "password": r.password, "skipTotp": true}, &reg)
+		map[string]any{"inviteCode": r.invite, "identity": second, "password": r.password, "skipTotp": true}, &reg)
 	c.requiref(status == http.StatusCreated, "registering a second user answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(reg.Secret != "", "the second registration returned no token secret")
 	xaSecond.username, xaSecond.token = second, reg.Secret
@@ -371,7 +371,7 @@ func xaCaseTOTPRegistration(c *C) {
 	var enr xaEnrollment
 	c.paceAuth()
 	status, raw := c.doAs("", http.MethodPost, "/register/enroll",
-		map[string]any{"inviteCode": r.invite, "repository": name}, &enr)
+		map[string]any{"inviteCode": r.invite, "identity": name}, &enr)
 	c.requiref(status == http.StatusOK, "`/register/enroll` answered %d, want 200%s", status, redacted(status, raw))
 	c.requiref(enr.TOTPSecret != "" && strings.HasPrefix(enr.URI, "otpauth://totp/"),
 		"the enrollment carries no seed or no `otpauth://totp/` URI")
@@ -383,7 +383,7 @@ func xaCaseTOTPRegistration(c *C) {
 	c.requiref(err == nil, "minting a second seed: %v", err)
 	step := c.totpStepAfter(0)
 	reg := map[string]any{
-		"inviteCode": r.invite, "repository": name, "password": r.password,
+		"inviteCode": r.invite, "identity": name, "password": r.password,
 		"totpSecret": enr.TOTPSecret, "totpCode": c.totpCode(other, step),
 	}
 	c.paceAuth()
@@ -406,7 +406,7 @@ func xaCaseTOTPRegistration(c *C) {
 
 	// The step that committed the registration is stored as consumed, so the
 	// same code cannot also log in.
-	login := map[string]any{"repository": name, "password": r.password, "totpCode": reg["totpCode"], "label": "xa-totp"}
+	login := map[string]any{"identity": name, "password": r.password, "totpCode": reg["totpCode"], "label": "xa-totp"}
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
 	xaRequireRefusal(c, "`/login` with the code that registered", status, raw, http.StatusUnauthorized, "auth")
@@ -436,7 +436,7 @@ func xaCaseTOTPSwap(c *C) {
 	// The password-factor rule: a bearer token is not evidence for a factor
 	// change, whoever's token it is.
 	c.paceAuth()
-	status, raw := c.doAs(r.token, http.MethodPost, "/totp/enroll", map[string]any{"repository": u.repository}, nil)
+	status, raw := c.doAs(r.token, http.MethodPost, "/totp/enroll", map[string]any{"identity": u.repository}, nil)
 	e := xaRequireRefusal(c, "`/totp/enroll` with a bearer and no factors", status, raw, http.StatusForbidden, "forbidden")
 	c.requiref(strings.Contains(e.Error.Message, "a bearer token is not accepted"),
 		"the 403 does not say a bearer is not accepted: %s", e.Error.Message)
@@ -446,7 +446,7 @@ func xaCaseTOTPSwap(c *C) {
 	var cand xaEnrollment
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/totp/enroll", map[string]any{
-		"repository": u.repository, "password": r.password, "totpCode": c.totpCode(u.secret, enrollStep),
+		"identity": u.repository, "password": r.password, "totpCode": c.totpCode(u.secret, enrollStep),
 	}, &cand)
 	c.requiref(status == http.StatusOK, "`/totp/enroll` with both factors answered %d, want 200%s", status, redacted(status, raw))
 	u.lastStep = enrollStep
@@ -458,7 +458,7 @@ func xaCaseTOTPSwap(c *C) {
 	// holds.
 	swapStep := c.totpStepAfter(u.lastStep)
 	swap := map[string]any{
-		"repository": u.repository, "password": r.password,
+		"identity": u.repository, "password": r.password,
 		"totpCode":      c.totpCode(u.secret, swapStep),
 		"newTotpSecret": cand.TOTPSecret,
 		"newTotpCode":   c.totpCode(u.secret, c.totpStepAfter(0)),
@@ -484,7 +484,7 @@ func xaCaseTOTPSwap(c *C) {
 	// A code the OLD seed would have accepted (a step after the last one it
 	// spent) is refused now, so the refusal is the swap's and not the step's.
 	stale := c.totpStepAfter(oldLast)
-	login := map[string]any{"repository": u.repository, "password": r.password, "totpCode": c.totpCode(oldSecret, stale), "label": "xa-totp-swap"}
+	login := map[string]any{"identity": u.repository, "password": r.password, "totpCode": c.totpCode(oldSecret, stale), "label": "xa-totp-swap"}
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
 	xaRequireRefusal(c, "`/login` with a fresh code from the old seed", status, raw, http.StatusUnauthorized, "auth")
@@ -512,13 +512,13 @@ func xaCasePasswordChange(c *C) {
 	// refused as a whole idea, 403 and not 401.
 	c.paceAuth()
 	status, raw := c.doAs(r.token, http.MethodPost, "/password",
-		map[string]any{"repository": r.repository, "newPassword": newPassword}, nil)
+		map[string]any{"identity": r.repository, "newPassword": newPassword}, nil)
 	e := xaRequireRefusal(c, "`/password` with a bearer and no factors", status, raw, http.StatusForbidden, "forbidden")
 	c.requiref(strings.Contains(e.Error.Message, "a bearer token is not accepted"),
 		"the 403 does not say a bearer is not accepted: %s", e.Error.Message)
 	c.stepf("`/password` with the run's bearer token and no factors was refused 403 `forbidden`")
 
-	body := map[string]any{"repository": r.repository, "password": r.password, "newPassword": newPassword}
+	body := map[string]any{"identity": r.repository, "password": r.password, "newPassword": newPassword}
 	if totp {
 		body["totpCode"] = r.nextTOTPCode(c)
 	}
@@ -536,7 +536,7 @@ func xaCasePasswordChange(c *C) {
 	// On the enforced door the old-password attempt carries a live, unspent
 	// code, so the password is the only thing wrong with it; a refused login
 	// spends nothing, and the same code then carries the new password in.
-	login := map[string]any{"repository": r.repository, "password": oldPassword, "label": "xa-password"}
+	login := map[string]any{"identity": r.repository, "password": oldPassword, "label": "xa-password"}
 	var step int64
 	if totp {
 		step = c.totpStepAfter(r.lastStep)

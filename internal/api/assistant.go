@@ -19,9 +19,9 @@ import (
 // substrate.Dataset does not compile here until somebody decides what an
 // assistant may do with it.
 //
-// It reads what the owner reads, the token and credential records among
-// them, whose secrets are digests and secret-typed values that read back
-// redacted for every token. What it takes away:
+// It reads what the owner reads, the token records among them, whose
+// secrets are digests and secret-typed values that read back redacted for
+// every token. What it takes away:
 //   - writing the auth material: no put, patch, delete or merge of the four
 //     vocabulary.AuthKinds, and no accept of a change request whose target
 //     is one, which would write it under the owner's hand;
