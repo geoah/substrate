@@ -786,6 +786,9 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 // 51), which yields to any manager outside the machine tier — that is
 // recompute restraining itself, not this path guarding anyone.
 func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
+	if err := t.refuseInstalledPolicyWrite(sp.ty.Identity, sp.op); err != nil {
+		return nil, err
+	}
 	create := sp.existing == nil
 	row := sp.existing
 	// Everything this write appends to the changelog from here on — its own
@@ -1727,6 +1730,23 @@ func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
 // it (decision 0194).
 func (t *txn) ownerHand() bool {
 	return t.tier == substrate.TierOwner && !t.scoped
+}
+
+// refuseInstalledPolicyWrite refuses a policy write by installed code, by
+// whatever path it reaches the record: a function's effect, a function it
+// calls, an agent's write or function tool, a provider's sync, and a change
+// request any of them accepts, whose materialization writes in the same
+// transaction. Every one of them runs at the bundle tier (setEffectEmit, sync),
+// and every write lands through apply or softDeleteIf, so this is the one
+// place they all pass. A policy is a gate: one installed code could write is
+// one it could open. The owner accepting a request installed code proposed is
+// the owner's hand, and lands.
+func (t *txn) refuseInstalledPolicyWrite(kind string, op substrate.Op) error {
+	if kind != vocabulary.KindRecordPatchPolicy || t.tier != substrate.TierBundle {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is the owner's hand alone — installed code never writes the door's own rules, by any path (%s by %s)",
+		substrate.ErrForbidden, kind, op, t.actor)
 }
 
 // decidesOn reports whether this write is an app's decision on the change
@@ -3043,6 +3063,9 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	}
 	ty, err := t.resolveType(row.Kind)
 	if err != nil {
+		return nil, err
+	}
+	if err := t.refuseInstalledPolicyWrite(ty.Identity, substrate.OpDelete); err != nil {
 		return nil, err
 	}
 	// Revoking a token is a delete; the projection prune deletes internally.
