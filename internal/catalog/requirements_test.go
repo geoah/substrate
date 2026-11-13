@@ -91,11 +91,11 @@ func TestRequirementsNamesWhatTheCatalogCannotInstall(t *testing.T) {
 	for _, u := range unmet {
 		shipped := "nothing"
 		if u.Bundle != nil {
-			shipped = u.Bundle.Tier
+			shipped = u.Bundle.KeptBy
 		}
 		got = append(got, fmt.Sprintf("%s@%d:%s", u.ID, u.Floor, shipped))
 	}
-	want := gone + "@1:nothing," + absent + "@1:nothing," + notes + "@1:" + substrate.TierSample
+	want := gone + "@1:nothing," + absent + "@1:nothing," + notes + "@1:" + substrate.KeptByRepository
 	if strings.Join(got, ",") != want {
 		t.Fatalf("unmet = %s, want %s", strings.Join(got, ","), want)
 	}

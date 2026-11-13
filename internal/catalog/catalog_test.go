@@ -134,38 +134,38 @@ func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	}
 }
 
-// The TIER is the tree a closure came from, never a guess from its authority
-// (decision record 0048): kinds/ is published, samples/ is a sample. It
-// decides which door a bundle takes, so a wrong answer here sends a user to
-// install what they should own.
-func TestCatalogTierIsTheTreeTheClosureCameFrom(t *testing.T) {
+// Who KEEPS a closure is the tree it came from, never a guess from its
+// authority (decision record 0048): kinds/ is kept by its publisher, samples/
+// by the repository. It decides where adding a bundle lands it, so a wrong
+// answer here hands a user a publisher's package they should own.
+func TestCatalogKeeperIsTheTreeTheClosureCameFrom(t *testing.T) {
 	c := realCatalog(t)
 	cases := map[string]string{
-		"providers.substrate.reamde.dev/google":    substrate.TierPublished,
-		"providers.substrate.reamde.dev/linear":    substrate.TierPublished,
-		"substrate.reamde.dev/clinical":            substrate.TierPublished,
-		"samples.substrate.reamde.dev/readinglist": substrate.TierSample,
-		"samples.substrate.reamde.dev/tasks":       substrate.TierSample,
+		"providers.substrate.reamde.dev/google":    substrate.KeptByPublisher,
+		"providers.substrate.reamde.dev/linear":    substrate.KeptByPublisher,
+		"substrate.reamde.dev/clinical":            substrate.KeptByPublisher,
+		"samples.substrate.reamde.dev/readinglist": substrate.KeptByRepository,
+		"samples.substrate.reamde.dev/tasks":       substrate.KeptByRepository,
 	}
 	for id, want := range cases {
 		b, ok := c.ByID(id)
 		if !ok {
 			t.Fatalf("bundle %q not in catalog", id)
 		}
-		if b.Tier != want {
-			t.Errorf("%s tier = %q, want %q", id, b.Tier, want)
+		if b.KeptBy != want {
+			t.Errorf("%s keptBy = %q, want %q", id, b.KeptBy, want)
 		}
 	}
-	// Every shipped bundle carries one of the two: an entry with an empty
-	// tier is a closure no door serves.
+	// Every shipped bundle carries one of the two: an entry nobody keeps is a
+	// closure adding could not land.
 	for _, b := range c.Bundles() {
-		if b.Tier != substrate.TierPublished && b.Tier != substrate.TierSample {
-			t.Errorf("%s tier = %q, want published or sample", b.ID, b.Tier)
+		if b.KeptBy != substrate.KeptByPublisher && b.KeptBy != substrate.KeptByRepository {
+			t.Errorf("%s keptBy = %q, want publisher or repository", b.ID, b.KeptBy)
 		}
 	}
 }
 
-// What a package is FOR is read from its declarations, apart from its tier
+// What a package is FOR is read from its declarations, apart from its keeper
 // (decision record 0238): the console lists a provider on Providers, an
 // add-on with the provider it extends, and every other published package
 // with the collections. A catalogue listed as a provider is the bug this
@@ -202,7 +202,7 @@ func TestCatalogSaysWhatEachPackageIsFor(t *testing.T) {
 		}
 	}
 	for _, b := range c.Bundles() {
-		if b.Tier == substrate.TierSample && (b.Provider || b.AddonFor != "") {
+		if b.KeptBy == substrate.KeptByRepository && (b.Provider || b.AddonFor != "") {
 			t.Errorf("sample %s reads as a provider or an add-on", b.ID)
 		}
 	}
@@ -217,8 +217,8 @@ func TestPublishedPackageSaysWhatItIsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plain.Provider || plain.Tier != substrate.TierPublished {
-		t.Errorf("a closure with no account: provider %v, tier %q", plain.Provider, plain.Tier)
+	if plain.Provider || plain.KeptBy != substrate.KeptByPublisher {
+		t.Errorf("a closure with no account: provider %v, keptBy %q", plain.Provider, plain.KeptBy)
 	}
 	withAccount := strings.Replace(publishedClosure("example.com/notes", 1), "installs: [example.com/notes/item]", "installs: [example.com/notes/item, example.com/notes/account]", 1) + account
 	connected, err := ParseClosure([]byte(withAccount), "example.com/notes", 1)

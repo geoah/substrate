@@ -262,7 +262,7 @@ async function seedObservations(page) {
     }
     const failed = await send(
       "POST",
-      `/api/v1/catalog/${encodeURIComponent("substrate.reamde.dev/health")}/install`
+      `/api/v1/catalog/${encodeURIComponent("substrate.reamde.dev/health")}/add`
     )
     if (failed) return failed
     const kind = "substrate.reamde.dev/observations/observation"

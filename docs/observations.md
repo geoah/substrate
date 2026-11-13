@@ -299,10 +299,10 @@ because what the read drops reveals what the links hold.
 ## Writing an observation by hand
 
 The `observation` kind is seeded, and the `health/body_mass` metric ships
-with the `health` catalogue, so install that first:
+with the `health` catalogue, so add that first:
 
 ```bash
-bin/substratectl install substrate.reamde.dev/health
+bin/substratectl add substrate.reamde.dev/health
 ```
 
 A weighing entered by hand:
@@ -488,15 +488,15 @@ a rewrite that changes no point writes nothing.
 Three first-party packages under `substrate.reamde.dev` each ship one
 domain's shared metrics, kinds, units and functions
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-They are not seeded: the catalog serves them, and a repository installs one
-when it wants it, through the door a provider takes
-(`bin/substratectl install substrate.reamde.dev/labs`, or
-`POST /api/v1/catalog/{id}/install`). Like a provider, each lands under the
+They are not seeded: the catalog serves them, and a repository adds one
+when it wants it, through the route a provider takes
+(`bin/substratectl add substrate.reamde.dev/labs`, or
+`POST /api/v1/catalog/{id}/add`). Like a provider, each lands under the
 authority that publishes it, is published (you write its records, never its
 declarations) and upgrades from the catalog
-([the two doors](bundles.md#the-two-doors)). An install first installs every
+([adding a package](bundles.md#adding-a-package)). Adding one first adds every
 published package the bundle requires and the repository lacks, so
-installing `labs`, or the Apple Health or WHOOP provider, installs `health`.
+adding `labs`, or the Apple Health or WHOOP provider, adds `health`.
 
 | Package | Ships |
 | --- | --- |
@@ -769,7 +769,7 @@ provider sent it, which keeps a later re-read of the provider honest.
 
 Before [decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)
 these kinds shipped as the samples `observations`, `health`, `healthapple`
-and `healthwhoop`. A repository that imported them holds its rows under its
+and `healthwhoop`. A repository that copied them holds its rows under its
 own authority (`ada.example.com/observations/observation`), and nothing
 moves them to the first-party kinds. The move, by hand:
 
@@ -777,8 +777,8 @@ moves them to the first-party kinds. The move, by hand:
 2. Disable the old `healthapple`, `healthwhoop` and `health` packages, so
    nothing writes the old kinds: `bin/substratectl bundle disable
    ada.example.com/healthwhoop`, and the same for the others.
-3. Install the providers again, which upgrades them (`bin/substratectl
-   install providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
+3. Add the providers again, which upgrades them (`bin/substratectl
+   add providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
    for lab results, `substrate.reamde.dev/labs`. Each brings `health`. The
    upgrade creates the provider's adapter trigger, which starts at the changelog's
    start, so every mirror row the repository holds is converted into the

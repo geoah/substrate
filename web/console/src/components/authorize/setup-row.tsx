@@ -377,7 +377,11 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
       <Term name="Package">
         <Mono>{pkg.id}</Mono>
       </Term>
-      {pkg.tier && <Term name="Tier">{pkg.tier}</Term>}
+      {pkg.keptBy && (
+        <Term name="Kept by">
+          {pkg.keptBy === "publisher" ? "Its publisher" : "This repository"}
+        </Term>
+      )}
       <Term name="The app needs">version {pkg.required} or later</Term>
       {pkg.oauthHosts && pkg.oauthHosts.length > 0 && (
         <Term name="OAuth hosts">

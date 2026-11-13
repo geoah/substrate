@@ -53,7 +53,7 @@ inside `structuredLocation`.
 ## How the device writes
 
 The app writes with the owner's token through the ordinary record routes,
-after the bundle is installed (`POST /api/v1/catalog/providers.substrate.reamde.dev%2Fapple/install`):
+after the bundle is installed (`POST /api/v1/catalog/providers.substrate.reamde.dev%2Fapple/add`):
 
 - `PUT /api/v1/providers.substrate.reamde.dev/apple/addressbook/<id>` with
   `deviceName`, `lastSyncedAt` and `contactCount` after each push.
@@ -69,7 +69,7 @@ The device omits an empty string or list rather than sending `""` or `[]`.
 `identifier` and `addressbook` are required; every other property is
 optional.
 
-Calendars follow the same routes, with the install path unchanged:
+Calendars follow the same routes, with the add route unchanged:
 
 - `PUT …/apple/eventstore/<id>` with `deviceName`, `calendarCount`,
   `eventCount`, `windowStart`, `windowEnd` and `lastSyncedAt` after each push.

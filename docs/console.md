@@ -77,7 +77,7 @@ same sections:
 
 - **One section per package** that holds your records, titled by the
   package's word (**Training**, **Health**, **Tasks**) and ordered by it:
-  your own packages, the samples you imported, any other authority's that is
+  your own packages, the samples you added, any other authority's that is
   neither a provider's nor the substrate's machinery, and the substrate's
   packages that hold your records, `observations` and the well-known
   catalogues (`health`, `labs`, `clinical`,
@@ -298,7 +298,7 @@ another page can link straight to it:
   the well-known catalogues (health, lab results, the medical record,
   environment) and a package an app's approval installed. Each is listed by
   the collections it adds, or by what it is where it adds metrics alone, with
-  **Add**, which installs it and first anything it requires, and stays in
+  **Add**, which adds it and first anything it requires, and stays in
   the dialog. Its publisher keeps its declarations, so you add the records
   and not the fields; the dialog says so, and points at a sample for a
   collection you can change. One already here reads **Added**, a link to
@@ -309,7 +309,7 @@ another page can link straight to it:
   [purpose](decisions/0133-a-kind-declares-its-purpose.md) is read from the
   catalog's closure until the repository holds the kind, so a sample whose
   kinds are all supporting or internal is not offered as a collection. Adding
-  one imports it under the repository's own authority
+  one copies it under the repository's own authority
   ([0048](decisions/0048-providers-are-published-samples-are-copied.md)),
   taking first any package it requires that the repository does not hold, and
   says so beforehand. A sample already taken reads **Added**; its package
@@ -838,16 +838,16 @@ in `appliesTo`
 (`substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep`). The
 `health` and `labs` catalogues ship five between them and the WHOOP provider
 two ([the well-known catalogues](observations.md#the-well-known-catalogues)).
-A sample's import rehomes `appliesTo` with the kind; a view on a provider's
+Adding a sample rehomes `appliesTo` with the kind; a view on a provider's
 or a catalogue's kind keeps it, because only `samples.substrate.reamde.dev`
 is rewritten.
 
-**Upgrades.** An import or an upgrade replaces a shipped view that only the
-import has written. A view you wrote, edited, trimmed or deleted through the
-API, the console or `substratectl` stays as you left it on every re-import
+**Upgrades.** An add or an upgrade replaces a shipped view that only the
+closure has written. A view you wrote, edited, trimmed or deleted through the
+API, the console or `substratectl` stays as you left it on every add
 and upgrade. To take a newer shipped view over yours, apply the shipped file
 with `substratectl apply -f`, a sample's with its authority rewritten to your
-repository's ([the two doors](bundles.md#the-two-doors) gives the commands),
+repository's ([adding a package](bundles.md#adding-a-package) gives the commands),
 purging the view first where you added a property the shipped view does not
 set.
 
@@ -960,7 +960,7 @@ panel on the right.
   adds the supporting and internal ones, each tagged with its
   [purpose](agents.md), and the ones that only work for other agents. One you
   can talk to starts a chat, and one that only works for other agents says so. **Add agents** lists the shipped samples that bring
-  agents, each with **Add**, the same import as
+  agents, each with **Add**, the same add as
   [Add a collection](#add-a-collection)'s samples.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
   the `llm/message` records the loop wrote, not from the browser's memory, so a
@@ -1073,7 +1073,7 @@ triggers run), **Other tools** that nothing uses yet, and, in everyday mode,
 with the rest. Each card says what the tool is for and when it runs.
 **Add tools** lists the shipped samples that bring functions (Notes, the
 reading list and Pebble), each by the tools it adds and with **Add**, the same
-import as [Add a collection](#add-a-collection)'s samples.
+add as [Add a collection](#add-a-collection)'s samples.
 
 A tool is a [function](functions.md), and its page is at
 `/tools/{authority}/{package}/{name}`, the function's reference segment by
@@ -1098,7 +1098,7 @@ and one trigger's record page is the trigger.
 **Providers** (`/providers`) lists every outside service the substrate uses a
 key or a sign-in for, in three groups
 ([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)).
-Which packages are providers is the catalog's to say, apart from its tier
+Which packages are providers is the catalog's to say, apart from who keeps them
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
 a standard collection such as health or the medical record is no provider
 and is added from [Add a collection](#add-a-collection), and an add-on such
@@ -1201,7 +1201,7 @@ the console's last response, so a browser clock running ahead cannot date it
 after the run that answers it.
 
 With Technical details on, **Other packages** lists every other bundle the
-repository holds (standard collections' packages, imported samples, the
+repository holds (standard collections' packages, added samples, the
 seeded `llm` and `console` packages, anything applied directly) with its
 version, state, update and removal, and
 states any pending upgrade of the seeded packages. The `llm` package is
@@ -1263,7 +1263,7 @@ in, then remove its declarations. An upgrade the binary ships is offered as
 **Update**, confirmed first where the preview is lossy, and stated instead of
 offered where the server would refuse it, with the guard lines that say what
 to migrate. The same page serves any other package the repository holds, such
-as an imported sample or a standard collection's package, without the setup
+as an added sample or a standard collection's package, without the setup
 steps and accounts, and a package the catalog offers and the repository does
 not hold yet (the page an approval's **Open its page** opens): what it is,
 what adding it brings, and **Add**.

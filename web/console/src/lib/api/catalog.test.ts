@@ -8,8 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   catalogQueryOptions,
   heldCopyOf,
-  importBundle,
-  installBundle,
+  addBundle,
   landedCatalog,
   oauthCallbackURL,
   OAUTH_CALLBACK_URL,
@@ -26,7 +25,7 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
     package: "google",
     description: "Connects a Google account.",
     version: 1,
-    tier: "published",
+    keptBy: "publisher",
     inputs: {
       client: {
         kind: "providers.substrate.reamde.dev/google/config",
@@ -87,25 +86,25 @@ describe("catalog reads and writes", () => {
         }
       )
     )
-    await installBundle("providers.substrate.reamde.dev/google")
+    await addBundle("providers.substrate.reamde.dev/google")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/catalog/providers.substrate.reamde.dev%2Fgoogle/install"
+      "/api/v1/catalog/providers.substrate.reamde.dev%2Fgoogle/add"
     )
     expect(init?.method).toBe("POST")
   })
 
-  it("POSTs import to the sample door, never the install one", async () => {
+  it("POSTs a sample to the same add route", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ id: "ada.example.com/tasks", installed: true }),
         { status: 200 }
       )
     )
-    await importBundle("samples.substrate.reamde.dev/tasks")
+    await addBundle("samples.substrate.reamde.dev/tasks")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/import"
+      "/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/add"
     )
     expect(init?.method).toBe("POST")
   })
@@ -114,9 +113,9 @@ describe("catalog reads and writes", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ installed: true }), { status: 200 })
     )
-    await installBundle("acme.example.com/planner")
+    await addBundle("acme.example.com/planner")
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/v1/catalog/acme.example.com%2Fplanner/install"
+      "/api/v1/catalog/acme.example.com%2Fplanner/add"
     )
   })
 })
@@ -132,7 +131,7 @@ describe("heldCopyOf", () => {
       name: "tasks",
       authority,
       package: "tasks",
-      tier: "sample",
+      keptBy: "repository",
     })
   const copy = (over: Partial<BundleStatus> = {}): BundleStatus => ({
     id: `${HOME}/tasks`,
@@ -203,7 +202,7 @@ describe("landedCatalog", () => {
       name: "pebble",
       authority: "samples.substrate.reamde.dev",
       package: "pebble",
-      tier: "sample",
+      keptBy: "repository",
       requires: ["samples.substrate.reamde.dev/tasks"],
       closure: {
         kinds: ["samples.substrate.reamde.dev/pebble/recording"],

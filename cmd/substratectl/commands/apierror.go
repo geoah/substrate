@@ -125,19 +125,16 @@ func (e *apiError) hint() string {
 	return ""
 }
 
-// lossyHint names the command that carries --allow-data-loss for the door
+// lossyHint names the command that carries --allow-data-loss for the route
 // that refused (decisions 0067 and 0070): the consent is bound to a preview,
-// so the flag previews first and confirms exactly what it printed. A sample
-// re-import's preview is the catalog's, read off the copy's origin stamp, and
-// it covers the edits the re-import replaces as well as the values it removes.
+// so the flag previews first and confirms exactly what it printed. A sample's
+// preview is the catalog's, read off the copy's origin stamp, and it covers
+// the edits adding it again replaces as well as the values it removes.
 func lossyHint(path string) string {
-	switch {
-	case strings.Contains(path, "/vocabulary/apply"):
+	if strings.Contains(path, "/vocabulary/apply") {
 		return "re-run `substratectl apply --allow-data-loss`: it previews the plan, prints the steps that remove values and confirms exactly those"
-	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
-		return "re-run `substratectl import <sample> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, the edits the re-import replaces) and confirms exactly that plan"
 	}
-	return "re-run `substratectl install <package> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
+	return "re-run `substratectl add <package> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, and the edits to a sample copy it replaces) and confirms exactly that plan"
 }
 
 // guardHint branches on what was actually refused. A `guard` on a record

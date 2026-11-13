@@ -82,7 +82,7 @@ binding kind's own declaration then carries the pin and the `onDelete`.
 Two of core's traits ask for a third: `recurring` and `override` each expect
 `temporal` on the same kind, because a rule with no anchor names no instants
 and an override with no `at` of its own sits nowhere. The loader does not
-refuse the pair (a repository that imported the `scheduling` sample before
+refuse the pair (a repository that copied the `scheduling` sample before
 `recurring` moved to core holds exactly that shape, and must keep booting);
 a kind that binds either without `temporal` is simply not on the timeline,
 and no window read computes from it.
@@ -178,7 +178,7 @@ GET /api/v1/records?filter={"implements":"temporal",
                     &orderBy=at
 ```
 
-Run against a repository (authority `ada.example.com`) that imported the
+Run against a repository (authority `ada.example.com`) that added the
 `tasks` and `calendar` samples, that query answers all three kinds in one
 ordered page; each record is the flat wire shape, trimmed here:
 

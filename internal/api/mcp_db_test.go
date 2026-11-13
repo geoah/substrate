@@ -141,9 +141,9 @@ func TestADoorToolsBodilessRequestReadsAsEmpty(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t)
 	_, tok := mcpAssistantToken(t, env)
-	text, isErr := callTool(t, env.h, tok, "packages", map[string]any{"action": "install", "id": "providers.substrate.reamde.dev/google"})
+	text, isErr := callTool(t, env.h, tok, "packages", map[string]any{"action": "add", "id": "providers.substrate.reamde.dev/google"})
 	if strings.Contains(text, "500") || strings.Contains(text, "internal") {
-		t.Fatalf("a bodiless install = %v %s", isErr, text)
+		t.Fatalf("a bodiless add = %v %s", isErr, text)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/units", nil)
 	req = req.WithContext(withMCPDoor(req.Context()))

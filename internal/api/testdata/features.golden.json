@@ -72,15 +72,18 @@
   {
     "name": "bundles",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "GET /api/v1/catalog",
       "GET /api/v1/catalog/{id}",
       "GET /api/v1/substrate.reamde.dev/core/bundle/status",
       "GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
-      "POST /api/v1/catalog/{id}/import",
-      "POST /api/v1/catalog/{id}/install",
+      "POST /api/v1/catalog/{id}/add",
       "POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind"
+    ],
+    "removed": [
+      "POST /api/v1/catalog/{id}/import",
+      "POST /api/v1/catalog/{id}/install"
     ]
   },
   {
@@ -104,7 +107,7 @@
   {
     "name": "apps",
     "stability": "beta",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "DELETE /api/v1/authorizations/{request}",
       "GET /.well-known/oauth-authorization-server",
@@ -230,7 +233,7 @@
   {
     "name": "mcp",
     "stability": "experimental",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "* /mcp",
       "GET /.well-known/oauth-protected-resource/mcp"

@@ -787,14 +787,14 @@ func packagesTool() Tool {
 	return Tool{
 		Name:  "packages",
 		Title: "Packages and the catalog",
-		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. install takes a " +
-			"published package (a provider or a catalogue) under the authority that publishes it; import copies a sample " +
-			"under the owner's authority. status reads one " +
+		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. add takes one: " +
+			"a published package (a provider or a catalogue) lands under the authority that publishes it, and a sample is copied " +
+			"under the owner's authority (keptBy on the catalog entry says which). status reads one " +
 			"installed package's state, or every one's without id. enable and disable switch one; bind points one of its inputs at a " +
 			"record. upgrades previews what this server would move in the shipped packages. Connecting a provider account " +
 			"(on the console's Providers page), and uninstalling or purging a package, are the owner's.",
 		Input: object(map[string]any{
-			"action": enum("what to do", "catalog", "item", "install", "import", "status", "enable", "disable", "bind", "upgrades"),
+			"action": enum("what to do", "catalog", "item", "add", "status", "enable", "disable", "bind", "upgrades"),
 			"id":     str("the package, <authority>/<package>"),
 			"input":  str("bind: the declared input's name"),
 			"record": str("bind: the record path, <kind>/<id>, to bind it to"),
@@ -834,8 +834,8 @@ func packagesTool() Tool {
 			switch in.Action {
 			case "item":
 				return send(ctx, api, Request{Method: http.MethodGet, Path: "/catalog/" + Escape(in.ID)})
-			case "install", "import":
-				return send(ctx, api, Request{Method: http.MethodPost, Path: "/catalog/" + Escape(in.ID) + "/" + in.Action})
+			case "add":
+				return send(ctx, api, Request{Method: http.MethodPost, Path: "/catalog/" + Escape(in.ID) + "/add"})
 			case "enable", "disable":
 				return send(ctx, api, Request{
 					Method: http.MethodPatch, Path: bundle + Escape(in.ID),
@@ -850,7 +850,7 @@ func packagesTool() Tool {
 					Body: map[string]any{"input": in.Input, "record": in.Record},
 				})
 			}
-			return nil, refuse("action is one of catalog, item, install, import, status, enable, disable, bind, upgrades")
+			return nil, refuse("action is one of catalog, item, add, status, enable, disable, bind, upgrades")
 		},
 	}
 }

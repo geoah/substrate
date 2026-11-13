@@ -123,7 +123,7 @@ func authorizeNewPackage(actor substrate.Actor, held bool, own, pkg string) erro
 	if authority == own {
 		return nil
 	}
-	return fmt.Errorf("%w: %s is not this repository's authority, %s: a token declares new packages only under its own authority; a shipped provider or catalogue arrives through `substratectl install %s` (POST /api/v1/catalog/{id}/install), and your own kinds go under %s",
+	return fmt.Errorf("%w: %s is not this repository's authority, %s: a token declares new packages only under its own authority; a shipped provider or catalogue arrives through `substratectl add %s` (POST /api/v1/catalog/{id}/add), and your own kinds go under %s",
 		substrate.ErrForbidden, authority, own, pkg, own)
 }
 

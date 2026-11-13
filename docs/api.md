@@ -556,7 +556,7 @@ The contract, per key:
   retained. For a write of a record the message names the record the first
   attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
-  `vocabulary/apply`, catalog import and `POST /tokens` do not take the header.
+  `vocabulary/apply`, catalog add and `POST /tokens` do not take the header.
   A write of a vocabulary kind (`kind`, `trait`, ...) refuses it (`422`),
   through `POST /api/v1/records` or at the record's path: a declaration is
   addressed by its own id. So does a bundle's lifecycle `PATCH` (`400`),
@@ -1055,7 +1055,7 @@ them:
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |
 | `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
 | `functions` | `stable` | The function call ([functions](functions.md)). |
-| `bundles` | `stable` | Bundle status and `bind`, and the catalog with its install and import ([bundles](bundles.md)). |
+| `bundles` | `stable` | Bundle status and `bind`, and the catalog with its one `add` ([bundles](bundles.md)). |
 | `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
 | `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
@@ -2548,7 +2548,7 @@ The code set is closed. The client-error codes:
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry. Also the accept of a change request whose change no longer applies, whatever the cause ([the patch request sibling](projection.md#the-patch-request-sibling)) — the message says which, and only an `ifVersion` says "version conflict". |
 | `parked`       | 409  | A retry of a parked delivery (`POST …/parked/{failureId}/retry`) ran and failed again: the row stays parked one attempt older, and the message names the new error's first line ([functions](functions.md#triggers)). |
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
-| `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
+| `lossy`        | 403  | A declaration change would remove values from the fold, or adding a sample again would replace a copy edited since it was added, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
 | `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). A stream whose token is revoked, or whose person signs out everywhere, ends with it too ([signing out everywhere](auth.md#signing-out-everywhere)). |
 | `totp_required` | 401 | A login or a credential change with the right password and no code, on an account that has a second factor: send it again with the code ([logging in](auth.md#logging-in)). |

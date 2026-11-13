@@ -19,9 +19,11 @@ import (
 // Blobs groups). They run over the repository the stories left behind and
 // write only under the `x-` prefix, so nothing a story asserts on moves.
 
+// xqTaskKind names the tasks sample's copy; bindSamples rebinds it.
+var xqTaskKind = "samples.substrate.reamde.dev/tasks/task"
+
 const (
-	xqTaskKind = "samples.substrate.reamde.dev/tasks/task"
-	xqChanges  = "/api/v1/changes"
+	xqChanges = "/api/v1/changes"
 	// xqBlobPrefix is the wire's one digest spelling: the hash function is
 	// named in the id, so a second algorithm would be a second prefix.
 	xqBlobPrefix = "blob-sha256-"
@@ -407,7 +409,7 @@ func xqCaseKindsFilter(c *C) {
 
 	// A kind nothing declares is not an empty list: the filter names a kind
 	// that does not exist, and the answer says so.
-	const nope = "samples.substrate.reamde.dev/tasks/nope"
+	nope := landed(samplesAuthority+"/tasks/nope", sampleHome())
 	path := listWhere(map[string]any{"kinds": []string{nope}})
 	status, raw := c.do(http.MethodGet, path, nil, nil)
 	c.requiref(status == http.StatusNotFound, "GET %s answered %d, want 404: %s", path, status, raw)

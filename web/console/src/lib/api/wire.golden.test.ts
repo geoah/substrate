@@ -802,7 +802,7 @@ const authorizationPackage: Shape<AuthorizationPackage> = {
   settings: false,
   id: true,
   description: false,
-  tier: false,
+  keptBy: false,
   required: true,
   held: false,
   shipped: false,
@@ -1026,7 +1026,7 @@ const catalogBundle: Shape<CatalogBundle> = {
   package: true,
   description: true,
   version: true,
-  tier: true,
+  keptBy: true,
   provider: false,
   brings: false,
   addonFor: false,
@@ -1611,7 +1611,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
 const notOnTheWire: Record<string, string> = {
   // types.ts
   BundleInstallRequest:
-    "the body of the catalog's install and import doors, declared in internal/api (catalogTakeRequest) and out of the golden's reach",
+    "the body of the catalog's add route, declared in internal/api (catalogAddRequest) and out of the golden's reach",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
   // discovery.ts

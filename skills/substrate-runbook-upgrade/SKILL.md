@@ -34,8 +34,8 @@ the note for the release wins.
 | Postgres tables | the new binary's schema migrations, at its first boot | no: an older binary refuses a database holding a migration it does not carry |
 | Each repository's data, the user's own declarations included | repository migrations, at the repository's first open under the new binary, as ordinary changelog writes | no: the repository's ledger and dialect stamps refuse an older binary |
 | The seeded packages (`substrate.reamde.dev/core`, `…/llm`, `…/console`, `…/observations`) | the boot upgrade, at each repository's first open, unless a guard refuses it | no |
-| Installed providers and catalogues (`providers.substrate.reamde.dev/<name>`, `substrate.reamde.dev/health`, `…/labs`, `…/environment`) | the user: the catalog offers the upgrade, and `substratectl install` takes it | no |
-| Imported samples (rehomed to `<authority>/<package>`) | the user: the catalog offers the upgrade, and `substratectl import` takes it | no |
+| Installed providers and catalogues (`providers.substrate.reamde.dev/<name>`, `substrate.reamde.dev/health`, `…/labs`, `…/environment`) | the user: the catalog offers the upgrade, and `substratectl add` takes it | no |
+| Added samples (copied to `<authority>/<package>`) | the user: the catalog offers the upgrade, and `substratectl add` takes it | no |
 | Kinds the user declared | the user; a binary that tightens a contract quarantines the package instead of refusing the repository | yes, by fixing and re-applying the package |
 | API clients, scripts, agents, `substratectl` | the user, following each note's `What to do` | yes |
 
@@ -417,7 +417,7 @@ substratectl sync status
 - **`blocked`**: the guard lines under the table name the kind, the property
   and the count of live records in the old shape. Rewrite those records.
   Then a seeded package needs a server restart, and a published package or
-  a sample needs its `install` or `import` again (step 8). A plan that rewrites more
+  a sample needs its `add` again (step 8). A plan that rewrites more
   records than `SUBSTRATE_CONVERSION_CEILING` (10000 by default) is blocked
   too; the operator may raise the ceiling.
 - **`quarantined: true`** on a package: the new binary does not admit its
@@ -425,7 +425,7 @@ substratectl sync status
   writes and its functions do not run until a valid closure is re-applied.
   For the user's own package, fix the declarations and apply them
   (`substratectl apply -f <package.yaml>`). For a published package or a
-  sample, install or import it again (step 8). If the marker stays, show the user
+  sample, add it again (step 8). If the marker stays, show the user
   the `quarantineReason`.
 - **Parked deliveries or a new last error** on a trigger, or a sync account
   in an error state: read the error before you retry anything. `substratectl
@@ -437,31 +437,31 @@ substratectl sync status
 ## Step 8: Take the upgrades the catalog offers
 
 `substratectl catalog` lists each published package (a provider or a catalogue
-such as `substrate.reamde.dev/health`, `published` in its TIER column)
+such as `substrate.reamde.dev/health`, `publisher` in its KEPT BY column)
 or sample with a newer shipped version as a motion (`16 -> 17`). Read the
 conversion steps printed under the table before you take one. Take the
 published packages first, then the samples, because a sample's suggested
 mapping can wait on a provider's upgrade:
 
 ```bash
-substratectl install providers.substrate.reamde.dev/github   # a published package: re-running install is the upgrade
-substratectl import samples.substrate.reamde.dev/tasks       # a sample: importing again is the upgrade
+substratectl add providers.substrate.reamde.dev/github   # a published package: adding it again is the upgrade
+substratectl add samples.substrate.reamde.dev/tasks      # a sample: adding it again is the upgrade
 ```
 
 A sample can require another at a minimum version (`tasks` requires `people`
-4 and `scheduling` 2). An import refused with a `requiresAtLeast` line names
-the sample and the version it needs: import that one first.
+4 and `scheduling` 2). An add refused with a `requiresAtLeast` line names
+the sample and the version it needs: add that one first.
 
 Four cases are refused:
 
 - **A blocked upgrade**: a dropped kind, a narrowed property or a removed
   callable that live records or triggers still use, or a plan above the
   conversion ceiling. Clear the blocker (step 7); no flag does.
-- **A lossy plan**, on either command: a step removes values from live
+- **A lossy plan**, on either package: a step removes values from live
   records.
-- **An `edited copy`**, on `import`: a sample the user changed since the
-  import. A re-import replaces the package whole, so the edits are lost.
-- **A `requiresAtLeast` floor**, on `import`: see above.
+- **An `edited copy`**, on a sample: one the user changed since adding it.
+  Adding it again replaces the copy whole, so the edits are lost.
+- **A `requiresAtLeast` floor**, on a sample: see above.
 
 A lossy plan and an edited copy clear only with `--allow-data-loss`. Show the
 user the steps or the edits that would be lost, and pass the flag only after

@@ -127,8 +127,8 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 		{id: clinicalPackage, kinds: clinicalKindRefs(), requires: []string{labsPackage}},
 	} {
 		b := shippedBundle(t, cat, c.id)
-		if b.Tier != substrate.TierPublished || b.Authority != kinds.SeedAuthority {
-			t.Errorf("%s is served as a %s under %s, want a published package under %s", c.id, b.Tier, b.Authority, kinds.SeedAuthority)
+		if b.KeptBy != substrate.KeptByPublisher || b.Authority != kinds.SeedAuthority {
+			t.Errorf("%s is served as a %s under %s, want a published package under %s", c.id, b.KeptBy, b.Authority, kinds.SeedAuthority)
 		}
 		if landed := b.LandedID("ada.example.com"); landed != c.id {
 			t.Errorf("%s lands as %s in the repository ada.example.com, want the name it ships with", c.id, landed)

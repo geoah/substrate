@@ -196,7 +196,7 @@ const CATALOG: CatalogItem = {
   package: "google",
   description: "Keeps a copy of your Google contacts.",
   version: 34,
-  tier: "published",
+  keptBy: "publisher",
   provider: true,
   brings: ["account", "collections"],
   installed: true,
@@ -527,7 +527,7 @@ describe("ProviderPage", () => {
       }
       if (method === "POST" && path.endsWith("/oauth/start"))
         return jsonResponse(200, { url: CONSENT_URL })
-      if (method === "POST" && path.endsWith("/install"))
+      if (method === "POST" && path.endsWith("/add"))
         return jsonResponse(200, status())
       if (method === "DELETE") return new Response(null, { status: 204 })
       return jsonResponse(200, { records: [], items: [] })
@@ -646,7 +646,7 @@ describe("ProviderPage", () => {
       await waitFor(() =>
         expect(
           calls("POST").some((c) =>
-            c.url.endsWith(`${encodeURIComponent(GOOGLE)}/install`)
+            c.url.endsWith(`${encodeURIComponent(GOOGLE)}/add`)
           )
         ).toBe(true)
       )
@@ -1457,9 +1457,9 @@ describe("ProviderPage", () => {
         within(dialog).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() =>
-        expect(
-          calls("POST").find((c) => c.url.endsWith("/install"))?.body
-        ).toEqual({ confirm: { planHash: "cafe", changelogSeq: 41 } })
+        expect(calls("POST").find((c) => c.url.endsWith("/add"))?.body).toEqual(
+          { confirm: { planHash: "cafe", changelogSeq: 41 } }
+        )
       )
     })
 
@@ -1488,7 +1488,7 @@ describe("ProviderPage", () => {
       const base = fetchMock.getMockImplementation()!
       let refusals = 0
       fetchMock.mockImplementation(async (url, init) => {
-        if (init?.method === "POST" && String(url).endsWith("/install")) {
+        if (init?.method === "POST" && String(url).endsWith("/add")) {
           refusals++
           return jsonResponse(409, {
             error: {
@@ -1524,9 +1524,9 @@ describe("ProviderPage", () => {
         })
       )
       await waitFor(() => expect(refusals).toBe(1))
-      expect(
-        calls("POST").find((c) => c.url.endsWith("/install"))?.body
-      ).toEqual({ expect: { version: 4, digest: "sha256:abc" } })
+      expect(calls("POST").find((c) => c.url.endsWith("/add"))?.body).toEqual({
+        expect: { version: 4, digest: "sha256:abc" },
+      })
       expect(
         await within(dialog).findByText(
           /The publisher listed another version since you reviewed this one/
@@ -1671,7 +1671,7 @@ describe("ProviderPage", () => {
       authority: "samples.substrate.reamde.dev",
       package: "people",
       description: "One record per human.",
-      tier: "sample",
+      keptBy: "repository",
       provider: false,
       brings: ["collections"],
       closure: { ...CATALOG.closure, kinds: null, functions: null },
@@ -1701,7 +1701,7 @@ describe("ProviderPage", () => {
         expect(
           calls("POST").some((c) =>
             c.url.endsWith(
-              `${encodeURIComponent("samples.substrate.reamde.dev/people")}/import`
+              `${encodeURIComponent("samples.substrate.reamde.dev/people")}/add`
             )
           )
         ).toBe(true)
@@ -1750,7 +1750,7 @@ describe("ProviderPage", () => {
             .filter((c) => c.url.startsWith(`${CATALOG_PATH}/`))
             .map((c) => c.url.slice(CATALOG_PATH.length + 1))
         ).toEqual([
-          `${encodeURIComponent("samples.substrate.reamde.dev/people")}/import`,
+          `${encodeURIComponent("samples.substrate.reamde.dev/people")}/add`,
         ])
       )
     })
