@@ -148,7 +148,7 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	blurbHash := sha256.Sum256([]byte("alpha prose"))
 	if _, err := db.Exec(`INSERT INTO embeddings (repository, record_kind, record_id, property, chunk, text_hash, provider, model)
 		VALUES ($1, $2, $3, 'blurb', 0, $4, 'vectors', 'text-embedding-3-small')`,
-		testdb.Repository(t), rnGizmo, full.ID, hex.EncodeToString(blurbHash[:])); err != nil {
+		ds.Repository().ID, rnGizmo, full.ID, hex.EncodeToString(blurbHash[:])); err != nil {
 		t.Fatalf("store the blurb's vector row: %v", err)
 	}
 	// The value is indexed under the old name before the rename.

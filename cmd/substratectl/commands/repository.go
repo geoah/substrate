@@ -340,9 +340,11 @@ func (a *app) repositoryListCommand() *cobra.Command {
 		Short: "List every repository on this substrate",
 		Long: `List the control-plane table: one row per repository, and the whole of it.
 
-The authority is the repository's id, and the directory under
-SUBSTRATE_DATA_ROOT is named by it; created_at is the admission record, since
-the invite code is the only door and there is nothing else to record.`,
+The authority is the repository's name, what its user signs in with and
+every other command here takes. The id is its key: the directory under
+SUBSTRATE_DATA_ROOT is named by it, and so is the webhook address the server
+gives out. created_at is the admission record, since the invite code is the
+only door and there is nothing else to record.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			db, err := a.controlPlane()
@@ -358,7 +360,8 @@ the invite code is the only door and there is nothing else to record.`,
 				out := make([]map[string]any, 0, len(rows))
 				for _, r := range rows {
 					out = append(out, map[string]any{
-						"authority": r.ID,
+						"authority": r.Authority,
+						"id":        r.ID,
 						"createdAt": r.CreatedAt.Format(time.RFC3339),
 						"dekKeyId":  r.DEKKeyID,
 					})
@@ -373,10 +376,10 @@ the invite code is the only door and there is nothing else to record.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "AUTHORITY\tCREATED\tAGE")
+			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\n",
-					r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt))
 			}
 			return tw.Flush()
 		},
@@ -394,7 +397,7 @@ func (a *app) repositoryInspectCommand() *cobra.Command {
 The changelog's head is its length — seq is per-repository, gapless and assigned at
 commit — and the records count is the fold's size. The changelog lives twice:
 the table is the live index and the segment files under SUBSTRATE_DATA_ROOT
-(<root>/repositories/<authority>/changelog) are the copy a backup takes, so both heads
+(<root>/repositories/<id>/changelog) are the copy a backup takes, so both heads
 are printed and a healthy repository shows the same number twice. The
 vocabulary section is what this repository's OWN changelog says its kinds are,
 which is the only authority on the question: the embedded tree is a seed, not
@@ -418,7 +421,8 @@ This command only reads.`,
 			}
 			defer func() { _ = scoped.Close() }()
 
-			fmt.Fprintf(a.out, "repository %s\n", repo.ID)
+			fmt.Fprintf(a.out, "repository %s\n", repo.Authority)
+			fmt.Fprintf(a.out, "  id:        %s\n", repo.ID)
 			fmt.Fprintf(a.out, "  created:   %s (%s)\n",
 				repo.CreatedAt.Format(time.RFC3339), humanAge(a.now(), repo.CreatedAt))
 			fmt.Fprintf(a.out, "  dek:       %s\n", describeKeys(repo))

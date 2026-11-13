@@ -293,7 +293,7 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	size := int64(len(sealed))
 	if len(sp.entries)+1 > webhookSpoolMaxEntries || sp.bytes+size > webhookSpoolMaxBytes {
 		sp.mu.Unlock()
-		metrics.WebhookSpoolRefusals.WithLabelValues(ds.Repository().ID).Inc()
+		metrics.WebhookSpoolRefusals.WithLabelValues(ds.Repository().Authority).Inc()
 		return "", "", ErrWebhookSpoolFull
 	}
 	ordinal := max(sp.last+1, at.UnixNano())
@@ -537,7 +537,7 @@ func (ds *dataset) spoolDrainFailed(name string, err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	metrics.WebhookSpoolDrainFailures.WithLabelValues(ds.Repository().ID).Inc()
+	metrics.WebhookSpoolDrainFailures.WithLabelValues(ds.Repository().Authority).Inc()
 	outcome := webhookFireOutcome(err)
 	if errors.Is(err, errSpoolUnreadable) {
 		ds.svc.log.Error("substrate: a spooled webhook request does not open; it is set aside under a suffix",

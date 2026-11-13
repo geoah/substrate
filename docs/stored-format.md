@@ -27,7 +27,7 @@ Three rules hold everywhere below:
 
 ```
 repositories/
-  ada.example.com/            # named by the repository's authority, its id
+  rnd-0vrkvsgbs6bnz2sjy4196kccck/  # named by the repository's id
     repository.json           # the manifest
     changelog/
       000000000000001.ndjson  # segments, named by their first seq
@@ -48,17 +48,25 @@ absent. A snapshot adds `snapshot.json`
 
 ### The manifest
 
-`repository.json` is one JSON object, format 1:
+`repository.json` is one JSON object, format 2:
 
 | Key | Holds |
 | --- | --- |
-| `format` | `1`. Any other value is refused. |
-| `authority` | The repository's authority, which is its id and the directory's name. |
+| `format` | `2`. Any other value but 1, below, is refused. |
+| `id` | The repository's id, `rnd-` and 26 characters, and the directory's name ([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)). |
+| `authority` | The repository's name: its authority, the namespace of its own kinds. |
 | `createdAt` | When the repository was created, RFC 3339. |
 | `changelogDialect` | The [changelog dialect](#dialects) the segments are in. |
 | `vocabularyDialect` | The [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) of the stored declaration records. |
-| `dek` | The repository's data key, wrapped under the host's credential key, base64. |
+| `dek` | The repository's data key, wrapped under the host's credential key and bound to the id, base64. |
 | `dekKeyId` | 16 hex digits that name the credential key, never the key. |
+
+A release before ids wrote format 1: the same keys without `id`, the
+directory named by the authority and the data key bound to it. A server
+converts such a directory at its boot, before anything reads it: it takes
+the id the repository's row holds, or a new one for a directory being
+restored, seals the spooled requests again under it, rewrites the manifest
+in format 2 and renames the directory. Nothing else reads format 1.
 
 ### Segments
 
@@ -79,7 +87,8 @@ sidecar and is the one that grows. A transaction never crosses a segment.
 - A **blob** is its bytes, as they were uploaded, named `blob-sha256-` and
   their digest.
 - A **spooled webhook request** is a request the door answered `202` and the
-  changelog does not hold yet, sealed under the data key
+  changelog does not hold yet, sealed under the data key and bound to the
+  repository's id and the fire
   ([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
 
 ## The line
@@ -203,6 +212,13 @@ nothing, and the repository's own stamp records it. A change that needs both
 lands both, and the conversion runs first. Converting closes the way back to
 an older server, as any raised stamp does
 ([going back](stability.md#going-back)).
+
+The move to repository ids is neither: no line changed, because a line names
+kinds and actors, and those stay the name's. What changed is the key the
+rows and the directory are found by, so the boot gives a repository its id
+before anything looks for it, and before the chain runs
+([the directory](#the-manifest) above, and
+[running a substrate](operations.md#what-happens-at-boot)).
 
 ## How old a directory may be
 

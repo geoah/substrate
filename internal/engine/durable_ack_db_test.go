@@ -56,7 +56,7 @@ func openDurabilityService(t *testing.T, opts ...Option) (*service, Repository, 
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	repo, err := s.repositoryByID(ctx, testdb.Repository(t))
+	repo, err := s.repositoryByAuthority(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func importCopy(t *testing.T, root, repoID string) (*service, Repository) {
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
 	s2 := svc2.(*service)
-	repo2, err := s2.repositoryByID(ctx, testdb.Repository(t))
+	repo2, err := s2.repositoryByAuthority(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}

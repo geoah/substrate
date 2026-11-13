@@ -142,7 +142,7 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 // snapshot holds its copy to that Log (snapshot.go).
 func (s *service) verifyRepository(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, *changelogfile.Log, error) {
 	started := time.Now()
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return VerifyReport{}, nil, err
 	}

@@ -14,8 +14,9 @@ import (
 )
 
 // The archive comes back as a tar under the authority's file name, with the
-// point in the name: the repository's directory laid out as a data root, its
-// manifest in it and snapshot.json, recording that point, as the last entry.
+// point in the name: the repository's directory, named by its id, laid out as
+// a data root, its manifest in it and snapshot.json, recording that point, as
+// the last entry.
 func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withSamples("people"))
@@ -31,7 +32,7 @@ func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
 		t.Fatalf("Content-Disposition = %q, want %q", cd, want)
 	}
 
-	dir := changelogfile.RepositoriesDir + "/" + env.repository + "/"
+	dir := changelogfile.RepositoriesDir + "/" + env.ds.Repository().ID + "/"
 	tr := tar.NewReader(rec.Body)
 	var names []string
 	var snapshot []byte

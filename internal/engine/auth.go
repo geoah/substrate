@@ -465,7 +465,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	// The operator's install list runs inside the registration, so a person
 	// signs in to the providers the operator gives them already there.
 	s.openForOperatorInstalls(ctx, repo)
-	countAuth(repo.ID, "registered")
+	countAuth(repo.Authority, "registered")
 	return out, nil
 }
 
@@ -558,7 +558,7 @@ func validPassword(p string) error {
 // given only to a caller who already proved the password.
 func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (Repository, authMaterial, error) {
 	authErr := fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
-	repo, rerr := s.repositoryByID(ctx, in.Repository)
+	repo, rerr := s.repositoryByAuthority(ctx, in.Repository)
 	material := authMaterial{passwordHash: dummyPasswordHash, totp: totpMaterial{}}
 	key := dummyTOTPKey
 	hasFactor := false
@@ -633,7 +633,7 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	}
 	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
 	if err == nil {
-		countAuth(repo.ID, "login")
+		countAuth(repo.Authority, "login")
 	}
 	return info, secret, err
 }
@@ -688,7 +688,7 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	if err != nil {
 		return err
 	}
-	cp, unlock, err := s.lockRegistration(ctx, repo.ID)
+	cp, unlock, err := s.lockRegistration(ctx, repo.Authority)
 	if err != nil {
 		return err
 	}
@@ -704,7 +704,7 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	s.lease.release(repo.ID)
 	s.unitGraphs.forget(repo.ID)
 	s.log.Info("substrate: repository deleted by its owner", "repository", repo.ID)
-	forgetUsage(repo.ID)
+	forgetUsage(repo.Authority)
 	return nil
 }
 
@@ -764,11 +764,11 @@ func (s *service) ResetUser(ctx context.Context, repository, newPassword string)
 	if err := validPassword(newPassword); err != nil {
 		return zero, err
 	}
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return zero, err
 	}
-	enrollment, err := newEnrollment(repository)
+	enrollment, err := newEnrollment(repo.Authority)
 	if err != nil {
 		return zero, err
 	}
@@ -783,7 +783,7 @@ func (s *service) ResetUser(ctx context.Context, repository, newPassword string)
 	// The operator's reset is authoritative and rare — no compare-and-swap: it
 	// deliberately overwrites whatever is there for a user who lost both factors.
 	if err := ds.rewriteCredential(ctx, credentialWrite{
-		repository: repository, passwordHash: hash,
+		repository: repo.Authority, passwordHash: hash,
 		totp: totpMaterial{Secret: enrollment.Secret},
 	}); err != nil {
 		return zero, err
@@ -1190,7 +1190,7 @@ func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking
 		// A well-formed token whose real repository could NOT be opened is a
 		// service condition, not a bad credential: surface it so
 		// the API maps it to a 5xx instead of a misleading "invalid token".
-		return nil, zero, fmt.Errorf("open repository %s: %w", repo.ID, err)
+		return nil, zero, fmt.Errorf("open repository %s: %w", repo.label(), err)
 	}
 	return ds, info, nil
 }

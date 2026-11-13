@@ -169,7 +169,7 @@ boot.
 | `SUBSTRATE_SITE_DIR`           | unset (no site)                        | An absolute path to a site directory: a `site.yaml` naming the brand the console's sign-in, register and landing pages show, and files served at `/site/`. An invalid `site.yaml` refuses the boot, naming the problem. See [a site for the deployment](#a-site-for-the-deployment). |
 | `SUBSTRATE_OPERATOR_DEFAULTS`  | unset (no operator defaults)           | An absolute path to the operator defaults file: the LLM providers, embeddings and provider function keys the operator pays for on behalf of every repository, and the daily allowance bounding them. It may not sit inside `SUBSTRATE_SITE_DIR`. An invalid file refuses the boot, naming the problem. See [operator defaults](#operator-defaults). |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
-| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
+| `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<id>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_REPOSITORY_CONNECTIONS` | `16`                            | The Postgres connections every repository of the process shares, however many repositories it has opened. One repository takes at most half of them, and never more than eight, so two busy repositories cannot take the whole pool. A process holds at most this cap plus 12 more: 4 for the admin pool, 5 for the maintenance pool, 2 for repository migrations running at once (each dials a connection of its own) and 1 for a commit-time catch-up after a foreign writer. The default therefore holds a process to 16 + 12 = 28. Keep the cap plus 12, for every process on the database, under the cluster's `max_connections`. At least 4; a lower value refuses the boot, naming the variable. |
 | `SUBSTRATE_DIGEST_BYTES_PER_SECOND` | `8388608`                        | The most bytes per second the process hashes of its repositories' finished changelog segments behind their opens, over every repository together ([what happens at boot](#what-happens-at-boot)). Hashing is one core busy for as long as the bytes last, so the default, 8 MiB, keeps it under half a core on a four-core arm64 box, where a 27 GB history takes about an hour; the digests also pause while any function or agent runs, whatever the cap, for at most 30 s before each megabyte. `0` removes the cap; a negative value, or one above `0` and below `65536`, refuses the boot, naming the variable. |
@@ -202,17 +202,19 @@ data root: without it, sealed material is unreadable
 
 ## The repository directory
 
-Every repository owns one directory under the data root, named by its
-authority, which is the repository's id everywhere, and that directory is the
-truth on disk and the unit a backup copies
-([decision 0052](decisions/0052-the-authority-is-the-repository-id.md)):
+Every repository owns one directory under the data root, named by its id,
+and that directory is the truth on disk and the unit a backup copies
+([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
+The id is minted at registration (`rnd-` and 26 characters) and never
+changes; the name is the repository's authority, which `repository.json`
+carries beside it:
 
 ```
 $SUBSTRATE_DATA_ROOT/
   instance                          # this server's instance id, minted at its first boot
   repositories/
-    ada.example.com/                # one per repository, named by its authority
-      repository.json               # the manifest: format, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId
+    rnd-0vrkvsgbs6bnz2sjy4196kccck/ # one per repository, named by its id
+      repository.json               # the manifest: format, id, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId
       snapshot.json                 # only in a snapshot, or a directory restored from one: the head seq and checksum the copy holds, and the blobs it needs
       changelog/
         000000000000001.ndjson      # a segment, named by its first seq; the highest is the active one
@@ -238,9 +240,10 @@ stay.
 The changelog segments are newline-delimited JSON, one entry per line, each
 line carrying its own SHA-256 checksum
 ([the checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)).
-The directory is `repositories/ada.example.com/` for the repository whose
-authority is `ada.example.com`, so a person finds it by name; `repository.json`
-carries that authority, and nothing else names the repository. It also carries the DEK wrapped
+The directory is `repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck/` for a
+repository with that id; `repository.json` carries the id and the name, and
+`substratectl repository list` prints both, so a person finds a repository's
+directory by its name there. The manifest also carries the DEK wrapped
 under `SUBSTRATE_CREDENTIAL_KEY`, the same bytes as the `repositories.dek`
 column, so a copy restored onto a host with the same key opens without
 anything else. The key itself is never in the directory; `dekKeyId` names it
@@ -488,7 +491,7 @@ redirect: a `3xx` answer fails the call.
 A blob is two halves: a **manifest**, which is an ordinary record keyed by the
 content digest, and the **bytes**. The manifest is always in Postgres and is
 always the truth. The bytes are always at
-`$SUBSTRATE_DATA_ROOT/repositories/<authority>/blobs/<digest>`, inside the
+`$SUBSTRATE_DATA_ROOT/repositories/<id>/blobs/<digest>`, inside the
 repository directory beside the changelog, so one copy of the directory is a
 whole backup.
 
@@ -878,6 +881,26 @@ it trusts:
   its file under `sealed/`) and have the user re-enter the secret it held (a
   provider token: reconnect the account; the login credential: `user reset`),
   then open again.
+- **A repository a release before ids left keyed by its name takes its id
+  first** ([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
+  One transaction per repository moves every row of every table from the
+  name to a minted id and rewraps the data key under it; then the spooled
+  webhook requests are sealed again under the id, `repository.json` is
+  rewritten in format 2 and the directory renamed from the name to the id.
+  A directory from before ids with no row, being restored, takes a new id the
+  same way before its import. One whose name a repository in the database
+  holds is that repository's only when both hold the same data key; one whose
+  name another repository took since the copy was made refuses the boot and
+  is left exactly as it was. The conversion holds the writer lease under the
+  name until the boot check has published the repository under its id, so a
+  second server over the same database, with the same directory or a copy of
+  it, is refused rather than giving it a second id. The boot logs `substrate: giving a repository
+  an id: rewriting its rows` before each and `substrate: gave a repository an
+  id` after, with the rows and `took`: on a laptop's Postgres about 600,000
+  rows took 6 seconds, and the boot serves nothing until every repository is
+  done. A boot stopped between the rows and the directory is finished by the
+  next. An older server cannot open a converted repository; the way back is
+  the copy taken before the upgrade.
 - **The data root is reconciled with the `repositories` table**, directory
   by directory and row by row, before anything else writes. Five cases: a
   directory and a row whose heads and last checksums agree open; a table ahead
@@ -918,12 +941,12 @@ it trusts:
   repository's writes (below); a
   row with no directory has its directory written out from the tables, once,
   which is how a repository whose directory was moved away gets one back. A
-  directory under `repositories/` named by an authority (`ada.example.com`)
-  with no row and no `repository.json` is logged and skipped: nothing says
-  whose it is, so it is neither imported nor deleted. Any other entry under
-  `repositories/` (a `tmp`, a `Backup-2026`, anything whose name is not an
-  authority) refuses the boot and names the entry; move it out of the data
-  root.
+  directory under `repositories/` named by an id, or by an authority
+  (`ada.example.com`) as a release before ids named it, with no row and no
+  `repository.json` is logged and skipped: nothing says whose it is, so it is
+  neither imported nor deleted. Any other entry under `repositories/` (a
+  `tmp`, a `Backup-2026`, anything whose name is neither) refuses the boot and
+  names the entry; move it out of the data root.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -1488,7 +1511,7 @@ cannot see the gap. Where that matters, take a snapshot or an export.
 
 **A snapshot is a copy with a recorded point, taken with the server stopped.**
 [`repository snapshot <repository> <destination root>`](#operator-recovery)
-writes `<destination root>/repositories/<authority>/`, the layout a data root
+writes `<destination root>/repositories/<id>/`, the layout a data root
 has, and `snapshot.json` last. That file names the point: the head seq, that
 entry's checksum, when the copy was taken, and the digests the copy carries
 under `blobs/`. A directory carrying one is a copy that finished; the boot
@@ -1687,8 +1710,8 @@ key under `SUBSTRATE_CREDENTIAL_KEY` and rewrites `repository.json`. Then move
 the directory under the data root and boot, which imports it as above.
 
 ```
-SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/ada.example.com --identity-file ./recovery.key
-mv /srv/restore/repositories/ada.example.com "$SUBSTRATE_DATA_ROOT"/repositories/
+SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck --identity-file ./recovery.key
+mv /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck "$SUBSTRATE_DATA_ROOT"/repositories/
 SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # imports at boot
 ```
 
@@ -1832,8 +1855,12 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.exa
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
-SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/ada.example.com --identity-file ./recovery.key
+SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck --identity-file ./recovery.key
 ```
+
+Every command that takes a repository takes its name, as above, or its id;
+`repository list` prints both. `rewrap` takes a directory, which is named by
+the id.
 
 **On the compose deployment, run them inside the container.** The image
 carries `substratectl` beside the server, because `compose.yaml`

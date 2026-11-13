@@ -147,8 +147,8 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	if err := json.Unmarshal(e.manifest, &m); err != nil {
 		return nil, fmt.Errorf("substrate/engine: decode %s: %w", changelogfile.ManifestName, err)
 	}
-	if m.Authority != ds.scope.Repository {
-		return nil, fmt.Errorf("substrate/engine: %s names authority %q, the repository is %q", changelogfile.ManifestName, m.Authority, ds.scope.Repository)
+	if m.ID != ds.scope.Repository {
+		return nil, fmt.Errorf("substrate/engine: %s names id %q, the repository is %q", changelogfile.ManifestName, m.ID, ds.scope.Repository)
 	}
 	if e.sealed, err = changelogfile.ReadSealed(ds.dir); err != nil {
 		return nil, err
@@ -178,7 +178,7 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 		BlobStore: blobbytes.BackendFS, Blobs: digests,
 	}
 	e.point = substrate.ExportPoint{
-		Authority: ds.scope.Repository, Head: head, TakenAt: taken,
+		ID: ds.scope.Repository, Authority: ds.info.Authority, Head: head, TakenAt: taken,
 		Segments: len(segments), SealedFiles: len(e.sealed), Blobs: len(e.blobs),
 	}
 	if head > 0 {
@@ -209,7 +209,7 @@ func (e *export) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (e *export) write(tw *tar.Writer) error {
-	root := path.Join(changelogfile.RepositoriesDir, e.point.Authority)
+	root := path.Join(changelogfile.RepositoriesDir, e.point.ID)
 	changelog := path.Join(root, changelogfile.ChangelogSubdir)
 	blobs := path.Join(root, changelogfile.BlobsSubdir)
 	sealed := path.Join(root, changelogfile.SealedSubdir)

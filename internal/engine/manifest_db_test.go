@@ -42,7 +42,7 @@ func unstamped(t *testing.T) (dsn, root, dir string, db *sql.DB) {
 	svc, dsn := newService(t)
 	registerUser(t, svc, "ada.example.com")
 	root = engine.DataRootOf(svc)
-	id := "ada.example.com"
+	id := repositoryIDByName(t, svc, "ada.example.com")
 	_ = svc.Close()
 	dir, err := changelogfile.RepoDir(root, id)
 	if err != nil {
@@ -218,10 +218,11 @@ func TestDialectTwoStampsACreatedRepositoryBeforeItsFirstOpen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	id := "dialect.example.com"
-	if _, err := svc.CreateRepository(ctx, id); err != nil {
+	repo, err := svc.CreateRepository(ctx, "dialect.example.com")
+	if err != nil {
 		t.Fatalf("create the repository: %v", err)
 	}
+	id := repo.ID
 	root := engine.DataRootOf(svc)
 	dir, err := changelogfile.RepoDir(root, id)
 	if err != nil {

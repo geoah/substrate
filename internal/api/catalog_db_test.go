@@ -520,7 +520,7 @@ type catalogPreviewCount struct {
 func (d catalogPreviewCount) PlanBundleUpgrade(ctx context.Context, docs []map[string]any) (substrate.BundleUpgrade, error) {
 	d.previews.Add(1)
 	plan, err := d.Dataset.PlanBundleUpgrade(ctx, docs)
-	plan.Blockers = append(plan.Blockers, "counted in "+d.Repository().ID)
+	plan.Blockers = append(plan.Blockers, "counted in "+d.Repository().Authority)
 	return plan, err
 }
 
@@ -553,7 +553,7 @@ func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
 	}
 	previews := map[string]*atomic.Int64{env.repository: new(atomic.Int64), other: new(atomic.Int64)}
 	env.wrap = func(ds substrate.Dataset) substrate.Dataset {
-		return catalogPreviewCount{Dataset: ds, previews: previews[ds.Repository().ID]}
+		return catalogPreviewCount{Dataset: ds, previews: previews[ds.Repository().Authority]}
 	}
 	listed := func(repository string) []string {
 		t.Helper()

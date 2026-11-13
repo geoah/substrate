@@ -1932,7 +1932,7 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		// The authority a new package must live under is the repository's,
 		// and nothing else the model sees names it.
 		if t.Builtin == vocabulary.AgentToolVocabulary {
-			description += " The owner's authority is " + l.ds.scope.Repository + "."
+			description += " The owner's authority is " + l.ds.info.Authority + "."
 		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)

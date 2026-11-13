@@ -74,9 +74,21 @@ func SetRepositoryConnsPerHandle(svc substrate.Service, n int) { svc.(*service).
 func SetTestMigrationHook(svc substrate.Service, fn func()) { svc.(*service).testMigrationHook = fn }
 
 // SharedScopedDB is a raw handle on the service's shared repository pool,
-// pinned to one repository by the same connector every dataset rides.
+// pinned to one repository by the same connector every dataset rides. It
+// takes the repository's id or its name, as OpenScopedDB does: the scope is
+// the id, and a name no row holds scopes to nothing.
 func SharedScopedDB(svc substrate.Service, repository string) (*sql.DB, error) {
-	return svc.(*service).scopedDB(Scope{Repository: repository})
+	s := svc.(*service)
+	if !vocabulary.ValidRepositoryID(repository) {
+		repo, err := s.repositoryByAuthority(context.Background(), repository)
+		switch {
+		case err == nil:
+			repository = repo.ID
+		case !errors.Is(err, substrate.ErrNotFound):
+			return nil, err
+		}
+	}
+	return s.scopedDB(Scope{Repository: repository})
 }
 
 // IdleRepositoryPins acquires every idle connection of the shared pool

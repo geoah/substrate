@@ -598,7 +598,8 @@ data:
 func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 	t.Parallel()
 	e := newAppSetupEnv(t)
-	repo := e.db.repository
+	// The webhook's address is keyed by the repository's id (decision 0261).
+	repo := e.db.ds.Repository().ID
 	id := e.park(setupRequest(syncScopes, syncDetails))
 	v := e.view(id)
 	// The approval names the plan it read.

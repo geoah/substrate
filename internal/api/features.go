@@ -104,7 +104,9 @@ var featureTable = []feature{
 		"PUT /api/v1/blobs/{digest}",
 		"GET /api/v1/blobs/{digest}",
 	}},
-	{name: "triggers", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 2: a webhook address names the repository by its id, which
+	// the trigger's `webhookPath` gives out, or by its name.
+	{name: "triggers", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/substrate.reamde.dev/core/trigger/status",
 		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/replay",
 		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/run",
@@ -112,8 +114,8 @@ var featureTable = []feature{
 		"GET /api/v1/substrate.reamde.dev/core/trigger/{id}/parked",
 		"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}/retry",
 		"DELETE /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}",
-		"POST /webhooks/{authority}/{trigger}",
-		"POST /webhooks/{authority}/{trigger}/{key}",
+		"POST /webhooks/{repository}/{trigger}",
+		"POST /webhooks/{repository}/{trigger}/{key}",
 	}},
 	{name: "functions", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/function/{name}/call",

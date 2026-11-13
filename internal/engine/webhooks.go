@@ -49,9 +49,10 @@ var errAgentWebhookTooLarge = errors.New("webhook request too large for an agent
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
-// The repository is named by its authority, which is its one name (0071).
-func webhookPath(authority, triggerID string) string {
-	return "/webhooks/" + authority + "/" + triggerID
+// The repository is named by its id, which outlives a change of its name
+// (decision 0261); the door still takes the name.
+func webhookPath(repositoryID, triggerID string) string {
+	return "/webhooks/" + repositoryID + "/" + triggerID
 }
 
 // pendingWebhookError is the error an ADMITTED webhook request carries in
@@ -187,14 +188,14 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 	return fid, nil
 }
 
-// webhookTarget resolves the repository by its authority and the trigger by
-// id, and checks that the trigger takes webhooks, is enabled and runnable, and
+// webhookTarget resolves the repository by its id or its name and the
+// trigger by id, and checks that the trigger takes webhooks, is enabled and runnable, and
 // that the key matches when it declares one. The door's webhook grant for
 // this authority and trigger (substrate.WithWebhookGrant, an app's token)
 // stands in for the key and for nothing else. Every check that fails answers
 // errWebhookRefused.
 func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key string) (*dataset, *trigger, error) {
-	repo, err := s.repositoryByAuthority(ctx, authority)
+	repo, err := s.repositoryByKey(ctx, authority)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
 			return nil, nil, errWebhookRefused

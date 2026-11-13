@@ -522,7 +522,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	}
 	if _, err := engine.RewrapRepositoryDir(dir2, wrong.String(), other); err == nil {
 		t.Fatal("a wrong identity rewrapped the directory")
-	} else if !strings.Contains(err.Error(), id) {
+	} else if !strings.Contains(err.Error(), "ada.example.com") {
 		t.Fatalf("the refusal must name the repository: %v", err)
 	}
 	if after, _ := os.ReadFile(filepath.Join(dir2, changelogfile.ManifestName)); string(after) != string(manifestBefore) {
@@ -547,7 +547,7 @@ func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewrap: %v", err)
 	}
-	if report.Repository != id || report.SealedFiles == 0 || report.RecoveryKeySeq == 0 {
+	if report.Repository != "ada.example.com" || report.SealedFiles == 0 || report.RecoveryKeySeq == 0 {
 		t.Fatalf("report = %+v", report)
 	}
 	// The manifest now opens under the new key and no longer under the old.

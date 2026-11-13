@@ -2424,14 +2424,15 @@ saying which. The console draws applets' images through it, so its own
 
 ## Webhooks
 
-`POST /webhooks/{authority}/{trigger}` is the one route that takes a body and
-no bearer. `authority` is the repository's authority (the name it publishes
-under, chosen at registration) and `trigger` the id of a
+`POST /webhooks/{repository}/{trigger}` is the one route that takes a body and
+no bearer. `repository` names the repository by its id (`rnd-…`, the address
+a trigger's `webhookPath` gives out, which a rename will not change) or by its
+name, its authority; `trigger` is the id of a
 `substrate.reamde.dev/core/trigger` record whose source is the `webhook` arm;
 the request becomes the delivery's envelope and the trigger's callable runs in
 the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
-path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
+path segment (`/webhooks/{repository}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
 reach the server. An app's token that holds `webhook:<trigger>` stands in for
 the key as `Authorization: Bearer`, and is read again once the body has
