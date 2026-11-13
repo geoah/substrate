@@ -231,7 +231,8 @@ An import lands the closure under your repository's own
 authority, so `samples.substrate.reamde.dev/tasks/task` becomes
 `ada.example.com/tasks/task` in a repository whose authority is
 `ada.example.com`. Registration also imports the `llm` sample and writes three
-keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the
+keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the `llm/model`
+records of the models they offer, the
 [shipped units](units.md#the-shipped-units) and the console package's shipped
 collection views, and nothing else. Packages namespace names; they never partition the data: a
 reference crosses packages as easily as it stays inside one.

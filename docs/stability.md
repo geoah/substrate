@@ -291,7 +291,7 @@ that trust.
 
 ## Outside the promise, by name
 
-No label covers these, and any release may change them:
+Any release may change these, whatever label stands near them:
 
 - **The database tables.** Postgres is the server's own storage. Read the
   data through the API or the
@@ -303,17 +303,33 @@ No label covers these, and any release may change them:
   `-o yaml`. The columns of a table are for a person, and may change.
 - **The built-in assistant**: the agents of the seeded
   `substrate.reamde.dev/assistant` package, and their prompts.
-- **Console layouts**: the record views and collection views the `console`
-  package ships.
-- **Model lists**: the `llm/provider` rows and `llm/model` records the binary
-  writes and keeps current.
-- **Vendor mappings**: the contact mappings `core` ships for each provider's
-  people.
-- **Applets**: the `applets` package and its routes.
+- **Console layouts**: every shipped record of
+  `substrate.reamde.dev/console/recordview` and
+  `substrate.reamde.dev/console/collectionview`, whichever package ships it.
+  The `console` package ships the collection views. Record views ship in
+  `health`, in `labs` and in two providers, and one may lay out a kind of
+  another package: `labs` ships a view of the seeded `metric` kind.
+- **Model lists**: the `llm/model` records the binary writes and keeps
+  current, with the prices they carry, and the three keyless `llm/provider`
+  rows a repository is created with, which the binary creates and never
+  replaces.
+- **Vendor mappings**: the nine contact mappings `core` ships, which map the
+  people of Apple, Google, Slack, GitHub, Linear and Beeper onto
+  `core/contact`.
+- **Applets**: the `applets` package and its routes, both labelled
+  `experimental`.
 
-One rule protects a person's edits across all of that shipped content: a
-shipped record is replaced by a newer one only while nobody but the server
-has written it. One a person edited or deleted stays as they left it.
+What becomes of a person's own changes depends on what the shipped thing is:
+
+- **A shipped record** (a layout, a model record, a provider row) is written
+  again or replaced by a newer one only while nobody but the server has
+  written it. One a person edited or deleted stays as they left it.
+- **A shipped declaration** (the assistant's agents with their prompts, and
+  the contact mappings) cannot be edited or deleted through the API: its
+  package changes only with the server, and a release that ships a newer
+  version of it replaces the stored one. A person shapes the assistant with
+  [instruction records](agents.md#owner-instructions), or copies an agent
+  into a package of their own and changes the copy.
 
 Two parts of `substrate.reamde.dev/core` are outside its `stable` label and
 are experimental:
