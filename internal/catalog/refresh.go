@@ -104,6 +104,12 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 		if plan.ReviewRequired || len(plan.Blockers) > 0 {
 			result.Outcome = "upgrade-needs-review"
 			result.Reason = "the publisher's changes need your review"
+			// What blocks the release is its reason, in the install's own
+			// words: a requirement written against a function interface this
+			// server does not run says so here too (decision record 0265).
+			if len(plan.Blockers) > 0 {
+				result.Reason = strings.Join(plan.Blockers, "; ")
+			}
 			return result, nil
 		}
 		if _, err := c.installed(ctx, b, ds, nil); err != nil {

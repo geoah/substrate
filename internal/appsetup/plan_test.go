@@ -605,3 +605,35 @@ func TestAnAgentsAMappingsAndATriggersReachCount(t *testing.T) {
 		t.Fatalf("an action-only row = %+v %+v", row.Blocked, row.Package)
 	}
 }
+
+// A requirement whose authority's document gave no closure says why, as the
+// catalog said it: here the loader refused a closure written against a
+// function interface this server does not run (decision record 0265). One the
+// catalog has nowhere to read stays a package this server does not offer.
+func TestARequirementWhoseDocumentGaveNoClosureSaysWhy(t *testing.T) {
+	ctx := context.Background()
+	cat := testCatalog(t)
+	b, err := cat.Resolve(ctx, appPkg, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &planner{ds: newFakeDataset(), cat: cat, statuses: map[string]*substrate.BundleStatus{}, bundles: map[string]*catalog.Bundle{}}
+	refusal := fmt.Errorf("%w: publisher.example/base: package publisher.example/base: data.interface: the package's code is written against function interface 2, and this server runs interface 1 alone", catalog.ErrNotPublished)
+	steps, first, err := p.binaryChain(ctx, b, nil, []catalog.Unmet{{ID: "publisher.example/base", Err: refusal}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 1 || steps[0].Blocked == nil || steps[0].Blocked.Reason != substrate.BlockNotPublished ||
+		!strings.HasPrefix(steps[0].Blocked.Problem, "This package is not published where this server can install it: ") ||
+		!strings.Contains(steps[0].Blocked.Problem, "function interface 2") {
+		t.Fatalf("the step = %+v, want blocked as not published, naming the interface", steps)
+	}
+	if first == nil || !strings.Contains(first.requirer, "function interface 2") {
+		t.Fatalf("the requiring row's problem = %+v, want it to name the interface", first)
+	}
+	steps, _, err = p.binaryChain(ctx, b, nil, []catalog.Unmet{{ID: "example.com/gone"}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBlocked(t, "a requirement nothing offers", steps[0].Blocked, substrate.BlockNotShipped, "")
+}

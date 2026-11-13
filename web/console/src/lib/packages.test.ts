@@ -7,6 +7,7 @@ import {
   kindOrigin,
   packageAgent,
   packageRows,
+  packageInterface,
   packageStability,
 } from "./packages"
 
@@ -58,6 +59,25 @@ describe("packages", () => {
     const tasks = labelled.get("ada.example.com/tasks")!
     expect(tasks.stability).toBeUndefined()
     expect(packageStability(tasks)).toBe("experimental")
+  })
+
+  it("reads the function interface a package names, and 1 where it names none", () => {
+    const named = packageRows({
+      records: [
+        {
+          kind: "substrate.reamde.dev/core/package",
+          id: "ada.example.com/garden",
+          properties: { interface: 1 },
+        } as unknown as SubstrateRecord,
+        row("ada.example.com/tasks", "console"),
+      ],
+    })
+    const garden = named.get("ada.example.com/garden")!
+    expect(garden.functionInterface).toBe(1)
+    expect(packageInterface(garden)).toBe(1)
+    const tasks = named.get("ada.example.com/tasks")!
+    expect(tasks.functionInterface).toBeUndefined()
+    expect(packageInterface(tasks)).toBe(1)
   })
 
   it("names the agent only when an agent declared the package", () => {

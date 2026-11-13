@@ -208,9 +208,13 @@ importing it ([kept directories](stored-format.md#kept-directories)).
 ### A package's code
 
 A function is written against an interface: the input it is handed, and the
-`host` object it reads and writes through. That interface carries a version,
-and the server runs function bodies on the current Python release and the one
-before ([not in force yet](#what-is-not-in-force-yet)).
+`host` object it reads and writes through. The interface is labelled `beta`,
+and it carries a version: a package names the one its code is written
+against in its header, under `interface`, and a server refuses a package
+naming a version it does not run. A release of the server supports the
+current Python release and the one before. The image carries the current
+one, and [the interface](functions.md#the-interface) says what holds the one
+before.
 
 ## Upgrading
 
@@ -359,6 +363,3 @@ The code does not hold these clauses today:
   and the `stability` key arrived without raising it. A package has no key to
   state the number it needs. A server that does not know a key refuses the
   document that carries it, naming the key.
-- **A package's code has no interface version.** A function names its
-  `runtime`, `python` or `host`, and nothing else about what it is written
-  against. The published image carries one Python release.

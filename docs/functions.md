@@ -410,6 +410,70 @@ the engine refuses one at the door
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 a full reference the registry cannot place is refused as an undeclared kind.
 
+## The interface
+
+A body is written against the **function interface**: the `input` it is
+handed ([the delivery envelope](#the-delivery-envelope) and the keys beside
+it) and the `host` object it reads and writes through ([the SDK](#the-sdk)).
+The interface is labelled `beta`
+([stability](stability.md#a-packages-code)): it is supported, and a break
+to it is announced one minor release ahead. A break is a new interface
+version.
+
+A package names the version its code is written against in its header, under
+`interface`
+([0265](decisions/0265-a-package-names-the-function-interface-its-code-is-written-against.md)):
+
+```yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ada.example.com/garden
+data:
+  authority: ada.example.com
+  package: garden
+  interface: 1
+  version: 3
+```
+
+- **This server runs interface 1.** A header that names none reads as 1, the
+  interface every package was written against before the key existed, and
+  nothing is stored for it.
+- **A version the server does not run is refused** when the package is
+  loaded, at every door a package comes through (the apply door, an install,
+  an import, a publisher's refresh, an app's approval), naming the version
+  and the ones the server runs. Nothing of the package lands, so its code never fails
+  at its first delivery instead. The likely cause is a package written for a
+  newer server. A package that requires such a package is refused for that
+  reason too: its install names the requirement and the version before
+  anything lands, its upgrade preview lists the same line among what blocks
+  it, a refresh that leaves the release for review gives it as its reason,
+  and an app's set-up shows it on the requirement's step.
+- **Within one version the input only gains keys**, so a body ignores a key
+  it does not know. The keys a body reads, their JSON types and whether each
+  is always there are pinned in
+  `internal/engine/testdata/function_input.golden.json`, and the `config`
+  the engine resolves for a package's function (its inputs, settings and
+  accounts, with the `title` the engine adds to a record's properties) in
+  `internal/engine/testdata/function_config.golden.json`. A test fails when
+  either moves. A key renamed or removed, or a host call that changes, is a
+  new version; what a host call returns is held by review, not by a golden.
+
+**The Python release is part of the interface.** A release of the server
+supports the current Python release and the one before: today 3.14 and
+3.13. What holds that:
+
+- The published image carries Python 3.14, pinned as `python3~3.14` in the
+  `Dockerfile`, so a build that would ship another release fails.
+- The runner's host, `internal/runner/host.py`, and every body the binary
+  ships are linted for Python 3.9 (`.ruff.toml`), so none of them needs a
+  grammar newer than the release before.
+- The tests run bodies on one interpreter, the `python3` of the machine that
+  runs them. No test runs a body on 3.13.
+
+A server outside the image runs bodies on the `python3` on its `PATH`. A
+body whose PEP 723 block asks for a newer `requires-python` than that fails
+when it is registered, not at its first delivery.
+
 ## How the body runs
 
 A function's source is prepared **at install**, synchronously, and a body that
