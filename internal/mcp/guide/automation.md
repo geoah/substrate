@@ -36,7 +36,7 @@ A `substrate.reamde.dev/core/trigger` is an ordinary data record (`write` it, or
 
 - `enabled` (false stops delivery and keeps the cursor), `label`.
 - `source.record {kinds: [kind or glob], ops: [create, update, delete], when: "<CEL>", coalesce, fromStart}`: `when` is a boolean over `change`, `record` (`null` after a delete) and `repository`; `fromStart: true` delivers the matching history too.
-- `source.schedule {recurrence: "FREQ=DAILY;BYHOUR=7;BYMINUTE=0", timezone: "Europe/London", startsAt: "2026-01-01T07:00:00Z"}` (an RFC 5545 RRULE counted forward from `startsAt`); the trigger's `arguments` reach the function as `input["args"]` on every fire.
+- `source.schedule {recurrence: "FREQ=DAILY;BYHOUR=7", timezone: "Europe/London", startsAt: "2026-01-01T07:00:00Z"}` (an RRULE from `startsAt`; missed runs: the newest, or each with `missed: "all"`); the trigger's `arguments` reach the function as `input["args"]` on every fire.
 - `source.webhook {key?, headers?, signature?, maxBody?}`: the public door `POST /webhooks/<authority>/<trigger id>`; `key` is a credential you may write but never read back (cut from every read); `signature {algorithm: "hmac-sha256", signatureHeader, secret: "substrate.reamde.dev/core/secret/<id>", …}` verifies the sender.
 - `callable`: `"substrate.reamde.dev/core/function/<function id>"` or `"substrate.reamde.dev/core/agent/<agent id>"`; an agent delivery opens a thread whose first message is the envelope.
 

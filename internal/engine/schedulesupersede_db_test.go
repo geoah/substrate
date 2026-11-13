@@ -66,6 +66,7 @@ func supersedeDatasetOn(t *testing.T, ds *dataset, startsAt time.Time, ops ...an
 	}
 	schedule := map[string]any{"schedule": map[string]any{
 		"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
+		"missed": "all",
 	}}
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "widgets", Authority: supersedePkg,
@@ -374,6 +375,7 @@ func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) 
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": s.Format(time.RFC3339),
+				"missed": "all",
 			}},
 			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/agent", crewPackage+"/keeper"),
 		},

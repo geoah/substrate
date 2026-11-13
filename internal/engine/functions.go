@@ -1835,7 +1835,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 	if err != nil {
 		return 0, 0, err
 	}
-	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), limit)
+	due, err := ds.scheduleDue(lt, lastFire, limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1891,6 +1891,25 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		lastFire = at
 	}
 	return ran, fired, nil
+}
+
+// scheduleDue is what a pass fires of the trigger's occurrences after
+// lastFire: every due one, oldest first and at most limit, for a trigger
+// whose `missed` is `all`; the newest due one alone otherwise, the fire state
+// jumping over the ones before it (decision 0267).
+func (ds *dataset) scheduleDue(lt loadedTrigger, lastFire time.Time, limit int) ([]time.Time, error) {
+	if lt.Schedule.Missed == scheduleMissedAll {
+		return ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), limit)
+	}
+	latest, passed, ok, err := ds.latestDue(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC())
+	if err != nil || !ok {
+		return nil, err
+	}
+	if passed > 0 {
+		ds.svc.log.Info("substrate: schedule fires the latest occurrence it missed and passes over the rest",
+			"repository", ds.Repository().ID, "trigger", lt.ID, "fire", fireID(latest), "passed", passed)
+	}
+	return []time.Time{latest}, nil
 }
 
 // scheduleLateAfter is how far past its occurrence a schedule fire may begin
@@ -2117,6 +2136,20 @@ func (ds *dataset) logFireYield(triggerID, swap, fid string) {
 // and the rest (pending), which wait for a dispatcher pass to reach them.
 // At most scheduleOwedCap are counted.
 func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
+	if lt.Schedule.Missed != scheduleMissedAll {
+		// The next pass fires the latest due occurrence alone, but a fire
+		// this process started before a newer one fell due is still in flight
+		// until it settles, and it is no longer the latest.
+		inFlight = ds.firingAfter(lt.ID, lastFire)
+		latest, _, ok, err := ds.latestDue(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC())
+		if err != nil {
+			return 0, 0, err
+		}
+		if ok && !ds.isFiring(lt.ID, fireID(latest)) {
+			pending = 1
+		}
+		return pending, inFlight, nil
+	}
 	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
 	if err != nil {
 		return 0, 0, err
@@ -2129,6 +2162,27 @@ func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inF
 		}
 	}
 	return pending, inFlight, nil
+}
+
+// firingAfter counts the schedule occurrences after lastFire this process is
+// delivering now for one trigger. An occurrence an agent fire claimed has
+// moved the fire state to it, so it is not after lastFire and is counted
+// where the claim is.
+func (ds *dataset) firingAfter(triggerID string, lastFire time.Time) int64 {
+	prefix := fireKey(triggerID, "")
+	ds.firingMu.Lock()
+	defer ds.firingMu.Unlock()
+	var n int64
+	for key, count := range ds.firing {
+		fid, ok := strings.CutPrefix(key, prefix)
+		if !ok || count <= 0 {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, fid); err == nil && at.After(lastFire) {
+			n++
+		}
+	}
+	return n
 }
 
 // fireSettlement settles a dispatched fire: for a schedule occurrence the

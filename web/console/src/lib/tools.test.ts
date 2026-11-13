@@ -279,6 +279,27 @@ describe("when it runs", () => {
     expect(cadenceSummary(byRef(fixture(), GCAL), label)).toBe("Every hour")
   })
 
+  it("says a schedule that runs each run it missed, and not the default", () => {
+    const starts = (missed?: string) => {
+      const [t] = buildTools(
+        [fn("a.example.com/p/f")],
+        [],
+        [
+          trigger("t", "a.example.com/p/f", {
+            schedule: {
+              recurrence: "FREQ=HOURLY",
+              ...(missed ? { missed } : {}),
+            },
+          }),
+        ]
+      )
+      return toolStarts(t, label)[0].detail
+    }
+    expect(starts("all")).toBe("Every hour, and each run it missed")
+    expect(starts("latest")).toBe("Every hour")
+    expect(starts()).toBe("Every hour")
+  })
+
   it("says an agent tool runs by an agent and by you when it can be tried", () => {
     const starts = toolStarts(byRef(fixture(), SAVE), label)
     expect(starts.map((s) => s.label)).toEqual(["By an agent", "By you"])

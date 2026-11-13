@@ -256,7 +256,17 @@ type scheduleSource struct {
 	Recurrence string
 	Timezone   string
 	StartsAt   *time.Time
+	// Missed is what a pass does with occurrences the trigger missed:
+	// scheduleMissedLatest (the default) fires the newest due one alone,
+	// scheduleMissedAll fires each, oldest first (decision 0267).
+	Missed string
 }
+
+// The values of a schedule's `missed`.
+const (
+	scheduleMissedLatest = "latest"
+	scheduleMissedAll    = "all"
+)
 
 // rule compiles the recurrence against the anchor. createdAt is the trigger
 // row's creation time, the anchor of last resort. The due occurrences are
@@ -300,7 +310,7 @@ var triggerSourceArms = map[string]bool{"record": true, "schedule": true, "webho
 
 var triggerRecordKeys = map[string]bool{"kinds": true, "ops": true, "when": true, "coalesce": true, "fromStart": true}
 
-var triggerScheduleKeys = map[string]bool{"recurrence": true, "timezone": true, "startsAt": true}
+var triggerScheduleKeys = map[string]bool{"recurrence": true, "timezone": true, "startsAt": true, "missed": true}
 
 // parseTrigger reads one trigger record's properties into the dispatch
 // shape. Pure validation — the callable resolves separately, because the
@@ -555,7 +565,7 @@ func parseRecordSource(raw any) (*recordSource, error) {
 func parseScheduleSource(raw any) (*scheduleSource, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("source.schedule: a map with recurrence/timezone/startsAt")
+		return nil, fmt.Errorf("source.schedule: a map with recurrence/timezone/startsAt/missed")
 	}
 	for k := range m {
 		if !triggerScheduleKeys[k] {
@@ -568,6 +578,15 @@ func parseScheduleSource(raw any) (*scheduleSource, error) {
 		return nil, fmt.Errorf("source.schedule.recurrence is required — an RRULE")
 	}
 	src.Timezone, _ = m["timezone"].(string)
+	src.Missed = scheduleMissedLatest
+	if raw, has := m["missed"]; has {
+		v, _ := raw.(string)
+		if v != scheduleMissedLatest && v != scheduleMissedAll {
+			return nil, fmt.Errorf("source.schedule.missed: %q is not %q or %q — %q fires the newest occurrence the trigger missed, %q fires each",
+				fmt.Sprint(raw), scheduleMissedLatest, scheduleMissedAll, scheduleMissedLatest, scheduleMissedAll)
+		}
+		src.Missed = v
+	}
 	if raw, has := m["startsAt"]; has {
 		s, _ := raw.(string)
 		ts, err := substrate.ParseInstant(s)

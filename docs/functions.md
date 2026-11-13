@@ -1337,10 +1337,16 @@ data:
   already there.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
-  guard. Every occurrence fires once, oldest first: a trigger that missed
-  occurrences (the server down, the trigger disabled, a repository restored
-  to an older fire state) catches up at most ten per dispatcher pass, however
-  long the pass lasts, and none is coalesced away.
+  guard. Optional `missed` says what the trigger does with occurrences it
+  missed while the server was down, the trigger disabled or a repository
+  restored to an older fire state
+  ([0267](decisions/0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md)).
+  `latest`, the default, fires the newest due occurrence alone, and the fire
+  state moves over the ones before it: a sync that was off for a week runs
+  once, not 168 times. `all` fires every occurrence once, oldest first, at
+  most ten per dispatcher pass however long the pass lasts, and none is
+  coalesced away: the choice for a trigger whose every occurrence is work of
+  its own, such as a reminder per occurrence.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is

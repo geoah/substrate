@@ -60,10 +60,11 @@ func scheduleKeyOf(s *scheduleSource, createdAt time.Time) scheduleCursorKey {
 }
 
 // dueFires lists the trigger's occurrences in (after, now], oldest first, at
-// most limit of them. Nothing is coalesced: a trigger that missed
-// occurrences (the server down, the trigger disabled, a repository restored
-// to an older fire state) fires each one, and the bound is what keeps a pass
-// from turning a long gap into one burst.
+// most limit of them. Nothing is coalesced here: a trigger whose `missed` is
+// `all` and that missed occurrences (the server down, the trigger disabled, a
+// repository restored to an older fire state) fires each one, and the bound
+// is what keeps a pass from turning a long gap into one burst. A trigger
+// whose `missed` is `latest` reads latestDue instead.
 //
 // The walk resumes from the trigger's cursor when `after` is not behind it
 // and the rule is the one the cursor walked; a fire state moved back (a
@@ -76,6 +77,37 @@ func (ds *dataset) dueFires(triggerID string, s *scheduleSource, createdAt, afte
 	defer c.mu.Unlock()
 	return c.due(s, createdAt, after, now, limit)
 }
+
+// latestDue is the newest of the trigger's occurrences in (after, now], and
+// how many older ones it passes over: what a trigger that fires only the
+// latest of its missed occurrences fires (decision 0267). It walks the
+// cursor through every occurrence in between, so a week of an hourly rule
+// costs 168 steps once, and the next walk resumes past them.
+func (ds *dataset) latestDue(triggerID string, s *scheduleSource, createdAt, after, now time.Time) (latest time.Time, passed int, ok bool, err error) {
+	c := ds.scheduleCursorOf(triggerID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for {
+		due, err := c.due(s, createdAt, after, now, latestDueBatch)
+		if err != nil {
+			return time.Time{}, 0, false, err
+		}
+		if len(due) == 0 {
+			break
+		}
+		n += len(due)
+		latest, after = due[len(due)-1], due[len(due)-1]
+	}
+	if n == 0 {
+		return time.Time{}, 0, false, nil
+	}
+	return latest, n - 1, true, nil
+}
+
+// latestDueBatch is how many occurrences one step of latestDue takes from
+// the cursor.
+const latestDueBatch = 1000
 
 // owesAfter reports whether the trigger has an occurrence in (after, now],
 // which is whether dueFires would list one. A cursor that has stepped past
