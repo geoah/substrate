@@ -923,7 +923,7 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		return err
 	}
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
-		return ds.commitAndPublish(tx, t)
+		return inDoubt(ds.commitAndPublish(tx, t))
 	}
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
@@ -991,25 +991,37 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		switch {
 		case t.publishReg != nil:
 			ds.latchDirectoryErr(fmt.Errorf("commit of a vocabulary change failed and may have committed: %w", err))
-			return ds.fileErr
+			return inDoubt(ds.fileErr)
 		case prepared:
 			ds.commitInDoubt = true
 		case len(staged) > 0 || len(deletes) > 0:
 			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
-			return ds.fileErr
+			return inDoubt(ds.fileErr)
 		}
-		return err
+		return inDoubt(err)
 	}
 	if err := ds.svc.commitFault(commitAfterCommit); err != nil {
-		return err
+		return inDoubt(err)
 	}
 	if err := ds.commitStagedSealed(staged); err != nil {
-		return err
+		return inDoubt(err)
 	}
 	if err := ds.commitLines(prepared); err != nil {
-		return err
+		return inDoubt(err)
 	}
-	return ds.deleteSealedAfterCommit(deletes)
+	return inDoubt(ds.deleteSealedAfterCommit(deletes))
+}
+
+// inDoubt marks an error a write answers once its COMMIT was sent, in the
+// commit phase or in a read after it (getAfterCommit): the write may have
+// landed, so its client is told it cannot conclude the write failed
+// (substrate.ErrWriteInDoubt, decision 0271). Every error before the COMMIT
+// rolled the write back and is not marked.
+func inDoubt(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", substrate.ErrWriteInDoubt, err)
 }
 
 // commitAndPublish commits the transaction and, when it carries a registry to

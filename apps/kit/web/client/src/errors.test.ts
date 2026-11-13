@@ -7,6 +7,26 @@ import {
 } from "./errors"
 
 describe("failure", () => {
+  it("carries the reason a repeat under a retry key was refused for", async () => {
+    for (const reason of ["first_attempt_landed", "first_attempt_running"]) {
+      const e = await failure(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "conflict",
+              reason,
+              message: "Idempotency-Key k: the first request …",
+            },
+          }),
+          { status: 409 }
+        )
+      )
+      expect(e.code).toBe("conflict")
+      expect(e.reason).toBe(reason)
+      expect(e.conflict).toBe(true)
+    }
+  })
+
   it("reads the REST envelope with its problems", async () => {
     const e = await failure(
       new Response(

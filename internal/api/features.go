@@ -108,7 +108,7 @@ var featureTable = []feature{
 	// Every list, the body-addressed create and the record path. The ranked
 	// and the aggregate read of the list route are features of their own
 	// below, each with its own label.
-	{name: "records", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	{name: "records", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -119,7 +119,7 @@ var featureTable = []feature{
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route
 	// because it is every route's refusal.
-	{name: "errors", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}},
+	{name: "errors", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route).
 	{name: "changefeed", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{

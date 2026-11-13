@@ -18,6 +18,9 @@ import golden from "./errorreasons.golden.json"
 import type { ErrorReason } from "./types"
 
 const errorReasons: Record<ErrorReason, true> = {
+  first_attempt_landed: true,
+  first_attempt_running: true,
+  in_doubt: true,
   key_refused: true,
   observed_rederiving: true,
   quota: true,
