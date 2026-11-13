@@ -87,6 +87,7 @@ func (t *txn) checkMetricValues() error {
 	if len(t.metricValues) == 0 && len(t.metricRecords) == 0 {
 		return nil
 	}
+	t.measured(measureMetricValues)
 	at, err := t.unitGraph()
 	if err != nil {
 		return err

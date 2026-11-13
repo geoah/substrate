@@ -417,6 +417,7 @@ func (t *txn) syncUnitUses(ref eref, before, after []string, created bool) error
 // replaceUnitUses writes a row's unit_uses rows as uses, deleting what it
 // held first unless the row is new.
 func (t *txn) replaceUnitUses(ref eref, uses []string, held bool) error {
+	t.measured(measureUnitUses)
 	if !held && t.queueUses(ref, uses) {
 		return nil
 	}
@@ -546,6 +547,7 @@ func (t *txn) checkUnitGraph() error {
 	if !t.unitTouched || t.migrating {
 		return nil
 	}
+	t.measured(measureUnitGraph)
 	after, err := t.unitGraph()
 	if err != nil {
 		return err

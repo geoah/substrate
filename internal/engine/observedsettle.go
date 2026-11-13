@@ -49,6 +49,7 @@ func (t *txn) settleObserved() error {
 	if touch.all || (len(touch.ops) == 0 && len(touch.metrics) == 0) {
 		return nil
 	}
+	t.measured(measureObserved)
 	if err := t.lockKey(observedLockKey); err != nil {
 		return err
 	}
@@ -365,6 +366,10 @@ func (s *obsSettle) writeSegments(removed []eref, segs []obsSegment) error {
 }
 
 func (s *obsSettle) writeSegmentBatch(gone [2][]string, streams, extents []int64, segs []obsSegment) error {
+	// Before the insert, so a record that leaves the fold next is probed.
+	for i := range segs {
+		s.t.ds.observedKinds.note(segs[i].ref.Kind)
+	}
 	n := len(segs)
 	kind, id, form, codes := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	stream, offset := make([]int64, n), make([]int64, n)
