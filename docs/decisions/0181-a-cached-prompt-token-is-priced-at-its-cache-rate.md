@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-10-20
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
 ---
 
@@ -60,8 +60,12 @@ Cost per 1M tokens is the uncached prompt times `inputPer1M`, reads times
 times `inputPer1M`, Anthropic's list ratios for a cache read and a 5-minute
 cache write. OpenAI's read ratio is 0.1x only on gpt-5 and gpt-5-mini (0.25x
 on gpt-4.1 and o3, 0.5x on gpt-4o), and OpenAI bills no cache write. A model
-whose ratio differs (Claude Opus 5.5 reads at 0.05x, a 1-hour cache writes at
-2x) states its rate on the row, and the shipped sample does. A stated `"0"` is a free cache. The thread records
+whose ratio differs (Claude Opus 5.5 reads at 0.05x) states its rate on the
+row, and the shipped sample does. A call that asks for hour-long cache
+entries is charged twice the input rate for its writes where the row states
+no write rate, and a stated rate stands (pull request 1092 added this default
+after the record was written; the sentence was corrected when the record was
+accepted). A stated `"0"` is a free cache. The thread records
 `cacheReadTokens` and `cacheWriteTokens` beside `promptTokens`, rolled up on
 the root thread like the other tallies.
 
